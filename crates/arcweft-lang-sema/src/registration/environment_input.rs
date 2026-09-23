@@ -143,6 +143,7 @@ pub struct EnvironmentTypeProjectionNode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EnvironmentTypeProjectionKind {
     Unit,
+    Never,
     Bool,
     I8,
     I16,
@@ -978,6 +979,7 @@ fn append_type_spans<'a>(root: &'a EnvironmentTypeProjectionNode, spans: &mut Ve
                 arguments: items, ..
             } => pending.extend(items.iter().rev()),
             EnvironmentTypeProjectionKind::Unit
+            | EnvironmentTypeProjectionKind::Never
             | EnvironmentTypeProjectionKind::Bool
             | EnvironmentTypeProjectionKind::I8
             | EnvironmentTypeProjectionKind::I16

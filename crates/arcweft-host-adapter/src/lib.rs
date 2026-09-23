@@ -178,18 +178,35 @@ impl HostCallPolicy {
 
     /// Creates a policy from one or more manifests.
     pub fn from_manifests(manifests: impl IntoIterator<Item = AdapterManifest>) -> Self {
-        Self {
-            ids: manifests
-                .into_iter()
-                .flat_map(|manifest| {
-                    manifest
-                        .host_calls()
-                        .iter()
-                        .map(|host_call| host_call.id().to_owned())
-                        .collect::<Vec<_>>()
-                })
-                .collect(),
+        Self::from_selected_calls(manifests, |_| true)
+    }
+
+    /// Creates an implicit embedding policy without non-returning host calls.
+    ///
+    /// A host call returning `Never` can take control away from the embedding
+    /// process. Such calls require explicit adapter selection with
+    /// [`Self::from_manifests`].
+    pub fn from_returning_manifests(manifests: impl IntoIterator<Item = AdapterManifest>) -> Self {
+        Self::from_selected_calls(manifests, |host_call| {
+            !matches!(host_call.signature().return_type(), AdapterTypeKind::Never)
+        })
+    }
+
+    fn from_selected_calls(
+        manifests: impl IntoIterator<Item = AdapterManifest>,
+        include: impl Fn(&AdapterHostCall) -> bool,
+    ) -> Self {
+        let mut policy = Self::new();
+        for manifest in manifests {
+            policy.ids.extend(
+                manifest
+                    .host_calls()
+                    .iter()
+                    .filter(|host_call| include(host_call))
+                    .map(|host_call| host_call.id().to_owned()),
+            );
         }
+        policy
     }
 
     /// Creates a policy from serialized host-call ids.
@@ -383,6 +400,7 @@ fn ensure_no_nested_need(ty: &AdapterTypeKind) -> Result<(), HostCallRuntimeType
             .iter()
             .try_for_each(ensure_no_nested_need),
         AdapterTypeKind::Unit
+        | AdapterTypeKind::Never
         | AdapterTypeKind::Bool
         | AdapterTypeKind::I8
         | AdapterTypeKind::I16
@@ -416,6 +434,7 @@ fn encode_adapter_semantic_type(
 ) {
     match ty {
         AdapterTypeKind::Unit => RuntimeCheckedType::Unit.encode_semantic_identity(encoder),
+        AdapterTypeKind::Never => RuntimeCheckedType::Never.encode_semantic_identity(encoder),
         AdapterTypeKind::Bool => RuntimeCheckedType::Bool.encode_semantic_identity(encoder),
         AdapterTypeKind::I8 => {
             RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I8).encode_semantic_identity(encoder)
@@ -581,6 +600,17 @@ impl<'a> HostCallArgs<'a> {
                 "expected {len} positional host-call arguments, got {}",
                 self.positional.len()
             ))
+        }
+    }
+
+    /// Reads one required positional-or-named parameter, rejecting extra arguments.
+    pub fn single(&self, name: &str) -> Result<&'a RuntimeValue, String> {
+        match (self.positional, self.named) {
+            ([value], []) => Ok(value.value()),
+            ([], [argument]) if argument.name == name => Ok(argument.value.value()),
+            _ => Err(format!(
+                "expected exactly one positional argument or named `{name}` argument"
+            )),
         }
     }
 
@@ -958,6 +988,7 @@ mod tests {
     fn primitive_host_results_share_the_checked_runtime_type_authority() {
         for (adapter, checked) in [
             (AdapterTypeKind::Unit, RuntimeCheckedType::Unit),
+            (AdapterTypeKind::Never, RuntimeCheckedType::Never),
             (AdapterTypeKind::Bool, RuntimeCheckedType::Bool),
             (
                 AdapterTypeKind::I32,

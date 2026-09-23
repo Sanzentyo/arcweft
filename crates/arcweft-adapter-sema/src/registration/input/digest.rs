@@ -502,6 +502,7 @@ fn hash_rust_path(hasher: &mut blake3::Hasher, path: &arcweft_rust_abi::ArcweftR
 fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
     let tag = match ty {
         AdapterTypeKind::Unit => 0,
+        AdapterTypeKind::Never => 26,
         AdapterTypeKind::Bool => 1,
         AdapterTypeKind::I8 => 2,
         AdapterTypeKind::I16 => 3,
@@ -566,6 +567,7 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
                 .for_each(|argument| hash_adapter_type(hasher, argument));
         }
         AdapterTypeKind::Unit
+        | AdapterTypeKind::Never
         | AdapterTypeKind::Bool
         | AdapterTypeKind::I8
         | AdapterTypeKind::I16

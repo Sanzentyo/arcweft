@@ -62,7 +62,7 @@ pub struct AdapterToolingDocFile {
 Type labels use Arcweft diagnostic spelling for primitive and common generic
 types:
 
-- `Unit`, `bool`, `String`, `char`
+- `Unit`, `Never`, `bool`, `String`, `char`
 - `i8`, `i16`, `i32`, `i64`, `i128`, `isize`
 - `u8`, `u16`, `u32`, `u64`, `u128`, `usize`
 - `f32`, `f64`

@@ -261,6 +261,13 @@ extern capability cli {
 }
 ```
 
+The `native-cli` adapter writes `stdout` and `stderr` text verbatim, flushes the
+selected stream, and returns `Unit`. Its `exit` operation terminates the native
+process with the supplied `i32` code and produces no runtime value. Select this
+adapter explicitly in the launch profile to enable process termination. The
+implicit bundled native policy excludes host calls whose result is `Never` so
+an embedding runner does not acquire termination authority implicitly.
+
 ### HTTP
 
 ```arcw

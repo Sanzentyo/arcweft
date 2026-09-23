@@ -41,6 +41,8 @@ pub struct AdapterId(String);
 pub enum AdapterTypeKind {
     /// Unit value.
     Unit,
+    /// Uninhabited result of a call that cannot return.
+    Never,
     /// Boolean value.
     Bool,
     /// Signed 8-bit integer.
@@ -239,6 +241,7 @@ impl AdapterTypeKind {
     pub fn primitive_name(name: &str) -> Option<Self> {
         match name {
             "Unit" => Some(Self::Unit),
+            "Never" => Some(Self::Never),
             "bool" => Some(Self::Bool),
             "i8" => Some(Self::I8),
             "i16" => Some(Self::I16),

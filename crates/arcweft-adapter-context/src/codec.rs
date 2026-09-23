@@ -199,6 +199,7 @@ struct AdapterToolingDocFile {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum AdapterTypeKindFile {
     Unit {},
+    Never {},
     Bool {},
     I8 {},
     I16 {},
@@ -843,6 +844,7 @@ impl TypeConversionBudget {
         let child_depth = depth.saturating_add(1);
         Ok(match ty {
             AdapterTypeKindFile::Unit {} => AdapterTypeKind::Unit,
+            AdapterTypeKindFile::Never {} => AdapterTypeKind::Never,
             AdapterTypeKindFile::Bool {} => AdapterTypeKind::Bool,
             AdapterTypeKindFile::I8 {} => AdapterTypeKind::I8,
             AdapterTypeKindFile::I16 {} => AdapterTypeKind::I16,
@@ -1048,6 +1050,38 @@ docs = "Read custom content."
 
         assert_eq!(manifest.id().as_str(), "custom-http");
         assert_eq!(manifest.host_calls()[0].id(), "http.respond");
+    }
+
+    #[test]
+    fn preserves_never_as_an_uninhabited_host_result() {
+        let file = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 1,
+  "id": "process",
+  "display_name": "Process",
+  "host_calls": [{
+    "id": "process.stop",
+    "signature": {
+      "groups": [{"index": 0, "parameters": []}],
+      "result": {"kind": "never"}
+    }
+  }]
+}"#,
+        )
+        .expect("Never is a schema-1 primitive");
+        let encoded = serde_json::to_string(&file).expect("manifest serializes");
+        let manifest = AdapterManifestFile::from_json(&encoded)
+            .expect("manifest round trips")
+            .into_manifest()
+            .expect("Never is a valid manifest result");
+        assert_eq!(
+            manifest.host_calls()[0].signature().return_type(),
+            &AdapterTypeKind::Never
+        );
+        assert_eq!(
+            AdapterTypeKind::primitive_name("Never"),
+            Some(AdapterTypeKind::Never)
+        );
     }
 
     #[test]

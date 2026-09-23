@@ -602,6 +602,7 @@ impl Renderer {
         let start = self.text.len();
         match ty {
             AdapterTypeKind::Unit => self.text.push_str("Unit"),
+            AdapterTypeKind::Never => self.text.push_str("Never"),
             AdapterTypeKind::Bool => self.text.push_str("bool"),
             AdapterTypeKind::I8 => self.text.push_str("i8"),
             AdapterTypeKind::I16 => self.text.push_str("i16"),

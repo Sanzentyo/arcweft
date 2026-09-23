@@ -1,0 +1,11 @@
+schema = 1
+
+[package]
+id = "org.arcweft.fixture.cli-stdout-entry"
+version = "0.1.0"
+
+[profiles.fixture]
+kind = "cli"
+source = "001_cli_stdout_entry.arcw"
+entry = "@entry.main"
+adapter = "native-cli"

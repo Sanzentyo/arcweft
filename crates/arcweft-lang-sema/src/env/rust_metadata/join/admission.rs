@@ -199,6 +199,7 @@ impl Admission<'_, '_> {
                     frames.push((arguments.iter(), depth + 1));
                 }
                 Kind::Unit
+                | Kind::Never
                 | Kind::Bool
                 | Kind::I8
                 | Kind::I16

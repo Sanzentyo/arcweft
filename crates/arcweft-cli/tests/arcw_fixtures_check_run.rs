@@ -96,11 +96,10 @@ fn current_check_fixtures_pass() {
 fn current_run_fixtures_pass() {
     for path in arcw_files(&fixture_root().join("current_pass/run")) {
         let output = run_fixture_from_temp(&path, |cmd| {
-            cmd.arg("run")
-                .arg("--entry")
-                .arg("entry.main")
-                .arg("--steps")
-                .arg("16");
+            cmd.arg("run").arg("--steps").arg("16");
+            if !path.with_extension("toml").is_file() {
+                cmd.arg("--entry").arg("entry.main");
+            }
         });
         assert!(
             output.status.success(),
@@ -151,12 +150,13 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
     for path in arcw_files(&fixture_root().join("spec_should_pass/run")) {
         let output = run_fixture_from_temp(&path, |cmd| {
             cmd.arg("run")
-                .arg("--entry")
-                .arg("entry.main")
                 .arg("--mode")
                 .arg("drain")
                 .arg("--steps")
                 .arg("16");
+            if !path.with_extension("toml").is_file() {
+                cmd.arg("--entry").arg("entry.main");
+            }
         });
         assert!(
             output.status.success(),
@@ -166,6 +166,21 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+#[test]
+fn cli_stdout_spec_fixture_runs_with_selected_adapter() {
+    let path = fixture_root().join("spec_should_pass/run/001_cli_stdout_entry.arcw");
+    let output = run_fixture_from_temp(&path, |command| {
+        command.args(["run", "--mode", "drain", "--steps", "16"]);
+    });
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"hello");
 }
 
 #[test]

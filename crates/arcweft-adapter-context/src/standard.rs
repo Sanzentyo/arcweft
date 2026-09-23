@@ -51,8 +51,10 @@ pub fn sans_io_manifest() -> AdapterManifest {
 
 /// Native command-line process manifest.
 pub fn native_cli_manifest() -> AdapterManifest {
-    AdapterManifest::new(NATIVE_CLI_ADAPTER_ID, "Native CLI").with_host_call(
-        AdapterHostCall::with_signature(
+    AdapterManifest::new(NATIVE_CLI_ADAPTER_ID, "Native CLI")
+        .with_effect(AdapterEffectCapability::new("stdio.write"))
+        .with_effect(AdapterEffectCapability::new("process.exit"))
+        .with_host_call(AdapterHostCall::with_signature(
             "cli.args",
             signature(
                 [],
@@ -61,8 +63,22 @@ pub fn native_cli_manifest() -> AdapterManifest {
                 },
             ),
             [],
-        ),
-    )
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "cli.stdout",
+            signature([("text", AdapterTypeKind::String)], AdapterTypeKind::Unit),
+            [AdapterEffectCapability::new("stdio.write")],
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "cli.stderr",
+            signature([("text", AdapterTypeKind::String)], AdapterTypeKind::Unit),
+            [AdapterEffectCapability::new("stdio.write")],
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "cli.exit",
+            signature([("code", AdapterTypeKind::I32)], AdapterTypeKind::Never),
+            [AdapterEffectCapability::new("process.exit")],
+        ))
 }
 
 /// Native HTTP server manifest.

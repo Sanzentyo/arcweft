@@ -223,3 +223,121 @@ fn authored_externs_cannot_change_manifest_types_or_omit_manifest_effects() {
         );
     }
 }
+
+const CLI_EXIT_SOURCE: &str = r#"
+extern capability cli {
+    fn stdout(text: String) effects { stdio.write }
+    fn stderr(text: String) effects { stdio.write }
+    fn exit(code: i32) -> Never effects { process.exit }
+}
+entry cli @entry.main { goto @flow.main }
+flow main() -> Never effects { stdio.write, process.exit } {
+    cli.stdout("hello")
+    cli.stderr(text = "problem")
+    return cli.exit(code = EXIT_CODE)
+}
+"#;
+
+#[test]
+fn selected_native_cli_writes_streams_and_exits_without_a_never_payload() {
+    for executor in ["bytecode-vm", "awbc-product"] {
+        for code in [0, 7] {
+            let source = CLI_EXIT_SOURCE.replace("EXIT_CODE", &format!("{code}i32"));
+            let fixture = NativeHostFixture::new(&source, "native-cli");
+            assert_success(&fixture.command("check").output().unwrap());
+            let output = fixture
+                .command("run")
+                .args([
+                    "--executor",
+                    executor,
+                    "--mode",
+                    "drain",
+                    "--steps",
+                    "8",
+                    "--max-ops",
+                    "64",
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(code),
+                "{executor}: stdout={:?}, stderr={:?}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout, b"hello", "{executor}");
+            assert_eq!(output.stderr, b"problem", "{executor}");
+        }
+    }
+}
+
+#[test]
+fn implicit_native_policy_cannot_exit_the_embedding_process() {
+    let source = r"
+extern capability cli { fn exit(code: i32) -> Never effects { process.exit } }
+entry cli @entry.main { goto @flow.main }
+flow main() -> Never effects { process.exit } { return cli.exit(7i32) }
+";
+    let fixture = NativeHostFixture::new(source, "native-cli");
+    for executor in ["bytecode-vm", "awbc-product"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("run")
+            .arg(fixture.root.join("src/main.arcw"))
+            .args([
+                "--executor",
+                executor,
+                "--entry",
+                "entry.main",
+                "--mode",
+                "drain",
+                "--steps",
+                "8",
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert_ne!(
+            output.status.code(),
+            Some(7),
+            "unselected adapter exited {executor}"
+        );
+        let diagnostic = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            diagnostic.contains("host call is not admitted by the active adapter manifests"),
+            "wrong unselected host diagnostic for {executor}: {diagnostic}"
+        );
+    }
+}
+
+#[test]
+fn cli_process_calls_require_matching_arguments_and_selected_manifest() {
+    for source in [
+        CLI_EXIT_SOURCE.replace("EXIT_CODE", "\"seven\""),
+        CLI_EXIT_SOURCE
+            .replace("EXIT_CODE", "7i32")
+            .replace("cli.stdout(\"hello\")", "cli.stdout(7i32)"),
+    ] {
+        let fixture = NativeHostFixture::new(&source, "native-cli");
+        let output = fixture.command("check").output().unwrap();
+        assert!(
+            !output.status.success(),
+            "invalid CLI argument was accepted"
+        );
+    }
+    let source = CLI_EXIT_SOURCE.replace("EXIT_CODE", "7i32");
+    for adapter in ["sans-io", "native-file"] {
+        let fixture = NativeHostFixture::new(&source, adapter);
+        let output = fixture.command("check").output().unwrap();
+        assert!(
+            !output.status.success(),
+            "{adapter} admitted CLI process calls"
+        );
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        assert!(diagnostic.contains("AWF-EFX-007"), "{diagnostic}");
+    }
+}

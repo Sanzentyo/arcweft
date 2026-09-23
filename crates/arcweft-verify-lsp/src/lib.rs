@@ -892,6 +892,7 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
         AdapterTypeKind::Char => "Char".to_owned(),
         AdapterTypeKind::Bytes => "Bytes".to_owned(),
         AdapterTypeKind::Unit => "()".to_owned(),
+        AdapterTypeKind::Never => "Never".to_owned(),
         AdapterTypeKind::Vec { item } => format!("Vec<{}>", type_kind_label(item)),
         AdapterTypeKind::Seq { item } => format!("Seq<{}>", type_kind_label(item)),
         AdapterTypeKind::Option { item } => format!("Option<{}>", type_kind_label(item)),

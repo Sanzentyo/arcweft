@@ -20,13 +20,14 @@ use arcweft_core::value::{
 };
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistry,
-    HostAdapterRegistryBuilder, HostCallPolicy, HostTaskCompletion, HostTaskMetrics,
+    HostAdapterRegistryBuilder, HostCallArgs, HostCallPolicy, HostTaskCompletion, HostTaskMetrics,
     HostTaskOutcome, HostTaskSubmission,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 use thiserror::Error;
@@ -177,7 +178,7 @@ impl NativeTaskBridge {
     }
 
     pub fn standard_policy() -> HostCallPolicy {
-        HostCallPolicy::from_manifests([
+        HostCallPolicy::from_returning_manifests([
             standard::native_file_manifest(),
             standard::native_cli_manifest(),
             standard::system_info_manifest(),
@@ -772,13 +773,9 @@ impl HostAdapter for NativeFileAdapter {
             && capability.0 == "path"
         {
             let space = RuntimeVirtualPathSpace::from_label(operation)?;
-            let argument = match (args.as_slice(), named_args.as_slice()) {
-                ([value], []) => Some(value.value()),
-                ([], [argument]) if argument.name == "path" => Some(argument.value.value()),
-                _ => None,
-            };
+            let argument = HostCallArgs::new(args, named_args).single("path");
             let completion = match argument {
-                Some(RuntimeValue::String(path)) => bound
+                Ok(RuntimeValue::String(path)) => bound
                     .try_payload(RuntimeVirtualPath::new(space, path.clone()).into_value())
                     .map_or_else(
                         |error| HostTaskCompletion::Failed(error.to_string()),
@@ -837,11 +834,12 @@ impl HostAdapter for NativeCliAdapter {
         else {
             return None;
         };
-        if capability.0 != "cli" || operation != "args" {
+        if capability.0 != "cli" {
             return None;
         }
-        let completion = if args.is_empty() && named_args.is_empty() {
-            bound
+        let arguments = HostCallArgs::new(args, named_args);
+        let completion = match operation.as_str() {
+            "args" if args.is_empty() && named_args.is_empty() => bound
                 .try_payload(runtime_sequence_values(
                     self.args
                         .iter()
@@ -852,9 +850,34 @@ impl HostAdapter for NativeCliAdapter {
                 .map_or_else(
                     |error| HostTaskCompletion::Failed(error.to_string()),
                     HostTaskCompletion::Ready,
-                )
-        } else {
-            HostTaskCompletion::Failed("cli.args expects no arguments".to_owned())
+                ),
+            "args" => HostTaskCompletion::Failed("cli.args expects no arguments".to_owned()),
+            "stdout" | "stderr" => match arguments.single("text") {
+                Ok(RuntimeValue::String(text)) => {
+                    if operation == "stdout" {
+                        Self::write_output(io::stdout().lock(), text, bound)
+                    } else {
+                        Self::write_output(io::stderr().lock(), text, bound)
+                    }
+                }
+                _ => HostTaskCompletion::Failed(format!(
+                    "cli.{operation} expects exactly one String text argument"
+                )),
+            },
+            "exit" => match arguments.single("code").ok().and_then(|value| match value {
+                RuntimeValue::Int(value) => value.exact_i32(),
+                _ => None,
+            }) {
+                Some(code) => {
+                    // The native process adapter owns termination. A Never call
+                    // cannot publish a successful runtime payload or continue.
+                    std::process::exit(code);
+                }
+                _ => HostTaskCompletion::Failed(
+                    "cli.exit expects exactly one i32 code argument".to_owned(),
+                ),
+            },
+            _ => return None,
         };
         Some(HostTaskOutcome {
             completion,
@@ -871,6 +894,25 @@ impl HostAdapter for NativeCliAdapter {
                 ..
             } if capability.0 == "cli" && operation == "args"
         )
+    }
+}
+
+impl NativeCliAdapter {
+    fn write_output(
+        mut writer: impl Write,
+        text: &str,
+        bound: &BoundTaskOutcome,
+    ) -> HostTaskCompletion {
+        match writer
+            .write_all(text.as_bytes())
+            .and_then(|()| writer.flush())
+        {
+            Ok(()) => bound.try_payload(RuntimeValue::Unit).map_or_else(
+                |error| HostTaskCompletion::Failed(error.to_string()),
+                HostTaskCompletion::Ready,
+            ),
+            Err(error) => HostTaskCompletion::Failed(error.to_string()),
+        }
     }
 }
 
@@ -1489,6 +1531,8 @@ mod tests {
 
         for id in [
             "cli.args",
+            "cli.stdout",
+            "cli.stderr",
             "fs.read_text",
             "fs.read_bytes",
             "fs.write_text",
@@ -1500,6 +1544,142 @@ mod tests {
             "flow_thread.run_child",
         ] {
             assert!(policy.contains(id), "missing host call {id}");
+        }
+        assert!(!policy.contains("cli.exit"));
+        assert!(
+            NativeTaskBridge::selected_policy_for_manifest(&standard::native_cli_manifest())
+                .contains("cli.exit")
+        );
+    }
+
+    #[test]
+    fn native_cli_rejects_malformed_process_arguments_without_side_effects() {
+        let adapter = NativeCliAdapter {
+            manifest: standard::native_cli_manifest(),
+            args: Box::new([]),
+        };
+        let exact_code =
+            RuntimePayload::new(RuntimeValue::Int(arcweft_core::value::RuntimeInt::i32(7)));
+        let wider_code =
+            RuntimePayload::new(RuntimeValue::Int(arcweft_core::value::RuntimeInt::i64(7)));
+        let never = TaskOutcomeContract::new(RuntimeCheckedType::Never)
+            .bind_standalone()
+            .unwrap();
+        for request in [
+            HostTaskRequest::custom_with_named_args("cli", "exit", [], []),
+            HostTaskRequest::custom_with_named_args("cli", "exit", [wider_code], []),
+            HostTaskRequest::custom_with_named_args("cli", "exit", [RuntimePayload::from("7")], []),
+            HostTaskRequest::custom_with_named_args(
+                "cli",
+                "exit",
+                [exact_code.clone(), exact_code.clone()],
+                [],
+            ),
+            HostTaskRequest::custom_with_named_args(
+                "cli",
+                "exit",
+                [],
+                [("wrong".to_owned(), exact_code.clone())],
+            ),
+            HostTaskRequest::custom_with_named_args(
+                "cli",
+                "exit",
+                [exact_code.clone()],
+                [("code".to_owned(), exact_code)],
+            ),
+        ] {
+            let outcome = adapter
+                .complete(&task("bad-exit", request), &never)
+                .unwrap();
+            assert!(matches!(outcome.completion, HostTaskCompletion::Failed(_)));
+        }
+        let unit = TaskOutcomeContract::new(RuntimeCheckedType::Unit)
+            .bind_standalone()
+            .unwrap();
+        for operation in ["stdout", "stderr"] {
+            let request = HostTaskRequest::custom_with_named_args(
+                "cli",
+                operation,
+                [RuntimePayload::new(RuntimeValue::Bool(true))],
+                [],
+            );
+            let outcome = adapter
+                .complete(&task("bad-output", request), &unit)
+                .unwrap();
+            assert!(matches!(outcome.completion, HostTaskCompletion::Failed(_)));
+        }
+    }
+
+    #[test]
+    fn native_cli_exit_requires_exact_manifest_and_never_result_before_dispatch() {
+        let source_path = std::env::temp_dir().join("arcweft-native-cli-exit-contract.arcw");
+        let manifest = standard::native_cli_manifest();
+        let call = manifest
+            .host_calls()
+            .iter()
+            .find(|call| call.id() == "cli.exit")
+            .unwrap();
+        let result = RuntimeCheckedType::Never.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    result,
+                    RuntimePlanTypeProjection::Never,
+                )],
+                [],
+            )
+            .unwrap();
+        let program = RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().unwrap()));
+        for (contract, requested_result) in [
+            (None, result),
+            (
+                Some(arcweft_core::step::HostCallContractDigest::from_bytes(
+                    [0xa5; 32],
+                )),
+                result,
+            ),
+            (
+                Some(call.contract_digest()),
+                RuntimeCheckedType::Unit.semantic_identity_digest(),
+            ),
+        ] {
+            let mut bridge = NativeTaskBridge::try_new(
+                &source_path,
+                NativeFileRoots::for_source(&source_path),
+                &[],
+                NativeTaskBridge::selected_policy_for_manifest(&manifest),
+                &[],
+            )
+            .unwrap();
+            let results = bridge.complete_host_calls(
+                program.clone(),
+                vec![RuntimeHostCallRequest {
+                    id: arcweft_core::step::RuntimeHostCallId("cli.exit.invalid".to_owned()),
+                    public_id: "cli.exit".to_owned(),
+                    capability: "cli".to_owned(),
+                    operation: "exit".to_owned(),
+                    contract,
+                    args: vec![RuntimePayload::new(RuntimeValue::Int(
+                        arcweft_core::value::RuntimeInt::i32(7),
+                    ))],
+                    named_args: Vec::new(),
+                    result: requested_result,
+                    mode: RuntimeHostCallMode::Immediate,
+                    deterministic: true,
+                }],
+            );
+            assert!(matches!(
+                results.as_slice(),
+                [RuntimeHostCallResult {
+                    outcome: Err(RuntimeHostCallError {
+                        kind: RuntimeHostCallErrorKind::Rejected,
+                        ..
+                    }),
+                    ..
+                }]
+            ));
+            assert_eq!(bridge.stats().completed_tasks, 0);
         }
     }
 

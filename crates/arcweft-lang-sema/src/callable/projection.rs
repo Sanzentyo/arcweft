@@ -713,6 +713,7 @@ impl<'a> TypeProjector<'a> {
         let next_depth = depth.saturating_add(1);
         match node.kind() {
             EnvironmentTypeProjectionKind::Unit => Ok(TypeKind::Unit),
+            EnvironmentTypeProjectionKind::Never => Ok(TypeKind::Never),
             EnvironmentTypeProjectionKind::Bool => Ok(TypeKind::Bool),
             EnvironmentTypeProjectionKind::I8 => Ok(TypeKind::I8),
             EnvironmentTypeProjectionKind::I16 => Ok(TypeKind::I16),

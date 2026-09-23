@@ -721,6 +721,7 @@ fn adapter_type_node(
 ) -> Result<EnvironmentTypeProjectionNode, AdapterRegistrationFactsError> {
     let kind = match ty {
         AdapterTypeKind::Unit => EnvironmentTypeProjectionKind::Unit,
+        AdapterTypeKind::Never => EnvironmentTypeProjectionKind::Never,
         AdapterTypeKind::Bool => EnvironmentTypeProjectionKind::Bool,
         AdapterTypeKind::I8 => EnvironmentTypeProjectionKind::I8,
         AdapterTypeKind::I16 => EnvironmentTypeProjectionKind::I16,
