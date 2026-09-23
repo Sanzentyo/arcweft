@@ -736,16 +736,19 @@ mod tests {
             .apply_patch_bytes(&patch_bytes)
             .expect("generational patch applies");
 
-        assert!(matches!(
-            outcome,
-            NativePatchOutcome::Applied {
-                report: BundleHotSwapReport {
-                    generation,
-                    compatibility: SwapCompatibility::CodeCompatible,
-                },
-                content_root,
-            } if generation == GenerationId::new(1) && content_root == new_root
-        ), "unexpected code-compatible patch outcome: {outcome:?}");
+        assert!(
+            matches!(
+                outcome,
+                NativePatchOutcome::Applied {
+                    report: BundleHotSwapReport {
+                        generation,
+                        compatibility: SwapCompatibility::CodeCompatible,
+                    },
+                    content_root,
+                } if generation == GenerationId::new(1) && content_root == new_root
+            ),
+            "unexpected code-compatible patch outcome: {outcome:?}"
+        );
         assert_eq!(endpoint.active_content_root(), Some(new_root));
 
         endpoint

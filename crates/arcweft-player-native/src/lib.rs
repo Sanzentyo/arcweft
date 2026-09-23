@@ -158,9 +158,7 @@ pub(crate) fn test_step_until_dialogue_stage(
         assert!(
             !step.finished,
             "dialogue finished before a stage appeared: status={}, diagnostics={:?}, events={:?}",
-            step.status_label,
-            step.diagnostics,
-            step.flow_events,
+            step.status_label, step.diagnostics, step.flow_events,
         );
         last_step = Some(step);
     }
