@@ -17,7 +17,7 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
     let method_local_domain = plan
         .nominal_record_domains()
         .domains()
-        .find(|domain| matches!(domain.fields(), [field] if field.name() == "output"))
+        .find(|domain| matches!(domain.fields(), [field] if field.name() == Some("output")))
         .expect("the reached Iterator::next body retains its nominal local layout");
     assert!(
         plan.local_declarations()
@@ -26,9 +26,10 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
         "the reached Iterator::next body local is admitted with its exact nominal type"
     );
     assert!(
-        plan.nominal_record_domains()
-            .domains()
-            .all(|domain| domain.fields().iter().all(|field| field.name() != "unused")),
+        plan.nominal_record_domains().domains().all(|domain| domain
+            .fields()
+            .iter()
+            .all(|field| field.name() != Some("unused"))),
         "an unwitnessed Iterator impl does not re-enter runtime reachability"
     );
     let evidence = plan

@@ -501,7 +501,6 @@ impl RuntimeSchemaProjection {
                 *checked.semantic_type().as_bytes(),
             ),
             layout: projection.layout(),
-            schema: projection.schema().clone(),
         })
     }
 }

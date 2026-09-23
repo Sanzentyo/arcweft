@@ -1,5 +1,12 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+#[path = "project_cache_transaction/rust_codec_policy.rs"]
+mod rust_codec_policy;
+#[path = "project_cache_transaction/rust_defaults.rs"]
+mod rust_defaults;
+#[path = "project_cache_transaction/rust_nominals.rs"]
+mod rust_nominals;
+
 use arcweft_adapter_context::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
     AdapterCallableParameterIndex, AdapterCallablePath, AdapterEnvironmentOwnerId,
@@ -1023,7 +1030,7 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         .expect("unit expression retains its selected project variant fact");
 
     assert_eq!(selected.selected_payload_type(), Ok(None));
-    let RuntimeVariantOwner::Project { cases, .. } = selected.owner() else {
+    let RuntimeVariantOwner::Nominal { cases, .. } = selected.owner() else {
         panic!("project enum expression retains a project variant owner");
     };
     assert_eq!(cases.len(), 2);

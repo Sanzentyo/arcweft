@@ -3,9 +3,7 @@ use arcweft_agent_protocol::{
     ids::{IdentifierError, StableHash},
     verified_effects::VerifiedEffectSummary,
 };
-use arcweft_lang_sema::{
-    callable::CheckedCallableFacts, effect_row::EffectRowTail, effects::EffectSet,
-};
+use arcweft_lang_sema::{callable::CheckedCallableFacts, effects::EffectSet};
 use thiserror::Error;
 
 /// Current semantics of the transitive closure and artifact-boundary lowering.
@@ -33,10 +31,9 @@ pub fn build_verified_effect_summary(
     let row = callable
         .actual_row()
         .ok_or(VerifiedEffectBuildError::MissingBodyRow)?;
-    if row.tail() != EffectRowTail::Closed {
-        return Err(VerifiedEffectBuildError::UnresolvedRow);
-    }
-    let inferred = row.concrete().clone();
+    let inferred = row
+        .closed_value()
+        .ok_or(VerifiedEffectBuildError::UnresolvedRow)?;
     let actual = inferred
         .iter()
         .map(|effect| EffectCapability::new(effect.as_str()))

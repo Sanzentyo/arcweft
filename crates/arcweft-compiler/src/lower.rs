@@ -6,10 +6,14 @@
 //! or consults the removed `TypeCheckReport` sidecar.
 
 mod closure_instances;
+#[cfg(test)]
+#[path = "lower/environment_record_pattern_tests.rs"]
+mod environment_record_pattern_tests;
 #[path = "lower/evaluated_effects.rs"]
 mod evaluated_effects;
 #[path = "lower/fx.rs"]
 pub(crate) mod fx;
+mod nominals;
 mod project_instances;
 #[path = "lower/reachability.rs"]
 mod reachability;
@@ -309,6 +313,12 @@ pub enum RuntimeSemanticProjectionError {
         nominal: String,
         #[source]
         source: RuntimeNominalRecordFactError,
+    },
+    #[error("accepted Rust nominal case {ordinal} has an invalid payload")]
+    RustVariantPayload {
+        ordinal: u32,
+        #[source]
+        source: arcweft_lang_sema::types::VariantPayloadSealError,
     },
     #[error(
         "environment record field {ordinal} of {semantic_owner:?} on {owner:?} has no executable runtime coordinate"
@@ -1104,7 +1114,7 @@ fn project_runtime_semantic_fact_inventories(
         &mut input,
         &dialogue_projection,
     )?;
-    Ok(match view_value_owners {
+    let facts = match view_value_owners {
         Some(view_value_owners) => RuntimePlanSemanticFacts::try_new_with_view_value_programs(
             project,
             runtime_owners,
@@ -1112,7 +1122,8 @@ fn project_runtime_semantic_fact_inventories(
             input,
         )?,
         None => RuntimePlanSemanticFacts::try_new(project, runtime_owners, input)?,
-    })
+    };
+    facts.try_with_nominal_definitions(|ty| nominals::definition(ty, symbols, world, analysis))
 }
 
 fn validate_executable_record_projections(
@@ -3909,6 +3920,14 @@ fn checked_expression_type<'a>(
         })
 }
 
+fn runtime_data_map_kind(kind: MapKind) -> arcweft_core::entry::RuntimeMapKind {
+    match kind {
+        MapKind::Ordered => arcweft_core::entry::RuntimeMapKind::Ordered,
+        MapKind::Sorted => arcweft_core::entry::RuntimeMapKind::Sorted,
+        MapKind::BTree => arcweft_core::entry::RuntimeMapKind::BTree,
+    }
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "the closed semantic type vocabulary must be projected exhaustively in one boundary"
@@ -3994,8 +4013,17 @@ fn runtime_type_at(
         TypeKind::ActionTarget => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ActionTarget),
         TypeKind::ActionResult => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ActionResult),
         TypeKind::AgentValue => RuntimeTypeShape::AgentValue,
-        TypeKind::DataFormat => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataFormat),
-        TypeKind::DataShape => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataShape),
+        TypeKind::DataValue
+        | TypeKind::DataErrorKind
+        | TypeKind::DataPathSegment
+        | TypeKind::DataMapKind => nominals::environment_enum_type(ty, identity, world, analysis)?,
+        TypeKind::DataError | TypeKind::DataPath => {
+            nominals::environment_record_type(ty, identity, world, analysis)?
+        }
+        TypeKind::DataFormat => nominals::environment_enum_type(ty, identity, world, analysis)?,
+        TypeKind::DataShape(value) => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataShape(
+            nested_at(value, RuntimeTypeProjectionStep::AgentDataShapeValue)?,
+        )),
         TypeKind::AgentEntityMetadata => {
             RuntimeTypeShape::Agent(RuntimeAgentTypeShape::EntityMetadata)
         }
@@ -4071,7 +4099,8 @@ fn runtime_type_at(
             kind: RuntimeSequenceKind::Seq,
             item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
         },
-        TypeKind::Map { key, value, .. } => RuntimeTypeShape::Map {
+        TypeKind::Map { kind, key, value } => RuntimeTypeShape::Map {
+            kind: runtime_data_map_kind(*kind),
             key: nested(key)?,
             value: nested(value)?,
         },
@@ -4149,13 +4178,14 @@ fn runtime_type_at(
                     nominal: nominal.declaration().qualified_name(),
                     source: NominalSchemaProjectionError::MissingCachedProjection { semantic_type },
                 })?;
-            RuntimeTypeShape::ProjectNominal {
-                nominal: RuntimeResolvedNominal::new(
+            RuntimeTypeShape::Nominal {
+                nominal: RuntimeResolvedNominal::project(
                     nominal.declaration().clone(),
                     projection.owner(),
                     projection.nominal().clone(),
                     projection.semantic_identity(),
                     projection.layout(),
+                    Arc::clone(projection.graph()),
                 ),
                 arguments: nominal
                     .arguments()
@@ -4289,45 +4319,7 @@ fn runtime_type_at(
             });
         }
         TypeKind::AcceptedNominal(nominal) => {
-            let record = world
-                .environment()
-                .nominal_catalog()
-                .exact(nominal.declaration().canonical_path())
-                .filter(|record| {
-                    record.id() == nominal.declaration()
-                        && usize::from(record.arity()) == nominal.arguments().len()
-                })
-                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                    reason: "accepted nominal runtime carrier is absent or stale".to_owned(),
-                })?;
-            let AcceptedNominalSemantics::Opaque(carrier) = record.semantics() else {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "accepted nominal has no opaque runtime-plan carrier".to_owned(),
-                });
-            };
-            RuntimeTypeShape::Opaque {
-                producer: carrier.producer().clone(),
-                admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
-                value_class: carrier.value_class(),
-                persistence: carrier.persistence(),
-                arguments: nominal
-                    .arguments()
-                    .iter()
-                    .enumerate()
-                    .map(|(index, argument)| {
-                        runtime_type_at(
-                            argument,
-                            symbols,
-                            world,
-                            analysis,
-                            &path.pushed(RuntimeTypeProjectionStep::OpaqueArgument(
-                                projection_index(index),
-                            )),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice(),
-            }
+            nominals::accepted_type(nominal, symbols, world, analysis, path)?
         }
         TypeKind::CharacterDialogue(dialogue) => {
             let owner = dialogue.runtime_opaque_owner();
@@ -4721,12 +4713,13 @@ fn runtime_nominal(
             },
         });
     }
-    Ok(RuntimeResolvedNominal::new(
+    Ok(RuntimeResolvedNominal::project(
         nominal.declaration().clone(),
         nominal.owner(),
         projected.nominal().clone(),
         projected.semantic_identity(),
         projected.layout(),
+        Arc::clone(projected.graph()),
     ))
 }
 
@@ -4841,7 +4834,7 @@ fn runtime_nominal_record_under(
         layout,
         projected_fields
             .into_iter()
-            .map(|(name, normalized, _)| (name, normalized)),
+            .map(|(name, normalized, _)| (Some(name), normalized)),
     )
     .map_err(|source| RuntimeSemanticProjectionError::NominalRecordFact {
         nominal: name,
@@ -4898,13 +4891,20 @@ fn runtime_record_pattern_under(
                     })?
                 }
                 CheckedRecordPatternOwner::Environment { .. } => {
-                    return Err(
+                    let ordinal = usize::try_from(field.declaration_ordinal()).map_err(|_| {
                         RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
                             owner: RuntimeRecordExecutableOwner::Pattern(owner),
                             semantic_owner: record.owner().semantic_type(),
                             ordinal: field.declaration_ordinal(),
-                        },
-                    );
+                        }
+                    })?;
+                    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|_| {
+                        RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                            owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                            semantic_owner: record.owner().semantic_type(),
+                            ordinal: field.declaration_ordinal(),
+                        }
+                    })?
                 }
             };
             let source = match field.source().value() {
@@ -4953,13 +4953,9 @@ fn runtime_record_pattern_under(
                 rest,
             )
         }
-        CheckedRecordPatternOwner::Environment { .. } => {
-            return Err(
-                RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecord {
-                    owner: RuntimeRecordExecutableOwner::Pattern(owner),
-                    semantic_owner: record.owner().semantic_type(),
-                },
-            );
+        CheckedRecordPatternOwner::Environment { record } => {
+            let nominal = nominals::environment_pattern_record(record, symbols, world, analysis)?;
+            RuntimeRecordPatternFact::try_new(nominal, fields, rest)
         }
     };
     projected.map_err(|source| RuntimeSemanticProjectionError::RecordPlan {
@@ -7043,9 +7039,12 @@ fn runtime_project_attached_default(
         .expect("runtime default requires attached ABI")
         .binding_ty()
         .clone();
+    let effects = instance_solution
+        .instantiate_effect_row(checked_default.effects())
+        .map_err(|error| origin.error(error.to_string()))?;
     let execution = match (
         checked_default.suspension(),
-        checked_default.effects().concrete().is_empty(),
+        effects.is_empty(),
         checked_default.control(),
     ) {
         (
@@ -7069,12 +7068,7 @@ fn runtime_project_attached_default(
         checked_default.suspension(),
         checked_default.control(),
         execution,
-        checked_default
-            .effects()
-            .concrete()
-            .iter()
-            .cloned()
-            .collect(),
+        effects.iter().cloned().collect(),
         captures.into_boxed_slice(),
     )
     .map(Some)
@@ -7471,12 +7465,13 @@ fn runtime_call_target(
                         .to_owned(),
                 });
             }
-            let mode = if checked
-                .exposed_row()
-                .concrete()
-                .iter()
-                .any(EffectId::is_control_suspend)
-            {
+            let effects = checked.exposed_row().closed_value().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "extern capability requires a closed manifest effect row".to_owned(),
+                }
+            })?;
+            let mode = if effects.iter().any(EffectId::is_control_suspend) {
                 RuntimeHostCallMode::Suspend
             } else {
                 RuntimeHostCallMode::Immediate
@@ -7494,7 +7489,7 @@ fn runtime_call_target(
                     reason: error.to_string(),
                 })?;
             if mode == RuntimeHostCallMode::Immediate
-                && checked.exposed_row().concrete().is_empty()
+                && effects.is_empty()
                 && let Some(intrinsic) = RuntimeIntrinsic::from_label(host.public_id())
             {
                 return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));

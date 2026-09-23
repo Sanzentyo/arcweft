@@ -47,7 +47,7 @@ pub(super) fn runtime_variant_under(
                 });
             }
             let normalized = runtime_type(&closed, symbols, world, analysis)?;
-            let RuntimeTypeShape::ProjectNominal {
+            let RuntimeTypeShape::Nominal {
                 nominal: runtime_nominal,
                 arguments,
             } = normalized.shape()
@@ -74,6 +74,14 @@ pub(super) fn runtime_variant_under(
         CheckedVariantOwnerKind::CharacterNominal { .. } => RuntimeResolvedVariant::character(
             RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
             RuntimeNominalTypeId::from_checked_digest(*semantic_type.as_bytes()),
+            analysis
+                .project_runtime_nominal_graph(world, &variant.owner().ty(), Default::default())
+                .map_err(
+                    |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
+                        nominal: variant.owner().ty().source_label(),
+                        source: NominalSchemaProjectionError::SourceGraph(Box::new(source)),
+                    },
+                )?,
             runtime_checked_variant_cases_under(
                 variant.owner(),
                 symbols,
@@ -95,6 +103,14 @@ pub(super) fn runtime_variant_under(
                         ),
                     }
                 })?,
+                analysis
+                    .project_runtime_nominal_graph(world, &variant.owner().ty(), Default::default())
+                    .map_err(
+                        |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
+                            nominal: variant.owner().ty().source_label(),
+                            source: NominalSchemaProjectionError::SourceGraph(Box::new(source)),
+                        },
+                    )?,
                 runtime_checked_variant_cases_under(
                     variant.owner(),
                     symbols,
@@ -200,7 +216,7 @@ fn checked_variant_selected_name(
         })
 }
 
-fn runtime_checked_variant_cases_under(
+pub(super) fn runtime_checked_variant_cases_under(
     owner: &CheckedVariantOwner,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,

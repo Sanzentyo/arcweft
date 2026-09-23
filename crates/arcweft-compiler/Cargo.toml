@@ -39,6 +39,10 @@ thiserror.workspace = true
 path = "src/lib.rs"
 
 [dev-dependencies]
+arcweft-data-derive = { workspace = true }
+arcweft-codec-json = { workspace = true }
+arcweft-rust-abi-macros = { workspace = true }
+arcweft-rust-abi = { workspace = true }
 arcweft-adapter-context = { workspace = true }
 arcweft-adapter-sema = { workspace = true }
 arcweft-agent-runner = { workspace = true }

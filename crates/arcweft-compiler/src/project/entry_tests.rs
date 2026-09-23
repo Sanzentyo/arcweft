@@ -545,6 +545,28 @@ fn body_only_change_preserves_binding_and_changes_compile_artifact_identity() {
     );
 }
 
+#[test]
+fn entry_event_payload_definitions_are_admitted_without_constructor_expressions() {
+    let source = format!(
+        "struct Payload {{ flag: bool }}\n{}",
+        ENTRY_SOURCE.replace("    Start\n", "    Start(Payload)\n"),
+    );
+    let compiled =
+        compile_entry_project(&source).expect("Entry-only Event payload types are reachable");
+    let plan = &compiled.runtime_plan().plan;
+    plan.verify()
+        .expect("the source proof and executable domains agree");
+    assert_eq!(plan.nominal_record_domains().domains().count(), 2);
+    let RuntimeEntryRoles::Stateful(roles) = &plan.entries()[0].roles else {
+        panic!("stateful entry");
+    };
+    let event = plan
+        .type_table()
+        .id_for_semantic(roles.event.semantic_identity)
+        .unwrap();
+    assert!(plan.variant_domains().get(event).is_some());
+}
+
 fn checked_project_index(compiled: &CompiledProject) -> ProjectSemanticIndex {
     compiled.analysis_lease().semantic_index().as_ref().clone()
 }
