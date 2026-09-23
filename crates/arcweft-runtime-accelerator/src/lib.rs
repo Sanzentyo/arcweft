@@ -12,7 +12,6 @@ pub mod math;
 #[cfg(test)]
 mod tests;
 
-use apache_avro::{Reader, Schema, Writer, types::Value as AvroValue};
 use arcweft_core::{
     math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64},
     plan::{
@@ -21,23 +20,18 @@ use arcweft_core::{
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
-        PureFunctionStats, RuntimeExternalCallBackend, RuntimeFixedArgs, RuntimeFloat32Args,
-        RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
-        RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalar, RuntimePureScalarInteger,
-        VmPureFunctionScratch,
+        PureFunctionStats, RuntimeExternalCallBackend, RuntimeExternalCallContext,
+        RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
+        RuntimeMathCallBackend, RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalar,
+        RuntimePureScalarInteger, VmPureFunctionScratch,
     },
     runtime_id::RuntimeLocalDeclarationId,
     step::RuntimePureCallStats,
     value::{
         DenseSeq, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
         RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeExpr, RuntimeExprKind,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes,
-        runtime_sequence_dense_usize,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeValue, runtime_sequence_dense_usize,
     },
-};
-use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataError, DataErrorKind, DataFormat, DecodeOptions, EncodeOptions,
-    FieldShape, Number, RecordPolicy, TypeShape, Value,
 };
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 use native_jit::PureObjectInputKind;
@@ -48,7 +42,6 @@ use native_jit::{
     CompiledPureU128BatchInputs, CraneliftPureFunctionBackend,
 };
 use rayon::{ThreadPool, ThreadPoolBuilder, prelude::*};
-use std::collections::BTreeMap;
 use std::fmt;
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]

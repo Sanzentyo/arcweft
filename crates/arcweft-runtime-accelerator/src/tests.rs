@@ -1,22 +1,38 @@
 use std::sync::Arc;
 
 use super::*;
+use arcweft_core::entry::{
+    RuntimeCodecUse, RuntimeEnumTagStyle, RuntimeFieldCodecUse, RuntimeVariantCodecUse,
+};
+use arcweft_core::value::runtime_sequence_dense_bytes;
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 use arcweft_core::value::runtime_sequence_dense_u32;
 use arcweft_core::{
-    engine::{Engine, FlowExit, FlowFiberStatus},
-    entry::RuntimeNominalTypeId,
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
-    plan::{
-        FlowRuntimeId, RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind,
-        RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
-        RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-        RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
-        RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-        RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    awbc::schema::{
+        AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
+        AwbcStringId, AwbcTypeId, AwbcVariantCase, AwbcVariantIdentity,
     },
+    engine::{Engine, FlowExit, FlowFiberStatus},
+    entry::{
+        RuntimeBytesFormat, RuntimeNominalRecordShape, RuntimeNominalTypeId, RuntimeSchemaLimits,
+    },
+    pattern::{
+        RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
+    },
+    plan::{
+        FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeCallArgumentSeed, RuntimeExprSeed,
+        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
+        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed,
+        RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    },
+    program_types::RuntimeProgramTypes,
     pure::{PureFunctionRequest, RuntimePureHelperRef},
     step::{RuntimeStepInput, RuntimeStepOptions},
+    task::RuntimeProgramOwner,
+    value::RuntimeRecordFieldId,
 };
 use arcweft_core::{
     entry::RuntimeCallableId,
@@ -27,6 +43,7 @@ use arcweft_core::{
         RuntimeUSizeValue, RuntimeUnsignedIntWidth,
     },
 };
+use arcweft_data::DataFormat;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -82,6 +99,39 @@ fn empty_plan_accelerator(config: RuntimePureAcceleratorConfig) -> RuntimePureAc
 fn empty_plan_accelerator_with_mode(mode: RuntimePureBackendMode) -> RuntimePureAccelerator {
     let plan = empty_runtime_plan();
     RuntimePureAccelerator::new(mode, &plan)
+}
+
+fn data_shape_context(
+    argument_types: impl IntoIterator<Item = RuntimeSemanticTypeId>,
+) -> RuntimeExternalCallContext {
+    let value_type = RuntimeSemanticTypeId::from_bytes([0xE1; 32]);
+    let shape_type = RuntimeSemanticTypeId::from_bytes([0xE2; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    value_type,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(
+                    shape_type,
+                    RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::DataShape(
+                        value_type,
+                    )),
+                ),
+            ],
+            std::iter::empty(),
+        )
+        .expect("DataShape context rows are valid");
+    let plan = Arc::new(builder.finish().expect("DataShape context plan is sealed"));
+    RuntimeExternalCallContext::for_program(
+        RuntimeProgramOwner::Plan(plan),
+        argument_types,
+        shape_type,
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .expect("DataShape context binds its selected rows")
 }
 
 fn default_helper_input(input: RuntimePureInputType) -> RuntimeValue {
@@ -214,14 +264,12 @@ fn admit_helper(
         .map(helper_type_identity)
         .collect::<Vec<_>>();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             type_seeds,
             input_types
                 .iter()
                 .copied()
                 .map(RuntimeLocalDeclarationSeed::new),
-            [],
-            [],
         )
         .expect("test helper semantic inputs are admitted");
     builder
@@ -323,7 +371,7 @@ fn admit_add_helpers(
     }
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             type_seeds,
             helpers.iter().flat_map(|(_, input_type, _)| {
                 std::iter::repeat_n(
@@ -331,8 +379,6 @@ fn admit_add_helpers(
                     2,
                 )
             }),
-            [],
-            [],
         )
         .expect("test helper semantic inputs are admitted");
     let mut next_local = 0;
@@ -411,193 +457,8 @@ fn conditional_div_helper(
     )
 }
 
-fn data_format_value(format: DataFormat) -> RuntimeValue {
-    let ordinal = DataFormat::ALL
-        .iter()
-        .position(|candidate| candidate == &format)
-        .and_then(|ordinal| u32::try_from(ordinal).ok())
-        .expect("DataFormat inventory fits the runtime ordinal");
-    RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("DataFormat")
-                .expect("DataFormat runtime nominal identity is valid"),
-            // The accelerator consumes the checked owner identity rather than
-            // rebuilding semantic type facts. A distinctive test identity
-            // proves it does not fall back to a source path.
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
-        },
-        ordinal,
-        name: format.variant_name().to_owned(),
-        payload: None,
-    }
-}
-
-#[test]
-fn data_external_call_encodes_and_decodes_json_with_format_enum() {
-    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
-    let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::String(
-        "hello".to_owned(),
-    )]));
-    let format = data_format_value(DataFormat::Json);
-
-    let encoded = accelerator
-        .call_external(
-            &callable_target("data.encode"),
-            &[value.clone(), format.clone()],
-        )
-        .expect("data encode is handled")
-        .expect("data encode succeeds");
-    let RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(bytes))) = &encoded else {
-        panic!("expected encoded bytes");
-    };
-    assert_eq!(bytes.as_slice(), br#"["hello"]"#);
-
-    let decoded = accelerator
-        .call_external(&callable_target("data.decode"), &[encoded, format])
-        .expect("data decode is handled")
-        .expect("data decode succeeds");
-
-    assert_eq!(decoded, value);
-}
-
-#[test]
-fn data_external_call_rejects_wrong_data_format_owner_and_ordinal() {
-    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
-    let value = RuntimeValue::String("hello".to_owned());
-    let wrong_owner = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("OtherFormat")
-                .expect("test runtime nominal identity is valid"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
-        },
-        ordinal: 0,
-        name: "Json".to_owned(),
-        payload: None,
-    };
-    let wrong_ordinal = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new("DataFormat")
-                .expect("DataFormat runtime nominal identity is valid"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
-        },
-        ordinal: 1,
-        name: "Json".to_owned(),
-        payload: None,
-    };
-
-    for format in [wrong_owner, wrong_ordinal] {
-        let error = accelerator
-            .call_external(&callable_target("data.encode"), &[value.clone(), format])
-            .expect("data encode is handled")
-            .expect_err("forged DataFormat identity is rejected");
-        let RuntimeEvalError::UnsupportedPure { reason, .. } = error else {
-            panic!("expected UnsupportedPure for forged DataFormat identity");
-        };
-        assert!(reason.contains("DataFormat"));
-    }
-}
-
-#[test]
-fn data_external_call_round_trips_dynamic_avro() {
-    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
-    let value = RuntimeValue::try_record(vec![(
-        "speaker".to_owned(),
-        RuntimeValue::String("alice".to_owned()),
-    )])
-    .expect("test record fields are unique");
-    let format = data_format_value(DataFormat::Avro);
-
-    let encoded = accelerator
-        .call_external(
-            &callable_target("data.encode"),
-            &[value.clone(), format.clone()],
-        )
-        .expect("data encode is handled")
-        .expect("data encode succeeds");
-    let decoded = accelerator
-        .call_external(&callable_target("data.decode"), &[encoded, format])
-        .expect("data decode is handled")
-        .expect("data decode succeeds");
-
-    assert_eq!(decoded, value);
-}
-
-#[test]
-fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode() {
-    for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
-        let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
-        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
-            RuntimeValue::try_record(vec![
-                ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
-                (
-                    "speaker".to_owned(),
-                    RuntimeValue::String("alice".to_owned()),
-                ),
-            ])
-            .expect("test record fields are unique"),
-        ]));
-        let format = data_format_value(
-            DataFormat::from_variant_name(variant).expect("tested data format is registered"),
-        );
-
-        let encoded = accelerator
-            .call_external(
-                &callable_target("data.encode"),
-                &[value.clone(), format.clone()],
-            )
-            .unwrap_or_else(|| panic!("{variant} data encode is handled"))
-            .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
-        let error = accelerator
-            .call_external(&callable_target("data.decode"), &[encoded, format])
-            .unwrap_or_else(|| panic!("{variant} data decode is handled"))
-            .expect_err("shape-required formats need an explicit decode shape");
-
-        let RuntimeEvalError::UnsupportedPure { reason, .. } = error else {
-            panic!("expected UnsupportedPure for {variant} dynamic decode");
-        };
-        assert!(
-            reason.contains("requires an explicit TypeShape"),
-            "{variant} should explain why dynamic decode is unavailable: {reason}"
-        );
-    }
-}
-
-#[test]
-fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
-    for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
-        let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
-        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
-            RuntimeValue::try_record(vec![
-                ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
-                (
-                    "speaker".to_owned(),
-                    RuntimeValue::String("alice".to_owned()),
-                ),
-            ])
-            .expect("test record fields are unique"),
-        ]));
-        let format = data_format_value(
-            DataFormat::from_variant_name(variant).expect("tested data format is registered"),
-        );
-        let shape = accelerator
-            .call_external(&callable_target("data.shape"), std::slice::from_ref(&value))
-            .unwrap_or_else(|| panic!("{variant} data shape is handled"))
-            .unwrap_or_else(|error| panic!("{variant} data shape succeeds: {error}"));
-        let encoded = accelerator
-            .call_external(
-                &callable_target("data.encode"),
-                &[value.clone(), format.clone()],
-            )
-            .unwrap_or_else(|| panic!("{variant} data encode is handled"))
-            .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
-        let decoded = accelerator
-            .call_external(&callable_target("data.decode"), &[encoded, format, shape])
-            .unwrap_or_else(|| panic!("{variant} data decode is handled"))
-            .unwrap_or_else(|error| panic!("{variant} data decode succeeds: {error}"));
-
-        assert_eq!(decoded, value, "{variant} explicit shape decode roundtrip");
-    }
-}
+#[path = "external_data_tests.rs"]
+mod external_data_tests;
 
 #[test]
 fn external_inference_call_sequence_uses_adapter_boundary() {
@@ -618,6 +479,7 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
     let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Auto);
     let conv = accelerator
         .call_external(
+            &RuntimeExternalCallContext::unbound(),
             &conv_target,
             &[
                 RuntimeValue::tensor_f32(image),
@@ -629,11 +491,16 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
         .expect("conv2d call is handled")
         .expect("conv2d call succeeds");
     let relu = accelerator
-        .call_external(&callable_target("infer.relu_f32"), &[conv])
+        .call_external(
+            &RuntimeExternalCallContext::unbound(),
+            &callable_target("infer.relu_f32"),
+            &[conv],
+        )
         .expect("relu call is handled")
         .expect("relu call succeeds");
     let pooled = accelerator
         .call_external(
+            &RuntimeExternalCallContext::unbound(),
             &callable_target("infer.max_pool2d_f32"),
             &[
                 relu,
@@ -646,11 +513,16 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
         .expect("max-pool call is handled")
         .expect("max-pool call succeeds");
     let flattened = accelerator
-        .call_external(&callable_target("infer.flatten_outer_f32"), &[pooled])
+        .call_external(
+            &RuntimeExternalCallContext::unbound(),
+            &callable_target("infer.flatten_outer_f32"),
+            &[pooled],
+        )
         .expect("flatten call is handled")
         .expect("flatten call succeeds");
     let logits = accelerator
         .call_external(
+            &RuntimeExternalCallContext::unbound(),
             &callable_target("infer.matmul_bias_add_f32"),
             &[
                 flattened,
@@ -661,7 +533,11 @@ fn external_inference_call_sequence_uses_adapter_boundary() {
         .expect("matmul-bias call is handled")
         .expect("matmul-bias call succeeds");
     let classified = accelerator
-        .call_external(&callable_target("infer.argmax_last_dim_f32"), &[logits])
+        .call_external(
+            &RuntimeExternalCallContext::unbound(),
+            &callable_target("infer.argmax_last_dim_f32"),
+            &[logits],
+        )
         .expect("argmax call is handled")
         .expect("argmax call succeeds");
 
@@ -847,6 +723,7 @@ fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
 
     let Some(Ok(first)) = RuntimeExternalCallBackend::call_external(
         &mut accelerator,
+        &RuntimeExternalCallContext::unbound(),
         &target,
         &[
             RuntimeValue::tensor_f32(lhs.clone()),
@@ -867,6 +744,7 @@ fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
         * std::mem::size_of::<f32>();
     let Some(Ok(second)) = RuntimeExternalCallBackend::call_external(
         &mut accelerator,
+        &RuntimeExternalCallContext::unbound(),
         &target,
         &[
             RuntimeValue::tensor_f32(lhs),
@@ -2082,7 +1960,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
     let u32_mapping_ty = RuntimeSemanticTypeId::from_bytes([18; 32]);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 helper_type_seed(RuntimePureInputType::U32),
                 RuntimePlanTypeSeed::new(
@@ -2101,8 +1979,6 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                 ),
             ],
             (0..3).map(|_| RuntimeLocalDeclarationSeed::new(u32_ty)),
-            [],
-            [],
         )
         .expect("u32 flow semantic inputs are admitted");
     let locals = admission.local_ids();
