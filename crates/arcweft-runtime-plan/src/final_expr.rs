@@ -1,5 +1,7 @@
 //! Runtime-expression seed projection from accepted final HIR.
 
+mod scopes;
+
 use std::collections::BTreeMap;
 
 use arcweft_core::plan::{
@@ -27,7 +29,7 @@ use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
 use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
-use crate::flow::TryLocalSeeds;
+use crate::flow::{ScopeLocalSeeds, TryLocalSeeds};
 use crate::semantic_facts::{
     RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeClosureInstanceKey,
     RuntimeDialogueEffectProgramKey, RuntimeNormalizedType, RuntimePlanSemanticFacts,
@@ -36,9 +38,10 @@ use crate::semantic_facts::{
     RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopedExecutableSemanticFactView,
-    RuntimeStandardMapCall, RuntimeStandardMapFamily as SemanticStandardMapFamily,
-    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
+    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
+    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
@@ -52,6 +55,8 @@ pub(crate) struct FinalExprLowerer<'hir> {
         &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
     try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
+    scope_locals: Option<&'hir BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>>,
+    scope_continuations: Vec<RuntimeScopeContinuation>,
     /// Synthetic destinations for specialized call operands.  Structural
     /// payloads are allowed to consume these locals in ABI/role order only
     /// after the source row has been evaluated once, in source order, by the
@@ -82,6 +87,11 @@ enum PureTryContinuation {
     },
     AssignBlock {
         statement: StmtId,
+        statements: Box<[StmtId]>,
+        tail: ExprId,
+        outer: Box<Self>,
+    },
+    DiscardBlock {
         statements: Box<[StmtId]>,
         tail: ExprId,
         outer: Box<Self>,
@@ -125,6 +135,7 @@ impl PureTryContinuation {
             | Self::Compose { outer, .. }
             | Self::LetBlock { outer, .. }
             | Self::AssignBlock { outer, .. }
+            | Self::DiscardBlock { outer, .. }
             | Self::WrapCarrier { outer, .. }
             | Self::IfCondition { outer, .. }
             | Self::MatchScrutinee { outer, .. }
@@ -163,6 +174,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             dialogue_effect_sites,
             pipe_locals,
             try_locals,
+            scope_locals: None,
+            scope_continuations: Vec::new(),
             specialized_operand_locals: None,
             closure_sites: None,
             overrides: BTreeMap::new(),
@@ -192,6 +205,14 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Self {
         self.pipe_locals = pipes;
         self.try_locals = tries;
+        self
+    }
+
+    pub(crate) fn with_scope_locals(
+        mut self,
+        scopes: &'hir BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
+    ) -> Self {
+        self.scope_locals = Some(scopes);
         self
     }
 
@@ -496,7 +517,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                         format!("Scope expression {id:?} has no checked lexical identity")
                     })?;
                 RuntimeExprSeedKind::Scope {
-                    identity,
+                    identity: identity.identity().clone(),
                     body: Box::new(self.lower_block(id, block.statements(), block.tail())?),
                 }
             }
@@ -632,6 +653,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             dialogue_effect_sites: self.dialogue_effect_sites,
             pipe_locals: self.pipe_locals,
             try_locals: self.try_locals,
+            scope_locals: self.scope_locals,
+            scope_continuations: self.scope_continuations.clone(),
             specialized_operand_locals: self.specialized_operand_locals,
             closure_sites: self.closure_sites,
             semantic_facts: self.semantic_facts,
@@ -656,19 +679,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             tried.carrier().success().identity(),
             RuntimeExprSeedKind::Local(locals.success.clone()),
         );
-        let failure_continuation = match tried.boundary() {
-            RuntimeTryBoundaryOwner::CarrierBlock(boundary) => Some(
-                outer
-                    .clone()
-                    .after_carrier(boundary)
-                    .ok_or_else(|| format!("Try {owner:?} has no active carrier continuation"))?,
-            ),
-            RuntimeTryBoundaryOwner::Infallible
-            | RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
-            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(_)
-            | RuntimeTryBoundaryOwner::Callable(_) => None,
-        };
-        let success = self.apply_try_continuation(success_value, outer)?;
+        let success = self.apply_try_continuation(success_value, outer.clone())?;
         let success_pattern = normalized_variant_binding_pattern_seed(
             tried.carrier_type(),
             0,
@@ -702,12 +713,12 @@ impl<'hir> FinalExprLowerer<'hir> {
                 None,
             ),
         };
-        let failure = normalized_variant_expression_seed(tried.boundary_type(), 1, failure_payload)
-            .map_err(|error| format!("Try {owner:?} propagated residual is invalid: {error}"))?;
-        let failure = match failure_continuation {
-            Some(continuation) => self.apply_try_continuation(failure, continuation)?,
-            None => failure,
-        };
+        let failure = self.propagate_pure_residual(
+            tried.boundary(),
+            tried.boundary_type(),
+            failure_payload,
+            outer,
+        )?;
         if failure.ty() != success.ty() {
             return Err(format!(
                 "Try {owner:?} branches do not produce one continuation type"
@@ -778,6 +789,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                     outer: Box::new(continuation),
                 },
             ),
+            HirStmtKind::Expression { expression } => self.lower_with_try_continuation(
+                *expression,
+                PureTryContinuation::DiscardBlock {
+                    statements: remaining.into(),
+                    tail,
+                    outer: Box::new(continuation),
+                },
+            ),
             other => Err(format!(
                 "statement {other:?} cannot be embedded in a pure runtime expression block"
             )),
@@ -827,6 +846,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             let child = match statement.kind() {
                 HirStmtKind::Let { initializer, .. } => *initializer,
                 HirStmtKind::Assign { value, .. } => *value,
+                HirStmtKind::Expression { expression } => *expression,
                 _ => continue,
             };
             if self.contains_executable_try(child)? {
@@ -945,14 +965,12 @@ impl<'hir> FinalExprLowerer<'hir> {
             HirExprKind::Block(block) => {
                 Some(self.lower_function_block(block.statements(), block.tail(), continuation))
             }
-            HirExprKind::NamedBlock(block) => Some((|| {
-                if self.block_contains_executable_try(block.statements(), block.tail())? {
-                    return Err(format!(
-                        "Scope expression {owner:?} requires a typed pure propagation continuation"
-                    ));
-                }
-                self.apply_try_continuation(self.lower(owner)?, continuation)
-            })()),
+            HirExprKind::NamedBlock(block) => Some(self.lower_scope_continuation(
+                owner,
+                block.statements(),
+                block.tail(),
+                continuation,
+            )),
             HirExprKind::ComputationBlock(block)
                 if matches!(
                     block.kind(),
@@ -1041,6 +1059,29 @@ impl<'hir> FinalExprLowerer<'hir> {
             } => {
                 let body = self.lower_function_block(&statements, tail, *outer)?;
                 self.lower_assignment_value(statement, value, body)
+            }
+            PureTryContinuation::DiscardBlock {
+                statements,
+                tail,
+                outer,
+            } => {
+                let body = self.lower_function_block(&statements, tail, *outer)?;
+                let value_type = value.ty();
+                Ok(RuntimeExprSeed::new(
+                    body.ty(),
+                    RuntimeExprSeedKind::Match {
+                        scrutinee: Box::new(value),
+                        arms: vec![RuntimeExprMatchArmSeed::new(
+                            arcweft_core::plan::RuntimePatternSeed::new(
+                                value_type,
+                                arcweft_core::plan::RuntimePatternSeedKind::Discard,
+                            ),
+                            None,
+                            body,
+                        )]
+                        .into_boxed_slice(),
+                    },
+                ))
             }
             PureTryContinuation::WrapCarrier { owner, outer } => {
                 let boundary = self
@@ -1293,15 +1334,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                 else_expr: Box::new(else_expr),
             },
         ))
-    }
-
-    pub(crate) fn lower_assignment(
-        &self,
-        statement: StmtId,
-        value: ExprId,
-        body: RuntimeExprSeed,
-    ) -> Result<RuntimeExprSeed, String> {
-        self.lower_assignment_value(statement, self.lower(value)?, body)
     }
 
     fn lower_assignment_value(
@@ -2164,38 +2196,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         statements: &[StmtId],
         tail: ExprId,
     ) -> Result<RuntimeExprSeed, String> {
-        let body = statements
-            .iter()
-            .rev()
-            .try_fold(self.lower(tail)?, |body, statement| {
-                let statement_id = *statement;
-                let statement = self.module.resolve_stmt(statement_id).map_err(|error| {
-                    format!("cannot resolve block statement {statement_id:?}: {error}")
-                })?;
-                if statement.is_poisoned() {
-                    return Err("recovered block statement is not executable".to_owned());
-                }
-                match statement.kind() {
-                    HirStmtKind::Let {
-                        pattern,
-                        initializer,
-                        ..
-                    } => Ok(RuntimeExprSeed::new(
-                        body.ty(),
-                        RuntimeExprSeedKind::Let {
-                            binding: self.simple_binding(*pattern)?,
-                            expr: Box::new(self.lower(*initializer)?),
-                            body: Box::new(body),
-                        },
-                    )),
-                    HirStmtKind::Assign { value, .. } => {
-                        self.lower_assignment(statement_id, *value, body)
-                    }
-                    other => Err(format!(
-                        "statement {other:?} cannot be embedded in a pure runtime expression block"
-                    )),
-                }
-            })?;
+        let body = self.lower_function_block(statements, tail, PureTryContinuation::Return)?;
         Ok(RuntimeExprSeed::new(
             self.expression_type(owner)?,
             body.kind().clone(),

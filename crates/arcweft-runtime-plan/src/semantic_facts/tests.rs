@@ -1,4 +1,6 @@
 use super::RuntimeFlowFact;
+#[path = "tests/scope_continuations.rs"]
+mod scope_continuations;
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::entry::{

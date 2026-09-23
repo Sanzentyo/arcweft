@@ -274,6 +274,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
             Self::Call(call) => call.append_normalized_types(roots),
             Self::Try(tried) => tried.append_normalized_types(roots),
+            Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::ImplicitCallable {
                 callable, tried, ..
             } => {
@@ -298,7 +299,6 @@ impl RuntimeProjectFunctionExpressionPayload {
             }
             Self::Closure(closure) => closure.append_normalized_types(roots),
             Self::Structural
-            | Self::Scope(_)
             | Self::Consumed
             | Self::Literal(_)
             | Self::Select(_)
@@ -330,6 +330,7 @@ impl RuntimeProjectFunctionStatementPayload {
                 .effect()
                 .visit_operand_types(&mut |ty| roots.push(ty)),
             Self::Iteration(iteration) => iteration.append_normalized_types(roots),
+            Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::Structural
             | Self::Assertion(_)
             | Self::Defer
@@ -338,7 +339,6 @@ impl RuntimeProjectFunctionStatementPayload {
             | Self::UnsafeAudit
             | Self::Select
             | Self::SourceLocale
-            | Self::Scope(_)
             | Self::Include
             | Self::Suspension
             | Self::Yield => {}

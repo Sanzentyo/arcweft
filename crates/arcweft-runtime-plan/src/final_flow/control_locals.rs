@@ -6,9 +6,9 @@ use arcweft_core::plan::{RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, Runtim
 use arcweft_lang_hir::identity::ExprId;
 
 use crate::errors::RuntimePlanLowerError;
-use crate::semantic_facts::RuntimeExecutableSemanticFactView;
+use crate::semantic_facts::{RuntimeExecutableSemanticFactView, RuntimeScopeOwner};
 
-use super::{AwaitLocalSeeds, TryLocalSeeds};
+use super::{AwaitLocalSeeds, ScopeLocalSeeds, TryLocalSeeds};
 
 #[derive(Clone, Default)]
 pub(super) struct ControlLocals {
@@ -16,6 +16,7 @@ pub(super) struct ControlLocals {
     pub(super) tries: BTreeMap<ExprId, TryLocalSeeds>,
     pub(super) pipes: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) expression_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
+    pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
 }
 
 enum ControlLocal {
@@ -26,6 +27,10 @@ enum ControlLocal {
 }
 
 impl ControlLocals {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one control-local owner allocates and checks its complete typed temporary inventory"
+    )]
     pub(super) fn admit(
         facts: RuntimeExecutableSemanticFactView<'_>,
         builder: &mut RuntimePlanBuilder,
@@ -118,6 +123,53 @@ impl ControlLocals {
         if admitted.next().is_some() {
             return Err(RuntimePlanLowerError::new(
                 "control temporary admission retained an extra local",
+            ));
+        }
+        let mut scope_owners = Vec::new();
+        let mut scope_seeds = Vec::new();
+        facts.visit_scope_continuations(&mut |owner, continuation| {
+            scope_owners.push((owner, continuation.residual_type().is_some()));
+            scope_seeds.extend([
+                RuntimeLocalDeclarationSeed::new(continuation.carrier_type().identity()),
+                RuntimeLocalDeclarationSeed::new(continuation.value_type().identity()),
+            ]);
+            scope_seeds.extend(
+                continuation
+                    .residual_type()
+                    .map(|ty| RuntimeLocalDeclarationSeed::new(ty.identity())),
+            );
+        });
+        let admission = builder
+            .admit_type_batch([], scope_seeds)
+            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+        let mut admitted = admission.local_ids().iter().cloned();
+        let missing = || RuntimePlanLowerError::new("scope continuation admission omitted a local");
+        for (owner, has_residual) in scope_owners {
+            let carrier = admitted.next().ok_or_else(missing)?;
+            let success = admitted.next().ok_or_else(missing)?;
+            let residual = has_residual
+                .then(|| admitted.next().ok_or_else(missing))
+                .transpose()?;
+            if result
+                .scopes
+                .insert(
+                    owner,
+                    ScopeLocalSeeds {
+                        carrier,
+                        success,
+                        residual,
+                    },
+                )
+                .is_some()
+            {
+                return Err(RuntimePlanLowerError::new(
+                    "scope continuation has duplicate local ownership",
+                ));
+            }
+        }
+        if admitted.next().is_some() {
+            return Err(RuntimePlanLowerError::new(
+                "scope continuation admission retained an extra local",
             ));
         }
         Ok(result)

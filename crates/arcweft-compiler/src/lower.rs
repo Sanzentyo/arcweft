@@ -17,6 +17,7 @@ mod nominals;
 mod project_instances;
 #[path = "lower/reachability.rs"]
 mod reachability;
+mod scopes;
 #[path = "lower/text_proxy.rs"]
 mod text_proxy;
 #[path = "lower/variants.rs"]
@@ -734,7 +735,28 @@ fn project_runtime_semantic_fact_inventories(
         );
         match expression.resolution() {
             CheckedExpressionResolution::Scope(identity) => {
-                input.push_expression_scope(owner, runtime_scope_identity(identity));
+                let module = project
+                    .modules()
+                    .find_map(|(_, module)| {
+                        (module.module_id() == owner.module()).then_some(module.as_ref())
+                    })
+                    .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+                let eligible = |id| {
+                    runtime_owners.contains_expression(id)
+                        || view_value_owners.is_some_and(|owners| owners.contains_expression(id))
+                };
+                input.push_expression_scope(
+                    owner,
+                    scopes::ScopeProjection {
+                        module,
+                        symbols,
+                        world,
+                        analysis,
+                        instance: None,
+                        eligible: &eligible,
+                    }
+                    .expression(owner, identity)?,
+                );
             }
             CheckedExpressionResolution::Structural => {
                 let module = project
@@ -1025,7 +1047,30 @@ fn project_runtime_semantic_fact_inventories(
         }
         match statement.payload() {
             CheckedStatementPayload::Scope(identity) => {
-                input.push_statement_scope(owner, runtime_scope_identity(identity));
+                let module = project
+                    .modules()
+                    .find_map(|(_, module)| {
+                        (module.module_id() == owner.module()).then_some(module.as_ref())
+                    })
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                        reason: format!("scope statement {owner:?} has no HIR module"),
+                    })?;
+                let eligible = |id| {
+                    runtime_owners.contains_expression(id)
+                        || view_value_owners.is_some_and(|owners| owners.contains_expression(id))
+                };
+                input.push_statement_scope(
+                    owner,
+                    scopes::ScopeProjection {
+                        module,
+                        symbols,
+                        world,
+                        analysis,
+                        instance: None,
+                        eligible: &eligible,
+                    }
+                    .statement(owner, identity)?,
+                );
             }
             CheckedStatementPayload::Assignment(assignment) => {
                 input.push_assignment(
@@ -6213,7 +6258,22 @@ fn runtime_project_function_instance_semantic_facts(
                         "scope expression has no checked lexical identity",
                     ));
                 };
-                RuntimeProjectFunctionExpressionPayload::Scope(runtime_scope_identity(identity))
+                RuntimeProjectFunctionExpressionPayload::Scope(
+                    scopes::ScopeProjection {
+                        module,
+                        symbols,
+                        world,
+                        analysis,
+                        instance: lexical.types(),
+                        eligible: &|id| {
+                            partition
+                                .expressions()
+                                .binary_search_by_key(&id, |row| row.owner())
+                                .is_ok()
+                        },
+                    }
+                    .expression(owner, identity)?,
+                )
             }
             CheckedExecutableRuntimeExpressionFactFamily::Structural => {
                 RuntimeProjectFunctionExpressionPayload::Structural
@@ -6735,7 +6795,22 @@ fn runtime_project_function_instance_semantic_facts(
             (
                 CheckedExecutableRuntimeStatementFactFamily::Scope,
                 CheckedStatementPayload::Scope(identity),
-            ) => RuntimeProjectFunctionStatementPayload::Scope(runtime_scope_identity(identity)),
+            ) => RuntimeProjectFunctionStatementPayload::Scope(
+                scopes::ScopeProjection {
+                    module,
+                    symbols,
+                    world,
+                    analysis,
+                    instance: lexical.types(),
+                    eligible: &|id| {
+                        partition
+                            .expressions()
+                            .binary_search_by_key(&id, |row| row.owner())
+                            .is_ok()
+                    },
+                }
+                .statement(owner, identity)?,
+            ),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Include,
                 CheckedStatementPayload::Include(_),

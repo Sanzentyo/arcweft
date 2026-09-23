@@ -85,6 +85,10 @@ mod content;
 mod evaluated_effect;
 mod flow;
 mod lexical_scope;
+mod scope_continuation;
+pub use scope_continuation::{
+    RuntimeScopeContinuation, RuntimeScopeContinuationError, RuntimeScopeFact, RuntimeScopeOwner,
+};
 mod project_function;
 mod type_dependencies;
 
@@ -4235,8 +4239,8 @@ impl RuntimePureProgramFact {
 pub struct RuntimePlanSemanticFactInput {
     local_declarations: Vec<(LocalId, RuntimeNormalizedType)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
-    expression_scopes: Vec<(ExprId, arcweft_core::scope::RuntimeScopeIdentity)>,
-    statement_scopes: Vec<(StmtId, arcweft_core::scope::RuntimeScopeIdentity)>,
+    expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
+    statement_scopes: Vec<(StmtId, crate::semantic_facts::RuntimeScopeFact)>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
@@ -4331,7 +4335,7 @@ impl RuntimePlanSemanticFactInput {
     pub fn push_expression_scope(
         &mut self,
         owner: ExprId,
-        identity: arcweft_core::scope::RuntimeScopeIdentity,
+        identity: crate::semantic_facts::RuntimeScopeFact,
     ) {
         self.expression_scopes.push((owner, identity));
     }
@@ -4339,7 +4343,7 @@ impl RuntimePlanSemanticFactInput {
     pub fn push_statement_scope(
         &mut self,
         owner: StmtId,
-        identity: arcweft_core::scope::RuntimeScopeIdentity,
+        identity: crate::semantic_facts::RuntimeScopeFact,
     ) {
         self.statement_scopes.push((owner, identity));
     }
@@ -4587,8 +4591,8 @@ pub struct RuntimePlanSemanticFacts {
     local_declaration_order: Box<[LocalId]>,
     local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
-    expression_scopes: BTreeMap<ExprId, arcweft_core::scope::RuntimeScopeIdentity>,
-    statement_scopes: BTreeMap<StmtId, arcweft_core::scope::RuntimeScopeIdentity>,
+    expression_scopes: BTreeMap<ExprId, crate::semantic_facts::RuntimeScopeFact>,
+    statement_scopes: BTreeMap<StmtId, crate::semantic_facts::RuntimeScopeFact>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -4704,14 +4708,14 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
     pub fn expression_scope(
         self,
         owner: ExprId,
-    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&'facts crate::semantic_facts::RuntimeScopeFact> {
         self.facts.expression_scope(owner)
     }
 
     pub fn statement_scope(
         self,
         owner: StmtId,
-    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&'facts crate::semantic_facts::RuntimeScopeFact> {
         self.facts.statement_scope(owner)
     }
 
@@ -4808,6 +4812,42 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 }
 
 impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
+    pub(crate) fn visit_scope_continuations(
+        self,
+        visitor: &mut impl FnMut(RuntimeScopeOwner, &'facts RuntimeScopeContinuation),
+    ) {
+        match self {
+            Self::Global(facts) => {
+                for (owner, fact) in &facts.expression_scopes {
+                    if let Some(continuation) = fact.continuation() {
+                        visitor(RuntimeScopeOwner::Expression(*owner), continuation);
+                    }
+                }
+                for (owner, fact) in &facts.statement_scopes {
+                    if let Some(continuation) = fact.continuation() {
+                        visitor(RuntimeScopeOwner::Statement(*owner), continuation);
+                    }
+                }
+            }
+            Self::ProjectInstance(facts) => {
+                for row in facts.expressions() {
+                    if let RuntimeProjectFunctionExpressionPayload::Scope(fact) = row.payload()
+                        && let Some(continuation) = fact.continuation()
+                    {
+                        visitor(RuntimeScopeOwner::Expression(row.owner()), continuation);
+                    }
+                }
+                for row in facts.statements() {
+                    if let RuntimeProjectFunctionStatementPayload::Scope(fact) = row.payload()
+                        && let Some(continuation) = fact.continuation()
+                    {
+                        visitor(RuntimeScopeOwner::Statement(row.owner()), continuation);
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn visit_runtime_expression_types(
         self,
         visitor: &mut impl FnMut(ExprId, &'facts RuntimeNormalizedType),
@@ -4856,7 +4896,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
     pub fn expression_scope(
         self,
         owner: ExprId,
-    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&'facts crate::semantic_facts::RuntimeScopeFact> {
         match self {
             Self::Global(facts) => facts.expression_scopes.get(&owner),
             Self::ProjectInstance(facts) => facts.expression_scope(owner),
@@ -4866,7 +4906,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
     pub fn statement_scope(
         self,
         owner: StmtId,
-    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&'facts crate::semantic_facts::RuntimeScopeFact> {
         match self {
             Self::Global(facts) => facts.statement_scopes.get(&owner),
             Self::ProjectInstance(facts) => facts.statement_scope(owner),
@@ -6289,6 +6329,25 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        for (owner, fact) in &expression_scopes {
+            lexical_scope::validate_continuation(
+                &modules,
+                RuntimeScopeOwner::Expression(*owner),
+                fact,
+                expression_types.get(owner),
+                try_facts.iter().map(|(owner, tried)| (*owner, tried)),
+            )?;
+        }
+        for (owner, fact) in &statement_scopes {
+            lexical_scope::validate_continuation(
+                &modules,
+                RuntimeScopeOwner::Statement(*owner),
+                fact,
+                None,
+                try_facts.iter().map(|(owner, tried)| (*owner, tried)),
+            )?;
+        }
+
         let postfix_candidates = collect_unique(
             input.postfix_candidates,
             RuntimeSemanticFactFamily::PostfixCandidate,
@@ -7165,6 +7224,13 @@ impl RuntimePlanSemanticFacts {
         roots.extend(self.expression_types.values());
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
+        for scope in self
+            .expression_scopes
+            .values()
+            .chain(self.statement_scopes.values())
+        {
+            scope.append_normalized_types(&mut roots);
+        }
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
         for call in self.calls.values() {
             call.append_normalized_types(&mut roots);
@@ -7610,6 +7676,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidExpressionScope { expression: ExprId },
     #[error("scope statement {statement:?} has no exact accepted lexical identity")]
     InvalidStatementScope { statement: StmtId },
+    #[error("scope continuation differs from the accepted lexical Try inventory at {owner:?}")]
+    InvalidScopeContinuation { owner: RuntimeScopeOwner },
     #[error("source nominal definition does not match requested type {identity:?}")]
     NominalDefinitionMismatch { identity: RuntimeSemanticTypeId },
     #[error("source nominal variant {identity:?} is invalid: {source}")]
@@ -9624,7 +9692,22 @@ fn validate_project_function_semantic_catalog(
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed => {}
             RuntimeProjectFunctionExpressionPayload::Scope(identity) => {
-                lexical_scope::validate_expression_scope(hir, owner, identity)?;
+                lexical_scope::validate_expression_scope(hir, owner, identity.identity())?;
+                lexical_scope::validate_continuation(
+                    modules,
+                    RuntimeScopeOwner::Expression(owner),
+                    identity,
+                    semantics.expression_type(owner),
+                    semantics
+                        .expressions()
+                        .iter()
+                        .filter_map(|row| match row.payload() {
+                            RuntimeProjectFunctionExpressionPayload::Try(tried) => {
+                                Some((row.owner(), tried))
+                            }
+                            _ => None,
+                        }),
+                )?;
             }
             RuntimeProjectFunctionExpressionPayload::Literal(_) => {
                 if !matches!(
@@ -9886,7 +9969,22 @@ fn validate_project_function_semantic_catalog(
                 lexical_scope::validate_statement_scope(
                     resolve_stmt(modules, row.owner())?,
                     row.owner(),
+                    identity.identity(),
+                )?;
+                lexical_scope::validate_continuation(
+                    modules,
+                    RuntimeScopeOwner::Statement(row.owner()),
                     identity,
+                    None,
+                    semantics
+                        .expressions()
+                        .iter()
+                        .filter_map(|row| match row.payload() {
+                            RuntimeProjectFunctionExpressionPayload::Try(tried) => {
+                                Some((row.owner(), tried))
+                            }
+                            _ => None,
+                        }),
                 )?;
             }
             RuntimeProjectFunctionStatementPayload::Assignment(fact) => {

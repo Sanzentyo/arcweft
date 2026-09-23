@@ -6,6 +6,8 @@ mod control_locals;
 mod line_plan;
 #[path = "final_flow/rust_defaults.rs"]
 mod rust_defaults;
+#[path = "final_flow/scopes.rs"]
+mod scopes;
 #[path = "final_flow/value_branches.rs"]
 mod value_branches;
 
@@ -99,6 +101,7 @@ use crate::semantic_facts::{
     RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
     RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
     RuntimeResolvedCallOperandProjection, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
     RuntimeScopedExecutableSemanticFactView, RuntimeSemanticFactsError, RuntimeTraitIdentity,
     RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
     RuntimeTypeShape,
@@ -484,6 +487,13 @@ pub(crate) struct TryLocalSeeds {
     pub(crate) residual: Option<RuntimeLocalSeedId>,
 }
 
+#[derive(Clone)]
+pub(crate) struct ScopeLocalSeeds {
+    pub(crate) carrier: RuntimeLocalSeedId,
+    pub(crate) success: RuntimeLocalSeedId,
+    pub(crate) residual: Option<RuntimeLocalSeedId>,
+}
+
 impl FinalLoweringContext<'_, '_> {
     fn expr_lowerer<'a>(&'a self, module: &'a HirModule) -> FinalExprLowerer<'a> {
         FinalExprLowerer::new(
@@ -495,6 +505,7 @@ impl FinalLoweringContext<'_, '_> {
             self.dialogue_effect_sites,
             (&self.control.pipes, &self.control.tries),
         )
+        .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals)
         .with_closure_sites(self.closure_sites)
     }
@@ -509,6 +520,7 @@ impl FinalLoweringContext<'_, '_> {
             .expr_lowerer(module)
             .with_locals(self.dialogue_locals(scope.scope())?)
             .with_control_locals(&control.pipes, &control.tries)
+            .with_scope_locals(&control.scopes)
             .with_specialized_operand_locals(
                 self.dialogue_specialized_operand_locals(scope.scope())?,
             )
@@ -2642,6 +2654,7 @@ fn define_closure_sites(
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
                     .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(RuntimeScopedExecutableSemanticFactView::closure(
                         closure.key(),
@@ -2719,6 +2732,7 @@ fn define_project_function_sites(
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
                     .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(
                         RuntimeScopedExecutableSemanticFactView::project_function(
@@ -2829,6 +2843,7 @@ fn define_project_default_function_sites(
                     .expr_lowerer(module)
                     .with_locals(&locals.hir)
                     .with_control_locals(&locals.control.pipes, &locals.control.tries)
+                    .with_scope_locals(&locals.control.scopes)
                     .with_specialized_operand_locals(&locals.specialized_operands)
                     .with_scoped_semantics(
                         RuntimeScopedExecutableSemanticFactView::project_function(
@@ -4180,6 +4195,7 @@ struct FinalFlowLowerer<'a> {
     control: &'a ControlLocals,
     specialized_operand_locals: &'a BTreeMap<(ExprId, u32), RuntimeLocalSeedId>,
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
+    scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
     await_ordinal: u32,
@@ -4196,6 +4212,9 @@ enum RuntimeFlowValueContinuation {
     ExitScope {
         owner: ExprId,
         outer: Box<Self>,
+    },
+    ScopeSuccess {
+        owner: RuntimeScopeOwner,
     },
     Ignore(RuntimeFlowTail),
     Try {
@@ -4233,7 +4252,10 @@ enum RuntimeFlowTail {
         statements: Box<[StmtId]>,
         tail: Box<RuntimeFlowTail>,
     },
-    ThreadItems(Box<[HirThreadFlowItem]>),
+    ThreadItems {
+        items: Box<[HirThreadFlowItem]>,
+        tail: Box<Self>,
+    },
     Value {
         expression: ExprId,
         continuation: Box<RuntimeFlowValueContinuation>,
@@ -4266,6 +4288,7 @@ impl<'a> FinalFlowLowerer<'a> {
             control: context.control,
             specialized_operand_locals: context.specialized_operand_locals,
             carrier_continuations: BTreeMap::new(),
+            scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
             await_ordinal: 0,
@@ -4329,6 +4352,7 @@ impl<'a> FinalFlowLowerer<'a> {
             (&self.control.pipes, &self.control.tries),
         )
         .with_closure_sites(self.closure_sites)
+        .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals);
         lowerer.with_scoped_semantics(self.semantic_facts)
     }
@@ -4480,12 +4504,23 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         items: &[HirThreadFlowItem],
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let Some((item, tail)) = items.split_first() else {
-            return Ok(Vec::new());
+        self.lower_thread_items_with_tail(items, RuntimeFlowTail::None)
+    }
+
+    fn lower_thread_items_with_tail(
+        &mut self,
+        items: &[HirThreadFlowItem],
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((item, remaining)) = items.split_first() else {
+            return self.lower_flow_tail(tail);
         };
         self.lower_thread_item(
             item,
-            RuntimeFlowTail::ThreadItems(tail.to_vec().into_boxed_slice()),
+            RuntimeFlowTail::ThreadItems {
+                items: remaining.into(),
+                tail: Box::new(tail),
+            },
         )
     }
 
@@ -4575,6 +4610,7 @@ impl<'a> FinalFlowLowerer<'a> {
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
+            HirStmtKind::Scope(scope) => self.lower_scope_statement(id, scope.body(), tail),
             HirStmtKind::Let {
                 pattern: owner,
                 initializer,
@@ -4890,19 +4926,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 body: self.lower_contextual_body(for_stmt.body())?,
             }]),
             HirStmtKind::Scope(scope) => {
-                let identity = self
-                    .semantic_facts
-                    .statement_scope(id)
-                    .cloned()
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "Scope {id:?} has no checked lexical identity"
-                        ))
-                    })?;
-                Ok(vec![RuntimeFlowOpSeed::Scope {
-                    identity,
-                    body: self.lower_contextual_body(scope.body())?,
-                }])
+                self.lower_scope_statement(id, scope.body(), RuntimeFlowTail::None)
             }
             HirStmtKind::Break { label, value } if label.is_none() => {
                 Ok(vec![RuntimeFlowOpSeed::Break(
@@ -5140,7 +5164,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.lower_value_block(block.statements(), block.tail(), continuation)
             }
             HirExprKind::NamedBlock(block) => {
-                let identity = self
+                let fact = self
                     .semantic_facts
                     .expression_scope(expression)
                     .cloned()
@@ -5149,7 +5173,18 @@ impl<'a> FinalFlowLowerer<'a> {
                             "Scope expression {expression:?} has no checked lexical identity"
                         ))
                     })?;
-                let mut ops = vec![RuntimeFlowOpSeed::EnterScope { identity }];
+                if fact.continuation().is_some() {
+                    return self.lower_scope_value(
+                        expression,
+                        &fact,
+                        block.statements(),
+                        block.tail(),
+                        continuation,
+                    );
+                }
+                let mut ops = vec![RuntimeFlowOpSeed::EnterScope {
+                    identity: fact.identity().clone(),
+                }];
                 ops.extend(self.lower_value_block(
                     block.statements(),
                     block.tail(),
@@ -5914,6 +5949,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops
             }
             RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
+            RuntimeFlowValueContinuation::ScopeSuccess { owner } => {
+                return self.complete_scope_success(owner, value);
+            }
             RuntimeFlowValueContinuation::ExitScope { owner, outer } => {
                 let ty = self.expression_type(owner)?;
                 let local = self
@@ -6029,43 +6067,6 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Try expression {owner:?} has no checked runtime fact"
             ))
         })?;
-        if let RuntimeTryBoundaryOwner::CarrierBlock(boundary) = fact.boundary() {
-            let mut scope = Some(
-                self.module
-                    .resolve_expr(owner)
-                    .map_err(|error| {
-                        RuntimePlanLowerError::new(format!(
-                            "Try expression {owner:?} cannot resolve its scope: {error}"
-                        ))
-                    })?
-                    .scope(),
-            );
-            while let Some(id) = scope {
-                let resolved = self.module.resolve_scope(id).map_err(|error| {
-                    RuntimePlanLowerError::new(format!(
-                        "Try expression {owner:?} has invalid scope ancestry: {error}"
-                    ))
-                })?;
-                if *resolved.owner() == arcweft_lang_hir::scope::HirScopeOwner::Expr(boundary) {
-                    break;
-                }
-                let crosses_scope = match *resolved.owner() {
-                    arcweft_lang_hir::scope::HirScopeOwner::Expr(expression) => {
-                        self.semantic_facts.expression_scope(expression).is_some()
-                    }
-                    arcweft_lang_hir::scope::HirScopeOwner::Stmt(statement) => {
-                        self.semantic_facts.statement_scope(statement).is_some()
-                    }
-                    _ => false,
-                };
-                if crosses_scope {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "Try expression {owner:?} requires a typed scope propagation continuation"
-                    )));
-                }
-                scope = resolved.parent();
-            }
-        }
         let locals = self.control.tries.get(&owner).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "Try expression {owner:?} has no admitted continuation locals"
@@ -6137,11 +6138,32 @@ impl<'a> FinalFlowLowerer<'a> {
         fact: &RuntimeTryFact,
         residual: Option<RuntimeExprSeed>,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let propagated = normalized_variant_expression_seed(fact.boundary_type(), 1, residual)
-            .map_err(|error| {
+        self.propagate_scope_residual(fact.boundary(), fact.boundary_type(), residual)
+    }
+
+    fn propagate_scope_residual(
+        &mut self,
+        boundary: RuntimeTryBoundaryOwner,
+        boundary_type: &RuntimeNormalizedType,
+        residual: Option<RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        if let Some(frame) = self
+            .scope_continuations
+            .iter()
+            .rev()
+            .find(|frame| frame.fact.boundary() == boundary)
+            .cloned()
+        {
+            let carrier =
+                normalized_variant_expression_seed(frame.fact.carrier_type(), 1, residual)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+            return self.complete_scope_carrier(frame.owner, carrier);
+        }
+        let propagated =
+            normalized_variant_expression_seed(boundary_type, 1, residual).map_err(|error| {
                 RuntimePlanLowerError::new(format!("Try residual is invalid: {error}"))
             })?;
-        match fact.boundary() {
+        match boundary {
             RuntimeTryBoundaryOwner::Infallible => Ok(Vec::new()),
             RuntimeTryBoundaryOwner::Callable(_) => {
                 Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
@@ -6176,7 +6198,9 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeFlowTail::StatementsWithTail { statements, tail } => {
                 self.lower_statement_ids_with_tail(&statements, *tail)
             }
-            RuntimeFlowTail::ThreadItems(items) => self.lower_thread_items(&items),
+            RuntimeFlowTail::ThreadItems { items, tail } => {
+                self.lower_thread_items_with_tail(&items, *tail)
+            }
             RuntimeFlowTail::Value {
                 expression,
                 continuation,

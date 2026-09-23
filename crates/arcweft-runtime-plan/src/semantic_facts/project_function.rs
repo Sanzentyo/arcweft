@@ -808,7 +808,7 @@ pub enum RuntimeProjectFunctionTypeProjection {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeProjectFunctionExpressionPayload {
     Structural,
-    Scope(arcweft_core::scope::RuntimeScopeIdentity),
+    Scope(crate::semantic_facts::RuntimeScopeFact),
     Consumed,
     Literal(RuntimeValue),
     Value(RuntimeResolvedValue),
@@ -963,7 +963,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     UnsafeAudit,
     Select,
     SourceLocale,
-    Scope(arcweft_core::scope::RuntimeScopeIdentity),
+    Scope(crate::semantic_facts::RuntimeScopeFact),
     Include,
     Suspension,
     Yield,
@@ -1705,7 +1705,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn expression_scope(
         &self,
         owner: ExprId,
-    ) -> Option<&arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&crate::semantic_facts::RuntimeScopeFact> {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::Scope(identity) => Some(identity),
             _ => None,
@@ -1715,7 +1715,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn statement_scope(
         &self,
         owner: StmtId,
-    ) -> Option<&arcweft_core::scope::RuntimeScopeIdentity> {
+    ) -> Option<&crate::semantic_facts::RuntimeScopeFact> {
         match self.statement(owner)?.payload() {
             RuntimeProjectFunctionStatementPayload::Scope(identity) => Some(identity),
             _ => None,
