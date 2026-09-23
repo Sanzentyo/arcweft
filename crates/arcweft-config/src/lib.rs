@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_data::{
-    DataError, DataErrorKind, FieldShape, Number, RecordPolicy, Result, TypeShape, Value,
-    encode_with_shape,
+    DataError, DataErrorKind, EmptyShapeAccess, FieldShape, MapKind, Number, RecordPolicy, Result,
+    TypeShape, Value, encode_with_shape,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,7 +127,9 @@ fn merge_value(
         TypeShape::Record { fields, policy, .. } => {
             merge_record(base, incoming, fields, *policy, path, context)
         }
-        TypeShape::Map { key, value } => merge_map(base, incoming, key, value, path, context),
+        TypeShape::Map { key, value, kind } => {
+            merge_map(base, incoming, key, value, *kind, path, context)
+        }
         TypeShape::Seq(item_shape) => merge_sequence(base, incoming, item_shape, path, context),
         _ => {
             validate_scalar(&incoming, shape)?;
@@ -159,7 +161,10 @@ fn merge_record(
         let field = field_shape(fields, &key)?;
         path.push(key.clone());
         let current = merged.remove(&key);
-        let merged_value = merge_value(current, value, &field.value_shape(), path, context)
+        let field_shape = field
+            .resolve_value_shape(&EmptyShapeAccess)
+            .map_err(|error| error.at_field(key.clone()))?;
+        let merged_value = merge_value(current, value, field_shape.as_ref(), path, context)
             .map_err(|error| error.at_field(key.clone()))?;
         path.pop();
         merged.insert(key, merged_value);
@@ -173,6 +178,7 @@ fn merge_map(
     incoming: Value,
     key_shape: &TypeShape,
     value_shape: &TypeShape,
+    map_kind: MapKind,
     path: &mut Vec<String>,
     context: &mut MergeContext<'_>,
 ) -> Result<Value> {
@@ -182,24 +188,61 @@ fn merge_map(
         ));
     }
     let incoming_entries = match incoming {
-        Value::Map(entries) => entries,
+        Value::Map { kind, entries } if kind == map_kind => entries,
+        Value::Map { .. } => {
+            return Err(DataError::unsupported(
+                "config map kind differs from its shape",
+            ));
+        }
         other => return Err(DataError::invalid_type("map config", other.type_name())),
     };
     let mut merged = match base {
-        Some(Value::Map(entries)) => entries,
+        Some(Value::Map { kind, entries }) if kind == map_kind => entries,
+        Some(Value::Map { .. }) => {
+            return Err(DataError::unsupported(
+                "config map kind differs from its shape",
+            ));
+        }
         Some(other) => return Err(DataError::invalid_type("map config", other.type_name())),
-        None => BTreeMap::new(),
+        None => Vec::new(),
     };
+    let mut seen = BTreeSet::new();
     incoming_entries.into_iter().try_for_each(|(key, value)| {
+        let Value::String(key) = key else {
+            return Err(DataError::invalid_type("string map key", key.type_name()));
+        };
+        if !seen.insert(key.clone()) {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                format!("duplicate config map key `{key}`"),
+            ));
+        }
         path.push(key.clone());
-        let current = merged.remove(&key);
+        let index = merged
+            .iter()
+            .position(|(existing, _)| existing == &Value::String(key.clone()));
+        let current = index.map(|index| merged.remove(index).1);
         let merged_value = merge_value(current, value, value_shape, path, context)
             .map_err(|error| error.at_field(key.clone()))?;
         path.pop();
-        merged.insert(key, merged_value);
+        let entry = (Value::String(key), merged_value);
+        if let Some(index) = index {
+            merged.insert(index, entry);
+        } else {
+            merged.push(entry);
+        }
         Ok(())
     })?;
-    Ok(Value::Map(merged))
+    if map_kind != MapKind::Ordered {
+        merged.sort_by(|(left, _), (right, _)| match (left, right) {
+            (Value::String(left), Value::String(right)) => left.cmp(right),
+            _ => unreachable!("config merge admitted only string map keys"),
+        });
+    }
+    Ok(Value::Map {
+        kind: map_kind,
+        entries: merged,
+    })
 }
 
 fn merge_sequence(
@@ -303,8 +346,9 @@ fn field_shape<'a>(fields: &'a [FieldShape], key: &str) -> Result<&'a FieldShape
 fn validate_scalar(value: &Value, shape: &TypeShape) -> Result<()> {
     match shape {
         TypeShape::Option(inner) => match value {
-            Value::Unit => Ok(()),
-            other => validate_scalar(other, inner),
+            Value::Option(None) => Ok(()),
+            Value::Option(Some(value)) => validate_scalar(value, inner),
+            other => Err(DataError::invalid_type("option", other.type_name())),
         },
         TypeShape::F32 => finite_float(value, "f32"),
         TypeShape::F64 => finite_float(value, "f64"),
@@ -331,19 +375,28 @@ fn finalize_value(value: &mut Value, shape: &TypeShape, path: &mut Vec<String>) 
             .filter(|field| !field.skip)
             .try_for_each(|field| {
                 path.push(field.wire_name.clone());
+                let field_shape = field
+                    .resolve_value_shape(&EmptyShapeAccess)
+                    .map_err(|error| error.at_field(field.wire_name.clone()))?;
                 if let Some(value) = values.get_mut(&field.wire_name) {
-                    finalize_value(value, &field.value_shape(), path)
+                    finalize_value(value, field_shape.as_ref(), path)
                         .map_err(|error| error.at_field(field.wire_name.clone()))?;
                     path.pop();
                     return Ok(());
                 }
-                let field_shape = field.value_shape();
-                if matches!(field_shape, TypeShape::Option(_)) {
-                    values.insert(field.wire_name.clone(), Value::Unit);
-                    path.pop();
-                    return Ok(());
-                }
                 if field.has_default {
+                    path.pop();
+                    return Err(DataError::new(
+                        DataErrorKind::MissingField,
+                        format!(
+                            "config field `{}` requires a default provider",
+                            field.wire_name
+                        ),
+                    )
+                    .at_field(field.wire_name.clone()));
+                }
+                if matches!(field_shape.as_ref(), TypeShape::Option(_)) {
+                    values.insert(field.wire_name.clone(), Value::Option(None));
                     path.pop();
                     return Ok(());
                 }
@@ -354,15 +407,21 @@ fn finalize_value(value: &mut Value, shape: &TypeShape, path: &mut Vec<String>) 
                 )
                 .at_field(field.wire_name.clone()))
             }),
-        (Value::Map(values), TypeShape::Map { value: shape, .. }) => {
-            values.iter_mut().try_for_each(|(key, value)| {
-                path.push(key.clone());
-                let result =
-                    finalize_value(value, shape, path).map_err(|error| error.at_field(key.clone()));
-                path.pop();
-                result
-            })
-        }
+        (
+            Value::Map {
+                entries: values, ..
+            },
+            TypeShape::Map { value: shape, .. },
+        ) => values.iter_mut().try_for_each(|(key, value)| {
+            let Value::String(key) = key else {
+                return Err(DataError::invalid_type("string map key", key.type_name()));
+            };
+            path.push(key.clone());
+            let result =
+                finalize_value(value, shape, path).map_err(|error| error.at_field(key.clone()));
+            path.pop();
+            result
+        }),
         (Value::Seq(values), TypeShape::Seq(shape)) => {
             values
                 .iter_mut()
@@ -382,9 +441,13 @@ fn finalize_value(value: &mut Value, shape: &TypeShape, path: &mut Vec<String>) 
 fn empty_value(shape: &TypeShape) -> Result<Value> {
     match shape {
         TypeShape::Record { .. } => Ok(Value::Record(BTreeMap::new())),
-        TypeShape::Map { .. } => Ok(Value::Map(BTreeMap::new())),
+        TypeShape::Map { kind, .. } => Ok(Value::Map {
+            kind: *kind,
+            entries: Vec::new(),
+        }),
         TypeShape::Seq(_) => Ok(Value::Seq(Vec::new())),
-        TypeShape::Option(_) | TypeShape::Unit => Ok(Value::Unit),
+        TypeShape::Option(_) => Ok(Value::Option(None)),
+        TypeShape::Unit => Ok(Value::Unit),
         other => Err(DataError::new(
             DataErrorKind::MissingField,
             format!("missing required config value for {}", other.type_name()),
@@ -424,7 +487,26 @@ fn config_path(path: &[String]) -> String {
 pub fn redact(value: &Value, policy: &ConfigMergePolicy) -> Value {
     match value {
         Value::Record(fields) => Value::Record(redact_map(fields, policy)),
-        Value::Map(fields) => Value::Map(redact_map(fields, policy)),
+        Value::Map { kind, entries } => Value::Map {
+            kind: *kind,
+            entries: entries
+                .iter()
+                .map(|(key, value)| {
+                    let redacted = match key {
+                        Value::String(key)
+                            if policy
+                                .redact_keys
+                                .iter()
+                                .any(|needle| key.to_ascii_lowercase().contains(needle)) =>
+                        {
+                            Value::String("<redacted>".to_owned())
+                        }
+                        _ => redact(value, policy),
+                    };
+                    (key.clone(), redacted)
+                })
+                .collect(),
+        },
         Value::Seq(values) => {
             Value::Seq(values.iter().map(|value| redact(value, policy)).collect())
         }

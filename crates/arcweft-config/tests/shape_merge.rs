@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use arcweft_config::{
     ConfigLayer, ConfigLayerKind, ConfigMergePolicy, ListMergeStrategy, merge_config_layers,
 };
-use arcweft_data::{DataErrorKind, FieldShape, Number, RecordPolicy, TypeShape, Value};
+use arcweft_data::{DataErrorKind, FieldShape, MapKind, Number, RecordPolicy, TypeShape, Value};
 
 fn server_shape() -> TypeShape {
     TypeShape::Record {
@@ -47,7 +47,10 @@ fn shape_merge_tracks_precedence_and_provenance() {
         ConfigLayerKind::Environment,
         record([
             ("port", Value::Number(Number::U(8080))),
-            ("token", Value::String("secret".to_owned())),
+            (
+                "token",
+                Value::Option(Some(Box::new(Value::String("secret".to_owned())))),
+            ),
         ]),
     )
     .with_source("env");
@@ -200,7 +203,10 @@ fn shape_merge_rejects_non_finite_float_values() {
     let error = merge_config_layers(
         [ConfigLayer::new(
             ConfigLayerKind::File,
-            record([("threshold", Value::Number(Number::F64(f64::INFINITY)))]),
+            record([(
+                "threshold",
+                Value::Option(Some(Box::new(Value::Number(Number::F64(f64::INFINITY))))),
+            )]),
         )],
         &shape,
         &ConfigMergePolicy::default(),
@@ -208,4 +214,96 @@ fn shape_merge_rejects_non_finite_float_values() {
     .expect_err("non-finite float");
 
     assert_eq!(error.kind(), &DataErrorKind::InvalidEncoding);
+}
+
+#[test]
+fn map_merge_preserves_kind_and_ordering_contract() {
+    let entries = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(key, value)| {
+                (
+                    Value::String((*key).to_owned()),
+                    Value::String((*value).to_owned()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    for (kind, expected) in [
+        (MapKind::Ordered, vec!["z", "a", "m"]),
+        (MapKind::BTree, vec!["a", "m", "z"]),
+    ] {
+        let shape = TypeShape::map(TypeShape::String, TypeShape::String, kind);
+        let report = merge_config_layers(
+            [
+                ConfigLayer::new(
+                    ConfigLayerKind::Defaults,
+                    Value::map(kind, entries(&[("z", "old"), ("a", "first")])),
+                ),
+                ConfigLayer::new(
+                    ConfigLayerKind::File,
+                    Value::map(kind, entries(&[("z", "new"), ("m", "last")])),
+                ),
+            ],
+            &shape,
+            &ConfigMergePolicy::default(),
+        )
+        .expect("matching maps merge");
+        let Value::Map {
+            kind: merged_kind,
+            entries: merged,
+        } = report.value
+        else {
+            panic!("merge returns a map");
+        };
+        assert_eq!(merged_kind, kind);
+        assert_eq!(
+            merged
+                .iter()
+                .map(|(key, _)| match key {
+                    Value::String(key) => key.as_str(),
+                    _ => panic!("string-key map"),
+                })
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(merged.contains(&(
+            Value::String("z".to_owned()),
+            Value::String("new".to_owned())
+        )));
+    }
+}
+
+#[test]
+fn missing_optional_is_explicit_and_missing_default_requires_a_producer() {
+    let optional = TypeShape::record(
+        "OptionalConfig",
+        [FieldShape::new(
+            "token",
+            "token",
+            TypeShape::option(TypeShape::String),
+        )],
+    );
+    let report = merge_config_layers(
+        [ConfigLayer::new(ConfigLayerKind::File, record([]))],
+        &optional,
+        &ConfigMergePolicy::default(),
+    )
+    .expect("missing option is empty");
+    assert_eq!(
+        report.value.as_record().unwrap().get("token"),
+        Some(&Value::Option(None))
+    );
+
+    let defaulted = TypeShape::record(
+        "DefaultedConfig",
+        [FieldShape::new("token", "token", TypeShape::option(TypeShape::String)).with_default()],
+    );
+    let error = merge_config_layers(
+        [ConfigLayer::new(ConfigLayerKind::File, record([]))],
+        &defaulted,
+        &ConfigMergePolicy::default(),
+    )
+    .expect_err("a default marker cannot synthesize a value");
+    assert_eq!(error.kind(), &DataErrorKind::MissingField);
 }
