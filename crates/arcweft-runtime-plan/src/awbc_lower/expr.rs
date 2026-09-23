@@ -278,17 +278,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         )
                     })
                     .collect();
-                let field_names = domain
-                    .fields()
-                    .iter()
-                    .map(|field| self.inventory.intern_string(field.name()))
-                    .collect();
                 let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeRecord {
                         dst,
                         ty,
-                        field_names,
                         fields: registers,
                     });
                 dst

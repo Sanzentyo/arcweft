@@ -567,6 +567,8 @@ impl AwbcInventory {
         &mut self,
         plan_type: RuntimePlanTypeId,
         shape: AwbcRuntimeTypeShape,
+        data_codec: Option<arcweft_core::entry::RuntimeCodecUse>,
+        data_codec_arguments: Option<Vec<arcweft_core::entry::RuntimeCodecUse>>,
     ) -> Result<(), AwbcLowerDiagnostic> {
         let awbc_type = self.plan_type(plan_type).ok_or_else(|| {
             AwbcLowerDiagnostic::error(
@@ -574,13 +576,41 @@ impl AwbcInventory {
                 "RuntimePlan type has no reserved AWBC identity",
             )
         })?;
-        if let Some(existing) = self.program.runtime_types.get(awbc_type.index()) {
-            return (existing.shape() == &shape).then_some(()).ok_or_else(|| {
-                AwbcLowerDiagnostic::error(
+        if let Some(existing) = self.program.runtime_types.get(awbc_type.index()).cloned() {
+            if existing.shape() != &shape {
+                return Err(AwbcLowerDiagnostic::error(
                     format!("type.{plan_type}"),
                     "plan semantic identity conflicts with a canonical AWBC type shape",
-                )
-            });
+                ));
+            }
+            let mut updated = existing;
+            if let Some(codec) = data_codec {
+                if updated.data_codec().is_some_and(|actual| actual != &codec) {
+                    return Err(AwbcLowerDiagnostic::error(
+                        format!("type.{plan_type}"),
+                        "plan semantic identity conflicts with its canonical AWBC codec use",
+                    ));
+                }
+                if updated.data_codec().is_none() {
+                    updated = updated.with_data_codec(codec);
+                }
+            }
+            if let Some(arguments) = data_codec_arguments {
+                if updated
+                    .data_codec_arguments()
+                    .is_some_and(|actual| actual != arguments.as_slice())
+                {
+                    return Err(AwbcLowerDiagnostic::error(
+                        format!("type.{plan_type}"),
+                        "plan semantic identity conflicts with its canonical AWBC codec arguments",
+                    ));
+                }
+                if updated.data_codec_arguments().is_none() {
+                    updated = updated.with_data_codec_arguments(arguments);
+                }
+            }
+            self.program.runtime_types[awbc_type.index()] = updated;
+            return Ok(());
         }
         let semantic_identity = self
             .reserved_types
@@ -592,11 +622,14 @@ impl AwbcInventory {
                     "reserved AWBC runtime type owner is absent",
                 )
             })?;
-        if self
-            .pending_types
-            .insert(awbc_type, AwbcRuntimeType::new(semantic_identity, shape))
-            .is_some()
-        {
+        let mut row = AwbcRuntimeType::new(semantic_identity, shape);
+        if let Some(codec) = data_codec {
+            row = row.with_data_codec(codec);
+        }
+        if let Some(arguments) = data_codec_arguments {
+            row = row.with_data_codec_arguments(arguments);
+        }
+        if self.pending_types.insert(awbc_type, row).is_some() {
             return Err(AwbcLowerDiagnostic::error(
                 format!("type.{plan_type}"),
                 "reserved AWBC runtime type was defined more than once",
@@ -668,6 +701,7 @@ impl AwbcInventory {
                 )?)
             }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_)) => return None,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(_)) => return None,
             AwbcRuntimeTypeShape::Dynamic => {
                 return Some(AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity());
             }
@@ -693,7 +727,7 @@ impl AwbcInventory {
                             .runtime_types
                             .get(field.ty.index())?
                             .semantic_identity();
-                        Some((self.string(field.name).to_owned(), semantic_identity))
+                        Some((self.string(field.name?).to_owned(), semantic_identity))
                     })
                     .collect::<Option<Vec<_>>>()?;
                 return Some(
@@ -884,17 +918,31 @@ impl AwbcInventory {
                     .map(|item| self.constant_runtime_value(item))
                     .collect(),
             ),
-            RuntimeValue::Record(fields) => AwbcConstant::Record {
-                ty: self.dynamic_ty(),
-                field_names: fields
+            RuntimeValue::Record(fields) => {
+                // Producer-owned untyped payloads retain their real record
+                // coordinates and names even though their child values have
+                // no source type annotation. Typed constants use the admitted
+                // plan rows in runtime_value_constant_typed instead.
+                let layout = fields
                     .iter()
-                    .map(|field| self.intern_string(field.name()))
-                    .collect(),
-                fields: fields
-                    .iter()
-                    .map(|field| self.constant_runtime_value(field.value()))
-                    .collect(),
-            },
+                    .map(|field| arcweft_core::awbc::schema::AwbcRecordField {
+                        field: field.field(),
+                        name: Some(self.intern_string(field.name())),
+                        ty: self.dynamic_ty(),
+                    })
+                    .collect();
+                let ty = self.intern_type(AwbcRuntimeTypeShape::Record {
+                    public_id: None,
+                    fields: layout,
+                });
+                AwbcConstant::Record {
+                    ty,
+                    fields: fields
+                        .iter()
+                        .map(|field| self.constant_runtime_value(field.value()))
+                        .collect(),
+                }
+            }
             RuntimeValue::NominalRecord(record) => {
                 panic!(
                     "nominal runtime record `{}` cannot be encoded as an AWBC constant before \
@@ -1055,13 +1103,16 @@ impl AwbcInventory {
                 for (value, field) in values.iter().zip(fields) {
                     assert_eq!(
                         value.name(),
-                        self.string(field.name),
+                        self.string(
+                            field
+                                .name
+                                .expect("accepted anonymous record fields are named")
+                        ),
                         "accepted record constant must match its exact AWBC field order"
                     );
                 }
                 AwbcConstant::Record {
                     ty,
-                    field_names: fields.iter().map(|field| field.name).collect(),
                     fields: values
                         .iter()
                         .zip(fields)
@@ -1097,7 +1148,6 @@ impl AwbcInventory {
                 );
                 AwbcConstant::Record {
                     ty,
-                    field_names: fields.iter().map(|field| field.name).collect(),
                     fields: value
                         .fields()
                         .iter()
@@ -1124,11 +1174,16 @@ impl AwbcInventory {
                         RuntimeVariantIdentity::Nominal {
                             nominal,
                             semantic_identity,
+                            layout,
                         },
-                        AwbcVariantIdentity::Nominal { public_id },
+                        AwbcVariantIdentity::Nominal {
+                            public_id,
+                            layout: expected_layout,
+                        },
                     ) => {
                         nominal.as_str() == self.string(*public_id)
                             && *semantic_identity == row.semantic_identity()
+                            && layout.as_bytes() == expected_layout
                     }
                     (
                         RuntimeVariantIdentity::Builtin(runtime),
@@ -1161,7 +1216,6 @@ impl AwbcInventory {
                 AwbcConstant::Variant {
                     ty,
                     case: *ordinal,
-                    case_name: case.name,
                     payload,
                 }
             }
@@ -1563,27 +1617,13 @@ impl AwbcInventory {
         id
     }
 
-    pub fn intern_host_task(
-        &mut self,
-        need_id: &str,
-        task_id: &str,
-        request: &HostTaskRequestTemplate,
-    ) -> AwbcTaskPlanId {
-        self.intern_host_task_with_outcome(
-            need_id,
-            task_id,
-            request,
-            &TaskOutcomeContract::default(),
-        )
-    }
-
     pub fn intern_host_task_with_outcome(
         &mut self,
         need_id: &str,
         task_id: &str,
         request: &HostTaskRequestTemplate,
         outcome: &TaskOutcomeContract,
-    ) -> AwbcTaskPlanId {
+    ) -> Option<AwbcTaskPlanId> {
         self.intern_named_task(NamedTaskSpec {
             public_id: task_id,
             need_id,
@@ -1654,7 +1694,7 @@ impl AwbcInventory {
         Some((id, result_type))
     }
 
-    fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> AwbcTaskPlanId {
+    fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> Option<AwbcTaskPlanId> {
         let NamedTaskSpec {
             public_id,
             need_id,
@@ -1671,7 +1711,7 @@ impl AwbcInventory {
             "task:{public_id}:{need_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}:{outcome:?}"
         );
         if let Some(id) = self.tasks.get(&key).copied() {
-            return id;
+            return Some(id);
         }
         let id = AwbcTaskPlanId(table_index(self.program.task_plans.len()));
         let public_id = self.intern_string(public_id);
@@ -1688,7 +1728,19 @@ impl AwbcInventory {
             .iter()
             .map(|arg| self.intern_host_argument(arg))
             .collect();
-        let payload_type = intern_runtime_type(self, outcome.payload());
+        let payload_type = match outcome {
+            TaskOutcomeContract::Standalone { payload } => intern_runtime_type(self, payload),
+            TaskOutcomeContract::Program { payload } => {
+                let Some(ty) = self.semantic_type(*payload) else {
+                    self.diagnostic(AwbcLowerDiagnostic::error(
+                        "task.payload",
+                        format!("program task payload type {payload:?} is absent"),
+                    ));
+                    return None;
+                };
+                ty
+            }
+        };
         self.program.task_plans.push(AwbcTaskPlan {
             public_id,
             need_id,
@@ -1704,7 +1756,7 @@ impl AwbcInventory {
             many: None,
         });
         self.tasks.insert(key, id);
-        id
+        Some(id)
     }
 
     fn intern_host_arguments(

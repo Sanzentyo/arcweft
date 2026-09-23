@@ -1,7 +1,12 @@
 use super::RuntimeFlowFact;
 use std::{collections::BTreeMap, sync::Arc};
 
-use arcweft_core::entry::{RuntimeCallableId, RuntimeNominalTypeId, TypeLayoutHash};
+use arcweft_core::entry::{
+    RuntimeCallableId, RuntimeMapKind, RuntimeNominalRecordShape, RuntimeNominalSchemaBody,
+    RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField,
+    RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
+    RuntimeSchemaLimits, RuntimeTypeSchema,
+};
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
@@ -750,11 +755,19 @@ fn assignment_fact_fixture(
         .next()
         .expect("assignment base local");
 
-    let resolved = assignment_nominal(&project, module, label);
+    let resolved = assignment_nominal(
+        &project,
+        module,
+        label,
+        &[
+            ("x", RuntimeTypeSchema::I64),
+            ("active", RuntimeTypeSchema::Bool),
+        ],
+    );
     let identity = resolved.identity();
     let record_type = super::RuntimeNormalizedType::new(
         identity,
-        RuntimeTypeShape::ProjectNominal {
+        RuntimeTypeShape::Nominal {
             nominal: resolved.clone(),
             arguments: Box::new([]),
         },
@@ -828,6 +841,7 @@ fn assignment_nominal(
     project: &HirProject,
     module: &arcweft_lang_hir::module::HirModule,
     label: &str,
+    fields: &[(&str, RuntimeTypeSchema)],
 ) -> RuntimeResolvedNominal {
     let document = Arc::clone(module.provenance().document());
     let world = ProjectSymbolWorldId::try_new(
@@ -847,13 +861,37 @@ fn assignment_nominal(
         .nominal_symbols()
         .find(|nominal| nominal.id().name().as_str() == "Point")
         .expect("Point nominal");
-    RuntimeResolvedNominal::new(
+    let identity = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let runtime_nominal = RuntimeNominalTypeId::try_new("test::assignment::Point").unwrap();
+    let graph = RuntimeNominalSchemaGraph::try_new(
+        vec![RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalSchemaIdentity::new(runtime_nominal.clone(), identity),
+            vec![],
+            RuntimeNominalSchemaBody::Record {
+                shape: RuntimeNominalRecordShape::Record,
+                fields: fields
+                    .iter()
+                    .enumerate()
+                    .map(|(ordinal, (name, schema))| {
+                        RuntimeNominalSchemaField::new(
+                            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap(),
+                            Some((*name).to_owned()),
+                            schema.clone(),
+                        )
+                    })
+                    .collect(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    RuntimeResolvedNominal::project(
         nominal.id().clone(),
         nominal.owner(),
-        RuntimeNominalTypeId::try_new("test::assignment::Point")
-            .expect("fixture runtime nominal identity"),
-        RuntimeSemanticTypeId::from_bytes([0x91; 32]),
-        TypeLayoutHash::from_bytes([0x92; 32]),
+        runtime_nominal,
+        identity,
+        graph.try_layout_hash(identity).unwrap(),
+        Arc::new(graph),
     )
 }
 
@@ -865,7 +903,7 @@ fn nominal_record_fact_requires_the_project_record_source_shape() {
     let project = project_fixture("nominal-record-shape", "struct Point {}\n");
     let executable = project.analysis_view().expect("project view");
     let (_, module) = executable.modules().next().expect("root module");
-    let nominal = assignment_nominal(&project, module, "nominal-record-shape");
+    let nominal = assignment_nominal(&project, module, "nominal-record-shape", &[]);
     for shape in [
         RuntimeNominalRecordShape::Record,
         RuntimeNominalRecordShape::Unit,
@@ -938,6 +976,16 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
     assert_eq!(accepted, &fact);
     assert_eq!(accepted.field().zero_based(), 1);
     assert_eq!(accepted.field_type(), accepted.value_type());
+    let proof = facts
+        .runtime_plan_nominal_schema()
+        .expect("source proof reaches plan admission");
+    assert_eq!(
+        proof
+            .try_layout_hash(accepted.nominal().identity())
+            .unwrap(),
+        accepted.nominal().layout()
+    );
+    assert_eq!(proof.definitions().len(), 1);
 
     let (project, input, statement, _, _) = assignment_fact_fixture("assignment-fact-missing");
     assert_eq!(
@@ -1665,14 +1713,6 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
             RuntimeOperationalType::Iterator,
         ),
         (
-            RuntimeTypeShape::Map {
-                key: boxed_unit_type(),
-                value: boxed_unit_type(),
-            },
-            RuntimeUnsupportedTypeShape::Map,
-            RuntimeOperationalType::Map,
-        ),
-        (
             RuntimeTypeShape::Need(boxed_unit_type()),
             RuntimeUnsupportedTypeShape::Need,
             RuntimeOperationalType::Need,
@@ -1729,6 +1769,29 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
             Ok(Some(operational))
         );
     }
+
+    let identity = RuntimeSemanticTypeId::from_bytes([0x46; 32]);
+    let map = super::RuntimeNormalizedType::new(
+        identity,
+        RuntimeTypeShape::Map {
+            kind: RuntimeMapKind::BTree,
+            key: boxed_unit_type(),
+            value: boxed_unit_type(),
+        },
+    );
+    assert_eq!(
+        map.checked_type(),
+        Ok(RuntimeCheckedType::Map {
+            kind: RuntimeMapKind::BTree,
+            key: Box::new(RuntimeCheckedType::Unit),
+            value: Box::new(RuntimeCheckedType::Unit),
+        })
+    );
+    assert_eq!(
+        map.runtime_plan_type_seed()
+            .map(|seed| seed.projection().operational_type()),
+        Ok(Some(RuntimeOperationalType::Map))
+    );
 }
 
 #[test]
@@ -1779,11 +1842,7 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             RuntimeAgentOperationalType::ActionResult,
         ),
         (
-            RuntimeAgentTypeShape::DataFormat,
-            RuntimeAgentOperationalType::DataFormat,
-        ),
-        (
-            RuntimeAgentTypeShape::DataShape,
+            RuntimeAgentTypeShape::DataShape(boxed_unit_type()),
             RuntimeAgentOperationalType::DataShape,
         ),
         (
@@ -1873,6 +1932,11 @@ fn every_agent_shape_selects_its_closed_operational_family() {
                     RuntimeCheckedType::Unit,
                 ))
             }
+            RuntimeAgentOperationalType::DataShape => {
+                arcweft_core::plan::RuntimeAgentTypeProjection::DataShape(Box::new(
+                    RuntimeCheckedType::Unit,
+                ))
+            }
             leaf => arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(leaf).unwrap(),
         };
         assert_eq!(
@@ -1900,6 +1964,13 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
             ))),
             RuntimeTypeProjectionStep::AgentProbeValue,
             RuntimeOperationalType::Agent(RuntimeAgentOperationalType::Probe),
+        ),
+        (
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataShape(Box::new(
+                unsupported_range_type(),
+            ))),
+            RuntimeTypeProjectionStep::AgentDataShapeValue,
+            RuntimeOperationalType::Agent(RuntimeAgentOperationalType::DataShape),
         ),
         (
             RuntimeTypeShape::Sequence {
@@ -2028,6 +2099,35 @@ fn normalized_array_projection_retains_its_exact_length() {
         normalized.runtime_plan_type_seed().unwrap().projection(),
         RuntimePlanTypeProjection::Array { length: 2, .. }
     ));
+}
+
+#[test]
+fn normalized_map_projection_retains_its_exact_ordering_kind() {
+    for (marker, kind) in [
+        (0xa1, RuntimeMapKind::Ordered),
+        (0xa2, RuntimeMapKind::Sorted),
+        (0xa3, RuntimeMapKind::BTree),
+    ] {
+        let normalized = normalized_type(
+            marker,
+            RuntimeTypeShape::Map {
+                kind,
+                key: boxed_unit_type(),
+                value: boxed_unit_type(),
+            },
+        );
+        assert_eq!(
+            normalized
+                .runtime_plan_type_seed()
+                .expect("map type projects into RuntimePlan")
+                .projection(),
+            &RuntimePlanTypeProjection::Map {
+                kind,
+                key: RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                value: RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+            }
+        );
+    }
 }
 
 #[test]
@@ -2426,6 +2526,11 @@ fn option_and_character_cases_use_the_shared_normalized_selection_path() {
         RuntimeSemanticTypeId::from_bytes([0x72; 32]),
         RuntimeNominalTypeId::try_new("fixture.CharacterState")
             .expect("valid Character fixture nominal"),
+        variant_source_graph(
+            0x72,
+            "fixture.CharacterState",
+            &[("Idle", None), ("Speaking", None)],
+        ),
         [
             RuntimeNormalizedVariantCase::new("Idle", None),
             RuntimeNormalizedVariantCase::new("Speaking", None),
@@ -2448,7 +2553,10 @@ fn option_and_character_cases_use_the_shared_normalized_selection_path() {
 
 #[test]
 fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
-    let payload = normalized_type(0x81, RuntimeTypeShape::String);
+    let payload = normalized_type(
+        0x81,
+        RuntimeTypeShape::Tuple(vec![normalized_type(0x80, RuntimeTypeShape::String)].into()),
+    );
     let cases = || {
         vec![
             RuntimeNormalizedVariantCase::new("Empty", None),
@@ -2459,9 +2567,27 @@ fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
     let identity = RuntimeSemanticTypeId::from_bytes([0x82; 32]);
     let nominal =
         RuntimeNominalTypeId::try_new("fixture.NormalizedVariant").expect("valid fixture nominal");
-    let variant =
-        RuntimeResolvedVariant::builtin_closed(identity, nominal.clone(), cases(), 1, "Payload")
-            .expect("name and ordinal select the normalized row");
+    let variant = RuntimeResolvedVariant::builtin_closed(
+        identity,
+        nominal.clone(),
+        variant_source_graph(
+            0x82,
+            "fixture.NormalizedVariant",
+            &[
+                ("Empty", None),
+                (
+                    "Payload",
+                    Some(RuntimeTypeSchema::Tuple(
+                        vec![RuntimeTypeSchema::String].into(),
+                    )),
+                ),
+            ],
+        ),
+        cases(),
+        1,
+        "Payload",
+    )
+    .expect("name and ordinal select the normalized row");
     assert_eq!(variant.selected_name(), Ok("Payload"));
     assert_eq!(variant.selected_payload_type(), Ok(Some(&payload)));
 
@@ -2469,7 +2595,10 @@ fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
         .checked_selection()
         .expect("checked view derives from the normalized table");
     assert_eq!(selection.name(), "Payload");
-    assert_eq!(selection.payload(), Some(&RuntimeCheckedType::String));
+    assert_eq!(
+        selection.payload(),
+        Some(&RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String]))
+    );
     let RuntimeCheckedType::Variant {
         cases: checked_cases,
         ..
@@ -2481,11 +2610,11 @@ fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
     assert!(checked_cases[0].payload.is_none());
     assert_eq!(
         checked_cases[1].payload.as_deref(),
-        Some(&RuntimeCheckedType::String)
+        Some(&RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String]))
     );
 
     assert!(matches!(
-        RuntimeResolvedVariant::builtin_closed(identity, nominal, cases(), 1, "Other"),
+        RuntimeResolvedVariant::builtin_closed(identity, nominal, variant_source_graph(0x82, "fixture.NormalizedVariant", &[("Empty", None), ("Payload", Some(RuntimeTypeSchema::Tuple(vec![RuntimeTypeSchema::String].into())))]), cases(), 1, "Other"),
         Err(RuntimeResolvedVariantError::CaseName {
             ordinal: 1,
             expected,
@@ -2494,11 +2623,54 @@ fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
     ));
 }
 
+fn variant_source_graph(
+    marker: u8,
+    nominal: &str,
+    cases: &[(&str, Option<RuntimeTypeSchema>)],
+) -> Arc<RuntimeNominalSchemaGraph> {
+    Arc::new(
+        RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(
+                    RuntimeNominalTypeId::try_new(nominal).unwrap(),
+                    RuntimeSemanticTypeId::from_bytes([marker; 32]),
+                ),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: cases
+                        .iter()
+                        .enumerate()
+                        .map(|(ordinal, (name, payload))| {
+                            RuntimeNominalSchemaCase::new(
+                                u32::try_from(ordinal).unwrap(),
+                                (*name).to_owned(),
+                                payload.clone(),
+                            )
+                        })
+                        .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap(),
+    )
+}
+
 #[test]
 fn operational_variant_payload_is_not_admitted_through_raw_facts() {
     let variant = RuntimeResolvedVariant::builtin_closed(
         RuntimeSemanticTypeId::from_bytes([0x83; 32]),
         RuntimeNominalTypeId::try_new("fixture.OperationalVariant").expect("valid fixture nominal"),
+        variant_source_graph(
+            0x83,
+            "fixture.OperationalVariant",
+            &[(
+                "Payload",
+                Some(RuntimeTypeSchema::Tuple(
+                    vec![RuntimeTypeSchema::Unit].into(),
+                )),
+            )],
+        ),
         [RuntimeNormalizedVariantCase::new(
             "Payload",
             Some(unsupported_range_type()),

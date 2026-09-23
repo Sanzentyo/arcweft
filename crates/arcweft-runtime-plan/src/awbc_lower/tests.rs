@@ -78,13 +78,11 @@ fn build_plan(
     let entries = entries.into_iter().collect::<Vec<_>>();
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
             ],
-            [],
-            [],
             [],
         )
         .expect("test semantic facts admit");
@@ -180,7 +178,7 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
     let unit = type_id(16);
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
                     item,
@@ -215,8 +213,6 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
                 ),
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
             ],
-            [],
-            [],
             [],
         )
         .expect("builtin payload type graph");
@@ -407,14 +403,12 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
 fn foreign_local_seed() -> RuntimeLocalSeedId {
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 type_id(1),
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(type_id(1))],
-            [],
-            [],
         )
         .expect("foreign local admission");
     admission.local_ids()[0].clone()
@@ -423,14 +417,12 @@ fn foreign_local_seed() -> RuntimeLocalSeedId {
 fn builder_with_local() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 type_id(1),
                 RuntimePlanTypeProjection::Bool,
             )],
             [RuntimeLocalDeclarationSeed::new(type_id(1))],
-            [],
-            [],
         )
         .expect("local admission");
     (builder, admission.local_ids()[0].clone())
@@ -453,14 +445,12 @@ fn plan_with_local() -> (
 ) {
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 type_id(1),
                 RuntimePlanTypeProjection::String,
             )],
             [RuntimeLocalDeclarationSeed::new(type_id(1))],
-            [],
-            [],
         )
         .expect("local plan admission");
     builder
@@ -513,13 +503,11 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
 
     let mut pure_builder = RuntimePlanBuilder::new();
     pure_builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 type_id(1),
                 RuntimePlanTypeProjection::Bool,
             )],
-            [],
-            [],
             [],
         )
         .expect("pure helper type admission");
@@ -852,14 +840,12 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
     let main = flow_id("main");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(type_id(3), RuntimePlanTypeProjection::Bool),
             ],
             [RuntimeLocalDeclarationSeed::new(type_id(1))],
-            [],
-            [],
         )
         .expect("loop result facts admit");
     let result = admission.local_ids()[0].clone();
@@ -925,7 +911,7 @@ fn nested_loops_bind_the_nearest_break_result() {
     let main = flow_id("main");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 type_id(1),
                 RuntimePlanTypeProjection::String,
@@ -934,8 +920,6 @@ fn nested_loops_bind_the_nearest_break_result() {
                 RuntimeLocalDeclarationSeed::new(type_id(1)),
                 RuntimeLocalDeclarationSeed::new(type_id(1)),
             ],
-            [],
-            [],
         )
         .expect("nested loop result facts admit");
     let inner_result = admission.local_ids()[0].clone();
@@ -1083,13 +1067,11 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
     let progress_type = type_id(4);
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
             ],
-            [],
-            [],
             [],
         )
         .expect("Await observer types admit");

@@ -17,10 +17,14 @@ use std::{
     sync::Arc,
 };
 
+mod nominal_definitions;
+pub use nominal_definitions::RuntimeNominalDefinition;
+
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::entry::{
-    RuntimeCallableId, RuntimeIdentityError, RuntimeNominalRecordShape, RuntimeNominalTypeId,
-    TypeLayoutHash,
+    RuntimeCallableId, RuntimeMapKind as RuntimePlanMapKind, RuntimeNominalRecordShape,
+    RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError, RuntimeNominalTypeId,
+    RuntimeSchemaLimits, TypeLayoutHash,
 };
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
@@ -71,6 +75,7 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
 };
+use arcweft_lang_sema::env::identity::EnvironmentBindingId;
 use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
@@ -138,8 +143,7 @@ pub enum RuntimeAgentTypeShape {
     ActionName,
     ActionTarget,
     ActionResult,
-    DataFormat,
-    DataShape,
+    DataShape(Box<RuntimeNormalizedType>),
     EntityMetadata,
     SourceAnchor,
     ProjectGraphNeighborhood,
@@ -198,6 +202,7 @@ pub enum RuntimeTypeShape {
         length: usize,
     },
     Map {
+        kind: RuntimePlanMapKind,
         key: Box<RuntimeNormalizedType>,
         value: Box<RuntimeNormalizedType>,
     },
@@ -231,7 +236,7 @@ pub enum RuntimeTypeShape {
         parameters: Box<[RuntimeNormalizedType]>,
         result: Box<RuntimeNormalizedType>,
     },
-    ProjectNominal {
+    Nominal {
         nominal: RuntimeResolvedNominal,
         arguments: Box<[RuntimeNormalizedType]>,
     },
@@ -296,7 +301,9 @@ pub enum RuntimeSequenceKind {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTypeProjectionStep {
     SequenceItem,
-    ProjectNominalArgument(u32),
+    MapKey,
+    MapValue,
+    NominalArgument(u32),
     TupleItem(u32),
     RecordField(u32),
     ChoiceAlternative(u32),
@@ -306,6 +313,7 @@ pub enum RuntimeTypeProjectionStep {
     OptionItem,
     BuiltinVariantCase(u32),
     AgentProbeValue,
+    AgentDataShapeValue,
 }
 
 /// Typed location of the first checked-type projection failure.
@@ -336,7 +344,6 @@ impl RuntimeTypeProjectionPath {
 pub enum RuntimeUnsupportedTypeShape {
     Range,
     Iterator,
-    Map,
     Need,
     Stream,
     Parser,
@@ -344,13 +351,6 @@ pub enum RuntimeUnsupportedTypeShape {
     Shared,
     Reference,
     Function,
-}
-
-/// Invalid retained identity on a checked project nominal fact.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum RuntimeResolvedNominalError {
-    #[error(transparent)]
-    InvalidIdentity(#[from] RuntimeIdentityError),
 }
 
 /// Failure to project a normalized semantic type into the closed runtime algebra.
@@ -367,12 +367,6 @@ pub enum RuntimeCheckedTypeProjectionError {
         semantic_identity: RuntimeSemanticTypeId,
         path: RuntimeTypeProjectionPath,
         shape: RuntimeUnsupportedTypeShape,
-    },
-    #[error("project nominal runtime identity is invalid")]
-    InvalidProjectNominal {
-        semantic_identity: RuntimeSemanticTypeId,
-        path: RuntimeTypeProjectionPath,
-        reason: RuntimeResolvedNominalError,
     },
     #[error("builtin variant `{owner:?}` has a non-canonical payload schema")]
     InvalidBuiltinVariant {
@@ -641,7 +635,8 @@ impl RuntimeNormalizedType {
                 length: u64::try_from(*length)
                     .expect("usize fits the u64 Arcweft runtime-plan contract"),
             },
-            RuntimeTypeShape::Map { key, value } => RuntimePlanTypeProjection::Map {
+            RuntimeTypeShape::Map { kind, key, value } => RuntimePlanTypeProjection::Map {
+                kind: *kind,
                 key: child(key),
                 value: child(value),
             },
@@ -693,8 +688,8 @@ impl RuntimeNormalizedType {
                     result: child(result),
                 }
             }
-            RuntimeTypeShape::ProjectNominal { nominal, arguments } => {
-                RuntimePlanTypeProjection::ProjectNominal {
+            RuntimeTypeShape::Nominal { nominal, arguments } => {
+                RuntimePlanTypeProjection::Nominal {
                     nominal: nominal.runtime_nominal_id(),
                     layout: nominal.layout(),
                     arguments: arguments
@@ -761,7 +756,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Array { item, .. }
             | RuntimeTypeShape::Need(item)
             | RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(item)) => vec![item],
-            RuntimeTypeShape::Map { key, value }
+            RuntimeTypeShape::Map { key, value, .. }
             | RuntimeTypeShape::Stream {
                 item: key,
                 error: value,
@@ -784,7 +779,7 @@ impl RuntimeNormalizedType {
                 .iter()
                 .chain(std::iter::once(result.as_ref()))
                 .collect(),
-            RuntimeTypeShape::ProjectNominal { arguments, .. }
+            RuntimeTypeShape::Nominal { arguments, .. }
             | RuntimeTypeShape::Tuple(arguments)
             | RuntimeTypeShape::Choice(arguments)
             | RuntimeTypeShape::Opaque { arguments, .. } => arguments.iter().collect(),
@@ -823,6 +818,15 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Sequence { item, .. } => RuntimeCheckedType::Sequence(Box::new(
                 item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
             )),
+            RuntimeTypeShape::Map { kind, key, value } => RuntimeCheckedType::Map {
+                kind: *kind,
+                key: Box::new(
+                    key.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::MapKey))?,
+                ),
+                value: Box::new(
+                    value.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::MapValue))?,
+                ),
+            },
             RuntimeTypeShape::Array { item, length } => RuntimeCheckedType::Array {
                 item: Box::new(
                     item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
@@ -830,24 +834,20 @@ impl RuntimeNormalizedType {
                 length: u64::try_from(*length)
                     .expect("usize fits the u64 Arcweft runtime-plan contract"),
             },
-            RuntimeTypeShape::ProjectNominal { nominal, arguments } => {
-                RuntimeCheckedType::Nominal {
-                    nominal: nominal.runtime_nominal_id(),
-                    semantic_identity: self.identity(),
-                    layout: nominal.layout(),
-                    arguments: arguments
-                        .iter()
-                        .enumerate()
-                        .map(|(index, argument)| {
-                            argument.checked_type_at(&path.pushed(
-                                RuntimeTypeProjectionStep::ProjectNominalArgument(
-                                    projection_index(index),
-                                ),
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                }
-            }
+            RuntimeTypeShape::Nominal { nominal, arguments } => RuntimeCheckedType::Nominal {
+                nominal: nominal.runtime_nominal_id(),
+                semantic_identity: self.identity(),
+                layout: nominal.layout(),
+                arguments: arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(index, argument)| {
+                        argument.checked_type_at(&path.pushed(
+                            RuntimeTypeProjectionStep::NominalArgument(projection_index(index)),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            },
             RuntimeTypeShape::Choice(alternatives) => RuntimeCheckedType::Choice(
                 alternatives
                     .iter()
@@ -997,7 +997,6 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Range(_)
             | RuntimeTypeShape::Iterator(_)
-            | RuntimeTypeShape::Map { .. }
             | RuntimeTypeShape::Need(_)
             | RuntimeTypeShape::Stream { .. }
             | RuntimeTypeShape::Parser { .. }
@@ -1008,10 +1007,8 @@ impl RuntimeNormalizedType {
                 unreachable!("leaf and unsupported shapes returned before recursive projection")
             }
             RuntimeTypeShape::Agent(agent) => {
-                RuntimeCheckedType::Agent(agent.try_project(|result| {
-                    result
-                        .checked_type_at(&path.pushed(RuntimeTypeProjectionStep::AgentProbeValue))
-                        .map(Box::new)
+                RuntimeCheckedType::Agent(agent.try_project(|child, step| {
+                    child.checked_type_at(&path.pushed(step)).map(Box::new)
                 })?)
             }
         })
@@ -1058,7 +1055,6 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
     match shape {
         RuntimeTypeShape::Range(_) => Some(RuntimeUnsupportedTypeShape::Range),
         RuntimeTypeShape::Iterator(_) => Some(RuntimeUnsupportedTypeShape::Iterator),
-        RuntimeTypeShape::Map { .. } => Some(RuntimeUnsupportedTypeShape::Map),
         RuntimeTypeShape::Need(_) => Some(RuntimeUnsupportedTypeShape::Need),
         RuntimeTypeShape::Stream { .. } => Some(RuntimeUnsupportedTypeShape::Stream),
         RuntimeTypeShape::Parser { .. } => Some(RuntimeUnsupportedTypeShape::Parser),
@@ -1072,18 +1068,21 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
 
 impl RuntimeAgentTypeShape {
     fn runtime_plan_projection(&self) -> RuntimeAgentTypeProjection<RuntimeSemanticTypeId> {
-        self.try_project(|value| Ok::<_, std::convert::Infallible>(value.identity()))
+        self.try_project(|value, _step| Ok::<_, std::convert::Infallible>(value.identity()))
             .unwrap_or_else(|impossible| match impossible {})
     }
 
     fn try_project<R, E>(
         &self,
-        mut project: impl FnMut(&RuntimeNormalizedType) -> Result<R, E>,
+        mut project: impl FnMut(&RuntimeNormalizedType, RuntimeTypeProjectionStep) -> Result<R, E>,
     ) -> Result<RuntimeAgentTypeProjection<R>, E> {
         Ok(match self {
             Self::DebugStatePath => RuntimeAgentTypeProjection::DebugStatePath,
             Self::ObservationFieldPath => RuntimeAgentTypeProjection::ObservationFieldPath,
-            Self::Probe(value) => RuntimeAgentTypeProjection::Probe(project(value)?),
+            Self::Probe(value) => RuntimeAgentTypeProjection::Probe(project(
+                value,
+                RuntimeTypeProjectionStep::AgentProbeValue,
+            )?),
             Self::Predicate => RuntimeAgentTypeProjection::Predicate,
             Self::Observation => RuntimeAgentTypeProjection::Observation,
             Self::ObservedObject => RuntimeAgentTypeProjection::ObservedObject,
@@ -1091,8 +1090,10 @@ impl RuntimeAgentTypeShape {
             Self::ActionName => RuntimeAgentTypeProjection::ActionName,
             Self::ActionTarget => RuntimeAgentTypeProjection::ActionTarget,
             Self::ActionResult => RuntimeAgentTypeProjection::ActionResult,
-            Self::DataFormat => RuntimeAgentTypeProjection::DataFormat,
-            Self::DataShape => RuntimeAgentTypeProjection::DataShape,
+            Self::DataShape(value) => RuntimeAgentTypeProjection::DataShape(project(
+                value,
+                RuntimeTypeProjectionStep::AgentDataShapeValue,
+            )?),
             Self::EntityMetadata => RuntimeAgentTypeProjection::EntityMetadata,
             Self::SourceAnchor => RuntimeAgentTypeProjection::SourceAnchor,
             Self::ProjectGraphNeighborhood => RuntimeAgentTypeProjection::ProjectGraphNeighborhood,
@@ -1330,39 +1331,110 @@ pub enum RuntimeCallableAttachedContentAbiError {
     ForeignOwner,
 }
 
-/// Exact project nominal and its final-HIR owner item.
+/// Declaration authority of one exact structural nominal. Rust declarations
+/// retain their accepted source lease and never acquire a synthetic HIR item.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedNominalSource {
+    Project {
+        declaration: ProjectNominalDeclarationId,
+        owner: ItemId,
+    },
+    BuiltinClosed {
+        owner: EnvironmentBindingId,
+        proof: arcweft_lang_sema::final_analysis::CheckedVariantOwner,
+    },
+    BuiltinRecord {
+        owner: arcweft_lang_sema::env::nominal::AcceptedNominalId,
+    },
+    AcceptedRust(Arc<arcweft_lang_sema::final_analysis::RuntimeAcceptedRustNominalProjection>),
+}
+
+/// Exact source nominal and its executable identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedNominal {
-    declaration: ProjectNominalDeclarationId,
-    owner: ItemId,
+    source: RuntimeResolvedNominalSource,
     runtime_nominal: RuntimeNominalTypeId,
     identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
+    source_graph: Arc<RuntimeNominalSchemaGraph>,
 }
 
 impl RuntimeResolvedNominal {
-    pub const fn new(
+    pub const fn project(
         declaration: ProjectNominalDeclarationId,
         owner: ItemId,
         runtime_nominal: RuntimeNominalTypeId,
         identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
     ) -> Self {
         Self {
-            declaration,
-            owner,
+            source: RuntimeResolvedNominalSource::Project { declaration, owner },
             runtime_nominal,
             identity,
             layout,
+            source_graph,
         }
     }
 
-    pub const fn declaration(&self) -> &ProjectNominalDeclarationId {
-        &self.declaration
+    pub fn accepted_rust(
+        projection: arcweft_lang_sema::final_analysis::RuntimeAcceptedRustNominalProjection,
+    ) -> Self {
+        Self {
+            runtime_nominal: projection.nominal().clone(),
+            identity: projection.root(),
+            layout: projection.layout(),
+            source_graph: Arc::clone(projection.graph()),
+            source: RuntimeResolvedNominalSource::AcceptedRust(Arc::new(projection)),
+        }
     }
 
-    pub const fn owner(&self) -> ItemId {
-        self.owner
+    pub fn builtin_closed(
+        owner: EnvironmentBindingId,
+        proof: arcweft_lang_sema::final_analysis::CheckedVariantOwner,
+        runtime_nominal: RuntimeNominalTypeId,
+        identity: RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
+    ) -> Self {
+        Self {
+            source: RuntimeResolvedNominalSource::BuiltinClosed { owner, proof },
+            runtime_nominal,
+            identity,
+            layout,
+            source_graph,
+        }
+    }
+
+    pub fn builtin_record(
+        owner: arcweft_lang_sema::env::nominal::AcceptedNominalId,
+        runtime_nominal: RuntimeNominalTypeId,
+        identity: RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
+    ) -> Self {
+        Self {
+            source: RuntimeResolvedNominalSource::BuiltinRecord { owner },
+            runtime_nominal,
+            identity,
+            layout,
+            source_graph,
+        }
+    }
+
+    pub const fn source(&self) -> &RuntimeResolvedNominalSource {
+        &self.source
+    }
+
+    fn valid_for_project(&self, project: HirAnalysisProjectView<'_>) -> bool {
+        match &self.source {
+            RuntimeResolvedNominalSource::Project { .. } => true,
+            RuntimeResolvedNominalSource::BuiltinClosed { .. } => true,
+            RuntimeResolvedNominalSource::BuiltinRecord { .. } => true,
+            RuntimeResolvedNominalSource::AcceptedRust(projection) => {
+                projection.validate_project(project).is_ok()
+            }
+        }
     }
 
     pub const fn identity(&self) -> RuntimeSemanticTypeId {
@@ -1371,6 +1443,10 @@ impl RuntimeResolvedNominal {
 
     pub const fn layout(&self) -> TypeLayoutHash {
         self.layout
+    }
+
+    pub const fn source_graph(&self) -> &Arc<RuntimeNominalSchemaGraph> {
+        &self.source_graph
     }
 
     #[must_use]
@@ -1845,7 +1921,7 @@ pub struct RuntimeResolvedNominalRecord {
 /// One defining-order nominal-record field with its exact normalized type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedNominalRecordField {
-    name: String,
+    name: Option<String>,
     ty: RuntimeNormalizedType,
 }
 
@@ -2088,18 +2164,18 @@ pub enum RuntimeNominalRecordFactError {
         expected: TypeLayoutHash,
         actual: TypeLayoutHash,
     },
-    #[error("project record fact requires a named record layout, received {actual:?}")]
+    #[error("nominal record layout shape {actual:?} differs from its source definition")]
     SourceShape { actual: RuntimeNominalRecordShape },
     #[error("nominal record fact has {actual} normalized fields, expected {expected}")]
     FieldCount { expected: usize, actual: usize },
-    #[error("nominal record field {ordinal} resolved as `{actual}`, expected {expected:?}")]
+    #[error("nominal record field {ordinal} resolved as {actual:?}, expected {expected:?}")]
     FieldName {
         ordinal: usize,
         expected: Option<String>,
-        actual: String,
+        actual: Option<String>,
     },
-    #[error("nominal record field `{name}` has a different checked projection")]
-    FieldType { name: String },
+    #[error("nominal record field {ordinal} has a different checked projection")]
+    FieldType { ordinal: usize },
 }
 
 impl RuntimeResolvedNominalRecord {
@@ -2112,7 +2188,7 @@ impl RuntimeResolvedNominalRecord {
     pub fn try_new(
         nominal: RuntimeResolvedNominal,
         layout: Arc<RuntimeNominalRecordLayout>,
-        fields: impl IntoIterator<Item = (String, RuntimeNormalizedType)>,
+        fields: impl IntoIterator<Item = (Option<String>, RuntimeNormalizedType)>,
     ) -> Result<Self, RuntimeNominalRecordFactError> {
         let expected = nominal.runtime_nominal_id();
         if layout.nominal() != &expected {
@@ -2133,7 +2209,11 @@ impl RuntimeResolvedNominalRecord {
                 actual: layout.layout(),
             });
         }
-        if layout.shape() != RuntimeNominalRecordShape::Record {
+        if !matches!(
+            nominal.source_graph().definition(nominal.identity()).map(|definition| definition.body()),
+            Some(arcweft_core::entry::RuntimeNominalSchemaBody::Record { shape, .. })
+                if *shape == layout.shape()
+        ) {
             return Err(RuntimeNominalRecordFactError::SourceShape {
                 actual: layout.shape(),
             });
@@ -2150,7 +2230,7 @@ impl RuntimeResolvedNominalRecord {
             });
         }
         for (ordinal, (field, accepted)) in fields.iter().zip(layout.fields()).enumerate() {
-            if Some(field.name.as_str()) != accepted.name() {
+            if field.name.as_deref() != accepted.name() {
                 return Err(RuntimeNominalRecordFactError::FieldName {
                     ordinal,
                     expected: accepted.name().map(str::to_owned),
@@ -2158,9 +2238,7 @@ impl RuntimeResolvedNominalRecord {
                 });
             }
             if field.ty.checked_type().ok().as_ref() != Some(accepted.checked_type()) {
-                return Err(RuntimeNominalRecordFactError::FieldType {
-                    name: field.name.clone(),
-                });
+                return Err(RuntimeNominalRecordFactError::FieldType { ordinal });
             }
         }
         Ok(Self {
@@ -2189,8 +2267,8 @@ impl RuntimeResolvedNominalRecord {
 }
 
 impl RuntimeResolvedNominalRecordField {
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {
@@ -2426,7 +2504,7 @@ impl<'a> RuntimeNormalizedVariantCaseRef<'a> {
     reason = "variant owners retain their complete normalized semantic arguments as immutable checker evidence without adding a second indirection contract"
 )]
 pub enum RuntimeVariantOwner {
-    Project {
+    Nominal {
         nominal: RuntimeResolvedNominal,
         arguments: Box<[RuntimeNormalizedType]>,
         cases: RuntimeNormalizedVariantCases,
@@ -2434,11 +2512,15 @@ pub enum RuntimeVariantOwner {
     CharacterNominal {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
         cases: RuntimeNormalizedVariantCases,
     },
     BuiltinClosed {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
         cases: RuntimeNormalizedVariantCases,
     },
     RuntimeBuiltin {
@@ -2460,9 +2542,19 @@ pub enum RuntimeVariantOwner {
 }
 
 impl RuntimeVariantOwner {
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        match self {
+            Self::Nominal { nominal, .. } => nominal.identity(),
+            Self::CharacterNominal { identity, .. }
+            | Self::BuiltinClosed { identity, .. }
+            | Self::RuntimeBuiltin { identity, .. }
+            | Self::Option { identity, .. }
+            | Self::Result { identity, .. } => *identity,
+        }
+    }
     fn append_normalized_types<'a>(&'a self, types: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
-            Self::Project {
+            Self::Nominal {
                 arguments, cases, ..
             } => {
                 types.extend(arguments.iter());
@@ -2504,28 +2596,34 @@ impl RuntimeVariantOwner {
     }
 
     fn runtime_plan_domain_seed(&self) -> Option<RuntimeVariantDomainSeed> {
-        let (owner, nominal, cases) = match self {
-            Self::Project { nominal, cases, .. } => (
+        let (owner, nominal, layout, cases) = match self {
+            Self::Nominal { nominal, cases, .. } => (
                 nominal.identity(),
                 nominal.runtime_nominal_id(),
+                nominal.layout(),
                 cases.as_ref(),
             ),
             Self::CharacterNominal {
                 identity,
                 nominal,
+                layout,
                 cases,
+                ..
             }
             | Self::BuiltinClosed {
                 identity,
                 nominal,
+                layout,
                 cases,
-            } => (*identity, nominal.clone(), cases.as_ref()),
+                ..
+            } => (*identity, nominal.clone(), *layout, cases.as_ref()),
             Self::RuntimeBuiltin { .. } => return None,
             Self::Option { .. } | Self::Result { .. } => return None,
         };
         Some(RuntimeVariantDomainSeed::new(
             owner,
             nominal,
+            layout,
             cases.iter().map(|case| {
                 RuntimeVariantCaseSeed::new(
                     case.name(),
@@ -2541,7 +2639,7 @@ impl RuntimeVariantOwner {
     ) -> Result<RuntimeNormalizedVariantCaseRef<'_>, RuntimeResolvedVariantError> {
         let ordinal_index = usize::try_from(ordinal).ok();
         let selected = match self {
-            Self::Project { cases, .. }
+            Self::Nominal { cases, .. }
             | Self::CharacterNominal { cases, .. }
             | Self::BuiltinClosed { cases, .. } => ordinal_index
                 .and_then(|ordinal| cases.get(ordinal))
@@ -2561,7 +2659,7 @@ impl RuntimeVariantOwner {
 
     fn case_count(&self) -> u32 {
         match self {
-            Self::Project { cases, .. }
+            Self::Nominal { cases, .. }
             | Self::CharacterNominal { cases, .. }
             | Self::BuiltinClosed { cases, .. }
             | Self::RuntimeBuiltin { cases, .. } => cases.count(),
@@ -2573,7 +2671,7 @@ impl RuntimeVariantOwner {
         &self,
     ) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
         Ok(match self {
-            Self::Project {
+            Self::Nominal {
                 nominal,
                 arguments,
                 cases,
@@ -2581,6 +2679,7 @@ impl RuntimeVariantOwner {
                 owner: arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
                     nominal: nominal.runtime_nominal_id(),
                     semantic_identity: nominal.identity(),
+                    layout: nominal.layout(),
                 },
                 arguments: arguments
                     .iter()
@@ -2594,16 +2693,21 @@ impl RuntimeVariantOwner {
             Self::CharacterNominal {
                 identity,
                 nominal,
+                layout,
                 cases,
+                ..
             }
             | Self::BuiltinClosed {
                 identity,
                 nominal,
+                layout,
                 cases,
+                ..
             } => RuntimeCheckedType::Variant {
                 owner: arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
                     nominal: nominal.clone(),
                     semantic_identity: *identity,
+                    layout: *layout,
                 },
                 arguments: Vec::new(),
                 cases: cases
@@ -2739,6 +2843,10 @@ impl RuntimeCheckedVariantSelection {
 /// Failure to reconcile one semantically selected case with its complete owner.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeResolvedVariantError {
+    #[error("source nominal graph projection failed: {source}")]
+    SourceGraph {
+        source: Box<RuntimeNominalSchemaGraphError>,
+    },
     #[error("variant owner checked-type projection failed")]
     CheckedTypeProjection(#[from] RuntimeCheckedTypeProjectionError),
     #[error("variant case ordinal {ordinal} is outside {case_count} cases")]
@@ -2787,7 +2895,7 @@ impl RuntimeResolvedVariant {
     ) -> Result<Self, RuntimeResolvedVariantError> {
         let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
         Self::try_new(
-            RuntimeVariantOwner::Project {
+            RuntimeVariantOwner::Nominal {
                 nominal: owner,
                 arguments,
                 cases,
@@ -2801,15 +2909,23 @@ impl RuntimeResolvedVariant {
     pub fn character(
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
         cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
         let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
+        let layout = source_graph.try_layout_hash(identity).map_err(|source| {
+            RuntimeResolvedVariantError::SourceGraph {
+                source: Box::new(source),
+            }
+        })?;
         Self::try_new(
             RuntimeVariantOwner::CharacterNominal {
                 identity,
                 nominal,
+                layout,
+                source_graph,
                 cases,
             },
             ordinal,
@@ -2821,15 +2937,23 @@ impl RuntimeResolvedVariant {
     pub fn builtin_closed(
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
+        source_graph: Arc<RuntimeNominalSchemaGraph>,
         cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
         let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
+        let layout = source_graph.try_layout_hash(identity).map_err(|source| {
+            RuntimeResolvedVariantError::SourceGraph {
+                source: Box::new(source),
+            }
+        })?;
         Self::try_new(
             RuntimeVariantOwner::BuiltinClosed {
                 identity,
                 nominal,
+                layout,
+                source_graph,
                 cases,
             },
             ordinal,
@@ -4434,6 +4558,7 @@ impl Default for RuntimePlanSemanticFactInput {
 /// Immutable semantic fact set bound to one exact executable project generation.
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
+    nominal_definitions: BTreeMap<RuntimeSemanticTypeId, RuntimeNominalDefinition>,
     reachability: HirRuntimeReachabilityIdentity,
     view_value_reachability: Option<HirRuntimeReachabilityIdentity>,
     runtime_owners: BTreeSet<HirRuntimeExecutableOwner>,
@@ -6518,6 +6643,7 @@ impl RuntimePlanSemanticFacts {
                 .map(|owners| owners.identity().clone()),
             runtime_owners: runtime_owners.reachable_executables(),
             snapshots,
+            nominal_definitions: BTreeMap::new(),
             local_declaration_order: expected_local_declarations.into_boxed_slice(),
             local_declarations,
             flows,
@@ -6761,7 +6887,33 @@ impl RuntimePlanSemanticFacts {
             .modules()
             .map(|(_, module)| (module.module_id(), module.snapshot_id()))
             .collect::<BTreeMap<_, _>>();
-        if actual == self.snapshots {
+        if actual != self.snapshots {
+            return Err(RuntimeSemanticFactsError::WrongProjectGeneration);
+        }
+        let mut valid = true;
+        let mut pending = self.all_normalized_type_roots();
+        while let Some(ty) = pending.pop() {
+            if let RuntimeTypeShape::Nominal { nominal, .. } = ty.shape() {
+                valid &= nominal.valid_for_project(project);
+            }
+            pending.extend(ty.children());
+        }
+        for record in self.nominal_records.values() {
+            valid &= record.nominal().nominal().valid_for_project(project);
+        }
+        for record in self
+            .pattern_nominal_records
+            .values()
+            .filter_map(RuntimeRecordPatternFact::nominal)
+        {
+            valid &= record.nominal().valid_for_project(project);
+        }
+        self.visit_variant_owners(&mut |owner| {
+            if let RuntimeVariantOwner::Nominal { nominal, .. } = owner {
+                valid &= nominal.valid_for_project(project);
+            }
+        });
+        if valid {
             Ok(())
         } else {
             Err(RuntimeSemanticFactsError::WrongProjectGeneration)
@@ -6822,60 +6974,65 @@ impl RuntimePlanSemanticFacts {
         Ok(seeds)
     }
 
-    /// Complete plan-owned nominal-record schemas. Repeated owners are
-    /// retained so the sole builder can reject conflicting projections.
-    pub fn runtime_plan_nominal_record_domain_seeds(&self) -> Vec<RuntimeNominalRecordDomainSeed> {
-        let project =
-            |record: &RuntimeResolvedNominalRecord| {
-                RuntimeNominalRecordDomainSeed::new(
-                    record.nominal().identity(),
-                    record.layout().shape(),
-                    record.fields().iter().zip(record.layout().fields()).map(
-                        |(field, accepted)| {
-                            RuntimeNominalRecordDomainFieldSeed::new(
-                                accepted.field(),
-                                accepted.name().map(str::to_owned),
-                                field.ty().identity(),
-                            )
-                        },
-                    ),
-                )
-            };
-        let mut domains = self
-            .nominal_records
-            .values()
-            .map(|record| project(record.nominal()))
-            .chain(
-                self.pattern_nominal_records
-                    .values()
-                    .filter_map(|record| record.nominal().map(&project)),
-            )
-            .collect::<Vec<_>>();
-        for (_, semantics) in instance_semantic_roots(
-            self.project_function_instances.values(),
-            self.root_closures.values(),
-        ) {
-            semantics.visit_catalogs(&mut |catalog| {
-                domains.extend(catalog.expressions().iter().filter_map(|row| {
-                    catalog
-                        .nominal_record(row.owner())
-                        .map(|record| project(record.nominal()))
-                }));
-                domains.extend(catalog.patterns().iter().filter_map(|row| {
-                    catalog
-                        .pattern_nominal_record(row.owner())
-                        .and_then(RuntimeRecordPatternFact::nominal)
-                        .map(&project)
-                }));
-            });
+    /// Borrows source-issued nominal documents carried by the selected facts.
+    /// The plan builder consumes their joined proof against its candidate rows.
+    pub fn runtime_plan_nominal_schema(
+        &self,
+    ) -> Result<RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError> {
+        let mut graphs = Vec::new();
+        let mut pending = self.all_normalized_type_roots();
+        while let Some(ty) = pending.pop() {
+            if let RuntimeTypeShape::Nominal { nominal, .. } = ty.shape() {
+                graphs.push(Arc::clone(nominal.source_graph()));
+            }
+            pending.extend(ty.children());
         }
-        domains
+        for record in self.nominal_records.values() {
+            graphs.push(Arc::clone(record.nominal().nominal().source_graph()));
+        }
+        for record in self
+            .pattern_nominal_records
+            .values()
+            .filter_map(RuntimeRecordPatternFact::nominal)
+        {
+            graphs.push(Arc::clone(record.nominal().source_graph()));
+        }
+        self.visit_variant_owners(&mut |owner| match owner {
+            RuntimeVariantOwner::Nominal { nominal, .. } => {
+                graphs.push(Arc::clone(nominal.source_graph()))
+            }
+            RuntimeVariantOwner::CharacterNominal { source_graph, .. }
+            | RuntimeVariantOwner::BuiltinClosed { source_graph, .. } => {
+                graphs.push(Arc::clone(source_graph))
+            }
+            RuntimeVariantOwner::RuntimeBuiltin { .. }
+            | RuntimeVariantOwner::Option { .. }
+            | RuntimeVariantOwner::Result { .. } => {}
+        });
+        RuntimeNominalSchemaGraph::try_merge(
+            graphs.iter().map(Arc::as_ref),
+            RuntimeSchemaLimits::engine_default(),
+        )
     }
 
+    /// Complete source-owned record definitions, independent of expression use.
+    pub fn runtime_plan_nominal_record_domain_seeds(&self) -> Vec<RuntimeNominalRecordDomainSeed> {
+        self.nominal_definitions
+            .values()
+            .filter_map(RuntimeNominalDefinition::record_seed)
+            .collect()
+    }
     /// Complete non-Option/Result variant schemas. Repeated owners remain in
     /// the batch for exact builder-level conflict validation.
     pub fn runtime_plan_variant_domain_seeds(&self) -> Vec<RuntimeVariantDomainSeed> {
-        let mut domains = self
+        self.nominal_definitions
+            .values()
+            .filter_map(RuntimeNominalDefinition::variant_seed)
+            .collect()
+    }
+
+    fn visit_variant_owners(&self, visit: &mut impl FnMut(&RuntimeVariantOwner)) {
+        for variant in self
             .expression_variants
             .values()
             .chain(self.pattern_variants.values())
@@ -6889,8 +7046,9 @@ impl RuntimePlanSemanticFacts {
                         _ => None,
                     }),
             )
-            .filter_map(|variant| variant.owner().runtime_plan_domain_seed())
-            .collect::<Vec<_>>();
+        {
+            visit(variant.owner());
+        }
         for (_, semantics) in instance_semantic_roots(
             self.project_function_instances.values(),
             self.root_closures.values(),
@@ -6909,22 +7067,24 @@ impl RuntimePlanSemanticFacts {
                         }
                         _ => None,
                     };
-                    domains.extend(
-                        variant.and_then(|variant| variant.owner().runtime_plan_domain_seed()),
-                    );
+                    if let Some(variant) = variant {
+                        visit(variant.owner());
+                    }
                 }
-                domains.extend(catalog.patterns().iter().filter_map(|row| {
-                    catalog
-                        .pattern_variant(row.owner())
-                        .and_then(|variant| variant.owner().runtime_plan_domain_seed())
-                }));
+                for row in catalog.patterns() {
+                    if let Some(variant) = catalog.pattern_variant(row.owner()) {
+                        visit(variant.owner());
+                    }
+                }
             });
         }
-        domains
     }
 
     fn all_normalized_type_roots(&self) -> Vec<&RuntimeNormalizedType> {
         let mut roots = Vec::new();
+        for definition in self.nominal_definitions.values() {
+            definition.append_types(&mut roots);
+        }
         roots.extend(self.local_declarations.values());
         roots.extend(self.expression_types.values());
         roots.extend(self.pattern_types.values());
@@ -7370,6 +7530,15 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("source nominal definition does not match requested type {identity:?}")]
+    NominalDefinitionMismatch { identity: RuntimeSemanticTypeId },
+    #[error("source nominal variant {identity:?} is invalid: {source}")]
+    NominalVariantDefinition {
+        identity: RuntimeSemanticTypeId,
+        source: Box<RuntimeResolvedVariantError>,
+    },
+    #[error("source nominal definition closure exceeds the type work budget")]
+    NominalDefinitionBudget,
     #[error("runtime capture {capture:?} differs from its selected lexical projection")]
     InvalidCaptureProjection { capture: CaptureId },
     #[error("runtime semantic facts and reachability belong to different generations")]
@@ -7997,7 +8166,7 @@ fn validate_variant(
         .selected_name()
         .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)?;
     match variant.owner() {
-        RuntimeVariantOwner::Project {
+        RuntimeVariantOwner::Nominal {
             nominal,
             arguments,
             cases,
@@ -8007,8 +8176,26 @@ fn validate_variant(
                 validate_normalized_type(modules, argument)?;
             }
             validate_normalized_variant_payloads(modules, cases)?;
-            let HirItemKind::Enum(declaration) = resolve_item(modules, nominal.owner())?.kind()
-            else {
+            let RuntimeResolvedNominalSource::Project { owner, .. } = nominal.source() else {
+                let Some(arcweft_core::entry::RuntimeNominalSchemaBody::Variant { cases: source }) =
+                    nominal
+                        .source_graph()
+                        .definition(nominal.identity())
+                        .map(|definition| definition.body())
+                else {
+                    return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
+                };
+                return if source.len() == cases.len()
+                    && source.iter().zip(cases.iter()).all(|(source, case)| {
+                        source.name() == case.name()
+                            && source.payload().is_some() == case.payload().is_some()
+                    }) {
+                    Ok(())
+                } else {
+                    Err(RuntimeSemanticFactsError::WrongVariantIdentity)
+                };
+            };
+            let HirItemKind::Enum(declaration) = resolve_item(modules, *owner)?.kind() else {
                 return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
             };
             if declaration.variants().len() != cases.len()
@@ -8141,10 +8328,10 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Shared(item)
         | RuntimeTypeShape::Reference(item)
         | RuntimeTypeShape::Need(item) => validate_normalized_type(modules, item),
-        RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(value)) => {
-            validate_normalized_type(modules, value)
-        }
-        RuntimeTypeShape::Map { key, value }
+        RuntimeTypeShape::Agent(
+            RuntimeAgentTypeShape::Probe(value) | RuntimeAgentTypeShape::DataShape(value),
+        ) => validate_normalized_type(modules, value),
+        RuntimeTypeShape::Map { key, value, .. }
         | RuntimeTypeShape::Stream {
             item: key,
             error: value,
@@ -8202,7 +8389,7 @@ fn validate_normalized_type(
             }
             validate_normalized_type(modules, result)
         }
-        RuntimeTypeShape::ProjectNominal { nominal, arguments } => {
+        RuntimeTypeShape::Nominal { nominal, arguments } => {
             validate_nominal(modules, nominal)?;
             for argument in arguments {
                 validate_normalized_type(modules, argument)?;
@@ -8253,8 +8440,6 @@ fn validate_normalized_type(
             | RuntimeAgentTypeShape::ActionName
             | RuntimeAgentTypeShape::ActionTarget
             | RuntimeAgentTypeShape::ActionResult
-            | RuntimeAgentTypeShape::DataFormat
-            | RuntimeAgentTypeShape::DataShape
             | RuntimeAgentTypeShape::EntityMetadata
             | RuntimeAgentTypeShape::SourceAnchor
             | RuntimeAgentTypeShape::ProjectGraphNeighborhood
@@ -10095,9 +10280,14 @@ fn validate_nominal(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     nominal: &RuntimeResolvedNominal,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    let item = resolve_item(modules, nominal.owner())?;
+    let RuntimeResolvedNominalSource::Project { declaration, owner } = nominal.source() else {
+        // The Rust constructor consumes an unforgeable accepted source lease.
+        // No HIR item exists for a published Rust declaration.
+        return Ok(());
+    };
+    let item = resolve_item(modules, *owner)?;
     let valid = matches!(
-        (nominal.declaration().kind(), item.kind()),
+        (declaration.kind(), item.kind()),
         (
             arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct,
             HirItemKind::Struct(_)
@@ -10113,7 +10303,7 @@ fn validate_nominal(
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::WrongItemFamily {
-            item: nominal.owner(),
+            item: *owner,
             actual: item.kind().family(),
         })
     }
@@ -10124,13 +10314,12 @@ fn validate_nominal_record(
     record: &RuntimeResolvedNominalRecord,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let nominal = record.nominal();
-    let arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct =
-        nominal.declaration().kind()
-    else {
-        return Err(RuntimeSemanticFactsError::WrongNominalRecordItemFamily {
-            item: nominal.owner(),
-        });
-    };
+    if let RuntimeResolvedNominalSource::Project { declaration, owner } = nominal.source()
+        && declaration.kind()
+            != arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct
+    {
+        return Err(RuntimeSemanticFactsError::WrongNominalRecordItemFamily { item: *owner });
+    }
     validate_nominal(modules, nominal)
 }
 

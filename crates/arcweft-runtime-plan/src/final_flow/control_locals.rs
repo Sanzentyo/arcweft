@@ -70,7 +70,7 @@ impl ControlLocals {
             return Err(error);
         }
         let admission = builder
-            .admit_semantic_batch([], seeds, [], [])
+            .admit_type_batch([], seeds)
             .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
         let mut admitted = admission.local_ids().iter().cloned();
         let mut result = Self::default();

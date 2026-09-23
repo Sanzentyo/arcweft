@@ -1080,12 +1080,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 target,
                 observers,
             } => {
-                let task = self.inventory.intern_host_task_with_outcome(
+                let Some(task) = self.inventory.intern_host_task_with_outcome(
                     &target.need.0,
                     &target.task.0,
                     &target.request,
                     &target.outcome,
-                );
+                ) else {
+                    return;
+                };
                 let args = target
                     .request
                     .args
@@ -1125,12 +1127,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_pending_effects(pending);
                 let source = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
                     .lower(&target.source);
-                let task = self.inventory.intern_host_task_with_outcome(
+                let Some(task) = self.inventory.intern_host_task_with_outcome(
                     &target.need.0,
                     &target.task.0,
                     &target.request,
                     &target.outcome,
-                );
+                ) else {
+                    return;
+                };
                 let item_binding =
                     frame.local(target.item_binding, self.local_type(target.item_binding));
                 if let Err(diagnostic) =

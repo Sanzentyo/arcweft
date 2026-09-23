@@ -131,7 +131,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     let error_payload_ty = type_id(31);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
                     item_ty,
@@ -203,8 +203,6 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                 RuntimeLocalDeclarationSeed::new(item_ty),
                 RuntimeLocalDeclarationSeed::new(item_ty),
             ],
-            [],
-            [],
         )
         .expect("standard map AWBC type graph");
     let callback_input_local = admission.local_ids()[0].clone();
@@ -412,13 +410,11 @@ fn plan_with_return(value: &str) -> RuntimePlan {
     let flow = flow_id("parity.main");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 STRING_TYPE,
                 RuntimePlanTypeProjection::String,
             )],
-            [],
-            [],
             [],
         )
         .expect("semantic facts admit");
@@ -448,13 +444,11 @@ fn plan_with_await_observer() -> RuntimePlan {
     let progress_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(STRING_TYPE, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
             ],
-            [],
-            [],
             [],
         )
         .expect("Await observer facts admit");
@@ -656,7 +650,7 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
 #[test]
 fn product_awbc_standard_map_helpers_match_structured_results() {
     let (plan, cases) = standard_map_awbc_plan();
-    let program = lower(&plan);
+    let program = Arc::new(lower(&plan));
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("standard map AWBC product verifies");

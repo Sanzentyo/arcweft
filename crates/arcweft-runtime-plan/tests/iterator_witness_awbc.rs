@@ -43,7 +43,7 @@ fn counter_plan() -> RuntimePlan {
     let next_payload_type = type_id(6);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
                     item_type,
@@ -77,8 +77,6 @@ fn counter_plan() -> RuntimePlan {
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(item_type)],
-            [],
-            [],
         )
         .expect("test semantic facts admit");
     let item = admission.local_ids()[0].clone();

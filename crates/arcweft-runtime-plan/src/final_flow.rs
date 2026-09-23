@@ -4,6 +4,8 @@
 mod control_locals;
 #[path = "final_flow/line_plan.rs"]
 mod line_plan;
+#[path = "final_flow/rust_defaults.rs"]
+mod rust_defaults;
 #[path = "final_flow/value_branches.rs"]
 mod value_branches;
 
@@ -960,12 +962,16 @@ pub fn lower_runtime_plan_with_stats(
             .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
     );
     let mut builder = RuntimePlanBuilder::new();
+    let nominal_schema = facts
+        .runtime_plan_nominal_schema()
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let admission = builder
         .admit_semantic_batch(
             type_seeds,
             local_seeds,
             facts.runtime_plan_nominal_record_domain_seeds(),
             facts.runtime_plan_variant_domain_seeds(),
+            &nominal_schema,
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let locals = local_facts
@@ -1248,6 +1254,7 @@ pub fn lower_runtime_plan_with_stats(
             &mut builder,
             &mut errors,
         );
+    rust_defaults::lower(facts, &mut builder, &mut errors);
     let pure_program_definitions = reserve_pure_programs(facts, &locals, &mut builder, &mut errors);
     let (trait_methods, trait_definitions) =
         reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
@@ -1292,13 +1299,11 @@ pub fn lower_runtime_plan_with_stats(
         }
     };
     let effect_admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [],
             dialogue_effect_capture_specs
                 .iter()
                 .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-            [],
-            [],
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut effect_local_ids = effect_admission.local_ids().iter().cloned();
@@ -1343,13 +1348,11 @@ pub fn lower_runtime_plan_with_stats(
         }
     };
     let value_admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [],
             dialogue_value_capture_specs
                 .iter()
                 .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
-            [],
-            [],
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut value_local_ids = value_admission.local_ids().iter().cloned();
@@ -5808,11 +5811,7 @@ impl<'a> FinalFlowLowerer<'a> {
             target: arcweft_core::plan::RuntimeAwaitTargetSeed {
                 need,
                 task,
-                outcome: TaskOutcomeContract::new(
-                    payload
-                        .checked_type()
-                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                ),
+                outcome: TaskOutcomeContract::program(payload.identity()),
                 request: RuntimeHostTaskRequestTemplateSeed {
                     capability: HostCapabilityId(target.capability),
                     operation: target.operation,

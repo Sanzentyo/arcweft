@@ -164,9 +164,11 @@ pub(crate) fn preflight_plan_types(
         return Err(errors);
     }
     for (ty, _) in types {
-        match plan_type_shape(inventory, plan, ty)
-            .and_then(|shape| inventory.define_plan_type(ty, shape))
-        {
+        let result = plan_type_shape(inventory, plan, ty).and_then(|shape| {
+            let (codec, arguments) = plan_type_codec_uses(plan, ty)?;
+            inventory.define_plan_type(ty, shape, codec, arguments)
+        });
+        match result {
             Ok(()) => {}
             Err(error) => errors.push(error),
         }
@@ -181,6 +183,48 @@ pub(crate) fn preflight_plan_types(
     } else {
         Err(errors)
     }
+}
+
+fn plan_type_codec_uses(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+) -> Result<
+    (
+        Option<arcweft_core::entry::RuntimeCodecUse>,
+        Option<Vec<arcweft_core::entry::RuntimeCodecUse>>,
+    ),
+    AwbcLowerDiagnostic,
+> {
+    let declaration = plan.type_table().get(ty).ok_or_else(|| {
+        AwbcLowerDiagnostic::error(format!("type.{ty}"), "RuntimePlan type is absent")
+    })?;
+    let record = plan.nominal_record_domains().get(ty);
+    let variant = plan.variant_domains().get(ty);
+    if record.is_some() && variant.is_some() {
+        return Err(AwbcLowerDiagnostic::error(
+            format!("type.{ty}"),
+            "nominal runtime type has conflicting record and variant codec domains",
+        ));
+    }
+    let nominal_uses = record
+        .and_then(|domain| domain.data_codec())
+        .or_else(|| variant.and_then(|domain| domain.data_codec()));
+    if let Some(nominal_uses) = nominal_uses {
+        if declaration
+            .data_codec()
+            .is_some_and(|codec| codec != &nominal_uses.body)
+        {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("type.{ty}"),
+                "type row codec use conflicts with its nominal body codec use",
+            ));
+        }
+        return Ok((
+            Some(nominal_uses.body.clone()),
+            Some(nominal_uses.arguments.to_vec()),
+        ));
+    }
+    Ok((declaration.data_codec().cloned(), None))
 }
 
 #[allow(
@@ -237,7 +281,8 @@ fn plan_type_shape(
             item: reserved_plan_type(inventory, *item)?,
             length: *length,
         },
-        RuntimePlanTypeProjection::Map { key, value } => AwbcRuntimeTypeShape::Map {
+        RuntimePlanTypeProjection::Map { kind, key, value } => AwbcRuntimeTypeShape::Map {
+            kind: *kind,
             key: reserved_plan_type(inventory, *key)?,
             value: reserved_plan_type(inventory, *value)?,
         },
@@ -321,7 +366,7 @@ fn plan_type_shape(
                 result: reserved_plan_type(inventory, *result)?,
             }
         }
-        RuntimePlanTypeProjection::ProjectNominal {
+        RuntimePlanTypeProjection::Nominal {
             nominal,
             layout,
             arguments,
@@ -336,9 +381,17 @@ fn plan_type_shape(
             public_id: None,
             fields: fields
                 .iter()
-                .map(|field| {
+                .enumerate()
+                .map(|(ordinal, field)| {
                     Ok(AwbcRecordField {
-                        name: inventory.intern_string(field.diagnostic_name()),
+                        field:
+                            arcweft_core::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                                ordinal,
+                            )
+                            .map_err(|error| {
+                                AwbcLowerDiagnostic::error(format!("type.{ty}"), error.to_string())
+                            })?,
+                        name: Some(inventory.intern_string(field.diagnostic_name())),
                         ty: reserved_plan_type(inventory, *field.ty())?,
                     })
                 })
@@ -369,6 +422,9 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Agent(agent) => AwbcRuntimeTypeShape::Agent(match agent {
             RuntimeAgentTypeProjection::Probe(value) => {
                 AwbcAgentTypeShape::Probe(reserved_plan_type(inventory, *value)?)
+            }
+            RuntimeAgentTypeProjection::DataShape(value) => {
+                AwbcAgentTypeShape::DataShape(reserved_plan_type(inventory, *value)?)
             }
             _ => AwbcAgentTypeShape::Leaf(agent.operational_type()),
         }),
@@ -407,7 +463,8 @@ fn nominal_plan_shape(
             .iter()
             .map(|field| {
                 Ok(arcweft_core::awbc::schema::AwbcRecordField {
-                    name: inventory.intern_string(field.name()),
+                    field: field.field(),
+                    name: field.name().map(|name| inventory.intern_string(name)),
                     ty: reserved_plan_type(inventory, field.ty())?,
                 })
             })
@@ -416,6 +473,7 @@ fn nominal_plan_shape(
             public_id,
             layout: *layout.as_bytes(),
             arguments,
+            shape: domain.shape(),
             fields,
         });
     }
@@ -434,7 +492,10 @@ fn nominal_plan_shape(
             })
             .collect::<Result<Vec<_>, AwbcLowerDiagnostic>>()?;
         return Ok(AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Nominal { public_id },
+            owner: AwbcVariantIdentity::Nominal {
+                public_id,
+                layout: *layout.as_bytes(),
+            },
             arguments,
             cases,
         });
@@ -541,6 +602,11 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Sequence(item) => {
             AwbcRuntimeTypeShape::Sequence(intern_runtime_type(inventory, item))
         }
+        RuntimeCheckedType::Map { kind, key, value } => AwbcRuntimeTypeShape::Map {
+            kind: *kind,
+            key: intern_runtime_type(inventory, key),
+            value: intern_runtime_type(inventory, value),
+        },
         RuntimeCheckedType::Array { item, length } => AwbcRuntimeTypeShape::Array {
             item: intern_runtime_type(inventory, item),
             length: *length,
@@ -556,7 +622,8 @@ pub(crate) fn intern_runtime_type(
             fields: fields
                 .iter()
                 .map(|field| AwbcRecordField {
-                    name: inventory.intern_string(field.diagnostic_name()),
+                    field: field.field(),
+                    name: Some(inventory.intern_string(field.diagnostic_name())),
                     ty: intern_runtime_type(inventory, field.ty()),
                 })
                 .collect(),
@@ -633,6 +700,9 @@ pub(crate) fn intern_runtime_type(
             RuntimeAgentTypeProjection::Probe(result) => {
                 AwbcAgentTypeShape::Probe(intern_runtime_type(inventory, result))
             }
+            RuntimeAgentTypeProjection::DataShape(result) => {
+                AwbcAgentTypeShape::DataShape(intern_runtime_type(inventory, result))
+            }
             _ => AwbcAgentTypeShape::Leaf(agent.operational_type()),
         }),
     };
@@ -663,8 +733,11 @@ fn intern_variant_type(
 ) -> AwbcRuntimeTypeShape {
     AwbcRuntimeTypeShape::Variant {
         owner: match owner {
-            RuntimeVariantIdentity::Nominal { nominal, .. } => AwbcVariantIdentity::Nominal {
+            RuntimeVariantIdentity::Nominal {
+                nominal, layout, ..
+            } => AwbcVariantIdentity::Nominal {
                 public_id: inventory.intern_string(nominal.as_str()),
+                layout: *layout.as_bytes(),
             },
             RuntimeVariantIdentity::Builtin(owner) => AwbcVariantIdentity::Builtin(*owner),
         },
