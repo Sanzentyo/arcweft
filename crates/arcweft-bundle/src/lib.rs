@@ -496,12 +496,63 @@ fn bundle_value_to_yaml(value: &Value) -> Result<Yaml, String> {
             .map(bundle_value_to_yaml)
             .collect::<Result<Vec<_>, _>>()
             .map(Yaml::Array),
-        Value::Map(entries) | Value::Record(entries) => {
+        Value::Option(value) => {
+            let mut hash = Hash::new();
+            hash.insert(
+                Yaml::String("$arcweft".to_owned()),
+                Yaml::String("option".to_owned()),
+            );
+            hash.insert(
+                Yaml::String("present".to_owned()),
+                Yaml::Boolean(value.is_some()),
+            );
+            if let Some(value) = value {
+                hash.insert(
+                    Yaml::String("value".to_owned()),
+                    bundle_value_to_yaml(value)?,
+                );
+            }
+            Ok(Yaml::Hash(hash))
+        }
+        Value::Tuple(values) => {
+            let items = values
+                .iter()
+                .map(bundle_value_to_yaml)
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut hash = Hash::new();
+            hash.insert(
+                Yaml::String("$arcweft".to_owned()),
+                Yaml::String("tuple".to_owned()),
+            );
+            hash.insert(Yaml::String("items".to_owned()), Yaml::Array(items));
+            Ok(Yaml::Hash(hash))
+        }
+        Value::Map { entries, .. } => {
+            let mut hash = Hash::new();
+            // yaml-rust2's Hash preserves insertion order; use the map's
+            // already-projected entry sequence without sorting it here.
+            for (key, value) in entries {
+                let Yaml::String(key) = bundle_value_to_yaml(key)? else {
+                    return Err("YAML bundle map keys must be strings".to_owned());
+                };
+                let key = Yaml::String(key);
+                if hash.contains_key(&key) {
+                    return Err("YAML bundle map contains a duplicate key".to_owned());
+                }
+                hash.insert(key, bundle_value_to_yaml(value)?);
+            }
+            let yaml = Yaml::Hash(hash);
+            reject_yaml_bundle_tag_collision(&yaml)?;
+            Ok(yaml)
+        }
+        Value::Record(entries) => {
             let mut hash = Hash::new();
             for (key, value) in entries {
                 hash.insert(Yaml::String(key.clone()), bundle_value_to_yaml(value)?);
             }
-            Ok(Yaml::Hash(hash))
+            let yaml = Yaml::Hash(hash);
+            reject_yaml_bundle_tag_collision(&yaml)?;
+            Ok(yaml)
         }
         Value::Enum { variant, payload } => match payload {
             Some(payload) => {
@@ -510,11 +561,25 @@ fn bundle_value_to_yaml(value: &Value) -> Result<Yaml, String> {
                     Yaml::String(variant.clone()),
                     bundle_value_to_yaml(payload)?,
                 );
-                Ok(Yaml::Hash(hash))
+                let yaml = Yaml::Hash(hash);
+                reject_yaml_bundle_tag_collision(&yaml)?;
+                Ok(yaml)
             }
             None => Ok(Yaml::String(variant.clone())),
         },
     }
+}
+
+#[cfg(feature = "format-yaml")]
+fn reject_yaml_bundle_tag_collision(yaml: &Yaml) -> Result<(), String> {
+    let Yaml::Hash(entries) = yaml else {
+        return Ok(());
+    };
+    let marker = entries.get(&Yaml::String("$arcweft".to_owned()));
+    if matches!(marker, Some(Yaml::String(tag)) if tag == "option" || tag == "tuple") {
+        return Err("YAML bundle mapping uses a reserved $arcweft value tag".to_owned());
+    }
+    Ok(())
 }
 
 #[cfg(feature = "format-yaml")]
@@ -539,18 +604,62 @@ fn bundle_yaml_to_value(yaml: &Yaml) -> Result<Value, String> {
             .map(bundle_yaml_to_value)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Seq),
-        Yaml::Hash(entries) => entries
-            .iter()
-            .map(|(key, value)| {
-                let Yaml::String(key) = key else {
-                    return Err("YAML bundle map keys must be strings".to_owned());
-                };
-                bundle_yaml_to_value(value).map(|value| (key.clone(), value))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()
-            .map(Value::Record),
+        Yaml::Hash(entries) => {
+            if let Some(value) = decode_yaml_bundle_tag(entries)? {
+                return Ok(value);
+            }
+            entries
+                .iter()
+                .map(|(key, value)| {
+                    let Yaml::String(key) = key else {
+                        return Err("YAML bundle map keys must be strings".to_owned());
+                    };
+                    bundle_yaml_to_value(value).map(|value| (key.clone(), value))
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()
+                .map(Value::Record)
+        }
         Yaml::Alias(_) => Err("YAML bundle aliases are not supported".to_owned()),
         Yaml::BadValue => Err("YAML bundle contains an invalid value".to_owned()),
+    }
+}
+
+#[cfg(feature = "format-yaml")]
+fn decode_yaml_bundle_tag(entries: &Hash) -> Result<Option<Value>, String> {
+    let marker = entries.get(&Yaml::String("$arcweft".to_owned()));
+    match marker {
+        Some(Yaml::String(tag)) if tag == "option" => {
+            let present = entries.get(&Yaml::String("present".to_owned()));
+            match present {
+                Some(Yaml::Boolean(false)) if entries.len() == 2 => Ok(Some(Value::Option(None))),
+                Some(Yaml::Boolean(true)) if entries.len() == 3 => {
+                    let value = entries
+                        .get(&Yaml::String("value".to_owned()))
+                        .ok_or_else(|| "tagged YAML option is missing its value".to_owned())?;
+                    Ok(Some(Value::Option(Some(Box::new(bundle_yaml_to_value(
+                        value,
+                    )?)))))
+                }
+                _ => Err("tagged YAML option fields do not match its presence marker".to_owned()),
+            }
+        }
+        Some(Yaml::String(tag)) if tag == "tuple" => {
+            if entries.len() != 2 {
+                return Err("tagged YAML tuple must contain only its items".to_owned());
+            }
+            let items = entries
+                .get(&Yaml::String("items".to_owned()))
+                .ok_or_else(|| "tagged YAML tuple is missing its items".to_owned())?;
+            let Yaml::Array(items) = items else {
+                return Err("tagged YAML tuple items must be a sequence".to_owned());
+            };
+            items
+                .iter()
+                .map(bundle_yaml_to_value)
+                .collect::<Result<Vec<_>, _>>()
+                .map(|items| Some(Value::Tuple(items)))
+        }
+        _ => Ok(None),
     }
 }
 
@@ -1614,6 +1723,55 @@ mod tests {
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    #[cfg(feature = "format-yaml")]
+    #[test]
+    fn yaml_bundle_conversion_preserves_option_and_tuple_distinctions() {
+        let values = [
+            Value::Option(None),
+            Value::Option(Some(Box::new(Value::Unit))),
+            Value::Tuple(Vec::new()),
+            Value::Tuple(vec![Value::Unit]),
+            Value::Seq(Vec::new()),
+        ];
+        let encoded = values
+            .iter()
+            .map(bundle_value_to_yaml)
+            .collect::<Result<Vec<_>, _>>()
+            .expect("YAML tagged values encode");
+
+        assert_ne!(encoded[0], encoded[1]);
+        assert_ne!(encoded[2], encoded[3]);
+        assert_ne!(encoded[2], encoded[4]);
+
+        for (value, yaml) in values.iter().zip(encoded) {
+            let mut source = String::new();
+            YamlEmitter::new(&mut source)
+                .dump(&yaml)
+                .expect("tagged YAML value emits");
+            let documents = YamlLoader::load_from_str(&source).expect("tagged YAML parses");
+            assert_eq!(documents.len(), 1);
+            assert_eq!(
+                bundle_yaml_to_value(&documents[0]).expect("tagged YAML decodes"),
+                *value
+            );
+        }
+    }
+
+    #[cfg(feature = "format-yaml")]
+    #[test]
+    fn yaml_bundle_mapping_cannot_shadow_arcweft_value_tags() {
+        let record = Value::Record(BTreeMap::from([
+            ("$arcweft".to_owned(), Value::String("option".to_owned())),
+            ("present".to_owned(), Value::Bool(false)),
+        ]));
+
+        assert!(
+            bundle_value_to_yaml(&record)
+                .expect_err("reserved value tag collision is rejected")
+                .contains("reserved $arcweft")
+        );
+    }
 
     #[test]
     fn bundle_json_round_trips_without_paths() {

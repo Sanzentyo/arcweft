@@ -63,6 +63,71 @@ fn runtime_types_must_match_the_awbc_header_exactly() {
 }
 
 #[test]
+fn executable_record_fingerprints_preserve_empty_shapes_and_field_names() {
+    use arcweft_core::{
+        awbc::schema::{
+            AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcStringId, AwbcTypeId,
+        },
+        entry::RuntimeNominalRecordShape as Shape,
+        value::RuntimeRecordFieldId,
+    };
+    let fingerprint = |shape, name: Option<&str>| {
+        let identity = RuntimeSemanticTypeId::from_bytes([2; 32]);
+        let mut program = AwbcProgram::default();
+        program.strings = vec!["fixture.Record".to_owned()];
+        let fields = name
+            .map(|name| {
+                program.strings.push(name.to_owned());
+                AwbcRecordField {
+                    field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                    name: Some(AwbcStringId(1)),
+                    ty: AwbcTypeId(0),
+                }
+            })
+            .into_iter()
+            .collect();
+        program.runtime_types = vec![
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([1; 32]),
+                AwbcRuntimeTypeShape::Bool,
+            ),
+            AwbcRuntimeType::new(
+                identity,
+                AwbcRuntimeTypeShape::NominalRecord {
+                    public_id: AwbcStringId(0),
+                    layout: [3; 32],
+                    arguments: vec![],
+                    shape,
+                    fields,
+                },
+            ),
+        ];
+        let section = RuntimeTypesSection::from_awbc_program(&program).unwrap();
+        let wire = section.encode_canonical_section().unwrap();
+        assert_eq!(
+            RuntimeTypesSection::decode_canonical_section(&wire).unwrap(),
+            section
+        );
+        section
+            .declarations
+            .iter()
+            .find(|declaration| declaration.semantic_identity == identity)
+            .unwrap()
+            .layout_digest
+    };
+    let unit = fingerprint(Shape::Unit, None);
+    let tuple = fingerprint(Shape::Tuple, None);
+    let record = fingerprint(Shape::Record, None);
+    assert_ne!(unit, tuple);
+    assert_ne!(unit, record);
+    assert_ne!(tuple, record);
+    assert_ne!(
+        fingerprint(Shape::Record, Some("first")),
+        fingerprint(Shape::Record, Some("second"))
+    );
+}
+
+#[test]
 fn entrypoints_compact_bytes_are_deterministic_and_round_trip() {
     let section = EntrypointsSection::new([
         EntrypointDeclaration {

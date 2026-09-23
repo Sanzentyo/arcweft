@@ -250,6 +250,7 @@ mod tests {
             RuntimeDialogueViewValue, RuntimeValue,
         },
     };
+    use std::sync::Arc;
 
     fn dialogue_view_value() -> RuntimeValue {
         let wrap = |role: RuntimeDialogueOpaqueRole| {
@@ -284,8 +285,10 @@ mod tests {
 
     #[test]
     fn installer_publishes_one_verified_typed_projection() {
-        let program = install_dialogue_handler_awbc(AwbcProgram::default())
-            .expect("standard handler installs");
+        let program = Arc::new(
+            install_dialogue_handler_awbc(AwbcProgram::default())
+                .expect("standard handler installs"),
+        );
         let binding = program
             .pure_program_binding(dialogue_primary_action_program_id())
             .expect("standard program binding");

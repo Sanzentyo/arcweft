@@ -13,6 +13,9 @@ use arcweft_core::awbc::schema::{
     AwbcFrameSlotRole, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignature,
     AwbcSignedIntKind, AwbcStringId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
+use arcweft_core::entry::{
+    RuntimeCodecUse, RuntimeEnumTagStyle, RuntimeFieldCodecUse, RuntimeVariantCodecUse,
+};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -1152,7 +1155,8 @@ fn runtime_type_layout_digest(
             transcript.write_optional_string(program, *public_id)?;
             transcript.write_len(fields.len())?;
             for field in fields {
-                transcript.write_string(program, field.name)?;
+                transcript.write_u32(field.field.get().get());
+                transcript.write_optional_string(program, field.name)?;
                 transcript.write_type(program, field.ty)?;
             }
         }
@@ -1163,9 +1167,10 @@ fn runtime_type_layout_digest(
         } => {
             transcript.write_tag(14);
             match owner {
-                AwbcVariantIdentity::Nominal { public_id } => {
+                AwbcVariantIdentity::Nominal { public_id, layout } => {
                     transcript.write_u8(0);
                     transcript.write_string(program, *public_id)?;
+                    transcript.write_bytes(layout);
                 }
                 AwbcVariantIdentity::Builtin(owner) => {
                     transcript.write_u8(1);
@@ -1197,15 +1202,18 @@ fn runtime_type_layout_digest(
             public_id,
             layout,
             arguments,
+            shape,
             fields,
         } => {
             transcript.write_tag(17);
             transcript.write_string(program, *public_id)?;
             transcript.write_bytes(layout);
             transcript.write_type_list(program, arguments)?;
+            transcript.write_u8(shape.semantic_tag());
             transcript.write_len(fields.len())?;
             for field in fields {
-                transcript.write_string(program, field.name)?;
+                transcript.write_u32(field.field.get().get());
+                transcript.write_optional_string(program, field.name)?;
                 transcript.write_type(program, field.ty)?;
             }
         }
@@ -1236,6 +1244,10 @@ fn runtime_type_layout_digest(
                     transcript.write_u8(1);
                     transcript.write_type(program, *item)?;
                 }
+                AwbcAgentTypeShape::DataShape(item) => {
+                    transcript.write_u8(2);
+                    transcript.write_type(program, *item)?;
+                }
             }
         }
         AwbcRuntimeTypeShape::AgentValue => transcript.write_tag(37),
@@ -1256,8 +1268,9 @@ fn runtime_type_layout_digest(
             transcript.write_type(program, *item)?;
             transcript.write_u64(*length);
         }
-        AwbcRuntimeTypeShape::Map { key, value } => {
+        AwbcRuntimeTypeShape::Map { kind, key, value } => {
             transcript.write_tag(29);
+            transcript.write_u8(kind.semantic_tag());
             transcript.write_type(program, *key)?;
             transcript.write_type(program, *value)?;
         }
@@ -1289,6 +1302,8 @@ fn runtime_type_layout_digest(
         }
         AwbcRuntimeTypeShape::Dynamic => transcript.write_tag(36),
     }
+    transcript.write_optional_codec_use(ty.data_codec())?;
+    transcript.write_optional_codec_uses(ty.data_codec_arguments())?;
     Ok(transcript.finish())
 }
 
@@ -1455,6 +1470,187 @@ impl CanonicalAwbcTranscript {
             self.write_type(program, *id)?;
         }
         Ok(())
+    }
+
+    fn write_optional_codec_use(
+        &mut self,
+        policy: Option<&RuntimeCodecUse>,
+    ) -> Result<(), SectionCodecError> {
+        match policy {
+            Some(policy) => {
+                self.write_u8(1);
+                self.write_codec_use(policy)
+            }
+            None => {
+                self.write_u8(0);
+                Ok(())
+            }
+        }
+    }
+
+    fn write_optional_codec_uses(
+        &mut self,
+        policies: Option<&[RuntimeCodecUse]>,
+    ) -> Result<(), SectionCodecError> {
+        match policies {
+            Some(policies) => {
+                self.write_u8(1);
+                self.write_len(policies.len())?;
+                for policy in policies {
+                    self.write_codec_use(policy)?;
+                }
+                Ok(())
+            }
+            None => {
+                self.write_u8(0);
+                Ok(())
+            }
+        }
+    }
+
+    fn write_codec_use(&mut self, policy: &RuntimeCodecUse) -> Result<(), SectionCodecError> {
+        match policy {
+            RuntimeCodecUse::Plain => self.write_tag(0),
+            RuntimeCodecUse::Bytes { format } => {
+                self.write_tag(1);
+                self.write_u8(format.semantic_tag());
+            }
+            RuntimeCodecUse::Unary { item } => {
+                self.write_tag(2);
+                self.write_codec_use(item)?;
+            }
+            RuntimeCodecUse::Tuple { items } => {
+                self.write_tag(3);
+                self.write_len(items.len())?;
+                for item in items.iter() {
+                    self.write_codec_use(item)?;
+                }
+            }
+            RuntimeCodecUse::Map { key, value } => {
+                self.write_tag(4);
+                self.write_codec_use(key)?;
+                self.write_codec_use(value)?;
+            }
+            RuntimeCodecUse::RecordFields { fields } => {
+                self.write_tag(5);
+                self.write_len(fields.len())?;
+                for field in fields.iter() {
+                    self.write_codec_use(field)?;
+                }
+            }
+            RuntimeCodecUse::Record {
+                name,
+                deny_unknown_fields,
+                fields,
+            } => {
+                self.write_tag(6);
+                self.write_str(name)?;
+                self.write_u8(u8::from(*deny_unknown_fields));
+                self.write_len(fields.len())?;
+                for field in fields.iter() {
+                    self.write_field_codec_use(field)?;
+                }
+            }
+            RuntimeCodecUse::Enum {
+                name,
+                tag,
+                repr,
+                cases,
+            } => {
+                self.write_tag(7);
+                self.write_str(name)?;
+                self.write_enum_tag_style(tag)?;
+                match repr {
+                    Some(repr) => {
+                        self.write_u8(1);
+                        self.write_u8(repr.semantic_tag());
+                    }
+                    None => self.write_u8(0),
+                }
+                self.write_len(cases.len())?;
+                for case in cases.iter() {
+                    self.write_variant_codec_use(case)?;
+                }
+            }
+            RuntimeCodecUse::Builtin { payloads } => {
+                self.write_tag(8);
+                self.write_len(payloads.len())?;
+                for payload in payloads.iter() {
+                    self.write_codec_use(payload)?;
+                }
+            }
+            RuntimeCodecUse::Choice { alternatives } => {
+                self.write_tag(9);
+                self.write_len(alternatives.len())?;
+                for alternative in alternatives.iter() {
+                    self.write_codec_use(alternative)?;
+                }
+            }
+            RuntimeCodecUse::Opaque { arguments } => {
+                self.write_tag(10);
+                self.write_len(arguments.len())?;
+                for argument in arguments.iter() {
+                    self.write_codec_use(argument)?;
+                }
+            }
+            RuntimeCodecUse::NominalRef => self.write_tag(11),
+            RuntimeCodecUse::Newtype { inner } => {
+                self.write_tag(12);
+                self.write_codec_use(inner)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn write_enum_tag_style(
+        &mut self,
+        style: &RuntimeEnumTagStyle,
+    ) -> Result<(), SectionCodecError> {
+        match style {
+            RuntimeEnumTagStyle::External => self.write_tag(0),
+            RuntimeEnumTagStyle::Internal { tag } => {
+                self.write_tag(1);
+                self.write_str(tag)?;
+            }
+            RuntimeEnumTagStyle::Adjacent { tag, content } => {
+                self.write_tag(2);
+                self.write_str(tag)?;
+                self.write_str(content)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn write_field_codec_use(
+        &mut self,
+        field: &RuntimeFieldCodecUse,
+    ) -> Result<(), SectionCodecError> {
+        self.write_str(&field.wire_name)?;
+        self.write_u8(u8::from(field.has_default));
+        self.write_u8(u8::from(field.skip));
+        match field.bytes_format {
+            Some(format) => {
+                self.write_u8(1);
+                self.write_u8(format.semantic_tag());
+            }
+            None => self.write_u8(0),
+        }
+        self.write_codec_use(&field.value)
+    }
+
+    fn write_variant_codec_use(
+        &mut self,
+        case: &RuntimeVariantCodecUse,
+    ) -> Result<(), SectionCodecError> {
+        self.write_str(&case.wire_name)?;
+        match case.discriminant {
+            Some(value) => {
+                self.write_u8(1);
+                self.write_bytes(&value.to_le_bytes());
+            }
+            None => self.write_u8(0),
+        }
+        self.write_optional_codec_use(case.payload.as_ref())
     }
 
     fn finish(self) -> BundleDigest {
@@ -2559,6 +2755,108 @@ mod opaque_runtime_type_tests {
         assert_eq!(
             runtime_frame_layout_digest(&left, &left_frame),
             runtime_frame_layout_digest(&right, &right_frame)
+        );
+    }
+
+    #[test]
+    fn runtime_type_layout_digest_commits_map_ordering_kind() {
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes([85; 32]);
+        let digests = [
+            arcweft_core::entry::RuntimeMapKind::Ordered,
+            arcweft_core::entry::RuntimeMapKind::Sorted,
+            arcweft_core::entry::RuntimeMapKind::BTree,
+        ]
+        .map(|kind| {
+            let mut program = AwbcProgram::default();
+            program.runtime_types.push(AwbcRuntimeType::new(
+                semantic_identity,
+                AwbcRuntimeTypeShape::Map {
+                    kind,
+                    key: AwbcTypeId(0),
+                    value: AwbcTypeId(1),
+                },
+            ));
+            runtime_type_layout_digest(&program, &program.runtime_types[2])
+                .expect("map layout digest resolves its child types")
+        });
+
+        assert_ne!(digests[0], digests[1]);
+        assert_ne!(digests[0], digests[2]);
+        assert_ne!(digests[1], digests[2]);
+    }
+
+    #[test]
+    fn runtime_type_layout_digest_commits_data_codec_occurrences() {
+        let identity = RuntimeSemanticTypeId::from_bytes([86; 32]);
+        let formats = [
+            arcweft_core::entry::RuntimeBytesFormat::Binary,
+            arcweft_core::entry::RuntimeBytesFormat::Base64,
+            arcweft_core::entry::RuntimeBytesFormat::Hex,
+            arcweft_core::entry::RuntimeBytesFormat::Array,
+        ];
+        let digests = formats.map(|format| {
+            let program = AwbcProgram::default();
+            let ty = AwbcRuntimeType::new(identity, AwbcRuntimeTypeShape::Bytes)
+                .with_data_codec(RuntimeCodecUse::Bytes { format });
+            runtime_type_layout_digest(&program, &ty)
+                .expect("codec-use transcript has no table references")
+        });
+        for left in 0..digests.len() {
+            for right in left + 1..digests.len() {
+                assert_ne!(digests[left], digests[right]);
+            }
+        }
+
+        let arguments = [
+            arcweft_core::entry::RuntimeBytesFormat::Base64,
+            arcweft_core::entry::RuntimeBytesFormat::Hex,
+        ]
+        .map(|format| {
+            let mut program = AwbcProgram::default();
+            program.strings.push("fixture.Generic".to_owned());
+            let ty = AwbcRuntimeType::new(
+                identity,
+                AwbcRuntimeTypeShape::Nominal {
+                    public_id: AwbcStringId(0),
+                    layout: [7; 32],
+                    arguments: vec![AwbcTypeId(1)],
+                },
+            )
+            .with_data_codec(RuntimeCodecUse::NominalRef)
+            .with_data_codec_arguments(vec![RuntimeCodecUse::Bytes { format }]);
+            runtime_type_layout_digest(&program, &ty)
+                .expect("nominal codec argument transcript resolves its child")
+        });
+        assert_ne!(arguments[0], arguments[1]);
+    }
+
+    #[test]
+    fn runtime_type_layout_digest_commits_agent_data_shape_child() {
+        let identity = RuntimeSemanticTypeId::from_bytes([87; 32]);
+        let mut program = AwbcProgram::default();
+        program.runtime_types.extend([
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([88; 32]),
+                AwbcRuntimeTypeShape::Unit,
+            ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([89; 32]),
+                AwbcRuntimeTypeShape::Unit,
+            ),
+        ]);
+        let unit = AwbcRuntimeType::new(
+            identity,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(AwbcTypeId(0))),
+        );
+        let dynamic_child = AwbcRuntimeType::new(
+            identity,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(AwbcTypeId(1))),
+        );
+
+        assert_ne!(
+            runtime_type_layout_digest(&program, &unit).expect("DataShape unit child resolves"),
+            runtime_type_layout_digest(&program, &dynamic_child)
+                .expect("DataShape dynamic child resolves")
         );
     }
 
