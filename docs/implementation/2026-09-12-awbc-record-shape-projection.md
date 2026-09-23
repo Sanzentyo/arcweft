@@ -1076,16 +1076,18 @@ cuts were pushed separately:
 | Preserve unresolved nominal candidate through dot fallback | `0089fb7698d876589d68ebe21739a066c5d812eb` | Sema library suite 886/886 and all-target Clippy passed with warnings. CLI fixture `022` advanced past its prior nominal TypeId error but did not pass. |
 | Typed carrier continuation across lexical Scope | `9b6a1b96f248cefddfe05277530449b4b2117987` | Compiler `scope_propagation` 7/7, `named_scopes` 3/3, `try_pipe` 8/8; runtime-plan forged-fact admission 1/1; changed-crate Clippy, formatting, and whitespace checks passed. Native/AWBC results include active-scope snapshot and restore. |
 | Nested test/bench script command validation | `3d1da68c55361cc8c9dd59869f1d703b96680d77` | CLI nested-scope command test 1/1, all-target Clippy, exact-file rustfmt and staged whitespace checks passed. |
+| HIR Language/script-root expression partition | `14b9312c3090a595788a422d9b94791c37a15a36` | HIR library suite 901 passed, 0 failed, 8 ignored; focused regression excludes Test/Bench script expression and owner families while retaining a called Flow body; exact-file rustfmt and staged whitespace checks passed. |
 
-The new HIR Language root partition excluded Test/Bench script body owners in
-its focused test, but the first full HIR library run was 900 passed / 1 failed
-because the newly authored test fixture recovered during parsing. After the
-fixture correction, the focused test passed. The CLI `current_check_fixtures_pass`
+The first HIR library run was 900 passed / 1 failed because the new fixture
+recovered during parsing; after correcting it and adding a Flow-body preservation
+assertion, the complete HIR suite passed. The CLI `current_check_fixtures_pass`
 suite still stops at `022_family_relative_test_bench_ids.arcw`: the nominal
 candidate error changed to ordinary callable resolution of `expect`, then to
-`semantic expression ExprId(... slot: 13 ...) has no
-admissible final type`. HIR and sema root-partition work remains uncommitted;
-these observations do not prove the fixture or the whole suite passes. The
-compiler `callable_execution` suite remains 67/81, with fourteen native/AWBC
-failures across seven required families. The program-owned callable-state
+`semantic expression ExprId(... slot: 13 ...) has no admissible final type`.
+Sema execution-effect sealing was found to fold Test/Bench manifest roots outside
+the selected Language owner graph; its correction remains uncommitted and
+unverified against the CLI fixture. The HIR pass alone does not prove the fixture
+or the whole suite passes. The compiler `callable_execution` suite remains
+67/81, with fourteen native/AWBC failures across seven required families.
+The program-owned callable-state
 migration and all later goal phases and final workspace gates remain open.
