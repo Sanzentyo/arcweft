@@ -34,6 +34,7 @@ fn selected_graph_rejects_an_internally_valid_capture_receipt_for_another_interp
     let dialogue_lines = project.seal_selected_dialogue_lines(&graph).unwrap();
     let selected = CheckedSelectedExpressionGraph {
         graph,
+        declaration_only_trait_receiver_owners: BTreeSet::new(),
         dialogue_lines,
         fx_definition_declarations: BTreeSet::new(),
         fx_body_expressions: BTreeSet::new(),

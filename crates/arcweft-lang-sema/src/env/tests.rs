@@ -1,6 +1,9 @@
 use super::*;
 use crate::callable::{CallableName, CallableParameterPresence, CallablePath};
-use crate::types::{StandardMapFamily, TypeKind};
+use crate::types::{
+    EntityKind, GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner,
+    StandardMapFamily, TypeKind,
+};
 use arcweft_data::DataFormat;
 use std::collections::BTreeSet;
 
@@ -96,6 +99,62 @@ fn standard_callable_inventory_is_typed_before_publication() {
             .iter()
             .all(|method| !method.member.as_str().contains('.'))
     );
+}
+
+#[test]
+fn entity_write_schemas_match_signal_watch_and_metric_payloads() {
+    let environment = TypeCheckEnv::standard();
+    let signal_value = TypeKind::generic_parameter(GenericTypeParameterId::new(
+        GenericParameterOwnerId::LanguageIntrinsic(LanguageIntrinsicGenericOwner::SignalWrite),
+        0,
+    ));
+    let metric_value = TypeKind::generic_parameter(GenericTypeParameterId::new(
+        GenericParameterOwnerId::LanguageIntrinsic(LanguageIntrinsicGenericOwner::MetricWrite),
+        0,
+    ));
+    let watch_record = environment
+        .nominal_catalog
+        .exact(super::nominal::standard_nominal_id("Watch").canonical_path())
+        .expect("Watch is one accepted standard nominal");
+    let signal_target_value = watch_record
+        .try_instantiate([signal_value.clone()])
+        .expect("Watch has one payload type parameter");
+    let callable = |namespace: &str| {
+        CallablePath::try_new(vec![
+            CallableName::try_new(namespace).expect("callable namespace"),
+            CallableName::try_new("set").expect("callable member"),
+        ])
+        .expect("entity write callable path")
+    };
+    let signal = environment
+        .standard_functions()
+        .iter()
+        .find(|function| function.path == callable("signal"))
+        .expect("signal.set has one typed standard schema");
+    let signal_parameters = signal.schema.groups()[0].parameters();
+    assert_eq!(
+        signal_parameters[0].declared_type(),
+        Some(&TypeKind::entity_ref_with_value(
+            EntityKind::Signal,
+            signal_target_value,
+        ))
+    );
+    assert_eq!(signal_parameters[1].declared_type(), Some(&signal_value));
+
+    let metric = environment
+        .standard_functions()
+        .iter()
+        .find(|function| function.path == callable("metric"))
+        .expect("metric.set has one typed standard schema");
+    let metric_parameters = metric.schema.groups()[0].parameters();
+    assert_eq!(
+        metric_parameters[0].declared_type(),
+        Some(&TypeKind::entity_ref_with_value(
+            EntityKind::Metric,
+            metric_value.clone(),
+        ))
+    );
+    assert_eq!(metric_parameters[1].declared_type(), Some(&metric_value));
 }
 
 #[test]

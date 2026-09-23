@@ -966,6 +966,92 @@ pub(crate) fn analyze(
     .map_err(super::FinalSemanticProjectError::into_semantic_fixture_error)
 }
 
+#[test]
+fn trait_requirement_receiver_does_not_require_a_final_local_type() {
+    let fixture = fixture(
+        r#"
+struct RouteInfo { label: String }
+pub trait Named {
+    type Item
+    fn name(self) -> String
+}
+impl Named for RouteInfo {
+    type Item = RouteInfo
+    fn name(self) -> String { self.label }
+}
+flow main() -> String { return "done" }
+"#,
+        None,
+    );
+    let project = fixture.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let ((trait_pattern, trait_local), (impl_pattern, impl_local)) = module
+        .items()
+        .find_map(|(_, item)| match item.kind() {
+            HirItemKind::Trait(trait_item) => {
+                let receiver = trait_item.members().iter().find_map(|member| {
+                    let arcweft_lang_hir::item::HirTraitMember::Function(function) = member else {
+                        return None;
+                    };
+                    if function.body().is_some() {
+                        return None;
+                    }
+                    function
+                        .parameter_groups()
+                        .iter()
+                        .flat_map(|group| group.parameters())
+                        .find_map(|parameter| parameter.receiver())
+                        .map(|receiver| (receiver.pattern(), receiver.locals()[0]))
+                });
+                receiver.map(|trait_receiver| {
+                    let impl_receiver = module
+                        .items()
+                        .find_map(|(_, item)| {
+                            let HirItemKind::Impl(implementation) = item.kind() else {
+                                return None;
+                            };
+                            implementation.members().iter().find_map(|member| {
+                                let arcweft_lang_hir::item::HirImplMember::Function(function) =
+                                    member
+                                else {
+                                    return None;
+                                };
+                                function
+                                    .parameter_groups()
+                                    .iter()
+                                    .flat_map(|group| group.parameters())
+                                    .find_map(|parameter| parameter.receiver())
+                                    .map(|receiver| (receiver.pattern(), receiver.locals()[0]))
+                            })
+                        })
+                        .expect("impl receiver pattern and local");
+                    (trait_receiver, impl_receiver)
+                })
+            }
+            _ => None,
+        })
+        .expect("trait and impl receiver patterns and locals");
+    let report = analyze(&fixture).expect("trait signatures retain abstract Self receivers");
+    assert!(
+        !report.locals().any(|(owner, _)| owner == trait_local),
+        "a bodyless trait requirement receiver has no concrete executable local type"
+    );
+    assert!(
+        !report.patterns().any(|(owner, _)| owner == trait_pattern),
+        "the abstract receiver pattern is declaration-only and has no runtime pattern fact"
+    );
+    assert!(
+        report.locals().any(|(owner, _)| owner == impl_local),
+        "the implementation's receiver is a concrete executable local"
+    );
+    assert!(
+        report.patterns().any(|(owner, _)| owner == impl_pattern),
+        "the implementation receiver has a concrete runtime pattern fact"
+    );
+}
+
 fn analyze_with_assertion_profile(
     fixture: &Fixture,
     profile: AssertionBuildProfile,

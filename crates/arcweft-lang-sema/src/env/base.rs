@@ -6,7 +6,7 @@ use super::{
         AcceptedEnvironmentRecordSemantics, AcceptedNominalCatalog, AcceptedNominalOrigin,
         AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
         standard_compile_time_scalar_record, standard_environment_record, standard_exact_record,
-        standard_runtime_environment_record,
+        standard_nominal_id, standard_runtime_environment_record,
     },
 };
 use crate::callable::{
@@ -971,6 +971,11 @@ impl TypeCheckEnv {
     /// and the immutable core publication accepted by a registered world.
     #[must_use]
     fn with_standard_runtime_callables(self) -> Self {
+        let watch_record = self
+            .nominal_catalog
+            .exact(standard_nominal_id("Watch").canonical_path())
+            .expect("the standard Watch nominal is accepted before runtime callables")
+            .clone();
         let env = StandardMapFamily::PUBLISHED
             .into_iter()
             .fold(self, |environment, family| {
@@ -1090,6 +1095,7 @@ impl TypeCheckEnv {
                 crate::types::EntityKind::Signal,
                 crate::types::LanguageIntrinsicGenericOwner::SignalWrite,
                 CallableEvaluatedEffect::SignalWrite,
+                Some(&watch_record),
             ),
         )
         .with_typed_standard_schema(
@@ -1098,6 +1104,7 @@ impl TypeCheckEnv {
                 crate::types::EntityKind::Metric,
                 crate::types::LanguageIntrinsicGenericOwner::MetricWrite,
                 CallableEvaluatedEffect::MetricWrite,
+                None,
             ),
         );
         let env = env.with_typed_standard_function(
@@ -2117,8 +2124,17 @@ fn evaluated_entity_write_schema(
     entity: crate::types::EntityKind,
     owner: LanguageIntrinsicGenericOwner,
     effect: CallableEvaluatedEffect,
+    target_value_wrapper: Option<&AcceptedNominalRecord>,
 ) -> CallableSignatureSchema {
     let value = language_intrinsic_generic(owner);
+    let target_value = target_value_wrapper.map_or_else(
+        || value.clone(),
+        |wrapper| {
+            wrapper
+                .try_instantiate([value.clone()])
+                .expect("entity write target wrapper is an accepted one-parameter nominal")
+        },
+    );
     standard_schema(
         vec![vec![
             standard_parameter(
@@ -2126,7 +2142,7 @@ fn evaluated_entity_write_schema(
                 "target",
                 CallableParameterAdmission::checked(TypeKind::entity_ref_with_value(
                     entity,
-                    value.clone(),
+                    target_value,
                 )),
                 CallableParameterPassing::PositionalOrNamed,
                 CallableParameterPresence::Required,

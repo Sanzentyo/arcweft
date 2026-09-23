@@ -16,7 +16,8 @@ use arcweft_lang_hir::{
         HirExprKind, HirExpressionChildRole, HirNestedExpressionPath,
         HirNestedExpressionPathSegment,
     },
-    identity::ExprId,
+    identity::{ExprId, SyntheticOwner},
+    item::{HirItemKind, HirTraitMember},
     module::HirModule,
     project::{
         HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
@@ -120,6 +121,7 @@ fn checked_call_site_for_expression(
 #[derive(Debug)]
 pub(super) struct CheckedSelectedExpressionGraph {
     graph: HirSelectedExpressionGraph,
+    declaration_only_trait_receiver_owners: BTreeSet<SyntheticOwner>,
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
     fx_definition_declarations: BTreeSet<CallableDeclarationKey>,
     fx_body_expressions: BTreeSet<ExprId>,
@@ -348,8 +350,41 @@ impl CheckedSelectedExpressionGraph {
         let dialogue_lines = project
             .seal_selected_dialogue_lines(&graph)
             .map_err(FinalSemanticAnalysisError::DialogueLineSeal)?;
+        let declaration_only_trait_receiver_owners = project
+            .modules()
+            .flat_map(|(_, module)| module.items())
+            .flat_map(|(_, item)| {
+                let HirItemKind::Trait(trait_item) = item.kind() else {
+                    return Vec::new();
+                };
+                trait_item
+                    .members()
+                    .iter()
+                    .filter_map(|member| {
+                        let HirTraitMember::Function(function) = member else {
+                            return None;
+                        };
+                        function.body().is_none().then_some(function)
+                    })
+                    .flat_map(|function| {
+                        function
+                            .parameter_groups()
+                            .iter()
+                            .flat_map(|group| group.parameters())
+                            .filter_map(|parameter| parameter.receiver())
+                            .flat_map(|receiver| {
+                                std::iter::once(SyntheticOwner::Pattern(receiver.pattern())).chain(
+                                    receiver.locals().iter().copied().map(SyntheticOwner::Local),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         Ok(Self {
             graph,
+            declaration_only_trait_receiver_owners,
             dialogue_lines,
             fx_definition_declarations,
             fx_body_expressions,
@@ -361,7 +396,8 @@ impl CheckedSelectedExpressionGraph {
     }
 
     pub(super) fn contains_owner(&self, owner: arcweft_lang_hir::identity::SyntheticOwner) -> bool {
-        self.graph.contains_owner(owner)
+        !self.declaration_only_trait_receiver_owners.contains(&owner)
+            && self.graph.contains_owner(owner)
     }
 
     pub(super) const fn dialogue_lines(
