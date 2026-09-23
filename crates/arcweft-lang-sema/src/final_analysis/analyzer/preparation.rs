@@ -98,6 +98,19 @@ fn is_unknown_nominal_receiver(
 }
 
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn is_language_semantic_owner(
+        &self,
+        owner: SyntheticOwner,
+    ) -> Result<bool, FinalSemanticAnalysisError> {
+        self.executable
+            .selected_expression_owner_in_partition(
+                &self.topology,
+                owner,
+                arcweft_lang_hir::project::HirSelectedExpressionRootPartition::Language,
+            )
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
+    }
+
     pub(super) fn resolve_region_types(
         &mut self,
         region: Option<ExprId>,
@@ -155,6 +168,9 @@ impl Analyzer<'_, '_, '_> {
             })
             .collect::<Vec<_>>();
         for owner in owners {
+            if !self.is_language_semantic_owner(SyntheticOwner::Type(owner))? {
+                continue;
+            }
             self.resolve_type(owner, false)?;
         }
         Ok(())
@@ -378,6 +394,9 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values() {
             for (owner, local) in module.locals() {
+                if !self.is_language_semantic_owner(SyntheticOwner::Local(owner))? {
+                    continue;
+                }
                 if module
                     .candidate_provenance()
                     .owner_region(SyntheticOwner::Local(owner))
@@ -422,6 +441,9 @@ impl Analyzer<'_, '_, '_> {
                 Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
             }
             for (owner, expression) in module.expressions() {
+                if !self.is_language_semantic_owner(SyntheticOwner::Expr(owner))? {
+                    continue;
+                }
                 if module
                     .candidate_provenance()
                     .owner_region(SyntheticOwner::Expr(owner))
@@ -572,6 +594,9 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut residual = Vec::new();
         for (owner, statement) in self.statement_inventory() {
+            if !self.is_language_semantic_owner(SyntheticOwner::Stmt(owner))? {
+                continue;
+            }
             if self
                 .module(owner.module())?
                 .candidate_provenance()
@@ -588,11 +613,16 @@ impl Analyzer<'_, '_, '_> {
         self.infer_statement_inventory(residual)
     }
 
-    fn expression_inventory(&self) -> BTreeSet<ExprId> {
-        self.modules
-            .values()
-            .flat_map(|module| module.expressions().map(|(owner, _)| owner))
-            .collect()
+    fn expression_inventory(&self) -> Result<BTreeSet<ExprId>, FinalSemanticAnalysisError> {
+        let mut owners = BTreeSet::new();
+        for module in self.modules.values() {
+            for (owner, _) in module.expressions() {
+                if self.is_language_semantic_owner(SyntheticOwner::Expr(owner))? {
+                    owners.insert(owner);
+                }
+            }
+        }
+        Ok(owners)
     }
 
     fn analyze_expression_inventory(
@@ -647,14 +677,14 @@ impl Analyzer<'_, '_, '_> {
 
     #[cfg(test)]
     pub(super) fn analyze_all_expressions(&mut self) -> Result<(), FinalSemanticAnalysisError> {
-        self.analyze_expression_inventory(self.expression_inventory())
+        self.analyze_expression_inventory(self.expression_inventory()?)
     }
 
     pub(super) fn analyze_residual_expressions(
         &mut self,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut residual = BTreeSet::new();
-        for owner in self.expression_inventory() {
+        for owner in self.expression_inventory()? {
             if self
                 .module(owner.module())?
                 .candidate_provenance()

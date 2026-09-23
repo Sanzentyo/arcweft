@@ -51,6 +51,16 @@ impl Default for PreparedExecutionEffectRow {
     }
 }
 
+fn body_projection_has_selected_owner(
+    projection: &HirBodyProjection,
+    mut contains: impl FnMut(HirBodyChild) -> bool,
+) -> bool {
+    projection
+        .children()
+        .iter()
+        .any(|edge| contains(edge.child()))
+}
+
 /// Transaction-local executable row consumed while attached-default
 /// interfaces are sealed. The expression inventory is the exact eager
 /// selected/body fold; it is not reconstructed from lexical scopes.
@@ -309,6 +319,23 @@ impl PreparedEffectSelection<'_> {
     fn owns_fx_definition(&self, declaration: &CallableDeclarationKey) -> bool {
         matches!(self, Self::Project(graph) if graph.owns_fx_definition(declaration))
     }
+
+    fn contains_body_owner(&self, owner: HirBodyChild) -> bool {
+        match (self, owner) {
+            (Self::Project(graph), HirBodyChild::Expression(owner)) => {
+                graph.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Expr(owner))
+            }
+            (Self::Project(graph), HirBodyChild::Statement(owner)) => {
+                graph.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Stmt(owner))
+            }
+            (Self::Declaration(graph), HirBodyChild::Expression(owner)) => {
+                graph.contains_expression(owner)
+            }
+            (Self::Declaration(graph), HirBodyChild::Statement(owner)) => {
+                graph.contains_statement(owner)
+            }
+        }
+    }
 }
 
 struct PreparedExecutionEffectSealer<'a> {
@@ -419,7 +446,11 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     }
                     let mut row = PreparedExecutionEffectRow::default();
                     for root in body.roots() {
-                        row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                        if body_projection_has_selected_owner(root.projection(), |owner| {
+                            self.selected.contains_body_owner(owner)
+                        }) {
+                            row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                        }
                     }
                     if self
                         .declarations
@@ -438,7 +469,11 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 }
                 let mut item_row = self.items.remove(&entry.item()).unwrap_or_default();
                 for root in entry.roots() {
-                    item_row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                    if body_projection_has_selected_owner(root.projection(), |owner| {
+                        self.selected.contains_body_owner(owner)
+                    }) {
+                        item_row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                    }
                 }
                 self.items.insert(entry.item(), item_row);
             }
@@ -898,7 +933,16 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
             for entry in module.entries() {
                 self.control.check()?;
                 for root in entry.roots() {
-                    self.fold_body(root.projection())?;
+                    if body_projection_has_selected_owner(root.projection(), |owner| match owner {
+                        HirBodyChild::Expression(owner) => self.selected.contains_owner(
+                            arcweft_lang_hir::identity::SyntheticOwner::Expr(owner),
+                        ),
+                        HirBodyChild::Statement(owner) => self.selected.contains_owner(
+                            arcweft_lang_hir::identity::SyntheticOwner::Stmt(owner),
+                        ),
+                    }) {
+                        self.fold_body(root.projection())?;
+                    }
                 }
                 if let Some(declaration) = entry.body() {
                     if self.selected.owns_fx_definition(declaration.declaration()) {

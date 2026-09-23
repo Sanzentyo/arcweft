@@ -196,6 +196,7 @@ impl CheckedSelectedExpressionGraph {
             topology,
             expressions,
             fx_body_obligations,
+            arcweft_lang_hir::project::HirSelectedExpressionRootPartition::Language,
             |owner| {
                 fx_body_obligations
                     .contains(owner)
@@ -227,12 +228,19 @@ impl CheckedSelectedExpressionGraph {
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let obligations = super::analyzer::PreparedFxDefinitionBodyObligations::default();
-        Self::seal_with_call_inventory(project, topology, expressions, &obligations, |owner| {
-            expressions
-                .get(&owner)
-                .filter(|expression| expression.checked_call_site(owner).is_none())
-                .map(|_| HirSelectedCallExpressionDisposition::Structural)
-        })
+        Self::seal_with_call_inventory(
+            project,
+            topology,
+            expressions,
+            &obligations,
+            arcweft_lang_hir::project::HirSelectedExpressionRootPartition::CompleteProject,
+            |owner| {
+                expressions
+                    .get(&owner)
+                    .filter(|expression| expression.checked_call_site(owner).is_none())
+                    .map(|_| HirSelectedCallExpressionDisposition::Structural)
+            },
+        )
     }
 
     fn seal_with_call_inventory(
@@ -240,11 +248,13 @@ impl CheckedSelectedExpressionGraph {
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         fx_body_obligations: &super::analyzer::PreparedFxDefinitionBodyObligations,
+        root_partition: arcweft_lang_hir::project::HirSelectedExpressionRootPartition,
         selected_call: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let graph = project
-            .selected_expression_graph(
+            .selected_expression_graph_in_partition(
                 &topology,
+                root_partition,
                 |owner| expressions.get(&owner)?.selected_postfix_candidate(),
                 selected_call,
             )

@@ -8758,6 +8758,116 @@ ensures no_effect network.request
 }
 
 #[test]
+fn test_and_bench_script_roots_stay_out_of_semantic_effects() {
+    let fixture = fixture(
+        r#"
+fn helper() -> String { return "done" }
+flow opening() -> String { return helper() }
+test @test.script_partition scenario {
+    result { let count: i64 = 1; || count }
+    expect.no_assertion_failures()
+}
+test @test:.opening scenario {
+    goto @flow.opening
+    expect.no_assertion_failures()
+}
+bench @bench:.opening {
+    measure iterations = 1 { opening() }
+}
+"#,
+        None,
+    );
+    let project = fixture.project.analysis_view().expect("executable HIR");
+    let topology = project
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("project evaluation topology");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let bench_call = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let is_call = matches!(expression.kind(), HirExprKind::Call(_));
+            let path = topology.semantic_path(owner.into()).ok().flatten();
+            (is_call
+                && path.is_some_and(|path| {
+                    matches!(
+                        path.path().steps().first(),
+                        Some(HirSemanticPathStep::DeclarationItem(
+                            arcweft_lang_hir::project::HirDeclarationItemRootRole::BenchBody
+                        ))
+                    )
+                }))
+            .then_some(owner)
+        })
+        .expect("Bench script call root");
+    let flow_body_call = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let is_call = matches!(expression.kind(), HirExprKind::Call(_));
+            let path = topology.semantic_path(owner.into()).ok().flatten();
+            (is_call
+                && path.is_some_and(|path| {
+                    matches!(
+                        path.path().steps().first(),
+                        Some(HirSemanticPathStep::DeclarationBody(
+                            arcweft_lang_hir::project::HirDeclarationBodyRootRole::FlowBody
+                        ))
+                    )
+                }))
+            .then_some(owner)
+        })
+        .expect("Flow body call to the helper function");
+    let (script_local, local) = module
+        .locals()
+        .find(|(_, local)| local.name().as_str() == "count")
+        .expect("Test script local");
+    let script_pattern = local.pattern().expect("Test script binding pattern");
+    let script_annotation = local.annotation().expect("Test script type annotation");
+    let (script_capture, _) = module
+        .captures()
+        .next()
+        .expect("Test script closure capture");
+    let (test_item, bench_item) = module
+        .items()
+        .fold((None, None), |mut items, (owner, item)| {
+            match item.kind() {
+                HirItemKind::Test(_) => items.0 = Some(owner),
+                HirItemKind::Bench(_) => items.1 = Some(owner),
+                _ => {}
+            }
+            items
+        });
+    let test_item = test_item.expect("Test item");
+    let bench_item = bench_item.expect("Bench item");
+
+    let report = analyze(&fixture).expect("script roots are owned by the HIR manifest");
+
+    assert!(report.expression(bench_call).is_none());
+    assert_eq!(
+        report
+            .expression(flow_body_call)
+            .and_then(CheckedExpression::value_type),
+        Some(&TypeKind::String),
+        "the called Flow body and its Function call remain language-owned"
+    );
+    assert!(report.local(script_local).is_none());
+    assert!(report.pattern(script_pattern).is_none());
+    assert!(!report.types().any(|(owner, _)| owner == script_annotation));
+    assert!(!report.captures().any(|(owner, _)| owner == script_capture));
+    assert!(matches!(
+        report.item(test_item).map(CheckedItem::role),
+        Some(CheckedItemRole::Test)
+    ));
+    assert!(matches!(
+        report.item(bench_item).map(CheckedItem::role),
+        Some(CheckedItemRole::Bench)
+    ));
+}
+
+#[test]
 fn scoped_flow_effect_bound_covers_the_same_unscoped_runtime_operation() {
     let fixture = fixture(
         r#"
