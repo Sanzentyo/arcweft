@@ -328,3 +328,78 @@ tooling 用の拒否・曖昧な呼び出しに実行計画を与えず、コン
 処理とそのテストは専用モジュールへ移した。意味解析の既知の失敗は、追加した
 相関する通常呼び出しの受入テストを含めて9件、callable 実行は22件である。
 親子の型制約・効果・関数値実行と全後続工程を引き続き必須とする。
+
+## Callable native/AWBC 失敗数の監査訂正 — 2026-09-23
+
+既存の記録と検証ログを照合した。確認時の `main` は
+`233ac21d8664da4a71dbff4150bc5b78b2a568ab`、編集前の作業ツリーは dirty
+（450 paths: 335 modified、6 deleted、109 untracked）である。上記の18→22は
+`2026-09-10-call-execution-admission` 時点の有効な checkpoint だが、その後の
+記録でさらに2つの native/AWBC case が追加され、最新の失敗 matrix は24件である。
+
+根拠ログ:
+
+- 18件: `.arcweft-local/validation/2026-09-10-recovered-closure-projection/test-workspace-final.log` — 54 passed / 18 failed。
+- 22件: `.arcweft-local/validation/2026-09-10-call-execution-admission/final-compiler.log` と `workspace-tests.log` — 54 passed / 22 failed。2つの相関する通常呼び出し case が native/AWBC 各1件ずつ増えた。
+- 24件: `.arcweft-local/validation/2026-09-10-final-call-diagnostics/compiler-full.log` — 57 passed / 24 failed、および `.arcweft-local/validation/2026-09-10-curried-group-effects/compiler-2.log` — 56 passed / 24 failed。後続の `2026-09-11-record-storage-admission/test-workspace-after-clean.log` も 57 passed / 24 failed と記録する。`compiler-1.log` の26件は `curried_terminal_effect` の2件を含む中間結果で、`compiler-2.log` ではその2件が通過して24件へ戻った。
+
+以下は24件の失敗を構成する6 familyで、各caseは `::native` と `::awbc` の両方で実行される。
+
+| Failure family | 実テスト名 | 主なownerと最終失敗 |
+| --- | --- | --- |
+| Contextual / correlated type evidence | `contextual_project_constructor_infers_an_unselected_case_parameter`; `contextual_constructor_sources_combine_complementary_type_evidence`; `contextual_project_unit_constructor_closes_with_a_later_argument`; `correlated_ordinary_call_closes_from_a_later_parent_argument`; `correlated_ordinary_calls_combine_complementary_parent_evidence` | `arcweft-lang-sema` final analysis/candidate constraints は final type または選択結果を確定できない。singular ordinary-call case は `arcweft-compiler` reachability で selected-call authority 欠落としても現れる。 |
+| Inferred callback effect rows | `callback_with_inferred_effects`; `uninvoked_callback_with_inferred_effects` | `arcweft-lang-sema` の effect-row seal/inference に unknown row が残り、compiler/runtime-plan 投影もそれを拒否する。 |
+| Shared-prefix generic scope | `shared_prefix_with_distinct_later_types` | `arcweft-lang-sema::types::GenericScope` の lexical binder depth が閉じず、`arcweft-compiler` の runtime semantic projection で失敗する。 |
+| Function prefixes used as callbacks | `curried_prefix_as_callback`; `generic_prefix_as_monomorphic_callback` | Curried prefix は `arcweft-core` native/AWBC execution で `ProjectContinuation` を `Function` として使おうとして失敗する。Generic prefix は `arcweft-compiler` の selected-call reachability authority を欠く。 |
+| Nonterminal prefix returned through callback | `callback_returns_a_nonterminal_prefix` | `arcweft-lang-sema` final analysis が式の admissible final type を確定できない。これは22件 checkpoint 後に加わった2件である。 |
+| Character factory calls in both branches | `character_factory_branches_keep_both_selected_calls` | `arcweft-compiler/src/lower.rs` が Dialogue callable family に typed runtime intrinsic がないとして両backendを拒否する。 |
+
+generic sema 修正後に回す最小の focused command は
+`cargo test -p arcweft-compiler --all-features --test callable_execution` である。
+この test target が各 family の native/AWBC case をまとめて検証する。直近の24件は
+歴史的な失敗結果であり、現在進行中の Sema 変更に対してこの command は**未実行**。
+全24件と goal の実行条件は未解決・必須のままであり、成功、期待拒否への変更、
+skip、goal 完了を主張しない。
+
+## CharacterDialogue factory/reconfigure producer gap — 2026-09-23
+
+Read-only follow-up inspected `main` at
+`233ac21d8664da4a71dbff4150bc5b78b2a568ab`; the shared working tree was dirty
+with 420 paths. No source edits or Cargo commands were made. The two known
+`character_factory_branches_keep_both_selected_calls::{native,awbc}` failures
+are at the compiler-to-executable boundary: sema retains the selected
+`CheckedCharacterDialogueFactory` and source-ordered patch, while
+`lower.rs::runtime_call_target` falls through because runtime-plan and core
+have no typed ordinary CharacterDialogue construction operation. The maintained
+contract requires first-class immutable values; skipping the calls or emitting
+an empty constant would lose source behavior.
+
+After the current coherent commit/push, the next cut must connect the complete
+owner chain: project the exact Factory/Reconfigure operation into a closed
+runtime-plan expression through the existing source-row ANF; evaluate the
+callee and every authored operand exactly once in source order, including a
+value later cleared by a patch; and use a generation-bound Sans-I/O producer
+owned by `arcweft-dialogue` to apply patches and encode the existing exact
+opaque value. Core must carry only the closed operation and typed producer
+boundary, with native/AWBC wire, verification, transcript, and execution kept
+in sync. The producer inputs must come from accepted generation assembly of
+real defaults, role payload types, custom-field registry, and View catalog.
+
+The source contract also needs to distinguish logical Character declaration
+membership from optional visual composition evidence: `pub character alice {}`
+is valid without a visual manifest, so use explicit Absent/Present visual
+evidence and validate looks only when present. Never fabricate an empty
+manifest or zero digest. Dynamic `CharacterDialogue<Any>` values must retain
+the actual constructed Character/config through application and display; the
+current static-contract-only target is insufficient. The same cut includes
+native/AWBC calls, captures, View/display, bundle generation, old-generation
+pins, and save/restore re-admission.
+
+Acceptance must observe produced values, not only successful compilation: run a
+branching function for both conditions through native and AWBC, then assert the
+returned opaque producer/semantic identity, 18-slot payload, selected Character
+reference, defaults, and an explicit patch field. Keep the Dialogue branch and
+selected-call authority intact. Add dynamic-target display and generation
+admission coverage with the relevant consumers. The focused
+`cargo test -p arcweft-compiler --all-features --test callable_execution` has
+not been rerun; this design note is not implementation or validation evidence.
