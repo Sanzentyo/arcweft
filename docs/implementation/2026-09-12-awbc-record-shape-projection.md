@@ -1089,5 +1089,22 @@ the selected Language owner graph; its correction remains uncommitted and
 unverified against the CLI fixture. The HIR pass alone does not prove the fixture
 or the whole suite passes. The compiler `callable_execution` suite remains
 67/81, with fourteen native/AWBC failures across seven required families.
-The program-owned callable-state
-migration and all later goal phases and final workspace gates remain open.
+The program-owned callable-state migration and all later goal phases and final
+workspace gates remain open.
+
+## Script-root semantic effect partition — 2026-09-24
+
+At `3ad1a67091105bab4967d1dc001391d53bd74191`, local `main` and
+`origin/main` matched, the index was empty, and 90 working-tree entries belonged
+to the in-progress callable-state migration. The HIR partition cut
+`14b9312c3090a595788a422d9b94791c37a15a36` also passed affected
+all-target/all-feature Clippy with warnings. The Sema script-root cut
+`3ad1a67091105bab4967d1dc001391d53bd74191` passed its focused regression
+1/1, the full Sema library suite 887/887, and all-target/all-feature Clippy
+with warnings; exact staged paths and `git diff --cached --check` were verified
+before push. Sema now excludes Test/Bench script roots from language expression,
+local, type, pattern, capture, and execution-effect facts while keeping their
+item facts and called Flow body facts. The CLI `022` fixture remains unrun after
+this cut because the AWBC/runtime-plan callable lowerer is still under migration.
+The callable execution tests, final workspace gates, and later goal phases remain
+open.
