@@ -122,7 +122,7 @@ impl BundleRunnerSession {
         self.host
             .pump_main_thread()
             .map_err(BundleRunnerError::NativeAdapter)?;
-        let completions = self.host.poll_completions();
+        let completions = self.host.poll_completions()?;
         let completion_count = completions.len();
         self.task_events.extend(completions);
         let host_call_results = self.host.take_host_call_results();
@@ -155,10 +155,14 @@ impl BundleRunnerSession {
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
         );
         if !runtime_finished {
-            self.task_events
-                .extend(self.host.complete_tasks(task_requests));
-            self.host_call_results
-                .extend(self.host.complete_host_calls(host_call_requests));
+            self.task_events.extend(
+                self.host
+                    .complete_tasks(self.executor.program_owner(), task_requests)?,
+            );
+            self.host_call_results.extend(
+                self.host
+                    .complete_host_calls(self.executor.program_owner(), host_call_requests),
+            );
         }
 
         self.steps.push(summary.clone());

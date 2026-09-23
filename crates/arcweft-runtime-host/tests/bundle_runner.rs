@@ -16,7 +16,7 @@ use arcweft_core::plan::{
     RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use arcweft_core::task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract};
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::value::RuntimeValue;
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterError, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome,
 };
@@ -180,11 +180,20 @@ impl HostAdapter for CustomEchoAdapter {
         &self.manifest
     }
 
-    fn complete(&self, task: &arcweft_core::task::TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(
+        &self,
+        task: &arcweft_core::task::TaskSpec,
+        bound: &arcweft_core::task::BoundTaskOutcome,
+    ) -> Option<HostTaskOutcome> {
         matches!(&task.request, HostTaskRequest::Custom { capability, operation, .. }
             if capability.0 == "custom" && operation == "echo")
         .then(|| HostTaskOutcome {
-            completion: HostTaskCompletion::Ready(RuntimePayload::from("echo-ok")),
+            completion: bound
+                .try_payload(RuntimeValue::String("echo-ok".to_owned()))
+                .map_or_else(
+                    |error| HostTaskCompletion::Failed(error.to_string()),
+                    HostTaskCompletion::Ready,
+                ),
             metrics: HostTaskMetrics::default(),
         })
     }
@@ -199,13 +208,11 @@ fn custom_echo_bundle() -> ArcweftBundle {
     let flow = flow_id("flow.custom");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 string_ty,
                 RuntimePlanTypeProjection::String,
             )],
-            [],
-            [],
             [],
         )
         .expect("string type admits");

@@ -198,6 +198,8 @@ pub enum BundleRunnerError {
     StartEntry(EngineStartError),
     #[error("native adapter registration failed: {0}")]
     NativeAdapter(arcweft_host_adapter::HostAdapterError),
+    #[error(transparent)]
+    NativeTask(#[from] crate::native_task::NativeTaskBridgeError),
 }
 
 fn execute_bundle_with_native_adapters(
@@ -431,7 +433,6 @@ fn run_product_runtime_steps(
         config.mode,
         config.max_ops,
     )
-    .map_err(BundleRunnerError::NativeAdapter)
 }
 
 fn run_runtime_steps_with_executor(
@@ -440,7 +441,7 @@ fn run_runtime_steps_with_executor(
     steps: usize,
     mode: BundleRunnerStepMode,
     max_ops: usize,
-) -> Result<RuntimeRunTrace, arcweft_host_adapter::HostAdapterError> {
+) -> Result<RuntimeRunTrace, BundleRunnerError> {
     let mut host = host_config
         .source_path
         .map(|path| {
@@ -452,14 +453,16 @@ fn run_runtime_steps_with_executor(
                 host_config.adapter_registrars,
             )
         })
-        .transpose()?;
+        .transpose()
+        .map_err(BundleRunnerError::NativeAdapter)?;
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
         if let Some(host) = host.as_mut() {
-            host.pump_main_thread()?;
-            task_events.extend(host.poll_completions());
+            host.pump_main_thread()
+                .map_err(BundleRunnerError::NativeAdapter)?;
+            task_events.extend(host.poll_completions()?);
             host_call_results.extend(host.take_host_call_results());
         }
         let result = executor.step(
@@ -481,8 +484,9 @@ fn run_runtime_steps_with_executor(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events.extend(host.complete_tasks(task_requests));
-            host_call_results.extend(host.complete_host_calls(host_call_requests));
+            task_events.extend(host.complete_tasks(executor.program_owner(), task_requests)?);
+            host_call_results
+                .extend(host.complete_host_calls(executor.program_owner(), host_call_requests));
         }
     }
     Ok(RuntimeRunTrace {
@@ -522,6 +526,10 @@ struct RuntimeExecutorInstance {
 }
 
 impl RuntimeExecutorInstance {
+    fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        self.executor.program_owner()
+    }
+
     fn from_awbc_product(program: BundleRunnerRuntimeProgram) -> Result<Self, BundleRunnerError> {
         let pure_plan = Arc::new(
             RuntimePlanBuilder::new()
@@ -1068,13 +1076,11 @@ mod tests {
             arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
         );
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [arcweft_core::plan::RuntimePlanTypeSeed::new(
                     unit_result.ty(),
                     arcweft_core::plan::RuntimePlanTypeProjection::Unit,
                 )],
-                [],
-                [],
                 [],
             )
             .expect("unit result type admits");

@@ -9,8 +9,10 @@ use arcweft_core::step::{
     RuntimeHostCallResult,
 };
 use arcweft_core::task::{
-    CancelScopeId, HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind,
-    TaskId, TaskKey, TaskOutcomeContract, TaskPolicy, TaskPriority, TaskSequence, TaskSpec,
+    BoundTaskOutcome, BoundTaskSpec, CancelScopeId, HostTaskRequest, LogicalEpoch,
+    RuntimeProgramOwner, SchedulerBudget, TaskCompletionError, TaskEnsureError, TaskEvent,
+    TaskEventKind, TaskId, TaskKey, TaskOutcomeBindingError, TaskOutcomeContract, TaskPolicy,
+    TaskPriority, TaskSequence, TaskSpec, normalize_task_events,
 };
 use arcweft_core::value::{
     RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes, runtime_sequence_values,
@@ -26,6 +28,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
+use thiserror::Error;
 
 pub type NativeAdapterRegistrar =
     fn(&Path, HostAdapterRegistryBuilder) -> Result<HostAdapterRegistryBuilder, HostAdapterError>;
@@ -58,7 +61,19 @@ pub struct NativeTaskBridge {
 #[derive(Clone, Debug)]
 struct PendingRuntimeHostCall {
     id: arcweft_core::step::RuntimeHostCallId,
-    result: RuntimeCheckedType,
+    result: BoundTaskOutcome,
+}
+
+#[derive(Debug, Error)]
+pub enum NativeTaskBridgeError {
+    #[error("failed to bind a task result to its selected program: {0}")]
+    TaskBinding(#[from] TaskOutcomeBindingError),
+    #[error("task submission rejected a conflicting specification: {0}")]
+    TaskSubmission(#[from] TaskEnsureError),
+    #[error("task completion rejected an unregistered or repeated event: {0}")]
+    TaskCompletion(#[from] TaskCompletionError),
+    #[error("adapter returned the same task completion twice in one batch: {task_id:?}")]
+    DuplicateAdapterCompletion { task_id: TaskId },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -194,17 +209,31 @@ impl NativeTaskBridge {
     }
 
     /// Converts pending adapter completions into deterministic scheduler events.
-    pub fn poll_completions(&mut self) -> Vec<TaskEvent> {
+    pub fn poll_completions(&mut self) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
         let mut completions = self.registry.drain_completions();
         completions.sort_by(|left, right| left.task_id.cmp(&right.task_id));
+        if let Some(pair) = completions
+            .windows(2)
+            .find(|pair| pair[0].task_id == pair[1].task_id)
+        {
+            return Err(NativeTaskBridgeError::DuplicateAdapterCompletion {
+                task_id: pair[0].task_id.clone(),
+            });
+        }
         let mut events = Vec::new();
+        let mut owner_ids = BTreeSet::new();
+        let mut host_results = Vec::new();
+        let mut retired_seen = Vec::new();
+        let saved_stats = self.stats;
+        let saved_sequence = self.sequence;
         for HostAdapterCompletion { task_id, outcome } in completions {
-            if let Some(pending) = self.pending_host_calls.remove(&task_id) {
-                let result = self.host_call_result(pending.id, &pending.result, outcome);
-                self.ready_host_call_results.push(result);
-            } else if self.retired_host_call_tasks.remove(&task_id) {
+            if let Some(pending) = self.pending_host_calls.get(&task_id) {
+                host_results.push((task_id, pending.clone(), outcome));
+            } else if self.retired_host_call_tasks.contains(&task_id) {
+                retired_seen.push(task_id);
                 continue;
             } else {
+                owner_ids.insert(task_id.clone());
                 events.push(self.task_event(TaskCompletion {
                     task_id,
                     completion: outcome.completion,
@@ -212,9 +241,26 @@ impl NativeTaskBridge {
                 }));
             }
         }
+        let events = match self.scheduler.complete(events) {
+            Ok(events) => events,
+            Err(error) => {
+                self.stats = saved_stats;
+                self.sequence = saved_sequence;
+                return Err(error.into());
+            }
+        };
+        self.record_scheduler_owner_outcomes(&owner_ids, &events);
+        for task_id in retired_seen {
+            self.retired_host_call_tasks.remove(&task_id);
+        }
+        for (task_id, pending, outcome) in host_results {
+            self.pending_host_calls.remove(&task_id);
+            let result = self.host_call_result(pending.id, &pending.result, outcome);
+            self.ready_host_call_results.push(result);
+        }
         self.ready_host_call_results
             .sort_by(|left, right| left.id.cmp(&right.id));
-        self.scheduler.complete(events)
+        Ok(normalize_task_events(events))
     }
 
     /// Dispatches direct runtime host calls through the same manifest-owned
@@ -223,11 +269,12 @@ impl NativeTaskBridge {
     /// [`Self::take_host_call_results`] after [`Self::poll_completions`].
     pub fn complete_host_calls(
         &mut self,
+        program: RuntimeProgramOwner,
         requests: Vec<RuntimeHostCallRequest>,
     ) -> Vec<RuntimeHostCallResult> {
         let mut results = requests
             .into_iter()
-            .filter_map(|request| self.complete_host_call(request))
+            .filter_map(|request| self.complete_host_call(program.clone(), request))
             .collect::<Vec<_>>();
         results.sort_by(|left, right| left.id.cmp(&right.id));
         results
@@ -240,6 +287,7 @@ impl NativeTaskBridge {
 
     fn complete_host_call(
         &mut self,
+        program: RuntimeProgramOwner,
         request: RuntimeHostCallRequest,
     ) -> Option<RuntimeHostCallResult> {
         if !self.seen_host_calls.insert(request.id.clone()) {
@@ -251,6 +299,13 @@ impl NativeTaskBridge {
         }
         let runtime_id = request.id.clone();
         let task_id = host_call_task_id(&request.id);
+        if self.scheduler.contains_task_id(&task_id) {
+            return Some(host_call_error(
+                runtime_id,
+                RuntimeHostCallErrorKind::Rejected,
+                "runtime host-call identity collides with a scheduler task",
+            ));
+        }
         let contract = request.contract;
         let host_request = HostTaskRequest::custom_with_named_args(
             request.capability,
@@ -296,7 +351,7 @@ impl NativeTaskBridge {
         if !self.registry.host_call_accepts_runtime_result(
             &host_request.host_call_id(),
             request.mode,
-            &request.result,
+            request.result,
         ) {
             return Some(host_call_error(
                 runtime_id,
@@ -304,6 +359,20 @@ impl NativeTaskBridge {
                 "host-call result type does not match the registered adapter manifest",
             ));
         }
+        let outcome_contract = TaskOutcomeContract::program(request.result);
+        let bound = match outcome_contract.bind_program(
+            program,
+            arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+        ) {
+            Ok(bound) => bound,
+            Err(error) => {
+                return Some(host_call_error(
+                    runtime_id,
+                    RuntimeHostCallErrorKind::Rejected,
+                    error.to_string(),
+                ));
+            }
+        };
         let task = TaskSpec::new(
             task_id.clone(),
             TaskKey(task_id.0.clone()),
@@ -313,17 +382,17 @@ impl NativeTaskBridge {
             TaskPolicy::AlwaysStart,
             host_request,
         )
-        .with_outcome(TaskOutcomeContract::new(request.result.clone()));
-        match self.registry.submit(&task) {
+        .with_outcome(outcome_contract);
+        match self.registry.submit(&task, &bound) {
             Some(HostTaskSubmission::Completed(outcome)) => {
-                Some(self.host_call_result(runtime_id, &request.result, outcome))
+                Some(self.host_call_result(runtime_id, &bound, outcome))
             }
             Some(HostTaskSubmission::Pending) if request.mode == RuntimeHostCallMode::Suspend => {
                 self.pending_host_calls.insert(
                     task_id,
                     PendingRuntimeHostCall {
                         id: runtime_id,
-                        result: request.result,
+                        result: bound,
                     },
                 );
                 None
@@ -348,7 +417,7 @@ impl NativeTaskBridge {
     fn host_call_result(
         &mut self,
         id: arcweft_core::step::RuntimeHostCallId,
-        expected: &RuntimeCheckedType,
+        expected: &BoundTaskOutcome,
         outcome: HostTaskOutcome,
     ) -> RuntimeHostCallResult {
         self.stats.read_ops += outcome.metrics.read_ops;
@@ -357,7 +426,9 @@ impl NativeTaskBridge {
         self.stats.bytes_read += outcome.metrics.bytes_read;
         self.stats.bytes_written += outcome.metrics.bytes_written;
         match outcome.completion {
-            HostTaskCompletion::Ready(value) if expected.accepts_value(value.value()) => {
+            HostTaskCompletion::Ready(value)
+                if expected.try_payload(value.value().clone()).is_ok() =>
+            {
                 self.stats.completed_tasks += 1;
                 RuntimeHostCallResult {
                     id,
@@ -369,7 +440,7 @@ impl NativeTaskBridge {
                 host_call_error(
                     id,
                     RuntimeHostCallErrorKind::Rejected,
-                    "adapter result does not satisfy the checked host-call result contract",
+                    "adapter result does not satisfy the selected program host-call result type",
                 )
             }
             HostTaskCompletion::Failed(message) => {
@@ -384,24 +455,60 @@ impl NativeTaskBridge {
         self.registry.cancel(task_id)
     }
 
-    pub fn complete_tasks(&mut self, tasks: Vec<TaskSpec>) -> Vec<TaskEvent> {
+    pub fn complete_tasks(
+        &mut self,
+        program: RuntimeProgramOwner,
+        tasks: Vec<TaskSpec>,
+    ) -> Result<Vec<TaskEvent>, NativeTaskBridgeError> {
+        for task in &tasks {
+            if self.pending_host_calls.contains_key(&task.id)
+                || self.retired_host_call_tasks.contains(&task.id)
+            {
+                return Err(TaskEnsureError::TaskIdSpecificationConflict {
+                    task_id: task.id.clone(),
+                }
+                .into());
+            }
+        }
         let (unauthorized, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
             .partition(|task| !self.policy.allows(&task.request));
-        let unauthorized_events = unauthorized
-            .into_iter()
-            .map(|task| self.rejected_task_event(task))
-            .collect::<Vec<_>>();
         let (unimplemented, tasks): (Vec<_>, Vec<_>) = tasks
             .into_iter()
             .partition(|task| !self.registry.contains(&task.request.host_call_id()));
-        let unimplemented_events = unimplemented
+        let scheduled_ids = tasks
+            .iter()
+            .map(|task| task.id.clone())
+            .collect::<BTreeSet<_>>();
+        let mut rejected_ids = BTreeSet::new();
+        for task in unauthorized.iter().chain(&unimplemented) {
+            if self.scheduler.contains_task_id(&task.id)
+                || scheduled_ids.contains(&task.id)
+                || !rejected_ids.insert(task.id.clone())
+            {
+                return Err(TaskEnsureError::TaskIdSpecificationConflict {
+                    task_id: task.id.clone(),
+                }
+                .into());
+            }
+        }
+        let bound_tasks = tasks
             .into_iter()
-            .map(|task| self.unimplemented_task_event(task))
-            .collect::<Vec<_>>();
+            .map(|task| {
+                let owner = match &task.outcome {
+                    TaskOutcomeContract::Standalone { .. } => None,
+                    TaskOutcomeContract::Program { .. } => Some(program.clone()),
+                };
+                BoundTaskSpec::bind(
+                    task,
+                    owner,
+                    arcweft_core::entry::RuntimeSchemaLimits::engine_default(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
         let started = Instant::now();
-        self.scheduler.submit(tasks);
+        self.scheduler.submit(bound_tasks)?;
         self.stats.scheduler_submit_elapsed_ns = self
             .stats
             .scheduler_submit_elapsed_ns
@@ -429,17 +536,17 @@ impl NativeTaskBridge {
             self.stats.parallel_io_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_io_task(&task.request))
+                .filter(|task| is_io_task(&task.spec().request))
                 .count();
             self.stats.parallel_system_info_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_system_info_task(&task.request))
+                .filter(|task| is_system_info_task(&task.spec().request))
                 .count();
             self.stats.parallel_marker_tasks += dispatch
                 .tasks
                 .iter()
-                .filter(|task| is_scheduler_marker_task(&task.request))
+                .filter(|task| is_scheduler_marker_task(&task.spec().request))
                 .count();
             self.stats.parallel_workers = self.stats.parallel_workers.max(
                 rayon::current_num_threads()
@@ -449,25 +556,49 @@ impl NativeTaskBridge {
         }
 
         let started = Instant::now();
+        let saved_stats = self.stats;
+        let saved_sequence = self.sequence;
+        let owner_ids = completions
+            .items
+            .iter()
+            .map(|completion| completion.task_id.clone())
+            .collect::<BTreeSet<_>>();
         let mut events = completions
             .items
             .into_iter()
             .map(|completion| self.task_event(completion))
             .collect::<Vec<_>>();
-        events.extend(unauthorized_events);
-        events.extend(unimplemented_events);
         self.stats.event_build_elapsed_ns = self
             .stats
             .event_build_elapsed_ns
             .saturating_add(started.elapsed().as_nanos());
 
         let started = Instant::now();
-        let events = self.scheduler.complete(events);
+        let scheduler_events = match self.scheduler.complete(std::mem::take(&mut events)) {
+            Ok(events) => events,
+            Err(error) => {
+                self.stats = saved_stats;
+                self.sequence = saved_sequence;
+                return Err(error.into());
+            }
+        };
+        self.record_scheduler_owner_outcomes(&owner_ids, &scheduler_events);
+        events = scheduler_events;
+        events.extend(
+            unauthorized
+                .into_iter()
+                .map(|task| self.rejected_task_event(task)),
+        );
+        events.extend(
+            unimplemented
+                .into_iter()
+                .map(|task| self.unimplemented_task_event(task)),
+        );
         self.stats.scheduler_complete_elapsed_ns = self
             .stats
             .scheduler_complete_elapsed_ns
             .saturating_add(started.elapsed().as_nanos());
-        events
+        Ok(normalize_task_events(events))
     }
 
     fn rejected_task_event(&mut self, task: TaskSpec) -> TaskEvent {
@@ -507,14 +638,8 @@ impl NativeTaskBridge {
         self.stats.bytes_read += completion.stats.bytes_read;
         self.stats.bytes_written += completion.stats.bytes_written;
         let kind = match completion.completion {
-            HostTaskCompletion::Ready(value) => {
-                self.stats.completed_tasks += 1;
-                TaskEventKind::Ready(value)
-            }
-            HostTaskCompletion::Failed(error) => {
-                self.stats.failed_tasks += 1;
-                TaskEventKind::Failed(error)
-            }
+            HostTaskCompletion::Ready(value) => TaskEventKind::Ready(value),
+            HostTaskCompletion::Failed(error) => TaskEventKind::Failed(error),
         };
         let event = TaskEvent {
             logical_epoch: LogicalEpoch(0),
@@ -524,6 +649,23 @@ impl NativeTaskBridge {
         };
         self.sequence = self.sequence.saturating_add(1);
         event
+    }
+
+    fn record_scheduler_owner_outcomes(
+        &mut self,
+        owner_ids: &BTreeSet<TaskId>,
+        events: &[TaskEvent],
+    ) {
+        for event in events {
+            if !owner_ids.contains(&event.task_id) {
+                continue;
+            }
+            match event.kind {
+                TaskEventKind::Ready(_) => self.stats.completed_tasks += 1,
+                TaskEventKind::Failed(_) => self.stats.failed_tasks += 1,
+                TaskEventKind::Progress(_) | TaskEventKind::Cancelled => {}
+            }
+        }
     }
 }
 
@@ -616,7 +758,7 @@ impl HostAdapter for NativeFileAdapter {
         &self.manifest
     }
 
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
         let (result, metrics) = match &task.request {
             HostTaskRequest::FileReadText(request) => {
                 complete_read_text(&self.roots, &request.path)
@@ -633,7 +775,7 @@ impl HostAdapter for NativeFileAdapter {
             _ => return None,
         };
         Some(HostTaskOutcome {
-            completion: file_task_completion(task, result),
+            completion: file_task_completion(bound, result),
             metrics,
         })
     }
@@ -651,7 +793,7 @@ impl HostAdapter for NativeCliAdapter {
         &self.manifest
     }
 
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
         let HostTaskRequest::Custom {
             capability,
             operation,
@@ -665,13 +807,18 @@ impl HostAdapter for NativeCliAdapter {
             return None;
         }
         let completion = if args.is_empty() && named_args.is_empty() {
-            HostTaskCompletion::Ready(RuntimePayload::new(runtime_sequence_values(
-                self.args
-                    .iter()
-                    .cloned()
-                    .map(RuntimeValue::String)
-                    .collect(),
-            )))
+            bound
+                .try_payload(runtime_sequence_values(
+                    self.args
+                        .iter()
+                        .cloned()
+                        .map(RuntimeValue::String)
+                        .collect(),
+                ))
+                .map_or_else(
+                    |error| HostTaskCompletion::Failed(error.to_string()),
+                    HostTaskCompletion::Ready,
+                )
         } else {
             HostTaskCompletion::Failed("cli.args expects no arguments".to_owned())
         };
@@ -694,16 +841,17 @@ impl HostAdapter for NativeCliAdapter {
 }
 
 fn file_task_completion(
-    task: &TaskSpec,
+    bound: &BoundTaskOutcome,
     result: Result<RuntimePayload, String>,
 ) -> HostTaskCompletion {
     match result {
-        Ok(value) => task
-            .outcome
-            .try_result_ok(value.value().clone())
-            .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
+        Ok(value) => bound.try_result_ok(value.value().clone()).map_or_else(
+            |error| HostTaskCompletion::Failed(error.to_string()),
+            HostTaskCompletion::Ready,
+        ),
         Err(error) => {
-            let Some(RuntimeCheckedType::Opaque { owner }) = task.outcome.result_error() else {
+            let Ok(Some(RuntimeCheckedType::Opaque { owner })) = bound.result_error_checked()
+            else {
                 return HostTaskCompletion::Failed(
                     "native file task has no exact opaque domain-error contract".to_owned(),
                 );
@@ -715,10 +863,10 @@ fn file_task_completion(
                 ));
             }
             match owner.try_wrap(RuntimeValue::String(error)) {
-                Ok(value) => task
-                    .outcome
-                    .try_result_err(value)
-                    .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
+                Ok(value) => bound.try_result_err(value).map_or_else(
+                    |error| HostTaskCompletion::Failed(error.to_string()),
+                    HostTaskCompletion::Ready,
+                ),
                 Err(error) => HostTaskCompletion::Failed(format!(
                     "native file task could not materialize its domain error: {error}"
                 )),
@@ -732,17 +880,19 @@ impl HostAdapter for NativeSystemInfoAdapter {
         &self.manifest
     }
 
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
         let HostTaskRequest::SystemInfo(request) = &task.request else {
             return None;
         };
         Some(HostTaskOutcome {
-            completion: task
-                .outcome
+            completion: bound
                 .try_result_ok(RuntimeValue::String(
                     system_info_value(self.host_system, request.kind).to_string(),
                 ))
-                .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
+                .map_or_else(
+                    |error| HostTaskCompletion::Failed(error.to_string()),
+                    HostTaskCompletion::Ready,
+                ),
             metrics: HostTaskMetrics {
                 system_info_ops: 1,
                 ..HostTaskMetrics::default()
@@ -760,9 +910,12 @@ impl HostAdapter for InternalSchedulerMarkerAdapter {
         &self.manifest
     }
 
-    fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
         is_scheduler_marker_task(&task.request).then(|| HostTaskOutcome {
-            completion: HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::Unit)),
+            completion: bound.try_payload(RuntimeValue::Unit).map_or_else(
+                |error| HostTaskCompletion::Failed(error.to_string()),
+                HostTaskCompletion::Ready,
+            ),
             metrics: HostTaskMetrics::default(),
         })
     }
@@ -818,7 +971,7 @@ pub fn internal_scheduler_manifest() -> AdapterManifest {
 
 fn complete_dispatched_tasks(
     registry: &HostAdapterRegistry,
-    tasks: &[TaskSpec],
+    tasks: &[BoundTaskSpec],
 ) -> TaskCompletions {
     let parallel = should_complete_in_parallel(registry, tasks);
     let items = if parallel {
@@ -835,20 +988,20 @@ fn complete_dispatched_tasks(
     TaskCompletions { parallel, items }
 }
 
-fn should_complete_in_parallel(registry: &HostAdapterRegistry, tasks: &[TaskSpec]) -> bool {
+fn should_complete_in_parallel(registry: &HostAdapterRegistry, tasks: &[BoundTaskSpec]) -> bool {
     tasks.len() > 1
         && tasks
             .iter()
-            .all(|task| registry.can_complete_in_parallel(&task.request))
+            .all(|task| registry.can_complete_in_parallel(&task.spec().request))
         && tasks
             .iter()
-            .any(|task| is_parallel_host_work(&task.request))
+            .any(|task| is_parallel_host_work(&task.spec().request))
 }
 
-fn complete_task(registry: &HostAdapterRegistry, task: &TaskSpec) -> Option<TaskCompletion> {
-    match registry.submit(task)? {
+fn complete_task(registry: &HostAdapterRegistry, task: &BoundTaskSpec) -> Option<TaskCompletion> {
+    match registry.submit(task.spec(), task.outcome())? {
         HostTaskSubmission::Completed(outcome) => Some(TaskCompletion {
-            task_id: task.id.clone(),
+            task_id: task.spec().id.clone(),
             completion: outcome.completion,
             stats: outcome.metrics,
         }),
@@ -1067,11 +1220,148 @@ impl From<TaskClassCounts> for NativeTaskClassCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_core::pattern::RuntimeCheckedType;
+    use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
+    use arcweft_core::plan::{
+        RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    };
     use arcweft_core::task::{
         CancelScopeId, HostTaskRequest, SystemInfoKind, SystemInfoRequest, TaskClass, TaskId,
         TaskKey, TaskOutcomeContract, TaskPolicy, TaskPriority,
     };
+    use std::sync::Mutex;
+
+    #[derive(Debug)]
+    struct PendingWrongValueAdapter {
+        manifest: AdapterManifest,
+        completions: Mutex<Vec<HostAdapterCompletion>>,
+    }
+
+    impl HostAdapter for PendingWrongValueAdapter {
+        fn manifest(&self) -> &AdapterManifest {
+            &self.manifest
+        }
+
+        fn submit(
+            &self,
+            task: &TaskSpec,
+            _outcome: &BoundTaskOutcome,
+        ) -> Option<HostTaskSubmission> {
+            self.completions
+                .lock()
+                .expect("completion queue")
+                .push(HostAdapterCompletion {
+                    task_id: task.id.clone(),
+                    outcome: HostTaskOutcome {
+                        completion: HostTaskCompletion::Ready(RuntimePayload(RuntimeValue::Bool(
+                            true,
+                        ))),
+                        metrics: HostTaskMetrics::default(),
+                    },
+                });
+            Some(HostTaskSubmission::Pending)
+        }
+
+        fn drain_completions(&self) -> Vec<HostAdapterCompletion> {
+            std::mem::take(&mut *self.completions.lock().expect("completion queue"))
+        }
+
+        fn can_complete_in_parallel(&self, _request: &HostTaskRequest) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn pending_task_completion_is_checked_against_its_retained_outcome() {
+        let manifest = AdapterManifest::new("pending-wrong-value", "Pending Wrong Value")
+            .with_host_call(AdapterHostCall::new("pending.echo", []));
+        let registry = HostAdapterRegistry::builder()
+            .register(PendingWrongValueAdapter {
+                manifest: manifest.clone(),
+                completions: Mutex::new(Vec::new()),
+            })
+            .expect("pending adapter")
+            .build();
+        let mut bridge = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry,
+        )
+        .expect("implemented policy");
+        let pending = TaskSpec::new(
+            TaskId("pending-value".to_owned()),
+            TaskKey("pending-value".to_owned()),
+            TaskClass::Cpu,
+            TaskPriority(0),
+            CancelScopeId("test".to_owned()),
+            TaskPolicy::JoinSameKey,
+            HostTaskRequest::custom("pending", "echo", []),
+        )
+        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String));
+
+        assert!(
+            bridge
+                .complete_tasks(standalone_test_program(), vec![pending])
+                .expect("pending task submission")
+                .is_empty()
+        );
+        let events = bridge.poll_completions().expect("pending completion");
+        assert!(
+            matches!(events.as_slice(), [TaskEvent { kind: TaskEventKind::Failed(message), .. }] if message.contains("standalone task outcome rejected"))
+        );
+        assert!(bridge.poll_completions().unwrap().is_empty());
+    }
+
+    #[test]
+    fn conflicting_joined_task_result_does_not_replace_the_pending_owner() {
+        let manifest = AdapterManifest::new("pending-join", "Pending Join")
+            .with_host_call(AdapterHostCall::new("pending.echo", []));
+        let registry = HostAdapterRegistry::builder()
+            .register(PendingWrongValueAdapter {
+                manifest: manifest.clone(),
+                completions: Mutex::new(Vec::new()),
+            })
+            .unwrap()
+            .build();
+        let mut bridge = NativeTaskBridge::try_with_registry(
+            NativeTaskBridge::policy_from_manifest(&manifest),
+            registry,
+        )
+        .unwrap();
+        let make_task = |id: &str, payload| {
+            TaskSpec::new(
+                TaskId(id.to_owned()),
+                TaskKey("same-producer".to_owned()),
+                TaskClass::Cpu,
+                TaskPriority(0),
+                CancelScopeId("test".to_owned()),
+                TaskPolicy::JoinSameKey,
+                HostTaskRequest::custom("pending", "echo", []),
+            )
+            .with_outcome(TaskOutcomeContract::new(payload))
+        };
+
+        assert!(
+            bridge
+                .complete_tasks(
+                    standalone_test_program(),
+                    vec![make_task("owner", RuntimeCheckedType::Bool)],
+                )
+                .unwrap()
+                .is_empty()
+        );
+        assert!(matches!(
+            bridge.complete_tasks(
+                standalone_test_program(),
+                vec![make_task("foreign-waiter", RuntimeCheckedType::String)],
+            ),
+            Err(NativeTaskBridgeError::TaskSubmission(
+                TaskEnsureError::JoinSpecificationConflict { .. }
+            ))
+        ));
+        let events = bridge.poll_completions().unwrap();
+        assert!(
+            matches!(events.as_slice(), [TaskEvent { task_id, kind: TaskEventKind::Ready(value), .. }] if task_id.0 == "owner" && value.value() == &RuntimeValue::Bool(true))
+        );
+    }
 
     #[test]
     fn native_bridge_rejects_host_call_missing_from_manifest() {
@@ -1084,12 +1374,17 @@ mod tests {
             &[],
         )
         .expect("standard native adapters are unique");
-        let events = bridge.complete_tasks(vec![task(
-            "missing",
-            HostTaskRequest::SystemInfo(SystemInfoRequest {
-                kind: SystemInfoKind::CoreCount,
-            }),
-        )]);
+        let events = bridge
+            .complete_tasks(
+                standalone_test_program(),
+                vec![task(
+                    "missing",
+                    HostTaskRequest::SystemInfo(SystemInfoRequest {
+                        kind: SystemInfoKind::CoreCount,
+                    }),
+                )],
+            )
+            .expect("rejected host call event");
 
         assert_eq!(events.len(), 1);
         assert!(matches!(
@@ -1113,12 +1408,17 @@ mod tests {
             &[],
         )
         .expect("standard native adapters are unique");
-        let events = bridge.complete_tasks(vec![task(
-            "system",
-            HostTaskRequest::SystemInfo(SystemInfoRequest {
-                kind: SystemInfoKind::AvailableParallelism,
-            }),
-        )]);
+        let events = bridge
+            .complete_tasks(
+                standalone_test_program(),
+                vec![task(
+                    "system",
+                    HostTaskRequest::SystemInfo(SystemInfoRequest {
+                        kind: SystemInfoKind::AvailableParallelism,
+                    }),
+                )],
+            )
+            .expect("completed host call event");
 
         assert_eq!(events.len(), 1);
         assert!(
@@ -1182,18 +1482,25 @@ mod tests {
         )
         .expect("native cli adapter is registered exactly once");
 
-        let results = bridge.complete_host_calls(vec![RuntimeHostCallRequest {
-            id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-            public_id: "cli.args".to_owned(),
-            capability: "cli".to_owned(),
-            operation: "args".to_owned(),
-            contract: Some(standard::native_cli_manifest().host_calls()[0].contract_digest()),
-            args: Vec::new(),
-            named_args: Vec::new(),
-            result: RuntimeCheckedType::Sequence(Box::new(RuntimeCheckedType::String)),
-            mode: RuntimeHostCallMode::Immediate,
-            deterministic: true,
-        }]);
+        let result_type = bridge
+            .registry
+            .host_call_result_type("cli.args")
+            .expect("registered result type");
+        let results = bridge.complete_host_calls(
+            cli_test_program(result_type),
+            vec![RuntimeHostCallRequest {
+                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                public_id: "cli.args".to_owned(),
+                capability: "cli".to_owned(),
+                operation: "args".to_owned(),
+                contract: Some(standard::native_cli_manifest().host_calls()[0].contract_digest()),
+                args: Vec::new(),
+                named_args: Vec::new(),
+                result: result_type,
+                mode: RuntimeHostCallMode::Immediate,
+                deterministic: true,
+            }],
+        );
 
         assert_eq!(results.len(), 1);
         let RuntimeValue::Seq(values) = results[0]
@@ -1226,20 +1533,27 @@ mod tests {
         )
         .expect("native cli adapter is registered exactly once");
 
-        let results = bridge.complete_host_calls(vec![RuntimeHostCallRequest {
-            id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-            public_id: "cli.args".to_owned(),
-            capability: "cli".to_owned(),
-            operation: "args".to_owned(),
-            contract: Some(arcweft_core::step::HostCallContractDigest::from_bytes(
-                [0xa5; 32],
-            )),
-            args: Vec::new(),
-            named_args: Vec::new(),
-            result: RuntimeCheckedType::Sequence(Box::new(RuntimeCheckedType::String)),
-            mode: RuntimeHostCallMode::Immediate,
-            deterministic: true,
-        }]);
+        let result_type = bridge
+            .registry
+            .host_call_result_type("cli.args")
+            .expect("registered result type");
+        let results = bridge.complete_host_calls(
+            cli_test_program(result_type),
+            vec![RuntimeHostCallRequest {
+                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                public_id: "cli.args".to_owned(),
+                capability: "cli".to_owned(),
+                operation: "args".to_owned(),
+                contract: Some(arcweft_core::step::HostCallContractDigest::from_bytes(
+                    [0xa5; 32],
+                )),
+                args: Vec::new(),
+                named_args: Vec::new(),
+                result: result_type,
+                mode: RuntimeHostCallMode::Immediate,
+                deterministic: true,
+            }],
+        );
 
         assert!(matches!(
             results.as_slice(),
@@ -1268,18 +1582,25 @@ mod tests {
         )
         .expect("native cli adapter is registered exactly once");
 
-        let results = bridge.complete_host_calls(vec![RuntimeHostCallRequest {
-            id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
-            public_id: "cli.args".to_owned(),
-            capability: "cli".to_owned(),
-            operation: "args".to_owned(),
-            contract: Some(manifest.host_calls()[0].contract_digest()),
-            args: Vec::new(),
-            named_args: Vec::new(),
-            result: RuntimeCheckedType::String,
-            mode: RuntimeHostCallMode::Immediate,
-            deterministic: true,
-        }]);
+        let result_type = bridge
+            .registry
+            .host_call_result_type("cli.args")
+            .expect("registered result type");
+        let results = bridge.complete_host_calls(
+            cli_test_program(result_type),
+            vec![RuntimeHostCallRequest {
+                id: arcweft_core::step::RuntimeHostCallId("cli.args.0".to_owned()),
+                public_id: "cli.args".to_owned(),
+                capability: "cli".to_owned(),
+                operation: "args".to_owned(),
+                contract: Some(manifest.host_calls()[0].contract_digest()),
+                args: Vec::new(),
+                named_args: Vec::new(),
+                result: RuntimeCheckedType::String.semantic_identity_digest(),
+                mode: RuntimeHostCallMode::Immediate,
+                deterministic: true,
+            }],
+        );
 
         assert!(matches!(
             results.as_slice(),
@@ -1327,5 +1648,32 @@ mod tests {
             ok: Box::new(RuntimeCheckedType::String),
             error: Box::new(RuntimeCheckedType::String),
         }))
+    }
+
+    fn standalone_test_program() -> RuntimeProgramOwner {
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(
+            RuntimePlanBuilder::new().finish().expect("empty program"),
+        ))
+    }
+
+    fn cli_test_program(result: RuntimeSemanticTypeId) -> RuntimeProgramOwner {
+        let item = RuntimeCheckedType::String.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(item, RuntimePlanTypeProjection::String),
+                    RuntimePlanTypeSeed::new(
+                        result,
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item,
+                        },
+                    ),
+                ],
+                [],
+            )
+            .expect("CLI result graph");
+        RuntimeProgramOwner::Plan(std::sync::Arc::new(builder.finish().expect("CLI program")))
     }
 }
