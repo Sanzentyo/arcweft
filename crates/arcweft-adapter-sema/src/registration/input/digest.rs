@@ -96,7 +96,6 @@ fn hash_manifest_rust_metadata(hasher: &mut blake3::Hasher, manifest: &AdapterMa
     for rust_type in rust_types {
         hash_rust_package(hasher, rust_type.package());
         hash_nominal_path(hasher, rust_type.accepted_path());
-        hash_str(hasher, rust_type.opaque_producer().as_str());
         hash_rust_path(hasher, &rust_type.decl().path);
         hash_str(hasher, &rust_type.decl().rust_path);
         hash_len(hasher, rust_type.decl().parameters.len());
@@ -105,6 +104,15 @@ fn hash_manifest_rust_metadata(hasher: &mut blake3::Hasher, manifest: &AdapterMa
             hash_str(hasher, parameter.name.as_str());
         }
         hash_rust_type_kind(hasher, &rust_type.decl().kind);
+        match &rust_type.decl().data_policy {
+            None => hash_u8(hasher, 0),
+            Some(policy) => {
+                hash_u8(hasher, 1);
+                let bytes = policy.canonical_bytes();
+                hash_len(hasher, bytes.len());
+                hasher.update(&bytes);
+            }
+        }
     }
 }
 
@@ -182,6 +190,13 @@ fn hash_manifest_rust_functions(hasher: &mut blake3::Hasher, manifest: &AdapterM
         hash_len(hasher, function.overload().get());
         hash_signature(hasher, function.signature());
         hash_u8(hasher, rust_purity_tag(function.purity()));
+        hash_u8(
+            hasher,
+            match function.role() {
+                arcweft_rust_abi::ArcweftRustCallableRole::Function => 0,
+                arcweft_rust_abi::ArcweftRustCallableRole::DefaultConstructor => 1,
+            },
+        );
         hash_effects(hasher, function.effects());
     }
 }
@@ -351,6 +366,17 @@ fn hash_rust_struct_shape(hasher: &mut blake3::Hasher, shape: &ArcweftRustStruct
 
 fn hash_rust_variant(hasher: &mut blake3::Hasher, variant: &ArcweftRustVariant) {
     hash_str(hasher, &variant.name);
+    hash_str(
+        hasher,
+        variant.wire_name.as_deref().unwrap_or(&variant.name),
+    );
+    match variant.discriminant {
+        None => hash_u8(hasher, 0),
+        Some(value) => {
+            hash_u8(hasher, 1);
+            hasher.update(&value.to_le_bytes());
+        }
+    }
     match &variant.payload {
         ArcweftRustVariantPayload::Unit => hash_u8(hasher, 0),
         ArcweftRustVariantPayload::Tuple { fields } => {
@@ -369,6 +395,20 @@ fn hash_rust_fields(hasher: &mut blake3::Hasher, fields: &[ArcweftRustField]) {
     for field in fields {
         hash_str(hasher, &field.name);
         hash_rust_type_ref(hasher, &field.ty);
+        hash_str(hasher, field.wire_name.as_deref().unwrap_or(&field.name));
+        hash_u8(
+            hasher,
+            field.bytes_format.map_or(0, |format| format as u8 + 1),
+        );
+        hash_u8(hasher, u8::from(field.skip));
+        match &field.default {
+            None => hash_u8(hasher, 0),
+            Some(arcweft_rust_abi::ArcweftRustFieldDefault::Trait) => hash_u8(hasher, 1),
+            Some(arcweft_rust_abi::ArcweftRustFieldDefault::Function { rust_path }) => {
+                hash_u8(hasher, 2);
+                hash_str(hasher, rust_path);
+            }
+        }
     }
 }
 
@@ -399,6 +439,7 @@ fn hash_rust_type_ref(hasher: &mut blake3::Hasher, ty: &ArcweftRustTypeRef) {
         ArcweftRustTypeRef::F64 => 15,
         ArcweftRustTypeRef::String => 16,
         ArcweftRustTypeRef::Char => 17,
+        ArcweftRustTypeRef::Bytes => 25,
         ArcweftRustTypeRef::Vec { .. } => 18,
         ArcweftRustTypeRef::Seq { .. } => 19,
         ArcweftRustTypeRef::Option { .. } => 20,
@@ -444,7 +485,8 @@ fn hash_rust_type_ref(hasher: &mut blake3::Hasher, ty: &ArcweftRustTypeRef) {
         | ArcweftRustTypeRef::F32
         | ArcweftRustTypeRef::F64
         | ArcweftRustTypeRef::String
-        | ArcweftRustTypeRef::Char => {}
+        | ArcweftRustTypeRef::Char
+        | ArcweftRustTypeRef::Bytes => {}
     }
 }
 
@@ -477,6 +519,7 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
         AdapterTypeKind::F64 => 15,
         AdapterTypeKind::String => 16,
         AdapterTypeKind::Char => 17,
+        AdapterTypeKind::Bytes => 25,
         AdapterTypeKind::Vec { .. } => 18,
         AdapterTypeKind::Seq { .. } => 19,
         AdapterTypeKind::Option { .. } => 20,
@@ -539,7 +582,8 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
         | AdapterTypeKind::F32
         | AdapterTypeKind::F64
         | AdapterTypeKind::String
-        | AdapterTypeKind::Char => {}
+        | AdapterTypeKind::Char
+        | AdapterTypeKind::Bytes => {}
     }
 }
 

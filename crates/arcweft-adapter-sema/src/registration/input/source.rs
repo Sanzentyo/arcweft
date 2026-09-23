@@ -354,7 +354,12 @@ fn render_rust_functions(
                 callable_path: project_callable_path(callable_package, function.path())?,
                 overload: overload(function.overload().get())?,
             },
-            kind: "rust-function",
+            kind: match function.role() {
+                arcweft_rust_abi::ArcweftRustCallableRole::Function => "rust-function",
+                arcweft_rust_abi::ArcweftRustCallableRole::DefaultConstructor => {
+                    "rust-default-constructor"
+                }
+            },
             receiver: None,
             name: callable_path_text(function.path()),
             overload_index: function.overload().get(),
@@ -614,6 +619,7 @@ impl Renderer {
             AdapterTypeKind::F64 => self.text.push_str("f64"),
             AdapterTypeKind::String => self.text.push_str("String"),
             AdapterTypeKind::Char => self.text.push_str("char"),
+            AdapterTypeKind::Bytes => self.text.push_str("Bytes"),
             AdapterTypeKind::Vec { item: child } => {
                 self.text.push_str("Vec<");
                 self.render_adapter_child(
@@ -791,17 +797,17 @@ impl Renderer {
         scalar(&mut self.text, rust_type.package().id.as_str());
         self.text.push_str(" accepted=");
         adapter_path(&mut self.text, rust_type.accepted_path());
-        self.text.push_str(" producer=");
-        let producer_range = scalar_payload(&mut self.text, rust_type.opaque_producer().as_str());
         self.text.push_str(" rust-item=");
         scalar(&mut self.text, &rust_type.decl().rust_path);
         self.text.push_str(" shape=");
         self.render_rust_metadata(&item, &rust_type.decl().kind)?;
+        if let Some(policy) = &rust_type.decl().data_policy {
+            self.text.push_str(" data-policy=");
+            scalar(&mut self.text, &format!("{policy:?}"));
+        }
         let end = self.text.len();
         self.text.push('\n');
-        self.map
-            .insert_item(item.clone(), SourceRange::new(start, end))?;
-        self.map.insert_opaque_producer(item, producer_range)
+        self.map.insert_item(item, SourceRange::new(start, end))
     }
 
     fn render_rust_metadata(
@@ -846,6 +852,13 @@ impl Renderer {
                         self.text.push(',');
                     }
                     scalar(&mut self.text, &variant.name);
+                    if let Some(wire_name) = &variant.wire_name {
+                        self.text.push_str(" wire=");
+                        scalar(&mut self.text, wire_name);
+                    }
+                    if let Some(discriminant) = variant.discriminant {
+                        self.text.push_str(&format!(" discriminant={discriminant}"));
+                    }
                     match &variant.payload {
                         ArcweftRustVariantPayload::Unit => {}
                         ArcweftRustVariantPayload::Tuple { fields } => {
@@ -915,6 +928,26 @@ impl Renderer {
                 },
             );
             self.render_rust_type(item, root, &mut Vec::new(), &field.ty)?;
+            if let Some(wire_name) = &field.wire_name {
+                self.text.push_str(" wire=");
+                scalar(&mut self.text, wire_name);
+            }
+            if let Some(format) = field.bytes_format {
+                self.text.push_str(&format!(" bytes={format:?}"));
+            }
+            if field.skip {
+                self.text.push_str(" skip");
+            }
+            match &field.default {
+                None => {}
+                Some(arcweft_rust_abi::ArcweftRustFieldDefault::Trait) => {
+                    self.text.push_str(" default=trait")
+                }
+                Some(arcweft_rust_abi::ArcweftRustFieldDefault::Function { rust_path }) => {
+                    self.text.push_str(" default=");
+                    scalar(&mut self.text, rust_path);
+                }
+            }
         }
         Ok(())
     }
@@ -946,6 +979,7 @@ impl Renderer {
             ArcweftRustTypeRef::F64 => self.text.push_str("f64"),
             ArcweftRustTypeRef::String => self.text.push_str("String"),
             ArcweftRustTypeRef::Char => self.text.push_str("char"),
+            ArcweftRustTypeRef::Bytes => self.text.push_str("Bytes"),
             ArcweftRustTypeRef::Vec { item: child }
             | ArcweftRustTypeRef::Seq { item: child }
             | ArcweftRustTypeRef::Option { item: child } => {

@@ -68,13 +68,6 @@ pub struct SourceBackedAdapterRegistrationParts {
     pub environment: SourceBackedEnvironmentRegistrationInput,
 }
 
-/// External descriptor family that authored an opaque producer identity.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExternalOpaqueProducerSourceKind {
-    AdapterNominal,
-    RustExport,
-}
-
 /// Failure while binding adapter facts to one generated source revision.
 #[derive(Debug, Error)]
 pub enum AdapterRegistrationFactsError {
@@ -143,17 +136,15 @@ pub enum AdapterRegistrationFactsError {
     MissingItemSource {
         item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
     },
-    #[error("invalid {source_kind:?} opaque producer `{producer}`")]
+    #[error("invalid adapter nominal opaque producer `{producer}`")]
     InvalidOpaqueProducer {
-        source_kind: ExternalOpaqueProducerSourceKind,
         producer: String,
         source_span: SourceSpan,
         #[source]
         error: RuntimeIdentityError,
     },
-    #[error("{source_kind:?} opaque producer `{producer}` uses reserved namespace `std.`")]
+    #[error("adapter nominal opaque producer `{producer}` uses reserved namespace `std.`")]
     ReservedOpaqueProducer {
-        source_kind: ExternalOpaqueProducerSourceKind,
         producer: String,
         source_span: SourceSpan,
     },

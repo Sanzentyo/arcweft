@@ -52,9 +52,9 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_lang_syntax::types::TypePath;
 use arcweft_rust_abi::{
-    ArcweftRustField, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
-    ArcweftRustStructShape, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef,
-    ArcweftRustVariant, ArcweftRustVariantPayload,
+    ArcweftRustField, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustStructShape,
+    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef, ArcweftRustVariant,
+    ArcweftRustVariantPayload,
 };
 use arcweft_source::{SourceDocument, SourceSpan};
 
@@ -66,50 +66,7 @@ use arcweft_adapter_context::manifest::{
     AdapterRustPackageMountTable, AdapterToolingSubject, AdapterTypeKind,
 };
 
-use super::{AdapterRegistrationFactsError, ExternalOpaqueProducerSourceKind};
-
-enum ExternalOpaqueProducer<'a> {
-    Adapter(&'a AdapterOpaqueTypeProducerId),
-    Rust(&'a ArcweftRustOpaqueTypeProducerId),
-}
-
-impl ExternalOpaqueProducer<'_> {
-    fn as_str(&self) -> &str {
-        match self {
-            Self::Adapter(producer) => producer.as_str(),
-            Self::Rust(producer) => producer.as_str(),
-        }
-    }
-
-    const fn source_kind(&self) -> ExternalOpaqueProducerSourceKind {
-        match self {
-            Self::Adapter(_) => ExternalOpaqueProducerSourceKind::AdapterNominal,
-            Self::Rust(_) => ExternalOpaqueProducerSourceKind::RustExport,
-        }
-    }
-
-    fn project(
-        &self,
-        source: SourceSpan,
-    ) -> Result<RuntimeOpaqueTypeProducerId, AdapterRegistrationFactsError> {
-        let producer = self.as_str();
-        if producer.starts_with("std.") {
-            return Err(AdapterRegistrationFactsError::ReservedOpaqueProducer {
-                source_kind: self.source_kind(),
-                producer: producer.to_owned(),
-                source_span: source,
-            });
-        }
-        RuntimeOpaqueTypeProducerId::try_new(producer).map_err(|error| {
-            AdapterRegistrationFactsError::InvalidOpaqueProducer {
-                source_kind: self.source_kind(),
-                producer: producer.to_owned(),
-                source_span: source,
-                error,
-            }
-        })
-    }
-}
+use super::AdapterRegistrationFactsError;
 
 struct TypeSource<'a> {
     document: &'a SourceDocument,
@@ -205,6 +162,28 @@ struct CallableRecordProjection<'a> {
 }
 
 impl<'a> EnvironmentInputProjector<'a> {
+    fn project_opaque_producer(
+        &self,
+        producer: &AdapterOpaqueTypeProducerId,
+        item: &EnvironmentPublicationItemId,
+    ) -> Result<RuntimeOpaqueTypeProducerId, AdapterRegistrationFactsError> {
+        let source = opaque_producer_source(self.document, self.source_map, item)?;
+        let producer = producer.as_str();
+        if producer.starts_with("std.") {
+            return Err(AdapterRegistrationFactsError::ReservedOpaqueProducer {
+                producer: producer.to_owned(),
+                source_span: source,
+            });
+        }
+        RuntimeOpaqueTypeProducerId::try_new(producer).map_err(|error| {
+            AdapterRegistrationFactsError::InvalidOpaqueProducer {
+                producer: producer.to_owned(),
+                source_span: source,
+                error,
+            }
+        })
+    }
+
     fn new(
         manifest: &'a AdapterManifest,
         owner: EnvironmentCallableOwner,
@@ -261,9 +240,7 @@ impl<'a> EnvironmentInputProjector<'a> {
                     owner: self.owner.clone(),
                     path: path.clone(),
                 };
-                let producer_source =
-                    opaque_producer_source(self.document, self.source_map, &item)?;
-                Ok(AcceptedNominalInventoryInput::new(
+                Ok(AcceptedNominalInventoryInput::new_opaque(
                     AcceptedNominalId::new(
                         AcceptedNominalOwnerId::Environment(
                             self.semantic_environment_owner.clone(),
@@ -272,8 +249,7 @@ impl<'a> EnvironmentInputProjector<'a> {
                     ),
                     declaration.arity(),
                     AcceptedOpaqueRuntimeCarrier::new(
-                        ExternalOpaqueProducer::Adapter(declaration.opaque_producer())
-                            .project(producer_source)?,
+                        self.project_opaque_producer(declaration.opaque_producer(), &item)?,
                         RuntimeOpaqueValueClass::Plain,
                         RuntimeOpaquePersistence::ConstantAndSnapshot,
                     ),
@@ -412,22 +388,14 @@ impl<'a> EnvironmentInputProjector<'a> {
             accepted_path,
         };
         let source = item_source(self.document, self.source_map, &item)?;
-        let producer_source = opaque_producer_source(self.document, self.source_map, &item)?;
-        nominal_inventory.push(AcceptedNominalInventoryInput::new(
+        nominal_inventory.push(AcceptedNominalInventoryInput::new_rust_adt(
             id.clone(),
             u16::try_from(rust_type.decl().parameters.len()).map_err(|_| {
                 AdapterRegistrationFactsError::RustFieldIndexOverflow {
                     value: rust_type.decl().parameters.len(),
                 }
             })?,
-            AcceptedOpaqueRuntimeCarrier::new(
-                ExternalOpaqueProducer::Rust(rust_type.decl().opaque_producer())
-                    .project(producer_source)?,
-                RuntimeOpaqueValueClass::Plain,
-                RuntimeOpaquePersistence::ConstantAndSnapshot,
-            ),
             AcceptedNominalInputVisibility::Visible,
-            AcceptedNominalOrigin::RustExport,
             source.clone(),
             item.clone(),
         ));
@@ -456,7 +424,8 @@ impl<'a> EnvironmentInputProjector<'a> {
                 &source,
             )?,
             source,
-        ))
+        )
+        .with_data_policy(rust_type.decl().data_policy.clone()))
     }
 
     fn callable_records(
@@ -769,6 +738,7 @@ fn adapter_type_node(
         AdapterTypeKind::F64 => EnvironmentTypeProjectionKind::F64,
         AdapterTypeKind::String => EnvironmentTypeProjectionKind::String,
         AdapterTypeKind::Char => EnvironmentTypeProjectionKind::Char,
+        AdapterTypeKind::Bytes => EnvironmentTypeProjectionKind::Bytes,
         AdapterTypeKind::Vec { item } => {
             EnvironmentTypeProjectionKind::Vec(Box::new(adapter_type_node(
                 item,
@@ -894,6 +864,7 @@ fn rust_type_node(
         ArcweftRustTypeRef::F64 => EnvironmentTypeProjectionKind::F64,
         ArcweftRustTypeRef::String => EnvironmentTypeProjectionKind::String,
         ArcweftRustTypeRef::Char => EnvironmentTypeProjectionKind::Char,
+        ArcweftRustTypeRef::Bytes => EnvironmentTypeProjectionKind::Bytes,
         ArcweftRustTypeRef::Vec { item } => {
             EnvironmentTypeProjectionKind::Vec(Box::new(rust_type_node(
                 item,
@@ -1070,7 +1041,10 @@ fn rust_record_fields(
     source_map: &source::RegistrationSourceMap,
     item: &EnvironmentPublicationItemId,
     variant: Option<&str>,
-) -> Result<Box<[(String, EnvironmentTypeProjectionNode)]>, AdapterRegistrationFactsError> {
+) -> Result<
+    Box<[arcweft_lang_sema::env::EnvironmentRecordField<EnvironmentTypeProjectionNode>]>,
+    AdapterRegistrationFactsError,
+> {
     fields
         .iter()
         .map(|field| {
@@ -1083,14 +1057,27 @@ fn rust_record_fields(
                     field: field.name.clone(),
                 },
             );
-            Ok((
+            let default = match &field.default {
+                Some(arcweft_rust_abi::ArcweftRustFieldDefault::Trait) => {
+                    Some(arcweft_lang_sema::env::rust_metadata::RustFieldDefault::Trait)
+                }
+                Some(arcweft_rust_abi::ArcweftRustFieldDefault::Function { rust_path }) => Some(
+                    arcweft_lang_sema::env::rust_metadata::RustFieldDefault::Function(
+                        RustItemPath::try_new(rust_path.as_str())?,
+                    ),
+                ),
+                None => None,
+            };
+            Ok(arcweft_lang_sema::env::EnvironmentRecordField::new(
                 field.name.clone(),
                 rust_type_node(
                     &field.ty,
                     mounts,
                     &TypeSource::new(document, source_map, item, root),
                 )?,
-            ))
+            )
+            .with_data_default(default, field.skip)
+            .with_wire_policy(field.wire_name.clone(), field.bytes_format))
         })
         .collect()
 }
@@ -1141,11 +1128,10 @@ fn rust_variant(
             )?)
         }
     };
-    Ok(RustVariantMetadataInput::new(
-        variant.name.clone(),
-        payload,
-        item_source.clone(),
-    ))
+    Ok(
+        RustVariantMetadataInput::new(variant.name.clone(), payload, item_source.clone())
+            .with_wire_policy(variant.wire_name.clone(), variant.discriminant),
+    )
 }
 
 fn accepted_owner(
@@ -1245,6 +1231,7 @@ fn rust_provenance(
         package,
         RustItemPath::try_new(function.rust_path())?,
         purity,
+        function.role(),
     )?)
 }
 

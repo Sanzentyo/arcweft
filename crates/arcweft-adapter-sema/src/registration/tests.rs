@@ -165,7 +165,8 @@ fn source_backed_callable_input_preserves_groups_defaults_rest_effects_and_docs(
         record
             .schema()
             .effects()
-            .concrete()
+            .closed_value()
+            .expect("registered host effect row is closed")
             .contains(&EffectId::parse("network.request").unwrap())
     );
     assert_eq!(record.documentation().summary(), Some("Sends a request."));
@@ -220,6 +221,7 @@ fn source_backed_standard_input_retains_rust_callable_identity_and_order() {
         metadata_hash: None,
     })
     .with_function(ArcweftRustFunction {
+        role: Default::default(),
         name: "score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
         params: vec![ArcweftRustParam {
@@ -386,16 +388,15 @@ fn opaque_producer_is_source_backed_and_changes_manifest_identity() {
         right.document().identity().revision()
     );
     let nominal = &left.environment().nominal_inventory()[0];
+    let arcweft_lang_sema::env::nominal::AcceptedNominalSemantics::Opaque(carrier) =
+        nominal.semantics()
+    else {
+        panic!("adapter nominal retains its opaque carrier")
+    };
+    assert_eq!(carrier.producer().as_str(), "fixture.adapter-sema.left");
+    assert_eq!(carrier.value_class(), RuntimeOpaqueValueClass::Plain);
     assert_eq!(
-        nominal.runtime_carrier().producer().as_str(),
-        "fixture.adapter-sema.left"
-    );
-    assert_eq!(
-        nominal.runtime_carrier().value_class(),
-        RuntimeOpaqueValueClass::Plain
-    );
-    assert_eq!(
-        nominal.runtime_carrier().persistence(),
+        carrier.persistence(),
         RuntimeOpaquePersistence::ConstantAndSnapshot
     );
     assert!(
@@ -529,9 +530,9 @@ fn rust_manifest_publishes_source_backed_nominal_metadata_when_enabled() {
         panic!("Custom retains its record payload")
     };
     assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].0, "label");
+    assert_eq!(fields[0].name(), "label");
     assert!(matches!(
-        fields[0].1.kind(),
+        fields[0].ty().kind(),
         arcweft_lang_sema::registration::EnvironmentTypeProjectionKind::String
     ));
 }
@@ -578,23 +579,28 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
         metadata_hash: None,
     })
     .with_type(ArcweftRustTypeDecl {
+        data_policy: None,
         path: rust_type_path("Rank"),
         rust_path: "truck_game::Rank".to_owned(),
-        opaque_producer: arcweft_rust_abi::ArcweftRustOpaqueTypeProducerId::try_new(
-            "fixture.adapter-sema.rust",
-        )
-        .expect("fixture producer is valid"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![
                 ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: "Bronze".to_owned(),
                     payload: ArcweftRustVariantPayload::Unit,
                 },
                 ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: "Custom".to_owned(),
                     payload: ArcweftRustVariantPayload::Record {
                         fields: vec![arcweft_rust_abi::ArcweftRustField {
+                            wire_name: None,
+                            bytes_format: None,
+                            default: None,
+                            skip: false,
                             name: "label".to_owned(),
                             ty: ArcweftRustTypeRef::String,
                         }],
@@ -604,6 +610,7 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
         },
     })
     .with_function(ArcweftRustFunction {
+        role: Default::default(),
         name: "score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
         params: vec![ArcweftRustParam {
