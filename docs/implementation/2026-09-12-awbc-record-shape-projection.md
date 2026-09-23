@@ -1035,3 +1035,30 @@ The CLI fixture suite also reaches `020_relative_ids.arcw`, whose named scope
 is accepted by sema but lacks runtime-plan/Core/AWBC identity projection.
 The remaining goal phases, `just test-workspace`, structural refresh, and
 applicable Tier 2 validation have not been completed at this checkpoint.
+
+## Higher-order rows and named scope execution — 2026-09-24
+
+Supersedes the preceding six-failure sema and `020_relative_ids` observations.
+Inspected local `main` and `origin/main` at
+`3a075b9ed5f303fcd411c947c7bf49d0c84f78d6`; the working tree and index
+were clean immediately after the non-forced push. The following cuts are on
+`main`:
+
+| Owner cut | Full Git SHA | Observed evidence |
+| --- | --- | --- |
+| Selected host implementation checkpoint | `2989007a448bd4611d48ee9f4b64ff5a34070178` | Documentation-only checkpoint of the preceding tested host cuts. |
+| Symbolic higher-order effect rows per application | `ff54425fb30fbaf6c68ca061920464a24fec8f26` | Focused higher-order tests 15/15; sema library suite 885/885; all-target Clippy passed with warnings. |
+| Shared HIR/sema named scope identity | `e4e0be04ddfd3d33ff024402b5370a9ebfaec8de` | HIR mixed namespace test 1/1, sema suite 885/885, HIR/sema Clippy passed with warnings. |
+| Typed native and AWBC named scopes, static scope IDs, codec and restore validation | `3a075b9ed5f303fcd411c947c7bf49d0c84f78d6` | Compiler native/AWBC scope acceptance 3/3; core scope tests 11/11 and checkpoint 1/1; runtime-plan sibling/parent definition test 1/1; driver cleanup save/load test 1/1; `cargo fmt --all --check` and affected 10-crate all-target/all-feature Clippy passed with warnings. |
+
+The CLI `current_check_fixtures_pass` suite compiled and passed the previous
+`020_relative_ids` and following `021` inputs, then failed at
+`022_family_relative_test_bench_ids.arcw` with an incomplete nominal type
+resolution for HIR TypeId slot 17. That fixture has no Scope syntax; the
+nominal failure remains unclassified and is not claimed as acceptance. The
+first scope execution cut explicitly rejects `?` crossing a carrier block's
+lexical Scope until its typed success/residual continuation is connected.
+Native/AWBC acceptance of that propagation, the remaining CLI fixtures,
+compiler callable execution, Match/View/task-plan/nominal/scheduler/restore,
+the final workspace gates, `just test-workspace`, structural refresh, and
+applicable Tier 2 evidence remain required.
