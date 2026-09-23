@@ -2,7 +2,7 @@
 use arcweft_core::value::RuntimePayload;
 use arcweft_core::{
     pattern::{RuntimeCheckedType, RuntimeVariantIdentity},
-    task::{HostTaskRequest, TaskOutcomeContract, TaskSpec},
+    task::{BoundTaskOutcome, HostTaskRequest, TaskSpec},
     value::RuntimeValue,
 };
 use arcweft_desktop_contract::{
@@ -184,7 +184,7 @@ fn expect_unit_variant(expected_type: &str, value: HostCallVariantArg<'_>) -> Re
 
 pub(crate) fn outcome(
     request: &DesktopRequest,
-    contract: &TaskOutcomeContract,
+    contract: &BoundTaskOutcome,
     result: Result<DesktopResponse, DesktopError>,
 ) -> HostTaskOutcome {
     match result {
@@ -193,7 +193,11 @@ pub(crate) fn outcome(
             let completion = serde_json::to_string(&response)
                 .map(RuntimeValue::String)
                 .map_err(|error| format!("failed to encode desktop response: {error}"))
-                .and_then(|value| contract.try_result_ok(value))
+                .and_then(|value| {
+                    contract
+                        .try_result_ok(value)
+                        .map_err(|error| error.to_string())
+                })
                 .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready);
             HostTaskOutcome {
                 completion,
@@ -202,14 +206,19 @@ pub(crate) fn outcome(
         }
         Err(error) => {
             let completion = (|| {
-                let Some(RuntimeCheckedType::Opaque { owner }) = contract.result_error() else {
+                let Some(RuntimeCheckedType::Opaque { owner }) = contract
+                    .result_error_checked()
+                    .map_err(|error| error.to_string())?
+                else {
                     return Err("desktop task has no exact opaque domain-error contract".to_owned());
                 };
                 let encoded = serde_json::to_string(&error).unwrap_or_else(|_| error.to_string());
                 let error = owner
                     .try_wrap(RuntimeValue::String(encoded))
                     .map_err(|error| error.to_string())?;
-                contract.try_result_err(error)
+                contract
+                    .try_result_err(error)
+                    .map_err(|error| error.to_string())
             })()
             .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready);
             HostTaskOutcome {
@@ -318,6 +327,7 @@ mod tests {
                 semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
                     [7; 32],
                 ),
+                layout: arcweft_core::entry::TypeLayoutHash::from_bytes([8; 32]),
             },
             ordinal,
             name: name.to_owned(),

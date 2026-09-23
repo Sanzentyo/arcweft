@@ -20,9 +20,14 @@ fn native_desktop_capabilities_complete_through_host_registry() {
         .register(HostAdapterRegistry::builder())
         .expect("desktop host calls are uniquely owned");
     let registry = builder.build();
+    let task = task("desktop.platform", "capabilities");
+    let bound_outcome = task
+        .outcome
+        .bind_standalone()
+        .expect("integration task has a standalone outcome contract");
 
     let submission = registry
-        .submit(&task("desktop.platform", "capabilities"))
+        .submit(&task, &bound_outcome)
         .expect("desktop platform adapter owns capabilities");
     let HostTaskSubmission::Completed(outcome) = submission else {
         panic!("capabilities should complete without a window pump");

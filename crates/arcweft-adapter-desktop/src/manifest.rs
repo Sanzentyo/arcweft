@@ -8,9 +8,9 @@ use arcweft_adapter_context::manifest::{
     AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
 };
 use arcweft_rust_abi::{
-    ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
-    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
-    ArcweftRustVariant, ArcweftRustVariantPayload,
+    ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
+    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustVariant,
+    ArcweftRustVariantPayload,
 };
 
 pub const DESKTOP_PLATFORM_ADAPTER_ID: &str = "desktop-platform";
@@ -397,15 +397,16 @@ fn unit_enum_type<const N: usize>(
     variants: [&str; N],
 ) -> ArcweftRustTypeDecl {
     ArcweftRustTypeDecl {
+        data_policy: None,
         path: rust_type_path(name),
         rust_path: rust_path.to_owned(),
-        opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new("arcweft.desktop.runtime")
-            .expect("desktop runtime producer is valid"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: variants
                 .into_iter()
                 .map(|name| ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: name.to_owned(),
                     payload: ArcweftRustVariantPayload::Unit,
                 })

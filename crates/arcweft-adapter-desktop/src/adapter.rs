@@ -10,7 +10,7 @@ use crate::manifest::{
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
 };
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{HostTaskRequest, TaskId, TaskOutcomeContract, TaskSpec};
+use arcweft_core::task::{BoundTaskOutcome, HostTaskRequest, TaskId, TaskSpec};
 use arcweft_desktop_contract::{
     DesktopRequest, ExternalWindowRequest, FileDialogMode, GlobalPointerRequest, GrantAccess,
     UserFileRequest,
@@ -45,7 +45,7 @@ enum RequestDomain {
 struct PendingTask {
     arcweft_task: TaskId,
     request: DesktopRequest,
-    outcome: TaskOutcomeContract,
+    outcome: BoundTaskOutcome,
 }
 
 /// Shared bridge retained by the native player so it can pump window-thread work.
@@ -147,7 +147,11 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
         &self.manifest
     }
 
-    fn submit(&self, task: &TaskSpec) -> Option<HostTaskSubmission> {
+    fn submit(
+        &self,
+        task: &TaskSpec,
+        outcome_contract: &BoundTaskOutcome,
+    ) -> Option<HostTaskSubmission> {
         if !self.domains.contains_key(&task.request.host_call_id()) {
             return None;
         }
@@ -168,7 +172,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
         match self.coordinator.host.submit(request.clone()) {
             DesktopSubmission::Completed(result) => Some(HostTaskSubmission::Completed(outcome(
                 &request,
-                &task.outcome,
+                outcome_contract,
                 result,
             ))),
             DesktopSubmission::Pending(desktop_task) => {
@@ -177,7 +181,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                     PendingTask {
                         arcweft_task: task.id.clone(),
                         request,
-                        outcome: task.outcome.clone(),
+                        outcome: outcome_contract.clone(),
                     },
                 );
                 Some(HostTaskSubmission::Pending)
