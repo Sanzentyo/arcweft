@@ -1,6 +1,6 @@
 use arcweft_data::{
     Codec, CodecRegistry, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FormatId,
-    TypeShape, Value,
+    ShapeAccess, ShapeRef, TypeShape, Value,
 };
 use arcweft_http_codec::{
     HttpCodecOptions, decode_request_body, decode_request_body_with_options, encode_response_body,
@@ -26,7 +26,8 @@ impl Codec for StaticCodec {
     fn encode_value(
         &self,
         _value: &Value,
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> arcweft_data::Result<Vec<u8>> {
         Ok(self.id.as_bytes().to_vec())
@@ -35,7 +36,8 @@ impl Codec for StaticCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &DecodeOptions,
     ) -> arcweft_data::Result<Value> {
         Ok(Value::String(format!(

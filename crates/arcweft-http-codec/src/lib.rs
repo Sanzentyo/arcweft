@@ -3,7 +3,8 @@
 use std::cmp::Ordering;
 
 use arcweft_data::{
-    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EncodeOptions, Result, TypeShape, Value,
+    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EmptyShapeAccess, EncodeOptions,
+    Result, ShapeRef, TypeShape, Value,
 };
 use http::HeaderMap;
 use http::header::{ACCEPT, CONTENT_TYPE};
@@ -49,7 +50,12 @@ pub fn decode_request_body_with_options(
         .ok_or_else(|| DataError::new(DataErrorKind::UnsupportedFormat, "missing Content-Type"))?;
     let media_type = parse_content_type(content_type)?;
     let codec = registry.by_media_type(&media_type)?;
-    codec.decode_value(body, shape, &options.decode)
+    codec.decode_value(
+        body,
+        ShapeRef::inline(shape),
+        &EmptyShapeAccess,
+        &options.decode,
+    )
 }
 
 pub fn encode_response_body(
@@ -76,7 +82,12 @@ pub fn encode_response_body_with_options(
 ) -> Result<EncodedBody> {
     let media_type = negotiate_accept(headers, registry)?;
     let codec = registry.by_media_type(&media_type)?;
-    let body = codec.encode_value(value, shape, &options.encode)?;
+    let body = codec.encode_value(
+        value,
+        ShapeRef::inline(shape),
+        &EmptyShapeAccess,
+        &options.encode,
+    )?;
     Ok(EncodedBody {
         content_type: media_type,
         body,
