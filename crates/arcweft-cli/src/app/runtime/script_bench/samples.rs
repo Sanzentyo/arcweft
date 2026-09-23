@@ -1,4 +1,5 @@
 use super::super::bench::RuntimeBenchTrace;
+use super::super::expectations::{script_command_diagnostics, script_command_goto};
 use crate::output::{
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchSectionRunSummary,
 };
@@ -6,7 +7,7 @@ use arcweft_runtime_host::{
     NativeSchedulerStats, NativeTaskClassCounts, NativeTaskStats, RuntimeExecutorMathStatsSummary,
     RuntimeExecutorStats,
 };
-use arcweft_test::{BenchSection, ScriptCommand};
+use arcweft_test::BenchSection;
 
 #[derive(Default)]
 pub(in crate::app) struct RuntimeBenchSamples {
@@ -500,17 +501,7 @@ fn median_task_class_field(
 }
 
 pub(in crate::app) fn bench_goto_flow(section: &BenchSection) -> Option<String> {
-    section.body.iter().find_map(command_goto_flow)
-}
-
-fn command_goto_flow(command: &ScriptCommand) -> Option<String> {
-    match command {
-        ScriptCommand::Goto { target } => Some(target.clone()),
-        ScriptCommand::Scope { body, .. } => body.iter().find_map(command_goto_flow),
-        ScriptCommand::Expectation { .. }
-        | ScriptCommand::Pure { .. }
-        | ScriptCommand::Other { .. } => None,
-    }
+    script_command_goto(&section.body)
 }
 
 fn median_u128(values: &mut [u128]) -> u128 {
@@ -605,6 +596,10 @@ pub(in crate::app) fn validate_bench_section(
     if !is_known_bench_section(&section.name) {
         diagnostics.push(format!("unknown bench section `{}`", section.name));
         return ScriptBenchSectionRunSummary::new(&section.name, "unknown", diagnostics);
+    }
+    diagnostics.extend(script_command_diagnostics(&section.body));
+    if !diagnostics.is_empty() {
+        return ScriptBenchSectionRunSummary::new(&section.name, "failed", diagnostics);
     }
     ScriptBenchSectionRunSummary::new(&section.name, "validated", diagnostics)
 }

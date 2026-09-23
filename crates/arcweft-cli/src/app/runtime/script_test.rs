@@ -1,4 +1,6 @@
-use super::expectations::{test_expectation_failures, test_goto_flow};
+use super::expectations::{
+    script_command_diagnostics, script_commands, test_expectation_failures, test_goto_flow,
+};
 use super::options::ScriptTestOptions;
 use super::steps::{NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
@@ -13,7 +15,7 @@ use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::NativeAdapterRegistrar;
-use arcweft_test::{ScriptTest, collect_script_tests};
+use arcweft_test::{ScriptCommand, ScriptTest, collect_script_tests};
 use std::process::ExitCode;
 
 pub(in crate::app) fn script_test_command(
@@ -124,6 +126,30 @@ fn run_script_test(
                 "headless execution for `{}` tests is not implemented",
                 test.kind
             ),
+        );
+    }
+    let mut script_diagnostics = test
+        .steps
+        .iter()
+        .flat_map(|step| script_command_diagnostics(std::slice::from_ref(&step.command)))
+        .collect::<Vec<_>>();
+    script_diagnostics.extend(test.steps.iter().flat_map(|step| {
+        script_commands(std::slice::from_ref(&step.command))
+            .into_iter()
+            .filter_map(|command| match command {
+                ScriptCommand::Pure { helper } => Some(format!(
+                    "scenario pure helper `{helper}` has no runtime execution"
+                )),
+                _ => None,
+            })
+    }));
+    if !script_diagnostics.is_empty() {
+        return ScriptTestRunSummary::completed(
+            test,
+            false,
+            ScriptTestFinalStatus::NotStarted,
+            script_diagnostics,
+            Vec::new(),
         );
     }
     let Some(start) = test_goto_flow(test) else {

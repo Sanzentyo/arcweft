@@ -1,6 +1,8 @@
 use super::super::bench::run_runtime_bench_steps_with_pure;
 use super::super::executor::RuntimeExecutorTemplate;
-use super::super::expectations::{RuntimeExpectationView, evaluate_runtime_expectation};
+use super::super::expectations::{
+    RuntimeExpectationView, evaluate_runtime_expectation, script_commands,
+};
 use super::super::options::ScriptBenchOptions;
 use super::super::steps::{
     NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps,
@@ -43,6 +45,7 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
     let has_error = diagnostics
         .iter()
         .any(|diagnostic| diagnostic.starts_with("unknown bench section"))
+        || sections.iter().any(|section| section.status == "failed")
         || !bench
             .sections
             .iter()
@@ -185,7 +188,17 @@ fn bench_assertion_failures(
 }
 
 fn bench_assertion_expectation(section: &BenchSection) -> Result<&ScriptExpectation, String> {
-    let [ScriptCommand::Expectation { expectation }] = section.body.as_slice() else {
+    let commands = script_commands(&section.body)
+        .into_iter()
+        .filter(|command| !matches!(command, ScriptCommand::Scope { .. }))
+        .collect::<Vec<_>>();
+    let [command] = commands.as_slice() else {
+        return Err(format!(
+            "bench assert must contain exactly one typed expectation; found `{}`",
+            section.text
+        ));
+    };
+    let ScriptCommand::Expectation { expectation } = *command else {
         return Err(format!(
             "bench assert must contain exactly one typed expectation; found `{}`",
             section.text
