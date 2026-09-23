@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
 use arcweft_data::{
-    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EncodeOptions, Result, TypeShape,
-    Value, encode_with_shape,
+    CodecRegistry, DataError, DataErrorKind, DecodeOptions, EmptyShapeAccess, EncodeOptions,
+    Result, ShapeRef, TypeShape, Value, encode_with_shape,
 };
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -290,7 +290,12 @@ pub fn encode_save(
     registry: &CodecRegistry,
 ) -> Result<Vec<u8>> {
     let codec = registry.by_id(codec_id)?;
-    let payload = codec.encode_value(value, shape, &EncodeOptions::default())?;
+    let payload = codec.encode_value(
+        value,
+        ShapeRef::inline(shape),
+        &EmptyShapeAccess,
+        &EncodeOptions::default(),
+    )?;
     SaveEnvelope::new(schema_id, schema_version, codec_id, payload).encode_bytes()
 }
 
@@ -324,7 +329,12 @@ pub fn decode_save(
         ));
     }
     let codec = registry.by_id(&envelope.codec_id)?;
-    let value = codec.decode_value(&envelope.payload, shape, &options.codec)?;
+    let value = codec.decode_value(
+        &envelope.payload,
+        ShapeRef::inline(shape),
+        &EmptyShapeAccess,
+        &options.codec,
+    )?;
     let value = match envelope.schema_version.cmp(&current_schema_version) {
         std::cmp::Ordering::Equal => value,
         std::cmp::Ordering::Less => {

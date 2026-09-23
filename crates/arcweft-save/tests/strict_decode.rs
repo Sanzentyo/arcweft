@@ -1,6 +1,6 @@
 use arcweft_data::{
-    Codec, CodecRegistry, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Result, TypeShape,
-    Value,
+    Codec, CodecRegistry, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Result,
+    ShapeAccess, ShapeRef, TypeShape, Value,
 };
 use arcweft_save::{
     SaveDecodeOptions, SaveEnvelope, SaveMigration, SaveMigrationChain, SaveMigrationStep,
@@ -22,7 +22,8 @@ impl Codec for UnitCodec {
     fn encode_value(
         &self,
         value: &Value,
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
         match value {
@@ -37,7 +38,8 @@ impl Codec for UnitCodec {
     fn decode_value(
         &self,
         _input: &[u8],
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &DecodeOptions,
     ) -> Result<Value> {
         Ok(Value::Unit)
@@ -78,7 +80,8 @@ impl Codec for TextCodec {
     fn encode_value(
         &self,
         value: &Value,
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
         match value {
@@ -93,7 +96,8 @@ impl Codec for TextCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &DecodeOptions,
     ) -> Result<Value> {
         String::from_utf8(input.to_vec())
