@@ -2,8 +2,7 @@ use crate::{
     CharacterDialogue, CharacterDialogueConfig, CharacterDialogueContractIdentity,
     CharacterDialogueCustomFieldId, CharacterDialogueCustomValue, CharacterDialogueHookValue,
     CharacterDialoguePatch, CharacterDialogueRichTextValue,
-    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
-    CharacterDialogueRuntimeSchema, CharacterDialogueStyleValue, CharacterDialogueType,
+    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueStyleValue,
     CharacterDialogueTypedValue, CharacterDialogueValueError, CharacterDialogueVoice,
     CharacterDialogueVoiceId, DialogueLocaleId, FallbackStylePolicy, InlineFailurePolicy,
     InlineFallback, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath,
@@ -19,17 +18,11 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash},
-    pattern::{
-        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-        RuntimeVariantIdentity,
-    },
-    value::{
-        MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordError, RuntimeNominalRecordValue,
-        RuntimeSeq, RuntimeValue,
-    },
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
 };
 use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 fn sample_manifest() -> CharacterManifest {
     let body = CharacterPart::new(
@@ -63,38 +56,29 @@ fn sample_manifest() -> CharacterManifest {
     .expect("manifest")
 }
 
-fn nominal_typed(
-    id: &str,
-    layout: TypeLayoutHash,
-    fields: Vec<RuntimeValue>,
-) -> CharacterDialogueTypedValue {
-    let type_id = RuntimeNominalTypeId::try_new(id).expect("nominal type");
-    CharacterDialogueTypedValue::try_new(
-        Some(type_id.clone()),
-        layout,
-        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(type_id, layout, fields)),
-    )
+fn nominal_typed(fields: Vec<RuntimeValue>) -> CharacterDialogueTypedValue {
+    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
+    CharacterDialogueTypedValue::try_new(RuntimeValue::NominalRecord(
+        RuntimeNominalRecordValue::new(type_id, semantic_identity, layout, fields),
+    ))
     .expect("typed value")
 }
 
-fn style(layout_byte: u8) -> CharacterDialogueStyleValue {
-    CharacterDialogueStyleValue::try_new(nominal_typed(
-        "std.rich_text_style",
-        TypeLayoutHash::from_bytes([layout_byte; 32]),
-        Vec::new(),
+fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
+    CharacterDialogueStyleValue::try_new(runtime_schema::role_value(
+        crate::CharacterDialogueRuntimeRole::RichText,
+        RuntimeValue::Tuple(vec![]),
     ))
-    .expect("style")
+    .unwrap()
 }
 
-fn rich_text(layout_byte: u8) -> CharacterDialogueRichTextValue {
-    CharacterDialogueRichTextValue::try_new(nominal_typed(
-        "std.rich_text_style",
-        TypeLayoutHash::from_bytes([layout_byte; 32]),
-        Vec::new(),
+fn rich_text(_layout_byte: u8) -> CharacterDialogueRichTextValue {
+    CharacterDialogueRichTextValue::try_new(runtime_schema::role_value(
+        crate::CharacterDialogueRuntimeRole::RichText,
+        RuntimeValue::Tuple(vec![]),
     ))
-    .expect("rich text")
+    .unwrap()
 }
-
 fn fixture() -> (
     CharacterDialogue,
     CharacterCatalog,
@@ -132,12 +116,11 @@ fn fixture_with_style(
         character_manifest,
         RuntimeValueDigest::from_bytes([2; 32]),
         custom_digest,
-        RuntimeValueDigest::from_bytes([4; 32]),
+        RuntimeValueDigest::from_bytes(*views.runtime_digest_v1().unwrap().as_bytes()),
     );
     let config = CharacterDialogueConfig::try_new(view, style, rich_text(6)).expect("config");
     let dialogue = CharacterDialogue::try_new(
         CharacterId::try_new("character.akane").expect("character"),
-        TypeLayoutHash::from_bytes([9; 32]),
         contract,
         config,
     )
@@ -211,14 +194,9 @@ fn dialogue_locale_is_a_domain_newtype_over_the_shared_canonical_owner() {
 #[test]
 fn failed_patch_leaves_base_and_successful_candidate_unchanged() {
     let (base, _, _, _) = fixture();
-    let hook = CharacterDialogueHookValue::try_new(nominal_typed(
-        "std.dialogue_hook",
-        TypeLayoutHash::from_bytes([7; 32]),
-        Vec::new(),
-    ))
-    .expect("hook");
+    let hook = CharacterDialogueHookValue::try_new(nominal_typed(Vec::new())).expect("hook");
     let too_many = vec![hook; 65];
-    let before = base.digest().expect("digest");
+    let before = base.clone();
     let error = base
         .patched(&CharacterDialoguePatch::default().with_hooks(PatchField::Set(too_many)))
         .expect_err("hook limit");
@@ -227,21 +205,16 @@ fn failed_patch_leaves_base_and_successful_candidate_unchanged() {
         error,
         CharacterDialogueValueError::Limit { limit: "hooks", .. }
     ));
-    assert_eq!(base.digest().expect("digest"), before);
+    assert_eq!(base, before);
     assert_eq!(base.config().hooks(), &[]);
 }
 
 #[test]
 fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
-    let layout = TypeLayoutHash::from_bytes([11; 32]);
-    let nominal_style = CharacterDialogueStyleValue::try_new(nominal_typed(
-        "std.rich_text_style",
-        layout,
-        vec![
-            option_some(RuntimeValue::String("red".to_owned())),
-            option_some(RuntimeValue::Bool(true)),
-        ],
-    ))
+    let nominal_style = CharacterDialogueStyleValue::try_new(nominal_typed(vec![
+        option_some(RuntimeValue::String("red".to_owned())),
+        option_some(RuntimeValue::Bool(true)),
+    ]))
     .expect("nominal style");
     let (base, _, _, _) = fixture_with_style(nominal_style);
     let clear_first = StructuredPatch::try_new(
@@ -294,8 +267,6 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
 
     let structural_style = CharacterDialogueStyleValue::try_new(
         CharacterDialogueTypedValue::try_new(
-            None,
-            layout,
             RuntimeValue::try_record(vec![
                 ("alpha".to_owned(), RuntimeValue::Bool(true)),
                 ("beta".to_owned(), RuntimeValue::Bool(false)),
@@ -334,19 +305,16 @@ fn structured_clear_rejects_non_option_some_leaf_atomically() {
         owner: RuntimeVariantIdentity::Nominal {
             nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal owner"),
             semantic_identity: RuntimeSemanticTypeId::from_bytes([12; 32]),
+            layout,
         },
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
     };
-    let style = CharacterDialogueStyleValue::try_new(nominal_typed(
-        "std.rich_text_style",
-        layout,
-        vec![non_option_some.clone()],
-    ))
-    .expect("nominal style");
+    let style = CharacterDialogueStyleValue::try_new(nominal_typed(vec![non_option_some.clone()]))
+        .expect("nominal style");
     let (base, _, _, _) = fixture_with_style(style);
-    let before = base.digest().expect("digest");
+    let before = base.clone();
     let patch = StructuredPatch::try_new(
         false,
         BTreeMap::from([(
@@ -363,257 +331,30 @@ fn structured_clear_rejects_non_option_some_leaf_atomically() {
             ..
         })
     ));
-    assert_eq!(base.digest().expect("digest"), before);
+    assert_eq!(base, before);
     let RuntimeValue::NominalRecord(record) = base.config().style().typed().value() else {
         panic!("style remains nominal");
     };
     assert_eq!(record.fields(), &[non_option_some]);
 }
 
-#[test]
-fn runtime_schema_round_trips_exact_nominal_record() {
-    let (dialogue, characters, views, custom) = fixture();
-    let schema =
-        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
-    let encoded = schema.encode(&dialogue).expect("encode");
-    let decoded = schema.decode(encoded.record()).expect("decode");
-
-    assert_eq!(decoded.dialogue(), &dialogue);
-    assert_eq!(
-        encoded.record().type_id().as_str(),
-        "std.character_dialogue"
-    );
-    assert_eq!(encoded.record().fields().len(), 18);
-}
-
-#[test]
-fn runtime_schema_round_trips_exact_opaque_owner_and_rejects_false_evidence() {
-    let (dialogue, characters, views, custom) = fixture();
-    let schema =
-        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
-    let exact = CharacterDialogueType::exact(dialogue.character().clone()).runtime_opaque_owner();
-    let encoded = schema.encode(&dialogue).expect("encode");
-    let RuntimeValue::Opaque(opaque) = encoded
-        .try_into_runtime_value(&exact)
-        .expect("exact owner wraps")
-    else {
-        panic!("CharacterDialogue uses its opaque carrier");
-    };
-    assert_eq!(
-        schema
-            .try_decode_opaque(&opaque)
-            .expect("opaque decode")
-            .dialogue(),
-        &dialogue
-    );
-
-    let foreign = RuntimeOpaqueTypeOwner::exact(
-        RuntimeOpaqueTypeProducerId::try_new("std.foreign_dialogue").expect("producer"),
-        exact.semantic_identity(),
-    );
-    assert!(matches!(
-        schema
-            .encode(&dialogue)
-            .expect("encode")
-            .try_into_runtime_value(&foreign),
-        Err(CharacterDialogueValueError::OpaqueProducer { .. })
-    ));
-
-    let wrong_identity = CharacterDialogueType::exact(
-        CharacterId::try_new("character.other").expect("other character"),
-    )
-    .runtime_opaque_owner();
-    assert!(matches!(
-        schema
-            .encode(&dialogue)
-            .expect("encode")
-            .try_into_runtime_value(&wrong_identity),
-        Err(CharacterDialogueValueError::OpaqueSemanticIdentity { .. })
-    ));
-
-    assert!(matches!(
-        schema
-            .encode(&dialogue)
-            .expect("encode")
-            .try_into_runtime_value(&CharacterDialogueType::any().runtime_opaque_owner()),
-        Err(CharacterDialogueValueError::OpaqueValue(_))
-    ));
-}
-
-#[test]
-fn runtime_schema_decode_returns_the_normalized_canonical_record() {
-    let (dialogue, characters, views, custom) = fixture();
-    let schema =
-        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
-    let encoded = schema.encode(&dialogue).expect("encode");
-    let mut fields = encoded.record().clone().into_fields();
-    let RuntimeValue::NominalRecord(style) = &fields[14] else {
-        panic!("style field is nominal");
-    };
-    fields[14] = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-        style.type_id().clone(),
-        style.layout(),
-        vec![RuntimeValue::F64(-0.0)],
-    ));
-    let input = RuntimeNominalRecordValue::new(
-        encoded.record().type_id().clone(),
-        encoded.record().layout(),
-        fields,
-    );
-
-    let decoded = schema.decode(&input).expect("decode and normalize");
-    let RuntimeValue::NominalRecord(record_style) = &decoded.record().fields()[14] else {
-        panic!("decoded record style remains nominal");
-    };
-    let RuntimeValue::F64(record_zero) = &record_style.fields()[0] else {
-        panic!("decoded record contains the normalized style leaf");
-    };
-    let RuntimeValue::NominalRecord(dialogue_style) =
-        decoded.dialogue().config().style().typed().value()
-    else {
-        panic!("decoded dialogue style remains nominal");
-    };
-    let RuntimeValue::F64(dialogue_zero) = &dialogue_style.fields()[0] else {
-        panic!("decoded dialogue contains the normalized style leaf");
-    };
-
-    assert_eq!(record_zero.to_bits(), 0.0_f64.to_bits());
-    assert_eq!(dialogue_zero.to_bits(), 0.0_f64.to_bits());
-    assert_eq!(
-        decoded.record(),
-        schema
-            .encode(decoded.dialogue())
-            .expect("re-encode decoded dialogue")
-            .record()
-    );
-}
-
-#[test]
-fn runtime_schema_rejects_wrong_type_layout_and_field_count() {
-    let (dialogue, characters, views, custom) = fixture();
-    let schema =
-        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
-    let encoded = schema.encode(&dialogue).expect("encode");
-    let fields = encoded.record().fields().to_vec();
-
-    let wrong_type = RuntimeNominalRecordValue::new(
-        RuntimeNominalTypeId::try_new("std.other_dialogue").expect("type"),
-        encoded.record().layout(),
-        fields.clone(),
-    );
-    assert!(matches!(
-        schema.decode(&wrong_type),
-        Err(CharacterDialogueValueError::Nominal(
-            RuntimeNominalRecordError::Type { .. }
-        ))
-    ));
-
-    let wrong_layout = RuntimeNominalRecordValue::new(
-        encoded.record().type_id().clone(),
-        TypeLayoutHash::from_bytes([1; 32]),
-        fields.clone(),
-    );
-    assert!(matches!(
-        schema.decode(&wrong_layout),
-        Err(CharacterDialogueValueError::Nominal(
-            RuntimeNominalRecordError::Layout { .. }
-        ))
-    ));
-
-    let mut short_fields = fields;
-    short_fields.pop();
-    let wrong_count = RuntimeNominalRecordValue::new(
-        encoded.record().type_id().clone(),
-        encoded.record().layout(),
-        short_fields,
-    );
-    assert!(matches!(
-        schema.decode(&wrong_count),
-        Err(CharacterDialogueValueError::Nominal(
-            RuntimeNominalRecordError::FieldCount { .. }
-        ))
-    ));
-}
-
-#[test]
-fn runtime_schema_rejects_reversed_custom_order() {
-    let (base, characters, views, _) = fixture();
-    let view = base.config().view().clone();
-    let layout = TypeLayoutHash::from_bytes([8; 32]);
-    let first =
-        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.alpha").expect("field");
-    let second =
-        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.beta").expect("field");
-    let descriptors = [first.clone(), second.clone()].map(|id| {
-        CharacterDialogueRuntimeCustomFieldDescriptor::new(
-            id,
-            None,
-            layout,
-            true,
-            BTreeSet::from([view.clone()]),
-        )
-    });
-    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(
-        base.contract().custom_schema(),
-        descriptors,
-    )
-    .expect("catalog");
-    let value = |text: &str| {
-        CharacterDialogueCustomValue::try_new(
-            CharacterDialogueTypedValue::try_new(
-                None,
-                layout,
-                RuntimeValue::String(text.to_owned()),
-            )
-            .expect("typed"),
-        )
-        .expect("custom")
-    };
-    let dialogue = base
-        .patched(
-            &CharacterDialoguePatch::default()
-                .with_custom(first, PatchField::Set(value("a")))
-                .with_custom(second, PatchField::Set(value("b"))),
-        )
-        .expect("patch");
-    let schema =
-        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
-    let encoded = schema.encode(&dialogue).expect("encode");
-    let mut fields = encoded.record().clone().into_fields();
-    let RuntimeValue::Seq(entries) = &fields[17] else {
-        panic!("custom field is a sequence");
-    };
-    let mut entries = entries.clone().into_values();
-    entries.reverse();
-    fields[17] = RuntimeValue::Seq(RuntimeSeq::values(entries));
-    let reversed = RuntimeNominalRecordValue::new(
-        encoded.record().type_id().clone(),
-        encoded.record().layout(),
-        fields,
-    );
-
-    assert_eq!(
-        schema.decode(&reversed).expect_err("order must fail"),
-        CharacterDialogueValueError::NonCanonicalCustomOrder
-    );
-}
+mod runtime_schema;
 
 fn nested_nominal(depth: usize) -> CharacterDialogueTypedValue {
-    let type_id = RuntimeNominalTypeId::try_new("test.NestedDialogueValue").expect("type");
-    let layout = TypeLayoutHash::from_bytes([21; 32]);
+    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
     let value = (0..depth).fold(RuntimeValue::Unit, |value, _| {
         RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             type_id.clone(),
+            semantic_identity,
             layout,
             vec![value],
         ))
     });
-    CharacterDialogueTypedValue::try_new(Some(type_id), layout, value).expect("nested typed value")
+    CharacterDialogueTypedValue::try_new(value).expect("nested typed value")
 }
 
-fn nominal_with_encoded_size(type_name: &str, target: usize) -> CharacterDialogueTypedValue {
-    let type_id = RuntimeNominalTypeId::try_new(type_name).expect("type");
-    let layout = TypeLayoutHash::from_bytes([22; 32]);
+fn nominal_with_encoded_size(target: usize) -> CharacterDialogueTypedValue {
+    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
     let max_string_bytes = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_string_bytes as usize;
     // Keep the field inventory fixed while sizing payloads through the public
     // encoder. An extra unit slot covers a byte skipped by a varint transition.
@@ -621,6 +362,7 @@ fn nominal_with_encoded_size(type_name: &str, target: usize) -> CharacterDialogu
     let nominal = |fields| {
         RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             type_id.clone(),
+            semantic_identity,
             layout,
             fields,
         ))
@@ -657,7 +399,7 @@ fn nominal_with_encoded_size(type_name: &str, target: usize) -> CharacterDialogu
             .len(),
         target
     );
-    CharacterDialogueTypedValue::try_new(Some(type_id), layout, value).expect("typed value")
+    CharacterDialogueTypedValue::try_new(value).expect("typed value")
 }
 
 #[test]
@@ -687,17 +429,17 @@ fn production_limits_have_the_exact_typed_contract_values() {
 #[test]
 fn generic_typed_values_use_runtime_depth_64_not_structured_depth_8() {
     nested_nominal(MAX_RUNTIME_VALUE_NESTING_DEPTH);
-    let type_id = RuntimeNominalTypeId::try_new("test.NestedDialogueValue").expect("type");
-    let layout = TypeLayoutHash::from_bytes([21; 32]);
+    let (type_id, semantic_identity, layout) = runtime_schema::test_payload_descriptor();
     let value = (0..=MAX_RUNTIME_VALUE_NESTING_DEPTH).fold(RuntimeValue::Unit, |value, _| {
         RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             type_id.clone(),
+            semantic_identity,
             layout,
             vec![value],
         ))
     });
     assert!(matches!(
-        CharacterDialogueTypedValue::try_new(Some(type_id), layout, value),
+        CharacterDialogueTypedValue::try_new(value),
         Err(CharacterDialogueValueError::Limit {
             limit: "runtime_value_nesting_depth",
             maximum: MAX_RUNTIME_VALUE_NESTING_DEPTH,
@@ -725,18 +467,9 @@ fn structured_paths_and_values_enforce_depth_8_and_total_leaves_256() {
         })
     ));
 
-    let layout = TypeLayoutHash::from_bytes([23; 32]);
-    let exact = nominal_typed(
-        "std.rich_text_style",
-        layout,
-        vec![RuntimeValue::Bool(true); 256],
-    );
+    let exact = nominal_typed(vec![RuntimeValue::Bool(true); 256]);
     CharacterDialogueStyleValue::try_new(exact).expect("256 structured leaves");
-    let over = nominal_typed(
-        "std.rich_text_style",
-        layout,
-        vec![RuntimeValue::Bool(true); 257],
-    );
+    let over = nominal_typed(vec![RuntimeValue::Bool(true); 257]);
     assert!(matches!(
         CharacterDialogueStyleValue::try_new(over),
         Err(CharacterDialogueValueError::Limit {
@@ -748,10 +481,7 @@ fn structured_paths_and_values_enforce_depth_8_and_total_leaves_256() {
 
 #[test]
 fn typed_values_normalize_nested_negative_zero_and_preserve_record_order() {
-    let layout = TypeLayoutHash::from_bytes([24; 32]);
     let value = CharacterDialogueTypedValue::try_new(
-        None,
-        layout,
         RuntimeValue::try_record(vec![(
             "value".to_owned(),
             RuntimeValue::Tuple(vec![RuntimeValue::F32(-0.0), RuntimeValue::F64(-0.0)]),
@@ -773,7 +503,7 @@ fn typed_values_normalize_nested_negative_zero_and_preserve_record_order() {
         ("alpha".to_owned(), RuntimeValue::Bool(false)),
     ])
     .expect("test record fields are unique");
-    let typed = CharacterDialogueTypedValue::try_new(None, layout, record.clone())
+    let typed = CharacterDialogueTypedValue::try_new(record.clone())
         .expect("declaration order remains valid");
     assert_eq!(typed.value(), &record);
 }
@@ -791,16 +521,10 @@ fn role_deserialization_revalidates_structured_limits() {
 #[test]
 fn role_encoded_sizes_accept_exact_limits_and_reject_one_over() {
     let field_max = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_field_value_bytes as usize;
-    crate::CharacterDialogueStageValue::try_new(nominal_with_encoded_size(
-        "std.dialogue_stage",
-        field_max,
-    ))
-    .expect("field value exact limit");
+    crate::CharacterDialogueStageValue::try_new(nominal_with_encoded_size(field_max))
+        .expect("field value exact limit");
     assert!(matches!(
-        crate::CharacterDialogueStageValue::try_new(nominal_with_encoded_size(
-            "std.dialogue_stage",
-            field_max + 1,
-        )),
+        crate::CharacterDialogueStageValue::try_new(nominal_with_encoded_size(field_max + 1)),
         Err(CharacterDialogueValueError::Limit {
             limit: "field_value_bytes",
             maximum,
@@ -808,16 +532,10 @@ fn role_encoded_sizes_accept_exact_limits_and_reject_one_over() {
     ));
 
     let aggregate_max = field_max * 4;
-    CharacterDialogueStyleValue::try_new(nominal_with_encoded_size(
-        "std.rich_text_style",
-        aggregate_max,
-    ))
-    .expect("style exact aggregate");
+    CharacterDialogueStyleValue::try_new(nominal_with_encoded_size(aggregate_max))
+        .expect("style exact aggregate");
     assert!(matches!(
-        CharacterDialogueStyleValue::try_new(nominal_with_encoded_size(
-            "std.rich_text_style",
-            aggregate_max + 1,
-        )),
+        CharacterDialogueStyleValue::try_new(nominal_with_encoded_size(aggregate_max + 1)),
         Err(CharacterDialogueValueError::Limit {
             limit: "typed_aggregate_bytes",
             maximum,
@@ -831,22 +549,17 @@ fn hooks_enforce_exact_256_kib_aggregate() {
     let aggregate_max = (PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_field_value_bytes as usize) * 4;
     let hook_count = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_hooks);
     let exact_hook_bytes = aggregate_max / hook_count;
-    let hook = CharacterDialogueHookValue::try_new(nominal_with_encoded_size(
-        "std.dialogue_hook",
-        exact_hook_bytes,
-    ))
-    .expect("hook");
+    let hook = CharacterDialogueHookValue::try_new(nominal_with_encoded_size(exact_hook_bytes))
+        .expect("hook");
     base.patched(
         &CharacterDialoguePatch::default()
             .with_hooks(PatchField::Set(vec![hook.clone(); hook_count])),
     )
     .expect("exact aggregate");
 
-    let larger = CharacterDialogueHookValue::try_new(nominal_with_encoded_size(
-        "std.dialogue_hook",
-        exact_hook_bytes + 1,
-    ))
-    .expect("larger hook");
+    let larger =
+        CharacterDialogueHookValue::try_new(nominal_with_encoded_size(exact_hook_bytes + 1))
+            .expect("larger hook");
     let mut over = vec![hook; hook_count];
     over[0] = larger;
     assert!(matches!(

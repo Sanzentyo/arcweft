@@ -10,7 +10,6 @@ mod typed_value;
 use crate::InlineFailurePolicy;
 use arcweft_character::id::{CharacterId, CharacterLookId};
 use arcweft_core::{
-    entry::{RuntimeValueDigest, TypeLayoutHash},
     pattern::{RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
     value::RuntimeOpaqueValueError,
 };
@@ -19,7 +18,6 @@ pub use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueRuntimeRole,
 };
 use arcweft_view::ViewId;
-use core::hash::{Hash, Hasher};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -34,6 +32,7 @@ pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, Structured
 pub use runtime_type::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use schema::{
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
     CharacterDialogueRuntimeSchema, CharacterDialogueValue,
 };
 pub use typed_value::{
@@ -65,16 +64,15 @@ pub use typed_value::{
 ///     let _ = dialogue.say("removed");
 /// }
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CharacterDialogue {
     pub(super) character: CharacterId,
-    pub(super) layout: TypeLayoutHash,
     pub(super) contract: CharacterDialogueContractIdentity,
     pub(super) config: CharacterDialogueConfig,
 }
 
 /// Effective reusable configuration stored by one [`CharacterDialogue`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CharacterDialogueConfig {
     pub(super) voice: Option<CharacterDialogueVoice>,
     pub(super) look: Option<CharacterLookId>,
@@ -123,8 +121,17 @@ pub enum CharacterDialogueValueError {
     DuplicateCustomField(CharacterDialogueCustomFieldId),
     #[error("CharacterDialogue custom entries are not in canonical field-id order")]
     NonCanonicalCustomOrder,
-    #[error("custom field `{0}` has the wrong declared nominal type or layout")]
-    CustomFieldType(CharacterDialogueCustomFieldId),
+    #[error("CharacterDialogue has no accepted defaults for character `{0}`")]
+    MissingDefaults(CharacterId),
+    #[error("CharacterDialogue defaults digest is stale for character `{0}`")]
+    DefaultsMismatch(CharacterId),
+    #[error("CharacterDialogue View contracts digest is stale")]
+    ViewContractsMismatch,
+    #[error("CharacterDialogue role {role:?} has an invalid type binding: {reason}")]
+    RoleType {
+        role: CharacterDialogueRuntimeRole,
+        reason: &'static str,
+    },
     #[error("custom field `{field}` is not accepted by View `{view}`")]
     CustomFieldView {
         field: CharacterDialogueCustomFieldId,
@@ -135,13 +142,21 @@ pub enum CharacterDialogueValueError {
         expected: RuntimeOpaqueTypeProducerId,
         actual: RuntimeOpaqueTypeProducerId,
     },
-    #[error("opaque CharacterDialogue payload is not a nominal record")]
+    #[error("opaque CharacterDialogue payload is not an 18-element tuple")]
     OpaquePayload,
     #[error("opaque CharacterDialogue semantic identity does not match decoded character")]
     OpaqueSemanticIdentity {
         expected: RuntimeSemanticTypeId,
         actual: RuntimeSemanticTypeId,
     },
+    #[error("opaque CharacterDialogue has the wrong value class or persistence")]
+    OpaqueContract,
+    #[error(transparent)]
+    ProgramType(#[from] arcweft_core::program_types::RuntimeProgramTypeError),
+    #[error(transparent)]
+    NominalSchema(#[from] arcweft_core::entry::RuntimeNominalSchemaGraphError),
+    #[error(transparent)]
+    ViewRegistry(#[from] arcweft_view::ViewRegistryRuntimeDigestError),
     #[error(transparent)]
     OpaqueValue(#[from] RuntimeOpaqueValueError),
     #[error(transparent)]
@@ -170,29 +185,21 @@ impl CharacterDialogue {
     /// snapshot. Catalog-dependent checks are performed by the runtime schema.
     pub fn try_new(
         character: CharacterId,
-        layout: TypeLayoutHash,
         contract: CharacterDialogueContractIdentity,
         config: CharacterDialogueConfig,
     ) -> Result<Self, CharacterDialogueValueError> {
         config.validate()?;
         let dialogue = Self {
             character,
-            layout,
             contract,
             config,
         };
-        dialogue.canonical_bytes()?;
         Ok(dialogue)
     }
 
     #[must_use]
     pub const fn character(&self) -> &CharacterId {
         &self.character
-    }
-
-    #[must_use]
-    pub const fn layout(&self) -> TypeLayoutHash {
-        self.layout
     }
 
     #[must_use]
@@ -213,45 +220,7 @@ impl CharacterDialogue {
         patch: &CharacterDialoguePatch,
     ) -> Result<Self, CharacterDialogueValueError> {
         let config = patch::apply_patch(&self.config, patch)?;
-        Self::try_new(self.character.clone(), self.layout, self.contract, config)
-    }
-
-    /// Canonical value digest used by equality, hashing, persistence, and
-    /// stale-contract checks.
-    pub fn digest(&self) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
-        let record = schema::encode_record(self)?;
-        Ok(arcweft_core::value::RuntimeValue::NominalRecord(record)
-            .try_digest(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize)?)
-    }
-
-    fn canonical_bytes(&self) -> Result<Vec<u8>, CharacterDialogueValueError> {
-        let record = schema::encode_record(self)?;
-        Ok(
-            arcweft_core::value::RuntimeValue::NominalRecord(record).try_canonical_bytes(
-                PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
-            )?,
-        )
-    }
-}
-
-impl PartialEq for CharacterDialogue {
-    fn eq(&self, other: &Self) -> bool {
-        self.canonical_bytes()
-            .expect("validated CharacterDialogue remains canonically encodable")
-            == other
-                .canonical_bytes()
-                .expect("validated CharacterDialogue remains canonically encodable")
-    }
-}
-
-impl Eq for CharacterDialogue {}
-
-impl Hash for CharacterDialogue {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.digest()
-            .expect("validated CharacterDialogue remains canonically hashable")
-            .as_bytes()
-            .hash(state);
+        Self::try_new(self.character.clone(), self.contract, config)
     }
 }
 

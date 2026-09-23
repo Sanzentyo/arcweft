@@ -55,3 +55,16 @@ pub(super) const MAX_LOCAL_ID_BYTES: usize =
     PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_field_id_bytes as usize;
 pub(super) const MAX_TYPED_AGGREGATE_BYTES: usize =
     (PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_field_value_bytes as usize) * 4;
+
+impl CharacterDialogueLimits {
+    /// Persistent type admission uses the shared engine traversal with the
+    /// dialogue product's string, sequence, and total encoded-size limits.
+    pub const fn runtime_schema_limits(self) -> arcweft_core::entry::RuntimeSchemaLimits {
+        arcweft_core::entry::RuntimeSchemaLimits {
+            max_sequence_items: self.max_values_per_sequence,
+            max_string_bytes: self.max_config_string_bytes as u64,
+            max_encoded_bytes: self.max_config_encoded_bytes as u64,
+            ..arcweft_core::entry::RuntimeSchemaLimits::engine_default()
+        }
+    }
+}

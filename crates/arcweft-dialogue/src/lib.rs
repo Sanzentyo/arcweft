@@ -12,6 +12,7 @@ pub use character_dialogue::{
     CharacterDialogueLimits, CharacterDialoguePatch, CharacterDialoguePortraitValue,
     CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeRole,
+    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
     CharacterDialogueRuntimeSchema, CharacterDialogueStageValue, CharacterDialogueStyleValue,
     CharacterDialogueType, CharacterDialogueTypedValue, CharacterDialogueValue,
     CharacterDialogueValueError, CharacterDialogueVoice, CharacterDialogueVoiceId,

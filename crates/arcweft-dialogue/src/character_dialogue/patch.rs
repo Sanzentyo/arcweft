@@ -6,7 +6,7 @@ use super::{
     CharacterDialoguePortraitValue, CharacterDialogueRichTextValue, CharacterDialogueStageValue,
     CharacterDialogueStyleValue, CharacterDialogueValueError, CharacterDialogueVoice,
     DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
-    typed_value::{empty_like, empty_runtime_value, replace_runtime_value},
+    typed_value::{empty_like, empty_runtime_value},
 };
 use crate::InlineFailurePolicy;
 use arcweft_character::id::CharacterLookId;
@@ -390,7 +390,7 @@ fn apply_structured<T>(
     base: &super::CharacterDialogueTypedValue,
     patch: &StructuredPatch<T>,
 ) -> Result<super::CharacterDialogueTypedValue, CharacterDialogueValueError> {
-    let mut typed = if patch.clear_all {
+    let typed = if patch.clear_all {
         empty_like(base)?
     } else {
         base.clone()
@@ -407,12 +407,7 @@ fn apply_structured<T>(
             }
         }
     }
-    typed = replace_runtime_value(typed, runtime);
-    super::CharacterDialogueTypedValue::try_new(
-        typed.nominal_type().cloned(),
-        typed.layout(),
-        typed.into_value(),
-    )
+    super::CharacterDialogueTypedValue::try_new(runtime)
 }
 
 fn update_path(
@@ -428,6 +423,18 @@ fn update_path(
     };
     let index = usize::from(ordinal);
     match value {
+        RuntimeValue::Opaque(opaque) => {
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                opaque.producer().clone(),
+                opaque.semantic_identity(),
+                opaque.value_class(),
+                opaque.persistence(),
+            );
+            let mut payload = opaque.payload().clone();
+            update_path(&mut payload, path, replacement)?;
+            *value = owner.try_wrap(payload)?;
+            Ok(())
+        }
         RuntimeValue::Tuple(values) => update_fixed_values(values, index, tail, replacement),
         RuntimeValue::Record(fields) => {
             let mut rebuilt = fields
@@ -471,11 +478,15 @@ fn update_path(
         }
         RuntimeValue::NominalRecord(record) => {
             let type_id = record.type_id().clone();
+            let semantic_identity = record.semantic_identity();
             let layout = record.layout();
             let mut values = record.clone().into_fields();
             update_fixed_values(&mut values, index, tail, replacement)?;
             *value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                type_id, layout, values,
+                type_id,
+                semantic_identity,
+                layout,
+                values,
             ));
             Ok(())
         }

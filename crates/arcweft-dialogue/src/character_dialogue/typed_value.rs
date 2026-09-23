@@ -6,17 +6,16 @@ use super::{
 };
 use crate::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_core::{
-    entry::{RuntimeNominalTypeId, RuntimeSchemaError, TypeLayoutHash},
+    entry::RuntimeSchemaError,
     value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
 };
 use core::hash::{Hash, Hasher};
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Checked lower-layer carrier for one runtime-typed configuration value.
+/// Locally bounded data, admitted against the active program at publication.
+/// Nominal and opaque evidence remains on the value, without a second header.
 #[derive(Clone, Debug, Serialize)]
 pub struct CharacterDialogueTypedValue {
-    nominal_type: Option<RuntimeNominalTypeId>,
-    layout: TypeLayoutHash,
     value: RuntimeValue,
 }
 
@@ -26,84 +25,32 @@ impl<'de> Deserialize<'de> for CharacterDialogueTypedValue {
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
         struct SerializedTypedValue {
-            nominal_type: Option<RuntimeNominalTypeId>,
-            layout: TypeLayoutHash,
             value: RuntimeValue,
         }
 
         let serialized = SerializedTypedValue::deserialize(deserializer)?;
-        Self::try_new(serialized.nominal_type, serialized.layout, serialized.value)
-            .map_err(serde::de::Error::custom)
+        Self::try_new(serialized.value).map_err(serde::de::Error::custom)
     }
 }
 
 impl CharacterDialogueTypedValue {
-    /// Validates identity correlation and deterministic canonical encoding.
-    pub fn try_new(
-        nominal_type: Option<RuntimeNominalTypeId>,
-        layout: TypeLayoutHash,
-        value: RuntimeValue,
-    ) -> Result<Self, CharacterDialogueValueError> {
-        let value = normalize_runtime_value(value)?;
-        match (&nominal_type, &value) {
-            (Some(expected), RuntimeValue::NominalRecord(record))
-                if expected == record.type_id() && layout == record.layout() => {}
-            (None, RuntimeValue::NominalRecord(record)) => {
-                return Err(CharacterDialogueValueError::Field {
-                    field: "typed_value",
-                    reason: format!(
-                        "nominal value `{}` requires its nominal identity",
-                        record.type_id().as_str()
-                    ),
-                });
-            }
-            (Some(expected), RuntimeValue::NominalRecord(record)) => {
-                return Err(CharacterDialogueValueError::Field {
-                    field: "typed_value",
-                    reason: format!(
-                        "declared nominal identity `{}` or layout does not match `{}`",
-                        expected.as_str(),
-                        record.type_id().as_str()
-                    ),
-                });
-            }
-            (Some(expected), _) => {
-                return Err(CharacterDialogueValueError::Field {
-                    field: "typed_value",
-                    reason: format!(
-                        "declared nominal identity `{}` requires a nominal record",
-                        expected.as_str()
-                    ),
-                });
-            }
-            (None, _) => {}
-        }
+    /// Checks local data limits before recursive normalization. This does not
+    /// replace role/custom admission through `CharacterDialogueRuntimeSchema`.
+    pub fn try_new(value: RuntimeValue) -> Result<Self, CharacterDialogueValueError> {
         value
             .validate_nesting_depth(MAX_RUNTIME_VALUE_NESTING_DEPTH)
             .map_err(|_| CharacterDialogueValueError::Limit {
                 limit: "runtime_value_nesting_depth",
                 maximum: MAX_RUNTIME_VALUE_NESTING_DEPTH,
             })?;
+        let value = normalize_runtime_value(value)?;
         validate_config_strings(&value)?;
         value.try_canonical_bytes(
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
         )?;
-        Ok(Self {
-            nominal_type,
-            layout,
-            value,
-        })
-    }
-
-    #[must_use]
-    pub const fn nominal_type(&self) -> Option<&RuntimeNominalTypeId> {
-        self.nominal_type.as_ref()
-    }
-
-    #[must_use]
-    pub const fn layout(&self) -> TypeLayoutHash {
-        self.layout
+        Ok(Self { value })
     }
 
     #[must_use]
@@ -127,9 +74,7 @@ impl CharacterDialogueTypedValue {
 
 impl PartialEq for CharacterDialogueTypedValue {
     fn eq(&self, other: &Self) -> bool {
-        self.nominal_type == other.nominal_type
-            && self.layout == other.layout
-            && self.canonical_bytes() == other.canonical_bytes()
+        self.canonical_bytes() == other.canonical_bytes()
     }
 }
 
@@ -137,15 +82,13 @@ impl Eq for CharacterDialogueTypedValue {}
 
 impl Hash for CharacterDialogueTypedValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.nominal_type.hash(state);
-        self.layout.hash(state);
         self.canonical_bytes().hash(state);
     }
 }
 
 macro_rules! typed_role {
     ($name:ident, $validator:ident) => {
-        #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+        #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
         #[serde(transparent)]
         pub struct $name(CharacterDialogueTypedValue);
 
@@ -513,8 +456,18 @@ fn normalize_runtime_value(
         RuntimeValue::Record(fields) => fields
             .try_map_values(normalize_runtime_value)
             .map(RuntimeValue::Record),
+        RuntimeValue::Opaque(value) => {
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                value.producer().clone(),
+                value.semantic_identity(),
+                value.value_class(),
+                value.persistence(),
+            );
+            Ok(owner.try_wrap(normalize_runtime_value(value.into_payload())?)?)
+        }
         RuntimeValue::NominalRecord(record) => {
             let type_id = record.type_id().clone();
+            let semantic_identity = record.semantic_identity();
             let layout = record.layout();
             record
                 .into_fields()
@@ -523,7 +476,10 @@ fn normalize_runtime_value(
                 .collect::<Result<Vec<_>, _>>()
                 .map(|fields| {
                     RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-                        type_id, layout, fields,
+                        type_id,
+                        semantic_identity,
+                        layout,
+                        fields,
                     ))
                 })
         }
@@ -549,21 +505,7 @@ pub(super) fn empty_like(
     value: &CharacterDialogueTypedValue,
 ) -> Result<CharacterDialogueTypedValue, CharacterDialogueValueError> {
     let empty = empty_runtime_value(value.value())?;
-    Ok(CharacterDialogueTypedValue {
-        nominal_type: value.nominal_type.clone(),
-        layout: value.layout,
-        value: empty,
-    })
-}
-
-pub(super) fn replace_runtime_value(
-    value: CharacterDialogueTypedValue,
-    runtime: RuntimeValue,
-) -> CharacterDialogueTypedValue {
-    CharacterDialogueTypedValue {
-        value: runtime,
-        ..value
-    }
+    Ok(CharacterDialogueTypedValue { value: empty })
 }
 
 pub(super) fn empty_runtime_value(
@@ -573,6 +515,15 @@ pub(super) fn empty_runtime_value(
         return Ok(none);
     }
     match value {
+        RuntimeValue::Opaque(value) => {
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                value.producer().clone(),
+                value.semantic_identity(),
+                value.value_class(),
+                value.persistence(),
+            );
+            Ok(owner.try_wrap(empty_runtime_value(value.payload())?)?)
+        }
         RuntimeValue::Unit => Ok(RuntimeValue::Unit),
         RuntimeValue::Tuple(values) => values
             .iter()
@@ -591,6 +542,7 @@ pub(super) fn empty_runtime_value(
             .map(|fields| {
                 RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(
                     record.type_id().clone(),
+                    record.semantic_identity(),
                     record.layout(),
                     fields,
                 ))

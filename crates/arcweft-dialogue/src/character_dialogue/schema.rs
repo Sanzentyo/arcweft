@@ -1,12 +1,16 @@
-//! Context-owned `CharacterDialogue` runtime record encoding and decoding.
+//! Program-bound admission and producer-owned tuple encoding of `CharacterDialogue`.
+
+mod policies;
+mod roles;
 
 use super::{
     CharacterDialogue, CharacterDialogueCleanupValue, CharacterDialogueConfig,
     CharacterDialogueContractIdentity, CharacterDialogueCustomFieldId,
     CharacterDialogueCustomValue, CharacterDialogueFocusValue, CharacterDialogueHookValue,
-    CharacterDialoguePortraitValue, CharacterDialogueRichTextValue, CharacterDialogueStageValue,
-    CharacterDialogueStyleValue, CharacterDialogueTypedValue, CharacterDialogueValueError,
-    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
+    CharacterDialoguePortraitValue, CharacterDialogueRichTextValue,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueStageValue, CharacterDialogueStyleValue,
+    CharacterDialogueTypedValue, CharacterDialogueValueError, CharacterDialogueVoice,
+    CharacterDialogueVoiceId, DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
 };
 use crate::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_character::{
@@ -14,154 +18,87 @@ use arcweft_character::{
     id::{CharacterId, CharacterLookId},
 };
 use arcweft_core::{
-    entry::{
-        RuntimeBytesFormat, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeTypeSchema,
-        RuntimeValueDigest, TypeLayoutHash,
-    },
+    entry::{RuntimeSchemaLimits, RuntimeValueDigest},
     pattern::{
-        RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
-        RuntimeSemanticTypeId, RuntimeVariantIdentity,
+        RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
     },
+    program_types::RuntimeProgramTypes,
     value::{
-        RuntimeEntityReference, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeSeq,
-        RuntimeValue, runtime_sequence_dense_bytes,
+        RuntimeEntityReference, RuntimeOpaqueValue, RuntimeSeq, RuntimeValue,
+        runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_view::{ViewId, ViewRegistry};
+use policies::{DialoguePolicyTypes, DialogueRuntimeVariantOwner};
+pub use roles::{CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes};
 use std::collections::{BTreeMap, BTreeSet};
 
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
-const CUSTOM_ENTRY_FIELD_COUNT: usize = 4;
 
-#[derive(Clone, Copy)]
-enum DialogueRuntimeVariantOwner {
-    Voice,
-    InlineFailure,
-    InlineFallback,
-    FallbackStyle,
-}
-
-impl DialogueRuntimeVariantOwner {
-    const fn public_id(self) -> &'static str {
-        match self {
-            Self::Voice => "arcweft.dialogue.CharacterDialogueVoice",
-            Self::InlineFailure => "arcweft.dialogue.InlineFailurePolicy",
-            Self::InlineFallback => "arcweft.dialogue.InlineFallback",
-            Self::FallbackStyle => "arcweft.dialogue.FallbackStylePolicy",
-        }
-    }
-
-    const fn semantic_digest(self) -> [u8; 32] {
-        match self {
-            // SHA-256 of the versioned canonical owner labels. The bytes are
-            // frozen schema identity, not source or display spellings.
-            Self::Voice => [
-                0x76, 0x53, 0x13, 0x17, 0x90, 0x11, 0xc8, 0xe7, 0x34, 0x93, 0xbe, 0xbe, 0x4e, 0xc0,
-                0x4d, 0x05, 0x6a, 0xd3, 0xd5, 0xcd, 0x6a, 0xbd, 0xd3, 0x94, 0x9b, 0x0f, 0x8a, 0x36,
-                0x9e, 0x3c, 0x6a, 0x4d,
-            ],
-            Self::InlineFailure => [
-                0x5c, 0xfa, 0x09, 0xb9, 0xb5, 0x88, 0x19, 0x62, 0xe9, 0xdd, 0xe3, 0x22, 0xfb, 0xe5,
-                0x50, 0xa8, 0x7a, 0x2b, 0xcc, 0x6f, 0xe1, 0x98, 0xc0, 0xe4, 0xd8, 0x51, 0x51, 0xb2,
-                0x24, 0x8d, 0xed, 0x77,
-            ],
-            Self::InlineFallback => [
-                0xb0, 0x2c, 0xfa, 0x28, 0x38, 0xd6, 0xf8, 0x30, 0x9e, 0x47, 0xad, 0xab, 0x77, 0xf1,
-                0x24, 0xea, 0x90, 0x2a, 0xb6, 0xea, 0xa4, 0xa6, 0xf9, 0x88, 0xfa, 0xec, 0x56, 0x58,
-                0x28, 0x50, 0x69, 0xc5,
-            ],
-            Self::FallbackStyle => [
-                0x89, 0xa6, 0x0b, 0xba, 0xba, 0x9b, 0x88, 0xe0, 0x84, 0x03, 0x27, 0x37, 0xd8, 0x0e,
-                0x27, 0xa3, 0xf4, 0xdd, 0x5a, 0x63, 0xeb, 0x3b, 0xec, 0x51, 0xcc, 0x7d, 0x5b, 0xd9,
-                0x09, 0x82, 0xc1, 0xe2,
-            ],
-        }
-    }
-
-    fn identity(self) -> RuntimeVariantIdentity {
-        RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new(self.public_id())
-                .expect("dialogue runtime variant owner IDs are valid"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes(self.semantic_digest()),
-        }
-    }
-}
-
-/// Runtime-only custom-field descriptor accepted with one bundle generation.
+/// A field's source type reference and policy in one accepted bundle generation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterDialogueRuntimeCustomFieldDescriptor {
     id: CharacterDialogueCustomFieldId,
-    nominal_type: Option<RuntimeNominalTypeId>,
-    layout: TypeLayoutHash,
+    semantic_type: RuntimeSemanticTypeId,
     clearable: bool,
     accepted_views: BTreeSet<ViewId>,
 }
 
-/// Immutable runtime custom-field catalog and semantic digest.
+/// Source catalog digest and its runtime field references. This is not a type table.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterDialogueRuntimeCustomFieldCatalog {
     digest: RuntimeValueDigest,
     fields: BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor>,
 }
 
-/// Context required to validate the Cut 1 `CharacterDialogue` domain carrier.
-///
-/// Exact role nominal identities and layouts are validated by the accepted
-/// AWBC type table introduced in Cut 4.
+/// Producer context borrowing the active program and accepted generation inputs.
+/// Type and payload references resolve only through that program. Defaults and
+/// the source custom-catalog digest must come from the generation being loaded.
+/// Construction checks structural consistency; it does not grant publication
+/// authority to a compiler or bundle integrator.
 pub struct CharacterDialogueRuntimeSchema<'a> {
     character_catalog: &'a CharacterCatalog,
     view_catalog: &'a ViewRegistry,
     custom_fields: &'a CharacterDialogueRuntimeCustomFieldCatalog,
-    expected_layout: TypeLayoutHash,
+    defaults: &'a BTreeMap<CharacterId, RuntimeValueDigest>,
+    roles: &'a CharacterDialogueRuntimeRoleTypes,
+    program: RuntimeProgramTypes<'a>,
+    view_contracts: RuntimeValueDigest,
+    policies: DialoguePolicyTypes,
 }
 
-/// Canonical Cut 1 nominal carrier paired with its validated domain value.
+/// Fully admitted domain value and its exact opaque runtime representation.
 #[derive(Clone, Debug)]
 pub struct CharacterDialogueValue {
-    record: RuntimeNominalRecordValue,
+    opaque: RuntimeOpaqueValue,
     dialogue: CharacterDialogue,
 }
 
 impl CharacterDialogueRuntimeCustomFieldDescriptor {
-    #[must_use]
     pub fn new(
         id: CharacterDialogueCustomFieldId,
-        nominal_type: Option<RuntimeNominalTypeId>,
-        layout: TypeLayoutHash,
+        semantic_type: RuntimeSemanticTypeId,
         clearable: bool,
         accepted_views: BTreeSet<ViewId>,
     ) -> Self {
         Self {
             id,
-            nominal_type,
-            layout,
+            semantic_type,
             clearable,
             accepted_views,
         }
     }
-
-    #[must_use]
     pub const fn id(&self) -> &CharacterDialogueCustomFieldId {
         &self.id
     }
-
-    #[must_use]
-    pub const fn nominal_type(&self) -> Option<&RuntimeNominalTypeId> {
-        self.nominal_type.as_ref()
+    pub const fn semantic_type(&self) -> RuntimeSemanticTypeId {
+        self.semantic_type
     }
-
-    #[must_use]
-    pub const fn layout(&self) -> TypeLayoutHash {
-        self.layout
-    }
-
-    #[must_use]
     pub const fn clearable(&self) -> bool {
         self.clearable
     }
-
-    #[must_use]
     pub const fn accepted_views(&self) -> &BTreeSet<ViewId> {
         &self.accepted_views
     }
@@ -181,21 +118,15 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
         }
         Ok(Self { digest, fields })
     }
-
-    #[must_use]
     pub const fn digest(&self) -> RuntimeValueDigest {
         self.digest
     }
-
-    #[must_use]
     pub const fn fields(
         &self,
     ) -> &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor>
     {
         &self.fields
     }
-
-    #[must_use]
     pub fn get(
         &self,
         id: &CharacterDialogueCustomFieldId,
@@ -205,67 +136,68 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
 }
 
 impl<'a> CharacterDialogueRuntimeSchema<'a> {
-    /// Canonical producer of all exact and producer-wide `CharacterDialogue` types.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if the compile-time canonical producer literal violates the
-    /// core producer identity grammar.
-    #[must_use]
+    /// Sole producer for configuration roles and exact `CharacterDialogue` values.
     pub fn opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
         super::runtime_type::character_dialogue_opaque_type_producer()
     }
 
-    /// Returns the sole runtime nominal identity for encoded
-    /// [`CharacterDialogue`](super::CharacterDialogue) values.
-    #[must_use]
-    pub fn nominal_type_id() -> RuntimeNominalTypeId {
-        character_dialogue_type_id()
-    }
-
-    #[must_use]
-    pub const fn new(
+    /// Resolves the complete role and custom type inventory before publishing a
+    /// producer context. Recursive payloads remain references to program rows.
+    pub fn try_new(
         character_catalog: &'a CharacterCatalog,
         view_catalog: &'a ViewRegistry,
         custom_fields: &'a CharacterDialogueRuntimeCustomFieldCatalog,
-        expected_layout: TypeLayoutHash,
-    ) -> Self {
-        Self {
+        defaults: &'a BTreeMap<CharacterId, RuntimeValueDigest>,
+        roles: &'a CharacterDialogueRuntimeRoleTypes,
+        program: RuntimeProgramTypes<'a>,
+    ) -> Result<Self, CharacterDialogueValueError> {
+        let rich_text = roles.validate(program)?;
+        for descriptor in custom_fields.fields.values() {
+            program.require_type(descriptor.semantic_type)?;
+        }
+        let view_contracts =
+            RuntimeValueDigest::from_bytes(*view_catalog.runtime_digest_v1()?.as_bytes());
+        let policies = DialoguePolicyTypes::try_new(
+            rich_text,
+            PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
+        )?;
+        Ok(Self {
             character_catalog,
             view_catalog,
             custom_fields,
-            expected_layout,
-        }
-    }
-
-    pub fn decode(
-        &self,
-        value: &RuntimeNominalRecordValue,
-    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
-        value.validate_shape(
-            &character_dialogue_type_id(),
-            self.expected_layout,
-            CHARACTER_DIALOGUE_FIELD_COUNT,
-        )?;
-        let dialogue = decode_record(value)?;
-        self.validate_dialogue(&dialogue)?;
-        let canonical = encode_record(&dialogue)?;
-        if canonical != *value {
-            return Err(CharacterDialogueValueError::Field {
-                field: "runtime_record",
-                reason: "record is not in canonical runtime form".to_owned(),
-            });
-        }
-        Ok(CharacterDialogueValue {
-            // `RuntimeValue` equality intentionally treats `-0.0` and `0.0`
-            // as equal. Retain the re-encoded value so the accepted carrier
-            // cannot diverge from its normalized domain representation.
-            record: canonical,
-            dialogue,
+            defaults,
+            roles,
+            program,
+            view_contracts,
+            policies,
         })
     }
 
-    /// Validates and decodes one exact opaque `CharacterDialogue` value.
+    fn limits() -> RuntimeSchemaLimits {
+        PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits()
+    }
+
+    pub fn encode(
+        &self,
+        value: &CharacterDialogue,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        self.validate_dialogue(value)?;
+        let payload = self.encode_payload(value);
+        let owner =
+            super::CharacterDialogueType::exact(value.character.clone()).runtime_opaque_owner();
+        let runtime = owner.try_wrap(payload)?;
+        runtime.try_digest_with_limits(Self::limits())?;
+        let RuntimeValue::Opaque(opaque) = runtime else {
+            unreachable!("exact owner wraps as opaque")
+        };
+        Ok(CharacterDialogueValue {
+            opaque,
+            dialogue: value.clone(),
+        })
+    }
+
+    /// Decodes only the final exact opaque representation. Removed nominal
+    /// wrappers have no reader. Character correlation precedes nested decoding.
     pub fn try_decode_opaque(
         &self,
         value: &RuntimeOpaqueValue,
@@ -277,49 +209,83 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
                 actual: value.producer().clone(),
             });
         }
-        let RuntimeValue::NominalRecord(record) = value.payload() else {
+        let RuntimeValue::Tuple(fields) = value.payload() else {
             return Err(CharacterDialogueValueError::OpaquePayload);
         };
-        let decoded = self.decode(record)?;
-        let expected = super::CharacterDialogueType::exact(decoded.dialogue.character.clone())
-            .runtime_semantic_identity();
-        if value.semantic_identity() != expected {
+        if fields.len() != CHARACTER_DIALOGUE_FIELD_COUNT {
+            return Err(CharacterDialogueValueError::OpaquePayload);
+        }
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id,
+        }) = &fields[0]
+        else {
+            return Err(field_shape(
+                "character_id",
+                "expected Character entity reference",
+            ));
+        };
+        let character = CharacterId::try_new(public_id.as_str())
+            .map_err(|error| field_shape("character_id", error.to_string()))?;
+        if self.character_catalog.get(&character).is_none() {
+            return Err(CharacterDialogueValueError::MissingCharacter(character));
+        }
+        let expected = super::CharacterDialogueType::exact(character).runtime_opaque_owner();
+        if expected.semantic_identity() != value.semantic_identity() {
             return Err(CharacterDialogueValueError::OpaqueSemanticIdentity {
-                expected,
+                expected: expected.semantic_identity(),
                 actual: value.semantic_identity(),
             });
         }
-        Ok(decoded)
+        if !expected.accepts_opaque_value(value) {
+            return Err(CharacterDialogueValueError::OpaqueContract);
+        }
+        // Bound the complete input before any recursive domain normalization or clone.
+        value.payload().try_digest_with_limits(Self::limits())?;
+        let dialogue = self.decode_payload(fields)?;
+        let canonical = self.encode(&dialogue)?;
+        let input = RuntimeValue::Opaque(value.clone()).try_canonical_bytes(
+            PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
+        )?;
+        let output = RuntimeValue::Opaque(canonical.opaque.clone()).try_canonical_bytes(
+            PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
+        )?;
+        if input != output {
+            return Err(field_shape(
+                "runtime_payload",
+                "value is not in canonical runtime form",
+            ));
+        }
+        Ok(canonical)
     }
 
-    pub fn encode(
+    pub fn canonical_bytes(
         &self,
         value: &CharacterDialogue,
-    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
-        self.validate_dialogue(value)?;
-        let record = encode_record(value)?;
-        record.validate_shape(
-            &character_dialogue_type_id(),
-            self.expected_layout,
-            CHARACTER_DIALOGUE_FIELD_COUNT,
-        )?;
-        Ok(CharacterDialogueValue {
-            record,
-            dialogue: value.clone(),
-        })
+    ) -> Result<Vec<u8>, CharacterDialogueValueError> {
+        Ok(self
+            .encode(value)?
+            .into_runtime_value()
+            .try_canonical_bytes(
+                PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
+            )?)
+    }
+
+    pub fn digest(
+        &self,
+        value: &CharacterDialogue,
+    ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+        Ok(self
+            .encode(value)?
+            .into_runtime_value()
+            .try_digest(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize)?)
     }
 
     fn validate_dialogue(
         &self,
         dialogue: &CharacterDialogue,
     ) -> Result<(), CharacterDialogueValueError> {
-        if dialogue.layout != self.expected_layout {
-            return Err(arcweft_core::value::RuntimeNominalRecordError::Layout {
-                expected: self.expected_layout,
-                actual: dialogue.layout,
-            }
-            .into());
-        }
+        dialogue.config.validate()?;
         let manifest = self
             .character_catalog
             .get(&dialogue.character)
@@ -332,6 +298,17 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
             return Err(CharacterDialogueValueError::CharacterManifestMismatch(
                 dialogue.character.clone(),
             ));
+        }
+        let defaults = self.defaults.get(&dialogue.character).ok_or_else(|| {
+            CharacterDialogueValueError::MissingDefaults(dialogue.character.clone())
+        })?;
+        if *defaults != dialogue.contract.defaults() {
+            return Err(CharacterDialogueValueError::DefaultsMismatch(
+                dialogue.character.clone(),
+            ));
+        }
+        if dialogue.contract.view_contracts() != self.view_contracts {
+            return Err(CharacterDialogueValueError::ViewContractsMismatch);
         }
         if let Some(look) = &dialogue.config.look
             && manifest.look(look).is_none()
@@ -349,732 +326,634 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
         if dialogue.contract.custom_schema() != self.custom_fields.digest {
             return Err(CharacterDialogueValueError::CustomSchemaMismatch);
         }
-        for (id, value) in &dialogue.config.custom {
+        let config = &dialogue.config;
+        for (role, value) in [
+            (
+                Role::Stage,
+                config
+                    .stage
+                    .as_ref()
+                    .map(CharacterDialogueStageValue::typed),
+            ),
+            (
+                Role::Portrait,
+                config
+                    .portrait
+                    .as_ref()
+                    .map(CharacterDialoguePortraitValue::typed),
+            ),
+            (
+                Role::Focus,
+                config
+                    .focus
+                    .as_ref()
+                    .map(CharacterDialogueFocusValue::typed),
+            ),
+            (
+                Role::Cleanup,
+                config
+                    .cleanup
+                    .as_ref()
+                    .map(CharacterDialogueCleanupValue::typed),
+            ),
+        ] {
+            if let Some(value) = value {
+                self.validate_role(role, value.value())?;
+            }
+        }
+        for value in &config.hooks {
+            self.validate_role(Role::Hook, value.typed().value())?;
+        }
+        self.validate_role(Role::Style, config.style.typed().value())?;
+        self.validate_role(Role::RichText, config.rich_text.typed().value())?;
+        if let InlineFailurePolicy::Fallback { fallback } = &config.inline_failure {
+            let style = match fallback {
+                InlineFallback::Text { style, .. }
+                | InlineFallback::ExprSource { style }
+                | InlineFallback::CallSource { style } => Some(style),
+                InlineFallback::ValuePlain => None,
+            };
+            if let Some(FallbackStylePolicy::Apply { styles }) = style {
+                for value in styles {
+                    self.validate_role(Role::Style, value.typed().value())?;
+                }
+            }
+        }
+        for (id, value) in &config.custom {
             let descriptor = self
                 .custom_fields
                 .get(id)
                 .ok_or_else(|| CharacterDialogueValueError::UnknownCustomField(id.clone()))?;
-            if descriptor.nominal_type.as_ref() != value.typed().nominal_type()
-                || descriptor.layout != value.typed().layout()
-            {
-                return Err(CharacterDialogueValueError::CustomFieldType(id.clone()));
-            }
-            if !descriptor.accepted_views.contains(&dialogue.config.view) {
+            if !descriptor.accepted_views.contains(&config.view) {
                 return Err(CharacterDialogueValueError::CustomFieldView {
                     field: id.clone(),
-                    view: dialogue.config.view.clone(),
+                    view: config.view.clone(),
                 });
             }
+            self.program.accepts_value(
+                descriptor.semantic_type,
+                value.typed().value(),
+                Self::limits(),
+            )?;
         }
-        dialogue.config.validate()
+        Ok(())
     }
 }
 
 impl CharacterDialogueValue {
-    #[must_use]
     pub const fn dialogue(&self) -> &CharacterDialogue {
         &self.dialogue
     }
-
-    #[must_use]
-    pub const fn record(&self) -> &RuntimeNominalRecordValue {
-        &self.record
+    pub const fn opaque(&self) -> &RuntimeOpaqueValue {
+        &self.opaque
     }
-
-    /// Wraps the validated record with its exact `CharacterDialogue` owner.
-    pub fn try_into_runtime_value(
-        self,
-        owner: &RuntimeOpaqueTypeOwner,
-    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
-        let expected_producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
-        if owner.producer() != &expected_producer {
-            return Err(CharacterDialogueValueError::OpaqueProducer {
-                expected: expected_producer,
-                actual: owner.producer().clone(),
-            });
-        }
-        if owner.admission() == arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ProducerWide {
-            return owner
-                .try_wrap(RuntimeValue::NominalRecord(self.record))
-                .map_err(Into::into);
-        }
-        let expected = super::CharacterDialogueType::exact(self.dialogue.character.clone())
-            .runtime_semantic_identity();
-        if owner.semantic_identity() != expected {
-            return Err(CharacterDialogueValueError::OpaqueSemanticIdentity {
-                expected,
-                actual: owner.semantic_identity(),
-            });
-        }
-        owner
-            .try_wrap(RuntimeValue::NominalRecord(self.record))
-            .map_err(Into::into)
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        RuntimeValue::Opaque(self.opaque)
     }
 }
 
-pub(super) fn encode_record(
-    dialogue: &CharacterDialogue,
-) -> Result<RuntimeNominalRecordValue, CharacterDialogueValueError> {
-    let contract = dialogue.contract;
-    let config = &dialogue.config;
-    let fields = vec![
-        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
-            family: DeclarationIdentityFamily::Character,
-            public_id: dialogue.character.as_public_id(),
-        }),
-        digest_value(contract.character_manifest()),
-        digest_value(contract.defaults()),
-        digest_value(contract.custom_schema()),
-        digest_value(contract.view_contracts()),
-        encode_option(config.voice.as_ref().map(encode_voice)),
-        encode_option(
-            config
-                .look
-                .as_ref()
-                .map(|look| RuntimeValue::String(look.as_str().to_owned())),
-        ),
-        encode_typed_option(
-            config
-                .stage
-                .as_ref()
-                .map(CharacterDialogueStageValue::typed),
-        ),
-        encode_typed_option(
-            config
-                .portrait
-                .as_ref()
-                .map(CharacterDialoguePortraitValue::typed),
-        ),
-        encode_typed_option(
-            config
-                .focus
-                .as_ref()
-                .map(CharacterDialogueFocusValue::typed),
-        ),
-        encode_typed_option(
-            config
-                .cleanup
-                .as_ref()
-                .map(CharacterDialogueCleanupValue::typed),
-        ),
-        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
-            family: DeclarationIdentityFamily::View,
-            public_id: config.view.public_id().clone(),
-        }),
-        encode_option(
-            config
-                .source_locale
-                .as_ref()
-                .map(|locale| RuntimeValue::String(locale.as_str().to_owned())),
-        ),
-        RuntimeValue::Seq(RuntimeSeq::values(
-            config
-                .hooks
-                .iter()
-                .map(|hook| hook.typed().value().clone())
-                .collect(),
-        )),
-        config.style.typed().value().clone(),
-        config.rich_text.typed().value().clone(),
-        encode_inline_failure(&config.inline_failure),
-        encode_custom(&config.custom),
-    ];
-    let record =
-        RuntimeNominalRecordValue::new(character_dialogue_type_id(), dialogue.layout, fields);
-    RuntimeValue::NominalRecord(record.clone()).try_canonical_bytes(
-        super::PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize,
-    )?;
-    Ok(record)
-}
-
-fn decode_record(
-    record: &RuntimeNominalRecordValue,
-) -> Result<CharacterDialogue, CharacterDialogueValueError> {
-    let fields = record.fields();
-    let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = fields
-        .first()
-        .ok_or_else(|| field_shape("character_id", "expected EntityRef"))?
-    else {
-        return Err(field_shape(
-            "character_id",
-            "expected Character entity reference",
-        ));
-    };
-    if *family != DeclarationIdentityFamily::Character {
-        return Err(field_shape(
-            "character_id",
-            "expected Character entity reference",
-        ));
+impl CharacterDialogueRuntimeSchema<'_> {
+    fn encode_payload(&self, dialogue: &CharacterDialogue) -> RuntimeValue {
+        let contract = dialogue.contract;
+        let config = &dialogue.config;
+        let fields = vec![
+            RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                family: DeclarationIdentityFamily::Character,
+                public_id: dialogue.character.as_public_id(),
+            }),
+            Self::digest_value(contract.character_manifest()),
+            Self::digest_value(contract.defaults()),
+            Self::digest_value(contract.custom_schema()),
+            Self::digest_value(contract.view_contracts()),
+            Self::encode_option(config.voice.as_ref().map(|voice| self.encode_voice(voice))),
+            Self::encode_option(
+                config
+                    .look
+                    .as_ref()
+                    .map(|look| RuntimeValue::String(look.as_str().to_owned())),
+            ),
+            Self::encode_typed_option(
+                config
+                    .stage
+                    .as_ref()
+                    .map(CharacterDialogueStageValue::typed),
+            ),
+            Self::encode_typed_option(
+                config
+                    .portrait
+                    .as_ref()
+                    .map(CharacterDialoguePortraitValue::typed),
+            ),
+            Self::encode_typed_option(
+                config
+                    .focus
+                    .as_ref()
+                    .map(CharacterDialogueFocusValue::typed),
+            ),
+            Self::encode_typed_option(
+                config
+                    .cleanup
+                    .as_ref()
+                    .map(CharacterDialogueCleanupValue::typed),
+            ),
+            RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                family: DeclarationIdentityFamily::View,
+                public_id: config.view.public_id().clone(),
+            }),
+            Self::encode_option(
+                config
+                    .source_locale
+                    .as_ref()
+                    .map(|locale| RuntimeValue::String(locale.as_str().to_owned())),
+            ),
+            RuntimeValue::Seq(RuntimeSeq::values(
+                config
+                    .hooks
+                    .iter()
+                    .map(|hook| hook.typed().value().clone())
+                    .collect(),
+            )),
+            config.style.typed().value().clone(),
+            config.rich_text.typed().value().clone(),
+            self.encode_inline_failure(&config.inline_failure),
+            Self::encode_custom(&config.custom),
+        ];
+        RuntimeValue::Tuple(fields)
     }
-    let character = CharacterId::try_new(public_id.as_str())
-        .map_err(|error| field_shape("character_id", error.to_string()))?;
-    let contract = CharacterDialogueContractIdentity::new(
-        decode_digest(&fields[1], "character_manifest_digest")?,
-        decode_digest(&fields[2], "defaults_digest")?,
-        decode_digest(&fields[3], "custom_schema_digest")?,
-        decode_digest(&fields[4], "view_contracts_digest")?,
-    );
-    let voice = decode_option(&fields[5], "voice")?
-        .map(decode_voice)
-        .transpose()?;
-    let look = decode_option(&fields[6], "look")?
-        .map(|value| {
-            let RuntimeValue::String(value) = value else {
-                return Err(field_shape("look", "expected String"));
-            };
-            CharacterLookId::try_new(value.clone())
-                .map_err(|error| field_shape("look", error.to_string()))
-        })
-        .transpose()?;
-    let stage = decode_typed_option(&fields[7], "stage")?
-        .map(CharacterDialogueStageValue::try_new)
-        .transpose()?;
-    let portrait = decode_typed_option(&fields[8], "portrait")?
-        .map(CharacterDialoguePortraitValue::try_new)
-        .transpose()?;
-    let focus = decode_typed_option(&fields[9], "focus")?
-        .map(CharacterDialogueFocusValue::try_new)
-        .transpose()?;
-    let cleanup = decode_typed_option(&fields[10], "cleanup")?
-        .map(CharacterDialogueCleanupValue::try_new)
-        .transpose()?;
-    let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) =
-        &fields[11]
-    else {
-        return Err(field_shape("view", "expected View entity reference"));
-    };
-    if *family != DeclarationIdentityFamily::View {
-        return Err(field_shape("view", "expected View entity reference"));
-    }
-    let view = ViewId::parse_public(public_id.as_str())
-        .map_err(|error| field_shape("view", error.to_string()))?;
-    let source_locale = decode_option(&fields[12], "source_locale")?
-        .map(|value| {
-            let RuntimeValue::String(value) = value else {
-                return Err(field_shape("source_locale", "expected String"));
-            };
-            DialogueLocaleId::try_new(value.clone())
-        })
-        .transpose()?;
-    let RuntimeValue::Seq(hooks) = &fields[13] else {
-        return Err(field_shape("hooks", "expected Seq"));
-    };
-    let hooks = hooks
-        .clone()
-        .into_values()
-        .into_iter()
-        .map(|value| {
-            typed_from_nominal(value, "hooks").and_then(CharacterDialogueHookValue::try_new)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let style =
-        CharacterDialogueStyleValue::try_new(typed_from_nominal(fields[14].clone(), "style")?)?;
-    let rich_text = CharacterDialogueRichTextValue::try_new(typed_from_nominal(
-        fields[15].clone(),
-        "rich_text",
-    )?)?;
-    let inline_failure = decode_inline_failure(&fields[16])?;
-    let custom = decode_custom(&fields[17])?;
-    let config = CharacterDialogueConfig {
-        voice,
-        look,
-        stage,
-        portrait,
-        focus,
-        cleanup,
-        view,
-        source_locale,
-        hooks,
-        style,
-        rich_text,
-        inline_failure,
-        custom,
-    };
-    CharacterDialogue::try_new(character, record.layout(), contract, config)
-}
 
-fn encode_voice(voice: &CharacterDialogueVoice) -> RuntimeValue {
-    match voice {
-        CharacterDialogueVoice::Auto => {
-            dialogue_variant(DialogueRuntimeVariantOwner::Voice, 0, "Auto", None)
-        }
-        CharacterDialogueVoice::Id(id) => dialogue_variant(
-            DialogueRuntimeVariantOwner::Voice,
-            1,
-            "Id",
-            Some(RuntimeValue::String(id.as_str().to_owned())),
-        ),
-    }
-}
-
-fn decode_voice(
-    value: &RuntimeValue,
-) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return Err(field_shape("voice", "expected DialogueVoice variant"));
-    };
-    expect_dialogue_variant_owner(owner, DialogueRuntimeVariantOwner::Voice, "voice")?;
-    match (*ordinal, name.as_str(), payload.as_deref()) {
-        (0, "Auto", None) => Ok(CharacterDialogueVoice::Auto),
-        (1, "Id", Some(RuntimeValue::String(id))) => {
-            CharacterDialogueVoiceId::try_new(id.clone()).map(CharacterDialogueVoice::Id)
-        }
-        _ => Err(field_shape("voice", "invalid DialogueVoice variant")),
-    }
-}
-
-fn encode_typed_option(value: Option<&CharacterDialogueTypedValue>) -> RuntimeValue {
-    encode_option(value.map(|value| value.value().clone()))
-}
-
-fn decode_typed_option(
-    value: &RuntimeValue,
-    field: &'static str,
-) -> Result<Option<CharacterDialogueTypedValue>, CharacterDialogueValueError> {
-    decode_option(value, field)?
-        .cloned()
-        .map(|value| typed_from_nominal(value, field))
-        .transpose()
-}
-
-fn typed_from_nominal(
-    value: RuntimeValue,
-    field: &'static str,
-) -> Result<CharacterDialogueTypedValue, CharacterDialogueValueError> {
-    let RuntimeValue::NominalRecord(record) = &value else {
-        return Err(field_shape(field, "expected nominal record"));
-    };
-    CharacterDialogueTypedValue::try_new(Some(record.type_id().clone()), record.layout(), value)
-}
-
-fn encode_option(value: Option<RuntimeValue>) -> RuntimeValue {
-    match value {
-        Some(value) => RuntimeValue::option_some(value),
-        None => RuntimeValue::option_none(),
-    }
-}
-
-fn decode_option<'a>(
-    value: &'a RuntimeValue,
-    field: &'static str,
-) -> Result<Option<&'a RuntimeValue>, CharacterDialogueValueError> {
-    match value.builtin_variant_case() {
-        Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(None),
-        Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => Ok(Some(value)),
-        _ => Err(field_shape(field, "invalid Option payload")),
-    }
-}
-
-fn encode_custom(
-    custom: &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomValue>,
-) -> RuntimeValue {
-    let mut entries = Vec::with_capacity(custom.len());
-    for (id, value) in custom {
-        let typed = value.typed();
-        entries.push(RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            custom_entry_type_id(),
-            custom_entry_layout(),
-            vec![
-                RuntimeValue::String(id.as_str().to_owned()),
-                encode_option(
-                    typed
-                        .nominal_type()
-                        .map(|id| RuntimeValue::String(id.as_str().to_owned())),
-                ),
-                layout_value(typed.layout()),
-                typed.value().clone(),
-            ],
-        )));
-    }
-    RuntimeValue::Seq(RuntimeSeq::values(entries))
-}
-
-fn decode_custom(
-    value: &RuntimeValue,
-) -> Result<
-    BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomValue>,
-    CharacterDialogueValueError,
-> {
-    let RuntimeValue::Seq(entries) = value else {
-        return Err(field_shape("custom", "expected Seq"));
-    };
-    let mut custom = BTreeMap::new();
-    let mut previous: Option<CharacterDialogueCustomFieldId> = None;
-    for entry in entries.clone().into_values() {
-        let RuntimeValue::NominalRecord(entry) = entry else {
-            return Err(field_shape("custom", "expected nominal custom entry"));
+    fn decode_payload(
+        &self,
+        fields: &[RuntimeValue],
+    ) -> Result<CharacterDialogue, CharacterDialogueValueError> {
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = fields
+            .first()
+            .ok_or_else(|| field_shape("character_id", "expected EntityRef"))?
+        else {
+            return Err(field_shape(
+                "character_id",
+                "expected Character entity reference",
+            ));
         };
-        entry.validate_shape(
-            &custom_entry_type_id(),
-            custom_entry_layout(),
-            CUSTOM_ENTRY_FIELD_COUNT,
-        )?;
-        let fields = entry.fields();
-        let RuntimeValue::String(id) = &fields[0] else {
-            return Err(field_shape("custom.field_id", "expected String"));
-        };
-        let id = CharacterDialogueCustomFieldId::try_new(id.clone())?;
-        if previous.as_ref().is_some_and(|previous| previous >= &id) {
-            return Err(CharacterDialogueValueError::NonCanonicalCustomOrder);
+        if *family != DeclarationIdentityFamily::Character {
+            return Err(field_shape(
+                "character_id",
+                "expected Character entity reference",
+            ));
         }
-        previous = Some(id.clone());
-        let nominal_type = decode_option(&fields[1], "custom.declared_nominal_type")?
+        let character = CharacterId::try_new(public_id.as_str())
+            .map_err(|error| field_shape("character_id", error.to_string()))?;
+        let contract = CharacterDialogueContractIdentity::new(
+            Self::decode_digest(&fields[1], "character_manifest_digest")?,
+            Self::decode_digest(&fields[2], "defaults_digest")?,
+            Self::decode_digest(&fields[3], "custom_schema_digest")?,
+            Self::decode_digest(&fields[4], "view_contracts_digest")?,
+        );
+        let voice = Self::decode_option(&fields[5], "voice")?
+            .map(|voice| self.decode_voice(voice))
+            .transpose()?;
+        let look = Self::decode_option(&fields[6], "look")?
             .map(|value| {
                 let RuntimeValue::String(value) = value else {
-                    return Err(field_shape(
-                        "custom.declared_nominal_type",
-                        "expected String",
-                    ));
+                    return Err(field_shape("look", "expected String"));
                 };
-                RuntimeNominalTypeId::try_new(value.clone())
-                    .map_err(|error| field_shape("custom.declared_nominal_type", error.to_string()))
+                CharacterLookId::try_new(value.clone())
+                    .map_err(|error| field_shape("look", error.to_string()))
             })
             .transpose()?;
-        let layout = decode_layout(&fields[2], "custom.declared_layout")?;
-        let typed = CharacterDialogueTypedValue::try_new(nominal_type, layout, fields[3].clone())?;
-        if custom
-            .insert(id.clone(), CharacterDialogueCustomValue::try_new(typed)?)
-            .is_some()
-        {
-            return Err(CharacterDialogueValueError::DuplicateCustomField(id));
-        }
-    }
-    Ok(custom)
-}
-
-fn encode_inline_failure(policy: &InlineFailurePolicy) -> RuntimeValue {
-    let value = match policy {
-        InlineFailurePolicy::FailLine => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFailure,
-            0,
-            "FailLine",
-            None,
-        ),
-        InlineFailurePolicy::Discard => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFailure,
-            1,
-            "Discard",
-            None,
-        ),
-        InlineFailurePolicy::Fallback { fallback } => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFailure,
-            2,
-            "Fallback",
-            Some(encode_fallback(fallback)),
-        ),
-    };
-    RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-        inline_failure_type_id(),
-        inline_failure_layout(),
-        vec![value],
-    ))
-}
-
-fn decode_inline_failure(
-    value: &RuntimeValue,
-) -> Result<InlineFailurePolicy, CharacterDialogueValueError> {
-    let RuntimeValue::NominalRecord(record) = value else {
-        return Err(field_shape("inline_failure", "expected nominal record"));
-    };
-    record.validate_shape(&inline_failure_type_id(), inline_failure_layout(), 1)?;
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = &record.fields()[0]
-    else {
-        return Err(field_shape("inline_failure", "expected policy variant"));
-    };
-    expect_dialogue_variant_owner(
-        owner,
-        DialogueRuntimeVariantOwner::InlineFailure,
-        "inline_failure",
-    )?;
-    match (*ordinal, name.as_str(), payload.as_deref()) {
-        (0, "FailLine", None) => Ok(InlineFailurePolicy::FailLine),
-        (1, "Discard", None) => Ok(InlineFailurePolicy::Discard),
-        (2, "Fallback", Some(value)) => Ok(InlineFailurePolicy::Fallback {
-            fallback: decode_fallback(value)?,
-        }),
-        _ => Err(field_shape("inline_failure", "invalid policy variant")),
-    }
-}
-
-fn encode_fallback(fallback: &InlineFallback) -> RuntimeValue {
-    match fallback {
-        InlineFallback::Text { text, style } => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFallback,
-            0,
-            "Text",
-            Some(RuntimeValue::Tuple(vec![
-                RuntimeValue::String(text.clone()),
-                encode_fallback_style(style),
-            ])),
-        ),
-        InlineFallback::ExprSource { style } => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFallback,
-            1,
-            "ExprSource",
-            Some(encode_fallback_style(style)),
-        ),
-        InlineFallback::CallSource { style } => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFallback,
-            2,
-            "CallSource",
-            Some(encode_fallback_style(style)),
-        ),
-        InlineFallback::ValuePlain => dialogue_variant(
-            DialogueRuntimeVariantOwner::InlineFallback,
-            3,
-            "ValuePlain",
-            None,
-        ),
-    }
-}
-
-fn decode_fallback(value: &RuntimeValue) -> Result<InlineFallback, CharacterDialogueValueError> {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return Err(field_shape("inline_failure", "expected fallback variant"));
-    };
-    expect_dialogue_variant_owner(
-        owner,
-        DialogueRuntimeVariantOwner::InlineFallback,
-        "inline_failure",
-    )?;
-    match (*ordinal, name.as_str(), payload.as_deref()) {
-        (0, "Text", Some(RuntimeValue::Tuple(values))) if values.len() == 2 => {
-            let RuntimeValue::String(text) = &values[0] else {
-                return Err(field_shape(
-                    "inline_failure",
-                    "fallback text must be String",
-                ));
-            };
-            Ok(InlineFallback::Text {
-                text: text.clone(),
-                style: decode_fallback_style(&values[1])?,
-            })
-        }
-        (1, "ExprSource", Some(style)) => Ok(InlineFallback::ExprSource {
-            style: decode_fallback_style(style)?,
-        }),
-        (2, "CallSource", Some(style)) => Ok(InlineFallback::CallSource {
-            style: decode_fallback_style(style)?,
-        }),
-        (3, "ValuePlain", None) => Ok(InlineFallback::ValuePlain),
-        _ => Err(field_shape("inline_failure", "invalid fallback variant")),
-    }
-}
-
-fn encode_fallback_style(style: &FallbackStylePolicy) -> RuntimeValue {
-    match style {
-        FallbackStylePolicy::Plain => {
-            dialogue_variant(DialogueRuntimeVariantOwner::FallbackStyle, 0, "Plain", None)
-        }
-        FallbackStylePolicy::InheritSurrounding => dialogue_variant(
-            DialogueRuntimeVariantOwner::FallbackStyle,
-            1,
-            "InheritSurrounding",
-            None,
-        ),
-        FallbackStylePolicy::Apply { styles } => dialogue_variant(
-            DialogueRuntimeVariantOwner::FallbackStyle,
-            2,
-            "Apply",
-            Some(RuntimeValue::Seq(RuntimeSeq::values(
-                styles
-                    .iter()
-                    .map(|style| style.typed().value().clone())
-                    .collect(),
-            ))),
-        ),
-    }
-}
-
-fn decode_fallback_style(
-    value: &RuntimeValue,
-) -> Result<FallbackStylePolicy, CharacterDialogueValueError> {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return Err(field_shape(
-            "inline_failure",
-            "expected fallback style variant",
-        ));
-    };
-    expect_dialogue_variant_owner(
-        owner,
-        DialogueRuntimeVariantOwner::FallbackStyle,
-        "inline_failure",
-    )?;
-    match (*ordinal, name.as_str(), payload.as_deref()) {
-        (0, "Plain", None) => Ok(FallbackStylePolicy::Plain),
-        (1, "InheritSurrounding", None) => Ok(FallbackStylePolicy::InheritSurrounding),
-        (2, "Apply", Some(RuntimeValue::Seq(styles))) => Ok(FallbackStylePolicy::Apply {
-            styles: styles
-                .clone()
-                .into_values()
-                .into_iter()
-                .map(|value| {
-                    typed_from_nominal(value, "inline_failure.style")
-                        .and_then(CharacterDialogueStyleValue::try_new)
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
-        _ => Err(field_shape(
-            "inline_failure",
-            "invalid fallback style variant",
-        )),
-    }
-}
-
-fn dialogue_variant(
-    owner: DialogueRuntimeVariantOwner,
-    ordinal: u32,
-    name: &str,
-    payload: Option<RuntimeValue>,
-) -> RuntimeValue {
-    RuntimeValue::Variant {
-        owner: owner.identity(),
-        ordinal,
-        name: name.to_owned(),
-        payload: payload.map(Box::new),
-    }
-}
-
-fn expect_dialogue_variant_owner(
-    actual: &RuntimeVariantIdentity,
-    expected: DialogueRuntimeVariantOwner,
-    field: &'static str,
-) -> Result<(), CharacterDialogueValueError> {
-    if actual == &expected.identity() {
-        Ok(())
-    } else {
-        Err(field_shape(field, "variant has the wrong typed owner"))
-    }
-}
-
-fn digest_value(value: RuntimeValueDigest) -> RuntimeValue {
-    runtime_sequence_dense_bytes(value.as_bytes().to_vec())
-}
-
-fn layout_value(value: TypeLayoutHash) -> RuntimeValue {
-    runtime_sequence_dense_bytes(value.as_bytes().to_vec())
-}
-
-fn decode_digest(
-    value: &RuntimeValue,
-    field: &'static str,
-) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
-    decode_fixed_bytes(value, field).map(RuntimeValueDigest::from_bytes)
-}
-
-fn decode_layout(
-    value: &RuntimeValue,
-    field: &'static str,
-) -> Result<TypeLayoutHash, CharacterDialogueValueError> {
-    decode_fixed_bytes(value, field).map(TypeLayoutHash::from_bytes)
-}
-
-fn decode_fixed_bytes(
-    value: &RuntimeValue,
-    field: &'static str,
-) -> Result<[u8; 32], CharacterDialogueValueError> {
-    let RuntimeValue::Seq(sequence) = value else {
-        return Err(field_shape(field, "expected dense u8[32]"));
-    };
-    let values = sequence.clone().into_values();
-    if values.len() != 32 {
-        return Err(field_shape(field, "expected exactly 32 bytes"));
-    }
-    let mut bytes = [0; 32];
-    for (target, value) in bytes.iter_mut().zip(values) {
-        let RuntimeValue::UInt(value) = value else {
-            return Err(field_shape(field, "expected u8 values"));
+        let stage = Self::decode_typed_option(&fields[7], "stage")?
+            .map(CharacterDialogueStageValue::try_new)
+            .transpose()?;
+        let portrait = Self::decode_typed_option(&fields[8], "portrait")?
+            .map(CharacterDialoguePortraitValue::try_new)
+            .transpose()?;
+        let focus = Self::decode_typed_option(&fields[9], "focus")?
+            .map(CharacterDialogueFocusValue::try_new)
+            .transpose()?;
+        let cleanup = Self::decode_typed_option(&fields[10], "cleanup")?
+            .map(CharacterDialogueCleanupValue::try_new)
+            .transpose()?;
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) =
+            &fields[11]
+        else {
+            return Err(field_shape("view", "expected View entity reference"));
         };
-        *target = value
-            .try_into_u64()
-            .and_then(|value| u8::try_from(value).ok())
-            .ok_or_else(|| field_shape(field, "expected u8 values"))?;
+        if *family != DeclarationIdentityFamily::View {
+            return Err(field_shape("view", "expected View entity reference"));
+        }
+        let view = ViewId::parse_public(public_id.as_str())
+            .map_err(|error| field_shape("view", error.to_string()))?;
+        let source_locale = Self::decode_option(&fields[12], "source_locale")?
+            .map(|value| {
+                let RuntimeValue::String(value) = value else {
+                    return Err(field_shape("source_locale", "expected String"));
+                };
+                DialogueLocaleId::try_new(value.clone())
+            })
+            .transpose()?;
+        let RuntimeValue::Seq(hooks) = &fields[13] else {
+            return Err(field_shape("hooks", "expected Seq"));
+        };
+        let hooks = hooks
+            .clone()
+            .into_values()
+            .into_iter()
+            .map(|value| {
+                CharacterDialogueTypedValue::try_new(value)
+                    .and_then(CharacterDialogueHookValue::try_new)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let style = CharacterDialogueStyleValue::try_new(CharacterDialogueTypedValue::try_new(
+            fields[14].clone(),
+        )?)?;
+        let rich_text = CharacterDialogueRichTextValue::try_new(
+            CharacterDialogueTypedValue::try_new(fields[15].clone())?,
+        )?;
+        let inline_failure = self.decode_inline_failure(&fields[16])?;
+        let custom = Self::decode_custom(&fields[17])?;
+        let config = CharacterDialogueConfig {
+            voice,
+            look,
+            stage,
+            portrait,
+            focus,
+            cleanup,
+            view,
+            source_locale,
+            hooks,
+            style,
+            rich_text,
+            inline_failure,
+            custom,
+        };
+        CharacterDialogue::try_new(character, contract, config)
     }
-    Ok(bytes)
-}
 
-fn character_dialogue_type_id() -> RuntimeNominalTypeId {
-    RuntimeNominalTypeId::try_new("std.character_dialogue")
-        .expect("reserved CharacterDialogue nominal identity is valid")
-}
-
-fn custom_entry_type_id() -> RuntimeNominalTypeId {
-    RuntimeNominalTypeId::try_new("std.character_dialogue_custom_entry")
-        .expect("reserved custom-entry nominal identity is valid")
-}
-
-fn inline_failure_type_id() -> RuntimeNominalTypeId {
-    RuntimeNominalTypeId::try_new("std.inline_failure_policy")
-        .expect("reserved inline-failure nominal identity is valid")
-}
-
-fn custom_entry_layout() -> TypeLayoutHash {
-    RuntimeTypeSchema::Record {
-        name: "std.character_dialogue_custom_entry".to_owned(),
-        fields: vec![
-            schema_field("field_id", RuntimeTypeSchema::String),
-            schema_field(
-                "declared_nominal_type",
-                RuntimeTypeSchema::Option(Box::new(RuntimeTypeSchema::String)),
+    fn encode_voice(&self, voice: &CharacterDialogueVoice) -> RuntimeValue {
+        match voice {
+            CharacterDialogueVoice::Auto => {
+                self.dialogue_variant(DialogueRuntimeVariantOwner::Voice, 0, "Auto", None)
+            }
+            CharacterDialogueVoice::Id(id) => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::Voice,
+                1,
+                "Id",
+                Some(RuntimeValue::String(id.as_str().to_owned())),
             ),
-            schema_field(
-                "declared_layout",
-                RuntimeTypeSchema::Bytes {
-                    format: RuntimeBytesFormat::Array,
-                },
+        }
+    }
+
+    fn decode_voice(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
+        let RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+        } = value
+        else {
+            return Err(field_shape("voice", "expected DialogueVoice variant"));
+        };
+        self.expect_dialogue_variant_owner(owner, DialogueRuntimeVariantOwner::Voice, "voice")?;
+        match (*ordinal, name.as_str(), payload.as_deref()) {
+            (0, "Auto", None) => Ok(CharacterDialogueVoice::Auto),
+            (1, "Id", Some(RuntimeValue::String(id))) => {
+                CharacterDialogueVoiceId::try_new(id.clone()).map(CharacterDialogueVoice::Id)
+            }
+            _ => Err(field_shape("voice", "invalid DialogueVoice variant")),
+        }
+    }
+
+    fn encode_typed_option(value: Option<&CharacterDialogueTypedValue>) -> RuntimeValue {
+        Self::encode_option(value.map(|value| value.value().clone()))
+    }
+
+    fn decode_typed_option(
+        value: &RuntimeValue,
+        field: &'static str,
+    ) -> Result<Option<CharacterDialogueTypedValue>, CharacterDialogueValueError> {
+        Self::decode_option(value, field)?
+            .cloned()
+            .map(CharacterDialogueTypedValue::try_new)
+            .transpose()
+    }
+
+    fn encode_option(value: Option<RuntimeValue>) -> RuntimeValue {
+        match value {
+            Some(value) => RuntimeValue::option_some(value),
+            None => RuntimeValue::option_none(),
+        }
+    }
+
+    fn decode_option<'a>(
+        value: &'a RuntimeValue,
+        field: &'static str,
+    ) -> Result<Option<&'a RuntimeValue>, CharacterDialogueValueError> {
+        match value.builtin_variant_case() {
+            Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(None),
+            Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => Ok(Some(value)),
+            _ => Err(field_shape(field, "invalid Option payload")),
+        }
+    }
+
+    fn encode_custom(
+        custom: &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomValue>,
+    ) -> RuntimeValue {
+        RuntimeValue::Seq(RuntimeSeq::values(
+            custom
+                .iter()
+                .map(|(id, value)| {
+                    RuntimeValue::Tuple(vec![
+                        RuntimeValue::String(id.as_str().to_owned()),
+                        value.typed().value().clone(),
+                    ])
+                })
+                .collect(),
+        ))
+    }
+
+    fn decode_custom(
+        value: &RuntimeValue,
+    ) -> Result<
+        BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomValue>,
+        CharacterDialogueValueError,
+    > {
+        let RuntimeValue::Seq(entries) = value else {
+            return Err(field_shape("custom", "expected Seq"));
+        };
+        let mut custom = BTreeMap::new();
+        let mut previous = None;
+        for entry in entries.clone().into_values() {
+            let RuntimeValue::Tuple(fields) = entry else {
+                return Err(field_shape("custom", "expected two-element tuple"));
+            };
+            let [RuntimeValue::String(id), value] = fields.as_slice() else {
+                return Err(field_shape("custom", "expected field ID and value"));
+            };
+            let id = CharacterDialogueCustomFieldId::try_new(id.clone())?;
+            if previous.as_ref().is_some_and(|previous| previous >= &id) {
+                return Err(CharacterDialogueValueError::NonCanonicalCustomOrder);
+            }
+            previous = Some(id.clone());
+            let typed = CharacterDialogueTypedValue::try_new(value.clone())?;
+            custom.insert(id, CharacterDialogueCustomValue::try_new(typed)?);
+        }
+        Ok(custom)
+    }
+    fn encode_inline_failure(&self, policy: &InlineFailurePolicy) -> RuntimeValue {
+        match policy {
+            InlineFailurePolicy::FailLine => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFailure,
+                0,
+                "FailLine",
+                None,
             ),
-            schema_field("value", RuntimeTypeSchema::Named("Dynamic".to_owned())),
-        ],
-        deny_unknown_fields: true,
+            InlineFailurePolicy::Discard => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFailure,
+                1,
+                "Discard",
+                None,
+            ),
+            InlineFailurePolicy::Fallback { fallback } => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFailure,
+                2,
+                "Fallback",
+                Some(self.encode_fallback(fallback)),
+            ),
+        }
     }
-    .try_layout_hash()
-    .expect("fixed custom-entry schema has a canonical layout")
-}
 
-fn inline_failure_layout() -> TypeLayoutHash {
-    RuntimeTypeSchema::Record {
-        name: "std.inline_failure_policy".to_owned(),
-        fields: vec![schema_field(
-            "policy",
-            RuntimeTypeSchema::Named("InlineFailurePolicy".to_owned()),
-        )],
-        deny_unknown_fields: true,
+    fn decode_inline_failure(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<InlineFailurePolicy, CharacterDialogueValueError> {
+        let RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+        } = value
+        else {
+            return Err(field_shape("inline_failure", "expected policy variant"));
+        };
+        self.expect_dialogue_variant_owner(
+            owner,
+            DialogueRuntimeVariantOwner::InlineFailure,
+            "inline_failure",
+        )?;
+        match (*ordinal, name.as_str(), payload.as_deref()) {
+            (0, "FailLine", None) => Ok(InlineFailurePolicy::FailLine),
+            (1, "Discard", None) => Ok(InlineFailurePolicy::Discard),
+            (2, "Fallback", Some(value)) => Ok(InlineFailurePolicy::Fallback {
+                fallback: self.decode_fallback(value)?,
+            }),
+            _ => Err(field_shape("inline_failure", "invalid policy variant")),
+        }
     }
-    .try_layout_hash()
-    .expect("fixed inline-failure schema has a canonical layout")
-}
 
-fn schema_field(name: &str, schema: RuntimeTypeSchema) -> RuntimeSchemaField {
-    RuntimeSchemaField {
-        rust_name: name.to_owned(),
-        wire_name: name.to_owned(),
-        schema,
-        has_default: false,
-        skip: false,
-        bytes_format: None,
+    fn encode_fallback(&self, fallback: &InlineFallback) -> RuntimeValue {
+        match fallback {
+            InlineFallback::Text { text, style } => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFallback,
+                0,
+                "Text",
+                Some(RuntimeValue::Tuple(vec![
+                    RuntimeValue::String(text.clone()),
+                    self.encode_fallback_style(style),
+                ])),
+            ),
+            InlineFallback::ExprSource { style } => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFallback,
+                1,
+                "ExprSource",
+                Some(self.encode_fallback_style(style)),
+            ),
+            InlineFallback::CallSource { style } => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFallback,
+                2,
+                "CallSource",
+                Some(self.encode_fallback_style(style)),
+            ),
+            InlineFallback::ValuePlain => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::InlineFallback,
+                3,
+                "ValuePlain",
+                None,
+            ),
+        }
+    }
+
+    fn decode_fallback(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<InlineFallback, CharacterDialogueValueError> {
+        let RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+        } = value
+        else {
+            return Err(field_shape("inline_failure", "expected fallback variant"));
+        };
+        self.expect_dialogue_variant_owner(
+            owner,
+            DialogueRuntimeVariantOwner::InlineFallback,
+            "inline_failure",
+        )?;
+        match (*ordinal, name.as_str(), payload.as_deref()) {
+            (0, "Text", Some(RuntimeValue::Tuple(values))) if values.len() == 2 => {
+                let RuntimeValue::String(text) = &values[0] else {
+                    return Err(field_shape(
+                        "inline_failure",
+                        "fallback text must be String",
+                    ));
+                };
+                Ok(InlineFallback::Text {
+                    text: text.clone(),
+                    style: self.decode_fallback_style(&values[1])?,
+                })
+            }
+            (1, "ExprSource", Some(style)) => Ok(InlineFallback::ExprSource {
+                style: self.decode_fallback_style(style)?,
+            }),
+            (2, "CallSource", Some(style)) => Ok(InlineFallback::CallSource {
+                style: self.decode_fallback_style(style)?,
+            }),
+            (3, "ValuePlain", None) => Ok(InlineFallback::ValuePlain),
+            _ => Err(field_shape("inline_failure", "invalid fallback variant")),
+        }
+    }
+
+    fn encode_fallback_style(&self, style: &FallbackStylePolicy) -> RuntimeValue {
+        match style {
+            FallbackStylePolicy::Plain => {
+                self.dialogue_variant(DialogueRuntimeVariantOwner::FallbackStyle, 0, "Plain", None)
+            }
+            FallbackStylePolicy::InheritSurrounding => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::FallbackStyle,
+                1,
+                "InheritSurrounding",
+                None,
+            ),
+            FallbackStylePolicy::Apply { styles } => self.dialogue_variant(
+                DialogueRuntimeVariantOwner::FallbackStyle,
+                2,
+                "Apply",
+                Some(RuntimeValue::Seq(RuntimeSeq::values(
+                    styles
+                        .iter()
+                        .map(|style| style.typed().value().clone())
+                        .collect(),
+                ))),
+            ),
+        }
+    }
+
+    fn decode_fallback_style(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<FallbackStylePolicy, CharacterDialogueValueError> {
+        let RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+        } = value
+        else {
+            return Err(field_shape(
+                "inline_failure",
+                "expected fallback style variant",
+            ));
+        };
+        self.expect_dialogue_variant_owner(
+            owner,
+            DialogueRuntimeVariantOwner::FallbackStyle,
+            "inline_failure",
+        )?;
+        match (*ordinal, name.as_str(), payload.as_deref()) {
+            (0, "Plain", None) => Ok(FallbackStylePolicy::Plain),
+            (1, "InheritSurrounding", None) => Ok(FallbackStylePolicy::InheritSurrounding),
+            (2, "Apply", Some(RuntimeValue::Seq(styles))) => Ok(FallbackStylePolicy::Apply {
+                styles: styles
+                    .clone()
+                    .into_values()
+                    .into_iter()
+                    .map(|value| {
+                        CharacterDialogueTypedValue::try_new(value)
+                            .and_then(CharacterDialogueStyleValue::try_new)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            }),
+            _ => Err(field_shape(
+                "inline_failure",
+                "invalid fallback style variant",
+            )),
+        }
+    }
+
+    fn dialogue_variant(
+        &self,
+        owner: DialogueRuntimeVariantOwner,
+        ordinal: u32,
+        name: &str,
+        payload: Option<RuntimeValue>,
+    ) -> RuntimeValue {
+        RuntimeValue::Variant {
+            owner: self.policies.identity(owner).clone(),
+            ordinal,
+            name: name.to_owned(),
+            payload: payload.map(Box::new),
+        }
+    }
+
+    fn expect_dialogue_variant_owner(
+        &self,
+        actual: &RuntimeVariantIdentity,
+        expected: DialogueRuntimeVariantOwner,
+        field: &'static str,
+    ) -> Result<(), CharacterDialogueValueError> {
+        if actual == self.policies.identity(expected) {
+            Ok(())
+        } else {
+            Err(field_shape(field, "variant has the wrong typed owner"))
+        }
+    }
+
+    fn digest_value(value: RuntimeValueDigest) -> RuntimeValue {
+        runtime_sequence_dense_bytes(value.as_bytes().to_vec())
+    }
+
+    fn decode_digest(
+        value: &RuntimeValue,
+        field: &'static str,
+    ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+        Self::decode_fixed_bytes(value, field).map(RuntimeValueDigest::from_bytes)
+    }
+
+    fn decode_fixed_bytes(
+        value: &RuntimeValue,
+        field: &'static str,
+    ) -> Result<[u8; 32], CharacterDialogueValueError> {
+        let RuntimeValue::Seq(sequence) = value else {
+            return Err(field_shape(field, "expected dense u8[32]"));
+        };
+        let values = sequence.clone().into_values();
+        if values.len() != 32 {
+            return Err(field_shape(field, "expected exactly 32 bytes"));
+        }
+        let mut bytes = [0; 32];
+        for (target, value) in bytes.iter_mut().zip(values) {
+            let RuntimeValue::UInt(value) = value else {
+                return Err(field_shape(field, "expected u8 values"));
+            };
+            *target = value
+                .try_into_u64()
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or_else(|| field_shape(field, "expected u8 values"))?;
+        }
+        Ok(bytes)
     }
 }
 

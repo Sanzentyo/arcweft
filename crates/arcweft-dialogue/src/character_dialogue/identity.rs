@@ -18,7 +18,7 @@ pub struct CharacterDialogueContractIdentity {
 }
 
 /// Reusable voice selection for one `CharacterDialogue`.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum CharacterDialogueVoice {
     Auto,
