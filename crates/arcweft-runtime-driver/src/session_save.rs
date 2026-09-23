@@ -21,7 +21,7 @@ use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
-use arcweft_core::task::GenerationId;
+use arcweft_core::task::{GenerationId, RuntimeProgramOwner};
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -92,7 +92,10 @@ impl BundleSessionSavePayload {
         })
     }
 
-    pub(crate) fn into_snapshot(self) -> Result<BundleSessionSnapshot, String> {
+    pub(crate) fn into_snapshot(
+        self,
+        program_owner: &RuntimeProgramOwner,
+    ) -> Result<BundleSessionSnapshot, String> {
         Ok(BundleSessionSnapshot {
             generation: self.generation,
             character_presentation: self.character_presentation,
@@ -101,7 +104,7 @@ impl BundleSessionSavePayload {
             runtime: self.runtime,
             executor: BundleSessionExecutorSnapshot {
                 generation: self.executor.generation,
-                state: self.executor.state.into_live()?,
+                state: self.executor.state.into_live_for_program(program_owner)?,
             },
             presentation: self.presentation,
             view_virtualization: self.view_virtualization,

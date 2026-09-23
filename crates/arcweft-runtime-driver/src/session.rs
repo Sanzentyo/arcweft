@@ -1,3 +1,4 @@
+use self::root_command::PendingRootCommandResult;
 use self::virtualization::validate_virtual_list_scroll_owner;
 use crate::clock::RuntimeClockStep;
 use crate::dialogue::{
@@ -286,7 +287,7 @@ pub struct BundleSession {
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
     pending_deferred_root_events: Vec<RootEventInput>,
-    pending_root_command_results: BTreeMap<RuntimeHostCallId, RootCommandHostResultRoute>,
+    pending_root_command_results: BTreeMap<RuntimeHostCallId, PendingRootCommandResult>,
     waiting_action_receive_calls: Vec<PendingActionReceiveCall>,
     presentation: BundlePresentationSnapshot,
     view_virtualization: ViewVirtualizationRuntime,
@@ -502,6 +503,11 @@ impl RuntimeInputKind {
 }
 
 impl BundleSession {
+    /// Retains this session's selected program for an asynchronous host result.
+    pub fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        self.executor.program_owner()
+    }
+
     /// Queues a core input event produced by a platform/presentation adapter.
     pub fn queue_input(&mut self, event: RoutedInputEvent) {
         self.pending_input_events.push(event);

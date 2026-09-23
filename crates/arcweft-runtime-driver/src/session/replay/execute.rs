@@ -19,6 +19,7 @@ use super::model::{
 };
 use arcweft_core::entry::{RuntimeStatefulEntryRoles, RuntimeValueDigest};
 use arcweft_core::plan::RuntimeEntryRoles;
+use arcweft_core::program_types::RuntimeProgramTypes;
 use arcweft_core::root::{RootStateSnapshotV1, RootTransitionOutcome, TransitionSequence};
 use std::collections::BTreeSet;
 
@@ -81,6 +82,7 @@ fn replay_root_trace_with(
     start: impl FnOnce() -> Result<BundleSession, BundleSessionError>,
 ) -> Result<RootReplayReportV1, RootReplayError> {
     let roles = preflight(bundle, options, trace, artifact)?;
+    let program = RuntimeProgramTypes::Awbc(bundle.product_awbc_program());
     validate_trace_shape(trace)?;
 
     let mut session = start().map_err(|error| RootReplayError::SessionStart {
@@ -92,8 +94,11 @@ fn replay_root_trace_with(
         .ok_or(RootReplayError::MissingRoot)?;
     let durable_state_digest = roles
         .state
-        .schema
-        .validate_payload(&initial.value, roles.command_policy.root_limits.schema)
+        .accepts_payload(
+            program,
+            &initial.value,
+            roles.command_policy.root_limits.schema,
+        )
         .map_err(|error| RootReplayError::InvalidInitializerState {
             message: error.to_string(),
         })?;
@@ -104,8 +109,16 @@ fn replay_root_trace_with(
     let entry_label = trace.entry.public_label().into_string();
     let mut progress = ReplayProgress::new(trace, durable_state_digest);
     while progress.transition_index < trace.transitions.len() {
-        let batch = progress.prepare_transition_batch(&session, trace, &roles, &entry_label)?;
-        progress.execute_transition_batch(&mut session, trace, &roles, &entry_label, batch)?;
+        let batch =
+            progress.prepare_transition_batch(&session, trace, &roles, &entry_label, program)?;
+        progress.execute_transition_batch(
+            &mut session,
+            trace,
+            &roles,
+            &entry_label,
+            batch,
+            program,
+        )?;
     }
     progress.inject_after_transitions(&mut session, trace)?;
 
@@ -156,6 +169,7 @@ impl ReplayProgress {
         trace: &RootReplayTraceV1,
         roles: &RuntimeStatefulEntryRoles,
         entry_label: &str,
+        program: RuntimeProgramTypes<'_>,
     ) -> Result<PreparedReplayBatch, RootReplayError> {
         let expected_sequence = trace.transitions[self.transition_index].sequence;
         let existing_queue_end = self
@@ -196,13 +210,21 @@ impl ReplayProgress {
                 .map(|transition| RootEventInput::new(transition.event.clone()))
                 .collect()
         });
-        validate_event_slice(trace, self.transition_index, batch_end, roles, entry_label)?;
+        validate_event_slice(
+            trace,
+            self.transition_index,
+            batch_end,
+            roles,
+            entry_label,
+            program,
+        )?;
         validate_supplied_events(
             trace,
             &external_indices,
             &supplied_sequences,
             roles,
             entry_label,
+            program,
         )?;
         Ok(PreparedReplayBatch {
             expected_sequence,
@@ -219,6 +241,7 @@ impl ReplayProgress {
         roles: &RuntimeStatefulEntryRoles,
         entry_label: &str,
         batch: PreparedReplayBatch,
+        program: RuntimeProgramTypes<'_>,
     ) -> Result<(), RootReplayError> {
         self.replay_step =
             self.replay_step
@@ -269,6 +292,7 @@ impl ReplayProgress {
             self.durable_state_digest,
             roles,
             entry_label,
+            program,
         )?;
         self.terminal_trap = matches!(
             step.root_transitions.last(),
@@ -515,10 +539,24 @@ fn prepare_external_batch(
                 request: recorded.request.0.clone(),
             });
         }
-        let root_route = session
-            .pending_root_command_results
-            .get(&recorded.request)
-            .copied();
+        let pending_root_result = session.pending_root_command_results.get(&recorded.request);
+        if let (Some(pending), RecordedExternalOutcomeResultV1::Success(payload)) =
+            (pending_root_result, &recorded.outcome)
+        {
+            pending
+                .bound
+                .try_payload(payload.0.clone())
+                .map_err(|error| {
+                    external_error(
+                        trace,
+                        *index,
+                        &format!(
+                            "successful root-command result violates its bound result type: {error}"
+                        ),
+                    )
+                })?;
+        }
+        let root_route = pending_root_result.map(|pending| pending.route);
         let successful_payload = match &recorded.outcome {
             RecordedExternalOutcomeResultV1::Success(payload) => Some(payload),
             RecordedExternalOutcomeResultV1::Failure { .. } => None,
@@ -561,12 +599,16 @@ fn validate_event_slice(
     end: usize,
     roles: &RuntimeStatefulEntryRoles,
     entry: &str,
+    program: RuntimeProgramTypes<'_>,
 ) -> Result<(), RootReplayError> {
     for transition in &trace.transitions[start..=end] {
         let digest = roles
             .event
-            .schema
-            .validate_payload(&transition.event, roles.command_policy.root_limits.schema)
+            .accepts_payload(
+                program,
+                &transition.event,
+                roles.command_policy.root_limits.schema,
+            )
             .map_err(|error| RootReplayError::EventDivergence {
                 entry: entry.to_owned(),
                 transition: transition.sequence.get(),
@@ -589,6 +631,7 @@ fn validate_supplied_events(
     supplied_sequences: &[TransitionSequence],
     roles: &RuntimeStatefulEntryRoles,
     entry: &str,
+    program: RuntimeProgramTypes<'_>,
 ) -> Result<(), RootReplayError> {
     let mut supplied = supplied_sequences.iter();
     for index in external_indices {
@@ -605,8 +648,7 @@ fn validate_supplied_events(
         let transition_index = trace_index_for_sequence(trace, *sequence)?;
         let digest = roles
             .event
-            .schema
-            .validate_payload(payload, roles.command_policy.root_limits.schema)
+            .accepts_payload(program, payload, roles.command_policy.root_limits.schema)
             .map_err(|error| RootReplayError::EventDivergence {
                 entry: entry.to_owned(),
                 transition: sequence.get(),
@@ -631,6 +673,7 @@ fn compare_outcomes(
     mut durable_state_digest: RuntimeValueDigest,
     roles: &RuntimeStatefulEntryRoles,
     entry: &str,
+    program: RuntimeProgramTypes<'_>,
 ) -> Result<RuntimeValueDigest, RootReplayError> {
     for (recorded, observed) in expected.iter().zip(actual) {
         durable_state_digest = compare_transition(recorded, observed, durable_state_digest, entry)?;
@@ -640,8 +683,11 @@ fn compare_outcomes(
     };
     let actual_digest = roles
         .state
-        .schema
-        .validate_payload(&after.value, roles.command_policy.root_limits.schema)
+        .accepts_payload(
+            program,
+            &after.value,
+            roles.command_policy.root_limits.schema,
+        )
         .map_err(|error| outcome_divergence(entry, last.sequence(), &error.to_string()))?;
     if actual_digest != durable_state_digest {
         return Err(outcome_divergence(

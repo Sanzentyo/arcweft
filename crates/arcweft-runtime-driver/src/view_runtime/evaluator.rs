@@ -38,6 +38,7 @@ use arcweft_bundle::resource_codec::{
 use arcweft_core::{
     awbc::product_step::evaluate_pure_program_with_backend,
     pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
+    task::RuntimeProgramOwner,
     value::{
         AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueOpaqueRole,
         RuntimeDialogueViewValue, RuntimeEntityReference, RuntimeValue,
@@ -256,9 +257,8 @@ fn dialogue_view_runtime_value(
             RuntimeValue::Bool(input.state.reveal.complete),
         ]),
     )?;
-    let action = RuntimeDialogueActionToken::from_target(input.state.primary_action.target)
-        .runtime_value()
-        .map_err(|error| error.to_string())?;
+    let action =
+        RuntimeDialogueActionToken::from_target(input.state.primary_action.target).runtime_value();
     RuntimeDialogueViewValue::try_new(character, content, occurrence, stage, reveal, action)
         .map(RuntimeDialogueViewValue::into_runtime_value)
         .map_err(|error| error.to_string())
@@ -1713,7 +1713,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
             ));
         }
         let awbc = match self.handler_runtime {
-            ViewHandlerRuntimeAuthority::Awbc(program) => program.as_ref(),
+            ViewHandlerRuntimeAuthority::Awbc(program) => program,
             ViewHandlerRuntimeAuthority::HandlerFree => {
                 return Err(failure(
                     "View handler has no accepted AWBC runtime authority".to_owned(),
@@ -1799,10 +1799,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 mounted.next_handler_seal_revision = revision
                     .checked_add(1)
                     .ok_or_else(|| failure("View handler seal revision is exhausted".to_owned()))?;
+                let program_owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(awbc));
                 let arguments = capture_snapshots
                     .iter()
                     .cloned()
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|snapshot| snapshot.into_runtime_value_for_program(&program_owner))
                     .collect::<Result<Vec<_>, _>>()
                     .map_err(|error| failure(error.to_string()))?;
                 let value = evaluate_pure_program_with_backend(

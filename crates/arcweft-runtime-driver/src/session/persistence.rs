@@ -216,8 +216,17 @@ impl BundleSession {
             message: error.to_string(),
         })?;
         self.validate_session_save_generation(&payload.generation)?;
+        let program_owner = self.executor.program_owner();
+        if !matches!(
+            &program_owner,
+            arcweft_core::task::RuntimeProgramOwner::Awbc(_)
+        ) {
+            return Err(BundleSessionSaveError::UnsupportedExecutorTier {
+                tier: self.executor.tier().as_str().to_owned(),
+            });
+        }
         let snapshot = payload
-            .into_snapshot()
+            .into_snapshot(&program_owner)
             .map_err(|message| BundleSessionSaveError::Decode { message })?;
         self.restore_session_snapshot(snapshot)
     }

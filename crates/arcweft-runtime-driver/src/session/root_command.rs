@@ -11,9 +11,11 @@ use super::{
 };
 use arcweft_core::entry::{
     RuntimeCommandConstructorId, RuntimeCommandContract, RuntimeCommandTargetId,
+    RuntimeSchemaLimits,
 };
-use arcweft_core::pattern::RuntimeCheckedType;
-use arcweft_core::step::RuntimeHostCallMode;
+use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::step::{HostCallContractDigest, RuntimeHostCallMode};
+use arcweft_core::task::{BoundTaskOutcome, RuntimeProgramOwner, TaskOutcomeContract};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
@@ -34,12 +36,20 @@ pub enum RootCommandHostResultRoute {
     RootEventPayload,
 }
 
+/// Pending validation and routing authority for one published root command.
+#[derive(Clone, Debug)]
+pub(super) struct PendingRootCommandResult {
+    pub(super) route: RootCommandHostResultRoute,
+    pub(super) bound: BoundTaskOutcome,
+}
+
 /// Exact existing host-call endpoint selected by the embedding host.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RootCommandHostCallEndpoint {
     public_id: String,
     capability: String,
     operation: String,
+    contract: HostCallContractDigest,
     mode: RuntimeHostCallMode,
     deterministic: bool,
 }
@@ -49,13 +59,25 @@ impl RootCommandHostCallEndpoint {
         public_id: impl Into<String>,
         capability: impl Into<String>,
         operation: impl Into<String>,
+        contract: HostCallContractDigest,
         mode: RuntimeHostCallMode,
         deterministic: bool,
     ) -> Result<Self, RootCommandHostCallCatalogError> {
+        let public_id = validate_endpoint_field("public_id", public_id.into())?;
+        let capability = validate_endpoint_field("capability", capability.into())?;
+        let operation = validate_endpoint_field("operation", operation.into())?;
+        if public_id != format!("{capability}.{operation}") {
+            return Err(RootCommandHostCallCatalogError::EndpointIdentityMismatch {
+                public_id,
+                capability,
+                operation,
+            });
+        }
         Ok(Self {
-            public_id: validate_endpoint_field("public_id", public_id.into())?,
-            capability: validate_endpoint_field("capability", capability.into())?,
-            operation: validate_endpoint_field("operation", operation.into())?,
+            public_id,
+            capability,
+            operation,
+            contract,
             mode,
             deterministic,
         })
@@ -69,7 +91,7 @@ pub struct RootCommandHostCallBinding {
     target: RuntimeCommandTargetId,
     endpoint: RootCommandHostCallEndpoint,
     arguments: Vec<RootCommandHostArgument>,
-    result: RuntimeCheckedType,
+    result: RuntimeSemanticTypeId,
     result_route: RootCommandHostResultRoute,
 }
 
@@ -80,7 +102,7 @@ impl RootCommandHostCallBinding {
         target: RuntimeCommandTargetId,
         endpoint: RootCommandHostCallEndpoint,
         arguments: impl IntoIterator<Item = RootCommandHostArgument>,
-        result: RuntimeCheckedType,
+        result: RuntimeSemanticTypeId,
         result_route: RootCommandHostResultRoute,
     ) -> Self {
         Self {
@@ -115,6 +137,12 @@ struct RootCommandHostCallKey {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RootCommandHostCallCatalogError {
+    #[error("root-command host endpoint `{public_id}` does not match `{capability}.{operation}`")]
+    EndpointIdentityMismatch {
+        public_id: String,
+        capability: String,
+        operation: String,
+    },
     #[error("root-command host endpoint {field} cannot be empty")]
     EmptyEndpointField { field: &'static str },
     #[error("root-command host endpoint {field} contains a control character at byte {byte}")]
@@ -127,6 +155,46 @@ pub enum RootCommandHostCallCatalogError {
         "root-command host catalog is missing constructor `{constructor}` and target `{target}`"
     )]
     MissingBinding { constructor: String, target: String },
+    #[error(
+        "root-command host binding for constructor `{constructor}` and target `{target}` could not bind result semantic type {semantic_type:?} to the selected executable: {message}"
+    )]
+    ResultBinding {
+        constructor: String,
+        target: String,
+        semantic_type: RuntimeSemanticTypeId,
+        message: String,
+    },
+    #[error(
+        "root-command host request identity `{request}` is already pending or duplicated in the publication batch"
+    )]
+    DuplicatePendingRequest { request: String },
+    #[error(
+        "root-command host binding for constructor `{constructor}` and target `{target}` has result semantic type {semantic_type:?} that cannot be resolved in the selected AWBC program: {source}"
+    )]
+    UnresolvedResultType {
+        constructor: String,
+        target: String,
+        semantic_type: RuntimeSemanticTypeId,
+        #[source]
+        source: arcweft_core::program_types::RuntimeProgramTypeError,
+    },
+    #[error(
+        "root-command host binding for constructor `{constructor}` and target `{target}` routes result type {result_type:?} as a root event, but the selected entry has no stateful event role"
+    )]
+    RootEventRouteWithoutEventRole {
+        constructor: String,
+        target: String,
+        result_type: RuntimeSemanticTypeId,
+    },
+    #[error(
+        "root-command host binding for constructor `{constructor}` and target `{target}` routes result type {result_type:?} as a root event, but the selected entry event type is {event_type:?}"
+    )]
+    RootEventResultTypeMismatch {
+        constructor: String,
+        target: String,
+        result_type: RuntimeSemanticTypeId,
+        event_type: RuntimeSemanticTypeId,
+    },
 }
 
 impl RootCommandHostCallCatalog {
@@ -168,18 +236,76 @@ impl RootCommandHostCallCatalog {
         Ok(())
     }
 
+    pub(crate) fn validate_for_program(
+        &self,
+        program: &arcweft_core::awbc::schema::AwbcProgram,
+        contracts: &[RuntimeCommandContract],
+        event_type: Option<RuntimeSemanticTypeId>,
+    ) -> Result<(), RootCommandHostCallCatalogError> {
+        self.validate_policy(contracts)?;
+
+        let program_types = arcweft_core::program_types::RuntimeProgramTypes::Awbc(program);
+        for binding in self.bindings.values() {
+            program_types
+                .require_type(binding.result)
+                .map_err(
+                    |source| RootCommandHostCallCatalogError::UnresolvedResultType {
+                        constructor: binding.constructor.as_str().to_owned(),
+                        target: binding.target.as_str().to_owned(),
+                        semantic_type: binding.result,
+                        source,
+                    },
+                )?;
+
+            if binding.result_route == RootCommandHostResultRoute::RootEventPayload {
+                let Some(event_type) = event_type else {
+                    return Err(
+                        RootCommandHostCallCatalogError::RootEventRouteWithoutEventRole {
+                            constructor: binding.constructor.as_str().to_owned(),
+                            target: binding.target.as_str().to_owned(),
+                            result_type: binding.result,
+                        },
+                    );
+                };
+                if binding.result != event_type {
+                    return Err(
+                        RootCommandHostCallCatalogError::RootEventResultTypeMismatch {
+                            constructor: binding.constructor.as_str().to_owned(),
+                            target: binding.target.as_str().to_owned(),
+                            result_type: binding.result,
+                            event_type,
+                        },
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn request(
         &self,
         envelope: &RuntimeCommandEnvelope,
-    ) -> (RuntimeHostCallRequest, RootCommandHostResultRoute) {
+        program: &RuntimeProgramOwner,
+    ) -> Result<(RuntimeHostCallRequest, PendingRootCommandResult), RootCommandHostCallCatalogError>
+    {
         let key = RootCommandHostCallKey {
             constructor: envelope.command.constructor().clone(),
             target: envelope.command.target().clone(),
         };
-        let binding = self
-            .bindings
-            .get(&key)
-            .expect("session construction proved the selected command policy complete");
+        let binding = self.bindings.get(&key).ok_or_else(|| {
+            RootCommandHostCallCatalogError::MissingBinding {
+                constructor: key.constructor.as_str().to_owned(),
+                target: key.target.as_str().to_owned(),
+            }
+        })?;
+        let bound = TaskOutcomeContract::program(binding.result)
+            .bind_program(program.clone(), RuntimeSchemaLimits::engine_default())
+            .map_err(|error| RootCommandHostCallCatalogError::ResultBinding {
+                constructor: binding.constructor.as_str().to_owned(),
+                target: binding.target.as_str().to_owned(),
+                semantic_type: binding.result,
+                message: error.to_string(),
+            })?;
         let args = binding
             .arguments
             .iter()
@@ -193,21 +319,24 @@ impl RootCommandHostCallCatalog {
                 RootCommandHostArgument::Payload => envelope.command.payload().clone(),
             })
             .collect();
-        (
+        Ok((
             RuntimeHostCallRequest {
                 id: root_command_request_id(envelope),
                 public_id: binding.endpoint.public_id.clone(),
                 capability: binding.endpoint.capability.clone(),
                 operation: binding.endpoint.operation.clone(),
-                contract: None,
+                contract: Some(binding.endpoint.contract),
                 args,
                 named_args: Vec::new(),
-                result: binding.result.clone(),
+                result: binding.result,
                 mode: binding.endpoint.mode,
                 deterministic: binding.endpoint.deterministic,
             },
-            binding.result_route,
-        )
+            PendingRootCommandResult {
+                route: binding.result_route,
+                bound,
+            },
+        ))
     }
 }
 
@@ -217,11 +346,21 @@ impl BundleSession {
         commands: &[RuntimeCommandEnvelope],
         diagnostics: &mut Vec<String>,
     ) -> Vec<RuntimeHostCallRequest> {
-        let requests = self.publish_root_commands(commands);
+        let requests = match self.publish_root_commands(commands) {
+            Ok(requests) => requests,
+            Err(error) => {
+                diagnostics.push(format!("failed to publish root commands: {error}"));
+                return Vec::new();
+            }
+        };
         if let Err(error) = self.executor.acknowledge_root_commands(commands) {
+            for request in &requests {
+                self.pending_root_command_results.remove(&request.id);
+            }
             diagnostics.push(format!(
                 "failed to acknowledge published root commands: {error}"
             ));
+            return Vec::new();
         }
         requests
     }
@@ -229,21 +368,32 @@ impl BundleSession {
     pub(super) fn publish_root_commands(
         &mut self,
         commands: &[RuntimeCommandEnvelope],
-    ) -> Vec<RuntimeHostCallRequest> {
-        commands
-            .iter()
-            .map(|command| {
-                let (request, result_route) = self.options.root_command_host_calls.request(command);
-                let replaced = self
-                    .pending_root_command_results
-                    .insert(request.id.clone(), result_route);
-                debug_assert!(
-                    replaced.is_none(),
-                    "transition/index root request identities are unique within a session"
-                );
-                request
-            })
-            .collect()
+    ) -> Result<Vec<RuntimeHostCallRequest>, RootCommandHostCallCatalogError> {
+        let program = self.executor.program_owner();
+        let mut prepared = Vec::with_capacity(commands.len());
+        let mut request_ids = BTreeSet::new();
+        for command in commands {
+            let (request, pending) = self
+                .options
+                .root_command_host_calls
+                .request(command, &program)?;
+            if !request_ids.insert(request.id.clone())
+                || self.pending_root_command_results.contains_key(&request.id)
+            {
+                return Err(RootCommandHostCallCatalogError::DuplicatePendingRequest {
+                    request: request.id.0,
+                });
+            }
+            prepared.push((request, pending));
+        }
+
+        let mut requests = Vec::with_capacity(prepared.len());
+        for (request, pending) in prepared {
+            self.pending_root_command_results
+                .insert(request.id.clone(), pending);
+            requests.push(request);
+        }
+        Ok(requests)
     }
 
     pub(super) fn route_host_call_results(
@@ -255,23 +405,27 @@ impl BundleSession {
         results
             .into_iter()
             .filter_map(|result| {
-                let Some(route) = self.pending_root_command_results.remove(&result.id) else {
+                let Some(pending) = self.pending_root_command_results.remove(&result.id) else {
                     return Some(result);
                 };
-                match (route, result.outcome) {
-                    (RootCommandHostResultRoute::Ignore, Ok(_)) => {}
-                    (
-                        RootCommandHostResultRoute::Ignore
-                        | RootCommandHostResultRoute::RootEventPayload,
-                        Err(error),
-                    ) => {
+                match result.outcome {
+                    Ok(payload) => match pending.bound.try_payload(payload.0) {
+                        Ok(payload) => match pending.route {
+                            RootCommandHostResultRoute::Ignore => {}
+                            RootCommandHostResultRoute::RootEventPayload => {
+                                root_events.push(RootEventInput::new(payload));
+                            }
+                        },
+                        Err(error) => diagnostics.push(format!(
+                            "root command request `{}` returned a payload outside its declared result type: {error}",
+                            result.id.0
+                        )),
+                    },
+                    Err(error) => {
                         diagnostics.push(format!(
                             "root command request `{}` failed after root commit: {}",
                             result.id.0, error.message
                         ));
-                    }
-                    (RootCommandHostResultRoute::RootEventPayload, Ok(payload)) => {
-                        root_events.push(RootEventInput::new(payload));
                     }
                 }
                 None

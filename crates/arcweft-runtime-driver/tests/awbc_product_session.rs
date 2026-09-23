@@ -987,13 +987,11 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
     let bool_ty = RuntimeSemanticTypeId::from_bytes([1; 32]);
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 bool_ty,
                 RuntimePlanTypeProjection::Bool,
             )],
-            [],
-            [],
             [],
         )
         .expect("bool type admits");

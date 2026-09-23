@@ -1417,7 +1417,7 @@ impl BundleViewRuntime {
 /// Runtime-driver owner of the closed DialogueAction payload and snapshot ABI.
 #[derive(Clone, Debug, PartialEq)]
 struct RuntimeDialogueActionToken {
-    snapshot: AwbcRuntimeValueSnapshot,
+    value: RuntimeDialogueActionValue,
 }
 
 impl RuntimeDialogueActionToken {
@@ -1432,52 +1432,37 @@ impl RuntimeDialogueActionToken {
                 revision: target.revision.get(),
             }),
         };
-        Self::try_from_runtime_value(value.into_runtime_value())
-            .expect("the DialogueAction owner produces its own closed payload schema")
+        Self { value }
     }
 
     fn try_from_runtime_value(value: RuntimeValue) -> Result<Self, BundleViewEventDispatchError> {
-        Self::decode(&value)?;
-        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value).map_err(|error| {
-            BundleViewEventDispatchError::InvalidDialogueAction {
-                message: error.to_string(),
-            }
-        })?;
-        Ok(Self { snapshot })
+        let value =
+            RuntimeDialogueActionValue::try_from_runtime_value(&value).map_err(|error| {
+                BundleViewEventDispatchError::InvalidDialogueAction {
+                    message: error.to_string(),
+                }
+            })?;
+        Ok(Self { value })
     }
 
-    fn runtime_value(&self) -> Result<RuntimeValue, BundleViewEventDispatchError> {
-        self.snapshot.clone().into_runtime_value().map_err(|error| {
-            BundleViewEventDispatchError::InvalidDialogueAction {
-                message: error.to_string(),
-            }
-        })
+    fn runtime_value(&self) -> RuntimeValue {
+        self.value.into_runtime_value()
     }
 
     fn presentation_input(
         &self,
     ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
-        Self::decode(&self.runtime_value()?)
-            .map(|target| target.map(BundlePresentationInput::advance_dialogue))
-    }
-
-    fn decode(
-        value: &RuntimeValue,
-    ) -> Result<Option<arcweft_view::DialogueAdvanceTarget>, BundleViewEventDispatchError> {
-        match RuntimeDialogueActionValue::try_from_runtime_value(value).map_err(|error| {
-            BundleViewEventDispatchError::InvalidDialogueAction {
-                message: error.to_string(),
-            }
-        })? {
+        match self.value {
             RuntimeDialogueActionValue::None => Ok(None),
             RuntimeDialogueActionValue::Advance(target) => {
-                Ok(Some(arcweft_view::DialogueAdvanceTarget::new(
+                let target = arcweft_view::DialogueAdvanceTarget::new(
                     arcweft_view::DialoguePresentationId::new(target.dialogue),
                     arcweft_view::DialogueEntryId::new(target.entry),
                     arcweft_view::DialogueInstanceId::new(target.instance),
                     arcweft_view::DialogueStageIndex::new(target.stage),
                     arcweft_view::DialogueRevision::new(target.revision),
-                )))
+                );
+                Ok(Some(BundlePresentationInput::advance_dialogue(target)))
             }
         }
     }

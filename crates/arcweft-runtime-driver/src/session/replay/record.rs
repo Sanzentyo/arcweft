@@ -12,6 +12,7 @@ use super::model::{
     RootReplayRecorderV1, RootReplayRecordingError, RootReplayTraceV1,
 };
 use arcweft_core::plan::RuntimeEntryRoles;
+use arcweft_core::program_types::RuntimeProgramTypes;
 use arcweft_core::root::{RootTransitionOutcome, TransitionSequence};
 use std::collections::VecDeque;
 
@@ -75,8 +76,11 @@ impl RootReplayRecorderV1 {
         }
         let initializer_state_digest = roles
             .state
-            .schema
-            .validate_payload(&root.value, roles.command_policy.root_limits.schema)
+            .accepts_payload(
+                RuntimeProgramTypes::Awbc(&runtime.program),
+                &root.value,
+                roles.command_policy.root_limits.schema,
+            )
             .map_err(|error| RootReplayRecordingError::RuntimeInspection {
                 message: error.to_string(),
             })?;
@@ -129,12 +133,24 @@ impl RootReplayRecorderV1 {
         pending_events.extend(input.root_events.iter().map(|event| event.payload.clone()));
         let mut external_outcomes = Vec::with_capacity(input.host_call_results.len());
         for result in &input.host_call_results {
-            let route = session
-                .pending_root_command_results
-                .get(&result.id)
-                .copied();
-            let root_event_sequence = match (&route, &result.outcome) {
-                (Some(RootCommandHostResultRoute::RootEventPayload), Ok(payload)) => {
+            let pending = session.pending_root_command_results.get(&result.id);
+            let route = pending.map(|pending| pending.route);
+            let checked_payload = match (pending, &result.outcome) {
+                (Some(pending), Ok(payload)) => Some(
+                    pending
+                        .bound
+                        .try_payload(payload.0.clone())
+                        .map_err(|error| RootReplayRecordingError::RuntimeInspection {
+                            message: format!(
+                                "root-command request `{}` returned a payload outside its declared result type: {error}",
+                                result.id.0
+                            ),
+                        })?,
+                ),
+                _ => None,
+            };
+            let root_event_sequence = match (route, checked_payload.as_ref()) {
+                (Some(RootCommandHostResultRoute::RootEventPayload), Some(payload)) => {
                     let offset = u64::try_from(pending_events.len()).map_err(|_| {
                         RootReplayRecordingError::RuntimeInspection {
                             message: "pending replay event count does not fit u64".to_owned(),
@@ -153,10 +169,14 @@ impl RootReplayRecorderV1 {
                 }
                 _ => None,
             };
+            let recorded_outcome = checked_payload.map_or_else(
+                || RecordedExternalOutcomeResultV1::from(&result.outcome),
+                RecordedExternalOutcomeResultV1::Success,
+            );
             external_outcomes.push(RecordedExternalOutcome {
                 position,
                 request: result.id.clone(),
-                outcome: RecordedExternalOutcomeResultV1::from(&result.outcome),
+                outcome: recorded_outcome,
                 root_event_sequence,
             });
         }
@@ -183,6 +203,17 @@ impl RootReplayRecorderV1 {
                 events: capture.pending_events.len(),
             });
         }
+        let generation = session
+            .current_fiber_generation()
+            .ok_or(RootReplayRecordingError::NoActiveGeneration)?;
+        let runtime = session
+            .runtime_images
+            .get(generation)
+            .map_err(|error| RootReplayRecordingError::RuntimeInspection {
+                message: error.to_string(),
+            })?
+            .runtime();
+        let program = RuntimeProgramTypes::Awbc(&runtime.program);
         for outcome in &step.root_transitions {
             let event = capture
                 .pending_events
@@ -200,8 +231,11 @@ impl RootReplayRecorderV1 {
             let event_digest = self
                 .roles
                 .event
-                .schema
-                .validate_payload(&event, self.roles.command_policy.root_limits.schema)
+                .accepts_payload(
+                    program,
+                    &event,
+                    self.roles.command_policy.root_limits.schema,
+                )
                 .map_err(|error| RootReplayRecordingError::InvalidEvent {
                     transition: expected_sequence,
                     message: error.to_string(),

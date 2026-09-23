@@ -432,18 +432,19 @@ fn validate_root_command_host_call_catalog(
     entry: AwbcEntryId,
     catalog: &RootCommandHostCallCatalog,
 ) -> Result<(), crate::session::RootCommandHostCallCatalogError> {
-    let contracts = program
-        .entries
-        .get(entry.index())
-        .and_then(|entry| match &entry.roles {
-            arcweft_core::plan::RuntimeEntryRoles::Stateful(roles) => {
-                Some(roles.command_policy.admitted.as_slice())
-            }
-            arcweft_core::plan::RuntimeEntryRoles::None
-            | arcweft_core::plan::RuntimeEntryRoles::Agent(_) => None,
-        })
-        .unwrap_or_default();
-    catalog.validate_policy(contracts)
+    let (contracts, event_type) =
+        program
+            .entries
+            .get(entry.index())
+            .map_or((&[][..], None), |entry| match &entry.roles {
+                arcweft_core::plan::RuntimeEntryRoles::Stateful(roles) => (
+                    roles.command_policy.admitted.as_slice(),
+                    Some(roles.event.semantic_identity),
+                ),
+                arcweft_core::plan::RuntimeEntryRoles::None
+                | arcweft_core::plan::RuntimeEntryRoles::Agent(_) => (&[][..], None),
+            });
+    catalog.validate_for_program(program, contracts, event_type)
 }
 
 pub(super) fn selected_awbc_entry(
