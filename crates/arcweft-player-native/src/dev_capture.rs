@@ -412,15 +412,17 @@ mod tests {
         let images = BundleImageCatalog::from_bundle(&bundle).expect("image catalog builds");
         let mut session =
             BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+        session
+            .start_foreground_entry_on_current_generation(
+                arcweft_runtime_driver::session::BundleEntryStart::session_default(),
+            )
+            .expect("foreground entry starts");
         let mut planner = PlayerFramePlannerState::new();
         PlayerFontSet::bundled_default()
             .register_with_planner(&mut planner)
             .expect("fonts register");
         let input = InputController::default();
-        let step = session.step_with_clock(
-            RuntimeClockStep::from_millis(1, CAPTURE_STEP_MILLIS).expect("clock is valid"),
-            BundleStepInput::default(),
-        );
+        let step = crate::test_step_until_dialogue_stage(&mut session, CAPTURE_STEP_MILLIS);
         let style_environment = session.presentation_environment();
         let candidate = planner
             .prepare_candidate(
@@ -503,7 +505,14 @@ mod tests {
             .expect("dialogue content admits");
         let line_task_group = builder
             .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-                activation_ops: Vec::new(),
+                activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: arcweft_core::plan::RuntimeExprSeed::new(
+                        unit_result.ty(),
+                        arcweft_core::plan::RuntimeExprSeedKind::Value(
+                            arcweft_core::value::RuntimeValue::Unit,
+                        ),
+                    ),
+                }],
                 result_type: unit_result.ty(),
                 handle_sites: Box::default(),
                 root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),

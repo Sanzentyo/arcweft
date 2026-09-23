@@ -542,7 +542,7 @@ mod tests {
             .expect("content patch prepares");
         assert_eq!(prepared.target_awfb_bytes(), new_bytes);
         assert_eq!(prepared.target_content_root(), new_root);
-        assert_eq!(prepared.compatibility(), PatchCompatibility::ContentOnly);
+        assert_eq!(prepared.compatibility(), PatchCompatibility::CodeCompatible);
         let outcome = endpoint
             .apply_prepared_patch(prepared)
             .expect("prepared content patch applies");
@@ -561,10 +561,11 @@ mod tests {
             "unexpected content patch outcome: {outcome:?}"
         );
         assert_eq!(endpoint.active_content_root(), Some(new_root));
-        let step = endpoint.session_mut().step_with_clock(
-            RuntimeClockStep::from_millis(1, 16).expect("clock"),
-            BundleStepInput::default(),
-        );
+        endpoint
+            .session_mut()
+            .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
+            .expect("patched content entry starts");
+        let step = crate::test_step_until_dialogue_stage(endpoint.session_mut(), 16);
         assert_eq!(
             step.presentation
                 .dialogue
@@ -721,8 +722,8 @@ mod tests {
 
     #[test]
     fn native_patch_endpoint_applies_code_compatible_patch_target() {
-        let old = fixture_bundle_with("Dialogue text", false);
-        let new = fixture_bundle_with("Dialogue text", true);
+        let old = fixture_bundle_with("done", true);
+        let new = fixture_bundle_with("changed", true);
         let old_bytes = awfb_bytes(&old);
         let new_bytes = awfb_bytes(&new);
         let patch_bytes = patch_bytes(&old_bytes, &new_bytes);
@@ -744,7 +745,7 @@ mod tests {
                 },
                 content_root,
             } if generation == GenerationId::new(1) && content_root == new_root
-        ));
+        ), "unexpected code-compatible patch outcome: {outcome:?}");
         assert_eq!(endpoint.active_content_root(), Some(new_root));
 
         endpoint
@@ -781,7 +782,7 @@ mod tests {
             "patch_bundle": "update.awfb",
             "base_content_root": old_root.to_string(),
             "target_content_root": new_root.to_string(),
-            "compatibility": "content-only",
+            "compatibility": "code-compatible",
             "operation_count": operation_count,
             "action": "apply_patch"
         });
@@ -827,7 +828,7 @@ mod tests {
             "patch_bundle": "update.awfb",
             "base_content_root": old_root.to_string(),
             "target_content_root": new_root.to_string(),
-            "compatibility": "content-only",
+            "compatibility": "code-compatible",
             "operation_count": operation_count,
             "action": "restart_player"
         });
@@ -848,7 +849,7 @@ mod tests {
             NativePatchEndpointError::TransportActionMismatch {
                 actual: NativePatchTransportAction::RestartPlayer,
                 expected: NativePatchTransportAction::ApplyPatch,
-                compatibility: PatchCompatibility::ContentOnly,
+                compatibility: PatchCompatibility::CodeCompatible,
             }
         ));
     }
@@ -881,7 +882,7 @@ mod tests {
             "patch_bundle": patch_value,
             "base_content_root": old_root.to_string(),
             "target_content_root": new_root.to_string(),
-            "compatibility": "content-only",
+            "compatibility": "code-compatible",
             "operation_count": operation_count,
             "action": "apply_patch"
         });
@@ -1003,7 +1004,14 @@ mod tests {
             .expect("dialogue content admits");
         let line_task_group = builder
             .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-                activation_ops: Vec::new(),
+                activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: arcweft_core::plan::RuntimeExprSeed::new(
+                        unit_result.ty(),
+                        arcweft_core::plan::RuntimeExprSeedKind::Value(
+                            arcweft_core::value::RuntimeValue::Unit,
+                        ),
+                    ),
+                }],
                 result_type: unit_result.ty(),
                 handle_sites: Box::default(),
                 root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
@@ -1018,7 +1026,7 @@ mod tests {
             .attach_line_task_group_seed(&content, &line_task_group)
             .expect("line-task group attaches to dialogue content");
         let main_ops = if changed_main_code {
-            vec![RuntimeFlowOpSeed::Return("changed".to_owned())]
+            vec![RuntimeFlowOpSeed::Return(display_text.to_owned())]
         } else {
             vec![
                 RuntimeFlowOpSeed::Dialogue {

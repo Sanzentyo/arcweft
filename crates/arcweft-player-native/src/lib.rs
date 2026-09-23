@@ -131,6 +131,48 @@ pub(crate) fn test_dialogue_profile_revision() -> arcweft_dialogue::DialogueProf
         ResourceTypeRegistry::empty().digest(),
     )
 }
+
+#[cfg(test)]
+pub(crate) fn test_step_until_dialogue_stage(
+    session: &mut arcweft_runtime_driver::session::BundleSession,
+    step_millis: u32,
+) -> arcweft_runtime_driver::session::BundleSessionStep {
+    use arcweft_runtime_driver::clock::RuntimeClockStep;
+    use arcweft_runtime_driver::session::BundleStepInput;
+
+    let mut last_step = None;
+    for tick in 1..=8 {
+        let step = session.step_with_clock(
+            RuntimeClockStep::from_millis(tick, step_millis).expect("fixture clock is valid"),
+            BundleStepInput::default(),
+        );
+        if step
+            .presentation
+            .dialogue
+            .latest_active()
+            .and_then(|(_, entry)| entry.current_stage())
+            .is_some()
+        {
+            return step;
+        }
+        assert!(
+            !step.finished,
+            "dialogue finished before a stage appeared: status={}, diagnostics={:?}, events={:?}",
+            step.status_label,
+            step.diagnostics,
+            step.flow_events,
+        );
+        last_step = Some(step);
+    }
+    let last_step = last_step.expect("at least one fixture step runs");
+    panic!(
+        "dialogue stage did not appear within 8 steps: status={}, stop_reason={}, diagnostics={:?}, events={:?}",
+        last_step.status_label,
+        last_step.stop_reason_label,
+        last_step.diagnostics,
+        last_step.flow_events,
+    );
+}
 use arcweft_text_model::LineDisplayFrame;
 use serde::Serialize;
 use std::path::Path;
@@ -333,7 +375,14 @@ mod tests {
             .expect("dialogue content admits");
         let line_task_group = builder
             .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-                activation_ops: Vec::new(),
+                activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: arcweft_core::plan::RuntimeExprSeed::new(
+                        unit_result.ty(),
+                        arcweft_core::plan::RuntimeExprSeedKind::Value(
+                            arcweft_core::value::RuntimeValue::Unit,
+                        ),
+                    ),
+                }],
                 result_type: unit_result.ty(),
                 handle_sites: Box::default(),
                 root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),

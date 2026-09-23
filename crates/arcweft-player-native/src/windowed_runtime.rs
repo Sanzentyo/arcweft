@@ -768,6 +768,12 @@ mod tests {
         let old_root = awfb_root(&awfb_bytes(&bundle));
         let mut owner = WindowedRuntimeOwner::from_bundle(&bundle, BundleSessionOptions::default())
             .expect("owner starts");
+        owner
+            .session_mut()
+            .start_foreground_entry_on_current_generation(
+                arcweft_runtime_driver::session::BundleEntryStart::session_default(),
+            )
+            .expect("foreground entry starts");
         let old_rgba = rendered_rgba(&owner);
 
         owner.push_patch_event(WindowedPatchEvent::ApplyBundle {
@@ -790,10 +796,7 @@ mod tests {
             owner.session().active_container_content_root(),
             Some(old_root)
         );
-        let step = owner.session_mut().step_with_clock(
-            RuntimeClockStep::from_millis(1, 16).expect("clock"),
-            BundleStepInput::default(),
-        );
+        let step = crate::test_step_until_dialogue_stage(owner.session_mut(), 16);
         assert_eq!(
             step.presentation
                 .dialogue
@@ -912,7 +915,14 @@ mod tests {
             .expect("dialogue content admits");
         let line_task_group = builder
             .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-                activation_ops: Vec::new(),
+                activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: arcweft_core::plan::RuntimeExprSeed::new(
+                        unit_result.ty(),
+                        arcweft_core::plan::RuntimeExprSeedKind::Value(
+                            arcweft_core::value::RuntimeValue::Unit,
+                        ),
+                    ),
+                }],
                 result_type: unit_result.ty(),
                 handle_sites: Box::default(),
                 root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
