@@ -491,6 +491,12 @@ pub enum FinalSemanticAnalysisError {
         contract_source: SourceSpan,
         trace_notes: Box<[String]>,
     },
+    #[error("selected target cannot provide effects {unavailable} required by call {owner:?}")]
+    TargetCapabilityUnavailable {
+        owner: ExprId,
+        unavailable: EffectSet,
+        call_source: SourceSpan,
+    },
     #[error("ordinary function {owner:?} has an invalid execution role")]
     InvalidFunctionExecution { owner: ItemId },
     #[error("ordinary function {owner:?} admits more than one body execution interpretation")]
@@ -605,6 +611,7 @@ impl FinalSemanticAnalysisError {
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
             Self::PropagationErrorMismatch { .. } => "sema.try.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",
+            Self::TargetCapabilityUnavailable { .. } => "AWF-EFX-007",
             Self::DuplicateCharacterDialogueField { .. } => "AW-CD-005",
             Self::CharacterDialogueApplicationOnlyField { .. } => "AW-CD-007",
             Self::UnknownCharacterDialogueField { .. } => "AW-CD-014",
@@ -662,6 +669,21 @@ impl FinalSemanticAnalysisError {
                 trace_notes,
                 self.diagnostic_code(),
             )),
+            Self::TargetCapabilityUnavailable {
+                unavailable,
+                call_source,
+                ..
+            } => Some(
+                Diagnostic::new(
+                    DiagnosticSeverity::Error,
+                    format!("selected target cannot provide effects {unavailable}"),
+                )
+                .with_code(self.diagnostic_code())
+                .with_label(DiagnosticLabel::primary(
+                    call_source.clone(),
+                    Some("this selected call requires unavailable host effects".to_owned()),
+                )),
+            ),
             Self::DialogueLineEscape { escape_span } => Some(dialogue_line_escape_diagnostic(
                 escape_span,
                 self.diagnostic_code(),

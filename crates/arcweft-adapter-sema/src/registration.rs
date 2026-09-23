@@ -22,6 +22,7 @@ use arcweft_lang_sema::{
     },
     effects::EffectSetParseError,
     env::{
+        EffectCapability,
         identity::{EnvironmentBindingId, EnvironmentBindingIdError},
         nominal::RustPackageIdError,
     },
@@ -179,7 +180,11 @@ impl<'a> AdapterSemanticRegistration<'a> {
 
     /// Declares this manifest's effects and marks them as target-provided.
     pub fn declare_target_effects(self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.grant_effect_availability(self.declare_effects(env))
+        self.grant_effect_availability(
+            self.declare_effects(
+                env.with_available_effects(std::iter::empty::<EffectCapability>()),
+            ),
+        )
     }
 
     /// Binds every registration-visible base fact to one deterministic generated document.

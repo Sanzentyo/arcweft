@@ -45,6 +45,21 @@ pub(super) fn derive(
     encoder.string(world.world().profile());
     encoder.bytes(world.symbol_revision().as_source_set().as_bytes());
     encoder.bytes(world.nominal_catalog().digest().as_bytes());
+    match world.typecheck_env().available_effects() {
+        None => encoder.byte(0),
+        Some(available) => {
+            encoder.byte(1);
+            let mut effects = available
+                .iter()
+                .map(|effect| effect.as_str())
+                .collect::<Vec<_>>();
+            effects.sort_unstable();
+            encoder.len(effects.len());
+            for effect in effects {
+                encoder.string(effect);
+            }
+        }
+    }
     let mut namespaces = world
         .typecheck_env()
         .namespace_bindings()

@@ -104,6 +104,8 @@ mod match_coverage;
 mod statement_contextual;
 #[path = "tests/statement_producers.rs"]
 mod statement_producers;
+#[path = "tests/target_effects.rs"]
+mod target_effects;
 #[path = "tests/text_proxy.rs"]
 mod text_proxy;
 use crate::{

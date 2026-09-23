@@ -53,6 +53,17 @@ fn adapter_manifest_applies_effect_capabilities_and_function_effects() {
 }
 
 #[test]
+fn an_empty_selected_adapter_provides_no_effects() {
+    let manifest = arcweft_adapter_context::standard::sans_io_manifest();
+    let env = AdapterSemanticRegistration::new(&manifest)
+        .declare_target_effects(TypeCheckEnv::standard());
+    assert!(
+        env.available_effects()
+            .is_some_and(|effects| effects.is_empty())
+    );
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one end-to-end publication test keeps the grouped signature, effects, and documentation assertions on the same record"
