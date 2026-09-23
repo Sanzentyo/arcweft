@@ -261,6 +261,74 @@ program-bound value migrations under the current autonomy instructions;
 the existing design material is evidence, not a reason to wait for another
 assignment or create a replacement design request.
 
+## Dialogue producer continuation after the Variant push
+
+The Variant cut was committed and pushed as
+`560baa52ce9901acf03a6f854bf29139111e9b63`; `main` and `origin/main` matched and
+the index was empty. The work below is a subsequent **uncommitted** producer
+migration, not part of that commit or the preceding 535-test result.
+
+The retained role table's authored `DialogueStage` collides with an existing
+View occurrence-state declaration at the same standard path. The current
+View carrier is `std.dialogue.stage`, Plain/SnapshotOnly; the configuration
+role requires `std.character_dialogue`, Plain/ConstantAndSnapshot. They cannot
+be one declaration. The occurrence-state source type is now
+`DialogueOccurrenceStage`; the authored configuration role keeps the accepted
+role-table name. The field coordinate remains `stage`. Core owns the runtime
+name, sema reads it, and the affected View chapter, manifest example and LSP
+fixture were migrated. The immutable package mirrors remain unchanged.
+
+The existing `CharacterDialogueRuntimeRole` coordinates are reused. A private
+sema registry projects all six exact Standard/Domain, zero-arity opaque rows
+from the accepted world before either registrar publishes its environment.
+It checks the producer, value class and persistence, derives ordered Style,
+retains the world stamp, and contributes its semantic/checked projection digest
+to the environment digest. Both registrar paths and their structured errors
+were updated. Callable schemas borrow the registry directly through
+`DialogueSchemaContext` and reject a custom-field registry from another world.
+All six role-related Named placeholders and both local Style compositions
+were replaced by those borrowed accepted types.
+
+The older package sketches an intermediate `TypeKind::CharacterDialogueRole`.
+Current dialogue schema construction already occurs after accepted-world
+publication in the shared callable resolver. Supplying its real registry
+directly preserves the complete accepted types and eliminates the need to
+introduce and then normalize another placeholder family. This is the selected
+source boundary, not a spelling-based resolver or a partial role inventory.
+
+Core now also has `RuntimeProgramTypes`, a borrowed selection of the existing
+native or AWBC program. Producer-side persistent admission uses source semantic
+identities against that one program, shares the existing value encoder, and
+rejects missing or duplicate AWBC identities. It stores no catalog, schema,
+generation capability, or fallback. It does not grant operational publication
+authority. Dialogue has not yet consumed this context; its schema/constructor
+and policy-Variant migration is the next implementation step.
+
+Actual evidence for this continuation:
+
+- Passed: core all-target/all-feature check,
+  `dialogue-program-types-check.log`, exit 0; the subsequent typed index-overflow
+  diagnostic compiled in the focused test run.
+- Passed: two `program_types::tests` tests, proving source identity selection,
+  native/AWBC canonical digest parity, mismatch rejection and duplicate-ID
+  rejection; `dialogue-program-types-tests.log`, exit 0.
+- Passed: 17 existing `value::opaque::tests`, including the dialogue View field
+  owner/tamper checks; `dialogue-occurrence-stage-tests.log`, exit 0.
+- Failed during dependency compilation: sema all-target/all-feature check at
+  Dialogue `schema.rs:83`, which still lacks the mandatory nominal Variant
+  layout. The new role registry, registrar/factory changes and sema regression
+  have **not compiled or executed**. They must be checked once the actual
+  Dialogue policy producer is migrated. No dependency bypass was used.
+- Changed Rust formatting and `git diff --check` passed. Full core tests,
+  Clippy, workspace tests and structural review have not been rerun for this
+  unfinished producer migration; earlier results are not promoted to it.
+
+The Dialogue codec still has the old root/custom/inline nominal wrappers and
+layout-only typed values. It must become the retained exact 18-slot opaque
+tuple with two-slot custom entries, actual role/custom type admission and
+context-derived layouts for all four policy Variant families. No placeholder
+layout, tuple-tag/JSON policy bridge, or empty source proof was introduced.
+
 ## Presentation target layout removal — 2026-09-22
 
 Inspected main and origin/main at
@@ -293,6 +361,134 @@ generic function boundaries (`dialogue-role-sema-tests.log`). The full
 convergence goal and required workspace integration remain active. Earlier
 workspace check/Clippy/test failures at the removed host-adapter opaque producer
 are not claimed repaired by this cut.
+## Program-bound Dialogue producer continuation — 2026-09-22
+
+The independent presentation cut above is now pushed as
+`7e06d60009dcda046f032a1682a6850828725cb2` (main equals origin/main).
+The rest of this section describes preserved, uncommitted implementation.
+
+Supersedes the earlier statement that Dialogue has not consumed
+`RuntimeProgramTypes`. The schema now borrows that actual native/AWBC authority,
+all six exact role type and payload type references, the ordered Style type,
+custom field type references, accepted defaults digests, CharacterCatalog and
+ViewRegistry. Construction resolves every reference, including unused role
+payloads/custom fields. It checks exact role producer/class/persistence and
+computes the View digest from the borrowed registry. Bindings are structural
+trusted-integrator inputs, not compiler/bundle publication capabilities.
+
+Encoding/decoding uses the exact Character-derived opaque owner and 18-slot
+Tuple. The caller supplies no root owner/layout. Custom entries are two-slot
+Tuples; inline failure is a direct Variant. The old root/custom/inline record
+wrappers, Dynamic custom schema, duplicated value nominal/layout metadata,
+root layout APIs and descriptorless domain digest are removed. All four policy
+families derive real layouts from the complete policy schema graph, including
+the active exact RichText owner in ordered Style. The graph is discarded after
+header derivation; no second executable nominal catalog is retained. The
+maintained chapter records why Voice Id remains its validated voice.* String
+(the existing identity family has no Voice declaration), correcting the older
+package's EntityRef cell without modifying that frozen package.
+
+Role admission checks the exact opaque value and then its body against the
+payload source type in the same program. Custom admission validates its complete
+value against its descriptor's source type. Style entity references require the
+Style family. Domain/catalog checks cover all four contract digests, membership,
+look/custom View compatibility, canonical order, limits and canonical re-encode.
+Schema-owned bytes/digests follow full admission. Domain equality/hash use the
+immutable fields. Local wrappers only normalize and bound data; they do not
+claim active program admission. Structured edits and normalization now traverse
+opaque payloads while retaining their exact owners.
+
+Core's borrowed type context gained require_type for recursive references.
+RuntimeValue::try_digest_with_limits uses the existing iterative encoder and
+one logical-value budget across the whole opaque payload. It proves bounded
+persistent encoding, not nominal or producer meaning. Large nested program
+errors are boxed while preserving their structured source errors.
+
+Sema's role implementation now compiles. The Proof-return registration prelude
+retains its already projected role registry until final publication. The
+accepted source-type accessor is available to production graph projection;
+previously it was test-only. Two empty boxed-slice test arguments and an unused
+import were corrected. The new role/occurrence identity test passed.
+
+Actual validation, all sequential Cargo commands with normal parallelism:
+
+- Dialogue library check passed. An initial test compile found a fixture calling
+  nonexistent CharacterManifest::id; it now uses character().
+- Final `cargo test -p arcweft-dialogue --all-features`: 40 passed (32 unit,
+  4 integration, 4 doctests), dialogue-tuple-delivery-tests.log. New evidence
+  covers native/AWBC digest parity, all policy cases, complete nested nominal
+  body/header rejection, current contract digests, outer owner/arity, two-slot
+  custom order/type checks, unused reference preflight, and opaque patching.
+- Core program_types owner tests: 3 passed, dialogue-program-bounds-tests.log;
+  includes shared opaque payload node/sequence limits and unchanged digest bytes.
+- Final Dialogue all-target/all-feature Clippy passed, with 2 production
+  function-size warnings and 3 test warnings including those 2. A prior run
+  exposed large error and unused-self warnings; those were corrected. The
+  static-helper conversion briefly had 7 missed multiline calls; final check
+  and tests pass after repair. Dependency warnings remain.
+- Sema all-target/all-feature check passed, dialogue-role-sema-recheck2.log
+  (19 lib warnings; 4 test warnings, 3 duplicated). Its first selected Dialogue
+  suite was 11 pass / 2 OpenEffectRow failures. The complete selected suite now
+  passes 13/13 in dialogue-role-sema-tests-recheck.log after the correction below.
+- Structure gate before that final private effect-projection correction:
+  95 packages, 2,337 Rust files, 1,285,403 physical Rust LOC, 312 triggers,
+  0 blockers. No new dependency edges or features. The schema owns admission
+  and its fixed codec (965 lines / 36,459 bytes at that check); child modules own
+  policy graph derivation (167 / 6,522) and program role references (155 / 5,781).
+  The 669-line / 24,339-byte fixture module builds both actual program forms and
+  exercises shared scenarios. The two long production functions retain one
+  atomic admission and one fixed-field decode responsibility; no arbitrary split
+  or public API widening was used to suppress the size warnings.
+
+The OpenEffectRow failures were premature projection of an as-yet-uninferred
+project body into a concrete expression effect set. Preparation now computes
+intrinsic effects separately. Known fixed/bounded rows contribute their actual
+constant effects; an unknown row is deferred only when the exact Project
+schema, checked declaration, staged body and UnboundedInference contract agree.
+The selected call graph still owns that callee edge. Existing callable closure
+and final call sealing must publish the complete closed row. Unknown fixed or
+detached rows still fail; no complete unknown row is replaced with purity.
+The broader effect suite ran: 80 passed / 9 failed in
+dialogue-call-effect-regressions.log. Failures remain in inferred callback rows,
+escaping callback rows and curried continuation constraints (UnknownRow and
+OpenEffectRow). This is incomplete application-specific symbolic effect
+publication, not a reason to weaken the final closed-row checks. Ordinary
+function/explicit callback propagation tests in that suite pass.
+
+Operational publication and execution remain incomplete: compiler/bundle
+issuance of these role payload bindings, ordinary Project/source graph layout
+migration and semantic-batch proof transport, host-adapter result admission,
+runtime-accelerator Variant migration, live/native/AWBC/restore typed value
+boundaries and the other convergence-goal branches still require completion.
+In particular runtime-driver's RuntimeCharacterDialogue presentation target
+still rejects without a decoded value; library tests do not establish that
+runtime path. Workspace check/Clippy/test-workspace have not been promoted from
+the previously recorded host-adapter failure to success. No new goal completion,
+blocker, compatibility reader or source-layout reconstruction was introduced.
+
+Additional unblocked checks: accepted_rust passes 8/8 after correcting the
+previously uncompiled mixed-graph fixture to current enum payload syntax
+`More(Branch<T>)` / `Empty(Unit)`; dialogue-unblocked-accepted-rust-recheck.log.
+The first run was 7 pass / 1 recovered-HIR fixture failure. The complete sema
+unit suite was then run for the registration/call-preparation boundary:
+829 passed / 24 failed (dialogue-unblocked-sema-full-tests.log). The failures
+cover the nine higher-order cases above, saved function-value/continuation
+origins and contextual constructor/ordinary-call type evidence. Integration
+tests and doctests were not reached by that failed full command. This is the
+current full baseline for continued repair, not a complete sema acceptance.
+
+Runtime-plan all-target/all-feature checking now reaches final_flow.rs:964 and
+fails because the existing semantic batch call lacks the new fifth source-graph
+proof argument. The prior Dialogue dependency compilation failure is gone.
+The next nominal migration must carry an actual source-issued graph through
+compiler semantic facts and correlate all Project/Rust source layouts and
+Entry/ownership consumers; neither an empty graph nor target-row reconstruction
+can replace that proof. Log: dialogue-unblocked-runtime-plan-check.log.
+
+Sema all-target/all-feature Clippy also completed successfully,
+dialogue-unblocked-sema-clippy.log (1,265 lib warnings; 1,459 lib-test warnings,
+1,247 duplicated). These warnings were not suppressed and this is not a
+warning-free result. No further Cargo sessions from this check remain active.
 
 ## Occurrence-stage namespace delivery — 2026-09-22
 
@@ -320,6 +516,13 @@ The LSP fixture was migrated but not executed: runtime-plan dependency checking
 currently fails at the missing source-graph proof argument (final_flow.rs:964).
 No new dependency, feature, instruction rule or build artifact is included.
 
+The occurrence namespace cut is pushed as
+
+df19f953bd34778161595d5649ffd6b4c5929b09
+
+(main equals origin/main; index empty). All recorded validation commands are
+terminal. Remaining work and failed checks above keep the full goal active.
+
 ## Canonical reducer Result delivery — 2026-09-22
 
 Inspected main/origin at df19f953bd34778161595d5649ffd6b4c5929b09.
@@ -342,6 +545,7 @@ only the Result consumer, its standalone test and this evidence.
 The larger root/program admission migration and source graph transport remain
 uncommitted required work. This cut does not claim complete reducer result ABI,
 source nominal lowering, workspace validation, or whole-goal acceptance.
+
 
 ## Stable Project type identity delivery — 2026-09-23
 
@@ -380,6 +584,114 @@ and this evidence. No separate staged-index build is claimed. Root/program
 admission, source graph transport/definition closure and consumer migrations
 remain preserved WIP; their passing tests do not imply whole-goal completion.
 
+## Source graph and root/program continuation — 2026-09-23
+
+Supersedes the earlier statement that compiler/runtime-plan proof transport is
+absent. This remains uncommitted work in the preserved main checkout. The two
+small delivered cuts in this continuation are canonical Result consumption
+(ceebaa5d29a7fe341c41fbccfd5183405bcd43e0) and stable Project type identity.
+The latter's full delivered SHA is recorded below after publication.
+
+Root state/event roles now retain identity/semantic identity/layout without a
+schema copy. Both role headers are correlated before initializer evaluation or
+snapshot acceptance. Initial values, event batches, committed reducer state,
+and restored values use RuntimeProgramTypes against the actual native/AWBC
+rows. Atomic event failure preserves state and transition cursor. Core's AWBC
+codec and both entry verifiers consume the same role contract. Compiler role
+issuance and driver replay recording/execution were migrated; no replay schema
+copy remains. The mock root evaluators exercise admission through real native
+and AWBC type/domain tables, not instruction-level reducer ABI execution.
+
+Project nominal projection now retains its exact checked source request and an
+Arc of the complete graph. The TypeShape expander, its named recursive leaves,
+and the copied RuntimeTypeSchema were deleted. Entry schema digest hashes the
+source layout in its distinct version-one domain; stable type identity repairs
+body-only Entry binding drift. Ownership's private top-level nominal validator
+uses that graph. Recursive ownership classification and nested aggregate value
+admission are still incomplete; this is not C5 completion.
+
+The shared graph projector now owns Project, joined Rust, Character and closed
+registered variant definitions under nominal_schema/graph.rs and its children.
+Accepted Rust's actual world/generation lease remains; the generic graph error
+and limits use RuntimeNominalGraphProjection names. A source-only API obtains
+closed variant layouts from the accepted semantic shape catalog. Source field
+and case types are retained, not inferred from normalized or AWBC rows. Core
+try_merge rejects disagreeing source definitions and keeps exact Bytes formats.
+Graph equality compares the defined type graph, independently of policy limits.
+
+RuntimeResolvedNominal and closed variant facts carry their original graph.
+Compiler publication completes an owned RuntimeNominalDefinition inventory
+from the final source projections, traversing typed arguments, record fields
+and case payloads with a visited set and work bound. This supplies definitions
+used solely by Entry signatures or nested types. The previous expression-driven
+record/variant domain emitters were removed. Final flow lowering passes the
+real merged proof to the atomic core semantic batch. The current completion
+API consumes the owned facts before compiler publication; further whole-goal
+construction/API reconciliation must preserve atomic publication and one final
+program type/domain authority.
+
+Bundle's distinct executable compatibility transcript now includes record
+shape, explicit field coordinates and optional names. The core shape owns the
+shared semantic tag. This is not a recomputation of the source layout hash.
+The strict wire fingerprint regression covers distinct empty forms and field
+names with a compact section round trip.
+
+Actual validation (all sequential Cargo commands, no jobs override):
+
+- root-program-admission-core-full: 542 passed (498 unit, 44 integration), before
+  the standalone Result and graph merge additions; source-final-core-tests:
+  500/500 final core unit tests pass. Core integration coverage was not rerun
+  after the new graph join/shape tag exposure.
+- source-final-runtime-plan-tests: 68/68 final unit tests pass. Earlier
+  source-graph-runtime-plan-tests passed 87 tests including integrations and
+  compile-fail fixtures before the source-definition closure was added.
+- source-stable-sema-tests: 830 passed / the same 24 earlier failed test names;
+  the new mixed Project->Rust graph/value and generation rejection tests pass.
+  No whole-sema integration/doc success is claimed after that failed command.
+- source-stable-entry-tests: 17/17 pass. Earlier runs were 14/2 (missing Event
+  domain), then 15/1 (binding stability). Both defects were repaired. The new
+  payload-only nested nominal source fixture compiles and verifies.
+- source-stable-iterator-tests: 2/2 pass; source-stable-bundle-tests: 10/10 pass.
+  The first bundle test compile used a wrong fixture type name AwbcFieldType;
+  it was corrected to AwbcRecordField before the passing rerun.
+- source-stable-clippy: six selected crates pass all-target/all-feature Clippy.
+  Library warnings: core128, sema1255, runtime-plan149, compiler71, bundle12,
+  driver12. Lib-test warnings include core155 (127 duplicate), sema1449
+  (1237 duplicate), runtime-plan151 (148 duplicate), compiler77 (68 duplicate),
+  bundle13 (11 duplicate), driver12 (12 duplicate). Integration warnings remain.
+- source-stable-workspace-check: FAILED at host-adapter lib.rs503, the removed
+  AdapterRustType::opaque_producer API. Structural Rust results need their real
+  program/type admission; an opaque placeholder would be incorrect.
+- source-stable-structure-gate: 95 packages, 2341 Rust files, 1,286,397 physical
+  Rust LOC, 310 ownership-review triggers, zero blocking dependency violations.
+  No new crate edges, features or I/O ownership were added. No workspace
+  Clippy/test-workspace or full convergence acceptance is claimed.
+
+Ownership review measurements at that gate: core root.rs1131LOC/40977bytes
+(production) and root/tests.rs447/16320 (test); program_types.rs257/9631 and
+schema/nominal.rs451/14245 (production). Sema nominal_schema.rs2183/88343 retains
+source request/seal relations; graph.rs586/24300 owns the mixed source traversal.
+Runtime-plan semantic_facts.rs10522/399578 retains the generation-bound fact
+vocabulary, with the new nominal_definitions.rs153/5751 owning definition closure.
+Compiler lower.rs7888/334004 remains the checked-source normalization boundary.
+These are existing cohesive cross-family owners; this change does not split
+fields by file size or create public wrappers to pass metrics. The new child
+uses existing record/variant models and the source provider; executable tables
+remain core-owned. Source-definition and producer APIs still require the full
+goal's remaining consumer reconciliation rather than a declaration of closure.
+
+Required remaining work includes Rust ADT compiler normalization and host-result
+admission; recursive ownership and nested retention; all program-bound live and
+snapshot C5 gates; operational CharacterDialogue compiler/bundle/driver role
+binding; the 24 symbolic-effect/continuation/contextual inference failures; and
+the retained Match/View/task-plan/scheduler sequence. Those repository-resolvable
+items keep the original seven-part goal active, not blocked or complete.
+
+Stable Project type identity was pushed as
+265ccea1da9c51afd8916240422ff4b673383e08.
+main equals origin/main; the index is empty. All recorded validation processes
+are terminal. The original goal remains active with the required work above.
+
 ## Rust callable overload registration repair — 2026-09-23
 
 An actual multi-function Rust ADT compiler fixture failed registration with
@@ -402,3 +714,269 @@ check passed. Logs: rust-overloads-adapter-tests.log and rust-overloads-clippy.l
 in the ignored 2026-09-11-effect-row-formulas validation directory. The separate
 Rust compiler integration test also passed after this fix. These focused checks
 do not replace the still-required full convergence checks; the goal stays active.
+
+## Accepted Rust source ADT normalization — 2026-09-23
+
+The compiler now retains accepted Rust metadata and its exact world/HIR lease in
+the same structural nominal source model as Project declarations. The native
+RuntimePlan and AWBC use the accepted source graph for unit, tuple, record,
+newtype, generic and recursive instances; no Rust HIR owner or opaque producer
+is fabricated. A real adapter-manifest/source integration compiles seven Rust
+return types, preserves two distinct Node<T> instantiations, and rejects
+incorrect nested values and wrong empty variant payload forms on both plans.
+The plan validates the accepted Rust generation again when consumed. The
+nominal source proof still needs full host result transport, live value gates,
+snapshot restore and ownership work before C1-C6 can be called complete.
+
+Focused evidence: rust-nominal-core-tests (500 unit + 44 integration pass),
+rust-nominal-runtime-plan-tests (68 unit + 19 integration pass),
+rust-nominal-sema-tests (9 accepted-Rust pass), rust-nominal-cache-tests
+(21 compiler integration pass), rust-nominal-entry-tests (17 pass), and
+rust-nominal-clippy (four selected crates, all targets/features exit0 with
+warnings) in the ignored validation directory. These were run before the last
+dead-error/typed-error cleanup; check the final changed bytes before publishing.
+No workspace acceptance is claimed. The unrelated sema baseline still has the
+same 24 known failures. The full convergence goal stays active.
+
+## Program-backed live host-result admission — 2026-09-23
+
+The existing native Plan and AWBC type tables now expose bounded live-value and
+snapshot-candidate checks alongside canonical encoding. Live admission accepts
+exactly owned SnapshotOnly and affine opaque values; snapshot admission permits
+SnapshotOnly plain values but rejects affine handles. Canonical constant encoding
+keeps its previous rejection and diagnostic. The shared traversal still checks
+nested children and scalar validity. `RuntimeProgramTypes` selects the existing
+program by semantic ID without retaining a parallel schema.
+
+Raw native HostCall resume validates the returned value against its retained
+Plan-local result type before any pattern binding, even with no binding. AWBC
+validates against the pending call signature before assigning a register or
+resuming; a discarded Unit result is checked too. A wrong raw result fails the
+fiber with a host/ABI diagnostic. Focused native and AWBC regressions and the
+full `arcweft-core` suite pass (503 unit tests plus all integration, compile-fail
+and doctest groups). All-target/all-feature core Clippy exits zero with existing
+warnings. A strict `-D warnings` run failed first in unchanged dependency
+crates on new Clippy lints; this is not a strict-lint acceptance claim.
+
+At this checkpoint, the manifest host registry and TaskOutcomeContract still
+held finite checked result predicates, and `arcweft-host-adapter` still called
+the removed Rust opaque-producer API. The next section records their subsequent
+program-bound migration. No whole-workspace validation was claimed here.
+
+## Program-bound host and task transport integration — 2026-09-23
+
+The next integration replaces manifest-host result predicate projection with
+the manifest contract digest, call mode and result semantic identity. The
+registry now rejects nested `Need` after the outer suspend modality is removed;
+there is no Rust opaque-producer reconstruction. `TaskOutcomeContract`
+distinguishes explicit standalone finite contracts from program-owned semantic
+rows. `BoundTaskOutcome` retains the exact Plan or AWBC program and validates
+live payloads and Result carriers through its type table. The native bridge,
+desktop pending work and Agent controller use that bound context. AWBC task
+lowering reuses an admitted semantic row rather than interning a detached
+checked predicate; native Await and AWBC task resumes use program admission.
+Root-command pending results retain their program context through live routing,
+recording and replay, including ignored successes.
+
+Current focused evidence: `arcweft-core` full suite passes 507 unit tests plus
+all integration, compile-fail and doctest groups after the standalone-contract
+and Agent protocol-record regressions. `arcweft-host-adapter` passes eight tests and
+`arcweft-adapter-desktop` passes seven. `arcweft-agent-runner` passes 65 after
+the shared AgentResourceBody fixture was updated to canonical unary payload
+tuples and both program admissions were aligned with the existing core
+`accepts_protocol_record` authority. Compiler and runtime-driver all-target,
+all-feature checks pass; `arcweft-runtime-driver` passes 67 unit tests and its
+integration groups after the root-command acknowledgement rollback. No
+all-workspace result is claimed.
+
+The current `arcweft-runtime-host` check stops earlier in its dependency graph
+at `arcweft-runtime-accelerator/src/external.rs:543`: shaped `data.decode` still
+tries to synthesize a nominal Variant from a `TypeShape` digest and now lacks
+the mandatory program-owned layout. The active producer-closure request
+explicitly rejects substituting the digest for layout. Astra Max and Luna Max
+traced the missing selected-program result context and the lossy DataShape
+descriptor contract; the typed data producer and codec path require a full
+source/program-bound reconciliation. This compile failure is not presented as
+an external blocker or as a successful runtime-host validation. C5/C6 restore,
+standalone constructor closure, hot replacement and broader convergence
+acceptance remain unfinished; the goal stays active.
+
+## Data producer reconciliation selected for implementation — 2026-09-23
+
+The Data boundary cannot obtain a nominal enum layout from a `TypeShape`
+semantic digest: the selected Plan/AWBC program owns the exact nominal graph,
+semantic type, layout and case ordinals. The final path therefore needs codec
+metadata on the existing type/field/case rows, a `DataShape<T>` witness bound to
+that program and semantic row, and one graph-aware data codec view over those
+rows. The standalone data reflection graph can use the same lower codec API;
+it does not become a second persistent runtime schema. The existing raw Record
+transport drops payload, rename, policy and generic-instance data and must be
+deleted when its replacement is connected.
+
+The public source operations must distinguish typed decode/encode from a
+dynamic `DataValue` result and return `Result<_, DataError>` for ordinary codec
+errors. Native expressions and AWBC intrinsic signatures must carry the exact
+selected input and result type rows to the operation. The data value algebra
+must retain Option/tuple form, typed map keys and ordering; a field default
+requires an admitted value or exact pure callable, not the existing bool flag.
+Core owns runtime-value conversion and admission; concrete codecs own byte
+conversion. This is the chosen integration direction, not a validation claim.
+The in-flight data owner and external-call-context edits have not yet been
+compiled together, and the full native/AWBC codec, restore and mutation-failure
+acceptance remains outstanding.
+
+The graph-aware `arcweft-data` trait now supplies `ShapeRef` plus a selected
+`ShapeAccess`, and `Value` distinguishes Option, Tuple and ordered typed-key
+Map. The reflection derive registers recursive and mutually recursive nodes
+without identifying types by spelling. The nine concrete codec crates compile
+with all targets and features, and their all-feature test suites pass, including
+format-specific rejection of unsupported shapes. `arcweft-data` and derive
+tests also pass. These results establish the standalone codec boundary; they
+do not validate the source `data.*` calls or selected-program runtime producer.
+At this checkpoint HEAD is `233ac21d8664da4a71dbff4150bc5b78b2a568ab`
+on `main`, with 352 dirty/untracked paths observed; the implementation remains
+uncommitted and in progress.
+
+The selected codec policy belongs to each typed use of a logical type, not
+solely to the shared semantic type row. For example, separate nominal fields
+may use the same `Seq<Bytes>` row while declaring Base64 and Hex for its Bytes
+element. The selected representation is a codec-only occurrence tree attached
+to the existing root/field/case/argument edges. It carries presentation
+attributes and child occurrence structure, while semantic IDs, nominal
+identity, layout, field IDs, case ordinals and MapKind stay on their existing
+type/domain rows. Admission zips the occurrence tree with those typed child
+slots and the original source schema proof before publication. A borrowed
+runtime view can index `(type row, occurrence)` pairs for graph-aware codecs;
+it does not retain a second declaration graph or infer a policy from observed
+values. The earlier plan to put a single BytesFormat on a shared Bytes row is
+superseded by this use-site decision. Implementation and acceptance of this
+occurrence boundary are still pending.
+
+## Data codec and default-provider checkpoint — 2026-09-23
+
+The codec-only occurrence tree is now admitted with the selected Plan/AWBC
+type graph. A borrowed `RuntimeProgramDataShapes` view retains field/case/child
+occurrences separately from semantic rows, so two fields sharing one Bytes node
+can select different Base64 and Hex representations. `arcweft-data` exposes a
+graph-aware `ShapeRef`/`ShapeAccess` codec boundary; the nine concrete codec
+crates and save/HTTP callers use it. Missing or skipped record fields request
+their original record occurrence and field ordinal from an explicit default
+provider. A bare `has_default` flag cannot synthesize a runtime value. CSV,
+Arrow/Parquet and Avro use the same request boundary in their own decoders.
+
+Current focused checks pass: the full `arcweft-data` and nine-codec all-feature
+test invocation (including new shared-Bytes and default-provider tests),
+`arcweft-config` (eight tests), save/HTTP codec tests, and `arcweft-core` (538
+unit tests plus its integration and compile-fail groups). The full
+`arcweft-runtime-plan` all-feature suite passes 71 unit tests, three
+compile-fail tests and its remaining integration groups. `arcweft-agent-runner`
+passes 66 tests both with default and all features after serializing its
+admitted RAG context from the typed payload for stable JSON key order. These
+are local working-tree results; they do not establish source/native/AWBC
+end-to-end Data acceptance or workspace-wide validation.
+
+The outstanding integration remains material. Source DataFormat nominal
+projection and generic effect-row completion are under repair; the accelerator
+still has to replace its inferred descriptor/nominal path with selected-program
+value conversion and `Result<_, DataError>` construction. Rust field-default
+metadata now retains the declared provenance through sema/ABI, but its
+accepted pure callable binding, Plan backend execution and full producer test
+are in progress. No C5/C6 or full convergence completion is claimed. The
+observed checkout remains `main` at
+`233ac21d8664da4a71dbff4150bc5b78b2a568ab`; this checkpoint has not yet
+been committed or pushed.
+
+## Integrated verification in progress — 2026-09-23
+
+The Rust pure default producer now has an accepted nullary callable proof,
+Plan/AWBC binding, and result verification. The accelerator now uses the
+selected program's DataShape witness and returns typed DataValue/DataError
+results. JSON, YAML, and TOML traverse enum payload occurrences, including
+per-field Bytes presentation. Focused producer, accelerator, and codec suites
+passed; the remaining generic-call constraint regressions are still under
+repair. This supersedes the outstanding producer/accelerator description in
+the previous checkpoint.
+
+The compiling checkout passed `cargo check --workspace --all-targets
+--all-features` and `cargo clippy --workspace --all-targets --all-features`
+(warnings retained). The canonical structural gate scanned 96 packages and
+reported 321 review triggers and zero blocking violations. The first
+`just test-workspace` attempt stopped while linking test binaries: its log
+records LLVM `no space on device` and MSVC LNK1180 insufficient disk space.
+The D: volume had about 323 MB free; `target/debug/incremental` alone held
+174,231,363,966 bytes. A further `cargo clean` removed 278,628 generated
+files (264.9 GiB) and restored about 273 GB free. The workspace test has not
+passed; the next attempt will use `CARGO_INCREMENTAL=0` as an environment-only
+capacity measure while keeping the repository's test profile, features, and
+normal Cargo parallelism. These results precede the ongoing generic-scope
+edits and require final revalidation before a coherent commit.
+
+## Structural owner review — 2026-09-23
+
+Inspected `main` at `233ac21d8664da4a71dbff4150bc5b78b2a568ab`. The dirty
+checkout contains 450 paths (335 modified, 6 deleted, 109 untracked). The
+canonical gate log at
+`.arcweft-local/validation/2026-09-23-structure-audit.log` reports 96 packages,
+321 review triggers, and zero blocking violations. Measurements compare
+complete physical files at that base with the current working tree; byte counts
+are base-to-current and LOC counts include blank lines.
+
+| Owner | Bytes, base → current | Physical LOC, base → current | Responsibility and disposition |
+| --- | ---: | ---: | --- |
+| `crates/arcweft-runtime-accelerator/src/external_data.rs` | 0 → 56,737 | 0 → 1,482 (+1,482) | Private selected-program Data call boundary: signature and witness admission, codec dispatch, typed-value conversion, and default execution share one `DataCall`/shape context. Keep together; there is no second schema or independently owned runtime state. The companion tests are in `external_data_tests.rs`. `SIZE001` remains a nonblocking owner review. |
+| `crates/arcweft-codec-json/src/lib.rs` | 28,776 → 50,768 | 808 → 1,397 (+589) | One JSON parser/emitter and its `ShapeRef`-aware wire projection; `arcweft-data` remains the shape authority. Keep format-specific parsing and projection together in this cut. `SIZE001` and the `SIZE002` facade-size review remain open; no claim is made that the 250-LOC facade target is met. |
+| `crates/arcweft-codec-yaml/src/lib.rs` | 25,894 → 45,931 | 694 → 1,250 (+556) | One YAML parser/emitter and graph-aware projection; source preflight is already isolated in `source_preflight.rs`. No separate state or dependency owner warrants a further split here. `SIZE001` and `SIZE002` remain open reviews. |
+| `crates/arcweft-codec-toml/src/lib.rs` | 26,529 → 46,073 | 732 → 1,267 (+535) | One TOML parser/emitter and graph-aware projection; source preflight is already isolated in `source_preflight.rs`. No separate state or dependency owner warrants a further split here. `SIZE001` and `SIZE002` remain open reviews. |
+| `crates/arcweft-runtime-scheduler/src/lib.rs` | 23,190 → 38,438 | 647 → 1,050 (+403) | One deterministic Sans-I/O scheduler state machine owns pending, in-flight, join, cancellation, and terminal-task transitions; host I/O remains in adapters. Keep the state transition owner intact. `SIZE002` remains open because the root exceeds the 1,000-LOC facade review threshold. |
+| `crates/arcweft-lang-sema/src/callable/constraints.rs` | 92,898 → 106,480 | 2,281 → 2,590 (+309) | One affine callback/checkpoint driver closes the candidate constraint transaction. Its 1,583 embedded test LOC exercise those private close-once invariants. Keep the driver as one algorithm and record this as the cohesion disposition for the upper `SIZE001` trigger; `TEST001` is review-only. |
+| `crates/arcweft-runtime-host/src/native_task.rs` | 47,292 → 60,605 | 1,331 → 1,679 (+348) | Native task routing, completion, and standard host adapters form one host-side lifecycle; scheduler state stays in the Sans-I/O scheduler crate. Its 460 embedded test LOC cover that bridge. Keep the lifecycle together; `SIZE001` and `TEST001` remain nonblocking reviews. |
+| `crates/arcweft-data/src/raw.rs` | 29,492 → 40,684 | 811 → 1,130 (+319) | Recursive typed/raw conversion shares one graph-aware traversal and field-default request context. It remains the format-neutral Data boundary with no duplicate schema authority; no split is indicated. |
+
+These dispositions follow the current state and dependency boundaries rather
+than the LOC numbers alone. The codec and scheduler `lib.rs` facade-size notices
+remain explicit open reviews; this audit does not claim a facade decomposition.
+No Cargo command was run for this structural review.
+
+## Data and codec owner cuts merged to main — 2026-09-23
+
+The existing `main` checkout started this harvest at
+`233ac21d8664da4a71dbff4150bc5b78b2a568ab`, with 452 expanded
+dirty/untracked paths before selective staging. The remaining working tree
+is still dirty; these commits establish only the listed completed owners.
+
+| Boundary | Pushed full SHA | Validation |
+| --- | --- | --- |
+| Graph-aware Data shape/value/default contracts, reflection derive, and nine codec adapters | `76a40ff652a9c994322be491a3d607f25cbc1640` | All-feature tests and all-target Clippy for `arcweft-data`, derive/support, and all nine codec crates passed; Clippy retained warnings. |
+| Rust ABI codec policy and pure field-default metadata | `96e39d38f49a099d049bfc9ef3f4320f905372b9` | All-feature Rust ABI/macro tests and all-target Clippy passed; Clippy retained linker warnings. |
+| Typed Map/Option config merging | `3daf1cfa5675a07a10528af4259ad6b1fca6fb3d` | Eight config tests and all-target Clippy passed. |
+| HTTP codec ShapeRef/ShapeAccess use | `7e4be12354f5fb56a52340f9a93291fa54ef72e8` | Eight negotiation tests and all-target Clippy passed. |
+| Save envelope ShapeRef/ShapeAccess use | `56524270979a61635a5a5168510340d7160283ce` | Save tests, including compile-fail coverage, and all-target Clippy passed. |
+| Rust ABI build fixture migration | `9c330783c3b55b817764315b5c9bda6029746705` | Two Rust ABI build tests and all-target Clippy passed. |
+| Shared Data derive ownership documentation | `7ed03ab9bd5ee187a92d33d59bd82eefe4c91e0c` | Crate map reviewed against the admitted derive owner. |
+| Program-owned core runtime types and outcomes | `0f06b58efd93bfcb60cb136b431f7c0214e3b0d2` | Core unit and integration groups passed; core Clippy passed. |
+| Scheduler-bound task outcomes | `c951cd3c80e089d8efd025f133f79268daf8067c` | Fourteen scheduler tests and Clippy passed. |
+| CharacterDialogue runtime schema and policies | `226ce68d1587aaf8d232dccb7baf3bf96650c1fc` | Focused core dialogue tests and Clippy passed. |
+| Program-owned nominal/default RuntimePlan facts | `2599581c882a0758b09b55a00b8ef6a92ff` | RuntimePlan unit, compile-fail, and integration groups and Clippy passed. |
+| Typed Rust ABI adapter metadata | `337082aa1b43fbe9324c0324c84500b8ef6a92ff` | Adapter context tests and Clippy passed. |
+| Typed Rust nominal metadata registration | `a35240c8ee8cd41be4fb22c277d867863f8147cc` | Eleven tests and Clippy passed. |
+| Selected-program external Data shapes | `1625e023c472f5e55dcc232188423fb326794a4c` | Ninety-one accelerator tests and Clippy passed. |
+| Typed runtime resources in bundles | `1e910b92369f876fc1f2dd34de18d2e05774f05e` | Bundle all-feature tests and Clippy passed. |
+| Host adapter task outcome binding | `39499f907511fb3deca0e439230917bdf42479fa` | Eight tests and Clippy passed. |
+| Native task completion and program outcomes | `0de97d2751a1ba0584800e14129161a27d9439a0` | Runtime-host library check and Clippy passed; package tests deferred during concurrent sema edit. |
+| Root command result program binding | `8f3b8cff25c3c0a5be27c0a3638e87067ae521e6` | Runtime-driver library check and Clippy passed; package tests deferred during concurrent sema edit. |
+| Agent controller result program binding | `c7da5aaf522287a66ad9cd8f9e63ed92d487bfdb` | Agent-runner library check and Clippy passed; package tests deferred during concurrent sema edit. |
+| Desktop adapter task outcomes | `39faa16755328c72b97c64ca53b381cd50dbe856` | Seven desktop-adapter tests and all-target Clippy passed. |
+| Native player task error propagation | `ace3e733c28253d5da9d52d686997f7c1d539ea9` | Player library check and Clippy passed; package tests deferred during concurrent sema edit. |
+| Maintained nominal/dialogue runtime contract | `22fbb498665e8ffc99ce04c8d5e9b1fc2cdb5fed` | Changed prose, links and executable example reviewed; documentation-only check passed. |
+| Nominal graph implementation evidence | `e9642599e2143ab7535b58a11fcc81a65408b479` | Historical checkpoint and referenced links reviewed; documentation-only check passed. |
+
+Each commit staged only its named dependency closure and was pushed by a
+non-forced fast-forward to `origin/main` after `git diff --cached --check`.
+The local test logs are under `.arcweft-local/validation/`, including the
+`2026-09-23-*-harvest.log` and later package-specific check/Clippy logs.
+These are incremental owner cuts, not an integrated acceptance result. The
+inspected `main` is `e9642599e2143ab7535b58a11fcc81a65408b479`, and the
+working tree still has 142 Git porcelain entries. Correlated callable
+constraints, effect rows, source Data integration, nominal runtime consumers,
+the deferred package tests, and the remaining goal acceptance require final
+verification.
