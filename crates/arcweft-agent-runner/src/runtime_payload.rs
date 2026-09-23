@@ -441,6 +441,15 @@ pub(crate) fn runtime_rag_context_payload(
             actual: context.items.len(),
         }
     })?;
+    // Serialize the admitted typed payload so JSON object order does not depend
+    // on serde_json's workspace feature unification for arbitrary input maps.
+    let json = serde_json::to_string(&context).map_err(|source| {
+        AgentHostResponseAdmissionError::InvalidShape {
+            response: AgentHostResponseKind::RagContext,
+            path: "rag_context".to_owned(),
+            source,
+        }
+    })?;
     Ok(runtime_record(vec![
         runtime_field(
             "summary",
@@ -448,7 +457,7 @@ pub(crate) fn runtime_rag_context_payload(
         ),
         runtime_field("item_count", RuntimeValue::usize(item_count)),
         runtime_field("truncated", RuntimeValue::Bool(context.truncated)),
-        runtime_field("json", RuntimeValue::String(value.to_string())),
+        runtime_field("json", RuntimeValue::String(json)),
     ]))
 }
 

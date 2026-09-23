@@ -528,15 +528,14 @@ where
         Ok(AwbcEntryId(index))
     }
 
-    fn run_controller_executor_with_budget<E>(
+    fn run_controller_executor_with_budget(
         &mut self,
-        executor: &mut E,
+        executor: &mut ArcweftRuntimeExecutor,
         config: AgentControllerRunConfig,
         budget: AgentBudget,
-    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
-    where
-        E: RuntimeExecutor,
-    {
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
+        let program = executor.program_owner();
+        let limits = arcweft_core::entry::RuntimeSchemaLimits::engine_default();
         let options = RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget {
@@ -590,14 +589,29 @@ where
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 let response = runtime_payload_from_response(&host_report.response)
                     .map_err(AgentRunError::InvalidHostResponse)?;
-                let response = task
-                    .outcome
+                let bound = match &task.outcome {
+                    arcweft_core::task::TaskOutcomeContract::Standalone { .. } => {
+                        task.outcome.bind_standalone()
+                    }
+                    arcweft_core::task::TaskOutcomeContract::Program { .. } => {
+                        task.outcome.bind_program(program.clone(), limits)
+                    }
+                }
+                .map_err(|detail| {
+                    AgentRunError::InvalidControllerOutcome(
+                        AgentControllerOutcomeAdmissionError::contract_rejected(
+                            task.id.0.clone(),
+                            detail.to_string(),
+                        ),
+                    )
+                })?;
+                let response = bound
                     .try_result_ok(response.value().clone())
                     .map_err(|detail| {
                         AgentRunError::InvalidControllerOutcome(
                             AgentControllerOutcomeAdmissionError::contract_rejected(
                                 task.id.0.clone(),
-                                detail,
+                                detail.to_string(),
                             ),
                         )
                     })?;
@@ -618,17 +632,34 @@ where
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 let payload = runtime_payload_from_response(&host_report.response)
                     .map_err(AgentRunError::InvalidHostResponse)?;
-                let response = match &call.result {
-                    result @ arcweft_core::pattern::RuntimeCheckedType::Result { .. } => {
-                        result.try_result_payload(Ok(payload.into_value()))
-                    }
-                    direct => direct.try_payload(payload.into_value()),
+                let bound = arcweft_core::task::TaskOutcomeContract::program(call.result)
+                    .bind_program(program.clone(), limits)
+                    .map_err(|detail| {
+                        AgentRunError::InvalidControllerOutcome(
+                            AgentControllerOutcomeAdmissionError::contract_rejected(
+                                call.id.0.clone(),
+                                detail.to_string(),
+                            ),
+                        )
+                    })?;
+                let is_result = bound.is_result_type().map_err(|detail| {
+                    AgentRunError::InvalidControllerOutcome(
+                        AgentControllerOutcomeAdmissionError::contract_rejected(
+                            call.id.0.clone(),
+                            detail.to_string(),
+                        ),
+                    )
+                })?;
+                let response = if is_result {
+                    bound.try_result_ok(payload.into_value())
+                } else {
+                    bound.try_payload(payload.into_value())
                 }
                 .map_err(|detail| {
                     AgentRunError::InvalidControllerOutcome(
                         AgentControllerOutcomeAdmissionError::contract_rejected(
                             call.id.0.clone(),
-                            detail,
+                            detail.to_string(),
                         ),
                     )
                 })?;

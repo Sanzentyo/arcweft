@@ -48,7 +48,10 @@ use arcweft_agent_protocol::{
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::{
-    awbc::schema::{AwbcEntryKind, AwbcEntryTarget, AwbcProgram},
+    awbc::schema::{
+        AwbcAgentTypeShape, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRuntimeType,
+        AwbcRuntimeTypeShape, AwbcTypeId,
+    },
     effect::{
         LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
         RuntimeCall,
@@ -73,12 +76,14 @@ use arcweft_core::{
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     step::RuntimeHostCallMode,
-    task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract},
+    task::{
+        HostCapabilityId, HostTaskRequest, NeedId, RuntimeProgramOwner, TaskId, TaskOutcomeContract,
+    },
     time::LogicalDuration,
     value::{
         DenseSeq, DenseSeqStorage, RuntimeAgentCompareOp, RuntimeAgentField, RuntimeAgentPath,
-        RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeFieldValue,
-        RuntimePayload, RuntimeSeq, RuntimeValue,
+        RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeDataShape,
+        RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
     },
 };
 use arcweft_debug_model::{
@@ -130,11 +135,13 @@ fn runtime_option_is_none(value: &RuntimeValue) -> bool {
 fn controller_resource_body_checked_type() -> RuntimeCheckedType {
     let owner = RuntimeBuiltinVariantIdentity::AgentResourceBody;
     let payloads = [
-        Some(RuntimeCheckedType::AgentValue),
-        Some(RuntimeCheckedType::String),
-        Some(RuntimeCheckedType::Agent(
+        Some(RuntimeCheckedType::Tuple(vec![
+            RuntimeCheckedType::AgentValue,
+        ])),
+        Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String])),
+        Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Agent(
             arcweft_core::plan::RuntimeAgentTypeProjection::BinaryResourceBody,
-        )),
+        )])),
     ];
     RuntimeCheckedType::Variant {
         owner: RuntimeVariantIdentity::Builtin(owner),
@@ -229,6 +236,8 @@ const ENTITY_METADATA_PAYLOAD_TY: u8 = 24;
 const PROJECT_NEIGHBORHOOD_PAYLOAD_TY: u8 = 25;
 const OBSERVATION_PAYLOAD_TY: u8 = 26;
 const STRING_PAYLOAD_TY: u8 = 27;
+const AGENT_VALUE_PAYLOAD_TY: u8 = 28;
+const BINARY_BODY_PAYLOAD_TY: u8 = 29;
 
 fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
     controller_checked_type(marker).semantic_identity_digest()
@@ -298,6 +307,10 @@ fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
             RuntimeCheckedType::Tuple(vec![controller_checked_type(OBSERVATION_TY)])
         }
         STRING_PAYLOAD_TY => RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String]),
+        AGENT_VALUE_PAYLOAD_TY => RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::AgentValue]),
+        BINARY_BODY_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![agent(RuntimeAgentOperationalType::BinaryResourceBody)])
+        }
         _ => panic!("unknown controller fixture type marker {marker}"),
     }
 }
@@ -306,7 +319,7 @@ fn controller_expr(ty: u8, kind: RuntimeExprSeedKind) -> RuntimeExprSeed {
     RuntimeExprSeed::new(controller_type(ty), kind)
 }
 
-fn controller_agent_types() -> [RuntimePlanTypeSeed; 27] {
+fn controller_agent_types() -> [RuntimePlanTypeSeed; 29] {
     [
         RuntimePlanTypeSeed::new(
             controller_type(STRING_TY),
@@ -342,9 +355,9 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 27] {
             RuntimePlanTypeProjection::BuiltinVariant {
                 owner: RuntimeBuiltinVariantIdentity::AgentResourceBody,
                 cases: vec![
-                    Some(controller_type(AGENT_VALUE_TY)),
-                    Some(controller_type(STRING_TY)),
-                    Some(controller_type(BINARY_BODY_TY)),
+                    Some(controller_type(AGENT_VALUE_PAYLOAD_TY)),
+                    Some(controller_type(STRING_PAYLOAD_TY)),
+                    Some(controller_type(BINARY_BODY_PAYLOAD_TY)),
                 ]
                 .into_boxed_slice(),
             },
@@ -455,6 +468,18 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 27] {
         RuntimePlanTypeSeed::new(
             controller_type(BINARY_BODY_TY),
             RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::BinaryResourceBody),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(AGENT_VALUE_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(AGENT_VALUE_TY)].into_boxed_slice(),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(BINARY_BODY_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(BINARY_BODY_TY)].into_boxed_slice(),
+            ),
         ),
     ]
 }
@@ -1215,13 +1240,11 @@ fn capture_binding_program() -> AwbcProgram {
 fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             controller_agent_types(),
             [RuntimeLocalDeclarationSeed::new(controller_type(
                 CAPTURE_REFERENCE_TY,
             ))],
-            [],
-            [],
         )
         .expect("capture response local admits");
     let shot = locals.local_ids()[0].clone();
@@ -1279,13 +1302,11 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
 fn read_resource_binding_program() -> AwbcProgram {
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             controller_agent_types(),
             [RuntimeLocalDeclarationSeed::new(controller_type(
                 RESOURCE_TY,
             ))],
-            [],
-            [],
         )
         .expect("resource response local admits");
     let resource = locals.local_ids()[0].clone();
@@ -1362,13 +1383,11 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
     } = request;
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             controller_agent_types(),
             [RuntimeLocalDeclarationSeed::new(controller_type(
                 response_ty,
             ))],
-            [],
-            [],
         )
         .expect("response local admits");
     let response = locals.local_ids()[0].clone();
@@ -1420,13 +1439,11 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
 fn direct_observe_program() -> AwbcProgram {
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             controller_agent_types(),
             [RuntimeLocalDeclarationSeed::new(controller_type(
                 OBSERVATION_TY,
             ))],
-            [],
-            [],
         )
         .expect("controller types admit");
     let observation = locals.local_ids()[0].clone();
@@ -1800,6 +1817,39 @@ fn runtime_value_json_projection_rejects_non_finite_numbers() {
         AgentRuntimeValueSerializationErrorKind::NonFiniteNumber
     );
     assert_eq!(error.path(), "$runtime.values[0]");
+}
+
+#[test]
+fn runtime_value_json_projection_rejects_program_bound_data_shape_witness() {
+    let value_type = RuntimeSemanticTypeId::from_bytes([191; 32]);
+    let shape_type = RuntimeSemanticTypeId::from_bytes([192; 32]);
+    let program = AwbcProgram {
+        runtime_types: vec![
+            AwbcRuntimeType::new(value_type, AwbcRuntimeTypeShape::Bool),
+            AwbcRuntimeType::new(
+                shape_type,
+                AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(AwbcTypeId(0))),
+            ),
+        ],
+        ..AwbcProgram::default()
+    };
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+    let witness =
+        RuntimeDataShape::bind(owner, shape_type).expect("program row binds a DataShape witness");
+
+    let error = runtime_value_to_json(&RuntimeValue::Agent(RuntimeAgentValue::DataShape(witness)))
+        .expect_err("program-bound DataShape witnesses cannot become Agent JSON");
+
+    assert_eq!(
+        error.kind(),
+        AgentRuntimeValueSerializationErrorKind::InvalidRuntimeState
+    );
+    assert_eq!(error.path(), "$runtime");
+    assert!(
+        error
+            .to_string()
+            .contains("program-bound DataShape witnesses")
+    );
 }
 
 #[test]
@@ -3473,7 +3523,7 @@ fn rag_context_projection_rejects_noncanonical_schema_version() {
 
 #[test]
 fn rag_context_runtime_payload_exposes_summary_fields() {
-    let rag_payload = runtime_rag_context_payload(&serde_json::json!({
+    let rag_json = serde_json::json!({
         "schema_version": 1,
         "query": {
             "query_id": "query.opening",
@@ -3507,8 +3557,9 @@ fn rag_context_runtime_payload_exposes_summary_fields() {
             }
         ],
         "truncated": true
-    }))
-    .expect("typed RAG context is admitted");
+    });
+    let rag_payload =
+        runtime_rag_context_payload(&rag_json).expect("typed RAG context is admitted");
     let RuntimeValue::Record(fields) = rag_payload else {
         panic!("RAG context payload is a record");
     };
@@ -3525,9 +3576,11 @@ fn rag_context_runtime_payload_exposes_summary_fields() {
         runtime_record_get(&fields, "truncated").expect("truncated exists"),
         RuntimeValue::Bool(true)
     ));
+    let encoded = runtime_record_string(&fields, "json").expect("json is a string");
+    assert!(encoded.starts_with("{\"schema_version\":1,\"query\":"));
     assert_eq!(
-        runtime_record_string(&fields, "json").expect("json is a string"),
-        "{\"items\":[{\"body\":\"first body\",\"channels\":[\"lexical\"],\"chunk_id\":\"item.1\",\"entity_ids\":[],\"fused_score\":1.0,\"kind\":\"source\",\"source_anchor\":null,\"title\":\"first\"},{\"body\":\"second body\",\"channels\":[\"summary\"],\"chunk_id\":\"item.2\",\"entity_ids\":[],\"fused_score\":0.5,\"kind\":\"documentation\",\"source_anchor\":null,\"title\":\"second\"}],\"query\":{\"graph_depth\":1,\"limit\":2,\"max_context_bytes\":4096,\"program_hash\":\"program.opening\",\"query_id\":\"query.opening\",\"roots\":[],\"text\":\"why did opening flow stall?\"},\"schema_version\":1,\"truncated\":true}"
+        serde_json::from_str::<serde_json::Value>(&encoded).expect("encoded JSON is valid"),
+        rag_json
     );
 }
 

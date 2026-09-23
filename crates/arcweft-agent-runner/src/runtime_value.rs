@@ -321,6 +321,13 @@ fn runtime_agent_to_json(
         RuntimeAgentValue::Predicate(predicate) => runtime_agent_predicate_to_json(predicate, path),
         RuntimeAgentValue::ViewportPoint { x, y } => Ok(serde_json::json!({ "x": x, "y": y })),
         RuntimeAgentValue::BinaryData(data) => Ok(serde_json::json!({ "data": data })),
+        RuntimeAgentValue::DataShape(_) => {
+            Err(AgentRuntimeValueSerializationError::InvalidRuntimeState {
+                path: path.to_owned(),
+                detail: "program-bound DataShape witnesses cannot be serialized as Agent JSON"
+                    .to_owned(),
+            })
+        }
     }
 }
 
