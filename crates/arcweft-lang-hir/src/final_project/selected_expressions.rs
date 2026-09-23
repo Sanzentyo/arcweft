@@ -14,13 +14,15 @@ use crate::dialogue_application::{
 use crate::expr::{
     HirCallInvocation, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
 };
-use crate::identity::{ExprId, HirModuleId, SyntheticOwner, TypeId};
+use crate::identity::{ExprId, HirModuleId, ItemId, SyntheticOwner, TypeId};
 use crate::module::HirModule;
+use crate::scope::HirScopeOwner;
 use crate::symbol::CallableDeclarationKey;
 
 use super::{
-    HirAnalysisProjectView, HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
-    HirRuntimeSemanticReachability,
+    HirAnalysisProjectView, HirDeclarationItemRootRole, HirExpressionEvaluationEdge,
+    HirProjectEvaluationTopology, HirRuntimeSemanticReachability, HirSemanticPathOwnerId,
+    HirSemanticPathStep,
 };
 
 pub(super) struct HirSelectedRuntimeExpressionOwners {
@@ -43,6 +45,16 @@ pub struct HirSelectedExpressionGraph {
     type_roots: BTreeSet<TypeId>,
 }
 
+/// Selects whether a semantic expression graph includes tooling-owned script
+/// bodies as well as ordinary language expressions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirSelectedExpressionRootPartition {
+    /// Include every accepted project root, including Test and Bench bodies.
+    CompleteProject,
+    /// Include language-owned roots and omit Test/Bench script-plan bodies.
+    Language,
+}
+
 /// A selected semantic graph restricted to one declaration body. Its typed
 /// identity prevents a partial preparation graph from being published as a
 /// complete project graph.
@@ -59,6 +71,10 @@ impl HirSelectedDeclarationExpressionGraph {
 
     pub fn expression_owners(&self) -> impl Iterator<Item = ExprId> + '_ {
         self.graph.expression_owners()
+    }
+
+    pub fn contains_expression(&self, owner: ExprId) -> bool {
+        self.graph.contains_expression(owner)
     }
 
     pub fn contains_statement(&self, owner: crate::identity::StmtId) -> bool {
@@ -216,6 +232,172 @@ impl HirSelectedExpressionGraph {
     }
 }
 
+impl<'project> HirAnalysisProjectView<'project> {
+    /// Returns whether one HIR owner belongs to a selected semantic root
+    /// partition. All owner families use the same typed TestBody/BenchBody
+    /// ownership boundary as expression-graph construction.
+    pub fn selected_expression_owner_in_partition(
+        self,
+        topology: &HirProjectEvaluationTopology,
+        owner: SyntheticOwner,
+        partition: HirSelectedExpressionRootPartition,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        if partition == HirSelectedExpressionRootPartition::CompleteProject {
+            return Ok(true);
+        }
+        let is_script_body = match owner {
+            SyntheticOwner::Item(_) => false,
+            SyntheticOwner::Expr(owner) => self.expression_owner_is_script_body(topology, owner)?,
+            SyntheticOwner::Stmt(owner) => {
+                self.path_owner_is_script_body(topology, owner.into())?
+            }
+            SyntheticOwner::Pattern(owner) => {
+                self.path_owner_is_script_body(topology, owner.into())?
+            }
+            SyntheticOwner::Local(owner) => {
+                self.path_owner_is_script_body(topology, owner.into())?
+            }
+            SyntheticOwner::Type(owner) => {
+                let module = self.module_by_id(owner.module())?;
+                let ty = module
+                    .resolve_type(owner)
+                    .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+                self.type_owner_is_script_body(module, topology, owner, ty.scope())?
+            }
+            SyntheticOwner::Scope(owner) => {
+                let module = self.module_by_id(owner.module())?;
+                self.scope_is_script_body(module, topology, owner)?
+            }
+            SyntheticOwner::Capture(owner) => {
+                let row = topology
+                    .module(owner.module())
+                    .and_then(|module| module.captures().capture(owner))
+                    .ok_or(HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+                self.expression_owner_is_script_body(topology, row.closure())?
+            }
+        };
+        Ok(!is_script_body)
+    }
+
+    fn module_by_id(
+        self,
+        module: HirModuleId,
+    ) -> Result<&'project HirModule, HirSelectedExpressionInventoryError> {
+        self.modules()
+            .find_map(|(_, value)| (value.module_id() == module).then_some(value.as_ref()))
+            .ok_or(HirSelectedExpressionInventoryError::UnknownModule { module })
+    }
+
+    fn path_owner_is_script_body(
+        self,
+        topology: &HirProjectEvaluationTopology,
+        owner: HirSemanticPathOwnerId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        let location = topology
+            .semantic_path(owner)
+            .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+        Ok(location.is_some_and(|location| {
+            matches!(
+                location.path().steps().first(),
+                Some(HirSemanticPathStep::DeclarationItem(
+                    HirDeclarationItemRootRole::TestBody | HirDeclarationItemRootRole::BenchBody
+                ))
+            )
+        }))
+    }
+
+    fn expression_owner_is_script_body(
+        self,
+        topology: &HirProjectEvaluationTopology,
+        owner: ExprId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        self.path_owner_is_script_body(topology, owner.into())
+    }
+
+    fn type_owner_is_script_body(
+        self,
+        module: &HirModule,
+        topology: &HirProjectEvaluationTopology,
+        owner: TypeId,
+        scope: crate::identity::ScopeId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        let mut expression_owned = false;
+        for (expression, value) in module.expressions() {
+            let mut owns_type = false;
+            for root in value
+                .kind()
+                .direct_type_roots()
+                .into_iter()
+                .map(crate::expr::HirExpressionTypeRoot::type_id)
+            {
+                if type_subtree_contains(module, root, owner)? {
+                    owns_type = true;
+                    break;
+                }
+            }
+            if owns_type {
+                expression_owned = true;
+                if self.expression_owner_is_script_body(topology, expression)? {
+                    return Ok(true);
+                }
+            }
+        }
+        if expression_owned {
+            return Ok(false);
+        }
+        if let Some(local) = module
+            .locals()
+            .find_map(|(local, value)| (value.annotation() == Some(owner)).then_some(local))
+        {
+            return self.path_owner_is_script_body(topology, local.into());
+        }
+        if let Some(pattern) = module.patterns().find_map(|(pattern, value)| {
+            (value.kind().authored_type() == Some(owner)).then_some(pattern)
+        }) {
+            return self.path_owner_is_script_body(topology, pattern.into());
+        }
+        self.scope_is_script_body(module, topology, scope)
+    }
+
+    fn scope_is_script_body(
+        self,
+        module: &HirModule,
+        topology: &HirProjectEvaluationTopology,
+        scope: crate::identity::ScopeId,
+    ) -> Result<bool, HirSelectedExpressionInventoryError> {
+        let mut current = Some(scope);
+        let mut visited = BTreeSet::new();
+        while let Some(owner) = current {
+            if !visited.insert(owner) {
+                return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+            }
+            let value = module
+                .resolve_scope(owner)
+                .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+            match *value.owner() {
+                HirScopeOwner::Item(item) => {
+                    if item_has_script_body(module, item)? {
+                        return Ok(true);
+                    }
+                }
+                HirScopeOwner::Expr(expression) => {
+                    if self.expression_owner_is_script_body(topology, expression)? {
+                        return Ok(true);
+                    }
+                }
+                HirScopeOwner::Stmt(statement) => {
+                    if self.path_owner_is_script_body(topology, statement.into())? {
+                        return Ok(true);
+                    }
+                }
+                HirScopeOwner::Module(_) => {}
+            }
+            current = value.parent();
+        }
+        Ok(false)
+    }
+}
+
 struct HirSelectedExpressionTraversal {
     reached: BTreeSet<ExprId>,
     typed: BTreeSet<ExprId>,
@@ -226,6 +408,7 @@ struct HirSelectedExpressionTraversal {
 struct SelectedExpressionTraversalInput<'a, Postfix, Calls, Disposition> {
     domain: SelectedExpressionDomain,
     topology: &'a HirProjectEvaluationTopology,
+    root_partition: HirSelectedExpressionRootPartition,
     outer_owners: Option<&'a BTreeSet<ExprId>>,
     execution_roots: &'a [ExprId],
     selected_postfix: Postfix,
@@ -335,6 +518,7 @@ impl HirAnalysisProjectView<'_> {
             self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
                 domain: SelectedExpressionDomain::SemanticAnalysis,
                 topology,
+                root_partition: HirSelectedExpressionRootPartition::CompleteProject,
                 outer_owners: Some(&outer),
                 execution_roots: &[],
                 selected_postfix,
@@ -401,10 +585,28 @@ impl HirAnalysisProjectView<'_> {
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<HirSelectedExpressionGraph, HirSelectedExpressionInventoryError> {
+        self.selected_expression_graph_in_partition(
+            topology,
+            HirSelectedExpressionRootPartition::CompleteProject,
+            selected_postfix,
+            selected_call_edges,
+        )
+    }
+
+    /// Selects one semantic expression graph under an explicit typed root
+    /// partition. Owner-family publication follows the same partition.
+    pub fn selected_expression_graph_in_partition(
+        self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        root_partition: HirSelectedExpressionRootPartition,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+    ) -> Result<HirSelectedExpressionGraph, HirSelectedExpressionInventoryError> {
         let traversal =
             self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
                 domain: SelectedExpressionDomain::SemanticAnalysis,
                 topology,
+                root_partition,
                 outer_owners: None,
                 execution_roots: &[],
                 selected_postfix,
@@ -438,13 +640,24 @@ impl HirAnalysisProjectView<'_> {
         };
         for (_, module) in self.modules() {
             for owner in module.slots().poisoned_live_owners() {
-                if graph.selects_owner_region(owner) {
+                if graph.selects_owner_region(owner)
+                    && self.selected_expression_owner_in_partition(
+                        topology,
+                        owner,
+                        root_partition,
+                    )?
+                {
                     return Err(HirSelectedExpressionInventoryError::RecoveredOwner { owner });
                 }
             }
             for (owner, statement) in module.statements() {
                 if super::HirControlTransferKind::from_statement(statement.kind()).is_some()
                     && graph.selects_owner_region(SyntheticOwner::Stmt(owner))
+                    && self.selected_expression_owner_in_partition(
+                        topology,
+                        SyntheticOwner::Stmt(owner),
+                        root_partition,
+                    )?
                     && !topology
                         .control_transfer_row(owner)
                         .is_ok_and(|row| row.target().is_ok())
@@ -477,6 +690,13 @@ impl HirAnalysisProjectView<'_> {
                         .map(|(owner, _)| SyntheticOwner::Scope(owner)),
                 )
                 .filter(|owner| graph.selects_owner_region(*owner))
+                .map(|owner| {
+                    self.selected_expression_owner_in_partition(topology, owner, root_partition)
+                        .map(|selected| selected.then_some(owner))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
                 .collect::<Vec<_>>();
             graph.owners.extend(selected);
             let captures = module
@@ -489,6 +709,13 @@ impl HirAnalysisProjectView<'_> {
                         })
                 })
                 .map(|(owner, _)| SyntheticOwner::Capture(owner))
+                .map(|owner| {
+                    self.selected_expression_owner_in_partition(topology, owner, root_partition)
+                        .map(|selected| selected.then_some(owner))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
                 .collect::<Vec<_>>();
             graph.owners.extend(captures);
         }
@@ -507,6 +734,7 @@ impl HirAnalysisProjectView<'_> {
             self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
                 domain: SelectedExpressionDomain::RuntimeType,
                 topology,
+                root_partition: HirSelectedExpressionRootPartition::CompleteProject,
                 outer_owners: Some(outer_owners),
                 execution_roots,
                 selected_postfix,
@@ -536,6 +764,7 @@ impl HirAnalysisProjectView<'_> {
         let SelectedExpressionTraversalInput {
             domain,
             topology,
+            root_partition,
             outer_owners,
             execution_roots,
             mut selected_postfix,
@@ -544,7 +773,13 @@ impl HirAnalysisProjectView<'_> {
         } = input;
         validate_selection_topology(self, topology)?;
         let modules = selected_expression_modules(self);
-        let mut pending = selected_expression_pending(topology, outer_owners, execution_roots);
+        let mut pending = selected_expression_pending(
+            self,
+            topology,
+            root_partition,
+            outer_owners,
+            execution_roots,
+        )?;
         let excluded_roots = selected_expression_excluded_roots(self, domain);
         let mut visited = BTreeSet::new();
         let mut selected = BTreeSet::new();
@@ -728,17 +963,63 @@ fn selected_expression_modules(
         .collect()
 }
 
+fn item_has_script_body(
+    module: &HirModule,
+    owner: ItemId,
+) -> Result<bool, HirSelectedExpressionInventoryError> {
+    let item = module
+        .resolve_item(owner)
+        .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+    Ok(matches!(
+        item.kind(),
+        crate::item::HirItemKind::Test(_) | crate::item::HirItemKind::Bench(_)
+    ))
+}
+
+fn type_subtree_contains(
+    module: &HirModule,
+    root: TypeId,
+    target: TypeId,
+) -> Result<bool, HirSelectedExpressionInventoryError> {
+    let mut pending = vec![root];
+    let mut visited = BTreeSet::new();
+    while let Some(owner) = pending.pop() {
+        if !visited.insert(owner) {
+            continue;
+        }
+        if owner == target {
+            return Ok(true);
+        }
+        let value = module
+            .resolve_type(owner)
+            .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+        pending.extend(value.kind().direct_type_children());
+    }
+    Ok(false)
+}
+
 fn selected_expression_pending(
+    view: HirAnalysisProjectView<'_>,
     topology: &HirProjectEvaluationTopology,
+    root_partition: HirSelectedExpressionRootPartition,
     outer_owners: Option<&BTreeSet<ExprId>>,
     execution_roots: &[ExprId],
-) -> VecDeque<ExprId> {
-    let mut pending = topology
+) -> Result<VecDeque<ExprId>, HirSelectedExpressionInventoryError> {
+    let mut pending = VecDeque::new();
+    for owner in topology
         .selection_roots()
         .filter(|owner| outer_owners.is_none_or(|outer| outer.contains(owner)))
-        .collect::<VecDeque<_>>();
+    {
+        if view.selected_expression_owner_in_partition(
+            topology,
+            SyntheticOwner::Expr(owner),
+            root_partition,
+        )? {
+            pending.push_back(owner);
+        }
+    }
     pending.extend(execution_roots.iter().copied());
-    pending
+    Ok(pending)
 }
 
 fn selected_expression_excluded_roots(

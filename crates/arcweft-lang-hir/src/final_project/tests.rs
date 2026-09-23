@@ -31,7 +31,7 @@ use crate::expr::{
     HirThreadFlowItem,
 };
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
-use crate::identity::ExprId;
+use crate::identity::{ExprId, SyntheticOwner};
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
 use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
 use crate::lowering::{HirModuleKey, LoweringRequest};
@@ -2613,6 +2613,198 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
         index_children: index_children.into_boxed_slice(),
         dialogue_children: dialogue_children.into_boxed_slice(),
     });
+}
+
+#[test]
+fn language_expression_partition_keeps_test_body_owned_by_the_script_manifest() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let source = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/script-root-partition",
+        "script-root-partition.arcw",
+        concat!(
+            "flow opening() -> String { return \"done\" }\n",
+            "test @test.script_partition scenario {\n",
+            "    result { let count: i64 = 1; || count }\n",
+            "    expect.no_assertion_failures()\n",
+            "}\n",
+            "bench @bench.script_partition {\n",
+            "    measure iterations = 1 { opening() }\n",
+            "}\n",
+            "test @test:.opening scenario {\n",
+            "    goto @flow.opening\n",
+            "    expect.no_assertion_failures()\n",
+            "}\n",
+            "bench @bench:.opening {\n",
+            "    measure iterations = 1 { opening() }\n",
+            "}\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &source, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    let executable = project.analysis_view().unwrap();
+    let symbols = symbols_for_project(&project, source.document(), "script-root-partition");
+    let topology = evaluation_topology(&project, &symbols);
+    let test = executable
+        .items()
+        .find_map(|item| match item.item().kind() {
+            HirItemKind::Test(test) => Some((item.id(), test)),
+            _ => None,
+        })
+        .expect("Test item");
+    let [expression_statement, expectation_statement] = test.1.body() else {
+        panic!("two script command statements");
+    };
+    let module = executable.module(&root_path).expect("test module");
+    let (local, binding) = module
+        .locals()
+        .find(|(_, binding)| binding.name().as_str() == "count")
+        .expect("script local");
+    let pattern = binding.pattern().expect("script binding pattern");
+    let annotation = binding.annotation().expect("script type annotation");
+    let (capture, _) = module.captures().next().expect("script closure capture");
+    let expression = match executable
+        .module(&root_path)
+        .expect("test module")
+        .resolve_stmt(*expression_statement)
+        .expect("test statement")
+        .kind()
+    {
+        HirStmtKind::Expression { expression } => *expression,
+        other => panic!("script expression statement, found {other:?}"),
+    };
+    let selected_call = |_| Some(super::HirSelectedCallExpressionDisposition::Structural);
+    let complete = executable
+        .selected_expression_graph(&topology, |_| None, selected_call)
+        .expect("complete-project expression graph");
+    let language = executable
+        .selected_expression_graph_in_partition(
+            &topology,
+            super::HirSelectedExpressionRootPartition::Language,
+            |_| None,
+            selected_call,
+        )
+        .expect("language expression graph");
+    let called_flow_body_expression = module
+        .expressions()
+        .find_map(|(owner, _)| {
+            topology
+                .semantic_path(owner.into())
+                .ok()
+                .flatten()
+                .filter(|path| {
+                    matches!(
+                        path.path().steps().first(),
+                        Some(super::HirSemanticPathStep::DeclarationBody(
+                            super::HirDeclarationBodyRootRole::FlowBody
+                        ))
+                    )
+                })
+                .map(|_| owner)
+        })
+        .expect("called Flow body expression");
+
+    assert!(complete.contains_expression(called_flow_body_expression));
+    assert!(language.contains_expression(called_flow_body_expression));
+    assert!(complete.contains_expression(expression));
+    assert!(!language.contains_expression(expression));
+    assert!(!language.contains_owner(SyntheticOwner::Stmt(*expression_statement)));
+    assert!(!language.contains_owner(SyntheticOwner::Stmt(*expectation_statement)));
+    assert!(complete.contains_owner(SyntheticOwner::Local(local)));
+    assert!(complete.contains_owner(SyntheticOwner::Pattern(pattern)));
+    assert!(complete.contains_owner(SyntheticOwner::Type(annotation)));
+    assert!(complete.contains_owner(SyntheticOwner::Capture(capture)));
+    assert!(!language.contains_owner(SyntheticOwner::Local(local)));
+    assert!(!language.contains_owner(SyntheticOwner::Pattern(pattern)));
+    assert!(!language.contains_owner(SyntheticOwner::Type(annotation)));
+    assert!(!language.contains_owner(SyntheticOwner::Capture(capture)));
+    assert!(language.contains_owner(SyntheticOwner::Item(test.0)));
+    assert!(
+        !executable
+            .selected_expression_owner_in_partition(
+                &topology,
+                SyntheticOwner::Expr(expression),
+                super::HirSelectedExpressionRootPartition::Language,
+            )
+            .expect("script expression partition")
+    );
+
+    let bench = executable
+        .items()
+        .find_map(|item| match item.item().kind() {
+            HirItemKind::Bench(bench) => Some((item.id(), bench)),
+            _ => None,
+        })
+        .expect("Bench item");
+    let bench_call = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let is_call = matches!(expression.kind(), crate::expr::HirExprKind::Call(_));
+            let path = topology.semantic_path(owner.into()).ok().flatten();
+            (is_call
+                && path.is_some_and(|path| {
+                    matches!(
+                        path.path().steps().first(),
+                        Some(super::HirSemanticPathStep::DeclarationItem(
+                            super::HirDeclarationItemRootRole::BenchBody
+                        ))
+                    )
+                }))
+            .then_some(owner)
+        })
+        .expect("Bench measure call root");
+    assert!(complete.contains_expression(bench_call));
+    assert!(!language.contains_expression(bench_call));
+    assert!(language.contains_owner(SyntheticOwner::Item(bench.0)));
+    assert!(
+        !executable
+            .selected_expression_owner_in_partition(
+                &topology,
+                SyntheticOwner::Expr(bench_call),
+                super::HirSelectedExpressionRootPartition::Language,
+            )
+            .expect("bench expression partition")
+    );
+    for (owner, _) in module.expressions() {
+        let path = topology
+            .semantic_path(owner.into())
+            .expect("expression semantic path");
+        let script_owned = path.is_some_and(|path| {
+            matches!(
+                path.path().steps().first(),
+                Some(super::HirSemanticPathStep::DeclarationItem(
+                    super::HirDeclarationItemRootRole::TestBody
+                        | super::HirDeclarationItemRootRole::BenchBody
+                ))
+            )
+        });
+        if script_owned {
+            assert!(complete.contains_expression(owner));
+            assert!(!language.contains_expression(owner));
+            assert!(
+                !executable
+                    .selected_expression_owner_in_partition(
+                        &topology,
+                        SyntheticOwner::Expr(owner),
+                        super::HirSelectedExpressionRootPartition::Language,
+                    )
+                    .expect("script expression partition")
+            );
+        }
+    }
 }
 
 fn assert_selected_graph_rejections(

@@ -50,6 +50,7 @@ pub use self::selected_expressions::{
     HirSelectedCallArgument, HirSelectedCallExpressionDisposition,
     HirSelectedCallExpressionInventory, HirSelectedDeclarationExpressionGraph,
     HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
+    HirSelectedExpressionRootPartition,
 };
 pub use self::semantic_paths::{
     HirAcceptedItemFamily, HirBindingSite, HirCaptureEvaluationIndex, HirCaptureEvaluationRow,
