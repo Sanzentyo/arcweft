@@ -214,13 +214,11 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
     let mut builder = RuntimePlanBuilder::new();
     let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [arcweft_core::plan::RuntimePlanTypeSeed::new(
                 unit_type,
                 arcweft_core::plan::RuntimePlanTypeProjection::Unit,
             )],
-            [],
-            [],
             [],
         )
         .expect("unit result type admits");

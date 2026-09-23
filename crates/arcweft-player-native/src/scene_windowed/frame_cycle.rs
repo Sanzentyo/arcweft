@@ -295,7 +295,7 @@ impl NativeSceneState {
         self.next_tick = self.next_tick.saturating_add(1);
         let step = self
             .runtime
-            .step_with_clock(clock, BundleStepInput::default());
+            .step_with_clock(clock, BundleStepInput::default())?;
         if let Some(audio) = &mut self.audio {
             let mut command_events = Vec::new();
             audio.submit_commands(step.audio_commands, &mut command_events);

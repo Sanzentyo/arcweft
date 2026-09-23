@@ -23,7 +23,7 @@ use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
 };
 use arcweft_runtime_driver::task::HostTaskDispatch;
-use arcweft_runtime_host::NativeTaskBridge;
+use arcweft_runtime_host::{NativeTaskBridge, NativeTaskBridgeError};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -127,6 +127,8 @@ impl WindowedRuntimeOutcome {
 /// Windowed runtime owner error.
 #[derive(Debug, Error)]
 pub enum WindowedRuntimeOwnerError {
+    #[error(transparent)]
+    NativeTaskBridge(#[from] NativeTaskBridgeError),
     #[error(transparent)]
     PatchEndpoint(#[from] NativePatchEndpointError),
     #[error(transparent)]
@@ -279,7 +281,7 @@ impl WindowedRuntimeOwner {
     /// events for the next runtime step.
     pub fn pump_main_thread(&mut self) -> Result<usize, WindowedRuntimeOwnerError> {
         self.host.pump_main_thread()?;
-        let completions = self.host.poll_completions();
+        let completions = self.host.poll_completions()?;
         let completion_count = completions.len();
         let events = self.normalize_host_events(completions);
         self.pending_task_events.extend(events);
@@ -297,27 +299,32 @@ impl WindowedRuntimeOwner {
         &mut self,
         clock: RuntimeClockStep,
         mut input: BundleStepInput,
-    ) -> BundleSessionStep {
+    ) -> Result<BundleSessionStep, WindowedRuntimeOwnerError> {
         input.task_events.append(&mut self.pending_task_events);
         input.audio_events.append(&mut self.pending_audio_events);
         let step = self.endpoint.session_mut().step_with_clock(clock, input);
-        self.complete_requested_tasks(step.requested_tasks.clone());
-        step
+        self.complete_requested_tasks(step.requested_tasks.clone())?;
+        Ok(step)
     }
 
-    fn complete_requested_tasks(&mut self, dispatches: Vec<HostTaskDispatch>) {
+    fn complete_requested_tasks(
+        &mut self,
+        dispatches: Vec<HostTaskDispatch>,
+    ) -> Result<(), WindowedRuntimeOwnerError> {
         if dispatches.is_empty() {
-            return;
+            return Ok(());
         }
-        self.pending_host_dispatches
-            .extend(dispatches.iter().cloned());
         let tasks = dispatches
-            .into_iter()
-            .map(|dispatch| dispatch.task)
+            .iter()
+            .map(|dispatch| dispatch.task.clone())
             .collect::<Vec<_>>();
-        let events = self.host.complete_tasks(tasks);
+        let events = self
+            .host
+            .complete_tasks(self.endpoint.session().program_owner(), tasks)?;
+        self.pending_host_dispatches.extend(dispatches);
         let events = self.normalize_host_events(events);
         self.pending_task_events.extend(events);
+        Ok(())
     }
 
     fn normalize_host_events(&mut self, events: Vec<TaskEvent>) -> Vec<TaskEvent> {
@@ -880,13 +887,11 @@ mod tests {
             arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
         );
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [arcweft_core::plan::RuntimePlanTypeSeed::new(
                     unit_result.ty(),
                     arcweft_core::plan::RuntimePlanTypeProjection::Unit,
                 )],
-                [],
-                [],
                 [],
             )
             .expect("unit result type admits");

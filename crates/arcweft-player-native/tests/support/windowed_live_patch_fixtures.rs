@@ -1130,13 +1130,11 @@ fn fixture_plan_builder() -> RuntimePlanBuilder {
     let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string_type, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(unit_type, RuntimePlanTypeProjection::Unit),
             ],
-            [],
-            [],
             [],
         )
         .expect("fixture string type admits");
