@@ -1,5 +1,5 @@
 error: Arcweft Rust ABI metadata does not support borrowed references yet
- --> tests/ui/reject_reference_field.rs:6:12
+ --> tests/ui/reject_reference_field.rs:5:12
   |
-6 |     value: &'static str,
+5 |     value: &'static str,
   |            ^

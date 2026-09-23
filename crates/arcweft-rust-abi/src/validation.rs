@@ -1,7 +1,6 @@
 use crate::{
-    ArcweftRustIdentityError, ArcweftRustManifest, ArcweftRustOpaqueTypeProducerIdError,
-    ArcweftRustStructShape, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef,
-    ArcweftRustVariantPayload,
+    ArcweftRustIdentityError, ArcweftRustManifest, ArcweftRustStructShape, ArcweftRustTypeKind,
+    ArcweftRustTypePath, ArcweftRustTypeRef, ArcweftRustVariantPayload,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -121,13 +120,15 @@ impl ArcweftRustTypeSite {
 /// A structured violation of the final Rust ABI manifest model.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ArcweftRustManifestError {
+    #[error("invalid codec policy on Rust type declaration {declaration}: {source}")]
+    CodecPolicy {
+        declaration: usize,
+        source: crate::ArcweftRustCodecPolicyError,
+    },
+    #[error("Rust default constructor {function} must be an effect-free, nullary pure callable")]
+    InvalidDefaultConstructor { function: usize },
     #[error("unsupported Rust ABI schema {found}; expected {expected}")]
     UnsupportedSchema { found: u32, expected: u32 },
-    #[error("Rust type declaration {declaration} has invalid opaque producer: {error}")]
-    InvalidOpaqueProducer {
-        declaration: usize,
-        error: ArcweftRustOpaqueTypeProducerIdError,
-    },
     #[error("invalid Rust package identity: {error}")]
     InvalidPackage { error: ArcweftRustIdentityError },
     #[error("invalid path for Rust type declaration {declaration}: {error}")]
@@ -208,16 +209,6 @@ impl ArcweftRustManifest {
                 expected: crate::ARCWEFT_RUST_ABI_SCHEMA_VERSION,
             });
         }
-        for (declaration, type_declaration) in self.types.iter().enumerate() {
-            type_declaration.opaque_producer().as_str();
-            crate::ArcweftRustOpaqueTypeProducerId::validate(
-                type_declaration.opaque_producer().as_str(),
-            )
-            .map_err(|error| ArcweftRustManifestError::InvalidOpaqueProducer {
-                declaration,
-                error,
-            })?;
-        }
         self.package
             .id
             .validate()
@@ -239,6 +230,12 @@ impl ArcweftRustManifest {
                 });
             }
             validate_parameters(declaration_index, declaration, limits)?;
+            declaration.validate_data_policy().map_err(|source| {
+                ArcweftRustManifestError::CodecPolicy {
+                    declaration: declaration_index,
+                    source,
+                }
+            })?;
             let parameter_count = declaration.parameters.len();
             for (root, ty) in declaration_type_roots(declaration_index, &declaration.kind) {
                 validate_type_tree(ty, root, Some(parameter_count), limits)?;
@@ -246,6 +243,15 @@ impl ArcweftRustManifest {
         }
 
         for (function_index, function) in self.functions.iter().enumerate() {
+            if function.role == crate::ArcweftRustCallableRole::DefaultConstructor
+                && (function.purity != crate::ArcweftRustPurity::Pure
+                    || !function.params.is_empty()
+                    || !function.effects.is_empty())
+            {
+                return Err(ArcweftRustManifestError::InvalidDefaultConstructor {
+                    function: function_index,
+                });
+            }
             for (parameter_index, parameter) in function.params.iter().enumerate() {
                 validate_type_tree(
                     &parameter.ty,
@@ -495,7 +501,8 @@ impl<'a> TypeTreeValidator<'a> {
             | ArcweftRustTypeRef::F32
             | ArcweftRustTypeRef::F64
             | ArcweftRustTypeRef::String
-            | ArcweftRustTypeRef::Char => {}
+            | ArcweftRustTypeRef::Char
+            | ArcweftRustTypeRef::Bytes => {}
         }
         Ok(())
     }

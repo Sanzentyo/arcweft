@@ -1,5 +1,0 @@
-error: ArcweftType requires #[arcweft(opaque_producer = "...")]
- --> tests/ui/reject_missing_opaque_producer.rs:4:12
-  |
-4 | pub struct MissingProducer;
-  |            ^^^^^^^^^^^^^^^

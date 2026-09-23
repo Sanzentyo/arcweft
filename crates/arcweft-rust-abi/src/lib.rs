@@ -4,24 +4,27 @@
 //! model validation, and presentation formatting live in responsibility
 //! modules; adapters own discovery and all filesystem or Cargo interaction.
 
+mod codec;
 mod display;
 mod identity;
 mod model;
-mod producer;
 mod validation;
+pub use codec::{
+    ArcweftRustBytesFormat, ArcweftRustCodecPolicyError, ArcweftRustDataTypePolicy,
+    ArcweftRustEnumRepr, ArcweftRustEnumTagStyle,
+};
 
 pub use identity::{
     ArcweftRustIdentityError, ArcweftRustPackageId, ArcweftRustTypeParameterIndex,
     ArcweftRustTypeParameterName, ArcweftRustTypePath, ArcweftRustTypePathSegment,
 };
 pub use model::{
-    ARCWEFT_RUST_ABI_SCHEMA_VERSION, ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest,
-    ArcweftRustManifestBuilder, ArcweftRustPackage, ArcweftRustParam, ArcweftRustPurity,
-    ArcweftRustStructShape, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeParameter,
-    ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload, ArcweftType,
-    ArcweftTypeMetadata,
+    ARCWEFT_RUST_ABI_SCHEMA_VERSION, ArcweftRustCallableRole, ArcweftRustField,
+    ArcweftRustFieldDefault, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustManifestBuilder,
+    ArcweftRustPackage, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeParameter, ArcweftRustTypeRef,
+    ArcweftRustVariant, ArcweftRustVariantPayload, ArcweftType, ArcweftTypeMetadata,
 };
-pub use producer::{ArcweftRustOpaqueTypeProducerId, ArcweftRustOpaqueTypeProducerIdError};
 pub use validation::{
     ArcweftRustAbiLimits, ArcweftRustManifestError, ArcweftRustTypeSite, ArcweftRustTypeSiteRoot,
     ArcweftRustTypeSiteStep,
@@ -74,9 +77,7 @@ impl ArcweftRustManifest {
                 expected: ARCWEFT_RUST_ABI_SCHEMA_VERSION,
             });
         }
-        let value: serde_json::Value = serde_json::from_str(source)?;
-        validate_type_producers(&value)?;
-        let manifest = serde_json::from_value::<RustManifestDto>(value)?.into_manifest()?;
+        let manifest = Self::from(serde_json::from_str::<RustManifestDto>(source)?);
         manifest.validate(ArcweftRustAbiLimits::PRODUCTION)?;
         Ok(manifest)
     }
@@ -129,23 +130,11 @@ pub enum ArcweftRustAbiError {
     },
     #[error("unsupported Rust ABI schema {found}; expected {expected}")]
     UnsupportedSchema { found: u32, expected: u32 },
-    #[error("Rust type declaration {site:?} is missing opaque_producer")]
-    MissingOpaqueProducer { site: ArcweftRustTypeFieldSite },
-    #[error("Rust type declaration {site:?} has malformed opaque_producer {found:?}")]
-    MalformedOpaqueProducer {
-        site: ArcweftRustTypeFieldSite,
-        found: ArcweftRustJsonValueKind,
-    },
-    #[error("Rust type declaration {site:?} has invalid opaque producer: {error}")]
-    InvalidOpaqueProducer {
-        site: ArcweftRustTypeFieldSite,
-        error: ArcweftRustOpaqueTypeProducerIdError,
-    },
     #[error(transparent)]
     Manifest(#[from] ArcweftRustManifestError),
 }
 
-/// JSON value category used by Rust ABI header and producer diagnostics.
+/// JSON value category used by Rust ABI header diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArcweftRustJsonValueKind {
     Null,
@@ -171,68 +160,25 @@ pub enum ArcweftRustSchemaHeaderProblem {
     IntegerOutOfRange,
 }
 
-/// Stable authored location of a Rust type declaration producer field.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ArcweftRustTypeFieldSite {
-    declaration: usize,
-}
-
-impl ArcweftRustTypeFieldSite {
-    pub const fn declaration(self) -> usize {
-        self.declaration
-    }
-}
-
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RustManifestDto {
     schema_version: u32,
     package: ArcweftRustPackage,
     #[serde(default)]
-    types: Vec<RustTypeDeclDto>,
+    types: Vec<ArcweftRustTypeDecl>,
     #[serde(default)]
     functions: Vec<ArcweftRustFunction>,
 }
 
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RustTypeDeclDto {
-    path: ArcweftRustTypePath,
-    rust_path: String,
-    opaque_producer: String,
-    #[serde(default)]
-    parameters: Vec<ArcweftRustTypeParameter>,
-    kind: ArcweftRustTypeKind,
-}
-
-impl RustManifestDto {
-    fn into_manifest(self) -> Result<ArcweftRustManifest, ArcweftRustAbiError> {
-        let types = self
-            .types
-            .into_iter()
-            .enumerate()
-            .map(|(declaration, declaration_dto)| {
-                let opaque_producer =
-                    ArcweftRustOpaqueTypeProducerId::try_new(declaration_dto.opaque_producer)
-                        .map_err(|error| ArcweftRustAbiError::InvalidOpaqueProducer {
-                            site: ArcweftRustTypeFieldSite { declaration },
-                            error,
-                        })?;
-                Ok(ArcweftRustTypeDecl {
-                    path: declaration_dto.path,
-                    rust_path: declaration_dto.rust_path,
-                    opaque_producer,
-                    parameters: declaration_dto.parameters,
-                    kind: declaration_dto.kind,
-                })
-            })
-            .collect::<Result<Vec<_>, ArcweftRustAbiError>>()?;
-        Ok(ArcweftRustManifest {
-            schema_version: self.schema_version,
-            package: self.package,
-            types,
-            functions: self.functions,
-        })
+impl From<RustManifestDto> for ArcweftRustManifest {
+    fn from(value: RustManifestDto) -> Self {
+        Self {
+            schema_version: value.schema_version,
+            package: value.package,
+            types: value.types,
+            functions: value.functions,
+        }
     }
 }
 
@@ -364,33 +310,6 @@ fn json_value_kind(value: &serde_json::Value) -> ArcweftRustJsonValueKind {
         serde_json::Value::Array(_) => ArcweftRustJsonValueKind::Array,
         serde_json::Value::Object(_) => ArcweftRustJsonValueKind::Object,
     }
-}
-
-fn validate_type_producers(value: &serde_json::Value) -> Result<(), ArcweftRustAbiError> {
-    let Some(types) = value.as_object().and_then(|object| object.get("types")) else {
-        return Ok(());
-    };
-    let Some(types) = types.as_array() else {
-        return Ok(());
-    };
-    for (declaration, type_value) in types.iter().enumerate() {
-        let Some(type_object) = type_value.as_object() else {
-            continue;
-        };
-        let site = ArcweftRustTypeFieldSite { declaration };
-        let Some(producer) = type_object.get("opaque_producer") else {
-            return Err(ArcweftRustAbiError::MissingOpaqueProducer { site });
-        };
-        let Some(producer) = producer.as_str() else {
-            return Err(ArcweftRustAbiError::MalformedOpaqueProducer {
-                site,
-                found: json_value_kind(producer),
-            });
-        };
-        ArcweftRustOpaqueTypeProducerId::try_new(producer)
-            .map_err(|error| ArcweftRustAbiError::InvalidOpaqueProducer { site, error })?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -47,6 +47,18 @@ pub struct ArcweftRustFunction {
     pub purity: ArcweftRustPurity,
     #[serde(default)]
     pub effects: Vec<String>,
+    /// Semantic role proved by the Rust metadata producer. A default
+    /// constructor calls the declared result type's actual `Default` method.
+    #[serde(default)]
+    pub role: ArcweftRustCallableRole,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArcweftRustCallableRole {
+    #[default]
+    Function,
+    DefaultConstructor,
 }
 
 /// One exported function parameter.
@@ -76,20 +88,18 @@ pub struct ArcweftRustTypeParameter {
 }
 
 /// A Rust struct, enum, or newtype exported as an Arcweft nominal declaration.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustTypeDecl {
     pub path: ArcweftRustTypePath,
     pub rust_path: String,
-    pub opaque_producer: crate::ArcweftRustOpaqueTypeProducerId,
     #[serde(default)]
     pub parameters: Vec<ArcweftRustTypeParameter>,
     pub kind: ArcweftRustTypeKind,
-}
-
-impl ArcweftRustTypeDecl {
-    pub const fn opaque_producer(&self) -> &crate::ArcweftRustOpaqueTypeProducerId {
-        &self.opaque_producer
-    }
+    /// Absent means the standard unannotated Rust data policy. Derives emit
+    /// the complete resolved policy after applying source attributes.
+    #[serde(default)]
+    pub data_policy: Option<crate::codec::ArcweftRustDataTypePolicy>,
 }
 
 /// Shape of an exported Rust ADT.
@@ -116,6 +126,24 @@ pub enum ArcweftRustStructShape {
 pub struct ArcweftRustField {
     pub name: String,
     pub ty: ArcweftRustTypeRef,
+    /// The declaration requests a producer; registration must supply its
+    /// exact pure, nullary callable. Metadata collection never executes it.
+    #[serde(default)]
+    pub default: Option<ArcweftRustFieldDefault>,
+    #[serde(default)]
+    pub skip: bool,
+    #[serde(default)]
+    pub wire_name: Option<String>,
+    #[serde(default)]
+    pub bytes_format: Option<crate::codec::ArcweftRustBytesFormat>,
+}
+
+/// Source default semantics before joining a registered Rust callable.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ArcweftRustFieldDefault {
+    Trait,
+    Function { rust_path: String },
 }
 
 /// One exported enum variant.
@@ -124,6 +152,10 @@ pub struct ArcweftRustField {
 pub struct ArcweftRustVariant {
     pub name: String,
     pub payload: ArcweftRustVariantPayload,
+    #[serde(default)]
+    pub wire_name: Option<String>,
+    #[serde(default, with = "crate::codec::discriminant")]
+    pub discriminant: Option<i128>,
 }
 
 /// Unit, tuple, or named-field payload of an exported Rust enum variant.
@@ -157,6 +189,7 @@ pub enum ArcweftRustTypeRef {
     F64,
     String,
     Char,
+    Bytes,
     Vec {
         item: Box<ArcweftRustTypeRef>,
     },
@@ -251,6 +284,7 @@ enum ArcweftRustTypeRefWire {
     F64 {},
     String {},
     Char {},
+    Bytes {},
     Vec {
         item: Box<ArcweftRustTypeRef>,
     },
@@ -302,6 +336,7 @@ impl<'de> Deserialize<'de> for ArcweftRustTypeRef {
             ArcweftRustTypeRefWire::F64 {} => Self::F64,
             ArcweftRustTypeRefWire::String {} => Self::String,
             ArcweftRustTypeRefWire::Char {} => Self::Char,
+            ArcweftRustTypeRefWire::Bytes {} => Self::Bytes,
             ArcweftRustTypeRefWire::Vec { item } => Self::Vec { item },
             ArcweftRustTypeRefWire::Seq { item } => Self::Seq { item },
             ArcweftRustTypeRefWire::Option { item } => Self::Option { item },
@@ -360,6 +395,7 @@ impl_primitive_type!(usize, ArcweftRustTypeRef::USize);
 impl_primitive_type!(f32, ArcweftRustTypeRef::F32);
 impl_primitive_type!(f64, ArcweftRustTypeRef::F64);
 impl_primitive_type!(char, ArcweftRustTypeRef::Char);
+impl_primitive_type!(arcweft_data::Bytes, ArcweftRustTypeRef::Bytes);
 
 impl ArcweftType for String {
     fn arcweft_type_ref() -> ArcweftRustTypeRef {

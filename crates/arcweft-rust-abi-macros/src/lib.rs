@@ -5,10 +5,14 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
 use syn::{
-    Attribute, Data, DeriveInput, Expr, ExprLit, Fields, FnArg, GenericArgument, GenericParam,
-    Ident, ItemFn, Lit, LitStr, Meta, Pat, PatIdent, PathArguments, ReturnType, Type,
-    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned,
+    Data, DeriveInput, Fields, FnArg, GenericArgument, GenericParam, Ident, Item, ItemFn, LitStr,
+    Pat, PatIdent, PathArguments, ReturnType, Type, parse_macro_input, parse_quote,
+    spanned::Spanned,
 };
+
+mod defaults;
+mod policy;
+use arcweft_data_derive_support::attrs::{ContainerAttrs, FieldAttrs, VariantAttrs};
 
 /// Derives `arcweft_rust_abi::ArcweftTypeMetadata` for a Rust ADT.
 #[proc_macro_derive(ArcweftType, attributes(arcweft))]
@@ -22,9 +26,30 @@ pub fn derive_arcweft_type(input: TokenStream) -> TokenStream {
 /// Exports one non-generic Rust function as Arcweft callable metadata.
 #[proc_macro_attribute]
 pub fn arcweft_export(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let options = parse_export_options(attr);
-    let function = parse_macro_input!(item as ItemFn);
-    expand_arcweft_export(options, &function)
+    let options = match parse_export_options(attr) {
+        Ok(options) => options,
+        Err(error) => return error.into_compile_error().into(),
+    };
+    let item = parse_macro_input!(item as Item);
+    match &item {
+        Item::Fn(function) => expand_arcweft_export(options, function),
+        Item::Impl(implementation) => defaults::expand_default_impl(options, implementation),
+        _ => Err(syn::Error::new_spanned(
+            item,
+            "arcweft_export requires a function or an explicitly pure Default implementation",
+        )),
+    }
+    .unwrap_or_else(syn::Error::into_compile_error)
+    .into()
+}
+
+/// Declares an explicitly pure wrapper for an existing Rust `Default`
+/// implementation, including primitive and foreign types. For example:
+/// `arcweft_export_default!(pure, pub fn default_flag() -> bool);`.
+#[proc_macro]
+pub fn arcweft_export_default(input: TokenStream) -> TokenStream {
+    let declaration = parse_macro_input!(input as defaults::DefaultExport);
+    defaults::expand_default_export(declaration)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -34,6 +59,7 @@ struct ExportOptions {
     name: Option<String>,
     pure: bool,
     task: bool,
+    default_constructor: bool,
 }
 
 struct TypeParameters {
@@ -47,7 +73,7 @@ impl TypeParameters {
     }
 }
 
-fn parse_export_options(attr: TokenStream) -> ExportOptions {
+fn parse_export_options(attr: TokenStream) -> syn::Result<ExportOptions> {
     let mut options = ExportOptions::default();
     let parser = syn::meta::parser(|meta| {
         if meta.path.is_ident("name") {
@@ -64,12 +90,18 @@ fn parse_export_options(attr: TokenStream) -> ExportOptions {
         }
         Err(meta.error("unsupported arcweft_export option"))
     });
-    let _ = syn::parse::Parser::parse(parser, attr);
-    options
+    syn::parse::Parser::parse(parser, attr)?;
+    if options.pure && options.task {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "an export cannot be both pure and task",
+        ));
+    }
+    Ok(options)
 }
 
 fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
-    let opaque_producer = opaque_producer_attribute(&input.attrs, input.ident.span())?;
+    let container = policy::parse(input)?;
     let parameter_indices = type_parameter_indices(input)?;
     let mut bounded_generics = input.generics.clone();
     for parameter in &mut bounded_generics.params {
@@ -100,8 +132,8 @@ fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     });
     let kind = match &input.data {
-        Data::Struct(data) => expand_struct_kind(&data.fields, &parameter_indices)?,
-        Data::Enum(data) => expand_enum_kind(data, &parameter_indices)?,
+        Data::Struct(data) => expand_struct_kind(&data.fields, &parameter_indices, &container)?,
+        Data::Enum(data) => expand_enum_kind(data, &parameter_indices, &container)?,
         Data::Union(data) => {
             return Err(syn::Error::new(
                 data.union_token.span(),
@@ -109,6 +141,7 @@ fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
             ));
         }
     };
+    let data_policy = policy::type_policy(&container, &name);
 
     Ok(quote! {
         impl #impl_generics arcweft_rust_abi::ArcweftType for #ident #type_generics #where_clause {
@@ -126,103 +159,13 @@ fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 arcweft_rust_abi::ArcweftRustTypeDecl {
                     path: #path,
                     rust_path: #rust_path.to_owned(),
-                    opaque_producer: arcweft_rust_abi::ArcweftRustOpaqueTypeProducerId::try_new(#opaque_producer)
-                        .expect("ArcweftType macro validated the opaque producer literal"),
                     parameters: vec![#(#parameters),*],
                     kind: #kind,
+                    data_policy: Some(#data_policy),
                 }
             }
         }
     })
-}
-
-fn opaque_producer_attribute(
-    attributes: &[Attribute],
-    item_span: proc_macro2::Span,
-) -> syn::Result<LitStr> {
-    let mut producer = None;
-    for attribute in attributes
-        .iter()
-        .filter(|attribute| attribute.path().is_ident("arcweft"))
-    {
-        let Meta::List(list) = &attribute.meta else {
-            return Err(malformed_arcweft_type_attribute(attribute));
-        };
-        let options = list
-            .parse_args_with(Punctuated::<Meta, syn::Token![,]>::parse_terminated)
-            .map_err(|_| malformed_arcweft_type_attribute(attribute))?;
-        if options.is_empty() {
-            return Err(malformed_arcweft_type_attribute(attribute));
-        }
-        for option in options {
-            let Meta::NameValue(option) = option else {
-                return Err(malformed_arcweft_type_attribute(attribute));
-            };
-            if !option.path.is_ident("opaque_producer") {
-                return Err(syn::Error::new(
-                    option.path.span(),
-                    "unsupported ArcweftType option; expected opaque_producer",
-                ));
-            }
-            if producer.is_some() {
-                return Err(syn::Error::new(
-                    option.path.span(),
-                    "duplicate ArcweftType opaque_producer option",
-                ));
-            }
-            let Expr::Lit(ExprLit {
-                lit: Lit::Str(value),
-                ..
-            }) = option.value
-            else {
-                return Err(syn::Error::new(
-                    option.value.span(),
-                    "ArcweftType opaque_producer must be a string literal",
-                ));
-            };
-            validate_opaque_producer_literal(&value)?;
-            producer = Some(value);
-        }
-    }
-    producer.ok_or_else(|| {
-        syn::Error::new(
-            item_span,
-            "ArcweftType requires #[arcweft(opaque_producer = \"...\")]",
-        )
-    })
-}
-
-fn malformed_arcweft_type_attribute(attribute: &Attribute) -> syn::Error {
-    syn::Error::new(
-        attribute.span(),
-        "malformed ArcweftType attribute; expected #[arcweft(opaque_producer = \"...\")]",
-    )
-}
-
-fn validate_opaque_producer_literal(value: &LitStr) -> syn::Result<()> {
-    let producer = value.value();
-    if producer.is_empty() {
-        return Err(syn::Error::new(
-            value.span(),
-            "ArcweftType opaque_producer must not be empty",
-        ));
-    }
-    if let Some((byte, _)) = producer
-        .char_indices()
-        .find(|(_, character)| character.is_control())
-    {
-        return Err(syn::Error::new(
-            value.span(),
-            format!("ArcweftType opaque_producer contains a control character at byte {byte}"),
-        ));
-    }
-    if producer.starts_with("std.") {
-        return Err(syn::Error::new(
-            value.span(),
-            "ArcweftType opaque_producer must not use the reserved std. namespace",
-        ));
-    }
-    Ok(())
 }
 
 fn type_parameter_indices(input: &DeriveInput) -> syn::Result<TypeParameters> {
@@ -254,7 +197,11 @@ fn type_parameter_indices(input: &DeriveInput) -> syn::Result<TypeParameters> {
     Ok(TypeParameters { ordered, by_name })
 }
 
-fn expand_struct_kind(fields: &Fields, parameters: &TypeParameters) -> syn::Result<TokenStream2> {
+fn expand_struct_kind(
+    fields: &Fields,
+    parameters: &TypeParameters,
+    container: &ContainerAttrs,
+) -> syn::Result<TokenStream2> {
     match fields {
         Fields::Unit => Ok(quote! {
             arcweft_rust_abi::ArcweftRustTypeKind::Struct {
@@ -282,7 +229,7 @@ fn expand_struct_kind(fields: &Fields, parameters: &TypeParameters) -> syn::Resu
             })
         }
         Fields::Named(fields) => {
-            let fields = expand_record_fields(&fields.named, parameters)?;
+            let fields = expand_record_fields(&fields.named, parameters, container)?;
             Ok(quote! {
                 arcweft_rust_abi::ArcweftRustTypeKind::Struct {
                     shape: arcweft_rust_abi::ArcweftRustStructShape::Record {
@@ -297,12 +244,22 @@ fn expand_struct_kind(fields: &Fields, parameters: &TypeParameters) -> syn::Resu
 fn expand_enum_kind(
     data: &syn::DataEnum,
     parameters: &TypeParameters,
+    container: &ContainerAttrs,
 ) -> syn::Result<TokenStream2> {
     let variants = data
         .variants
         .iter()
         .map(|variant| {
             let name = variant.ident.to_string();
+            let attrs =
+                VariantAttrs::from_attrs(&variant.attrs, &variant.ident, container.rename_all)?;
+            let wire_name = attrs.wire_name;
+            let ident = &variant.ident;
+            let discriminant = if container.repr.is_some() {
+                quote! { Some(Self::#ident as i128) }
+            } else {
+                quote! { None }
+            };
             let payload = match &variant.fields {
                 Fields::Unit => quote! { arcweft_rust_abi::ArcweftRustVariantPayload::Unit },
                 Fields::Unnamed(fields) => {
@@ -318,7 +275,7 @@ fn expand_enum_kind(
                     }
                 }
                 Fields::Named(fields) => {
-                    let fields = expand_record_fields(&fields.named, parameters)?;
+                    let fields = expand_record_fields(&fields.named, parameters, container)?;
                     quote! {
                         arcweft_rust_abi::ArcweftRustVariantPayload::Record {
                             fields: vec![#(#fields),*],
@@ -330,6 +287,8 @@ fn expand_enum_kind(
                 arcweft_rust_abi::ArcweftRustVariant {
                     name: #name.to_owned(),
                     payload: #payload,
+                    wire_name: Some(#wire_name.to_owned()),
+                    discriminant: #discriminant,
                 }
             })
         })
@@ -344,6 +303,7 @@ fn expand_enum_kind(
 fn expand_record_fields(
     fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
     parameters: &TypeParameters,
+    container: &ContainerAttrs,
 ) -> syn::Result<Vec<TokenStream2>> {
     fields
         .iter()
@@ -354,10 +314,23 @@ fn expand_record_fields(
                 .expect("named field collection contains identifiers")
                 .to_string();
             let ty = expand_metadata_type_ref(&field.ty, parameters)?;
+            let attrs = FieldAttrs::from_attrs(
+                &field.attrs,
+                field.ident.as_ref().expect("named field"),
+                container.rename_all,
+            )?;
+            let default = defaults::field_default(field, &attrs)?;
+            let skip = attrs.skip;
+            let wire_name = &attrs.wire_name;
+            let bytes_format = policy::bytes_format(attrs.bytes_format);
             Ok(quote! {
                 arcweft_rust_abi::ArcweftRustField {
                     name: #name.to_owned(),
                     ty: #ty,
+                    default: #default,
+                    skip: #skip,
+                    wire_name: Some(#wire_name.to_owned()),
+                    bytes_format: #bytes_format,
                 }
             })
         })
@@ -531,6 +504,11 @@ fn expand_arcweft_export(options: ExportOptions, function: &ItemFn) -> syn::Resu
         quote! { arcweft_rust_abi::ArcweftRustPurity::External }
     };
     let visibility = &function.vis;
+    let role = if options.default_constructor {
+        quote! { arcweft_rust_abi::ArcweftRustCallableRole::DefaultConstructor }
+    } else {
+        quote! { arcweft_rust_abi::ArcweftRustCallableRole::Function }
+    };
 
     Ok(quote! {
         #function
@@ -543,6 +521,7 @@ fn expand_arcweft_export(options: ExportOptions, function: &ItemFn) -> syn::Resu
                 return_type: #return_type,
                 purity: #purity,
                 effects: Vec::new(),
+                role: #role,
             }
         }
     })

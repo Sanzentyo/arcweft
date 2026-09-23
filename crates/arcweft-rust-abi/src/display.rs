@@ -96,6 +96,7 @@ impl fmt::Display for ArcweftRustTypeRef {
             Self::F64 => formatter.write_str("f64"),
             Self::String => formatter.write_str("String"),
             Self::Char => formatter.write_str("Char"),
+            Self::Bytes => formatter.write_str("Bytes"),
             Self::Vec { item } => write!(formatter, "Vec<{item}>"),
             Self::Seq { item } => write!(formatter, "Seq<{item}>"),
             Self::Option { item } => write!(formatter, "Option<{item}>"),

@@ -13,10 +13,6 @@ fn path(segments: &[&str]) -> ArcweftRustTypePath {
     .expect("non-empty path")
 }
 
-fn producer(value: &str) -> ArcweftRustOpaqueTypeProducerId {
-    ArcweftRustOpaqueTypeProducerId::try_new(value).expect("valid fixture producer")
-}
-
 fn manifest() -> ArcweftRustManifest {
     let package_id = package("truck_game");
     ArcweftRustManifest::new(ArcweftRustPackage {
@@ -25,18 +21,21 @@ fn manifest() -> ArcweftRustManifest {
         metadata_hash: Some("fixture-hash".to_owned()),
     })
     .with_type(ArcweftRustTypeDecl {
+        data_policy: None,
         path: path(&["model", "Rank"]),
         rust_path: "truck_game::model::Rank".to_owned(),
-        opaque_producer: producer("fixture.rust-abi.rank"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![ArcweftRustVariant {
+                wire_name: None,
+                discriminant: None,
                 name: "Gold".to_owned(),
                 payload: ArcweftRustVariantPayload::Unit,
             }],
         },
     })
     .with_function(ArcweftRustFunction {
+        role: ArcweftRustCallableRole::Function,
         name: "mini_games.truck.score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
         params: vec![ArcweftRustParam {
@@ -65,6 +64,26 @@ fn json_round_trip_preserves_typed_nominal_identity() {
     assert_eq!(decoded.package.id.as_str(), "truck_game");
     assert!(!json.contains("D:\\"));
     assert!(!json.contains("/tmp/"));
+}
+
+#[test]
+fn full_width_discriminants_round_trip_as_canonical_decimal_text() {
+    for value in [i128::MIN, i128::MAX] {
+        let mut manifest = manifest();
+        let declaration = &mut manifest.types[0];
+        let mut policy = ArcweftRustDataTypePolicy::standard("Rank");
+        policy.repr = Some(ArcweftRustEnumRepr::I128);
+        declaration.data_policy = Some(policy);
+        let ArcweftRustTypeKind::Enum { variants } = &mut declaration.kind else {
+            panic!()
+        };
+        variants[0].discriminant = Some(value);
+        let json = manifest.to_json_pretty().unwrap();
+        assert_eq!(ArcweftRustManifest::from_json(&json).unwrap(), manifest);
+        assert!(json.contains(&format!("\"discriminant\": \"{value}\"")));
+        let invalid = json.replace(&format!("\"{value}\""), "\"+1\"");
+        assert!(ArcweftRustManifest::from_json(&invalid).is_err());
+    }
 }
 
 #[test]
@@ -97,9 +116,9 @@ fn nominal_arguments_and_nested_composites_round_trip() {
 fn declaration_parameter_indices_are_contiguous_and_bound() {
     let mut manifest = manifest();
     manifest.types = vec![ArcweftRustTypeDecl {
+        data_policy: None,
         path: path(&["Envelope"]),
         rust_path: "truck_game::Envelope".to_owned(),
-        opaque_producer: producer("fixture.rust-abi.envelope"),
         parameters: vec![ArcweftRustTypeParameter {
             index: ArcweftRustTypeParameterIndex::try_from_usize(0).expect("index"),
             name: ArcweftRustTypeParameterName::try_new("T").expect("name"),
@@ -107,6 +126,10 @@ fn declaration_parameter_indices_are_contiguous_and_bound() {
         kind: ArcweftRustTypeKind::Struct {
             shape: ArcweftRustStructShape::Record {
                 fields: vec![ArcweftRustField {
+                    wire_name: None,
+                    bytes_format: None,
+                    default: None,
+                    skip: false,
                     name: "value".to_owned(),
                     ty: ArcweftRustTypeRef::TypeParameter {
                         index: ArcweftRustTypeParameterIndex::try_from_usize(0).expect("index"),
@@ -191,9 +214,9 @@ fn display_is_presentation_only_and_preserves_shapes() {
         arguments: vec![ArcweftRustTypeRef::String],
     };
     let tuple = ArcweftRustTypeDecl {
+        data_policy: None,
         path: path(&["Point"]),
         rust_path: "game::Point".to_owned(),
-        opaque_producer: producer("fixture.rust-abi.point"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Struct {
             shape: ArcweftRustStructShape::Tuple {
@@ -207,27 +230,7 @@ fn display_is_presentation_only_and_preserves_shapes() {
 }
 
 #[test]
-fn producer_ids_are_exact_validated_values() {
-    assert_eq!(
-        producer("fixture.rust-abi.valid").as_str(),
-        "fixture.rust-abi.valid"
-    );
-    assert!(matches!(
-        ArcweftRustOpaqueTypeProducerId::try_new(""),
-        Err(ArcweftRustOpaqueTypeProducerIdError::Empty)
-    ));
-    assert!(matches!(
-        ArcweftRustOpaqueTypeProducerId::try_new("fixture\u{0000}bad"),
-        Err(ArcweftRustOpaqueTypeProducerIdError::ControlCharacter { byte: 7 })
-    ));
-    assert!(matches!(
-        ArcweftRustOpaqueTypeProducerId::try_new("std.reserved"),
-        Err(ArcweftRustOpaqueTypeProducerIdError::ReservedStandardNamespace { .. })
-    ));
-}
-
-#[test]
-fn json_schema_and_producer_precedence_are_closed() {
+fn schema_header_precedes_body_admission() {
     let package = r#"{"id":"game","version":"1.0.0"}"#;
     let unsupported =
         format!(r#"{{"schema_version":2,"package":{package},"types":[{{}}],"functions":[]}}"#);
@@ -242,18 +245,25 @@ fn json_schema_and_producer_precedence_are_closed() {
         format!(r#"{{"schema_version":1,"package":{package},"types":[{{}}],"functions":[]}}"#);
     assert!(matches!(
         ArcweftRustManifest::from_json(&missing),
-        Err(ArcweftRustAbiError::MissingOpaqueProducer { .. })
+        Err(ArcweftRustAbiError::Json(_))
     ));
-    let reserved = format!(
-        r#"{{"schema_version":1,"package":{package},"types":[{{"opaque_producer":"std.x"}}],"functions":[]}}"#
-    );
-    assert!(matches!(
-        ArcweftRustManifest::from_json(&reserved),
-        Err(ArcweftRustAbiError::InvalidOpaqueProducer {
-            error: ArcweftRustOpaqueTypeProducerIdError::ReservedStandardNamespace { .. },
-            ..
-        })
-    ));
+}
+
+#[test]
+fn typed_body_decode_rejects_duplicate_declaration_fields() {
+    let source = r#"{
+        "schema_version": 1,
+        "package": {"id": "game", "version": "1.0.0"},
+        "types": [{
+            "path": {"segments": ["Marker"]},
+            "rust_path": "game::Marker",
+            "rust_path": "game::DifferentMarker",
+            "kind": {"kind": "struct", "shape": {"kind": "unit"}}
+        }],
+        "functions": []
+    }"#;
+    assert!(matches!(ArcweftRustManifest::from_json(source),
+        Err(ArcweftRustAbiError::Json(error)) if error.to_string().contains("duplicate field `rust_path`")));
 }
 
 #[test]
@@ -289,7 +299,6 @@ fn json_rejects_unknown_fields_at_manifest_and_nested_levels() {
   "types": [{
     "path": {"segments": ["Rank"]},
     "rust_path": "game::Rank",
-    "opaque_producer": "fixture.rust-abi.rank",
     "parameters": [],
     "kind": {"kind": "enum", "variants": []},
     "unexpected": true
@@ -331,7 +340,6 @@ fn json_rejects_unknown_fields_at_manifest_and_nested_levels() {
   "types": [{
     "path": {"segments": ["Marker"]},
     "rust_path": "game::Marker",
-    "opaque_producer": "fixture.rust-abi.marker",
     "parameters": [],
     "kind": {"kind": "struct", "shape": {"kind": "unit", "unexpected": true}}
   }],

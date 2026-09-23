@@ -1537,6 +1537,7 @@ dependencies = [
 name = "arcweft-rust-abi"
 version = "0.1.0"
 dependencies = [
+ "arcweft-data",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1556,6 +1557,7 @@ dependencies = [
 name = "arcweft-rust-abi-macros"
 version = "0.1.0"
 dependencies = [
+ "arcweft-data-derive-support",
  "arcweft-rust-abi",
  "proc-macro2",
  "quote",
