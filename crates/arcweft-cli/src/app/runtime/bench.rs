@@ -31,7 +31,10 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
                 eprintln!("error: {error}");
                 ExitCode::FAILURE
             })?;
-            task_events.extend(host.poll_completions());
+            task_events.extend(host.poll_completions().map_err(|error| {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            })?);
             host_call_results.extend(host.take_host_call_results());
         }
         let result = executor.step(
@@ -78,8 +81,14 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
                 );
             }
             if let Some(host) = host.as_mut() {
-                task_events = host.complete_tasks(task_requests);
-                host_call_results = host.complete_host_calls(host_call_requests);
+                task_events = host
+                    .complete_tasks(executor.program_owner(), task_requests)
+                    .map_err(|error| {
+                        eprintln!("error: {error}");
+                        ExitCode::FAILURE
+                    })?;
+                host_call_results =
+                    host.complete_host_calls(executor.program_owner(), host_call_requests);
             }
         }
     }

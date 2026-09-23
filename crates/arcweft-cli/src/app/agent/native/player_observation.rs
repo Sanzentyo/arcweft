@@ -249,7 +249,12 @@ fn advance_player_runtime(
                 eprintln!("error: native adapter pump failed: {error}");
                 ExitCode::FAILURE
             })?;
-            runtime.task_events.extend(host.poll_completions());
+            runtime
+                .task_events
+                .extend(host.poll_completions().map_err(|error| {
+                    eprintln!("error: player-backed task completion failed: {error}");
+                    ExitCode::FAILURE
+                })?);
             runtime
                 .host_call_results
                 .extend(host.take_host_call_results());
@@ -305,13 +310,24 @@ fn advance_player_runtime(
         runtime.task_events = if finished {
             Vec::new()
         } else {
-            complete_player_runtime_tasks(runtime.host.as_mut(), &step.requested_tasks)
+            complete_player_runtime_tasks(
+                runtime.host.as_mut(),
+                runtime.session.program_owner(),
+                &step.requested_tasks,
+            )
+            .map_err(|error| {
+                eprintln!("error: player-backed task submission failed: {error}");
+                ExitCode::FAILURE
+            })?
         };
         runtime.host_call_results = if finished {
             Vec::new()
         } else {
             runtime.host.as_mut().map_or_else(Vec::new, |host| {
-                host.complete_host_calls(std::mem::take(&mut step.requested_host_calls))
+                host.complete_host_calls(
+                    runtime.session.program_owner(),
+                    std::mem::take(&mut step.requested_host_calls),
+                )
             })
         };
         last_step = Some(step);
@@ -396,19 +412,21 @@ fn append_frame_fx_diagnostics(
 
 fn complete_player_runtime_tasks(
     host: Option<&mut NativeTaskBridge>,
+    program: arcweft_core::task::RuntimeProgramOwner,
     requested_tasks: &[HostTaskDispatch],
-) -> Vec<TaskEvent> {
+) -> Result<Vec<TaskEvent>, arcweft_runtime_host::native_task::NativeTaskBridgeError> {
     let Some(host) = host else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let tasks = requested_tasks
         .iter()
         .map(|dispatch| dispatch.task.clone())
         .collect::<Vec<_>>();
-    host.complete_tasks(tasks)
+    Ok(host
+        .complete_tasks(program, tasks)?
         .into_iter()
         .map(|event| align_player_task_event(event, requested_tasks))
-        .collect()
+        .collect())
 }
 
 fn align_player_task_event(

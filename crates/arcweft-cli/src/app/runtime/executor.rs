@@ -45,6 +45,10 @@ impl RuntimeExecutorTemplate {
 }
 
 impl RuntimeExecutorCore {
+    pub(in crate::app) fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        self.executor.program_owner()
+    }
+
     pub(in crate::app) fn step(
         &mut self,
         input: RuntimeStepInput,
@@ -60,6 +64,10 @@ impl RuntimeExecutorCore {
 }
 
 impl RuntimeExecutorInstance {
+    pub(in crate::app) fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
+        self.executor.program_owner()
+    }
+
     pub(in crate::app) fn new(
         plan: RuntimePlan,
         entry: &EntryRuntimeId,

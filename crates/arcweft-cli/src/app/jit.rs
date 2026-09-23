@@ -950,7 +950,7 @@ impl JitCheckTarget {
         let bool_type = RuntimeSemanticTypeId::from_bytes([2; 32]);
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         i64_type,
@@ -961,8 +961,6 @@ impl JitCheckTarget {
                     RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
                 ],
                 (0..N + local_count).map(|_| RuntimeLocalDeclarationSeed::new(i64_type)),
-                [],
-                [],
             )
             .expect("builtin JIT helper semantic facts admit");
         builder

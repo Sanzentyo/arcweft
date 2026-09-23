@@ -116,7 +116,7 @@ fn try_run_runtime_steps_with_executor(
     for step_index in 0..steps {
         if let Some(host) = host.as_mut() {
             host.pump_main_thread()?;
-            task_events.extend(host.poll_completions());
+            task_events.extend(host.poll_completions()?);
             host_call_results.extend(host.take_host_call_results());
         }
         let result = executor.step(
@@ -143,8 +143,9 @@ fn try_run_runtime_steps_with_executor(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events = host.complete_tasks(task_requests);
-            host_call_results = host.complete_host_calls(host_call_requests);
+            task_events = host.complete_tasks(executor.program_owner(), task_requests)?;
+            host_call_results =
+                host.complete_host_calls(executor.program_owner(), host_call_requests);
         }
     }
     Ok(RuntimeRunTrace {
@@ -161,6 +162,8 @@ fn try_run_runtime_steps_with_executor(
 enum RuntimeStepRunError {
     #[error(transparent)]
     Host(#[from] arcweft_host_adapter::HostAdapterError),
+    #[error(transparent)]
+    NativeTask(#[from] arcweft_runtime_host::native_task::NativeTaskBridgeError),
     #[error("fresh runtime assertion identity projection failed: {0}")]
     Assertion(#[from] arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError),
 }

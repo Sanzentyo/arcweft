@@ -699,6 +699,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::UnknownEntry { .. }
         | BundleRunnerError::NonFlowEntry { .. }
         | BundleRunnerError::StartEntry(_)
+        | BundleRunnerError::NativeTask(_)
         | BundleRunnerError::NativeAdapter(_) => ExitCode::FAILURE,
     }
 }
