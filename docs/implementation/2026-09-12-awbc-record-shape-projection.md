@@ -980,3 +980,37 @@ working tree still has 142 Git porcelain entries. Correlated callable
 constraints, effect rows, source Data integration, nominal runtime consumers,
 the deferred package tests, and the remaining goal acceptance require final
 verification.
+
+## Integrated owner harvest checkpoint — 2026-09-23
+
+Supersedes the preceding dirty-tree count as an operational checkpoint.
+Inspected local `main` and `origin/main` at
+`ad65af6296c0f770495a89a76694cdee6ad65841`; the Git working tree and
+index were clean. The remaining owner migrations were pushed through the
+following full SHAs:
+
+- Compiler accepted nominal/Data lowering and source-policy fixtures:
+  `edc4e54bb46d59722da2ff8e94c3e3642a48478b`.
+- HIR/sema correlated applications, checked nominal facts, and graph-bound
+  pending effect prerequisites: `4c852688f348d397be2992990008f3c5b9a113ed`.
+- Native player fixture lifecycle and formatting:
+  `9139f8e8702425ee26cb4175989f7418b91363fb`,
+  `8c216b1e23da29a57ec12b793bd6c716d66034e4`.
+- Checked LSP/verify-LSP consumers and compile-fail diagnostic fixture:
+  `5c29f3d169bfafd428db43cad66c07c268d70809`.
+- CLI bound-task consumers: `ad65af6296c0f770495a89a76694cdee6ad65841`.
+
+The clean integrated HEAD passed `cargo check --workspace --all-targets
+--all-features` and `cargo clippy --workspace --all-targets --all-features`
+with warnings. The focused native-player library suite passed 48/48;
+runtime-host and runtime-driver package test groups passed; LSP/verify-LSP
+package suites passed after updating one compiler-diagnostic-only `.stderr`
+fixture. Compiler Data nominal, environment-record pattern and iterator
+targets passed, while `callable_execution` passed 67/81. The full sema library
+suite passed 870/878; its remaining eight failures are effect-row inference
+and callback/function-value cases. CLI unit tests passed 168/168, but four
+fixture-suite tests still fail at their first checked/run input. These are
+separate from workspace check/Clippy success. A complete `just test-workspace`
+and final goal acceptance have not passed; effect rows, callable execution,
+CharacterDialogue producer, Match, View, task-plan, nominal/scheduler/restore
+acceptance and the applicable Tier 2 evidence remain required.
