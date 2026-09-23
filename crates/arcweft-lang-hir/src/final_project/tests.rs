@@ -4149,6 +4149,39 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
 }
 
 #[test]
+fn dialogue_namespace_combines_statement_and_expression_scopes() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/mixed-named-scopes",
+        "mixed-named-scopes.arcw",
+        "flow main { scope rain { let value = scope window { alice(id=@.hello)[Hello] } } }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(module.is_analysis_ready(), "{:?}", module.diagnostics());
+    let [site] = module.dialogue_line_sites().records() else {
+        panic!("one dialogue site")
+    };
+    assert_eq!(
+        site.named_scopes()
+            .iter()
+            .map(|scope| scope.segment().as_str())
+            .collect::<Vec<_>>(),
+        ["rain", "window"]
+    );
+    for scope in site.named_scopes() {
+        let named = module
+            .scope_namespace(scope.scope())
+            .unwrap()
+            .expect("named scope");
+        assert_eq!(named.name().as_str(), scope.segment().as_str());
+    }
+}
+
+#[test]
 fn module_input_permutations_produce_equal_inventory_fingerprint() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();

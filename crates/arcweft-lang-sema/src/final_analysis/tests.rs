@@ -1323,6 +1323,7 @@ flow main {
     }
 }
 
+
 flow done() -> String {
     return "done"
 }
@@ -1356,6 +1357,46 @@ flow done() -> String {
     };
     assert_eq!(target.arm(), 0);
     assert_eq!(target.target().public_id().as_str(), "flow.done");
+}
+
+#[test]
+fn relative_choice_ids_share_statement_and_expression_scope_names() {
+    let fixture = fixture(
+        r#"
+flow main() -> Never {
+    scope rain {
+        return scope window {
+            choice @.first {
+                @.next "Next" -> @flow.done
+            }
+        }
+    }
+}
+flow done() -> String { return "done" }
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("mixed named statement/expression scope analysis");
+    let choice = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Choice(choice) => Some(choice),
+            _ => None,
+        })
+        .expect("one checked choice");
+    assert_eq!(
+        choice.public_id().map(arcweft_id::PublicId::as_str),
+        Some("choice.main.rain.window.first")
+    );
+    assert_eq!(
+        choice
+            .option_ids()
+            .iter()
+            .map(arcweft_id::PublicId::as_str)
+            .collect::<Vec<_>>(),
+        ["choice.main.rain.window.first.next"]
+    );
+    assert!(report.statements().any(|(_, statement)| matches!(statement.payload(), CheckedStatementPayload::Scope(super::CheckedScopeIdentity::Named(name)) if name.as_str() == "rain")));
 }
 
 #[test]

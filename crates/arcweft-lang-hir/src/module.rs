@@ -3,6 +3,9 @@
 mod capture_validation;
 mod local_resolution;
 mod resolution;
+mod scope_namespace;
+
+pub use scope_namespace::{HirNamedScope, HirScopeNamespaceError};
 
 pub(crate) use local_resolution::HirLocalResolver;
 

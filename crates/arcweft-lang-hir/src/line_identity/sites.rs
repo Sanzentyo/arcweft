@@ -11,13 +11,13 @@ use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 use arcweft_source::SourceSpan;
 
 use crate::dialogue_application::{HirAttachedContentApplicationFamily, HirDialogueCoordinateKind};
-use crate::expr::{HirExprKind, HirNamedBlockName};
+use crate::expr::HirExprKind;
 use crate::identity::{ExprId, ItemId, SyntheticOwner};
 use crate::item::{HirCapabilityMember, HirItemKind, HirRetainedName};
 use crate::module::HirModule;
 use crate::scope::HirScopeOwner;
 use crate::slot::HirOrigin;
-use crate::source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite};
+use crate::source_index::{HirSourcePresence, HirSourceQuery, HirSourceSite};
 use crate::symbol::{CallableDeclarationId, CallableDeclarationOwner};
 
 use super::{
@@ -187,24 +187,16 @@ fn source_owner_and_scopes(
                     item = Some(owner);
                 }
             }
-            HirScopeOwner::Expr(owner) => {
-                let expression = module
-                    .arenas()
-                    .expressions()
-                    .resolve_prepared(module.slots(), owner)
-                    .map_err(|_| DialogueLineBuildFatal::InvalidSourceComponent)?;
-                if let HirExprKind::NamedBlock(block) = expression.kind()
-                    && block.scope() == scope_id
-                    && let HirNamedBlockName::Resolved(name) = block.name()
-                {
-                    let segment = ModuleSegment::new(name.as_str())
-                        .map_err(|_| DialogueLineBuildFatal::InvalidInternalPrefix)?;
-                    let declaration =
-                        expression_component_span(module, owner, HirExprSourceRole::Name)?;
-                    named_scopes.push(HirDialogueNamedScope::new(scope_id, segment, declaration));
-                }
-            }
-            HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
+            HirScopeOwner::Expr(_) | HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
+        }
+        if let Some(named) = module
+            .prepared_scope_namespace(scope_id)
+            .map_err(|_| DialogueLineBuildFatal::InvalidSourceComponent)?
+        {
+            let segment = ModuleSegment::new(named.name().as_str())
+                .map_err(|_| DialogueLineBuildFatal::InvalidInternalPrefix)?;
+            let declaration = namespace_declaration_span(module, named.declaration())?;
+            named_scopes.push(HirDialogueNamedScope::new(scope_id, segment, declaration));
         }
         scope = payload.parent();
     }
@@ -217,14 +209,28 @@ fn source_owner_and_scopes(
     Ok((owner, Arc::from(named_scopes)))
 }
 
-fn expression_component_span(
+fn namespace_declaration_span(
     module: &HirModule,
-    owner: ExprId,
-    role: HirExprSourceRole,
+    query: &HirSourceQuery,
 ) -> Result<SourceSpan, DialogueLineBuildFatal> {
+    if let HirSourceQuery::Stmt {
+        owner,
+        role: crate::source_index::HirStmtSourceRole::Whole,
+    } = query
+    {
+        return match module
+            .slots()
+            .resolve_prepared(*owner)
+            .map_err(|_| DialogueLineBuildFatal::InvalidSourceComponent)?
+            .source_site()
+        {
+            HirSourceSite::Span(span) => Ok(span.clone()),
+            HirSourceSite::Insertion(_) => Err(DialogueLineBuildFatal::InvalidSourceComponent),
+        };
+    }
     match module
         .source_components()
-        .component_presence(&HirSourceQuery::Expr { owner, role })
+        .component_presence(query)
         .ok_or(DialogueLineBuildFatal::InvalidSourceComponent)?
     {
         HirSourcePresence::Present(HirSourceSite::Span(span)) => Ok(span.clone()),

@@ -2881,16 +2881,10 @@ impl Analyzer<'_, '_, '_> {
             if let HirScopeOwner::Item(owner) = node.owner() {
                 break *owner;
             }
-            if let HirScopeOwner::Stmt(owner) = node.owner()
-                && let HirStmtKind::Scope(statement) = module
-                    .resolve_stmt(*owner)
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?
-                    .kind()
-                && let Some(name) = statement.name()
-            {
-                named_scopes.push(name.as_str());
+            if let Some(named) = module.scope_namespace(scope).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })? {
+                named_scopes.push(named.name().as_str());
             }
             let Some(parent) = node.parent() else {
                 return Err(AnalyzerExpressionError::fatal(

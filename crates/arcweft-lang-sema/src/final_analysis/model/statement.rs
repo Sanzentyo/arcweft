@@ -473,11 +473,11 @@ impl CheckedUnsafeAudit {
     }
 }
 
-/// Semantic presence of a name on a Scope statement.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// Accepted namespace identity of a lexical statement or expression scope.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedScopeIdentity {
     Anonymous,
-    Named,
+    Named(arcweft_id::DeclarationName),
 }
 
 /// Accepted Flow declaration selected for one Include statement.

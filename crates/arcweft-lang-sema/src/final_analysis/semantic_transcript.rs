@@ -1700,15 +1700,16 @@ fn write_statement_payload(
         CheckedStatementPayload::SourceLocale(locale) => {
             transcript_update!(hasher, locale.semantic_digest().as_bytes());
         }
-        CheckedStatementPayload::Scope(scope) => {
-            transcript_update!(
-                hasher,
-                &[match scope {
-                    super::CheckedScopeIdentity::Anonymous => 0,
-                    super::CheckedScopeIdentity::Named => 1,
-                }]
-            );
-        }
+        CheckedStatementPayload::Scope(scope) => match scope {
+            super::CheckedScopeIdentity::Anonymous => {
+                transcript_update!(hasher, &[0]);
+            }
+            super::CheckedScopeIdentity::Named(name) => {
+                transcript_update!(hasher, &[1]);
+                write_len(hasher, name.as_str().len())?;
+                transcript_update!(hasher, name.as_str().as_bytes());
+            }
+        },
         CheckedStatementPayload::Include(target) => {
             transcript_update!(hasher, target.declaration().as_bytes());
         }

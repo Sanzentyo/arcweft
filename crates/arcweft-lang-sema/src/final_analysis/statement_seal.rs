@@ -506,10 +506,12 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
                 ) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                Ok(CheckedStatementPayload::Scope(if scope.name().is_some() {
-                    CheckedScopeIdentity::Named
-                } else {
-                    CheckedScopeIdentity::Anonymous
+                Ok(CheckedStatementPayload::Scope(match scope.name() {
+                    Some(name) => CheckedScopeIdentity::Named(
+                        arcweft_id::DeclarationName::try_new(name.as_str())
+                            .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?,
+                    ),
+                    None => CheckedScopeIdentity::Anonymous,
                 }))
             }
             HirStmtKind::Include(_) => self.include(owner),
