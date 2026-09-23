@@ -84,6 +84,7 @@ use crate::assertion_identity::RuntimeAssertionMode;
 mod content;
 mod evaluated_effect;
 mod flow;
+mod lexical_scope;
 mod project_function;
 mod type_dependencies;
 
@@ -4234,6 +4235,8 @@ impl RuntimePureProgramFact {
 pub struct RuntimePlanSemanticFactInput {
     local_declarations: Vec<(LocalId, RuntimeNormalizedType)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
+    expression_scopes: Vec<(ExprId, arcweft_core::scope::RuntimeScopeIdentity)>,
+    statement_scopes: Vec<(StmtId, arcweft_core::scope::RuntimeScopeIdentity)>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
@@ -4275,6 +4278,8 @@ impl RuntimePlanSemanticFactInput {
         Self {
             local_declarations: Vec::new(),
             flows: Vec::new(),
+            expression_scopes: Vec::new(),
+            statement_scopes: Vec::new(),
             expression_types: Vec::new(),
             pattern_types: Vec::new(),
             expression_literals: Vec::new(),
@@ -4321,6 +4326,22 @@ impl RuntimePlanSemanticFactInput {
 
     pub fn push_flow(&mut self, owner: ItemId, flow: RuntimeFlowFact) {
         self.flows.push((owner, flow));
+    }
+
+    pub fn push_expression_scope(
+        &mut self,
+        owner: ExprId,
+        identity: arcweft_core::scope::RuntimeScopeIdentity,
+    ) {
+        self.expression_scopes.push((owner, identity));
+    }
+
+    pub fn push_statement_scope(
+        &mut self,
+        owner: StmtId,
+        identity: arcweft_core::scope::RuntimeScopeIdentity,
+    ) {
+        self.statement_scopes.push((owner, identity));
     }
 
     /// Stages the accepted normalized type of one selected runtime-domain
@@ -4566,6 +4587,8 @@ pub struct RuntimePlanSemanticFacts {
     local_declaration_order: Box<[LocalId]>,
     local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
     flows: BTreeMap<ItemId, RuntimeFlowFact>,
+    expression_scopes: BTreeMap<ExprId, arcweft_core::scope::RuntimeScopeIdentity>,
+    statement_scopes: BTreeMap<StmtId, arcweft_core::scope::RuntimeScopeIdentity>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -4676,6 +4699,20 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 
     pub fn expression_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
         self.facts.expression_type(owner)
+    }
+
+    pub fn expression_scope(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+        self.facts.expression_scope(owner)
+    }
+
+    pub fn statement_scope(
+        self,
+        owner: StmtId,
+    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+        self.facts.statement_scope(owner)
     }
 
     pub fn expression_children(self, owner: ExprId) -> Option<&'facts [ExprId]> {
@@ -4813,6 +4850,26 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.expression_type(owner),
             Self::ProjectInstance(facts) => facts.expression_type(owner),
+        }
+    }
+
+    pub fn expression_scope(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+        match self {
+            Self::Global(facts) => facts.expression_scopes.get(&owner),
+            Self::ProjectInstance(facts) => facts.expression_scope(owner),
+        }
+    }
+
+    pub fn statement_scope(
+        self,
+        owner: StmtId,
+    ) -> Option<&'facts arcweft_core::scope::RuntimeScopeIdentity> {
+        match self {
+            Self::Global(facts) => facts.statement_scopes.get(&owner),
+            Self::ProjectInstance(facts) => facts.statement_scope(owner),
         }
     }
 
@@ -5550,6 +5607,23 @@ impl RuntimePlanSemanticFacts {
                 });
             }
         }
+
+        let expression_scopes = collect_unique(
+            input.expression_scopes,
+            RuntimeSemanticFactFamily::ExpressionScope,
+        )?;
+        let statement_scopes = collect_unique(
+            input.statement_scopes,
+            RuntimeSemanticFactFamily::StatementScope,
+        )?;
+        lexical_scope::validate_global_scopes(
+            &modules,
+            runtime_owners,
+            &instance_expression_owners,
+            &instance_statement_owners,
+            &expression_scopes,
+            &statement_scopes,
+        )?;
 
         let expression_literals = collect_unique(
             input.expression_literals,
@@ -6647,6 +6721,8 @@ impl RuntimePlanSemanticFacts {
             local_declaration_order: expected_local_declarations.into_boxed_slice(),
             local_declarations,
             flows,
+            expression_scopes,
+            statement_scopes,
             expression_types,
             expression_children,
             pattern_types,
@@ -7530,6 +7606,10 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("scope expression {expression:?} has no exact accepted lexical identity")]
+    InvalidExpressionScope { expression: ExprId },
+    #[error("scope statement {statement:?} has no exact accepted lexical identity")]
+    InvalidStatementScope { statement: StmtId },
     #[error("source nominal definition does not match requested type {identity:?}")]
     NominalDefinitionMismatch { identity: RuntimeSemanticTypeId },
     #[error("source nominal variant {identity:?} is invalid: {source}")]
@@ -7753,6 +7833,8 @@ pub enum RuntimeSemanticFactsError {
 pub enum RuntimeSemanticFactFamily {
     LocalDeclaration,
     FlowIdentity,
+    ExpressionScope,
+    StatementScope,
     ExpressionType,
     ExpressionChildren,
     PatternType,
@@ -9541,6 +9623,9 @@ fn validate_project_function_semantic_catalog(
         match row.payload() {
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed => {}
+            RuntimeProjectFunctionExpressionPayload::Scope(identity) => {
+                lexical_scope::validate_expression_scope(hir, owner, identity)?;
+            }
             RuntimeProjectFunctionExpressionPayload::Literal(_) => {
                 if !matches!(
                     hir,
@@ -9797,6 +9882,13 @@ fn validate_project_function_semantic_catalog(
         .collect::<BTreeMap<_, _>>();
     for row in semantics.statements() {
         match row.payload() {
+            RuntimeProjectFunctionStatementPayload::Scope(identity) => {
+                lexical_scope::validate_statement_scope(
+                    resolve_stmt(modules, row.owner())?,
+                    row.owner(),
+                    identity,
+                )?;
+            }
             RuntimeProjectFunctionStatementPayload::Assignment(fact) => {
                 validate_assignment(
                     modules,
@@ -9859,7 +9951,6 @@ fn validate_project_function_semantic_catalog(
             | RuntimeProjectFunctionStatementPayload::UnsafeAudit
             | RuntimeProjectFunctionStatementPayload::Select
             | RuntimeProjectFunctionStatementPayload::SourceLocale
-            | RuntimeProjectFunctionStatementPayload::Scope
             | RuntimeProjectFunctionStatementPayload::Include
             | RuntimeProjectFunctionStatementPayload::Suspension
             | RuntimeProjectFunctionStatementPayload::Yield => {}
@@ -10016,6 +10107,7 @@ fn validate_project_instance_dialogue_applications(
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed
             | RuntimeProjectFunctionExpressionPayload::Literal(_)
+            | RuntimeProjectFunctionExpressionPayload::Scope(_)
             | RuntimeProjectFunctionExpressionPayload::Value(_)
             | RuntimeProjectFunctionExpressionPayload::Select(_)
             | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)

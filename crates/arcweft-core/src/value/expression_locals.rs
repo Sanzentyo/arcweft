@@ -55,6 +55,9 @@ impl RuntimeExpr {
                 body_bound.push(*binding);
                 body.collect_evaluation_free_locals(plan, &body_bound, locals)?;
             }
+            RuntimeExprKind::Scope { body, .. } => {
+                body.collect_evaluation_free_locals(plan, bound, locals)?;
+            }
             RuntimeExprKind::DialogueContent {
                 values, effects, ..
             } => {

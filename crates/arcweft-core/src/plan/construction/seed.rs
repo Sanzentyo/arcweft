@@ -18,6 +18,7 @@ use crate::runtime_id::{
     RuntimeFunctionSiteId, RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
     RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
+use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamRuntimeId;
 use crate::task::{HostCapabilityId, NamedHostArg, NeedId, TaskId};
@@ -493,7 +494,14 @@ pub enum RuntimeFlowOpSeed {
         name: Option<String>,
         body: Vec<Self>,
     },
-    Scope(Vec<Self>),
+    Scope {
+        identity: RuntimeScopeIdentity,
+        body: Vec<Self>,
+    },
+    ExitScopeBind {
+        pattern: RuntimePatternSeed,
+        expr: RuntimeExprSeed,
+    },
     Break(Option<RuntimeExprSeed>),
     Continue,
     Goto(FlowRuntimeId),
@@ -509,7 +517,9 @@ pub enum RuntimeFlowOpSeed {
     CancelCleanup {
         key: String,
     },
-    EnterScope,
+    EnterScope {
+        identity: RuntimeScopeIdentity,
+    },
     ExitScope,
     Noop,
 }
@@ -807,7 +817,7 @@ fn collect_control_flow_free_locals(
                 result.collect_binding_locals(bound);
             }
         }
-        RuntimeFlowOpSeed::Thread { body, .. } | RuntimeFlowOpSeed::Scope(body) => {
+        RuntimeFlowOpSeed::Thread { body, .. } | RuntimeFlowOpSeed::Scope { body, .. } => {
             collect_flow_ops_free_locals(body, bound, locals);
         }
         RuntimeFlowOpSeed::While { condition, body } => {
@@ -846,7 +856,7 @@ fn collect_control_flow_free_locals(
 
 fn collect_terminal_or_effect_free_locals(
     op: &RuntimeFlowOpSeed,
-    bound: &[RuntimeLocalSeedId],
+    bound: &mut Vec<RuntimeLocalSeedId>,
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) {
     match op {
@@ -854,7 +864,7 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::Goto(_)
         | RuntimeFlowOpSeed::Return(_)
         | RuntimeFlowOpSeed::CancelCleanup { .. }
-        | RuntimeFlowOpSeed::EnterScope
+        | RuntimeFlowOpSeed::EnterScope { .. }
         | RuntimeFlowOpSeed::ExitScope
         | RuntimeFlowOpSeed::Noop => {}
         RuntimeFlowOpSeed::Choice { options, .. } => {
@@ -873,6 +883,10 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::ReturnExpr(value)
         | RuntimeFlowOpSeed::CommitDialogueResult { value } => {
             value.collect_free_locals(bound, locals);
+        }
+        RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {
+            expr.collect_free_locals(bound, locals);
+            pattern.collect_binding_locals(bound);
         }
         RuntimeFlowOpSeed::Effect(effect) | RuntimeFlowOpSeed::RegisterCleanup { effect, .. } => {
             effect.collect_free_locals(bound, locals);
@@ -898,7 +912,7 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::WhileLet { .. }
         | RuntimeFlowOpSeed::For { .. }
         | RuntimeFlowOpSeed::Thread { .. }
-        | RuntimeFlowOpSeed::Scope(_) => unreachable!("flow-op collector dispatched variant"),
+        | RuntimeFlowOpSeed::Scope { .. } => unreachable!("flow-op collector dispatched variant"),
     }
 }
 
@@ -1831,6 +1845,10 @@ pub enum RuntimeExprSeedKind {
         expr: Box<RuntimeExprSeed>,
         body: Box<RuntimeExprSeed>,
     },
+    Scope {
+        identity: RuntimeScopeIdentity,
+        body: Box<RuntimeExprSeed>,
+    },
     Tuple(Box<[RuntimeExprSeed]>),
     /// Constructs an exact `DialogueContent` envelope from evaluated bindings
     /// against one plan-owned template manifest row.
@@ -2209,6 +2227,9 @@ impl RuntimeExprSeed {
                 body,
             } => {
                 collect_let_free_locals(binding, expr, body, bound, locals);
+            }
+            RuntimeExprSeedKind::Scope { body, .. } => {
+                body.collect_free_locals(bound, locals);
             }
             RuntimeExprSeedKind::Tuple(items) | RuntimeExprSeedKind::BracketSeq(items) => {
                 collect_expr_free_locals(items, bound, locals);

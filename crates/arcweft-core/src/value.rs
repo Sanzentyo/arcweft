@@ -10,6 +10,7 @@ use crate::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
+use crate::scope::RuntimeScopeIdentity;
 use crate::time::LogicalDuration;
 use arcweft_id::{DeclarationIdentityFamily, PublicId, PublicIdFamilyError};
 pub use arcweft_need::Progress;
@@ -1713,6 +1714,10 @@ pub enum RuntimeExprKind {
         expr: Box<RuntimeExpr>,
         body: Box<RuntimeExpr>,
     },
+    Scope {
+        identity: RuntimeScopeIdentity,
+        body: Box<RuntimeExpr>,
+    },
     Tuple(Vec<RuntimeExpr>),
     /// Constructs an exact `DialogueContent` envelope from values evaluated
     /// against the plan-owned immutable template manifest.
@@ -1916,6 +1921,7 @@ impl RuntimeExpr {
             RuntimeExprKind::Let { expr, body, .. } => {
                 expr.supports_scalar_pure_eval() && body.supports_scalar_pure_eval()
             }
+            RuntimeExprKind::Scope { body, .. } => body.supports_scalar_pure_eval(),
             RuntimeExprKind::Unary { expr, .. } => expr.supports_scalar_pure_eval(),
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 lhs.supports_scalar_pure_eval() && rhs.supports_scalar_pure_eval()
@@ -1966,6 +1972,10 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Local(local) => write!(f, "local#{local}"),
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),
             RuntimeExprKind::Let { binding, .. } => write!(f, "let local#{binding}"),
+            RuntimeExprKind::Scope { identity, .. } => match identity.name() {
+                Some(name) => write!(f, "scope {}", name.as_str()),
+                None => f.write_str("scope"),
+            },
             RuntimeExprKind::Tuple(items) => write!(f, "tuple/{}", items.len()),
             RuntimeExprKind::DialogueContent {
                 template,
@@ -2130,6 +2140,7 @@ pub struct RuntimeEnv {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct RuntimeScope {
+    identity: RuntimeScopeIdentity,
     bindings: Vec<RuntimeLocalBinding>,
 }
 

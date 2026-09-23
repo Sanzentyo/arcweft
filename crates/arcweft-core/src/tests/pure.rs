@@ -14,10 +14,12 @@ use crate::pure::{
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureHelperRef, VmPureFunctionBackend,
     VmPureFunctionScratch, VmRuntimePureCallBackend, compare_pure_function_backend,
 };
+use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeSeq, RuntimeSignedIntWidth,
-    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
+    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeExprKind, RuntimeSeq,
+    RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
 };
+use arcweft_id::DeclarationName;
 
 const I64_SEMANTIC_MARKER: u8 = 1;
 const BOOL_SEMANTIC_MARKER: u8 = 2;
@@ -566,6 +568,42 @@ fn aot_and_vm_compare_the_same_admitted_helper() {
     assert!(comparison.matches_vm);
     assert_eq!(comparison.vm.value, RuntimeValue::i64(14));
     assert_eq!(comparison.candidate.value, RuntimeValue::i64(14));
+}
+
+#[test]
+fn named_scope_is_preserved_by_the_vm_and_aot_pure_backends() {
+    let helper = admit_i64_helper("named_scope", 1, |inputs| {
+        RuntimeExprSeed::new(
+            i64_semantic_type(),
+            RuntimeExprSeedKind::Scope {
+                identity: RuntimeScopeIdentity::Named(
+                    DeclarationName::try_new("window").expect("valid scope name"),
+                ),
+                body: Box::new(i64_binary(
+                    i64_local(inputs[0].clone()),
+                    RuntimeBinaryOp::Add,
+                    i64_value(1),
+                )),
+            },
+        )
+    });
+    assert!(matches!(
+        helper.plan.pure_helpers()[0].expr.kind(),
+        RuntimeExprKind::Scope { identity, .. }
+            if identity.name().is_some_and(|name| name.as_str() == "window")
+    ));
+    let request = helper.request([RuntimeValue::i64(41)]);
+
+    let comparison = compare_pure_function_backend(
+        &VmPureFunctionBackend,
+        &AotPureFunctionBackend::new(),
+        &request,
+    )
+    .expect("both pure evaluators retain the named lexical frame");
+
+    assert!(comparison.matches_vm);
+    assert_eq!(comparison.vm.value, RuntimeValue::i64(42));
+    assert_eq!(comparison.candidate.value, RuntimeValue::i64(42));
 }
 
 #[test]

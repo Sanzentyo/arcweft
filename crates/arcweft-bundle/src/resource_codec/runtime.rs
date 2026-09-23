@@ -2735,6 +2735,7 @@ mod opaque_runtime_type_tests {
         );
 
         let left_frame = AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: Some(AwbcStringId(0)),
                 ty: AwbcTypeId(2),
@@ -2744,6 +2745,7 @@ mod opaque_runtime_type_tests {
             max_scope_depth: 0,
         };
         let right_frame = AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: Some(AwbcStringId(2)),
                 ty: AwbcTypeId(2),

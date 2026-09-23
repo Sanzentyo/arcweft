@@ -889,6 +889,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
         strings,
         signatures: vec![signature],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         }],
@@ -939,6 +940,7 @@ fn content_ensure_program() -> AwbcProgram {
         strings,
         signatures: vec![signature],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         }],
@@ -1009,6 +1011,7 @@ fn host_call_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     };
     let frame_layout = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![AwbcFrameSlot {
             name: None,
             ty: AwbcTypeId(1),
@@ -1148,6 +1151,7 @@ fn direct_need_program() -> AwbcProgram {
             effects: AwbcEffectSetId(0),
         }],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![
                 AwbcFrameSlot {
                     name: Some(AwbcStringId(1)),

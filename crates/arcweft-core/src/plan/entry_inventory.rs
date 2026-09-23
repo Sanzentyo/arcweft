@@ -825,7 +825,7 @@ impl RuntimePlan {
                 }
                 FlowOp::LetElse { else_ops, .. }
                 | FlowOp::Thread { body: else_ops, .. }
-                | FlowOp::Scope(else_ops)
+                | FlowOp::Scope { body: else_ops, .. }
                 | FlowOp::Loop { body: else_ops, .. }
                 | FlowOp::While { body: else_ops, .. }
                 | FlowOp::WhileLet { body: else_ops, .. } => {
@@ -878,7 +878,7 @@ impl RuntimePlan {
                 | FlowOp::EvaluatedEffect(_)
                 | FlowOp::RegisterCleanup { .. }
                 | FlowOp::CancelCleanup { .. }
-                | FlowOp::EnterScope
+                | FlowOp::EnterScope { .. }
                 | FlowOp::ExitScope
                 | FlowOp::CompleteAwaitObserver
                 | FlowOp::ExitScopeBind { .. }

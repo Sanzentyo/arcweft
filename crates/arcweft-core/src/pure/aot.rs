@@ -6,6 +6,7 @@ use super::{
 };
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
     RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeExpr, RuntimeExprKind,
     RuntimeIntrinsic, RuntimeUnaryOp, RuntimeValue,
@@ -19,6 +20,10 @@ pub(super) enum AotI64Expr {
     Let {
         slot: usize,
         expr: Box<AotI64Expr>,
+        body: Box<AotI64Expr>,
+    },
+    Scope {
+        identity: RuntimeScopeIdentity,
         body: Box<AotI64Expr>,
     },
     AddCall {
@@ -44,6 +49,10 @@ pub(super) enum AotI64Expr {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum AotBoolExpr {
     Const(bool),
+    Scope {
+        identity: RuntimeScopeIdentity,
+        body: Box<AotBoolExpr>,
+    },
     Compare {
         lhs: Box<AotI64Expr>,
         op: RuntimeBinaryOp,
@@ -58,6 +67,10 @@ pub(super) enum AotScalarExpr {
     Let {
         slot: usize,
         expr: Box<AotScalarExpr>,
+        body: Box<AotScalarExpr>,
+    },
+    Scope {
+        identity: RuntimeScopeIdentity,
         body: Box<AotScalarExpr>,
     },
     AddCall {
@@ -83,6 +96,10 @@ pub(super) enum AotScalarExpr {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum AotScalarBoolExpr {
     Const(bool),
+    Scope {
+        identity: RuntimeScopeIdentity,
+        body: Box<AotScalarBoolExpr>,
+    },
     Compare {
         lhs: Box<AotScalarExpr>,
         op: RuntimeBinaryOp,
@@ -252,6 +269,7 @@ impl AotPureI64Plan {
         let mut evaluator = AotI64Evaluator {
             slots,
             stats: PureFunctionStats::default(),
+            scope_stack: Vec::new(),
         };
         let value = evaluator.eval_i64(&self.expr);
         (value, evaluator.stats)
@@ -430,6 +448,7 @@ impl AotPureScalarPlan {
             name: self.name(),
             slots,
             stats: PureFunctionStats::default(),
+            scope_stack: Vec::new(),
         };
         let value = evaluator.eval_scalar(&self.expr)?;
         Ok((value, evaluator.stats))
@@ -563,6 +582,7 @@ impl AotCompileContext {
 struct AotI64Evaluator<'a> {
     slots: &'a mut [i64],
     stats: PureFunctionStats,
+    scope_stack: Vec<RuntimeScopeIdentity>,
 }
 
 impl AotI64Evaluator<'_> {
@@ -577,6 +597,12 @@ impl AotI64Evaluator<'_> {
                 self.slots[*slot] = value;
                 let result = self.eval_i64(body);
                 self.slots[*slot] = previous;
+                result
+            }
+            AotI64Expr::Scope { identity, body } => {
+                self.scope_stack.push(identity.clone());
+                let result = self.eval_i64(body);
+                self.scope_stack.pop();
                 result
             }
             AotI64Expr::AddCall { lhs, rhs } => {
@@ -624,6 +650,12 @@ impl AotI64Evaluator<'_> {
         self.stats.evaluated_exprs += 1;
         match expr {
             AotBoolExpr::Const(value) => *value,
+            AotBoolExpr::Scope { identity, body } => {
+                self.scope_stack.push(identity.clone());
+                let result = self.eval_bool(body);
+                self.scope_stack.pop();
+                result
+            }
             AotBoolExpr::Compare { lhs, op, rhs } => {
                 self.stats.evaluated_binary_ops += 1;
                 let lhs = self.eval_i64(lhs);
@@ -651,6 +683,7 @@ struct AotScalarEvaluator<'a> {
     name: &'a str,
     slots: &'a mut [RuntimePureScalar],
     stats: PureFunctionStats,
+    scope_stack: Vec<RuntimeScopeIdentity>,
 }
 
 impl AotScalarEvaluator<'_> {
@@ -665,6 +698,12 @@ impl AotScalarEvaluator<'_> {
                 self.slots[*slot] = value;
                 let result = self.eval_scalar(body);
                 self.slots[*slot] = previous;
+                result
+            }
+            AotScalarExpr::Scope { identity, body } => {
+                self.scope_stack.push(identity.clone());
+                let result = self.eval_scalar(body);
+                self.scope_stack.pop();
                 result
             }
             AotScalarExpr::AddCall { lhs, rhs } => {
@@ -704,6 +743,12 @@ impl AotScalarEvaluator<'_> {
         self.stats.evaluated_exprs += 1;
         match expr {
             AotScalarBoolExpr::Const(value) => Ok(*value),
+            AotScalarBoolExpr::Scope { identity, body } => {
+                self.scope_stack.push(identity.clone());
+                let result = self.eval_bool(body);
+                self.scope_stack.pop();
+                result
+            }
             AotScalarBoolExpr::Compare { lhs, op, rhs } => {
                 self.stats.evaluated_binary_ops += 1;
                 match evaluate_scalar_binary(self.eval_scalar(lhs)?, *op, self.eval_scalar(rhs)?)? {
@@ -776,6 +821,10 @@ fn compile_aot_i64_expr(
             .local_slot(*local)
             .map(AotI64Expr::Local)
             .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+        RuntimeExprKind::Scope { identity, body } => Ok(AotI64Expr::Scope {
+            identity: identity.clone(),
+            body: Box::new(compile_aot_i64_expr(helper_name, body, ctx)?),
+        }),
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -853,6 +902,10 @@ fn compile_aot_bool_expr(
 ) -> Result<AotBoolExpr, RuntimeEvalError> {
     match expr.kind() {
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => Ok(AotBoolExpr::Const(*value)),
+        RuntimeExprKind::Scope { identity, body } => Ok(AotBoolExpr::Scope {
+            identity: identity.clone(),
+            body: Box::new(compile_aot_bool_expr(helper_name, body, ctx)?),
+        }),
         RuntimeExprKind::Binary { lhs, op, rhs } if is_aot_comparison(*op) => {
             Ok(AotBoolExpr::Compare {
                 lhs: Box::new(compile_aot_i64_expr(helper_name, lhs, ctx)?),
@@ -888,6 +941,10 @@ fn compile_aot_scalar_expr(
             .local_slot(*local)
             .map(AotScalarExpr::Local)
             .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+        RuntimeExprKind::Scope { identity, body } => Ok(AotScalarExpr::Scope {
+            identity: identity.clone(),
+            body: Box::new(compile_aot_scalar_expr(helper_name, body, ctx)?),
+        }),
         RuntimeExprKind::Let {
             binding,
             expr,
@@ -965,6 +1022,10 @@ fn compile_aot_scalar_bool_expr(
 ) -> Result<AotScalarBoolExpr, RuntimeEvalError> {
     match expr.kind() {
         RuntimeExprKind::Value(RuntimeValue::Bool(value)) => Ok(AotScalarBoolExpr::Const(*value)),
+        RuntimeExprKind::Scope { identity, body } => Ok(AotScalarBoolExpr::Scope {
+            identity: identity.clone(),
+            body: Box::new(compile_aot_scalar_bool_expr(helper_name, body, ctx)?),
+        }),
         RuntimeExprKind::Binary { lhs, op, rhs } if is_aot_comparison(*op) => {
             Ok(AotScalarBoolExpr::Compare {
                 lhs: Box::new(compile_aot_scalar_expr(helper_name, lhs, ctx)?),

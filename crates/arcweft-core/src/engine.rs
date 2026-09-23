@@ -1303,7 +1303,9 @@ impl Engine {
             for op in body.into_iter().rev() {
                 pending_ops.push_front(op);
             }
-            pending_ops.push_front(FlowOp::EnterScope);
+            pending_ops.push_front(FlowOp::EnterScope {
+                identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+            });
         }
         let (id, persistent_id, execution) = self.allocate_fiber_identity()?;
         self.child_fibers.push_back(FlowFiber {
@@ -1416,7 +1418,9 @@ impl Engine {
             env.bind_all(bindings);
         }
         let mut pending_ops = VecDeque::with_capacity(executable.ops().len().saturating_add(2));
-        pending_ops.push_back(FlowOp::EnterScope);
+        pending_ops.push_back(FlowOp::EnterScope {
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        });
         pending_ops.extend(executable.ops().iter().cloned());
         pending_ops.push_back(FlowOp::ExitScope);
         Ok(FlowFiber {
@@ -1561,7 +1565,9 @@ impl Engine {
                     for op in ops.iter().rev().cloned() {
                         pending_ops.push_front(op);
                     }
-                    pending_ops.push_front(FlowOp::EnterScope);
+                    pending_ops.push_front(FlowOp::EnterScope {
+                        identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+                    });
                     let selected_captures = if let Some(token) = tag.scheduled_token().cloned() {
                         transaction
                             .line_mut()

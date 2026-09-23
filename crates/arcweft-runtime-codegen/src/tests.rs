@@ -84,6 +84,7 @@ fn program() -> AwbcProgram {
             effects: AwbcEffectSetId(0),
         }],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         }],
@@ -283,6 +284,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         scope_depth: 0,
     });
     program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: Vec::new(),
         max_scope_depth: 0,
     });

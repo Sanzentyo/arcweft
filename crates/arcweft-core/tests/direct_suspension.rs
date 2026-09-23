@@ -756,6 +756,7 @@ fn direct_suspension_entry() -> AwbcEntry {
 
 fn need_frame_layout(need_ty: AwbcTypeId) -> AwbcFrameLayout {
     AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![AwbcFrameSlot {
             name: Some(AwbcStringId(1)),
             ty: need_ty,

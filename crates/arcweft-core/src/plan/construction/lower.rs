@@ -179,6 +179,14 @@ impl RuntimePlanBuilder {
                     body: Box::new(body),
                 }
             }
+            RuntimeExprSeedKind::Scope { identity, body } => {
+                let body = self.lower_expression(*body)?;
+                require_same("scope body", ty, body.ty())?;
+                RuntimeExprKind::Scope {
+                    identity,
+                    body: Box::new(body),
+                }
+            }
             RuntimeExprSeedKind::Tuple(items) => {
                 let expected = match self.projection(ty)? {
                     RuntimePlanTypeProjection::Tuple(items) => items.as_ref(),
@@ -2100,6 +2108,9 @@ impl RuntimePlanBuilder {
                 let nested = extend_scope(scope, [*binding])?;
                 self.validate_expression_locals(body, &nested, used)
             }
+            RuntimeExprKind::Scope { body, .. } => {
+                self.validate_expression_locals(body, scope, used)
+            }
             RuntimeExprKind::DialogueContent {
                 values, effects, ..
             } => {
@@ -2751,7 +2762,16 @@ impl RuntimePlanBuilder {
                 name,
                 body: self.lower_flow_ops(body)?,
             },
-            RuntimeFlowOpSeed::Scope(ops) => FlowOp::Scope(self.lower_flow_ops(ops)?),
+            RuntimeFlowOpSeed::Scope { identity, body } => FlowOp::Scope {
+                identity,
+                body: self.lower_flow_ops(body)?,
+            },
+            RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {
+                let pattern = self.lower_pattern_seed(pattern)?;
+                let expr = self.lower_expression(expr)?;
+                require_same("scope result binding", pattern.ty(), expr.ty())?;
+                FlowOp::ExitScopeBind { pattern, expr }
+            }
             RuntimeFlowOpSeed::Break(value) => FlowOp::Break(
                 value
                     .map(|value| self.lower_expression(value))
@@ -2773,7 +2793,7 @@ impl RuntimePlanBuilder {
                 effect: self.lower_line_effect(effect)?,
             },
             RuntimeFlowOpSeed::CancelCleanup { key } => FlowOp::CancelCleanup { key },
-            RuntimeFlowOpSeed::EnterScope => FlowOp::EnterScope,
+            RuntimeFlowOpSeed::EnterScope { identity } => FlowOp::EnterScope { identity },
             RuntimeFlowOpSeed::ExitScope => FlowOp::ExitScope,
             RuntimeFlowOpSeed::Noop => FlowOp::Noop,
         })
@@ -4069,7 +4089,8 @@ impl RuntimePlanBuilder {
         scope: &mut BTreeSet<RuntimeLocalDeclarationId>,
     ) -> Result<(), RuntimePlanBuildError> {
         let mut used = BTreeSet::new();
-        self.validate_flow_operation_locals_inner(ops, scope, &mut used)
+        let mut scope_frames = Vec::new();
+        self.validate_flow_operation_locals_inner(ops, scope, &mut used, &mut scope_frames)
     }
 
     pub(super) fn validate_flow_operation_locals_with_usage(
@@ -4078,7 +4099,8 @@ impl RuntimePlanBuilder {
         scope: &mut BTreeSet<RuntimeLocalDeclarationId>,
     ) -> Result<BTreeSet<RuntimeLocalDeclarationId>, RuntimePlanBuildError> {
         let mut used = BTreeSet::new();
-        self.validate_flow_operation_locals_inner(ops, scope, &mut used)?;
+        let mut scope_frames = Vec::new();
+        self.validate_flow_operation_locals_inner(ops, scope, &mut used, &mut scope_frames)?;
         Ok(used)
     }
 
@@ -4090,7 +4112,13 @@ impl RuntimePlanBuilder {
         let mut used = BTreeSet::new();
         for action in actions {
             let mut scope = captures.clone();
-            self.validate_flow_operation_locals_inner(action, &mut scope, &mut used)?;
+            let mut scope_frames = Vec::new();
+            self.validate_flow_operation_locals_inner(
+                action,
+                &mut scope,
+                &mut used,
+                &mut scope_frames,
+            )?;
         }
         Ok(used)
     }
@@ -4104,6 +4132,7 @@ impl RuntimePlanBuilder {
         ops: &[FlowOp],
         scope: &mut BTreeSet<RuntimeLocalDeclarationId>,
         used: &mut BTreeSet<RuntimeLocalDeclarationId>,
+        scope_frames: &mut Vec<BTreeSet<RuntimeLocalDeclarationId>>,
     ) -> Result<(), RuntimePlanBuildError> {
         for op in ops {
             match op {
@@ -4118,7 +4147,13 @@ impl RuntimePlanBuilder {
                 } => {
                     self.validate_expression_locals(expr, scope, used)?;
                     let mut else_scope = scope.clone();
-                    self.validate_flow_operation_locals_inner(else_ops, &mut else_scope, used)?;
+                    let mut else_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        else_ops,
+                        &mut else_scope,
+                        used,
+                        &mut else_frames,
+                    )?;
                     *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
                 }
                 FlowOp::AssignNominalField { base, value, .. } => {
@@ -4155,6 +4190,7 @@ impl RuntimePlanBuilder {
                             &observer.ops,
                             &mut observer_scope,
                             used,
+                            scope_frames,
                         )?;
                     }
                     if let Some(binding) = binding {
@@ -4215,9 +4251,21 @@ impl RuntimePlanBuilder {
                 } => {
                     self.validate_expression_locals(condition, scope, used)?;
                     let mut then_scope = scope.clone();
-                    self.validate_flow_operation_locals_inner(then_ops, &mut then_scope, used)?;
+                    let mut then_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        then_ops,
+                        &mut then_scope,
+                        used,
+                        &mut then_frames,
+                    )?;
                     let mut else_scope = scope.clone();
-                    self.validate_flow_operation_locals_inner(else_ops, &mut else_scope, used)?;
+                    let mut else_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        else_ops,
+                        &mut else_scope,
+                        used,
+                        &mut else_frames,
+                    )?;
                 }
                 FlowOp::IfLet {
                     pattern,
@@ -4231,9 +4279,21 @@ impl RuntimePlanBuilder {
                     if let Some(guard) = guard {
                         self.validate_expression_locals(guard, &then_scope, used)?;
                     }
-                    self.validate_flow_operation_locals_inner(then_ops, &mut then_scope, used)?;
+                    let mut then_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        then_ops,
+                        &mut then_scope,
+                        used,
+                        &mut then_frames,
+                    )?;
                     let mut else_scope = scope.clone();
-                    self.validate_flow_operation_locals_inner(else_ops, &mut else_scope, used)?;
+                    let mut else_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        else_ops,
+                        &mut else_scope,
+                        used,
+                        &mut else_frames,
+                    )?;
                 }
                 FlowOp::Match { scrutinee, arms } => {
                     self.validate_expression_locals(scrutinee, scope, used)?;
@@ -4243,24 +4303,65 @@ impl RuntimePlanBuilder {
                         if let Some(guard) = &arm.guard {
                             self.validate_expression_locals(guard, &arm_scope, used)?;
                         }
-                        self.validate_flow_operation_locals_inner(&arm.ops, &mut arm_scope, used)?;
+                        let mut arm_frames = scope_frames.clone();
+                        self.validate_flow_operation_locals_inner(
+                            &arm.ops,
+                            &mut arm_scope,
+                            used,
+                            &mut arm_frames,
+                        )?;
                     }
                 }
                 FlowOp::Loop { result, body } => {
                     let mut nested = scope.clone();
-                    self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    let mut nested_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
                     if let Some(result) = result {
                         *scope = extend_scope(scope, pattern_binding_locals(result))?;
                     }
                 }
-                FlowOp::Thread { body, .. } | FlowOp::Scope(body) => {
+                FlowOp::Thread { body, .. } => {
                     let mut nested = scope.clone();
-                    self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    let mut nested_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
+                }
+                FlowOp::Scope { body, .. } => {
+                    let mut nested = scope.clone();
+                    let mut nested_frames = scope_frames.clone();
+                    nested_frames.push(scope.clone());
+                    let expected_depth = nested_frames.len();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
+                    if nested_frames.len() != expected_depth {
+                        return Err(RuntimePlanBuildError::FlowScopeUnderflow {
+                            operation: "Scope body",
+                        });
+                    }
                 }
                 FlowOp::While { condition, body } => {
                     self.validate_expression_locals(condition, scope, used)?;
                     let mut nested = scope.clone();
-                    self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    let mut nested_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
                 }
                 FlowOp::WhileLet {
                     pattern,
@@ -4273,7 +4374,13 @@ impl RuntimePlanBuilder {
                     if let Some(guard) = guard {
                         self.validate_expression_locals(guard, &nested, used)?;
                     }
-                    self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    let mut nested_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
                 }
                 FlowOp::For {
                     pattern,
@@ -4283,7 +4390,13 @@ impl RuntimePlanBuilder {
                 } => {
                     self.validate_expression_locals(source, scope, used)?;
                     let mut nested = extend_scope(scope, pattern_binding_locals(pattern))?;
-                    self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    let mut nested_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut nested,
+                        used,
+                        &mut nested_frames,
+                    )?;
                 }
                 FlowOp::Break(value) => {
                     if let Some(value) = value {
@@ -4305,9 +4418,26 @@ impl RuntimePlanBuilder {
                 | FlowOp::Goto(_)
                 | FlowOp::Return(_)
                 | FlowOp::CancelCleanup { .. }
-                | FlowOp::EnterScope
-                | FlowOp::ExitScope
                 | FlowOp::Noop => {}
+                FlowOp::EnterScope { .. } => scope_frames.push(scope.clone()),
+                FlowOp::ExitScope => {
+                    *scope =
+                        scope_frames
+                            .pop()
+                            .ok_or(RuntimePlanBuildError::FlowScopeUnderflow {
+                                operation: "ExitScope",
+                            })?;
+                }
+                FlowOp::ExitScopeBind { pattern, expr } => {
+                    self.validate_expression_locals(expr, scope, used)?;
+                    let parent =
+                        scope_frames
+                            .pop()
+                            .ok_or(RuntimePlanBuildError::FlowScopeUnderflow {
+                                operation: "ExitScopeBind",
+                            })?;
+                    *scope = extend_scope(&parent, pattern_binding_locals(pattern))?;
+                }
                 FlowOp::Bind(_) => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
                         operation: "Bind",
@@ -4342,11 +4472,6 @@ impl RuntimePlanBuilder {
                 FlowOp::LetScope { .. } => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
                         operation: "LetScope",
-                    });
-                }
-                FlowOp::ExitScopeBind { .. } => {
-                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
-                        operation: "ExitScopeBind",
                     });
                 }
                 FlowOp::CompleteAwaitObserver => {

@@ -1134,7 +1134,16 @@ pub struct AwbcSignature {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcFrameLayout {
     pub slots: Vec<AwbcFrameSlot>,
+    pub scopes: Vec<AwbcScopeDefinition>,
     pub max_scope_depth: u32,
+}
+
+/// One function-local static lexical scope. Fiber state and instructions carry
+/// only its ordinal; this definition owns its parent and accepted namespace.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcScopeDefinition {
+    pub parent: Option<AwbcScopeId>,
+    pub identity: crate::scope::RuntimeScopeIdentity,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

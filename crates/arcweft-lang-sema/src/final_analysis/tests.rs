@@ -1377,6 +1377,8 @@ flow done() -> String { return "done" }
         None,
     );
     let report = analyze(&fixture).expect("mixed named statement/expression scope analysis");
+    assert!(report.expressions().any(|(_, expression)| matches!(expression.resolution(),
+        CheckedExpressionResolution::Scope(super::CheckedScopeIdentity::Named(name)) if name.as_str() == "window")));
     let choice = report
         .expressions()
         .find_map(|(_, expression)| match expression.resolution() {

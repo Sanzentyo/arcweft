@@ -488,7 +488,17 @@ impl<'hir> FinalExprLowerer<'hir> {
                 return self.lower_block(id, block.statements(), block.tail());
             }
             HirExprKind::NamedBlock(block) => {
-                return self.lower_block(id, block.statements(), block.tail());
+                let identity = self
+                    .semantic_facts
+                    .expression_scope(id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!("Scope expression {id:?} has no checked lexical identity")
+                    })?;
+                RuntimeExprSeedKind::Scope {
+                    identity,
+                    body: Box::new(self.lower_block(id, block.statements(), block.tail())?),
+                }
             }
             HirExprKind::If(branch) => RuntimeExprSeedKind::If {
                 condition: Box::new(self.lower(branch.condition())?),
@@ -935,9 +945,14 @@ impl<'hir> FinalExprLowerer<'hir> {
             HirExprKind::Block(block) => {
                 Some(self.lower_function_block(block.statements(), block.tail(), continuation))
             }
-            HirExprKind::NamedBlock(block) => {
-                Some(self.lower_function_block(block.statements(), block.tail(), continuation))
-            }
+            HirExprKind::NamedBlock(block) => Some((|| {
+                if self.block_contains_executable_try(block.statements(), block.tail())? {
+                    return Err(format!(
+                        "Scope expression {owner:?} requires a typed pure propagation continuation"
+                    ));
+                }
+                self.apply_try_continuation(self.lower(owner)?, continuation)
+            })()),
             HirExprKind::ComputationBlock(block)
                 if matches!(
                     block.kind(),

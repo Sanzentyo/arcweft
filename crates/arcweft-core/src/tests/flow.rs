@@ -2,6 +2,7 @@
 
 mod function_call;
 
+use crate::scope::RuntimeScopeIdentity;
 use crate::{
     engine::{Engine, FlowFiberStatus},
     entry::RuntimeNominalTypeId,
@@ -30,6 +31,7 @@ use crate::{
     },
     value::{RuntimeBinaryOp, RuntimeUnsignedIntWidth, RuntimeValue},
 };
+use arcweft_id::DeclarationName;
 use arcweft_need::Progress;
 
 const STRING_TYPE_MARKER: u8 = 1;
@@ -123,6 +125,103 @@ fn native_flow_returns_a_typed_scalar_value() {
         output.flow_events,
         vec![FlowEvent::Return {
             value: "ready".to_owned(),
+        }]
+    );
+    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn named_flow_scope_binds_its_result_in_the_parent_and_keeps_aot_identity() {
+    let string = string_type();
+    let entry = flow_id("flow.named_scope");
+    let identity =
+        RuntimeScopeIdentity::Named(DeclarationName::try_new("window").expect("valid scope name"));
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                string,
+                RuntimePlanTypeProjection::String,
+            )],
+            [RuntimeLocalDeclarationSeed::new(string)],
+        )
+        .expect("named scope result local admits");
+    let result = admission.local_ids()[0].clone();
+    builder
+        .push_flow_schema(flow_schema(&entry))
+        .expect("flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            entry.clone(),
+            [],
+            RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::EnterScope {
+                    identity: identity.clone(),
+                },
+                RuntimeFlowOpSeed::ExitScopeBind {
+                    pattern: RuntimePatternSeed::new(
+                        string,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: result.clone(),
+                        },
+                    ),
+                    expr: string_value("scope result"),
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    string,
+                    RuntimeExprSeedKind::Local(result),
+                )),
+            ],
+        ))
+        .expect("named flow body admits");
+    let plan = builder.finish().expect("named flow plan seals");
+
+    let aot = crate::aot::AotProgram::from_runtime_plan(&plan);
+    assert!(matches!(
+        aot.flow_block(0).and_then(|block| block.linear_op(0)),
+        Some(crate::aot::AotLinearOp::EnterScope { identity: projected })
+            if projected == &identity
+    ));
+    let mut engine = Engine::for_flow(plan, &entry).expect("named scope flow starts");
+
+    let output = drain(&mut engine);
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "scope result".to_owned(),
+        }]
+    );
+    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn native_flow_evaluates_a_named_expression_scope_before_its_outer_return() {
+    let entry = flow_id("flow.named_expression_scope");
+    let plan = finish_plan([RuntimeFlowSeed::new(
+        entry.clone(),
+        [],
+        RuntimeEffectSet::empty(),
+        vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+            string_type(),
+            RuntimeExprSeedKind::Scope {
+                identity: RuntimeScopeIdentity::Named(
+                    DeclarationName::try_new("window").expect("valid scope name"),
+                ),
+                body: Box::new(string_value("expression scope")),
+            },
+        ))],
+    )]);
+    let mut engine = Engine::for_flow(plan, &entry).expect("named expression scope starts");
+
+    let output = drain(&mut engine);
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "expression scope".to_owned(),
         }]
     );
     assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));

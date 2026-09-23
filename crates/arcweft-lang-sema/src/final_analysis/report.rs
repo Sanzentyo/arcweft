@@ -193,6 +193,7 @@ pub struct FinalAnalysisExecutionProjection<'analysis> {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedExecutableRuntimeExpressionFactFamily {
     Structural,
+    Scope,
     Consumed,
     Literal,
     Value,
@@ -455,6 +456,9 @@ impl FinalAnalysisExecutionProjection<'_> {
                     }
                     CheckedExpressionResolution::Structural => {
                         CheckedExecutableRuntimeExpressionFactFamily::Structural
+                    }
+                    CheckedExpressionResolution::Scope(_) => {
+                        CheckedExecutableRuntimeExpressionFactFamily::Scope
                     }
                     CheckedExpressionResolution::Literal(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Literal

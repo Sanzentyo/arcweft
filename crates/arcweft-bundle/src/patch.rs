@@ -1667,6 +1667,7 @@ mod tests {
                 effects: AwbcEffectSetId(0),
             }],
             frame_layouts: vec![AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: Vec::new(),
                 max_scope_depth: 0,
             }],

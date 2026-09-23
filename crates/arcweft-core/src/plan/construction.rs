@@ -392,6 +392,8 @@ pub enum RuntimePlanBuildError {
     RawExpressionCarrier { context: &'static str },
     #[error("runtime-plan contains non-canonical flow operation {operation}")]
     NonCanonicalFlowOperation { operation: &'static str },
+    #[error("runtime flow operation `{operation}` has no active lexical scope")]
+    FlowScopeUnderflow { operation: &'static str },
     #[error("runtime-plan {context} value does not satisfy plan type {ty}")]
     InvalidValueType {
         context: &'static str,

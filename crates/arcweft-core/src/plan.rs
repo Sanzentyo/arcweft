@@ -1156,8 +1156,12 @@ pub enum FlowOp {
         name: Option<String>,
         body: Vec<FlowOp>,
     },
-    Scope(Vec<FlowOp>),
+    Scope {
+        identity: crate::scope::RuntimeScopeIdentity,
+        body: Vec<FlowOp>,
+    },
     LetScope {
+        identity: crate::scope::RuntimeScopeIdentity,
         pattern: RuntimePattern,
         ops: Vec<FlowOp>,
         value: RuntimeExpr,
@@ -1177,7 +1181,9 @@ pub enum FlowOp {
     CancelCleanup {
         key: String,
     },
-    EnterScope,
+    EnterScope {
+        identity: crate::scope::RuntimeScopeIdentity,
+    },
     ExitScope,
     /// Engine-only fallthrough marker for one Pending observer body.
     CompleteAwaitObserver,

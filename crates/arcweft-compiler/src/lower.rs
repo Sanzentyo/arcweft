@@ -33,6 +33,19 @@ pub use project_instances::{
 };
 use variants::{runtime_variant, runtime_variant_under};
 
+fn runtime_scope_identity(
+    identity: &arcweft_lang_sema::final_analysis::CheckedScopeIdentity,
+) -> arcweft_core::scope::RuntimeScopeIdentity {
+    match identity {
+        arcweft_lang_sema::final_analysis::CheckedScopeIdentity::Anonymous => {
+            arcweft_core::scope::RuntimeScopeIdentity::Anonymous
+        }
+        arcweft_lang_sema::final_analysis::CheckedScopeIdentity::Named(name) => {
+            arcweft_core::scope::RuntimeScopeIdentity::Named(name.clone())
+        }
+    }
+}
+
 pub(crate) use reachability::project_view_value_program_reachability;
 pub use reachability::{
     RuntimeEmissionMode, RuntimeReachabilityProjectionError, project_runtime_reachability,
@@ -720,6 +733,9 @@ fn project_runtime_semantic_fact_inventories(
             )?,
         );
         match expression.resolution() {
+            CheckedExpressionResolution::Scope(identity) => {
+                input.push_expression_scope(owner, runtime_scope_identity(identity));
+            }
             CheckedExpressionResolution::Structural => {
                 let module = project
                     .modules()
@@ -1008,6 +1024,9 @@ fn project_runtime_semantic_fact_inventories(
             continue;
         }
         match statement.payload() {
+            CheckedStatementPayload::Scope(identity) => {
+                input.push_statement_scope(owner, runtime_scope_identity(identity));
+            }
             CheckedStatementPayload::Assignment(assignment) => {
                 input.push_assignment(
                     owner,
@@ -1043,7 +1062,6 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedStatementPayload::UnsafeAudit(_)
             | CheckedStatementPayload::Select(_)
             | CheckedStatementPayload::SourceLocale(_)
-            | CheckedStatementPayload::Scope(_)
             | CheckedStatementPayload::Include(_)
             | CheckedStatementPayload::Suspension(_)
             | CheckedStatementPayload::Yield => {}
@@ -5853,6 +5871,7 @@ fn discover_runtime_project_executable_dependencies(
                     pending.insert(HirRuntimeExecutableOwner::Closure(row.owner()));
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Structural
+                | CheckedExecutableRuntimeExpressionFactFamily::Scope
                 | CheckedExecutableRuntimeExpressionFactFamily::Consumed
                 | CheckedExecutableRuntimeExpressionFactFamily::Literal
                 | CheckedExecutableRuntimeExpressionFactFamily::Value
@@ -6187,6 +6206,15 @@ fn runtime_project_function_instance_semantic_facts(
             .resolve_expr(owner)
             .map_err(|_| error(owner, "instance expression is absent from its HIR module"))?;
         let payload = match expected.family() {
+            CheckedExecutableRuntimeExpressionFactFamily::Scope => {
+                let CheckedExpressionResolution::Scope(identity) = checked.resolution() else {
+                    return Err(error(
+                        owner,
+                        "scope expression has no checked lexical identity",
+                    ));
+                };
+                RuntimeProjectFunctionExpressionPayload::Scope(runtime_scope_identity(identity))
+            }
             CheckedExecutableRuntimeExpressionFactFamily::Structural => {
                 RuntimeProjectFunctionExpressionPayload::Structural
             }
@@ -6706,8 +6734,8 @@ fn runtime_project_function_instance_semantic_facts(
             ) => RuntimeProjectFunctionStatementPayload::SourceLocale,
             (
                 CheckedExecutableRuntimeStatementFactFamily::Scope,
-                CheckedStatementPayload::Scope(_),
-            ) => RuntimeProjectFunctionStatementPayload::Scope,
+                CheckedStatementPayload::Scope(identity),
+            ) => RuntimeProjectFunctionStatementPayload::Scope(runtime_scope_identity(identity)),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Include,
                 CheckedStatementPayload::Include(_),

@@ -734,7 +734,12 @@ impl LinePlanLowerer<'_, '_> {
             }
             HirExprKind::Block(block) => self.lower_callback_body(block.statements(), block.tail()),
             HirExprKind::NamedBlock(block) => {
-                self.lower_callback_body(block.statements(), block.tail())
+                let identity = self.flow.semantic_facts.expression_scope(expression).cloned().ok_or_else(||
+                    RuntimePlanLowerError::new(format!("scheduled Scope expression {expression:?} has no checked lexical identity")))?;
+                let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope { identity })];
+                actions.extend(self.lower_callback_body(block.statements(), block.tail())?);
+                actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
+                Ok(actions)
             }
             HirExprKind::ComputationBlock(block) => {
                 self.lower_callback_body(block.statements(), block.tail())

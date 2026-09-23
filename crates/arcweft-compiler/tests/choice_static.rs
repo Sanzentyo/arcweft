@@ -27,7 +27,7 @@ flow done() -> String {
         .iter()
         .flat_map(|flow| flow.body().ops().iter())
         .find_map(|op| match op {
-            FlowOp::Scope(ops) => ops.iter().find_map(|op| match op {
+            FlowOp::Scope { body: ops, .. } => ops.iter().find_map(|op| match op {
                 FlowOp::Choice { id, options } => Some((id, options)),
                 _ => None,
             }),

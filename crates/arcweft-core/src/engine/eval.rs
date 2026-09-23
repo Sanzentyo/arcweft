@@ -131,6 +131,12 @@ impl Engine {
                 expr,
                 body,
             } => self.evaluate_let_expr(*binding, expr, body, pure_backend),
+            RuntimeExprKind::Scope { identity, body } => {
+                self.fiber.env.push_scope_with_identity(identity.clone());
+                let result = self.evaluate_expr_with_backend(body, pure_backend);
+                self.fiber.env.pop_scope();
+                result
+            }
             RuntimeExprKind::Tuple(_)
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }

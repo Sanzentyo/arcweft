@@ -72,7 +72,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::WhileLet { body, .. }
             | FlowOp::For { body, .. }
             | FlowOp::Thread { body, .. }
-            | FlowOp::Scope(body)
+            | FlowOp::Scope { body, .. }
             | FlowOp::LetScope { ops: body, .. } => visit_ops(body, visitor),
             FlowOp::LoopNext { body }
             | FlowOp::WhileNext { body, .. }
@@ -99,7 +99,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
-            | FlowOp::EnterScope
+            | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::CompleteAwaitObserver

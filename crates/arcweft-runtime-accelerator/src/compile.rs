@@ -827,6 +827,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExprKind::Let { expr, body, .. } => {
             2 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
+        RuntimeExprKind::Scope { body, .. } => 2 + runtime_expr_work_units(body),
         RuntimeExprKind::DialogueContent {
             values, effects, ..
         } => {

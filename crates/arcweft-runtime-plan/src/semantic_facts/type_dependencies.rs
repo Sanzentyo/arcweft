@@ -298,6 +298,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             }
             Self::Closure(closure) => closure.append_normalized_types(roots),
             Self::Structural
+            | Self::Scope(_)
             | Self::Consumed
             | Self::Literal(_)
             | Self::Select(_)
@@ -337,7 +338,7 @@ impl RuntimeProjectFunctionStatementPayload {
             | Self::UnsafeAudit
             | Self::Select
             | Self::SourceLocale
-            | Self::Scope
+            | Self::Scope(_)
             | Self::Include
             | Self::Suspension
             | Self::Yield => {}

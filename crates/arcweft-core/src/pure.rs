@@ -12,6 +12,7 @@ use crate::plan::{
     RuntimePureOutputType,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
+use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeAgentExpr, RuntimeAgentValue, RuntimeBinaryOp, RuntimeCallArgument,
@@ -1738,6 +1739,12 @@ struct PureScalarEvaluator<'a, T> {
     input_locals: &'a [RuntimeLocalDeclarationId],
     args: &'a [T],
     locals: Vec<(RuntimeLocalDeclarationId, RuntimePureScalar)>,
+    scopes: Vec<PureScalarScopeFrame>,
+}
+
+struct PureScalarScopeFrame {
+    _identity: RuntimeScopeIdentity,
+    local_start: usize,
 }
 
 impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
@@ -1746,6 +1753,20 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
             input_locals,
             args,
             locals: Vec::new(),
+            scopes: Vec::new(),
+        }
+    }
+
+    fn push_scope(&mut self, identity: RuntimeScopeIdentity) {
+        self.scopes.push(PureScalarScopeFrame {
+            _identity: identity,
+            local_start: self.locals.len(),
+        });
+    }
+
+    fn pop_scope(&mut self) {
+        if let Some(scope) = self.scopes.pop() {
+            self.locals.truncate(scope.local_start);
         }
     }
 
@@ -1762,9 +1783,16 @@ impl<'a, T: RuntimePureScalarInteger> PureScalarEvaluator<'a, T> {
                 body,
             } => {
                 let value = self.evaluate(expr)?;
+                self.push_scope(RuntimeScopeIdentity::Anonymous);
                 self.locals.push((*binding, value));
                 let result = self.evaluate(body);
-                self.locals.pop();
+                self.pop_scope();
+                result
+            }
+            RuntimeExprKind::Scope { identity, body } => {
+                self.push_scope(identity.clone());
+                let result = self.evaluate(body);
+                self.pop_scope();
                 result
             }
             RuntimeExprKind::Unary { op, expr } => evaluate_scalar_unary(*op, self.evaluate(expr)?),
@@ -1854,6 +1882,12 @@ impl<'a> PureEvaluator<'a> {
                 expr,
                 body,
             } => self.evaluate_let_expr(*binding, expr, body),
+            RuntimeExprKind::Scope { identity, body } => {
+                self.env.push_scope_with_identity(identity.clone());
+                let result = self.evaluate_expr(body);
+                self.env.pop_scope();
+                result
+            }
             RuntimeExprKind::DialogueContent {
                 template,
                 values,
@@ -2396,6 +2430,12 @@ impl<'a> PureEvaluator<'a> {
                 let value = self.evaluate_scalar_expr(expr)?.into_runtime_value();
                 self.env.push_scope_with_capacity(1);
                 self.env.set(*binding, value);
+                let result = self.evaluate_scalar_expr(body);
+                self.env.pop_scope();
+                result
+            }
+            RuntimeExprKind::Scope { identity, body } => {
+                self.env.push_scope_with_identity(identity.clone());
                 let result = self.evaluate_scalar_expr(body);
                 self.env.pop_scope();
                 result

@@ -4193,6 +4193,10 @@ enum RuntimeFlowValueContinuation {
         tail: RuntimeFlowTail,
     },
     Return,
+    ExitScope {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
     Ignore(RuntimeFlowTail),
     Try {
         owner: ExprId,
@@ -4232,6 +4236,10 @@ enum RuntimeFlowTail {
     ThreadItems(Box<[HirThreadFlowItem]>),
     Value {
         expression: ExprId,
+        continuation: Box<RuntimeFlowValueContinuation>,
+    },
+    ContinueValue {
+        value: RuntimeExprSeed,
         continuation: Box<RuntimeFlowValueContinuation>,
     },
 }
@@ -4882,14 +4890,19 @@ impl<'a> FinalFlowLowerer<'a> {
                 body: self.lower_contextual_body(for_stmt.body())?,
             }]),
             HirStmtKind::Scope(scope) => {
-                if scope.name().is_some() {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "named Scope {id:?} requires a typed runtime scope identity"
-                    )));
-                }
-                Ok(vec![RuntimeFlowOpSeed::Scope(
-                    self.lower_contextual_body(scope.body())?,
-                )])
+                let identity = self
+                    .semantic_facts
+                    .statement_scope(id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Scope {id:?} has no checked lexical identity"
+                        ))
+                    })?;
+                Ok(vec![RuntimeFlowOpSeed::Scope {
+                    identity,
+                    body: self.lower_contextual_body(scope.body())?,
+                }])
             }
             HirStmtKind::Break { label, value } if label.is_none() => {
                 Ok(vec![RuntimeFlowOpSeed::Break(
@@ -5127,7 +5140,34 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.lower_value_block(block.statements(), block.tail(), continuation)
             }
             HirExprKind::NamedBlock(block) => {
-                self.lower_value_block(block.statements(), block.tail(), continuation)
+                let identity = self
+                    .semantic_facts
+                    .expression_scope(expression)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Scope expression {expression:?} has no checked lexical identity"
+                        ))
+                    })?;
+                let mut ops = vec![RuntimeFlowOpSeed::EnterScope { identity }];
+                ops.extend(self.lower_value_block(
+                    block.statements(),
+                    block.tail(),
+                    RuntimeFlowValueContinuation::ExitScope {
+                        owner: expression,
+                        outer: Box::new(continuation),
+                    },
+                )?);
+                if matches!(
+                    self.expression_type(expression)?.shape(),
+                    RuntimeTypeShape::Never
+                ) {
+                    // A Never tail has no value continuation. Retain a balanced
+                    // lexical fallthrough for resumable terminal operations;
+                    // a real return/goto unwinds before reaching this marker.
+                    ops.push(RuntimeFlowOpSeed::ExitScope);
+                }
+                Ok(ops)
             }
             HirExprKind::ComputationBlock(block)
                 if matches!(
@@ -5492,15 +5532,25 @@ impl<'a> FinalFlowLowerer<'a> {
                 ),
                 tail,
             ),
-            RuntimeFlowValueContinuation::Return
-            | RuntimeFlowValueContinuation::Try { .. }
-            | RuntimeFlowValueContinuation::WrapCarrier { .. }
-            | RuntimeFlowValueContinuation::Compose { .. }
-            | RuntimeFlowValueContinuation::Branch { .. }
-            | RuntimeFlowValueContinuation::Pipe { .. } => {
-                return Err(RuntimePlanLowerError::new(format!(
-                    "dialogue application {expression:?} requires a direct result-pattern continuation"
-                )));
+            other => {
+                let ty = application.line_result();
+                let local = self
+                    .control
+                    .expression_values
+                    .get(&expression)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "dialogue application {expression:?} has no admitted result local"
+                        ))
+                    })?;
+                (
+                    bind_seed(ty, local.clone()),
+                    RuntimeFlowTail::ContinueValue {
+                        value: local_seed(ty, local),
+                        continuation: Box::new(other),
+                    },
+                )
             }
         };
         if pattern.ty() != application.line_result().identity() {
@@ -5670,15 +5720,25 @@ impl<'a> FinalFlowLowerer<'a> {
                     tail,
                 )
             }
-            RuntimeFlowValueContinuation::Return
-            | RuntimeFlowValueContinuation::Try { .. }
-            | RuntimeFlowValueContinuation::WrapCarrier { .. }
-            | RuntimeFlowValueContinuation::Compose { .. }
-            | RuntimeFlowValueContinuation::Branch { .. }
-            | RuntimeFlowValueContinuation::Pipe { .. } => {
-                return Err(RuntimePlanLowerError::new(format!(
-                    "Loop expression {owner:?} requires a continuation result local"
-                )));
+            other => {
+                let ty = self.expression_type(owner)?;
+                let local = self
+                    .control
+                    .expression_values
+                    .get(&owner)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Loop expression {owner:?} has no admitted result local"
+                        ))
+                    })?;
+                (
+                    bind_seed(ty, local.clone()),
+                    RuntimeFlowTail::ContinueValue {
+                        value: local_seed(ty, local),
+                        continuation: Box::new(other),
+                    },
+                )
             }
         };
         let mut ops = vec![RuntimeFlowOpSeed::Loop {
@@ -5854,6 +5914,26 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops
             }
             RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
+            RuntimeFlowValueContinuation::ExitScope { owner, outer } => {
+                let ty = self.expression_type(owner)?;
+                let local = self
+                    .control
+                    .expression_values
+                    .get(&owner)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Scope expression {owner:?} has no admitted result local"
+                        ))
+                    })?;
+                let result = local_seed(ty, local.clone());
+                let mut ops = vec![RuntimeFlowOpSeed::ExitScopeBind {
+                    pattern: bind_seed(ty, local),
+                    expr: value,
+                }];
+                ops.extend(self.apply_value_continuation(result, *outer)?);
+                ops
+            }
             RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail)?,
             RuntimeFlowValueContinuation::Try { owner, outer } => {
                 return self.lower_try_continuation(owner, value, *outer);
@@ -5949,6 +6029,43 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Try expression {owner:?} has no checked runtime fact"
             ))
         })?;
+        if let RuntimeTryBoundaryOwner::CarrierBlock(boundary) = fact.boundary() {
+            let mut scope = Some(
+                self.module
+                    .resolve_expr(owner)
+                    .map_err(|error| {
+                        RuntimePlanLowerError::new(format!(
+                            "Try expression {owner:?} cannot resolve its scope: {error}"
+                        ))
+                    })?
+                    .scope(),
+            );
+            while let Some(id) = scope {
+                let resolved = self.module.resolve_scope(id).map_err(|error| {
+                    RuntimePlanLowerError::new(format!(
+                        "Try expression {owner:?} has invalid scope ancestry: {error}"
+                    ))
+                })?;
+                if *resolved.owner() == arcweft_lang_hir::scope::HirScopeOwner::Expr(boundary) {
+                    break;
+                }
+                let crosses_scope = match *resolved.owner() {
+                    arcweft_lang_hir::scope::HirScopeOwner::Expr(expression) => {
+                        self.semantic_facts.expression_scope(expression).is_some()
+                    }
+                    arcweft_lang_hir::scope::HirScopeOwner::Stmt(statement) => {
+                        self.semantic_facts.statement_scope(statement).is_some()
+                    }
+                    _ => false,
+                };
+                if crosses_scope {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "Try expression {owner:?} requires a typed scope propagation continuation"
+                    )));
+                }
+                scope = resolved.parent();
+            }
+        }
         let locals = self.control.tries.get(&owner).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "Try expression {owner:?} has no admitted continuation locals"
@@ -6064,6 +6181,10 @@ impl<'a> FinalFlowLowerer<'a> {
                 expression,
                 continuation,
             } => self.lower_flow_value(expression, *continuation),
+            RuntimeFlowTail::ContinueValue {
+                value,
+                continuation,
+            } => self.apply_value_continuation(value, *continuation),
         }
     }
 

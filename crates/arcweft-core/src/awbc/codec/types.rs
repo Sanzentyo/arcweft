@@ -8,10 +8,10 @@ use crate::awbc::schema::{
     AwbcHeader, AwbcHostCallId, AwbcInstructionId, AwbcIntrinsicId, AwbcLineHandleSiteId,
     AwbcLineOperationId, AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId, AwbcPatternId,
     AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId, AwbcResumePointId,
-    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
-    AwbcVariantIdentity,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeDefinition, AwbcScopeId, AwbcSignature,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId,
+    AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::entry::{RuntimeCodecUse, RuntimeMapKind, RuntimeNominalRecordShape};
 use crate::pattern::{
@@ -1038,14 +1038,54 @@ impl Wire for AwbcSignature {
 impl Wire for AwbcFrameLayout {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.slots.write_wire(writer)?;
+        self.scopes.write_wire(writer)?;
         self.max_scope_depth.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             slots: Vec::<AwbcFrameSlot>::read_wire(reader)?,
+            scopes: Vec::<AwbcScopeDefinition>::read_wire(reader)?,
             max_scope_depth: u32::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for AwbcScopeDefinition {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.parent.write_wire(writer)?;
+        match &self.identity {
+            crate::scope::RuntimeScopeIdentity::Anonymous => 0u8.write_wire(writer),
+            crate::scope::RuntimeScopeIdentity::Named(name) => {
+                1u8.write_wire(writer)?;
+                name.as_str().to_owned().write_wire(writer)
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let parent = Option::<AwbcScopeId>::read_wire(reader)?;
+        let offset = reader.offset();
+        let identity = match u8::read_wire(reader)? {
+            0 => crate::scope::RuntimeScopeIdentity::Anonymous,
+            1 => crate::scope::RuntimeScopeIdentity::Named(
+                arcweft_id::DeclarationName::try_new(String::read_wire(reader)?).map_err(
+                    |error| AwbcCodecError::InvalidMetadata {
+                        kind: "scope name",
+                        message: error.to_string(),
+                        offset,
+                    },
+                )?,
+            ),
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "scope identity",
+                    tag,
+                    offset,
+                });
+            }
+        };
+        Ok(Self { parent, identity })
     }
 }
 

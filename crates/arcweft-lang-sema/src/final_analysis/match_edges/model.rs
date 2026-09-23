@@ -32,15 +32,16 @@ const EXPRESSION_RESOLUTION_TAG_TYPE_VALUE: u16 = 0x021E;
 const EXPRESSION_RESOLUTION_TAG_TEXT_PROXY_SCALAR: u16 = 0x021F;
 const EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_ENUM: u16 = 0x0220;
 const EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION: u16 = 0x0221;
-const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION;
+const EXPRESSION_RESOLUTION_TAG_SCOPE: u16 = 0x0222;
+const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_SCOPE;
 // This count is the number of live constructors, not the width of the
 // numeric range.  0x0211 and 0x0213 are retained tombstones for removed
 // constructors and must never be reused.
-const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 32;
-const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 32] = [
+const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 33;
+const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 33] = [
     0x0200, 0x0201, 0x0202, 0x0203, 0x0204, 0x0205, 0x0206, 0x0207, 0x0208, 0x0209, 0x020A, 0x020B,
     0x020C, 0x020D, 0x020E, 0x020F, 0x0210, 0x0212, 0x0214, 0x0215, 0x0216, 0x0217, 0x0218, 0x0219,
-    0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221,
+    0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221, 0x0222,
 ];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
 const VALUE_RESOLUTION_TAG_END: u16 = 0x0307;
@@ -49,7 +50,7 @@ const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
 const PATTERN_RESOLUTION_TAG_END: u16 = 0x0605;
 const PATTERN_RESOLUTION_TAG_COUNT: u16 = 6;
 const _: () = {
-    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0221);
+    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0222);
     assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
     assert!(
         PATTERN_RESOLUTION_TAG_END
@@ -387,6 +388,7 @@ impl CheckedExpressionResolution {
     pub const fn semantic_tag(&self) -> u16 {
         match self {
             Self::Structural => EXPRESSION_RESOLUTION_TAG_BASE,
+            Self::Scope(_) => EXPRESSION_RESOLUTION_TAG_SCOPE,
             Self::Literal(_) => EXPRESSION_RESOLUTION_TAG_BASE + 1,
             Self::Value(_) => EXPRESSION_RESOLUTION_TAG_BASE + 2,
             Self::Select(_) => EXPRESSION_RESOLUTION_TAG_BASE + 3,
@@ -509,7 +511,7 @@ mod tests {
         assert_unique(&expression);
         assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG));
         assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG));
-        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0221);
+        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0222);
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));

@@ -299,7 +299,7 @@ fn execution_plan_for_expression(
                 CheckedStructuralExecutionReason::PostfixBracket,
             ))
         }
-        CheckedExpressionResolution::Structural => {
+        CheckedExpressionResolution::Structural | CheckedExpressionResolution::Scope(_) => {
             Ok(super::CheckedExpressionExecutionPlan::structural(
                 value,
                 CheckedStructuralExecutionReason::Structural,

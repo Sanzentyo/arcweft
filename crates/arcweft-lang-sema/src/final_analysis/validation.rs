@@ -881,6 +881,9 @@ fn expression_resolution_matches(
         (HirExprKind::Pipe(authored), CheckedExpressionResolution::Pipe(checked)) => {
             authored.left() == checked.lookup_left() && authored.right() == checked.lookup_right()
         }
+        (HirExprKind::NamedBlock(block), CheckedExpressionResolution::Scope(super::CheckedScopeIdentity::Named(name))) => {
+            matches!(block.name(), arcweft_lang_hir::expr::HirNamedBlockName::Resolved(authored) if authored.as_str() == name.as_str())
+        }
         (kind, CheckedExpressionResolution::Structural) => structural_resolution_matches(kind),
         _ => false,
     }
@@ -905,7 +908,6 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::Unary(_)
             | HirExprKind::Block(_)
             | HirExprKind::ComputationBlock(_)
-            | HirExprKind::NamedBlock(_)
             | HirExprKind::Loop(_)
             | HirExprKind::If(_)
             | HirExprKind::IfLet(_)
@@ -1155,6 +1157,7 @@ fn validate_expression_resolution(
         | CheckedExpressionResolution::ViewCall(_)
         | CheckedExpressionResolution::StyleValue(_)
         | CheckedExpressionResolution::Structural
+        | CheckedExpressionResolution::Scope(_)
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => Ok(()),
     }

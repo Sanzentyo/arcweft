@@ -70,7 +70,9 @@ pub(crate) enum AotLinearOp {
     CancelCleanup {
         key: String,
     },
-    EnterScope,
+    EnterScope {
+        identity: crate::scope::RuntimeScopeIdentity,
+    },
     ExitScope,
     ExitScopeBind {
         pattern: RuntimePattern,
@@ -103,7 +105,9 @@ impl AotLinearOp {
                 effect: effect.clone(),
             }),
             FlowOp::CancelCleanup { key } => Some(Self::CancelCleanup { key: key.clone() }),
-            FlowOp::EnterScope => Some(Self::EnterScope),
+            FlowOp::EnterScope { identity } => Some(Self::EnterScope {
+                identity: identity.clone(),
+            }),
             FlowOp::ExitScope => Some(Self::ExitScope),
             FlowOp::ExitScopeBind { pattern, expr } => Some(Self::ExitScopeBind {
                 pattern: pattern.clone(),
@@ -132,7 +136,7 @@ impl AotLinearOp {
             | FlowOp::For { .. }
             | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
-            | FlowOp::Scope(_)
+            | FlowOp::Scope { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
@@ -238,7 +242,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::ReturnExpr(_)
         | FlowOp::RegisterCleanup { .. }
         | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
+        | FlowOp::EnterScope { .. }
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
         | FlowOp::Noop => true,
@@ -265,7 +269,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::For { .. }
         | FlowOp::ForNext { .. }
         | FlowOp::Thread { .. }
-        | FlowOp::Scope(_)
+        | FlowOp::Scope { .. }
         | FlowOp::LetScope { .. }
         | FlowOp::Break(_)
         | FlowOp::Continue
@@ -300,7 +304,7 @@ impl AotOpClass {
             | FlowOp::ReturnExpr(_)
             | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
-            | FlowOp::EnterScope
+            | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::Noop
@@ -318,7 +322,7 @@ impl AotOpClass {
             | FlowOp::For { .. }
             | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
-            | FlowOp::Scope(_) => Self::Branch,
+            | FlowOp::Scope { .. } => Self::Branch,
             FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::CommitDialogueResult { .. } => Self::Effect,
@@ -366,7 +370,8 @@ impl AotProgramStats {
                 | FlowOp::WhileNext { body, .. }
                 | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::ForNext { body, .. } => self.record_ops(body),
-                FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
+                FlowOp::Scope { body, .. } => self.record_ops(body),
+                FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Await { observers, .. } => {
                     for observer in observers {
                         self.record_ops(&observer.ops);
@@ -393,7 +398,7 @@ impl AotProgramStats {
                 | FlowOp::EvaluatedEffect(_)
                 | FlowOp::RegisterCleanup { .. }
                 | FlowOp::CancelCleanup { .. }
-                | FlowOp::EnterScope
+                | FlowOp::EnterScope { .. }
                 | FlowOp::ExitScope
                 | FlowOp::ExitScopeBind { .. }
                 | FlowOp::CompleteAwaitObserver

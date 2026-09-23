@@ -851,6 +851,8 @@ impl CheckedContentApplication {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExpressionResolution {
     Structural,
+    /// The accepted lexical identity of one explicit Scope expression.
+    Scope(CheckedScopeIdentity),
     Literal(HirLiteral),
     Value(CheckedValueResolution),
     Select(CheckedSelectResolution),
@@ -950,6 +952,7 @@ impl CheckedExpressionResolution {
                 ),
             },
             Self::Structural
+            | Self::Scope(_)
             | Self::Literal(_)
             | Self::Value(_)
             | Self::Select(_)
@@ -1019,6 +1022,7 @@ impl CheckedExpressionResolution {
             Self::TypeValue(value) => value.visit_types(visitor),
             Self::CompileTimeScalar(value) => value.original().visit_types(visitor),
             Self::Structural
+            | Self::Scope(_)
             | Self::Literal(_)
             | Self::StageLook(_)
             | Self::Effect(_)

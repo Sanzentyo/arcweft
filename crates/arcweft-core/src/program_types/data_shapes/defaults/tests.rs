@@ -105,6 +105,7 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
             effects: AwbcEffectSetId(0),
         }],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: None,
                 ty: AwbcTypeId(1),

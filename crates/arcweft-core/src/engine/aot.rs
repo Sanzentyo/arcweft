@@ -173,8 +173,8 @@ impl Engine {
                 self.cancel_scope_cleanup(key);
                 self.advance_aot_linear_cursor(next_op_index);
             }
-            AotLinearOp::EnterScope => {
-                self.push_scope_frame();
+            AotLinearOp::EnterScope { identity } => {
+                self.push_scope_frame(identity.clone());
                 self.advance_aot_linear_cursor(next_op_index);
             }
             AotLinearOp::ExitScope => {

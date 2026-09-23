@@ -5,8 +5,7 @@ mod array;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
-    FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
-    FiberTrap,
+    FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTrap,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
@@ -55,6 +54,7 @@ fn minimal_program() -> AwbcProgram {
             effects: AwbcEffectSetId(0),
         }],
         frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         }],
@@ -91,6 +91,98 @@ fn minimal_program() -> AwbcProgram {
     }
 }
 
+#[test]
+fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity() {
+    let mut program = minimal_program();
+    let named = |name| {
+        crate::scope::RuntimeScopeIdentity::Named(
+            arcweft_id::DeclarationName::try_new(name).unwrap(),
+        )
+    };
+    program.frame_layouts[0].scopes = vec![
+        AwbcScopeDefinition {
+            parent: None,
+            identity: named("rain"),
+        },
+        AwbcScopeDefinition {
+            parent: Some(AwbcScopeId(0)),
+            identity: named("window"),
+        },
+        AwbcScopeDefinition {
+            parent: Some(AwbcScopeId(0)),
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        },
+    ];
+    program.frame_layouts[0].max_scope_depth = 2;
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(1),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(1),
+        },
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(2),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(2),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 6);
+    program
+        .verify(Default::default(), Default::default())
+        .unwrap();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, Default::default()).unwrap();
+    assert_eq!(decoded.frame_layouts, program.frame_layouts);
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64).unwrap();
+    super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 2,
+        },
+    )
+    .unwrap();
+    fiber.validate_for_program(&decoded).unwrap();
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let serialized = serde_json::to_vec(&snapshot).unwrap();
+    let snapshot: AwbcFiberStateSnapshot = serde_json::from_slice(&serialized).unwrap();
+    let restored = snapshot
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(decoded.clone()),
+        ))
+        .unwrap();
+    restored.validate_for_program(&decoded).unwrap();
+    assert_eq!(restored, fiber);
+
+    let mut wrong_sibling = restored.clone();
+    wrong_sibling.frames[0].scopes[1].id = AwbcScopeId(2);
+    assert!(wrong_sibling.validate_for_program(&decoded).is_err());
+    let mut wrong_depth = restored.clone();
+    wrong_depth.frames[0].scopes[1].depth = 0;
+    assert!(wrong_depth.validate_for_program(&decoded).is_err());
+    let mut unknown_scope = restored;
+    unknown_scope.frames[0].scopes[1].id = AwbcScopeId(99);
+    assert!(unknown_scope.validate_for_program(&decoded).is_err());
+
+    let mut wrong_parent = decoded;
+    wrong_parent.frame_layouts[0].scopes[1].parent = Some(AwbcScopeId(2));
+    assert!(
+        wrong_parent
+            .verify(Default::default(), Default::default())
+            .is_err()
+    );
+}
+
 fn add_effect_set(program: &mut AwbcProgram, effects: &[&str]) -> AwbcEffectSetId {
     let id = AwbcEffectSetId(u32::try_from(program.effect_sets.len()).unwrap());
     let effects = effects
@@ -116,6 +208,7 @@ fn project_call_invoke_program() -> AwbcProgram {
         effects: AwbcEffectSetId(0),
     });
     program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![AwbcFrameSlot {
             name: None,
             ty: AwbcTypeId(0),
@@ -200,6 +293,7 @@ fn project_call_continuation_program() -> (AwbcProgram, RuntimeValue) {
     ));
     program.patterns = vec![AwbcPattern::Discard];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -456,6 +550,7 @@ fn project_call_default_program() -> AwbcProgram {
     ]);
     program.frame_layouts.extend([
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: None,
                 ty: AwbcTypeId(0),
@@ -465,6 +560,7 @@ fn project_call_default_program() -> AwbcProgram {
             max_scope_depth: 0,
         },
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![
                 AwbcFrameSlot {
                     name: None,
@@ -605,10 +701,12 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
     }];
     program.frame_layouts = vec![
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         },
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: None,
                 ty: AwbcTypeId(1),
@@ -618,6 +716,7 @@ fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
             max_scope_depth: 0,
         },
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         },
@@ -2210,6 +2309,7 @@ fn typed_drop_is_an_exact_vm_transaction_boundary() {
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
     program.constants = vec![AwbcConstant::Unit];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2354,6 +2454,7 @@ fn typed_drop_stop_codec_row_rejects_a_non_duration_fade() {
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
     program.constants = vec![AwbcConstant::Unit];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![AwbcFrameSlot {
             name: None,
             ty: AwbcTypeId(0),
@@ -2477,6 +2578,7 @@ fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2532,6 +2634,7 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2612,6 +2715,7 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2678,6 +2782,7 @@ fn optional_string_field_program(owner: AwbcRuntimeTypeShape, label: &str) -> Aw
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2780,6 +2885,7 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     ];
     viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
     viewport.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2829,6 +2935,7 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     ];
     all.signatures[0].params = vec![AwbcTypeId(1)];
     all.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -2864,6 +2971,7 @@ fn vm_pretests_before_writes_and_binds_record_and_sequence_rests_last() {
     let mut program = minimal_program();
     program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: (0..3)
             .map(|_| AwbcFrameSlot {
                 name: None,
@@ -3125,6 +3233,7 @@ fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
 fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
     vec![
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![
                 AwbcFrameSlot {
                     name: None,
@@ -3142,6 +3251,7 @@ fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
             max_scope_depth: 0,
         },
         AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: vec![AwbcFrameSlot {
                 name: None,
                 ty: AwbcTypeId(0),
@@ -3696,6 +3806,7 @@ fn reduction_unchanged_instruction_roundtrips_verifies_and_constructs_typed_valu
     ];
     program.signatures[0].result = Some(AwbcTypeId(1));
     program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,
@@ -4041,9 +4152,31 @@ fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
 
 #[test]
 fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
-    let program = minimal_program();
+    let mut program = minimal_program();
+    program.frame_layouts[0].scopes = vec![AwbcScopeDefinition {
+        parent: None,
+        identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+    }];
+    program.frame_layouts[0].max_scope_depth = 1;
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 7, 64).expect("fiber initializes");
+    super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("declared lexical scope enters");
     fiber
         .active_frame_mut()
         .expect("active frame")
@@ -4053,18 +4186,12 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
             effect: AwbcEffectPlanId(0),
             args: vec![RuntimeValue::String("root".to_owned())],
         });
-    fiber
-        .active_frame_mut()
-        .expect("active frame")
-        .scopes
-        .push(FiberScope {
-            id: AwbcScopeId(0),
-            depth: 1,
-            cleanups: vec![FiberScopeCleanup {
-                key: "handle.scope".to_owned(),
-                effect: AwbcEffectPlanId(0),
-                args: vec![RuntimeValue::String("scope".to_owned())],
-            }],
+    fiber.active_frame_mut().expect("active frame").scopes[0]
+        .cleanups
+        .push(FiberScopeCleanup {
+            key: "handle.scope".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![RuntimeValue::String("scope".to_owned())],
         });
 
     let checkpoint = fiber.checkpoint();
@@ -4345,6 +4472,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
         ],
         frame_layouts: vec![
             AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: vec![
                     AwbcFrameSlot {
                         name: Some(AwbcStringId(2)),
@@ -4368,6 +4496,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 max_scope_depth: 0,
             },
             AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: vec![AwbcFrameSlot {
                     name: Some(AwbcStringId(2)),
                     ty: AwbcTypeId(1),
@@ -5000,6 +5129,7 @@ fn nested_return_restores_caller_resume_and_destination() {
         scope_depth: 0,
     });
     program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: Vec::new(),
         max_scope_depth: 0,
     });

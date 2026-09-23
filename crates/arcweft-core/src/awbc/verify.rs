@@ -14,6 +14,7 @@ use thiserror::Error;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AwbcVerifyBudget {
     pub frame_slots_per_function: usize,
+    pub scope_definitions_per_function: usize,
     pub params_per_signature: usize,
     pub args_per_call: usize,
     pub cfg_edges: usize,
@@ -26,6 +27,7 @@ impl Default for AwbcVerifyBudget {
     fn default() -> Self {
         Self {
             frame_slots_per_function: 65_536,
+            scope_definitions_per_function: 65_536,
             params_per_signature: 4_096,
             args_per_call: 4_096,
             cfg_edges: 16_000_000,
@@ -202,5 +204,58 @@ impl AwbcProgram {
         context: AwbcVerifyContext<'_>,
     ) -> Result<(), AwbcVerifyError> {
         structure::verify_program(self, budget, context)
+    }
+
+    /// Validates saved scope stacks at their exact resume coordinates through
+    /// the same control-flow transfer rules used to admit the executable.
+    pub(crate) fn verify_scope_stacks<'a>(
+        &self,
+        stacks: impl IntoIterator<Item = (super::fiber::FiberCursor, &'a [super::fiber::FiberScope])>,
+    ) -> Result<(), AwbcVerifyError> {
+        let stacks = stacks
+            .into_iter()
+            .filter(|(cursor, scopes)| {
+                !scopes.is_empty()
+                    || self
+                        .functions
+                        .get(cursor.function.index())
+                        .and_then(|function| self.frame_layouts.get(function.frame_layout.index()))
+                        .is_none_or(|layout| !layout.scopes.is_empty())
+            })
+            .collect::<Vec<_>>();
+        // A frame with no declared scopes has one possible scope stack: empty.
+        // Its ordinary cursor and frame admission are checked by the caller.
+        if stacks.is_empty() {
+            return Ok(());
+        }
+        let verifier = structure::prepare_verifier(
+            self,
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                supported_feature_bits: self.header.feature_bits,
+                ..AwbcVerifyContext::default()
+            },
+        )?;
+        for (cursor, scopes) in stacks {
+            let expected = code::scope_stack_at(
+                &verifier,
+                cursor.function.index(),
+                cursor.block.index(),
+                cursor.instruction_offset,
+            )?;
+            if !expected
+                .iter()
+                .copied()
+                .eq(scopes.iter().map(|scope| scope.id))
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: "saved scope stack".to_owned(),
+                    message: "saved lexical scopes do not match the selected resume coordinate"
+                        .to_owned(),
+                });
+            }
+        }
+        Ok(())
     }
 }

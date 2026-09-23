@@ -17,6 +17,7 @@ pub mod program_types;
 pub mod pure;
 pub mod root;
 pub mod runtime_id;
+pub mod scope;
 pub mod step;
 pub mod stream;
 pub mod task;

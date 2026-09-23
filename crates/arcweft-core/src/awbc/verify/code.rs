@@ -39,7 +39,7 @@ fn block_index_to_u32(index: usize) -> u32 {
 
 pub(super) fn verify_code(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     for function in 0..verifier.program.functions.len() {
-        verify_function(verifier, function)?;
+        verify_function(verifier, function, None)?;
     }
     Ok(())
 }
@@ -47,7 +47,8 @@ pub(super) fn verify_code(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyE
 fn verify_function(
     verifier: &Verifier<'_, '_>,
     function_index: usize,
-) -> Result<(), AwbcVerifyError> {
+    scope_query: Option<(usize, u32)>,
+) -> Result<Option<Vec<AwbcScopeId>>, AwbcVerifyError> {
     let program = verifier.program;
     let function = &program.functions[function_index];
     let layout = &program.frame_layouts[function.frame_layout.index()];
@@ -72,6 +73,7 @@ fn verify_function(
     let mut queue = VecDeque::from([function.entry_block.index()]);
     let mut steps = 0_usize;
     let mut edges = 0_usize;
+    let mut queried_scopes = None;
 
     while let Some(block_index) = queue.pop_front() {
         steps = steps.saturating_add(1);
@@ -91,7 +93,10 @@ fn verify_function(
             "instructions",
             &format!("block {block_index}"),
         )?;
-        for instruction_index in instruction_range {
+        for (offset, instruction_index) in instruction_range.enumerate() {
+            if scope_query == Some((block_index, block_index_to_u32(offset))) {
+                queried_scopes = Some(state.scopes.clone());
+            }
             apply_instruction(
                 verifier,
                 function_index,
@@ -99,6 +104,9 @@ fn verify_function(
                 instruction_index,
                 &mut state,
             )?;
+        }
+        if scope_query == Some((block_index, block.instructions.len)) {
+            queried_scopes = Some(state.scopes.clone());
         }
         let successors = apply_terminator(
             verifier,
@@ -142,7 +150,29 @@ fn verify_function(
             });
         }
     }
-    Ok(())
+    Ok(queried_scopes)
+}
+
+pub(super) fn scope_stack_at(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    offset: u32,
+) -> Result<Vec<AwbcScopeId>, AwbcVerifyError> {
+    if verifier.program.functions.get(function).is_none()
+        || verifier.block_owner.get(block) != Some(&function)
+    {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: "scope resume coordinate".to_owned(),
+            message: "scope resume coordinate has a foreign function or block".to_owned(),
+        });
+    }
+    verify_function(verifier, function, Some((block, offset)))?.ok_or_else(|| {
+        AwbcVerifyError::InvalidInvariant {
+            at: "scope resume coordinate".to_owned(),
+            message: "scope resume offset is outside the selected block".to_owned(),
+        }
+    })
 }
 
 fn verify_entry_safe_point(
@@ -265,6 +295,21 @@ fn apply_instruction(
             clear_register(verifier, function, block, *register, state)?;
         }
         AwbcInstruction::EnterScope { scope } => {
+            let layout = function_layout(verifier, function);
+            let definition = layout.scopes.get(scope.index()).ok_or_else(|| {
+                AwbcVerifyError::ScopeDiscipline {
+                    function,
+                    block,
+                    message: format!("scope {} has no frame definition", scope.0),
+                }
+            })?;
+            if definition.parent != state.scopes.last().copied() {
+                return Err(AwbcVerifyError::ScopeDiscipline {
+                    function,
+                    block,
+                    message: format!("scope {} has a different lexical parent", scope.0),
+                });
+            }
             if state.scopes.contains(scope) {
                 return Err(AwbcVerifyError::ScopeDiscipline {
                     function,
@@ -272,7 +317,6 @@ fn apply_instruction(
                     message: format!("scope {} is entered twice", scope.0),
                 });
             }
-            let layout = function_layout(verifier, function);
             if state.scopes.len() + 1 > layout.max_scope_depth as usize {
                 return Err(AwbcVerifyError::ScopeDiscipline {
                     function,

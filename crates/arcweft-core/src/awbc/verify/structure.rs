@@ -37,6 +37,19 @@ pub(super) fn verify_program(
     budget: AwbcVerifyBudget,
     context: AwbcVerifyContext<'_>,
 ) -> Result<(), AwbcVerifyError> {
+    let verifier = prepare_verifier(program, budget, context)?;
+    super::code::verify_code(&verifier)?;
+    verify_entry_runtime_contracts(&verifier)?;
+    verify_entries(&verifier)?;
+    verify_maps_and_resources(&verifier)?;
+    Ok(())
+}
+
+pub(super) fn prepare_verifier<'program, 'context>(
+    program: &'program AwbcProgram,
+    budget: AwbcVerifyBudget,
+    context: AwbcVerifyContext<'context>,
+) -> Result<Verifier<'program, 'context>, AwbcVerifyError> {
     verify_header(program, context)?;
     verify_strings(program)?;
     if context.require_entrypoint && program.entries.is_empty() {
@@ -58,11 +71,7 @@ pub(super) fn verify_program(
     verify_resume_points(&verifier)?;
     verify_patterns(&verifier)?;
     verify_runtime_tables(&verifier)?;
-    super::code::verify_code(&verifier)?;
-    verify_entry_runtime_contracts(&verifier)?;
-    verify_entries(&verifier)?;
-    verify_maps_and_resources(&verifier)?;
-    Ok(())
+    Ok(verifier)
 }
 
 fn verify_header(
@@ -605,6 +614,34 @@ fn verify_frame_layouts(
     budget: AwbcVerifyBudget,
 ) -> Result<(), AwbcVerifyError> {
     for (index, layout) in program.frame_layouts.iter().enumerate() {
+        if layout.scopes.len() > budget.scope_definitions_per_function {
+            return Err(AwbcVerifyError::FrameBudgetExceeded {
+                layout: index,
+                budget: "scope_definitions_per_function",
+            });
+        }
+        let mut scope_depths = Vec::<u32>::with_capacity(layout.scopes.len());
+        for (scope_index, scope) in layout.scopes.iter().enumerate() {
+            let depth = match scope.parent {
+                None => 1,
+                Some(parent) => scope_depths
+                    .get(parent.index())
+                    .copied()
+                    .and_then(|depth| depth.checked_add(1))
+                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                        at: format!("frame layout {index} scope {scope_index}"),
+                        message: "scope parent must be an earlier definition in the same frame"
+                            .to_owned(),
+                    })?,
+            };
+            if depth > layout.max_scope_depth {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: format!("frame layout {index} scope {scope_index}"),
+                    message: "scope parent chain exceeds frame maximum depth".to_owned(),
+                });
+            }
+            scope_depths.push(depth);
+        }
         if layout.slots.len() > budget.frame_slots_per_function {
             return Err(AwbcVerifyError::FrameBudgetExceeded {
                 layout: index,

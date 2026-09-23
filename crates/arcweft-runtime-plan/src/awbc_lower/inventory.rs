@@ -1997,6 +1997,7 @@ impl AwbcInventory {
         let layout = self.intern_frame_layout(
             format!("{name}:empty"),
             AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: Vec::new(),
                 max_scope_depth: 0,
             },

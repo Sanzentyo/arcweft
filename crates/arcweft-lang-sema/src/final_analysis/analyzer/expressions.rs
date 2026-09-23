@@ -1911,7 +1911,28 @@ impl Analyzer<'_, '_, '_> {
                         },
                     )
                 })?;
-                Ok(structural_expression(tail_type, tail_selection))
+                let namespace = module
+                    .scope_namespace(block.scope())
+                    .map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                    })?
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        )
+                    })?;
+                let name = arcweft_id::DeclarationName::try_new(namespace.name().as_str())
+                    .map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+                    })?;
+                Ok(CheckedExpression::value(
+                    tail_type,
+                    tail_selection,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::Scope(
+                        crate::final_analysis::CheckedScopeIdentity::Named(name),
+                    ),
+                ))
             }
             HirExprKind::Loop(loop_expression) => {
                 self.evaluate_block_statement_uses(context, module, loop_expression.statements())?;

@@ -2973,6 +2973,14 @@ fn write_resolution_payload(
         CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => {}
+        CheckedExpressionResolution::Scope(scope) => match scope {
+            super::CheckedScopeIdentity::Anonymous => transcript_update!(hasher, &[0]),
+            super::CheckedScopeIdentity::Named(name) => {
+                transcript_update!(hasher, &[1]);
+                write_len(hasher, name.as_str().len())?;
+                transcript_update!(hasher, name.as_str().as_bytes());
+            }
+        },
         CheckedExpressionResolution::Value(value) => match value {
             CheckedValueResolution::Local(local) => {
                 let binding = coordinates.binding(*local)?;

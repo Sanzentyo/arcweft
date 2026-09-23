@@ -5,7 +5,7 @@ use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeS
 use arcweft_core::task::GenerationId;
 use arcweft_core::{
     awbc::{
-        fiber::{FiberScope, FiberScopeCleanup},
+        fiber::FiberScopeCleanup,
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -551,19 +551,44 @@ fn presentation_handle_rollback_restores_tombstones() {
 
 #[test]
 fn awbc_save_load_preserves_cleanup_stacks() {
-    let bytes = product_awfb_bytes("entry.main");
+    let mut program = minimal_awbc_program("entry.main");
+    program.frame_layouts[0].scopes = vec![arcweft_core::awbc::schema::AwbcScopeDefinition {
+        parent: None,
+        identity: arcweft_core::scope::RuntimeScopeIdentity::Named(
+            arcweft_id::DeclarationName::try_new("rain").unwrap(),
+        ),
+    }];
+    program.instructions = vec![
+        arcweft_core::awbc::schema::AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        arcweft_core::awbc::schema::AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[1].instructions = AwbcTableRange::new(2, 0);
+    let bytes = product_bundle_with_program("entry.main", "scoped-cleanup.arcw", program.clone())
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("scoped program encodes");
     let mut session = product_session_from_bytes(&bytes);
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     let state = &mut snapshot.executor.state;
+    arcweft_core::awbc::vm::step(
+        &program,
+        &mut state.fiber,
+        arcweft_core::awbc::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("declared lexical scope enters");
     let frame = state.fiber.active_frame_mut().expect("active frame");
     frame
         .root_cleanups
         .push(cleanup("handle.root", "root cleanup"));
-    frame.scopes.push(FiberScope {
-        id: AwbcScopeId(0),
-        depth: 1,
-        cleanups: vec![cleanup("handle.scope", "scope cleanup")],
-    });
+    frame.scopes[0]
+        .cleanups
+        .push(cleanup("handle.scope", "scope cleanup"));
 
     session
         .restore_session_snapshot(snapshot.clone())
@@ -1235,10 +1260,12 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
         ],
         frame_layouts: vec![
             AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: Vec::new(),
                 max_scope_depth: 1,
             },
             AwbcFrameLayout {
+                scopes: Vec::new(),
                 slots: vec![AwbcFrameSlot {
                     name: Some(AwbcStringId(0)),
                     ty: AwbcTypeId(0),

@@ -1430,6 +1430,17 @@ impl FiberState {
                 validate_return_point(program, caller, frame.function, return_to)?;
             }
         }
+        let scope_stacks = self.frames.iter().enumerate().map(|(index, frame)| {
+            let cursor = self
+                .frames
+                .get(index + 1)
+                .and_then(|callee| callee.return_to.as_ref())
+                .map_or(self.cursor, |return_to| return_to.cursor);
+            (cursor, frame.scopes.as_slice())
+        });
+        program
+            .verify_scope_stacks(scope_stacks)
+            .map_err(|_| FiberStateError::InvalidFrame)?;
         if matches!(self.status, FiberStatus::Running | FiberStatus::Suspended)
             && self.frames.is_empty()
         {
@@ -2039,7 +2050,17 @@ fn validate_frame(
         validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
     }
     for (scope_index, scope) in frame.scopes.iter().enumerate() {
-        if scope.depth > layout.max_scope_depth {
+        let definition = layout
+            .scopes
+            .get(scope.id.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let expected_parent = scope_index
+            .checked_sub(1)
+            .map(|index| frame.scopes[index].id);
+        if scope.depth as usize != scope_index
+            || scope_index >= layout.max_scope_depth as usize
+            || definition.parent != expected_parent
+        {
             return Err(FiberStateError::InvalidFrame);
         }
         for (cleanup_index, cleanup) in scope.cleanups.iter().enumerate() {
@@ -3382,6 +3403,7 @@ mod tests {
             effects: Default::default(),
         });
         program.frame_layouts.push(AwbcFrameLayout {
+            scopes: Vec::new(),
             slots: Vec::new(),
             max_scope_depth: 0,
         });

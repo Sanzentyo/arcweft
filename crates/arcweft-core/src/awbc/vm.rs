@@ -507,6 +507,19 @@ fn execute_instruction(
             return Ok(InstructionControl::YieldAdvanced);
         }
         AwbcInstruction::EnterScope { scope } => {
+            let frame = fiber.active_frame()?;
+            let definition = program
+                .frame_layouts
+                .get(frame.layout.index())
+                .and_then(|layout| layout.scopes.get(scope.index()))
+                .ok_or_else(|| VmError::Runtime("scope has no frame definition".to_owned()))?;
+            if definition.parent != frame.scopes.last().map(|scope| scope.id)
+                || frame.scopes.iter().any(|active| active.id == *scope)
+            {
+                return Err(VmError::Runtime(
+                    "scope does not match the active lexical parent".to_owned(),
+                ));
+            }
             let depth = u32::try_from(fiber.active_frame()?.scopes.len())
                 .map_err(|_| VmError::Runtime("scope depth exceeds u32".to_owned()))?;
             fiber
@@ -518,7 +531,12 @@ fn execute_instruction(
                     cleanups: Vec::new(),
                 });
         }
-        AwbcInstruction::ExitScope { .. } => {
+        AwbcInstruction::ExitScope { scope } => {
+            if fiber.active_frame()?.scopes.last().map(|active| active.id) != Some(*scope) {
+                return Err(VmError::Runtime(
+                    "scope exit does not match the active scope".to_owned(),
+                ));
+            }
             let layout_id = fiber.active_frame()?.layout;
             let layout = program
                 .frame_layouts

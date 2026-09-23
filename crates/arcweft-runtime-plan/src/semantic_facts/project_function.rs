@@ -808,6 +808,7 @@ pub enum RuntimeProjectFunctionTypeProjection {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeProjectFunctionExpressionPayload {
     Structural,
+    Scope(arcweft_core::scope::RuntimeScopeIdentity),
     Consumed,
     Literal(RuntimeValue),
     Value(RuntimeResolvedValue),
@@ -839,6 +840,7 @@ impl RuntimeProjectFunctionExpressionPayload {
     pub const fn family(&self) -> CheckedExecutableRuntimeExpressionFactFamily {
         match self {
             Self::Structural => CheckedExecutableRuntimeExpressionFactFamily::Structural,
+            Self::Scope(_) => CheckedExecutableRuntimeExpressionFactFamily::Scope,
             Self::Consumed => CheckedExecutableRuntimeExpressionFactFamily::Consumed,
             Self::Literal(_) => CheckedExecutableRuntimeExpressionFactFamily::Literal,
             Self::Value(_) => CheckedExecutableRuntimeExpressionFactFamily::Value,
@@ -961,7 +963,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     UnsafeAudit,
     Select,
     SourceLocale,
-    Scope,
+    Scope(arcweft_core::scope::RuntimeScopeIdentity),
     Include,
     Suspension,
     Yield,
@@ -983,7 +985,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::UnsafeAudit => CheckedExecutableRuntimeStatementFactFamily::UnsafeAudit,
             Self::Select => CheckedExecutableRuntimeStatementFactFamily::Select,
             Self::SourceLocale => CheckedExecutableRuntimeStatementFactFamily::SourceLocale,
-            Self::Scope => CheckedExecutableRuntimeStatementFactFamily::Scope,
+            Self::Scope(_) => CheckedExecutableRuntimeStatementFactFamily::Scope,
             Self::Include => CheckedExecutableRuntimeStatementFactFamily::Include,
             Self::Suspension => CheckedExecutableRuntimeStatementFactFamily::Suspension,
             Self::Yield => CheckedExecutableRuntimeStatementFactFamily::Yield,
@@ -1700,6 +1702,26 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
     }
 
+    pub fn expression_scope(
+        &self,
+        owner: ExprId,
+    ) -> Option<&arcweft_core::scope::RuntimeScopeIdentity> {
+        match self.expression(owner)?.payload() {
+            RuntimeProjectFunctionExpressionPayload::Scope(identity) => Some(identity),
+            _ => None,
+        }
+    }
+
+    pub fn statement_scope(
+        &self,
+        owner: StmtId,
+    ) -> Option<&arcweft_core::scope::RuntimeScopeIdentity> {
+        match self.statement(owner)?.payload() {
+            RuntimeProjectFunctionStatementPayload::Scope(identity) => Some(identity),
+            _ => None,
+        }
+    }
+
     pub fn assertion(&self, owner: StmtId) -> Option<RuntimeAssertionAdmission> {
         match self.statement(owner)?.payload() {
             RuntimeProjectFunctionStatementPayload::Assertion(value) => Some(*value),
@@ -1820,6 +1842,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                         .visit_dialogue_applications(nested, visitor);
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
+                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)
@@ -1864,6 +1887,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     closure.semantics().visit_content_fragments(nested, visitor);
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
+                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)
@@ -1900,6 +1924,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     closure.semantics().dialogue_content_fragment(template)
                 }
                 RuntimeProjectFunctionExpressionPayload::Structural
+                | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)

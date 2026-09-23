@@ -15,6 +15,7 @@ use crate::plan::{
     RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOutcome, RuntimeReceiverMode,
 };
 use crate::pure::RuntimeCallBackend;
+use crate::scope::RuntimeScopeIdentity;
 use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
     CancelScopeId, HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate, TaskClass, TaskId,
@@ -534,17 +535,18 @@ impl Engine {
                     self.fail_eval(error, output);
                 }
             }
-            FlowOp::Scope(ops) => {
+            FlowOp::Scope { identity, body } => {
                 self.advance_if_needed(next_op_index);
-                self.push_scoped_ops(ops);
+                self.push_scoped_ops_with_identity(identity, body);
             }
             FlowOp::LetScope {
+                identity,
                 pattern,
                 mut ops,
                 value,
             } => {
                 self.advance_if_needed(next_op_index);
-                ops.insert(0, FlowOp::EnterScope);
+                ops.insert(0, FlowOp::EnterScope { identity });
                 ops.push(FlowOp::ExitScopeBind {
                     pattern,
                     expr: value,
@@ -647,8 +649,8 @@ impl Engine {
                 self.cancel_scope_cleanup(&key);
                 self.advance_if_needed(next_op_index);
             }
-            FlowOp::EnterScope => {
-                self.push_scope_frame();
+            FlowOp::EnterScope { identity } => {
+                self.push_scope_frame(identity);
                 self.advance_if_needed(next_op_index);
             }
             FlowOp::ExitScope => {
@@ -1109,8 +1111,8 @@ impl Engine {
         }
     }
 
-    pub(super) fn push_scope_frame(&mut self) {
-        self.fiber.env.push_scope();
+    pub(super) fn push_scope_frame(&mut self, identity: RuntimeScopeIdentity) {
+        self.fiber.env.push_scope_with_identity(identity);
         self.fiber.control_stack.push(FlowControlStackEntry {
             kind: FlowControlStackEntryKind::Scope {
                 cleanups: Vec::new(),
@@ -1152,6 +1154,14 @@ impl Engine {
 
     pub(super) fn push_scoped_ops(&mut self, ops: Vec<FlowOp>) {
         self.push_owned_scoped_ops(ops, None);
+    }
+
+    pub(super) fn push_scoped_ops_with_identity(
+        &mut self,
+        identity: RuntimeScopeIdentity,
+        ops: Vec<FlowOp>,
+    ) {
+        self.push_owned_scoped_ops_with_identity(ops, None, identity);
     }
 
     pub(super) fn push_scoped_ops_with_bindings(
@@ -1326,6 +1336,15 @@ impl Engine {
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {
+        self.push_owned_scoped_ops_with_identity(ops, prefix, RuntimeScopeIdentity::Anonymous);
+    }
+
+    fn push_owned_scoped_ops_with_identity(
+        &mut self,
+        ops: Vec<FlowOp>,
+        prefix: Option<FlowOp>,
+        identity: RuntimeScopeIdentity,
+    ) {
         if ops.is_empty() && prefix.is_none() {
             return;
         }
@@ -1339,7 +1358,9 @@ impl Engine {
         if let Some(prefix) = prefix {
             self.fiber.pending_ops.push_front(prefix);
         }
-        self.fiber.pending_ops.push_front(FlowOp::EnterScope);
+        self.fiber
+            .pending_ops
+            .push_front(FlowOp::EnterScope { identity });
     }
 
     fn push_borrowed_scoped_ops(
@@ -1364,7 +1385,9 @@ impl Engine {
         if let Some(prefix) = prefix {
             self.fiber.pending_ops.push_front(prefix);
         }
-        self.fiber.pending_ops.push_front(FlowOp::EnterScope);
+        self.fiber.pending_ops.push_front(FlowOp::EnterScope {
+            identity: RuntimeScopeIdentity::Anonymous,
+        });
     }
 
     fn push_borrowed_ops_with_exit(&mut self, ops: &[FlowOp], tail: Option<FlowOp>) {

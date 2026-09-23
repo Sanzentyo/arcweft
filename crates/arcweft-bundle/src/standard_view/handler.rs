@@ -93,6 +93,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
     let frame_layout =
         AwbcFrameLayoutId(table_index(candidate.frame_layouts.len(), "frame_layouts")?);
     candidate.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
         slots: vec![
             AwbcFrameSlot {
                 name: None,

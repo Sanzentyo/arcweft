@@ -68,6 +68,14 @@ struct ForLoweringInput<'a> {
     path: &'a str,
 }
 
+struct LetScopeLoweringInput<'a> {
+    identity: &'a arcweft_core::scope::RuntimeScopeIdentity,
+    pattern: &'a RuntimePattern,
+    ops: &'a [FlowOp],
+    value: &'a RuntimeExpr,
+    path: &'a str,
+}
+
 struct BranchJoin {
     fallthroughs: Vec<AwbcBlockId>,
 }
@@ -81,6 +89,7 @@ struct LoopLoweringTarget {
     header: AwbcBlockId,
     exit_jumps: Vec<AwbcBlockId>,
     outer_scope_depth: u32,
+    outer_scopes: Vec<AwbcScopeId>,
     result: Option<AwbcRegisterId>,
 }
 
@@ -890,9 +899,32 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     });
                 }
             }
-            FlowOp::Let { pattern, expr } | FlowOp::ExitScopeBind { pattern, expr } => {
+            FlowOp::Let { pattern, expr } => {
                 let value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+                let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
+                self.inventory
+                    .push_instruction(AwbcInstruction::BindPattern {
+                        pattern,
+                        value,
+                        mode: AwbcBindMode::Declare,
+                    });
+            }
+            FlowOp::ExitScopeBind { pattern, expr } => {
+                let scoped_value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let value = frame.parent_temp(ty);
+                self.inventory.push_instruction(AwbcInstruction::Move {
+                    dst: value,
+                    src: scoped_value,
+                });
+                let scope = frame
+                    .active_scope()
+                    .expect("scope result has an active lexical scope");
+                self.inventory
+                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                frame.exit_scope();
                 let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
                 self.inventory
                     .push_instruction(AwbcInstruction::BindPattern {
@@ -1319,8 +1351,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     },
                 );
             }
-            FlowOp::Scope(ops) => {
-                let scope = frame.enter_scope();
+            FlowOp::Scope {
+                identity,
+                body: ops,
+            } => {
+                let scope = frame.enter_scope_with_identity(identity.clone());
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
                 self.lower_ops(frame, body, ops, &format!("{path}.scope"));
@@ -1331,10 +1366,21 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 frame.exit_scope();
             }
             FlowOp::LetScope {
+                identity,
                 pattern,
                 ops,
                 value,
-            } => self.lower_let_scope(frame, body, pattern, ops, value, path),
+            } => self.lower_let_scope(
+                frame,
+                body,
+                LetScopeLoweringInput {
+                    identity,
+                    pattern,
+                    ops,
+                    value,
+                    path,
+                },
+            ),
             FlowOp::Break(value) => {
                 self.lower_break(frame, body, value.as_ref(), path);
             }
@@ -1477,14 +1523,16 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.inventory
                     .push_instruction(AwbcInstruction::CancelCleanup { key });
             }
-            FlowOp::EnterScope => {
-                let scope = frame.enter_scope();
+            FlowOp::EnterScope { identity } => {
+                let scope = frame.enter_scope_with_identity(identity.clone());
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
             }
             FlowOp::ExitScope => {
                 self.inventory.push_instruction(AwbcInstruction::ExitScope {
-                    scope: AwbcScopeId(0),
+                    scope: frame
+                        .active_scope()
+                        .expect("ExitScope has an active lexical scope"),
                 });
                 frame.exit_scope();
             }
@@ -2258,7 +2306,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
     ) {
-        let restored_scope_depth = frame.scope_depth();
+        let restored_scopes = frame.scope_checkpoint();
         let scope = frame.enter_scope();
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
@@ -2276,19 +2324,23 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .push_instruction(AwbcInstruction::ExitScope { scope });
             frame.exit_scope();
         }
-        frame.restore_scope_depth_after_branch(restored_scope_depth);
+        frame.restore_scopes_after_branch(restored_scopes);
     }
 
     fn lower_let_scope(
         &mut self,
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
-        pattern: &RuntimePattern,
-        ops: &[FlowOp],
-        value: &RuntimeExpr,
-        path: &str,
+        input: LetScopeLoweringInput<'_>,
     ) {
-        let scope = frame.enter_scope();
+        let LetScopeLoweringInput {
+            identity,
+            pattern,
+            ops,
+            value,
+            path,
+        } = input;
+        let scope = frame.enter_scope_with_identity(identity.clone());
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
         self.lower_ops(frame, body, ops, &format!("{path}.let_scope"));
@@ -2299,7 +2351,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
         let scoped_value =
             AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
-        let value = frame.root_temp(self.inventory.dynamic_ty());
+        let ty = admitted_plan_type(self.inventory, self.plan, value.ty());
+        let value = frame.parent_temp(ty);
         self.inventory.push_instruction(AwbcInstruction::Move {
             dst: value,
             src: scoped_value,
@@ -2353,6 +2406,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         );
 
         let outer_scope_depth = frame.scope_depth();
+        let outer_scopes = frame.scope_checkpoint();
         let scope = frame.enter_scope();
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
@@ -2360,6 +2414,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             header,
             exit_jumps: Vec::new(),
             outer_scope_depth,
+            outer_scopes,
             result: result_register,
         });
         self.lower_ops(frame, body, ops, &format!("{path}.body"));
@@ -2379,7 +2434,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .loop_targets
             .pop()
             .expect("loop lowering target is balanced with its loop body");
-        frame.restore_scope_depth_after_branch(target.outer_scope_depth);
+        frame.restore_scopes_after_branch(target.outer_scopes);
         if target.exit_jumps.is_empty() {
             return;
         }
@@ -2470,10 +2525,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     }
 
     fn close_scopes_to_depth(&mut self, frame: &FrameBuilder, target_depth: u32) {
-        for depth in (target_depth..frame.scope_depth()).rev() {
-            self.inventory.push_instruction(AwbcInstruction::ExitScope {
-                scope: AwbcScopeId(depth),
-            });
+        for scope in frame.scope_ids_for_exit_to_depth(target_depth) {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
         }
     }
 
@@ -2504,10 +2558,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         frame: &mut FrameBuilder,
         pattern: &RuntimePattern,
     ) -> AwbcPatternId {
-        let restored_scope_depth = frame.scope_depth();
+        let restored_scopes = frame.scope_checkpoint();
         let _ = frame.enter_scope();
         let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
-        frame.restore_scope_depth_after_branch(restored_scope_depth);
+        frame.restore_scopes_after_branch(restored_scopes);
         pattern
     }
 
@@ -2525,7 +2579,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
     ) -> GuardedCandidate {
-        let restored_scope_depth = frame.scope_depth();
+        let restored_scopes = frame.scope_checkpoint();
         let scope = frame.enter_scope();
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
@@ -2556,7 +2610,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .push_instruction(AwbcInstruction::ExitScope { scope });
             frame.exit_scope();
         }
-        frame.restore_scope_depth_after_branch(restored_scope_depth);
+        frame.restore_scopes_after_branch(restored_scopes);
 
         let fallthrough = if body.terminated {
             None
@@ -3196,7 +3250,7 @@ fn collect_flow_dependencies(
             | FlowOp::WhileLet { body, .. }
             | FlowOp::For { body, .. }
             | FlowOp::Thread { body, .. }
-            | FlowOp::Scope(body) => {
+            | FlowOp::Scope { body, .. } => {
                 collect_flow_dependencies(body, targets, has_dynamic_target);
                 false
             }
@@ -3234,7 +3288,7 @@ fn collect_flow_dependencies(
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
-            | FlowOp::EnterScope
+            | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
             | FlowOp::CompleteAwaitObserver

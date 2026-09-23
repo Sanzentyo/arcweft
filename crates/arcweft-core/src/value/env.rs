@@ -1,5 +1,6 @@
 use super::{RuntimeEnv, RuntimeLocalBinding, RuntimeRecordFieldId, RuntimeScope, RuntimeValue};
 use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::scope::RuntimeScopeIdentity;
 
 impl Default for RuntimeEnv {
     fn default() -> Self {
@@ -31,11 +32,27 @@ impl RuntimeEnv {
     }
 
     pub(crate) fn push_scope_with_capacity(&mut self, binding_capacity: usize) {
+        self.push_scope_with_identity_and_capacity(
+            RuntimeScopeIdentity::Anonymous,
+            binding_capacity,
+        );
+    }
+
+    pub(crate) fn push_scope_with_identity(&mut self, identity: RuntimeScopeIdentity) {
+        self.push_scope_with_identity_and_capacity(identity, 0);
+    }
+
+    fn push_scope_with_identity_and_capacity(
+        &mut self,
+        identity: RuntimeScopeIdentity,
+        binding_capacity: usize,
+    ) {
         let mut scope = self
             .spare_scopes
             .pop()
             .unwrap_or_else(|| RuntimeScope::with_capacity(binding_capacity));
         scope.clear();
+        scope.identity = identity;
         scope.reserve_bindings(binding_capacity);
         self.scopes.push(scope);
     }
@@ -207,6 +224,7 @@ impl RuntimeEnv {
 impl RuntimeScope {
     fn with_capacity(binding_capacity: usize) -> Self {
         Self {
+            identity: RuntimeScopeIdentity::Anonymous,
             bindings: Vec::with_capacity(binding_capacity),
         }
     }
@@ -255,6 +273,7 @@ impl RuntimeScope {
     }
 
     fn clear(&mut self) {
+        self.identity = RuntimeScopeIdentity::Anonymous;
         self.bindings.clear();
     }
 
@@ -312,6 +331,26 @@ mod tests {
                     value: RuntimeValue::String("inner".to_owned()),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn reused_runtime_scope_owns_and_clears_its_typed_identity() {
+        let identity = RuntimeScopeIdentity::Named(
+            arcweft_id::DeclarationName::try_new("window").expect("valid scope name"),
+        );
+        let mut env = RuntimeEnv::default();
+        env.push_scope_with_identity(identity.clone());
+        assert_eq!(
+            env.scopes.last().map(|scope| &scope.identity),
+            Some(&identity)
+        );
+
+        env.pop_scope();
+        env.push_scope();
+        assert_eq!(
+            env.scopes.last().map(|scope| &scope.identity),
+            Some(&RuntimeScopeIdentity::Anonymous)
         );
     }
 

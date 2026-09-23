@@ -125,6 +125,17 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 });
                 self.lower(body)
             }
+            RuntimeExprKind::Scope { identity, body } => {
+                let scope = self.frame.enter_scope_with_identity(identity.clone());
+                self.inventory.push_instruction(AwbcInstruction::EnterScope { scope });
+                let scoped_value = self.lower(body);
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let value = self.frame.parent_temp(ty);
+                self.inventory.push_instruction(AwbcInstruction::Move { dst: value, src: scoped_value });
+                self.inventory.push_instruction(AwbcInstruction::ExitScope { scope });
+                self.frame.exit_scope();
+                value
+            }
             RuntimeExprKind::DialogueContent {
                 template,
                 values,
@@ -1996,10 +2007,10 @@ fn lower_branch_pattern(
     frame: &mut FrameBuilder,
     pattern: &RuntimePattern,
 ) -> AwbcPatternId {
-    let restored_scope_depth = frame.scope_depth();
+    let restored_scopes = frame.scope_checkpoint();
     let _ = frame.enter_scope();
     let pattern = lower_pattern(inventory, plan, frame, pattern);
-    frame.restore_scope_depth_after_branch(restored_scope_depth);
+    frame.restore_scopes_after_branch(restored_scopes);
     pattern
 }
 
