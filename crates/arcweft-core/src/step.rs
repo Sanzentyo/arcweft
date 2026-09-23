@@ -155,7 +155,7 @@ pub struct RuntimeHostCallRequest {
     pub contract: Option<HostCallContractDigest>,
     pub args: Vec<RuntimePayload>,
     pub named_args: Vec<NamedHostArg<RuntimePayload>>,
-    pub result: crate::pattern::RuntimeCheckedType,
+    pub result: crate::pattern::RuntimeSemanticTypeId,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
 }

@@ -23,13 +23,11 @@ fn typed_stream_plan_is_admitted_and_runs_without_a_flow() {
         StreamRuntimeId::from_source_entity_body("stream.rms").expect("stream source ID lowers");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 string_type(),
                 RuntimePlanTypeProjection::String,
             )],
-            [],
-            [],
             [],
         )
         .expect("typed stream scalar admission");

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::entry::RuntimeNominalTypeId;
+use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::RuntimePlanTypeId;
 
@@ -38,6 +38,7 @@ impl RuntimeVariantCaseSeed {
 pub struct RuntimeVariantDomainSeed {
     owner: RuntimeSemanticTypeId,
     nominal: RuntimeNominalTypeId,
+    layout: TypeLayoutHash,
     cases: Box<[RuntimeVariantCaseSeed]>,
 }
 
@@ -46,11 +47,13 @@ impl RuntimeVariantDomainSeed {
     pub fn new(
         owner: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
         cases: impl IntoIterator<Item = RuntimeVariantCaseSeed>,
     ) -> Self {
         Self {
             owner,
             nominal,
+            layout,
             cases: cases.into_iter().collect::<Vec<_>>().into_boxed_slice(),
         }
     }
@@ -63,6 +66,11 @@ impl RuntimeVariantDomainSeed {
     #[must_use]
     pub const fn nominal(&self) -> &RuntimeNominalTypeId {
         &self.nominal
+    }
+
+    #[must_use]
+    pub const fn layout(&self) -> TypeLayoutHash {
+        self.layout
     }
 
     #[must_use]
@@ -93,23 +101,28 @@ impl RuntimeVariantCase {
 pub struct RuntimeVariantDomain {
     owner: RuntimePlanTypeId,
     nominal: RuntimeNominalTypeId,
+    layout: TypeLayoutHash,
     cases: Box<[RuntimeVariantCase]>,
+    data_codec: Option<crate::entry::schema::RuntimeNominalCodecUses>,
 }
 
 impl RuntimeVariantDomain {
     pub(crate) fn from_admitted_parts(
         owner: RuntimePlanTypeId,
         nominal: RuntimeNominalTypeId,
+        layout: TypeLayoutHash,
         cases: impl IntoIterator<Item = (String, Option<RuntimePlanTypeId>)>,
     ) -> Self {
         Self {
             owner,
             nominal,
+            layout,
             cases: cases
                 .into_iter()
                 .map(|(name, payload)| RuntimeVariantCase { name, payload })
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
+            data_codec: None,
         }
     }
 
@@ -118,9 +131,27 @@ impl RuntimeVariantDomain {
         self.owner
     }
 
+    /// Source-proved per-occurrence policies, retained on this exact domain.
+    pub const fn data_codec(&self) -> Option<&crate::entry::schema::RuntimeNominalCodecUses> {
+        self.data_codec.as_ref()
+    }
+
+    pub(crate) fn with_data_codec(
+        mut self,
+        codec: Option<crate::entry::schema::RuntimeNominalCodecUses>,
+    ) -> Self {
+        self.data_codec = codec;
+        self
+    }
+
     #[must_use]
     pub const fn nominal(&self) -> &RuntimeNominalTypeId {
         &self.nominal
+    }
+
+    #[must_use]
+    pub const fn layout(&self) -> TypeLayoutHash {
+        self.layout
     }
 
     #[must_use]
@@ -169,6 +200,12 @@ pub(crate) struct RuntimeVariantDomainTableBuilder {
 
 pub(crate) struct PreparedRuntimeVariantDomainBatch {
     candidate: BTreeMap<RuntimePlanTypeId, RuntimeVariantDomain>,
+}
+
+impl PreparedRuntimeVariantDomainBatch {
+    pub(crate) fn get(&self, owner: RuntimePlanTypeId) -> Option<&RuntimeVariantDomain> {
+        self.candidate.get(&owner)
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

@@ -40,7 +40,10 @@ impl AwbcProductTaskEventSaveSnapshot {
         })
     }
 
-    pub(super) fn into_live(self) -> Result<TaskEvent, String> {
+    pub(super) fn into_live(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<TaskEvent, String> {
         Ok(TaskEvent {
             logical_epoch: self.logical_epoch,
             task_id: self.task_id,
@@ -49,7 +52,7 @@ impl AwbcProductTaskEventSaveSnapshot {
                 AwbcProductTaskEventKindSaveSnapshot::Ready(value) => {
                     TaskEventKind::Ready(RuntimePayload::from(
                         value
-                            .into_runtime_value()
+                            .into_runtime_value_for_program(owner)
                             .map_err(|error| error.to_string())?,
                     ))
                 }

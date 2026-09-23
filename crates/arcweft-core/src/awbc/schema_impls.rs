@@ -1,5 +1,33 @@
-use super::schema::{AwbcBinaryOp, AwbcUnaryOp};
-use crate::value::{RuntimeBinaryOp, RuntimeUnaryOp};
+use super::schema::{AwbcBinaryOp, AwbcSignedIntKind, AwbcUnaryOp, AwbcUnsignedIntKind};
+use crate::value::{
+    RuntimeBinaryOp, RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
+};
+
+impl From<AwbcSignedIntKind> for RuntimeSignedIntWidth {
+    fn from(kind: AwbcSignedIntKind) -> Self {
+        match kind {
+            AwbcSignedIntKind::I8 => Self::I8,
+            AwbcSignedIntKind::I16 => Self::I16,
+            AwbcSignedIntKind::I32 => Self::I32,
+            AwbcSignedIntKind::I64 => Self::I64,
+            AwbcSignedIntKind::I128 => Self::I128,
+            AwbcSignedIntKind::ISize => Self::ISize,
+        }
+    }
+}
+
+impl From<AwbcUnsignedIntKind> for RuntimeUnsignedIntWidth {
+    fn from(kind: AwbcUnsignedIntKind) -> Self {
+        match kind {
+            AwbcUnsignedIntKind::U8 => Self::U8,
+            AwbcUnsignedIntKind::U16 => Self::U16,
+            AwbcUnsignedIntKind::U32 => Self::U32,
+            AwbcUnsignedIntKind::U64 => Self::U64,
+            AwbcUnsignedIntKind::U128 => Self::U128,
+            AwbcUnsignedIntKind::USize => Self::USize,
+        }
+    }
+}
 
 impl From<RuntimeUnaryOp> for AwbcUnaryOp {
     fn from(value: RuntimeUnaryOp) -> Self {

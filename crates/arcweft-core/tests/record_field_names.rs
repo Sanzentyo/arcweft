@@ -54,24 +54,20 @@ fn conflicting_record_names_reject_the_entire_plan_type_batch() {
     };
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 record("accepted"),
                 RuntimePlanTypeSeed::new(semantic(2), RuntimePlanTypeProjection::Bool),
             ],
             [],
-            [],
-            [],
         )
         .unwrap();
     assert!(matches!(
-        builder.admit_semantic_batch(
+        builder.admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(semantic(3), RuntimePlanTypeProjection::String),
                 record("conflicting"),
             ],
-            [],
-            [],
             [],
         ),
         Err(RuntimePlanBuildError::TypeGraph(

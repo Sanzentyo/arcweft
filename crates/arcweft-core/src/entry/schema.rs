@@ -2,16 +2,33 @@
 
 use super::identity::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash};
 use crate::canonical_varint::encode_u32;
-use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeVariantIdentity};
+use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeVariantIdentity};
 use crate::value::{RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod builtin;
+mod codec_use;
 mod data;
 mod encoding;
+mod nominal;
 mod record_shape;
+pub(crate) mod traversal;
+pub(crate) mod value_budget;
+pub(crate) mod value_encoding;
+mod value_validation;
 
+pub use builtin::{RuntimeBuiltinSchema, RuntimeBuiltinSchemaError};
+pub use codec_use::{
+    RuntimeCodecUse, RuntimeCodecUseError, RuntimeFieldCodecUse, RuntimeNominalCodecUses,
+    RuntimeVariantCodecUse,
+};
+pub use nominal::{
+    RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
+    RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError,
+    RuntimeNominalSchemaIdentity, RuntimeSchemaValueField,
+};
 pub use record_shape::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
 
 /// Runtime-verifiable persistent data shape.
@@ -38,9 +55,14 @@ pub enum RuntimeTypeSchema {
     Bytes {
         format: RuntimeBytesFormat,
     },
-    Option(Box<Self>),
+    Builtin(RuntimeBuiltinSchema),
     Seq(Box<Self>),
+    Array {
+        item: Box<Self>,
+        length: u64,
+    },
     Map {
+        kind: RuntimeMapKind,
         key: Box<Self>,
         value: Box<Self>,
     },
@@ -56,6 +78,21 @@ pub enum RuntimeTypeSchema {
         repr: Option<RuntimeEnumRepr>,
     },
     Named(String),
+    Tuple(Box<[Self]>),
+    RecordValue {
+        fields: Box<[RuntimeSchemaValueField]>,
+    },
+    ExactOpaque {
+        owner: RuntimeOpaqueTypeOwner,
+        arguments: Box<[Self]>,
+    },
+    NominalRef(RuntimeNominalSchemaIdentity),
+    Never,
+    Duration,
+    Progress,
+    EntityReference,
+    AgentValue,
+    Choice(Box<[Self]>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -74,6 +111,32 @@ pub struct RuntimeSchemaVariant {
     pub wire_name: String,
     pub payload: Option<RuntimeTypeSchema>,
     pub discriminant: Option<i128>,
+}
+
+/// Deterministic map ordering contract retained in the schema layout.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(u8)]
+pub enum RuntimeMapKind {
+    Ordered = 0,
+    Sorted = 1,
+    BTree = 2,
+}
+
+impl RuntimeMapKind {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Ordered),
+            1 => Some(Self::Sorted),
+            2 => Some(Self::BTree),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -188,6 +251,8 @@ pub struct RuntimeSchemaLimits {
     pub max_sequence_items: u32,
     pub max_string_bytes: u64,
     pub max_encoded_bytes: u64,
+    /// Shared expected-type and Choice-candidate work for one value admission.
+    pub max_validation_work: u64,
 }
 
 impl RuntimeSchemaLimits {
@@ -203,6 +268,7 @@ impl RuntimeSchemaLimits {
             max_sequence_items: 65_536,
             max_string_bytes: 1_048_576,
             max_encoded_bytes: 8_388_608,
+            max_validation_work: 262_144,
         }
     }
 
@@ -239,6 +305,47 @@ impl RuntimeSchemaLimits {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum RuntimeSchemaError {
+    #[error("runtime builtin variant at `{path}` has owner {actual:?}, expected {expected:?}")]
+    BuiltinVariantOwner {
+        path: String,
+        expected: crate::pattern::RuntimeBuiltinVariantIdentity,
+        actual: RuntimeVariantIdentity,
+    },
+    #[error("runtime schema validation at `{path}` exceeds {limit} work units")]
+    ValidationWork {
+        path: String,
+        limit: u64,
+        consumed: u64,
+    },
+    #[error("runtime schema validation at `{path}` exceeds depth {limit}")]
+    ValidationDepth { path: String, limit: u32 },
+    #[error("runtime value at `{path}` matches no Choice alternative")]
+    ChoiceNoMatch {
+        path: String,
+        branches: Box<[RuntimeSchemaChoiceMismatch]>,
+    },
+    #[error("runtime value at `{path}` matches Choice alternatives {first} and {second}")]
+    ChoiceAmbiguous {
+        path: String,
+        first: u32,
+        second: u32,
+    },
+    #[error("runtime value at `{path}` has {actual} items, expected {expected}")]
+    Arity {
+        path: String,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("runtime array at `{path}` has {actual} items, expected {expected}")]
+    ArrayLength {
+        path: String,
+        expected: u64,
+        actual: usize,
+    },
+    #[error("runtime record field {ordinal} at `{path}` has the wrong identity or name")]
+    RecordField { path: String, ordinal: usize },
+    #[error("runtime opaque value at `{path}` has the wrong exact owner")]
+    OpaqueOwner { path: String },
     #[error("runtime value at `{path}` has type `{actual}`, expected `{expected}`")]
     Type {
         path: String,
@@ -269,8 +376,80 @@ pub enum RuntimeSchemaError {
     },
     #[error("runtime nominal value at `{path}` has the wrong accepted layout")]
     NominalLayout { path: String },
+    #[error(
+        "runtime nominal value at `{path}` has semantic identity {actual:?}, expected {expected:?}"
+    )]
+    NominalSemanticIdentity {
+        path: String,
+        expected: crate::pattern::RuntimeSemanticTypeId,
+        actual: crate::pattern::RuntimeSemanticTypeId,
+    },
+    #[error("runtime nominal graph validation failed: {source}")]
+    NominalGraph {
+        source: Box<RuntimeNominalSchemaGraphError>,
+    },
     #[error("runtime schema canonical encoding exceeds u32 collection limits")]
     SchemaEncodingOverflow,
+    #[error("schema reference {identity:?} requires its validated nominal graph")]
+    NominalGraphRequired {
+        identity: RuntimeNominalSchemaIdentity,
+    },
+    #[error("schema reference {identity:?} is absent from the supplied nominal graph")]
+    UnresolvedNominal {
+        identity: RuntimeNominalSchemaIdentity,
+    },
+}
+
+/// One ordinary Choice mismatch, retained in source alternative order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeSchemaChoiceMismatch {
+    alternative: u32,
+    source: Option<Box<RuntimeSchemaError>>,
+}
+
+impl RuntimeSchemaChoiceMismatch {
+    fn new(alternative: u32, source: RuntimeSchemaError) -> Self {
+        Self {
+            alternative,
+            source: Some(Box::new(source)),
+        }
+    }
+
+    #[must_use]
+    pub const fn alternative(&self) -> u32 {
+        self.alternative
+    }
+
+    #[must_use]
+    /// Returns the cause retained for this candidate.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal lifetime invariant is violated. The cause is
+    /// present for every live instance and is extracted only during destruction.
+    pub fn source(&self) -> &RuntimeSchemaError {
+        self.source
+            .as_deref()
+            .expect("a live mismatch owns its cause")
+    }
+}
+
+impl Drop for RuntimeSchemaChoiceMismatch {
+    fn drop(&mut self) {
+        let mut pending = Vec::new();
+        if let Some(source) = self.source.take() {
+            pending.push(source);
+        }
+        while let Some(mut source) = pending.pop() {
+            if let RuntimeSchemaError::ChoiceNoMatch { branches, .. } = source.as_mut() {
+                for mut branch in std::mem::take(branches) {
+                    if let Some(source) = branch.source.take() {
+                        pending.push(source);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl RuntimeTypeSchema {
@@ -289,61 +468,17 @@ impl RuntimeTypeSchema {
         self.validate_value(&payload.0, limits)
     }
 
-    /// Validates a nominal root payload against its exact accepted role and
-    /// this structural persistence schema.
-    pub fn validate_nominal_payload(
-        &self,
-        payload: &RuntimePayload,
-        expected_identity: &RuntimeNominalTypeId,
-        expected_layout: TypeLayoutHash,
-        limits: RuntimeSchemaLimits,
-    ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
-        let definitions = schema_definitions(self);
-        let mut state = SchemaValidationState {
-            limits,
-            nodes: 0,
-            definitions,
-        };
-        match (self, &payload.0) {
-            (Self::Record { fields, .. }, RuntimeValue::NominalRecord(record)) => {
-                validate_nominal_identity(expected_identity, record.type_id(), "$")?;
-                if record.layout() != expected_layout {
-                    return Err(RuntimeSchemaError::NominalLayout {
-                        path: "$".to_owned(),
-                    });
-                }
-                state.validate_nominal_record(fields, record.fields(), "$", 0)?;
-            }
-            (
-                Self::Enum { variants, .. },
-                RuntimeValue::Variant {
-                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
-                    ordinal,
-                    name,
-                    payload,
-                },
-            ) => {
-                validate_nominal_identity(expected_identity, nominal, "$")?;
-                state.validate_enum(variants, *ordinal, name, payload.as_deref(), "$", 0)?;
-            }
-            _ => state.validate(self, &payload.0, "$", 0)?,
-        }
-        canonical_runtime_value_digest(&payload.0, limits.platform_encoded_bytes())
-    }
-
     pub fn validate_value(
         &self,
         value: &RuntimeValue,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
-        let definitions = schema_definitions(self);
-        let mut state = SchemaValidationState {
+        validate_schema_value(
+            self,
+            value,
             limits,
-            nodes: 0,
-            definitions,
-        };
-        state.validate(self, value, "$", 0)?;
-        canonical_runtime_value_digest(value, limits.platform_encoded_bytes())
+            value_validation::Expected::Schema(self),
+        )
     }
 }
 
@@ -355,6 +490,15 @@ fn canonical_schema_bytes(
     let mut sink = CanonicalBytesSink::default();
     visit_schema_document(schema, max_encoded_bytes, &mut sink)?;
     Ok(sink.finish())
+}
+
+fn validate_schema_value<'a>(
+    schema: &'a RuntimeTypeSchema,
+    value: &RuntimeValue,
+    limits: RuntimeSchemaLimits,
+    expected: value_validation::Expected<'a>,
+) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+    value_validation::SchemaValueValidation::tree(schema, limits)?.validate(value, expected)
 }
 
 fn canonical_schema_layout_hash(
@@ -373,6 +517,7 @@ fn visit_schema_document<S: CanonicalSink + ?Sized>(
 ) -> Result<(), RuntimeSchemaError> {
     let mut writer = CanonicalWriter {
         sink,
+        max_string_bytes: None,
         max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
             RuntimeSchemaError::BudgetExceeded {
                 budget: "encoded_bytes",
@@ -381,7 +526,7 @@ fn visit_schema_document<S: CanonicalSink + ?Sized>(
     };
     writer.extend(b"arcweft.nominal-schema\0")?;
     writer.var_u32(1)?;
-    encoding::schema(schema, &mut writer)
+    encoding::schema(schema, &mut writer, None)
 }
 
 fn validate_nominal_identity(
@@ -505,18 +650,27 @@ fn visit_runtime_value<S: CanonicalSink + ?Sized>(
 ) -> Result<(), RuntimeSchemaError> {
     let mut visitor = CanonicalWriter {
         sink,
+        max_string_bytes: None,
         max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
             RuntimeSchemaError::BudgetExceeded {
                 budget: "encoded_bytes",
             }
         })?,
     };
-    visitor.value(value)
+    value_encoding::visit(
+        value.view(),
+        0,
+        &mut visitor,
+        None,
+        &mut value_encoding::NoSchemaValidation,
+        (),
+    )
 }
 
 struct CanonicalWriter<'a, S: CanonicalSink + ?Sized> {
     sink: &'a mut S,
     max_encoded_bytes: u64,
+    max_string_bytes: Option<u64>,
 }
 
 impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
@@ -570,6 +724,14 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
     }
 
     fn string(&mut self, value: &str) -> Result<(), RuntimeSchemaError> {
+        if self
+            .max_string_bytes
+            .is_some_and(|limit| u64::try_from(value.len()).map_or(true, |length| length > limit))
+        {
+            return Err(RuntimeSchemaError::BudgetExceeded {
+                budget: "string_bytes",
+            });
+        }
         self.len(value.len())?;
         self.extend(value.as_bytes())
     }
@@ -610,44 +772,44 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
         }
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one exhaustive encoder owns the stable runtime-value byte contract"
-    )]
-    fn value(&mut self, value: &RuntimeValue) -> Result<(), RuntimeSchemaError> {
+    fn scalar(
+        &mut self,
+        value: crate::value::RuntimeScalarView<'_>,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::RuntimeScalarView as Scalar;
         match value {
-            RuntimeValue::Unit => self.u8(1),
-            RuntimeValue::Bool(value) => {
+            Scalar::Unit => self.u8(1),
+            Scalar::Bool(value) => {
                 self.u8(2)?;
-                self.u8(u8::from(*value))
+                self.u8(u8::from(value))
             }
-            RuntimeValue::Int(value) => {
+            Scalar::Int(value) => {
                 self.u8(3)?;
                 let (width, value) = match value {
-                    RuntimeInt::I8(value) => (1, i128::from(*value)),
-                    RuntimeInt::I16(value) => (2, i128::from(*value)),
-                    RuntimeInt::I32(value) => (3, i128::from(*value)),
-                    RuntimeInt::I64(value) => (4, i128::from(*value)),
-                    RuntimeInt::I128(value) => (5, *value),
-                    RuntimeInt::ISize(value) => (6, i128::from(*value)),
+                    RuntimeInt::I8(value) => (1, i128::from(value)),
+                    RuntimeInt::I16(value) => (2, i128::from(value)),
+                    RuntimeInt::I32(value) => (3, i128::from(value)),
+                    RuntimeInt::I64(value) => (4, i128::from(value)),
+                    RuntimeInt::I128(value) => (5, value),
+                    RuntimeInt::ISize(value) => (6, i128::from(value)),
                 };
                 self.u8(width)?;
                 self.i128(value)
             }
-            RuntimeValue::UInt(value) => {
+            Scalar::UInt(value) => {
                 self.u8(4)?;
                 let (width, value) = match value {
-                    RuntimeUInt::U8(value) => (1, u128::from(*value)),
-                    RuntimeUInt::U16(value) => (2, u128::from(*value)),
-                    RuntimeUInt::U32(value) => (3, u128::from(*value)),
-                    RuntimeUInt::U64(value) => (4, u128::from(*value)),
-                    RuntimeUInt::U128(value) => (5, *value),
-                    RuntimeUInt::USize(value) => (6, u128::from(*value)),
+                    RuntimeUInt::U8(value) => (1, u128::from(value)),
+                    RuntimeUInt::U16(value) => (2, u128::from(value)),
+                    RuntimeUInt::U32(value) => (3, u128::from(value)),
+                    RuntimeUInt::U64(value) => (4, u128::from(value)),
+                    RuntimeUInt::U128(value) => (5, value),
+                    RuntimeUInt::USize(value) => (6, u128::from(value)),
                 };
                 self.u8(width)?;
                 self.u128(value)
             }
-            RuntimeValue::F32(value) => {
+            Scalar::F32(value) => {
                 if !value.is_finite() {
                     return Err(RuntimeSchemaError::NonFinite {
                         path: "$".to_owned(),
@@ -655,9 +817,9 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                     });
                 }
                 self.u8(5)?;
-                self.fixed_u32(if *value == 0.0 { 0 } else { value.to_bits() })
+                self.fixed_u32(if value == 0.0 { 0 } else { value.to_bits() })
             }
-            RuntimeValue::F64(value) => {
+            Scalar::F64(value) => {
                 if !value.is_finite() {
                     return Err(RuntimeSchemaError::NonFinite {
                         path: "$".to_owned(),
@@ -665,21 +827,21 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                     });
                 }
                 self.u8(6)?;
-                self.u64(if *value == 0.0 { 0 } else { value.to_bits() })
+                self.u64(if value == 0.0 { 0 } else { value.to_bits() })
             }
-            RuntimeValue::String(value) => {
+            Scalar::String(value) => {
                 self.u8(7)?;
                 self.string(value)
             }
-            RuntimeValue::Char(value) => {
+            Scalar::Char(value) => {
                 self.u8(8)?;
-                self.fixed_u32(u32::from(*value))
+                self.fixed_u32(u32::from(value))
             }
-            RuntimeValue::Duration(value) => {
+            Scalar::Duration(value) => {
                 self.u8(9)?;
                 self.u64(value.as_nanos())
             }
-            RuntimeValue::Progress(value) => {
+            Scalar::Progress(value) => {
                 self.u8(19)?;
                 self.fixed_u32(if value.ratio() == 0.0 {
                     0
@@ -688,169 +850,9 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                 })?;
                 self.option(value.label(), Self::string)
             }
-            RuntimeValue::EntityRef(value) => {
+            Scalar::EntityRef(value) => {
                 self.u8(10)?;
                 self.entity_reference(value)
-            }
-            RuntimeValue::Tuple(values) => {
-                self.u8(11)?;
-                self.len(values.len())?;
-                for value in values {
-                    self.value(value)?;
-                }
-                Ok(())
-            }
-            RuntimeValue::Seq(values) => {
-                self.u8(12)?;
-                self.len(values.len())?;
-                for ordinal in 0..values.len() {
-                    self.value(&values.value_at(ordinal))?;
-                }
-                Ok(())
-            }
-            RuntimeValue::Record(fields) => {
-                self.u8(13)?;
-                self.len(fields.len())?;
-                for field in fields {
-                    self.var_u32(field.field().get().get())?;
-                    self.string(field.name())?;
-                    self.value(field.value())?;
-                }
-                Ok(())
-            }
-            RuntimeValue::NominalRecord(record) => {
-                self.u8(15)?;
-                self.string(record.type_id().as_str())?;
-                self.extend(record.layout().as_bytes())?;
-                self.len(record.fields().len())?;
-                for field in record.fields() {
-                    self.value(field)?;
-                }
-                Ok(())
-            }
-            RuntimeValue::Opaque(value) => {
-                if value.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
-                    || matches!(
-                        value.value_class(),
-                        crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
-                    )
-                {
-                    return Err(RuntimeSchemaError::Encoding {
-                        message: "opaque value class/persistence is not constant-admissible"
-                            .to_owned(),
-                    });
-                }
-                self.u8(16)?;
-                self.string(value.producer().as_str())?;
-                self.extend(value.semantic_identity().as_bytes())?;
-                self.u8(value.value_class().semantic_tag())?;
-                self.u8(value.persistence().semantic_tag())?;
-                self.value(value.payload())
-            }
-            RuntimeValue::Reduction(value) => {
-                self.u8(18)?;
-                self.string(value.owner().producer().as_str())?;
-                self.extend(value.owner().semantic_identity().as_bytes())?;
-                self.value(value.state())?;
-                self.len(value.commands().len())?;
-                for command in value.commands() {
-                    self.string(command.constructor().as_str())?;
-                    self.string(command.target().as_str())?;
-                    self.value(&command.payload().0)?;
-                }
-                Ok(())
-            }
-            RuntimeValue::Agent(value) => {
-                self.u8(17)?;
-                self.agent_value(value)
-            }
-            RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-            } => {
-                self.u8(14)?;
-                self.variant_identity(owner)?;
-                self.var_u32(*ordinal)?;
-                self.string(name)?;
-                self.option(payload.as_deref(), Self::value)
-            }
-            RuntimeValue::MatrixF32(_)
-            | RuntimeValue::MatrixF64(_)
-            | RuntimeValue::TensorF32(_)
-            | RuntimeValue::TensorF64(_)
-            | RuntimeValue::Range(_)
-            | RuntimeValue::Iterator(_)
-            | RuntimeValue::Function(_)
-            | RuntimeValue::ProjectContinuation(_) => Err(RuntimeSchemaError::Encoding {
-                message: "runtime-only value has no replay/save encoding".to_owned(),
-            }),
-        }
-    }
-
-    fn agent_value(
-        &mut self,
-        value: &crate::value::RuntimeAgentValue,
-    ) -> Result<(), RuntimeSchemaError> {
-        use crate::value::RuntimeAgentCaptureTarget;
-        match value {
-            crate::value::RuntimeAgentValue::ActionTarget(target) => {
-                self.u8(0)?;
-                self.string(target.id().as_str())?;
-                self.string(target.target().as_str())?;
-                self.u8(match target.action() {
-                    crate::value::RuntimeAgentAction::AdvanceText => 0,
-                    crate::value::RuntimeAgentAction::SelectChoice => 1,
-                    crate::value::RuntimeAgentAction::Invoke => 2,
-                    crate::value::RuntimeAgentAction::Scroll => 3,
-                    crate::value::RuntimeAgentAction::PointerClick => 4,
-                })?;
-                self.u8(match target.dispatch() {
-                    crate::value::RuntimeAgentActionDispatch::Semantic => 0,
-                    crate::value::RuntimeAgentActionDispatch::Physical => 1,
-                })?;
-                self.u8(u8::from(target.enabled()))
-            }
-            crate::value::RuntimeAgentValue::CaptureTarget(target) => {
-                self.u8(1)?;
-                match target {
-                    RuntimeAgentCaptureTarget::Viewport => self.u8(0),
-                    RuntimeAgentCaptureTarget::Layer { target } => {
-                        self.u8(1)?;
-                        self.string(target.as_str())
-                    }
-                    RuntimeAgentCaptureTarget::Object { target } => {
-                        self.u8(2)?;
-                        self.string(target.as_str())
-                    }
-                }
-            }
-            crate::value::RuntimeAgentValue::DebugStatePath(path) => {
-                self.u8(2)?;
-                self.string(path.as_str())
-            }
-            crate::value::RuntimeAgentValue::ObservationFieldPath(path) => {
-                self.u8(3)?;
-                self.string(path.as_str())
-            }
-            crate::value::RuntimeAgentValue::Probe(probe) => {
-                self.u8(4)?;
-                self.agent_probe(probe)
-            }
-            crate::value::RuntimeAgentValue::Diagnostics => self.u8(5),
-            crate::value::RuntimeAgentValue::Predicate(predicate) => {
-                self.u8(6)?;
-                self.agent_predicate(predicate)
-            }
-            crate::value::RuntimeAgentValue::ViewportPoint { x, y } => {
-                self.u8(7)?;
-                self.fixed_u32(*x)?;
-                self.fixed_u32(*y)
-            }
-            crate::value::RuntimeAgentValue::BinaryData(data) => {
-                self.u8(8)?;
-                self.string(data)
             }
         }
     }
@@ -880,57 +882,6 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
         }
     }
 
-    fn agent_predicate(
-        &mut self,
-        predicate: &crate::value::RuntimeAgentPredicate,
-    ) -> Result<(), RuntimeSchemaError> {
-        use crate::value::RuntimeAgentPredicate;
-        match predicate {
-            RuntimeAgentPredicate::Compare { probe, op, value } => {
-                self.u8(0)?;
-                self.agent_probe(probe)?;
-                self.u8(match op {
-                    crate::value::RuntimeAgentCompareOp::Eq => 0,
-                    crate::value::RuntimeAgentCompareOp::NotEq => 1,
-                    crate::value::RuntimeAgentCompareOp::Greater => 2,
-                    crate::value::RuntimeAgentCompareOp::GreaterOrEqual => 3,
-                    crate::value::RuntimeAgentCompareOp::Less => 4,
-                    crate::value::RuntimeAgentCompareOp::LessOrEqual => 5,
-                })?;
-                self.value(value)
-            }
-            RuntimeAgentPredicate::Exists { probe } => {
-                self.u8(1)?;
-                self.agent_probe(probe)
-            }
-            RuntimeAgentPredicate::ActionEnabled { target } => {
-                self.u8(2)?;
-                self.string(target.as_str())
-            }
-            RuntimeAgentPredicate::DiagnosticsHasError => self.u8(3),
-            RuntimeAgentPredicate::All { predicates } => {
-                self.u8(4)?;
-                self.len(predicates.len())?;
-                for predicate in predicates {
-                    self.agent_predicate(predicate)?;
-                }
-                Ok(())
-            }
-            RuntimeAgentPredicate::Any { predicates } => {
-                self.u8(5)?;
-                self.len(predicates.len())?;
-                for predicate in predicates {
-                    self.agent_predicate(predicate)?;
-                }
-                Ok(())
-            }
-            RuntimeAgentPredicate::Not { predicate } => {
-                self.u8(6)?;
-                self.agent_predicate(predicate)
-            }
-        }
-    }
-
     fn variant_identity(
         &mut self,
         identity: &RuntimeVariantIdentity,
@@ -939,10 +890,12 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
             RuntimeVariantIdentity::Nominal {
                 nominal,
                 semantic_identity,
+                layout,
             } => {
                 self.u8(0)?;
                 self.string(nominal.as_str())?;
-                self.extend(semantic_identity.as_bytes())
+                self.extend(semantic_identity.as_bytes())?;
+                self.extend(layout.as_bytes())
             }
             RuntimeVariantIdentity::Builtin(owner) => {
                 self.u8(1)?;
@@ -982,294 +935,6 @@ impl RuntimeEnumRepr {
     }
 }
 
-struct SchemaValidationState<'a> {
-    limits: RuntimeSchemaLimits,
-    nodes: usize,
-    definitions: BTreeMap<&'a str, &'a RuntimeTypeSchema>,
-}
-
-impl<'a> SchemaValidationState<'a> {
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one recursive schema validator owns the shared depth/node budget and closed variant matrix"
-    )]
-    fn validate(
-        &mut self,
-        schema: &'a RuntimeTypeSchema,
-        value: &RuntimeValue,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        if !self.limits.permits_depth(depth) {
-            return Err(RuntimeSchemaError::BudgetExceeded { budget: "depth" });
-        }
-        self.nodes = self
-            .nodes
-            .checked_add(1)
-            .ok_or(RuntimeSchemaError::BudgetExceeded { budget: "nodes" })?;
-        if !self.limits.permits_nodes(self.nodes) {
-            return Err(RuntimeSchemaError::BudgetExceeded { budget: "nodes" });
-        }
-        match (schema, value) {
-            (RuntimeTypeSchema::Unit, RuntimeValue::Unit)
-            | (RuntimeTypeSchema::Bool, RuntimeValue::Bool(_))
-            | (RuntimeTypeSchema::I8, RuntimeValue::Int(RuntimeInt::I8(_)))
-            | (RuntimeTypeSchema::I16, RuntimeValue::Int(RuntimeInt::I16(_)))
-            | (RuntimeTypeSchema::I32, RuntimeValue::Int(RuntimeInt::I32(_)))
-            | (RuntimeTypeSchema::I64, RuntimeValue::Int(RuntimeInt::I64(_)))
-            | (RuntimeTypeSchema::I128, RuntimeValue::Int(RuntimeInt::I128(_)))
-            | (RuntimeTypeSchema::ISize, RuntimeValue::Int(RuntimeInt::ISize(_)))
-            | (RuntimeTypeSchema::U8, RuntimeValue::UInt(RuntimeUInt::U8(_)))
-            | (RuntimeTypeSchema::U16, RuntimeValue::UInt(RuntimeUInt::U16(_)))
-            | (RuntimeTypeSchema::U32, RuntimeValue::UInt(RuntimeUInt::U32(_)))
-            | (RuntimeTypeSchema::U64, RuntimeValue::UInt(RuntimeUInt::U64(_)))
-            | (RuntimeTypeSchema::U128, RuntimeValue::UInt(RuntimeUInt::U128(_)))
-            | (RuntimeTypeSchema::USize, RuntimeValue::UInt(RuntimeUInt::USize(_)))
-            | (RuntimeTypeSchema::Char, RuntimeValue::Char(_)) => Ok(()),
-            (RuntimeTypeSchema::F32, RuntimeValue::F32(value)) if value.is_finite() => Ok(()),
-            (RuntimeTypeSchema::F64, RuntimeValue::F64(value)) if value.is_finite() => Ok(()),
-            (RuntimeTypeSchema::F32, RuntimeValue::F32(_)) => Err(RuntimeSchemaError::NonFinite {
-                path: path.to_owned(),
-                kind: "f32",
-            }),
-            (RuntimeTypeSchema::F64, RuntimeValue::F64(_)) => Err(RuntimeSchemaError::NonFinite {
-                path: path.to_owned(),
-                kind: "f64",
-            }),
-            (RuntimeTypeSchema::String, RuntimeValue::String(value)) => {
-                if self.limits.permits_string_bytes(value.len()) {
-                    Ok(())
-                } else {
-                    Err(RuntimeSchemaError::BudgetExceeded {
-                        budget: "string_bytes",
-                    })
-                }
-            }
-            (RuntimeTypeSchema::Bytes { .. }, RuntimeValue::Seq(sequence)) => {
-                self.validate_sequence(&RuntimeTypeSchema::U8, sequence, path, depth)
-            }
-            (RuntimeTypeSchema::Option(inner), value @ RuntimeValue::Variant { .. }) => {
-                match value.builtin_variant_case() {
-                    Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(()),
-                    Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(payload))) => {
-                        let case = RuntimeBuiltinVariantCaseIdentity::OptionSome;
-                        let (_, schema) = case
-                            .owner()
-                            .resolve_case(case)
-                            .expect("Option::Some belongs to the Option schema");
-                        self.validate(
-                            inner,
-                            payload,
-                            &format!("{path}.{}", schema.name()),
-                            depth + 1,
-                        )
-                    }
-                    _ => Err(RuntimeSchemaError::VariantPayload {
-                        path: path.to_owned(),
-                    }),
-                }
-            }
-            (RuntimeTypeSchema::Seq(inner), RuntimeValue::Seq(sequence)) => {
-                self.validate_sequence(inner, sequence, path, depth)
-            }
-            (RuntimeTypeSchema::Map { key, value }, RuntimeValue::Seq(sequence)) => {
-                self.validate_map(key, value, sequence, path, depth)
-            }
-            (RuntimeTypeSchema::Record { fields, .. }, RuntimeValue::Record(values)) => {
-                self.validate_record(fields, values, path, depth)
-            }
-            (
-                RuntimeTypeSchema::Record { name, fields, .. },
-                RuntimeValue::NominalRecord(record),
-            ) if record.type_id().as_str() == name => {
-                self.validate_nominal_record(fields, record.fields(), path, depth)
-            }
-            (
-                RuntimeTypeSchema::Enum {
-                    name: owner_name,
-                    variants,
-                    ..
-                },
-                RuntimeValue::Variant {
-                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
-                    ordinal,
-                    name,
-                    payload,
-                },
-            ) if nominal.as_str() == owner_name => {
-                self.validate_enum(variants, *ordinal, name, payload.as_deref(), path, depth)
-            }
-            (RuntimeTypeSchema::Named(name), _) => {
-                let schema = self
-                    .definitions
-                    .get(name.as_str())
-                    .copied()
-                    .ok_or_else(|| RuntimeSchemaError::UnresolvedNamed {
-                        path: path.to_owned(),
-                        name: name.clone(),
-                    })?;
-                self.validate(schema, value, path, depth + 1)
-            }
-            _ => Err(type_error(path, schema.type_label(), value)),
-        }
-    }
-
-    fn validate_map(
-        &mut self,
-        key: &'a RuntimeTypeSchema,
-        value: &'a RuntimeTypeSchema,
-        entries: &crate::value::RuntimeSeq,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        if !self.limits.permits_sequence_items(entries.len()) {
-            return Err(RuntimeSchemaError::BudgetExceeded {
-                budget: "sequence_items",
-            });
-        }
-        for index in 0..entries.len() {
-            let entry = entries.value_at(index);
-            let RuntimeValue::Tuple(items) = &entry else {
-                return Err(type_error(path, "map entry tuple", &entry));
-            };
-            if items.len() != 2 {
-                return Err(type_error(path, "two-item map entry tuple", &entry));
-            }
-            self.validate(key, &items[0], &format!("{path}[{index}].key"), depth + 1)?;
-            self.validate(
-                value,
-                &items[1],
-                &format!("{path}[{index}].value"),
-                depth + 1,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn validate_record(
-        &mut self,
-        fields: &'a [RuntimeSchemaField],
-        values: &crate::value::RuntimeRecordValue,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        let actual = values
-            .iter()
-            .map(|field| (field.name(), field.value()))
-            .collect::<BTreeMap<_, _>>();
-        let expected = fields
-            .iter()
-            .filter(|field| !field.skip)
-            .map(|field| field.rust_name.as_str())
-            .collect::<BTreeSet<_>>();
-        if let Some(unknown) = actual.keys().find(|name| !expected.contains(**name)) {
-            return Err(RuntimeSchemaError::UnknownField {
-                path: path.to_owned(),
-                field: (*unknown).to_owned(),
-            });
-        }
-        for field in fields {
-            if field.skip {
-                continue;
-            }
-            let Some(value) = actual.get(field.rust_name.as_str()) else {
-                if field.has_default {
-                    continue;
-                }
-                return Err(RuntimeSchemaError::MissingField {
-                    path: path.to_owned(),
-                    field: field.rust_name.clone(),
-                });
-            };
-            self.validate(
-                &field.schema,
-                value,
-                &format!("{path}.{}", field.rust_name),
-                depth + 1,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn validate_nominal_record(
-        &mut self,
-        fields: &'a [RuntimeSchemaField],
-        values: &[RuntimeValue],
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        if values.len() != fields.len() {
-            return Err(RuntimeSchemaError::Encoding {
-                message: format!(
-                    "nominal record at `{path}` has {} fields, expected {}",
-                    values.len(),
-                    fields.len()
-                ),
-            });
-        }
-        for (field, value) in fields.iter().zip(values) {
-            self.validate(
-                &field.schema,
-                value,
-                &format!("{path}.{}", field.rust_name),
-                depth + 1,
-            )?;
-        }
-        Ok(())
-    }
-
-    fn validate_enum(
-        &mut self,
-        variants: &'a [RuntimeSchemaVariant],
-        ordinal: u32,
-        name: &str,
-        payload: Option<&RuntimeValue>,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        let variant = usize::try_from(ordinal)
-            .ok()
-            .and_then(|ordinal| variants.get(ordinal))
-            .filter(|variant| variant.rust_name == name)
-            .ok_or_else(|| RuntimeSchemaError::UnknownVariant {
-                path: path.to_owned(),
-                variant: name.to_owned(),
-            })?;
-        match (&variant.payload, payload) {
-            (None, None) => Ok(()),
-            (Some(schema), Some(value)) => {
-                self.validate(schema, value, &format!("{path}.{name}"), depth + 1)
-            }
-            _ => Err(RuntimeSchemaError::VariantPayload {
-                path: path.to_owned(),
-            }),
-        }
-    }
-
-    fn validate_sequence(
-        &mut self,
-        schema: &'a RuntimeTypeSchema,
-        values: &crate::value::RuntimeSeq,
-        path: &str,
-        depth: usize,
-    ) -> Result<(), RuntimeSchemaError> {
-        if !self.limits.permits_sequence_items(values.len()) {
-            return Err(RuntimeSchemaError::BudgetExceeded {
-                budget: "sequence_items",
-            });
-        }
-        for index in 0..values.len() {
-            self.validate(
-                schema,
-                &values.value_at(index),
-                &format!("{path}[{index}]"),
-                depth + 1,
-            )?;
-        }
-        Ok(())
-    }
-}
-
 impl RuntimeTypeSchema {
     const fn type_label(&self) -> &'static str {
         match self {
@@ -1292,108 +957,46 @@ impl RuntimeTypeSchema {
             Self::String => "string",
             Self::Char => "char",
             Self::Bytes { .. } => "bytes",
-            Self::Option(_) => "option",
+            Self::Builtin(_) => "builtin variant",
             Self::Seq(_) => "sequence",
+            Self::Array { .. } => "array",
             Self::Map { .. } => "map",
             Self::Record { .. } => "record",
             Self::Enum { .. } => "enum",
             Self::Named(_) => "named value",
+            Self::Tuple(_) => "tuple",
+            Self::RecordValue { .. } => "record",
+            Self::ExactOpaque { .. } => "opaque value",
+            Self::NominalRef(_) => "nominal value",
+            Self::Never => "never",
+            Self::Duration => "duration",
+            Self::Progress => "progress",
+            Self::EntityReference => "entity reference",
+            Self::AgentValue => "AgentValue",
+            Self::Choice(_) => "Choice",
         }
     }
 }
 
-fn schema_definitions(schema: &RuntimeTypeSchema) -> BTreeMap<&str, &RuntimeTypeSchema> {
-    fn visit<'a>(
-        schema: &'a RuntimeTypeSchema,
-        definitions: &mut BTreeMap<&'a str, &'a RuntimeTypeSchema>,
-    ) {
-        match schema {
-            RuntimeTypeSchema::Record { name, fields, .. } => {
-                definitions.insert(name, schema);
-                for field in fields {
-                    visit(&field.schema, definitions);
-                }
-            }
-            RuntimeTypeSchema::Enum { name, variants, .. } => {
-                definitions.insert(name, schema);
-                for variant in variants {
-                    if let Some(payload) = &variant.payload {
-                        visit(payload, definitions);
-                    }
-                }
-            }
-            RuntimeTypeSchema::Option(inner) | RuntimeTypeSchema::Seq(inner) => {
-                visit(inner, definitions);
-            }
-            RuntimeTypeSchema::Map { key, value } => {
-                visit(key, definitions);
-                visit(value, definitions);
-            }
-            RuntimeTypeSchema::Unit
-            | RuntimeTypeSchema::Bool
-            | RuntimeTypeSchema::I8
-            | RuntimeTypeSchema::I16
-            | RuntimeTypeSchema::I32
-            | RuntimeTypeSchema::I64
-            | RuntimeTypeSchema::I128
-            | RuntimeTypeSchema::ISize
-            | RuntimeTypeSchema::U8
-            | RuntimeTypeSchema::U16
-            | RuntimeTypeSchema::U32
-            | RuntimeTypeSchema::U64
-            | RuntimeTypeSchema::U128
-            | RuntimeTypeSchema::USize
-            | RuntimeTypeSchema::F32
-            | RuntimeTypeSchema::F64
-            | RuntimeTypeSchema::String
-            | RuntimeTypeSchema::Char
-            | RuntimeTypeSchema::Bytes { .. }
-            | RuntimeTypeSchema::Named(_) => {}
-        }
-    }
+fn schema_definitions(
+    schema: &RuntimeTypeSchema,
+) -> Result<BTreeMap<&str, &RuntimeTypeSchema>, RuntimeSchemaError> {
     let mut definitions = BTreeMap::new();
-    visit(schema, &mut definitions);
-    definitions
-}
-
-fn type_error(path: &str, expected: &'static str, value: &RuntimeValue) -> RuntimeSchemaError {
-    RuntimeSchemaError::Type {
-        path: path.to_owned(),
-        expected,
-        actual: runtime_value_type(value),
-    }
-}
-
-const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
-    match value {
-        RuntimeValue::Unit => "unit",
-        RuntimeValue::Bool(_) => "bool",
-        RuntimeValue::Int(_) => "signed integer",
-        RuntimeValue::UInt(_) => "unsigned integer",
-        RuntimeValue::F32(_) => "f32",
-        RuntimeValue::F64(_) => "f64",
-        RuntimeValue::MatrixF32(_) => "f32 matrix",
-        RuntimeValue::MatrixF64(_) => "f64 matrix",
-        RuntimeValue::TensorF32(_) => "f32 tensor",
-        RuntimeValue::TensorF64(_) => "f64 tensor",
-        RuntimeValue::String(_) => "string",
-        RuntimeValue::Char(_) => "char",
-        RuntimeValue::Duration(_) => "duration",
-        RuntimeValue::Progress(_) => "progress",
-        RuntimeValue::Range(_) => "range",
-        RuntimeValue::Iterator(_) => "iterator",
-        RuntimeValue::EntityRef(_) => "entity reference",
-        RuntimeValue::Tuple(_) => "tuple",
-        RuntimeValue::Seq(_) => "sequence",
-        RuntimeValue::Record(_) => "record",
-        RuntimeValue::NominalRecord(_) => "nominal record",
-        RuntimeValue::Opaque(_) => "opaque value",
-        RuntimeValue::Reduction(_) => "Reduction value",
-        RuntimeValue::Agent(_) => "Agent value",
-        RuntimeValue::Function(_) => "function",
-        RuntimeValue::ProjectContinuation(_) => "project continuation",
-        RuntimeValue::Variant { .. } => "variant",
-    }
+    schema.walk(&mut traversal::SchemaPath::root("$"), |schema, _, _| {
+        match schema {
+            RuntimeTypeSchema::Record { name, .. } | RuntimeTypeSchema::Enum { name, .. } => {
+                definitions.insert(name.as_str(), schema);
+            }
+            RuntimeTypeSchema::NominalRef(identity) => {
+                return Err(RuntimeSchemaError::NominalGraphRequired {
+                    identity: identity.clone(),
+                });
+            }
+            _ => {}
+        }
+        Ok(())
+    })?;
+    Ok(definitions)
 }
 
 #[cfg(test)]
@@ -1517,6 +1120,7 @@ mod visitor_tests {
             owner: crate::pattern::RuntimeVariantIdentity::Nominal {
                 nominal: super::RuntimeNominalTypeId::try_new("aw.test.variant").unwrap(),
                 semantic_identity: crate::pattern::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                layout: super::TypeLayoutHash::from_bytes([0x22; 32]),
             },
             ordinal: 300,
             name: "case".to_owned(),
@@ -1525,6 +1129,7 @@ mod visitor_tests {
         let mut expected = vec![14, 0, 15];
         expected.extend_from_slice(b"aw.test.variant");
         expected.extend_from_slice(&[0x11; 32]);
+        expected.extend_from_slice(&[0x22; 32]);
         expected.extend_from_slice(&[0xac, 0x02, 4]);
         expected.extend_from_slice(b"case");
         expected.push(0);
@@ -1623,6 +1228,7 @@ mod visitor_tests {
                 format: super::RuntimeBytesFormat::Binary,
             },
             super::RuntimeTypeSchema::Map {
+                kind: super::RuntimeMapKind::Ordered,
                 key: Box::new(super::RuntimeTypeSchema::Unit),
                 value: Box::new(super::RuntimeTypeSchema::Unit),
             },

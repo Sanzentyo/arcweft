@@ -25,6 +25,7 @@ pub const MAX_RUNTIME_PLAN_TYPE_DEPTH: usize = 64;
 pub struct RuntimePlanTypeSeed {
     semantic_identity: RuntimeSemanticTypeId,
     projection: RuntimePlanTypeProjection<RuntimeSemanticTypeId>,
+    data_codec: Option<crate::entry::schema::RuntimeCodecUse>,
 }
 
 impl RuntimePlanTypeSeed {
@@ -36,6 +37,7 @@ impl RuntimePlanTypeSeed {
         Self {
             semantic_identity,
             projection,
+            data_codec: None,
         }
     }
 
@@ -48,6 +50,14 @@ impl RuntimePlanTypeSeed {
     pub const fn projection(&self) -> &RuntimePlanTypeProjection<RuntimeSemanticTypeId> {
         &self.projection
     }
+
+    /// Supplies the source-owned canonical-root codec policy. Nested uses may
+    /// carry different policies on their owning nominal-domain occurrence.
+    #[must_use]
+    pub fn with_data_codec(mut self, codec: crate::entry::schema::RuntimeCodecUse) -> Self {
+        self.data_codec = Some(codec);
+        self
+    }
 }
 
 /// One exact semantic identity and its final plan-local projection.
@@ -55,6 +65,7 @@ impl RuntimePlanTypeSeed {
 pub struct RuntimePlanTypeDeclaration {
     semantic_identity: RuntimeSemanticTypeId,
     projection: RuntimePlanTypeProjection<RuntimePlanTypeId>,
+    data_codec: Option<crate::entry::schema::RuntimeCodecUse>,
 }
 
 impl RuntimePlanTypeDeclaration {
@@ -66,6 +77,11 @@ impl RuntimePlanTypeDeclaration {
     #[must_use]
     pub const fn projection(&self) -> &RuntimePlanTypeProjection<RuntimePlanTypeId> {
         &self.projection
+    }
+
+    #[must_use]
+    pub const fn data_codec(&self) -> Option<&crate::entry::schema::RuntimeCodecUse> {
+        self.data_codec.as_ref()
     }
 }
 
@@ -177,7 +193,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Progress
             | RuntimePlanTypeProjection::EntityReference
             | RuntimePlanTypeProjection::AgentValue
-            | RuntimePlanTypeProjection::ProjectNominal { .. }
+            | RuntimePlanTypeProjection::Nominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
             RuntimePlanTypeProjection::Sequence { item, .. }
             | RuntimePlanTypeProjection::Array { item, .. } => {
@@ -219,9 +235,10 @@ impl RuntimePlanTypeTable {
                     && self.is_checked_memoized(*value_payload, memo)?
                     && self.is_checked_memoized(*error_payload, memo)?
             }
-            RuntimePlanTypeProjection::Agent(agent) => {
-                !matches!(agent, RuntimeAgentTypeProjection::Probe(_))
-            }
+            RuntimePlanTypeProjection::Agent(agent) => !matches!(
+                agent,
+                RuntimeAgentTypeProjection::Probe(_) | RuntimeAgentTypeProjection::DataShape(_)
+            ),
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
@@ -268,6 +285,10 @@ pub(crate) struct PreparedRuntimePlanTypeBatch {
 }
 
 impl PreparedRuntimePlanTypeBatch {
+    pub(crate) fn result_ids(&self) -> &[RuntimePlanTypeId] {
+        &self.result_ids
+    }
+
     pub(crate) fn id_for_semantic(
         &self,
         semantic_identity: RuntimeSemanticTypeId,
@@ -281,8 +302,13 @@ impl PreparedRuntimePlanTypeBatch {
 }
 
 /// Failure to admit one atomic semantic type graph batch.
-#[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePlanTypeTableError {
+    #[error("semantic type {semantic_identity:?} has invalid codec-use metadata: {source}")]
+    CodecUse {
+        semantic_identity: RuntimeSemanticTypeId,
+        source: crate::entry::schema::RuntimeCodecUseError,
+    },
     #[error("semantic type {semantic_identity:?} has conflicting projections")]
     ConflictingProjection {
         semantic_identity: RuntimeSemanticTypeId,
@@ -370,7 +396,9 @@ impl RuntimePlanTypeTableBuilder {
 
         for seed in &seeds {
             if let Some(index) = unique_indices.get(&seed.semantic_identity).copied() {
-                if unique[index].projection != seed.projection {
+                if unique[index].projection != seed.projection
+                    || unique[index].data_codec != seed.data_codec
+                {
                     return Err(RuntimePlanTypeTableError::ConflictingProjection {
                         semantic_identity: seed.semantic_identity,
                     });
@@ -417,6 +445,7 @@ impl RuntimePlanTypeTableBuilder {
             let declaration = RuntimePlanTypeDeclaration {
                 semantic_identity: seed.semantic_identity,
                 projection,
+                data_codec: seed.data_codec.clone(),
             };
             if let Some(existing_id) = self
                 .by_semantic_identity
@@ -648,6 +677,157 @@ fn validate_candidate_graph(
     }
     for (index, row) in rows.iter().enumerate() {
         row.validate_builtin_payloads(plan_type_id_for_index(index)?, rows)?;
+    }
+    validate_codec_uses(rows)?;
+    Ok(())
+}
+
+fn validate_codec_uses(
+    rows: &[RuntimePlanTypeDeclaration],
+) -> Result<(), RuntimePlanTypeTableError> {
+    use crate::entry::schema::{RuntimeCodecUse as Use, RuntimeCodecUseError};
+    let mut work = crate::entry::schema::value_budget::ValidationWork::new(
+        crate::entry::RuntimeSchemaLimits::engine_default(),
+    );
+    for (index, declaration) in rows.iter().enumerate() {
+        let Some(codec) = declaration.data_codec.as_ref() else {
+            continue;
+        };
+        let map_error = |source| RuntimePlanTypeTableError::CodecUse {
+            semantic_identity: declaration.semantic_identity,
+            source,
+        };
+        codec
+            .validate_limits(crate::entry::RuntimeSchemaLimits::engine_default())
+            .map_err(map_error)?;
+        let mut pending = vec![(index, codec, 0_usize)];
+        while let Some((index, codec, depth)) = pending.pop() {
+            work.charge(depth)
+                .map_err(|source| map_error(RuntimeCodecUseError::Schema(source)))?;
+            let mismatch = || {
+                map_error(RuntimeCodecUseError::Mismatch {
+                    path: format!("type.{index}"),
+                })
+            };
+            let row = rows.get(index).ok_or_else(mismatch)?;
+            let children: Vec<(RuntimePlanTypeId, &Use)> = match (row.projection(), codec) {
+                (
+                    RuntimePlanTypeProjection::Unit
+                    | RuntimePlanTypeProjection::Never
+                    | RuntimePlanTypeProjection::Bool
+                    | RuntimePlanTypeProjection::Signed(_)
+                    | RuntimePlanTypeProjection::Unsigned(_)
+                    | RuntimePlanTypeProjection::F32
+                    | RuntimePlanTypeProjection::F64
+                    | RuntimePlanTypeProjection::String
+                    | RuntimePlanTypeProjection::Char
+                    | RuntimePlanTypeProjection::Duration
+                    | RuntimePlanTypeProjection::Progress
+                    | RuntimePlanTypeProjection::EntityReference
+                    | RuntimePlanTypeProjection::AgentValue,
+                    Use::Plain,
+                )
+                | (RuntimePlanTypeProjection::Bytes, Use::Bytes { .. })
+                | (RuntimePlanTypeProjection::Nominal { .. }, Use::NominalRef) => vec![],
+                (
+                    RuntimePlanTypeProjection::Sequence { item, .. }
+                    | RuntimePlanTypeProjection::Array { item, .. },
+                    Use::Unary { item: codec },
+                ) => vec![(*item, codec)],
+                (RuntimePlanTypeProjection::Tuple(types), Use::Tuple { items })
+                    if types.len() == items.len() =>
+                {
+                    types.iter().copied().zip(items.iter()).collect()
+                }
+                (RuntimePlanTypeProjection::Tuple(types), Use::Newtype { inner })
+                    if types.len() == 1 =>
+                {
+                    vec![(types[0], inner.as_ref())]
+                }
+                (RuntimePlanTypeProjection::Choice(types), Use::Choice { alternatives })
+                    if types.len() == alternatives.len() =>
+                {
+                    types.iter().copied().zip(alternatives.iter()).collect()
+                }
+                (
+                    RuntimePlanTypeProjection::Opaque {
+                        arguments: types, ..
+                    },
+                    Use::Opaque { arguments },
+                ) if types.len() == arguments.len() => {
+                    types.iter().copied().zip(arguments.iter()).collect()
+                }
+                (
+                    RuntimePlanTypeProjection::Map { key, value, .. },
+                    Use::Map {
+                        key: key_codec,
+                        value: value_codec,
+                    },
+                ) => vec![(*key, key_codec), (*value, value_codec)],
+                (
+                    RuntimePlanTypeProjection::Record(fields),
+                    Use::Record {
+                        fields: policies, ..
+                    },
+                ) if fields.len() == policies.len() => fields
+                    .iter()
+                    .zip(policies)
+                    .map(|(field, policy)| (*field.ty(), &policy.value))
+                    .collect(),
+                (
+                    RuntimePlanTypeProjection::Record(fields),
+                    Use::RecordFields { fields: policies },
+                ) if fields.len() == policies.len() => fields
+                    .iter()
+                    .zip(policies)
+                    .map(|(field, policy)| (*field.ty(), policy))
+                    .collect(),
+                (RuntimePlanTypeProjection::Option { item, .. }, Use::Builtin { payloads })
+                    if payloads.len() == 1 =>
+                {
+                    vec![(*item, &payloads[0])]
+                }
+                (
+                    RuntimePlanTypeProjection::Result { value, error, .. },
+                    Use::Builtin { payloads },
+                ) if payloads.len() == 2 => vec![(*value, &payloads[0]), (*error, &payloads[1])],
+                (
+                    RuntimePlanTypeProjection::BuiltinVariant { cases, .. },
+                    Use::Builtin { payloads },
+                ) => {
+                    let types = cases
+                        .iter()
+                        .flatten()
+                        .map(|tuple| {
+                            let tuple = declaration_index(*tuple)
+                                .and_then(|index| rows.get(index))
+                                .ok_or_else(mismatch)?;
+                            let RuntimePlanTypeProjection::Tuple(items) = tuple.projection() else {
+                                return Err(mismatch());
+                            };
+                            let [item] = items.as_ref() else {
+                                return Err(mismatch());
+                            };
+                            Ok(*item)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if types.len() != payloads.len() {
+                        return Err(mismatch());
+                    }
+                    types.into_iter().zip(payloads.iter()).collect()
+                }
+                _ => return Err(mismatch()),
+            };
+            work.collection(children.len())
+                .map_err(|source| map_error(RuntimeCodecUseError::Schema(source)))?;
+            for (ty, codec) in children.into_iter().rev() {
+                pending.push((
+                    declaration_index(ty).ok_or_else(mismatch)?,
+                    codec,
+                    depth + 1,
+                ));
+            }
+        }
     }
     Ok(())
 }

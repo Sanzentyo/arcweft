@@ -2,6 +2,7 @@ use super::codec::{AwbcCodecError, AwbcDecodeBudget};
 mod agent_constructors;
 mod agent_projection;
 mod array;
+mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
     FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
@@ -1512,7 +1513,11 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .validate_for_program(&program)
         .expect("default stage validates");
     let default_snapshot = AwbcFiberStateSnapshot::from_live(&default_fiber).expect("snapshot");
-    let default_restored = default_snapshot.into_live().expect("restore snapshot");
+    let default_restored = default_snapshot
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
+        .expect("restore snapshot");
     default_restored
         .validate_for_program(&program)
         .expect("restored default stage validates");
@@ -1533,7 +1538,11 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .validate_for_program(&program)
         .expect("target stage validates");
     let target_snapshot = AwbcFiberStateSnapshot::from_live(&target_fiber).expect("snapshot");
-    let mut target_restored = target_snapshot.into_live().expect("restore snapshot");
+    let mut target_restored = target_snapshot
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
+        .expect("restore snapshot");
     target_restored
         .validate_for_program(&program)
         .expect("restored target stage validates");
@@ -1926,7 +1935,11 @@ fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
         .expect("snapshot codec");
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot decode");
-    let mut restored = snapshot.into_live().expect("restore snapshot");
+    let mut restored = snapshot
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
+        .expect("restore snapshot");
     restored
         .validate_for_program(&program)
         .expect("restored target continuation validates");
@@ -2970,13 +2983,22 @@ fn nominal_record_bytes_and_never_types_roundtrip_and_project_exactly() {
                     public_id: AwbcStringId(1),
                     layout: [32; 32],
                     arguments: Vec::new(),
+                    shape: crate::entry::RuntimeNominalRecordShape::Record,
                     fields: vec![
                         AwbcRecordField {
-                            name: AwbcStringId(0),
+                            field: crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                                0,
+                            )
+                            .unwrap(),
+                            name: Some(AwbcStringId(0)),
                             ty: AwbcTypeId(1),
                         },
                         AwbcRecordField {
-                            name: AwbcStringId(2),
+                            field: crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                                1,
+                            )
+                            .unwrap(),
+                            name: Some(AwbcStringId(2)),
                             ty: AwbcTypeId(2),
                         },
                     ],
@@ -3023,6 +3045,7 @@ fn verifier_rejects_duplicate_nominal_record_descriptor_authority() {
             public_id: AwbcStringId(0),
             layout: [42; 32],
             arguments: Vec::new(),
+            shape: crate::entry::RuntimeNominalRecordShape::Record,
             fields: Vec::new(),
         },
     );
@@ -3999,7 +4022,6 @@ fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
     program.constants.push(AwbcConstant::Variant {
         ty: AwbcTypeId(0),
         case: 0,
-        case_name: AwbcStringId(2),
         payload: None,
     });
     program.canonicalize_string_table();

@@ -290,24 +290,19 @@ impl Engine {
                     }
                 };
                 let (args, named_args) = arguments;
-                let result = match self.plan.checked_type(target.result) {
-                    Ok(Some(result)) => result,
-                    Ok(None) => {
-                        let error = format!(
-                            "host call {} result is outside the checked host-call image",
-                            target.public_id
-                        );
-                        self.fiber.status = FlowFiberStatus::Failed(error.clone());
-                        output.diagnostics.push(RuntimeDiagnostic::new(error));
-                        return;
-                    }
-                    Err(error) => {
-                        self.fiber.status = FlowFiberStatus::Failed(error.to_string());
-                        output
-                            .diagnostics
-                            .push(RuntimeDiagnostic::new(error.to_string()));
-                        return;
-                    }
+                let Some(result) = self
+                    .plan
+                    .type_table()
+                    .get(target.result)
+                    .map(|declaration| declaration.semantic_identity())
+                else {
+                    let error = format!(
+                        "host call {} result type is absent from the selected plan",
+                        target.public_id
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::new(error));
+                    return;
                 };
                 let id = self.next_host_call_id(&target.public_id);
                 output.requests.host_calls.push(RuntimeHostCallRequest {
@@ -325,6 +320,7 @@ impl Engine {
                 self.fiber.status = FlowFiberStatus::HostCall(HostCallState {
                     binding,
                     id,
+                    result_type: super::HostCallResultType::Plan(target.result),
                     resume: self.resume_cursor(next_op_index),
                 });
             }

@@ -9,7 +9,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
     let entry = flow_id("flow.callback_await");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(
@@ -24,8 +24,6 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 RuntimeLocalDeclarationSeed::new(string),
                 RuntimeLocalDeclarationSeed::new(string),
             ],
-            [],
-            [],
         )
         .expect("callback ABI admits");
     let capture = admission.local_ids()[0].clone();

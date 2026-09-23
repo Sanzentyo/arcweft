@@ -110,7 +110,7 @@ impl RuntimePlanTypeDeclaration {
                     .ok_or_else(unknown_case)?;
                 (*owner, payload)
             }
-            RuntimePlanTypeProjection::ProjectNominal { .. }
+            RuntimePlanTypeProjection::Nominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => {
                 let domain =
                     nominal_domain.ok_or(RuntimePlanVariantCaseError::MissingDomain { ty })?;
@@ -119,6 +119,7 @@ impl RuntimePlanTypeDeclaration {
                     owner: RuntimeVariantIdentity::Nominal {
                         nominal: domain.nominal().clone(),
                         semantic_identity: self.semantic_identity(),
+                        layout: domain.layout(),
                     },
                     name: case.name(),
                     payload: case.payload(),

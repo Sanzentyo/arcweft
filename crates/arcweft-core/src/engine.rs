@@ -1,3 +1,4 @@
+use crate::awbc::schema::AwbcTypeId;
 use crate::effect::LineEffectRequest;
 use crate::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
 use crate::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskWorkTag};
@@ -13,6 +14,7 @@ use crate::root::{
     RootCallableEvaluationError, RootCallableEvaluator, RootEventInput, RootRuntime,
     RootRuntimeError, RootStartupContract, RuntimeCommandEnvelope,
 };
+use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{DialogueActivationId, RuntimePersistentFiberId};
 use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepInput,
@@ -414,10 +416,18 @@ pub struct AwaitManyInFlight {
 }
 
 /// Suspended direct host call awaiting a typed host result.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HostCallResultType {
+    Plan(RuntimePlanTypeId),
+    Awbc(AwbcTypeId),
+    Unit,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostCallState {
     pub binding: Option<RuntimePattern>,
     pub id: RuntimeHostCallId,
+    pub result_type: HostCallResultType,
     pub resume: Option<FlowCursor>,
 }
 
@@ -549,6 +559,11 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 }
 
 impl Engine {
+    /// Retains the exact executable type authority for an asynchronous host result.
+    pub fn program_plan(&self) -> Arc<RuntimePlan> {
+        Arc::clone(&self.plan)
+    }
+
     pub(super) fn allocate_dialogue_activation(
         &mut self,
         content: crate::runtime_id::RuntimeDialogueContentPlanId,
@@ -748,11 +763,14 @@ impl Engine {
                     }
                 })?;
             let mut evaluator = StructuredRootEvaluator::new(&self.plan);
-            let startup = RootRuntime::start(contract, &mut evaluator).map_err(|error| {
-                EngineStartError::InvalidRootStartup {
-                    entry: entry.canonical_label(),
-                    message: error.to_string(),
-                }
+            let startup = RootRuntime::start(
+                contract,
+                &mut evaluator,
+                crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+            )
+            .map_err(|error| EngineStartError::InvalidRootStartup {
+                entry: entry.canonical_label(),
+                message: error.to_string(),
             })?;
             let flow_index = self.flow_index(&startup.initial_flow).ok_or_else(|| {
                 EngineStartError::MissingFlow {
@@ -1071,7 +1089,11 @@ impl Engine {
         };
         let result = {
             let mut evaluator = StructuredRootEvaluator::new(&self.plan);
-            root.step(events, &mut evaluator)
+            root.step(
+                events,
+                &mut evaluator,
+                crate::program_types::RuntimeProgramTypes::Plan(&self.plan),
+            )
         };
         match result {
             Ok(result) => {

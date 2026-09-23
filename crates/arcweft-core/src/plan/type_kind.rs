@@ -1,6 +1,6 @@
 //! Canonical runtime-plan type projection graph.
 
-use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use crate::entry::{RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
@@ -24,7 +24,6 @@ pub enum RuntimeAgentOperationalType {
     ActionName = 7,
     ActionTarget = 8,
     ActionResult = 9,
-    DataFormat = 11,
     DataShape = 12,
     EntityMetadata = 13,
     SourceAnchor = 14,
@@ -67,7 +66,6 @@ impl RuntimeAgentOperationalType {
             7 => Self::ActionName,
             8 => Self::ActionTarget,
             9 => Self::ActionResult,
-            11 => Self::DataFormat,
             12 => Self::DataShape,
             13 => Self::EntityMetadata,
             14 => Self::SourceAnchor,
@@ -201,6 +199,7 @@ pub enum RuntimePlanTypeProjection<R> {
         length: u64,
     },
     Map {
+        kind: RuntimeMapKind,
         key: R,
         value: R,
     },
@@ -230,7 +229,7 @@ pub enum RuntimePlanTypeProjection<R> {
         parameters: Box<[R]>,
         result: R,
     },
-    ProjectNominal {
+    Nominal {
         nominal: RuntimeNominalTypeId,
         layout: TypeLayoutHash,
         arguments: Box<[R]>,
@@ -294,8 +293,7 @@ pub enum RuntimeAgentTypeProjection<R> {
     ActionName,
     ActionTarget,
     ActionResult,
-    DataFormat,
-    DataShape,
+    DataShape(R),
     EntityMetadata,
     SourceAnchor,
     SourcePosition,
@@ -329,9 +327,10 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Need(child)
             | Self::Sequence { item: child, .. }
             | Self::Array { item: child, .. }
-            | Self::Agent(RuntimeAgentTypeProjection::Probe(child)) => Box::new([child]),
+            | Self::Agent(RuntimeAgentTypeProjection::Probe(child))
+            | Self::Agent(RuntimeAgentTypeProjection::DataShape(child)) => Box::new([child]),
             Self::BuiltinVariant { cases, .. } => cases.iter().filter_map(Option::as_ref).collect(),
-            Self::Map { key, value }
+            Self::Map { key, value, .. }
             | Self::Stream {
                 item: key,
                 error: value,
@@ -348,7 +347,7 @@ impl<R> RuntimePlanTypeProjection<R> {
                 .chain(std::iter::once(result))
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
-            Self::ProjectNominal { arguments, .. }
+            Self::Nominal { arguments, .. }
             | Self::Opaque { arguments, .. }
             | Self::Tuple(arguments)
             | Self::Choice(arguments) => arguments.iter().collect::<Vec<_>>().into_boxed_slice(),
@@ -405,7 +404,8 @@ impl<R> RuntimePlanTypeProjection<R> {
                 item: map(item)?,
                 length,
             },
-            Self::Map { key, value } => RuntimePlanTypeProjection::Map {
+            Self::Map { kind, key, value } => RuntimePlanTypeProjection::Map {
+                kind,
                 key: map(key)?,
                 value: map(value)?,
             },
@@ -445,11 +445,11 @@ impl<R> RuntimePlanTypeProjection<R> {
                 parameters: try_map_boxed(parameters, &mut map)?,
                 result: map(result)?,
             },
-            Self::ProjectNominal {
+            Self::Nominal {
                 nominal,
                 layout,
                 arguments,
-            } => RuntimePlanTypeProjection::ProjectNominal {
+            } => RuntimePlanTypeProjection::Nominal {
                 nominal,
                 layout,
                 arguments: try_map_boxed(arguments, &mut map)?,
@@ -514,7 +514,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::EntityReference
             | Self::AgentValue
             | Self::BuiltinVariant { .. }
-            | Self::ProjectNominal { .. }
+            | Self::Nominal { .. }
             | Self::Opaque { .. } => None,
         }
     }
@@ -564,8 +564,7 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ActionName => RuntimeAgentTypeProjection::ActionName,
             Self::ActionTarget => RuntimeAgentTypeProjection::ActionTarget,
             Self::ActionResult => RuntimeAgentTypeProjection::ActionResult,
-            Self::DataFormat => RuntimeAgentTypeProjection::DataFormat,
-            Self::DataShape => RuntimeAgentTypeProjection::DataShape,
+            Self::DataShape(value) => RuntimeAgentTypeProjection::DataShape(map(value)?),
             Self::EntityMetadata => RuntimeAgentTypeProjection::EntityMetadata,
             Self::SourceAnchor => RuntimeAgentTypeProjection::SourceAnchor,
             Self::SourcePosition => RuntimeAgentTypeProjection::SourcePosition,
@@ -605,8 +604,7 @@ impl<R> RuntimeAgentTypeProjection<R> {
             RuntimeAgentOperationalType::ActionName => Self::ActionName,
             RuntimeAgentOperationalType::ActionTarget => Self::ActionTarget,
             RuntimeAgentOperationalType::ActionResult => Self::ActionResult,
-            RuntimeAgentOperationalType::DataFormat => Self::DataFormat,
-            RuntimeAgentOperationalType::DataShape => Self::DataShape,
+            RuntimeAgentOperationalType::DataShape => return None,
             RuntimeAgentOperationalType::EntityMetadata => Self::EntityMetadata,
             RuntimeAgentOperationalType::SourceAnchor => Self::SourceAnchor,
             RuntimeAgentOperationalType::SourcePosition => Self::SourcePosition,
@@ -644,8 +642,7 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ActionName => RuntimeAgentOperationalType::ActionName,
             Self::ActionTarget => RuntimeAgentOperationalType::ActionTarget,
             Self::ActionResult => RuntimeAgentOperationalType::ActionResult,
-            Self::DataFormat => RuntimeAgentOperationalType::DataFormat,
-            Self::DataShape => RuntimeAgentOperationalType::DataShape,
+            Self::DataShape(_) => RuntimeAgentOperationalType::DataShape,
             Self::EntityMetadata => RuntimeAgentOperationalType::EntityMetadata,
             Self::SourceAnchor => RuntimeAgentOperationalType::SourceAnchor,
             Self::SourcePosition => RuntimeAgentOperationalType::SourcePosition,
@@ -688,7 +685,6 @@ mod tests {
             (RuntimeAgentOperationalType::ActionName, 7),
             (RuntimeAgentOperationalType::ActionTarget, 8),
             (RuntimeAgentOperationalType::ActionResult, 9),
-            (RuntimeAgentOperationalType::DataFormat, 11),
             (RuntimeAgentOperationalType::DataShape, 12),
             (RuntimeAgentOperationalType::EntityMetadata, 13),
             (RuntimeAgentOperationalType::SourceAnchor, 14),

@@ -29,23 +29,17 @@ fn types(root: Type<RuntimeSemanticTypeId>) -> [RuntimePlanTypeSeed; 7] {
 
 fn plan(root: Type<RuntimeSemanticTypeId>) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
-    builder
-        .admit_semantic_batch(types(root), [], [], [])
-        .unwrap();
+    builder.admit_type_batch(types(root), []).unwrap();
     builder.finish().unwrap()
 }
 
 fn rejects_atomically(root: Type<RuntimeSemanticTypeId>) {
     let mut builder = RuntimePlanBuilder::new();
-    builder
-        .admit_semantic_batch([seed(9, Type::Unit)], [], [], [])
-        .unwrap();
-    assert!(
-        matches!(builder.admit_semantic_batch(types(root), [], [], []),
+    builder.admit_type_batch([seed(9, Type::Unit)], []).unwrap();
+    assert!(matches!(builder.admit_type_batch(types(root), [],  ),
         Err(RuntimePlanBuildError::TypeGraph(RuntimePlanTypeTableError::InvalidBuiltinVariantSchema {
             semantic_identity,
-        })) if semantic_identity == semantic(1))
-    );
+        })) if semantic_identity == semantic(1)));
     let plan = builder.finish().unwrap();
     assert_eq!(plan.type_table().declarations().len(), 1);
     assert!(plan.type_table().id_for_semantic(semantic(9)).is_some());

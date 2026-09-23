@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod agent_tests;
+#[cfg(test)]
+mod value_tests;
 
 use std::collections::BTreeSet;
 
@@ -9,9 +11,8 @@ use crate::audio::RuntimeAudioCommand;
 use crate::effect::{
     LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectFieldExpr,
 };
-use crate::entry::TypeLayoutHash;
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
+    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
     RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
     RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
 };
@@ -19,14 +20,14 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
 use crate::task::{
     AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NamedHostArg,
-    RuntimeHostArgumentTemplate,
+    RuntimeHostArgumentTemplate, TaskOutcomeContract,
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
     RuntimeAgentFieldValue, RuntimeAgentSignatureError, RuntimeAgentTypeContext,
     RuntimeAgentTypeOperand, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
     RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
-    RuntimeNominalRecordExpr, RuntimeRange, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
+    RuntimeNominalRecordExpr, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
     RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeUnaryOp,
     RuntimeUnsignedIntWidth, RuntimeValue,
 };
@@ -99,6 +100,25 @@ impl RuntimeAgentTypeContext for RuntimePlanBuilder {
 }
 
 impl RuntimePlanBuilder {
+    fn validate_task_outcome(
+        &self,
+        outcome: &TaskOutcomeContract,
+        context: &'static str,
+    ) -> Result<(), RuntimePlanBuildError> {
+        match outcome {
+            TaskOutcomeContract::Program { payload } => {
+                self.resolve_seed_type(context, *payload)?;
+                Ok(())
+            }
+            TaskOutcomeContract::Standalone { .. } if outcome.standalone_contract_is_valid() => {
+                Ok(())
+            }
+            TaskOutcomeContract::Standalone { .. } => {
+                Err(RuntimePlanBuildError::InvalidStandaloneTaskOutcome { context })
+            }
+        }
+    }
+
     pub(super) fn lower_pattern_seed(
         &self,
         seed: RuntimePatternSeed,
@@ -1611,7 +1631,7 @@ impl RuntimePlanBuilder {
             ),
             (
                 RuntimeAgentFieldValue::AgentValueMap,
-                RuntimePlanTypeProjection::Map { key, value },
+                RuntimePlanTypeProjection::Map { key, value, .. },
             ) => matches!(
                 (self.projection(*key)?, self.projection(*value)?),
                 (
@@ -1833,7 +1853,7 @@ impl RuntimePlanBuilder {
             RuntimePatternSeedKind::Record { fields, rest } => {
                 let field_count = match self.projection(ty)? {
                     RuntimePlanTypeProjection::Record(fields) => fields.len(),
-                    RuntimePlanTypeProjection::ProjectNominal { .. } => self
+                    RuntimePlanTypeProjection::Nominal { .. } => self
                         .nominal_record_domains
                         .get(ty)
                         .map(|domain| domain.fields().len())
@@ -2526,30 +2546,33 @@ impl RuntimePlanBuilder {
                 binding,
                 target,
                 observers,
-            } => FlowOp::Await {
-                binding: binding
-                    .map(|binding| self.lower_pattern_seed(binding))
-                    .transpose()?,
-                target: AwaitTarget {
-                    need: target.need,
-                    task: target.task,
-                    outcome: target.outcome,
-                    request: self.lower_host_task_request(target.request)?,
-                },
-                observers: observers
-                    .into_iter()
-                    .map(|observer| {
-                        Ok(crate::plan::RuntimeAwaitPendingObserver {
-                            pattern: self.lower_pattern_seed(observer.pattern)?,
-                            ops: observer
-                                .ops
-                                .into_iter()
-                                .map(|op| self.lower_flow_op(op))
-                                .collect::<Result<_, _>>()?,
+            } => {
+                self.validate_task_outcome(&target.outcome, "await payload")?;
+                FlowOp::Await {
+                    binding: binding
+                        .map(|binding| self.lower_pattern_seed(binding))
+                        .transpose()?,
+                    target: AwaitTarget {
+                        need: target.need,
+                        task: target.task,
+                        outcome: target.outcome,
+                        request: self.lower_host_task_request(target.request)?,
+                    },
+                    observers: observers
+                        .into_iter()
+                        .map(|observer| {
+                            Ok(crate::plan::RuntimeAwaitPendingObserver {
+                                pattern: self.lower_pattern_seed(observer.pattern)?,
+                                ops: observer
+                                    .ops
+                                    .into_iter()
+                                    .map(|op| self.lower_flow_op(op))
+                                    .collect::<Result<_, _>>()?,
+                            })
                         })
-                    })
-                    .collect::<Result<_, RuntimePlanBuildError>>()?,
-            },
+                        .collect::<Result<_, RuntimePlanBuildError>>()?,
+                }
+            }
             RuntimeFlowOpSeed::AwaitMany {
                 binding,
                 target,
@@ -2558,6 +2581,7 @@ impl RuntimePlanBuilder {
                 if target.limit == 0 {
                     return Err(RuntimePlanBuildError::ZeroAwaitManyLimit);
                 }
+                self.validate_task_outcome(&target.outcome, "await-many payload")?;
                 let source = self.lower_expression(target.source)?;
                 let item_ty = self.await_many_item_type(source.ty())?;
                 let (item_binding, binding_ty) = target
@@ -4556,18 +4580,6 @@ fn collect_pattern_binding_locals(
     }
 }
 
-fn bytes_value_matches(value: &RuntimeValue) -> bool {
-    let RuntimeValue::Seq(sequence) = value else {
-        return false;
-    };
-    sequence.clone().into_values().iter().all(|value| {
-        matches!(
-            value,
-            RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8
-        )
-    })
-}
-
 impl RuntimePlanBuilder {
     fn validate_plan_value(
         &self,
@@ -4581,386 +4593,33 @@ impl RuntimePlanBuilder {
         if value.contains_nonconstant_opaque() {
             return Err(RuntimePlanBuildError::NonConstantOpaqueValueInPlan { context });
         }
-        if self.value_matches_type(ty, value, 0)? {
-            Ok(())
-        } else {
-            Err(RuntimePlanBuildError::InvalidValueType { context, ty })
-        }
-    }
-
-    fn value_matches_type(
-        &self,
-        ty: RuntimePlanTypeId,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
-            return Ok(false);
-        }
-        let declaration =
-            self.types
-                .get(ty)
-                .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
-                    context: "literal plan type",
-                    ty,
-                })?;
-        self.value_matches_projection(ty, declaration.projection(), value, depth)
-    }
-
-    fn value_matches_projection(
-        &self,
-        ty: RuntimePlanTypeId,
-        projection: &RuntimePlanTypeProjection<RuntimePlanTypeId>,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        Ok(match projection {
-            RuntimePlanTypeProjection::Unit => matches!(value, RuntimeValue::Unit),
-            RuntimePlanTypeProjection::Bool => matches!(value, RuntimeValue::Bool(_)),
-            RuntimePlanTypeProjection::Signed(width) => {
-                matches!(value, RuntimeValue::Int(value) if *width == value.width())
-            }
-            RuntimePlanTypeProjection::Unsigned(width) => {
-                matches!(value, RuntimeValue::UInt(value) if *width == value.width())
-            }
-            RuntimePlanTypeProjection::F32 => matches!(value, RuntimeValue::F32(_)),
-            RuntimePlanTypeProjection::F64 => matches!(value, RuntimeValue::F64(_)),
-            RuntimePlanTypeProjection::String => matches!(value, RuntimeValue::String(_)),
-            RuntimePlanTypeProjection::Char => matches!(value, RuntimeValue::Char(_)),
-            RuntimePlanTypeProjection::Bytes => bytes_value_matches(value),
-            RuntimePlanTypeProjection::Duration => matches!(value, RuntimeValue::Duration(_)),
-            RuntimePlanTypeProjection::Progress => matches!(value, RuntimeValue::Progress(_)),
-            RuntimePlanTypeProjection::EntityReference => {
-                matches!(value, RuntimeValue::EntityRef(_))
-            }
-            RuntimePlanTypeProjection::AgentValue => {
-                RuntimeCheckedType::AgentValue.accepts_value(value)
-            }
-            RuntimePlanTypeProjection::Range(item) => match value {
-                RuntimeValue::Range(range) => self.range_matches_item(*item, range)?,
-                _ => false,
-            },
-            RuntimePlanTypeProjection::Iterator(item) => match value {
-                RuntimeValue::Iterator(iterator) => {
-                    self.iterator_matches_item(*item, iterator, depth + 1)?
+        let authority = super::super::value_admission::PlanValueAuthority::Building {
+            types: &self.types,
+            records: &self.nominal_record_domains,
+            variants: &self.variant_domains,
+        };
+        let limits = crate::entry::RuntimeSchemaLimits {
+            max_depth: u32::try_from(crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH)
+                .expect("runtime value nesting limit fits the schema allowance"),
+            ..crate::entry::RuntimeSchemaLimits::engine_default()
+        };
+        authority
+            .validate_literal(ty, value, limits)
+            .map_err(|source| match source {
+                super::super::RuntimePlanValueAdmissionError::UnknownType { ty } => {
+                    RuntimePlanBuildError::InvalidTypeProjection { context, ty }
                 }
-                _ => false,
-            },
-            RuntimePlanTypeProjection::Sequence { item, .. }
-            | RuntimePlanTypeProjection::Array { item, .. } => {
-                self.sequence_value_matches(projection, *item, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::Tuple(items) => {
-                self.tuple_value_matches(items, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::Record(fields) => {
-                self.record_value_matches(fields, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::Choice(alternatives) => {
-                self.choice_value_matches(alternatives, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::Result { .. }
-            | RuntimePlanTypeProjection::Option { .. }
-            | RuntimePlanTypeProjection::BuiltinVariant { .. } => {
-                matches!(value, RuntimeValue::Variant { .. })
-                    && self.variant_value_matches(ty, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::ProjectNominal {
-                nominal, layout, ..
-            } => self.project_nominal_value_matches(ty, nominal, *layout, value, depth + 1)?,
-            projection @ RuntimePlanTypeProjection::Opaque { .. } => {
-                self.opaque_value_matches(ty, projection, value, depth + 1)?
-            }
-            RuntimePlanTypeProjection::Agent(expected) => match value {
-                RuntimeValue::Agent(value) => {
-                    !matches!(expected, RuntimeAgentTypeProjection::Probe(_))
-                        && expected.operational_type() == value.operational_type()
+                super::super::RuntimePlanValueAdmissionError::Value { ref source, .. }
+                    if source.is_choice_mismatch() =>
+                {
+                    RuntimePlanBuildError::InvalidValueType { context, ty }
                 }
-                _ => false,
-            },
-            RuntimePlanTypeProjection::Never
-            | RuntimePlanTypeProjection::Map { .. }
-            | RuntimePlanTypeProjection::Need(_)
-            | RuntimePlanTypeProjection::Stream { .. }
-            | RuntimePlanTypeProjection::ThreadHandle(_)
-            | RuntimePlanTypeProjection::Shared(_)
-            | RuntimePlanTypeProjection::Reference(_)
-            | RuntimePlanTypeProjection::Function { .. } => false,
-        })
+                source => RuntimePlanBuildError::ValueAdmission {
+                    context,
+                    source: Box::new(source),
+                },
+            })
     }
-
-    fn sequence_value_matches(
-        &self,
-        projection: &RuntimePlanTypeProjection<RuntimePlanTypeId>,
-        item: RuntimePlanTypeId,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        let RuntimeValue::Seq(sequence) = value else {
-            return Ok(false);
-        };
-        let values = sequence.clone().into_values();
-        if let RuntimePlanTypeProjection::Array { length, .. } = projection
-            && u64::try_from(values.len()).ok() != Some(*length)
-        {
-            return Ok(false);
-        }
-        self.values_match_type(item, &values, depth)
-    }
-
-    fn tuple_value_matches(
-        &self,
-        items: &[RuntimePlanTypeId],
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        let RuntimeValue::Tuple(values) = value else {
-            return Ok(false);
-        };
-        if items.len() != values.len() {
-            return Ok(false);
-        }
-        for (item, value) in items.iter().zip(values) {
-            if !self.value_matches_type(*item, value, depth)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn record_value_matches(
-        &self,
-        fields: &[RuntimePlanRecordField<RuntimePlanTypeId>],
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        let RuntimeValue::Record(values) = value else {
-            return Ok(false);
-        };
-        if fields.len() != values.len() {
-            return Ok(false);
-        }
-        for (ordinal, (field, value)) in fields.iter().zip(values).enumerate() {
-            let expected = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
-            if expected != value.field()
-                || !self.value_matches_type(*field.ty(), value.value(), depth)?
-            {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn choice_value_matches(
-        &self,
-        alternatives: &[RuntimePlanTypeId],
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        for alternative in alternatives {
-            if self.value_matches_type(*alternative, value, depth)? {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    fn project_nominal_value_matches(
-        &self,
-        ty: RuntimePlanTypeId,
-        nominal: &crate::entry::RuntimeNominalTypeId,
-        layout: TypeLayoutHash,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        if self.variant_domains.get(ty).is_some() {
-            return match value {
-                RuntimeValue::Variant { .. } => self.variant_value_matches(ty, value, depth),
-                _ => Ok(false),
-            };
-        }
-        let RuntimeValue::NominalRecord(record) = value else {
-            return Ok(false);
-        };
-        let Some(domain) = self.nominal_record_domains.get(ty) else {
-            return Ok(false);
-        };
-        Ok(nominal == record.type_id()
-            && layout == record.layout()
-            && domain.fields().len() == record.fields().len()
-            && self.nominal_fields_match(domain, record.fields(), depth)?)
-    }
-
-    fn opaque_value_matches(
-        &self,
-        ty: RuntimePlanTypeId,
-        projection: &RuntimePlanTypeProjection<RuntimePlanTypeId>,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        let RuntimePlanTypeProjection::Opaque {
-            producer,
-            admission,
-            value_class,
-            persistence,
-            arguments,
-        } = projection
-        else {
-            unreachable!("opaque value matching receives one opaque projection")
-        };
-        let semantic_identity = self
-            .types
-            .get(ty)
-            .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
-                context: "opaque literal type",
-                ty,
-            })?
-            .semantic_identity();
-        if self.variant_domains.get(ty).is_some() {
-            return match value {
-                RuntimeValue::Variant { .. } => self.variant_value_matches(ty, value, depth),
-                _ => Ok(false),
-            };
-        }
-        match value {
-            RuntimeValue::Reduction(value) => Ok(*admission
-                == RuntimeOpaqueTypeAdmission::ExactIdentity
-                && RuntimeReductionProducer::accepts(producer)
-                && value.owner().producer() == producer
-                && value.owner().admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
-                && value.owner().semantic_identity() == semantic_identity
-                && value.owner().value_class() == *value_class
-                && value.owner().persistence() == *persistence
-                && match arguments.as_ref() {
-                    [state] => self.value_matches_type(*state, value.state(), depth)?,
-                    _ => false,
-                }),
-            RuntimeValue::Opaque(value) => Ok(producer == value.producer()
-                && *value_class == value.value_class()
-                && *persistence == value.persistence()
-                && match *admission {
-                    RuntimeOpaqueTypeAdmission::ExactIdentity => {
-                        semantic_identity == value.semantic_identity()
-                    }
-                    RuntimeOpaqueTypeAdmission::ProducerWide => true,
-                }),
-            _ => Ok(false),
-        }
-    }
-
-    fn range_matches_item(
-        &self,
-        item: RuntimePlanTypeId,
-        range: &RuntimeRange,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        Ok(match (self.projection(item)?, range) {
-            (RuntimePlanTypeProjection::Signed(expected), RuntimeRange::Int { start, end, .. }) => {
-                (start.is_some() || end.is_some())
-                    && start
-                        .iter()
-                        .chain(end.iter())
-                        .all(|value| value.width() == *expected)
-            }
-            (
-                RuntimePlanTypeProjection::Unsigned(expected),
-                RuntimeRange::UInt { start, end, .. },
-            ) => {
-                (start.is_some() || end.is_some())
-                    && start
-                        .iter()
-                        .chain(end.iter())
-                        .all(|value| value.width() == *expected)
-            }
-            _ => false,
-        })
-    }
-
-    fn values_match_type(
-        &self,
-        item: RuntimePlanTypeId,
-        values: &[RuntimeValue],
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        for value in values {
-            if !self.value_matches_type(item, value, depth)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn nominal_fields_match(
-        &self,
-        domain: &super::super::RuntimeNominalRecordDomain,
-        values: &[RuntimeValue],
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        for (field, value) in domain.fields().iter().zip(values) {
-            if !self.value_matches_type(field.ty(), value, depth)? {
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    fn iterator_matches_item(
-        &self,
-        item: RuntimePlanTypeId,
-        iterator: &crate::value::RuntimeIterator,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        match iterator {
-            crate::value::RuntimeIterator::Values { items, .. } => {
-                for value in items {
-                    if !self.value_matches_type(item, value, depth)? {
-                        return Ok(false);
-                    }
-                }
-                Ok(true)
-            }
-            crate::value::RuntimeIterator::Range(range) => {
-                Ok(match (self.projection(item)?, range) {
-                    (
-                        RuntimePlanTypeProjection::Signed(expected),
-                        crate::value::RuntimeRangeIterator::Int { width, .. },
-                    ) => expected == width,
-                    (
-                        RuntimePlanTypeProjection::Unsigned(expected),
-                        crate::value::RuntimeRangeIterator::UInt { width, .. },
-                    ) => expected == width,
-                    _ => false,
-                })
-            }
-            crate::value::RuntimeIterator::Witness { .. } => Ok(false),
-        }
-    }
-
-    fn variant_value_matches(
-        &self,
-        owner: RuntimePlanTypeId,
-        value: &RuntimeValue,
-        depth: usize,
-    ) -> Result<bool, RuntimePlanBuildError> {
-        let RuntimeValue::Variant {
-            owner: actual_owner,
-            ordinal,
-            name,
-            payload,
-        } = value
-        else {
-            return Ok(false);
-        };
-        let case = self.variant_case(owner, *ordinal)?;
-        if actual_owner != case.owner() || name != case.name() {
-            return Ok(false);
-        }
-        match (case.payload(), payload) {
-            (Some(expected), Some(payload)) => self.value_matches_type(expected, payload, depth),
-            (None, None) => Ok(true),
-            _ => Ok(false),
-        }
-    }
-
     fn variant_case(
         &self,
         owner: RuntimePlanTypeId,
@@ -4977,7 +4636,11 @@ impl RuntimePlanBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+    use crate::entry::{
+        RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
+        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema as Schema,
+    };
     use crate::pattern::{
         RuntimeOpaqueTypeProducerId, RuntimePatternBindingPathError, RuntimeSemanticTypeId,
     };
@@ -5004,7 +4667,7 @@ mod tests {
         let field_type = identity(92);
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         semantic_owner,
@@ -5021,8 +4684,6 @@ mod tests {
                     RuntimePlanTypeSeed::new(field_type, RuntimePlanTypeProjection::String),
                 ],
                 [RuntimeLocalDeclarationSeed::new(semantic_owner)],
-                [],
-                [],
             )
             .expect("opaque record graph");
         let expression = builder
@@ -5063,15 +4724,37 @@ mod tests {
 
     #[test]
     fn record_binding_path_uses_retained_pattern_order_not_domain_ordinal() {
+        let schema = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(nominal("game.Pair"), identity(1)),
+                vec![],
+                RuntimeNominalSchemaBody::Record {
+                    shape: crate::entry::RuntimeNominalRecordShape::Record,
+                    fields: ["first", "second"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ordinal, name)| {
+                            RuntimeNominalSchemaField::new(
+                                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap(),
+                                Some(name.to_owned()),
+                                Schema::Bool,
+                            )
+                        })
+                        .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
             .admit_semantic_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         identity(1),
-                        RuntimePlanTypeProjection::ProjectNominal {
+                        RuntimePlanTypeProjection::Nominal {
                             nominal: nominal("game.Pair"),
-                            layout: TypeLayoutHash::from_bytes([4; 32]),
+                            layout: schema.try_layout_hash(identity(1)).unwrap(),
                             arguments: Box::new([]),
                         },
                     ),
@@ -5097,6 +4780,7 @@ mod tests {
                     ],
                 )],
                 [],
+                &schema,
             )
             .expect("record graph");
         let pattern = RuntimePatternSeed::new(
@@ -5136,13 +4820,33 @@ mod tests {
     fn binding_path_accepts_depth_64_and_rejects_depth_65() {
         let mut builder = RuntimePlanBuilder::new();
         let owner = nominal("game.Recursive");
+        let schema = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(owner.clone(), identity(1)),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: vec![RuntimeNominalSchemaCase::new(
+                        0,
+                        "Next".to_owned(),
+                        Some(Schema::NominalRef(RuntimeNominalSchemaIdentity::new(
+                            owner.clone(),
+                            identity(1),
+                        ))),
+                    )]
+                    .into_boxed_slice(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let layout = schema.try_layout_hash(identity(1)).unwrap();
         let admission = builder
             .admit_semantic_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(1),
-                    RuntimePlanTypeProjection::ProjectNominal {
+                    RuntimePlanTypeProjection::Nominal {
                         nominal: owner.clone(),
-                        layout: TypeLayoutHash::from_bytes([8; 32]),
+                        layout,
                         arguments: Box::new([]),
                     },
                 )],
@@ -5151,8 +4855,10 @@ mod tests {
                 [RuntimeVariantDomainSeed::new(
                     identity(1),
                     owner,
+                    layout,
                     [RuntimeVariantCaseSeed::new("Next", Some(identity(1)))],
                 )],
+                &schema,
             )
             .expect("recursive variant domain");
         let local = admission.local_ids()[0].clone();

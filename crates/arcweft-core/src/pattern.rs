@@ -1,4 +1,4 @@
-use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
+use crate::entry::{RuntimeIdentityError, RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::plan::{
     RuntimeNominalRecordDomain, RuntimePlan, RuntimePlanRecordField, RuntimePlanTypeDeclaration,
     RuntimePlanTypeProjection, RuntimePlanValueTypeError,
@@ -385,6 +385,7 @@ pub enum RuntimeVariantIdentity {
     Nominal {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
     },
     Builtin(RuntimeBuiltinVariantIdentity),
 }
@@ -575,6 +576,20 @@ const POINTER_BUTTON_CASES: [RuntimeBuiltinVariantCaseSchema; 3] = [
 ];
 
 impl RuntimeBuiltinVariantIdentity {
+    /// Core-owned name for the builtin's fixed external-tag data descriptor.
+    #[must_use]
+    pub const fn codec_name(self) -> &'static str {
+        match self {
+            Self::Option => "Option",
+            Self::Result => "Result",
+            Self::AgentResourceBody => "AgentResourceBody",
+            Self::AgentBinaryEncoding => "AgentBinaryEncoding",
+            Self::CaptureFormat => "CaptureFormat",
+            Self::CaptureKind => "CaptureKind",
+            Self::PointerButton => "PointerButton",
+        }
+    }
+
     const COUNT: usize = Self::PointerButton as usize + 1;
     const DECODE: [Option<Self>; RuntimeBuiltinVariantIdentity::COUNT] = {
         let mut decode = [None; RuntimeBuiltinVariantIdentity::COUNT];
@@ -832,6 +847,13 @@ pub enum RuntimeCheckedType {
     AgentValue,
     Bytes,
     Sequence(Box<RuntimeCheckedType>),
+    /// Ordered entry carrier with the exact semantic map family retained.
+    /// Each runtime entry is a two-item tuple `(key, value)`.
+    Map {
+        kind: RuntimeMapKind,
+        key: Box<RuntimeCheckedType>,
+        value: Box<RuntimeCheckedType>,
+    },
     /// A fixed-length sequence whose item predicate applies to every element.
     Array {
         item: Box<RuntimeCheckedType>,
@@ -1069,6 +1091,19 @@ impl RuntimeCheckedType {
                 .into_values()
                 .iter()
                 .all(|value| item.accepts_value_at_depth(value, depth + 1)),
+            (
+                RuntimeValue::Seq(sequence),
+                Self::Map { key, value, .. },
+            ) => sequence.clone().into_values().iter().all(|entry| {
+                let RuntimeValue::Tuple(pair) = entry else {
+                    return false;
+                };
+                let [actual_key, actual_value] = pair.as_slice() else {
+                    return false;
+                };
+                key.accepts_value_at_depth(actual_key, depth + 1)
+                    && value.accepts_value_at_depth(actual_value, depth + 1)
+            }),
             (RuntimeValue::Seq(sequence), Self::Array { item, length }) => {
                 u64::try_from(sequence.len()) == Ok(*length)
                     && sequence
@@ -1106,9 +1141,11 @@ impl RuntimeCheckedType {
             (
                 RuntimeValue::NominalRecord(record),
                 Self::Nominal {
-                    nominal, layout, ..
+                    nominal, semantic_identity, layout, ..
                 },
-            ) => record.type_id() == nominal && record.layout() == *layout,
+            ) => record.type_id() == nominal
+                && record.semantic_identity() == *semantic_identity
+                && record.layout() == *layout,
             (
                 RuntimeValue::Variant {
                     owner,
@@ -1131,7 +1168,8 @@ impl RuntimeCheckedType {
                 self.accepts_builtin_variant_at_depth(value, depth)
             }
             (RuntimeValue::Agent(value), Self::Agent(expected)) => {
-                value.operational_type() == expected.operational_type()
+                !matches!(expected, crate::plan::RuntimeAgentTypeProjection::DataShape(_))
+                    && value.operational_type() == expected.operational_type()
             }
             (RuntimeValue::Record(_), Self::Agent(expected)) => {
                 expected.operational_type().accepts_protocol_record()
@@ -1249,6 +1287,12 @@ fn write_checked_type_identity(
             encoder.write_tag(13);
             write_checked_type_identity(encoder, inner);
         }
+        RuntimeCheckedType::Map { kind, key, value } => {
+            encoder.write_tag(25);
+            encoder.write_u8(kind.semantic_tag());
+            write_checked_type_identity(encoder, key);
+            write_checked_type_identity(encoder, value);
+        }
         RuntimeCheckedType::Array { item, length } => {
             encoder.write_tag(24);
             encoder.write_u64(*length);
@@ -1334,7 +1378,9 @@ fn write_checked_type_identity(
         RuntimeCheckedType::Agent(agent) => {
             encoder.write_tag(21);
             encoder.write_u8(agent.operational_type().semantic_tag());
-            if let crate::plan::RuntimeAgentTypeProjection::Probe(result) = agent {
+            if let crate::plan::RuntimeAgentTypeProjection::Probe(result)
+            | crate::plan::RuntimeAgentTypeProjection::DataShape(result) = agent
+            {
                 write_checked_type_identity(encoder, result);
             }
         }
@@ -1343,17 +1389,11 @@ fn write_checked_type_identity(
 }
 
 fn runtime_value_is_agent_value(value: &RuntimeValue, depth: usize) -> bool {
-    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH || !value.view().is_agent_value_node()
+    {
         return false;
     }
     match value {
-        RuntimeValue::Unit
-        | RuntimeValue::Bool(_)
-        | RuntimeValue::String(_)
-        | RuntimeValue::EntityRef(_) => true,
-        RuntimeValue::Int(value) => value.width() == RuntimeSignedIntWidth::I64,
-        RuntimeValue::UInt(value) => value.width() == RuntimeUnsignedIntWidth::U64,
-        RuntimeValue::F64(value) => value.is_finite(),
         RuntimeValue::Seq(values) => values
             .clone()
             .into_values()
@@ -1362,24 +1402,7 @@ fn runtime_value_is_agent_value(value: &RuntimeValue, depth: usize) -> bool {
         RuntimeValue::Record(fields) => fields
             .iter()
             .all(|field| runtime_value_is_agent_value(field.value(), depth + 1)),
-        RuntimeValue::F32(_)
-        | RuntimeValue::MatrixF32(_)
-        | RuntimeValue::MatrixF64(_)
-        | RuntimeValue::TensorF32(_)
-        | RuntimeValue::TensorF64(_)
-        | RuntimeValue::Char(_)
-        | RuntimeValue::Duration(_)
-        | RuntimeValue::Progress(_)
-        | RuntimeValue::Range(_)
-        | RuntimeValue::Iterator(_)
-        | RuntimeValue::Tuple(_)
-        | RuntimeValue::NominalRecord(_)
-        | RuntimeValue::Opaque(_)
-        | RuntimeValue::Reduction(_)
-        | RuntimeValue::Agent(_)
-        | RuntimeValue::Function(_)
-        | RuntimeValue::ProjectContinuation(_)
-        | RuntimeValue::Variant { .. } => false,
+        _ => true,
     }
 }
 
@@ -1669,7 +1692,7 @@ fn runtime_record_pattern_domain(
         .get(ty)
         .ok_or(RuntimePatternMatchError::UnknownType { ty })?;
     match declaration.projection() {
-        RuntimePlanTypeProjection::ProjectNominal { .. } => plan
+        RuntimePlanTypeProjection::Nominal { .. } => plan
             .nominal_record_domains()
             .get(ty)
             .map(RuntimeRecordPatternDomain::ProjectNominal)
@@ -2079,14 +2102,13 @@ fn runtime_value_matches_type_inner(
             RuntimeCheckedType::AgentValue.accepts_value(value)
         }
         (
-            RuntimePlanTypeProjection::ProjectNominal {
+            RuntimePlanTypeProjection::Nominal {
                 nominal, layout, ..
             },
             RuntimeValue::NominalRecord(record),
         ) => runtime_nominal_record_matches_type(plan, ty, nominal, *layout, record, depth),
         (
-            RuntimePlanTypeProjection::ProjectNominal { .. }
-            | RuntimePlanTypeProjection::Opaque { .. },
+            RuntimePlanTypeProjection::Nominal { .. } | RuntimePlanTypeProjection::Opaque { .. },
             value @ RuntimeValue::Variant {
                 owner: RuntimeVariantIdentity::Nominal { .. },
                 ..
@@ -2105,7 +2127,14 @@ fn runtime_value_matches_type_inner(
             value,
         ) => runtime_value_matches_type_inner(plan, *inner, value, depth + 1),
         (RuntimePlanTypeProjection::Agent(agent), RuntimeValue::Agent(value)) => {
-            agent.operational_type() == value.operational_type()
+            match (agent, value) {
+                (
+                    crate::plan::RuntimeAgentTypeProjection::DataShape(_),
+                    crate::value::RuntimeAgentValue::DataShape(shape),
+                ) => shape.matches_plan(plan, declaration.semantic_identity()),
+                (crate::plan::RuntimeAgentTypeProjection::DataShape(_), _) => false,
+                _ => agent.operational_type() == value.operational_type(),
+            }
         }
         _ => false,
     }
@@ -2215,6 +2244,10 @@ fn runtime_nominal_record_matches_type(
 ) -> bool {
     plan.nominal_record_domains().get(ty).is_some_and(|domain| {
         record.type_id() == nominal
+            && plan
+                .type_table()
+                .get(ty)
+                .is_some_and(|row| row.semantic_identity() == record.semantic_identity())
             && record.layout() == layout
             && record.fields().len() == domain.fields().len()
             && record
@@ -2322,6 +2355,42 @@ mod tests {
                 actual: second,
             })
         );
+    }
+
+    #[test]
+    fn checked_map_preserves_kind_and_admits_typed_entry_rows() {
+        let ordered = RuntimeCheckedType::Map {
+            kind: RuntimeMapKind::Ordered,
+            key: Box::new(RuntimeCheckedType::String),
+            value: Box::new(RuntimeCheckedType::Bool),
+        };
+        let sorted = RuntimeCheckedType::Map {
+            kind: RuntimeMapKind::Sorted,
+            key: Box::new(RuntimeCheckedType::String),
+            value: Box::new(RuntimeCheckedType::Bool),
+        };
+        assert_ne!(
+            ordered.semantic_identity_digest(),
+            sorted.semantic_identity_digest()
+        );
+
+        let valid = runtime_sequence_values(vec![RuntimeValue::Tuple(vec![
+            RuntimeValue::String("key".to_owned()),
+            RuntimeValue::Bool(true),
+        ])]);
+        assert!(ordered.accepts_value(&valid));
+
+        let wrong_value = runtime_sequence_values(vec![RuntimeValue::Tuple(vec![
+            RuntimeValue::String("key".to_owned()),
+            RuntimeValue::String("wrong type".to_owned()),
+        ])]);
+        assert!(!ordered.accepts_value(&wrong_value));
+
+        let wrong_arity =
+            runtime_sequence_values(vec![RuntimeValue::Tuple(vec![RuntimeValue::String(
+                "key".to_owned(),
+            )])]);
+        assert!(!ordered.accepts_value(&wrong_arity));
     }
 
     #[test]
@@ -2583,7 +2652,7 @@ mod tests {
     fn tuple_pattern_binds_plan_local_ids() {
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
@@ -2598,8 +2667,6 @@ mod tests {
                     RuntimeLocalDeclarationSeed::new(identity(1)),
                     RuntimeLocalDeclarationSeed::new(identity(2)),
                 ],
-                [],
-                [],
             )
             .expect("typed tuple admission");
         let pattern = builder
@@ -2668,7 +2735,7 @@ mod tests {
     fn structural_record_pattern_binds_selected_field_and_complete_rest_record() {
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         identity(1),
@@ -2688,8 +2755,6 @@ mod tests {
                     RuntimeLocalDeclarationSeed::new(identity(1)),
                     RuntimeLocalDeclarationSeed::new(identity(3)),
                 ],
-                [],
-                [],
             )
             .expect("structural record type graph");
         let selected_seed = admission.local_ids()[0].clone();
@@ -2749,7 +2814,7 @@ mod tests {
     fn structural_record_pattern_rejects_unknown_field_and_wrong_field_type() {
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         identity(1),
@@ -2765,8 +2830,6 @@ mod tests {
                     RuntimeLocalDeclarationSeed::new(identity(2)),
                     RuntimeLocalDeclarationSeed::new(identity(3)),
                 ],
-                [],
-                [],
             )
             .expect("structural record type graph");
 
@@ -2812,15 +2875,45 @@ mod tests {
 
     #[test]
     fn nominal_record_pattern_uses_owner_domain_and_field_id() {
+        use crate::entry::{
+            RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField,
+            RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeSchemaLimits,
+            RuntimeTypeSchema,
+        };
         let nominal = RuntimeNominalTypeId::try_new("game.Pair").unwrap();
-        let layout = TypeLayoutHash::from_bytes([7; 32]);
+        let schema = RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(nominal.clone(), identity(1)),
+                vec![],
+                RuntimeNominalSchemaBody::Record {
+                    shape: crate::entry::RuntimeNominalRecordShape::Record,
+                    fields: [
+                        ("alpha", RuntimeTypeSchema::Bool),
+                        ("zeta", RuntimeTypeSchema::String),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, (name, schema))| {
+                        RuntimeNominalSchemaField::new(
+                            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap(),
+                            Some(name.to_owned()),
+                            schema,
+                        )
+                    })
+                    .collect(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let layout = schema.try_layout_hash(identity(1)).unwrap();
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
             .admit_semantic_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         identity(1),
-                        RuntimePlanTypeProjection::ProjectNominal {
+                        RuntimePlanTypeProjection::Nominal {
                             nominal: nominal.clone(),
                             layout,
                             arguments: Box::new([]),
@@ -2849,6 +2942,7 @@ mod tests {
                     ],
                 )],
                 [],
+                &schema,
             )
             .expect("record admission");
         let pattern = builder
@@ -2879,6 +2973,7 @@ mod tests {
         let plan = builder.finish().expect("plan");
         let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             nominal,
+            identity(1),
             layout,
             vec![
                 RuntimeValue::Bool(true),
@@ -2899,14 +2994,12 @@ mod tests {
     fn binding_local_type_must_equal_the_pattern_node_type() {
         let mut builder = RuntimePlanBuilder::new();
         let admitted = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
                 ],
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
-                [],
-                [],
             )
             .expect("local admission");
         let result = builder.lower_pattern_seed_for_test(RuntimePatternSeed::new(

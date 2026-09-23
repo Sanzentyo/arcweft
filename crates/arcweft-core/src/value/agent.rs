@@ -1116,6 +1116,7 @@ pub enum RuntimeAgentValue {
     Predicate(RuntimeAgentPredicate),
     ViewportPoint { x: u32, y: u32 },
     BinaryData(String),
+    DataShape(super::RuntimeDataShape),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1514,6 +1515,7 @@ impl RuntimeAgentValue {
             Self::Predicate(_) => RuntimeAgentOperationalType::Predicate,
             Self::ViewportPoint { .. } => RuntimeAgentOperationalType::ViewportPoint,
             Self::BinaryData(_) => RuntimeAgentOperationalType::BinaryData,
+            Self::DataShape(_) => RuntimeAgentOperationalType::DataShape,
         }
     }
 
@@ -1575,6 +1577,7 @@ impl RuntimeAgentValue {
             Self::Predicate(_) => "agent/predicate",
             Self::ViewportPoint { .. } => "agent/viewport_point",
             Self::BinaryData(_) => "agent/binary_data",
+            Self::DataShape(_) => "data/shape",
         }
     }
 
@@ -1614,6 +1617,7 @@ impl RuntimeAgentValue {
             }
             Self::CaptureTarget(RuntimeAgentCaptureTarget::Viewport)
             | Self::Diagnostics
+            | Self::DataShape(_)
             | Self::ViewportPoint { .. } => {}
             Self::CaptureTarget(
                 RuntimeAgentCaptureTarget::Layer { target }

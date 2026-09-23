@@ -12,6 +12,7 @@ mod nominal_record_domains;
 mod project_call;
 mod type_kind;
 mod type_table;
+mod value_admission;
 mod variant_case;
 mod variant_domains;
 
@@ -37,11 +38,12 @@ pub use construction::{
     RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
     RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
     RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
-    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent, RuntimePlanSemanticAdmission,
+    RuntimePlanTable, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
+    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
+    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
+    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
@@ -94,6 +96,7 @@ pub use type_table::{
     MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
     RuntimePlanTypeSeed, RuntimePlanTypeTable, RuntimePlanTypeTableError,
 };
+pub use value_admission::RuntimePlanValueAdmissionError;
 pub use variant_case::{RuntimePlanVariantCase, RuntimePlanVariantCaseError};
 pub use variant_domains::{
     RuntimeVariantCase, RuntimeVariantCaseSeed, RuntimeVariantDomain, RuntimeVariantDomainError,
@@ -345,13 +348,30 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Sequence { item, .. } => self
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Sequence(Box::new(item))),
+            RuntimePlanTypeProjection::Map { kind, key, value } => {
+                let Some(key) = self.checked_type_inner(*key, memo, visiting)? else {
+                    visiting.remove(&ty);
+                    memo.insert(ty, None);
+                    return Ok(None);
+                };
+                let Some(value) = self.checked_type_inner(*value, memo, visiting)? else {
+                    visiting.remove(&ty);
+                    memo.insert(ty, None);
+                    return Ok(None);
+                };
+                Some(RuntimeCheckedType::Map {
+                    kind: *kind,
+                    key: Box::new(key),
+                    value: Box::new(value),
+                })
+            }
             RuntimePlanTypeProjection::Array { item, length } => self
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Array {
                     item: Box::new(item),
                     length: *length,
                 }),
-            RuntimePlanTypeProjection::ProjectNominal {
+            RuntimePlanTypeProjection::Nominal {
                 nominal,
                 layout,
                 arguments,
@@ -419,7 +439,6 @@ impl RuntimePlan {
             }
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
-            | RuntimePlanTypeProjection::Map { .. }
             | RuntimePlanTypeProjection::Need(_)
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
@@ -565,6 +584,7 @@ impl RuntimePlan {
             owner: crate::pattern::RuntimeVariantIdentity::Nominal {
                 nominal: domain.nominal().clone(),
                 semantic_identity,
+                layout: domain.layout(),
             },
             arguments,
             cases,

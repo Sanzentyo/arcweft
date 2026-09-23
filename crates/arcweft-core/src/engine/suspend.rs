@@ -16,11 +16,37 @@ use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
     HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest, RuntimeHostArgumentTemplate,
-    ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
+    ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest,
+    WasmCallRequest,
 };
 use crate::value::{DenseSeq, RuntimeFieldValue};
 
 impl Engine {
+    fn task_outcome_accepts_live_value(
+        &self,
+        outcome: &TaskOutcomeContract,
+        value: &RuntimeValue,
+    ) -> bool {
+        match outcome {
+            TaskOutcomeContract::Standalone { payload } => {
+                outcome.standalone_contract_is_valid() && payload.accepts_value(value)
+            }
+            TaskOutcomeContract::Program { payload } => self
+                .plan
+                .type_table()
+                .id_for_semantic(*payload)
+                .is_some_and(|ty| {
+                    self.plan
+                        .validate_live_value(
+                            ty,
+                            value,
+                            crate::entry::RuntimeSchemaLimits::engine_default(),
+                        )
+                        .is_ok()
+                }),
+        }
+    }
+
     pub(super) fn resume_suspended(
         &mut self,
         input: &RuntimeStepInput,
@@ -336,7 +362,7 @@ impl Engine {
         );
         match event.kind {
             TaskEventKind::Ready(value) => {
-                if !state.target.outcome.payload().accepts_value(value.value()) {
+                if !self.task_outcome_accepts_live_value(&state.target.outcome, value.value()) {
                     let message = format!(
                         "await task {} published a payload outside its checked outcome contract",
                         state.target.task.0
@@ -463,6 +489,28 @@ impl Engine {
         };
         match &result.outcome {
             Ok(value) => {
+                let super::HostCallResultType::Plan(ty) = state.result_type else {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        "host-call result has no selected plan type".to_owned(),
+                    );
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        "host-call result has no selected plan type".to_owned(),
+                    ));
+                    return;
+                };
+                if let Err(error) = self.plan.validate_live_value(
+                    ty,
+                    value.value(),
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ) {
+                    self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        error.to_string(),
+                    ));
+                    return;
+                }
                 if let Some(binding) = &state.binding {
                     match self.try_bind_pattern(binding, value.value()) {
                         Ok(true) => {}
@@ -640,7 +688,7 @@ impl Engine {
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
-                    if !state.target.outcome.payload().accepts_value(value.value()) {
+                    if !self.task_outcome_accepts_live_value(&state.target.outcome, value.value()) {
                         let in_flight = &state.in_flight[position];
                         let message = format!(
                             "await task {} at index {} published a payload outside its checked outcome contract",
@@ -1236,4 +1284,49 @@ fn input_choice_selection(input: &RuntimeStepInput) -> Option<(Option<&str>, &st
                 .map(|choice| (Some(choice), selection)),
         }
     })
+}
+
+#[cfg(test)]
+mod host_result_tests {
+    use super::*;
+    use crate::engine::{FlowFiberStatus, HostCallResultType};
+    use crate::pattern::RuntimeCheckedType;
+    use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+    use crate::step::{RuntimeHostCallId, RuntimeHostCallResult};
+
+    #[test]
+    fn native_raw_host_result_is_validated_before_unbound_resume() {
+        let semantic = RuntimeCheckedType::String.semantic_identity_digest();
+        let mut builder = RuntimePlanBuilder::new();
+        let admission = builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    semantic,
+                    RuntimePlanTypeProjection::String,
+                )],
+                [],
+            )
+            .expect("string result type is admitted");
+        let mut engine = Engine::new(builder.finish().expect("valid plan"));
+        let state = HostCallState {
+            binding: None,
+            id: RuntimeHostCallId("host.probe".to_owned()),
+            result_type: HostCallResultType::Plan(admission.type_ids()[0]),
+            resume: None,
+        };
+        let input = RuntimeStepInput {
+            host_call_results: vec![RuntimeHostCallResult {
+                id: state.id.clone(),
+                outcome: Ok(RuntimePayload(RuntimeValue::Bool(true))),
+            }],
+            ..RuntimeStepInput::default()
+        };
+        let mut output = RuntimeStepOutput::default();
+
+        engine.resume_host_call_state(state, &input, &mut output);
+
+        assert!(matches!(engine.fiber.status, FlowFiberStatus::Failed(_)));
+        assert!(!output.diagnostics.is_empty());
+        assert!(output.flow_events.is_empty());
+    }
 }

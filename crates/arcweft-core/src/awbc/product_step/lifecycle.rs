@@ -397,6 +397,13 @@ impl AwbcProductStepExecutor {
         FlowFiberStatus::HostCall(HostCallState {
             binding: None,
             id,
+            result_type: record
+                .and_then(|record| self.program.signatures.get(record.signature.index()))
+                .and_then(|signature| signature.result)
+                .map_or(
+                    crate::engine::HostCallResultType::Unit,
+                    crate::engine::HostCallResultType::Awbc,
+                ),
             resume: None,
         })
     }

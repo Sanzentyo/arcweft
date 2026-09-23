@@ -113,6 +113,7 @@ pub struct RuntimeNominalRecordDomain {
     owner: RuntimePlanTypeId,
     shape: RuntimeNominalRecordShape,
     fields: Box<[RuntimeNominalRecordDomainField]>,
+    data_codec: Option<crate::entry::schema::RuntimeNominalCodecUses>,
 }
 
 impl RuntimeNominalRecordDomain {
@@ -129,12 +130,26 @@ impl RuntimeNominalRecordDomain {
                 .map(|(field, name, ty)| RuntimeNominalRecordDomainField { field, name, ty })
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
+            data_codec: None,
         }
     }
 
     #[must_use]
     pub const fn owner(&self) -> RuntimePlanTypeId {
         self.owner
+    }
+
+    /// Source-proved per-occurrence policies, retained on this exact domain.
+    pub const fn data_codec(&self) -> Option<&crate::entry::schema::RuntimeNominalCodecUses> {
+        self.data_codec.as_ref()
+    }
+
+    pub(crate) fn with_data_codec(
+        mut self,
+        codec: Option<crate::entry::schema::RuntimeNominalCodecUses>,
+    ) -> Self {
+        self.data_codec = codec;
+        self
     }
 
     #[must_use]
@@ -213,6 +228,12 @@ pub(crate) struct RuntimeNominalRecordDomainTableBuilder {
 
 pub(crate) struct PreparedRuntimeNominalRecordDomainBatch {
     candidate: BTreeMap<RuntimePlanTypeId, RuntimeNominalRecordDomain>,
+}
+
+impl PreparedRuntimeNominalRecordDomainBatch {
+    pub(crate) fn get(&self, owner: RuntimePlanTypeId) -> Option<&RuntimeNominalRecordDomain> {
+        self.candidate.get(&owner)
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

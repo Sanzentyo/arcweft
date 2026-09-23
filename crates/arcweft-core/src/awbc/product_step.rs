@@ -85,13 +85,14 @@ use crate::value::{
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Executes one verified stable pure-program binding through its exact AWBC
 /// helper row. Callers retain domain ownership of the program identity and
 /// arguments; this boundary performs no string lookup or helper fallback.
 pub fn evaluate_pure_program_with_backend(
-    program: &AwbcProgram,
+    program: &Arc<AwbcProgram>,
     pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
     args: &[RuntimeValue],
     backend: &mut impl RuntimeCallBackend,
@@ -723,7 +724,7 @@ enum AwbcProductExecutorStatus {
 /// Stateful canonical AWBC executor exposed through `RuntimeStepResult`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
-    pub(super) program: AwbcProgram,
+    pub(super) program: Arc<AwbcProgram>,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     fiber: FiberState,
     facade_fiber: FlowFiber,
@@ -786,7 +787,7 @@ impl AwbcProductStepExecutor {
         let snapshot = self.snapshot();
         let mut candidate = self.clone();
         candidate.artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        candidate.program = program;
+        candidate.program = Arc::new(program);
         candidate.validate_snapshot(&snapshot)?;
         candidate.rebuild_facade_stream_states_from_compact();
         candidate.sync_facade();
@@ -799,6 +800,7 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        let program = Arc::new(program);
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -876,6 +878,7 @@ impl AwbcProductStepExecutor {
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
                 message: error.to_string(),
             })?;
+        let program = Arc::new(program);
         let mut fiber = FiberState::for_entry_target_function(
             &program,
             entry,
@@ -899,7 +902,7 @@ impl AwbcProductStepExecutor {
     }
 
     fn for_fiber(
-        program: AwbcProgram,
+        program: Arc<AwbcProgram>,
         fiber: FiberState,
         artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     ) -> Self {
@@ -966,8 +969,13 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    pub const fn program(&self) -> &AwbcProgram {
+    pub fn program(&self) -> &AwbcProgram {
         &self.program
+    }
+
+    /// Retains the selected executable type authority across host completion.
+    pub fn program_arc(&self) -> Arc<AwbcProgram> {
+        Arc::clone(&self.program)
     }
 
     pub const fn fiber(&self) -> &FlowFiber {
@@ -1286,6 +1294,7 @@ impl AwbcProductStepExecutor {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
             context: VmExecutionContext::new(self.artifact_fingerprint),
+            program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
         let context = VmExecutionContext::new(self.artifact_fingerprint);
         match step_with_host_context(
@@ -1399,6 +1408,9 @@ impl AwbcProductStepExecutor {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
                     context: VmExecutionContext::new(self.artifact_fingerprint),
+                    program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
+                        &self.program,
+                    )),
                 };
                 let context = VmExecutionContext::new(self.artifact_fingerprint);
                 step_with_host_context(
@@ -1497,6 +1509,7 @@ impl AwbcProductStepExecutor {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
             context: VmExecutionContext::new(self.artifact_fingerprint),
+            program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
         let context = VmExecutionContext::new(self.artifact_fingerprint);
         let vm_output = match step_with_host_context(

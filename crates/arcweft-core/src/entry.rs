@@ -5,7 +5,7 @@
 
 mod identity;
 mod roles;
-mod schema;
+pub(crate) mod schema;
 
 pub use identity::*;
 pub use roles::*;

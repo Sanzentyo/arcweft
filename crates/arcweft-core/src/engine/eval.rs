@@ -11,7 +11,9 @@ use crate::plan::{
     FlowRuntimeId, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
     RuntimePureOutputType,
 };
-use crate::pure::{RuntimeCallBackend, RuntimeI64Args, VmRuntimePureCallBackend};
+use crate::pure::{
+    RuntimeCallBackend, RuntimeExternalCallContext, RuntimeI64Args, VmRuntimePureCallBackend,
+};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::RuntimeBinaryOp;
 use crate::value::{
@@ -147,7 +149,7 @@ impl Engine {
                 effects,
             } => self.evaluate_dialogue_content_expr(*template, values, effects, pure_backend),
             RuntimeExprKind::Call { callee, args } => {
-                self.evaluate_call_expr(callee, args, pure_backend)
+                self.evaluate_call_expr(callee, args, expr.ty(), pure_backend)
             }
             RuntimeExprKind::Function { site, captures } => {
                 self.evaluate_function_expr(*site, captures, pure_backend)
@@ -541,7 +543,7 @@ impl Engine {
             .type_table()
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
-        let RuntimePlanTypeProjection::ProjectNominal {
+        let RuntimePlanTypeProjection::Nominal {
             nominal, layout, ..
         } = declaration.projection()
         else {
@@ -582,7 +584,12 @@ impl Engine {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(RuntimeValue::NominalRecord(
-            crate::value::RuntimeNominalRecordValue::new(nominal.clone(), *layout, fields),
+            crate::value::RuntimeNominalRecordValue::new(
+                nominal.clone(),
+                declaration.semantic_identity(),
+                *layout,
+                fields,
+            ),
         ))
     }
 
@@ -1063,6 +1070,7 @@ fn evaluate_core_iterator_intrinsic(
 pub(crate) fn evaluate_runtime_call(
     callee: &RuntimeCallTarget,
     args: &[RuntimeValue],
+    external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> RuntimeValue {
     if let Some(intrinsic) = callee.as_intrinsic()
@@ -1085,12 +1093,13 @@ pub(crate) fn evaluate_runtime_call(
     {
         return value;
     }
-    evaluate_runtime_call_after_intrinsics(callee, args, pure_backend)
+    evaluate_runtime_call_after_intrinsics(callee, args, external_context, pure_backend)
 }
 
 fn evaluate_runtime_call_after_intrinsics(
     callee: &RuntimeCallTarget,
     args: &[RuntimeValue],
+    external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
 ) -> RuntimeValue {
     match (callee.as_intrinsic(), args) {
@@ -1158,23 +1167,25 @@ fn evaluate_runtime_call_after_intrinsics(
             let space = intrinsic.path_space().unwrap_or(intrinsic.as_label());
             RuntimeValue::String(format!("{space}:{path}"))
         }
-        _ => pure_backend.call_external(callee, args).map_or_else(
-            || {
-                RuntimeValue::String(format!(
-                    "{}({})",
-                    callee.as_label(),
-                    args.iter()
-                        .map(runtime_value_label)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            },
-            |result| {
-                result.unwrap_or_else(|error| {
-                    RuntimeValue::String(format!("{}({error})", callee.as_label()))
-                })
-            },
-        ),
+        _ => pure_backend
+            .call_external(external_context, callee, args)
+            .map_or_else(
+                || {
+                    RuntimeValue::String(format!(
+                        "{}({})",
+                        callee.as_label(),
+                        args.iter()
+                            .map(runtime_value_label)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                },
+                |result| {
+                    result.unwrap_or_else(|error| {
+                        RuntimeValue::String(format!("{}({error})", callee.as_label()))
+                    })
+                },
+            ),
     }
 }
 
@@ -1206,7 +1217,7 @@ mod opaque_record_projection_tests {
         );
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         owner.semantic_identity(),
@@ -1220,8 +1231,6 @@ mod opaque_record_projection_tests {
                     ),
                     RuntimePlanTypeSeed::new(identity(112), RuntimePlanTypeProjection::String),
                 ],
-                [],
-                [],
                 [],
             )
             .expect("test type graph");

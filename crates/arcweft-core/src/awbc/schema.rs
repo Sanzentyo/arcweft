@@ -1,6 +1,7 @@
 use crate::entry::{
-    EntryBindingIdentity, RuntimeCallableRole, RuntimeDialogueContentTemplateDigest,
-    RuntimeEntryRoles, RuntimeFlowExecutable,
+    EntryBindingIdentity, RuntimeCallableRole, RuntimeCodecUse,
+    RuntimeDialogueContentTemplateDigest, RuntimeEntryRoles, RuntimeFlowExecutable, RuntimeMapKind,
+    RuntimeNominalRecordShape,
 };
 use crate::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeSemanticTypeId,
@@ -14,7 +15,9 @@ use crate::runtime_id::{
     RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
     RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
 };
-use crate::value::{RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind};
+use crate::value::{
+    RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind, RuntimeRecordFieldId,
+};
 use arcweft_character::id::CharacterId;
 use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use arcweft_interaction_model::audio::{
@@ -516,7 +519,7 @@ fn visit_runtime_type_strings(
         AwbcRuntimeTypeShape::Record { public_id, fields } => {
             visit_optional_string_id(public_id, visitor);
             for field in fields {
-                visit_string_id(&mut field.name, visitor);
+                visit_optional_string_id(&mut field.name, visitor);
             }
         }
         AwbcRuntimeTypeShape::Variant { owner, cases, .. } => {
@@ -533,7 +536,7 @@ fn visit_runtime_type_strings(
         } => {
             visit_string_id(public_id, visitor);
             for field in fields {
-                visit_string_id(&mut field.name, visitor);
+                visit_optional_string_id(&mut field.name, visitor);
             }
         }
         AwbcRuntimeTypeShape::Opaque { producer, .. } => visit_string_id(producer, visitor),
@@ -591,13 +594,9 @@ fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
         | AwbcConstant::TensorF64 { .. }
+        | AwbcConstant::Record { .. }
+        | AwbcConstant::Variant { .. }
         | AwbcConstant::Opaque { .. } => {}
-        AwbcConstant::Variant { case_name, .. } => visit_string_id(case_name, visitor),
-        AwbcConstant::Record { field_names, .. } => {
-            for field_name in field_names {
-                visit_string_id(field_name, visitor);
-            }
-        }
     }
 }
 
@@ -623,11 +622,6 @@ fn visit_instruction_strings(
             }
             for capture_name in capture_names {
                 visit_string_id(capture_name, visitor);
-            }
-        }
-        AwbcInstruction::MakeRecord { field_names, .. } => {
-            for field_name in field_names {
-                visit_string_id(field_name, visitor);
             }
         }
         AwbcInstruction::MakeVariant { case_name, .. } => visit_string_id(case_name, visitor),
@@ -711,6 +705,8 @@ impl Default for AwbcHeader {
 pub struct AwbcRuntimeType {
     semantic_identity: RuntimeSemanticTypeId,
     shape: AwbcRuntimeTypeShape,
+    data_codec: Option<RuntimeCodecUse>,
+    data_codec_arguments: Option<Vec<RuntimeCodecUse>>,
 }
 
 impl AwbcRuntimeType {
@@ -722,7 +718,24 @@ impl AwbcRuntimeType {
         Self {
             semantic_identity,
             shape,
+            data_codec: None,
+            data_codec_arguments: None,
         }
+    }
+
+    /// Attaches source-proved codec policy for this exact type row occurrence.
+    #[must_use]
+    pub fn with_data_codec(mut self, codec: RuntimeCodecUse) -> Self {
+        self.data_codec = Some(codec);
+        self
+    }
+
+    /// Attaches source-proved codec policies for this nominal row's generic
+    /// arguments. `Some([])` is distinct from absent metadata.
+    #[must_use]
+    pub fn with_data_codec_arguments(mut self, arguments: impl Into<Vec<RuntimeCodecUse>>) -> Self {
+        self.data_codec_arguments = Some(arguments.into());
+        self
     }
 
     #[must_use]
@@ -749,6 +762,16 @@ impl AwbcRuntimeType {
     #[must_use]
     pub const fn shape(&self) -> &AwbcRuntimeTypeShape {
         &self.shape
+    }
+
+    #[must_use]
+    pub const fn data_codec(&self) -> Option<&RuntimeCodecUse> {
+        self.data_codec.as_ref()
+    }
+
+    #[must_use]
+    pub fn data_codec_arguments(&self) -> Option<&[RuntimeCodecUse]> {
+        self.data_codec_arguments.as_deref()
     }
 }
 
@@ -816,6 +839,7 @@ impl AwbcStructuralRuntimeTypeKind {
 
 /// Closed executable shape owned by one [`AwbcRuntimeType`] row.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum AwbcRuntimeTypeShape {
     Unit,
     Bool,
@@ -854,6 +878,7 @@ pub enum AwbcRuntimeTypeShape {
         public_id: AwbcStringId,
         layout: [u8; 32],
         arguments: Vec<AwbcTypeId>,
+        shape: RuntimeNominalRecordShape,
         fields: Vec<AwbcRecordField>,
     },
     /// Opaque checked-type identity and its producer-owned admission rule.
@@ -885,6 +910,7 @@ pub enum AwbcRuntimeTypeShape {
         length: u64,
     },
     Map {
+        kind: RuntimeMapKind,
         key: AwbcTypeId,
         value: AwbcTypeId,
     },
@@ -903,11 +929,82 @@ pub enum AwbcRuntimeTypeShape {
     Dynamic,
 }
 
+/// Structural reference behavior of the executable type algebra.
+impl AwbcRuntimeTypeShape {
+    /// Nominal body edges end at their identity; generic arguments remain
+    /// structural. Scanning every row also checks each body's child subgraphs.
+    pub(crate) fn visit_structural_type_refs(&self, visit: &mut impl FnMut(AwbcTypeId)) {
+        match self {
+            Self::Tuple(items) | Self::Choice(items) => items.iter().copied().for_each(visit),
+            Self::Record { fields, .. } => fields.iter().for_each(|field| visit(field.ty)),
+            Self::Variant {
+                owner: AwbcVariantIdentity::Builtin(_),
+                arguments,
+                cases,
+            } => {
+                arguments.iter().copied().for_each(&mut *visit);
+                cases.iter().filter_map(|case| case.payload).for_each(visit);
+            }
+            Self::Opaque { arguments, .. }
+            | Self::Nominal { arguments, .. }
+            | Self::NominalRecord { arguments, .. }
+            | Self::Variant {
+                owner: AwbcVariantIdentity::Nominal { .. },
+                arguments,
+                ..
+            } => arguments.iter().copied().for_each(visit),
+            Self::Sequence(item)
+            | Self::Range(item)
+            | Self::Iterator(item)
+            | Self::Array { item, .. }
+            | Self::Need(item)
+            | Self::Task(item)
+            | Self::Shared(item)
+            | Self::Reference(item)
+            | Self::Agent(AwbcAgentTypeShape::Probe(item))
+            | Self::Agent(AwbcAgentTypeShape::DataShape(item)) => visit(*item),
+            Self::Map { key, value, .. } => {
+                visit(*key);
+                visit(*value);
+            }
+            Self::Stream { item, error } => {
+                visit(*item);
+                visit(*error);
+            }
+            Self::Function { parameters, result } => {
+                parameters.iter().copied().for_each(&mut *visit);
+                visit(*result);
+            }
+            Self::Unit
+            | Self::Never
+            | Self::Bool
+            | Self::Int(_)
+            | Self::UInt(_)
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Char
+            | Self::Duration
+            | Self::Progress
+            | Self::EntityRef
+            | Self::Bytes
+            | Self::AgentValue
+            | Self::Agent(AwbcAgentTypeShape::Leaf(_))
+            | Self::MatrixF32
+            | Self::MatrixF64
+            | Self::TensorF32
+            | Self::TensorF64
+            | Self::Dynamic => {}
+        }
+    }
+}
+
 /// Exact Agent runtime type graph retained by an AWBC row.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcAgentTypeShape {
     Leaf(RuntimeAgentOperationalType),
     Probe(AwbcTypeId),
+    DataShape(AwbcTypeId),
 }
 
 impl AwbcAgentTypeShape {
@@ -916,6 +1013,7 @@ impl AwbcAgentTypeShape {
         match self {
             Self::Leaf(value) => *value,
             Self::Probe(_) => RuntimeAgentOperationalType::Probe,
+            Self::DataShape(_) => RuntimeAgentOperationalType::DataShape,
         }
     }
 }
@@ -923,7 +1021,10 @@ impl AwbcAgentTypeShape {
 /// Closed semantic owner for an AWBC variant type.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcVariantIdentity {
-    Nominal { public_id: AwbcStringId },
+    Nominal {
+        public_id: AwbcStringId,
+        layout: [u8; 32],
+    },
     Builtin(crate::pattern::RuntimeBuiltinVariantIdentity),
 }
 
@@ -950,8 +1051,10 @@ awbc_u8_enum! {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcRecordField {
-    pub name: AwbcStringId,
+    pub field: RuntimeRecordFieldId,
+    pub name: Option<AwbcStringId>,
     pub ty: AwbcTypeId,
 }
 
@@ -963,6 +1066,7 @@ pub struct AwbcVariantCase {
 
 /// Canonical constant pool entry. Floating-point constants store exact bits.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum AwbcConstant {
     Unit,
     Bool(bool),
@@ -984,13 +1088,11 @@ pub enum AwbcConstant {
     Sequence(Vec<AwbcConstantId>),
     Record {
         ty: AwbcTypeId,
-        field_names: Vec<AwbcStringId>,
         fields: Vec<AwbcConstantId>,
     },
     Variant {
         ty: AwbcTypeId,
         case: u32,
-        case_name: AwbcStringId,
         payload: Option<AwbcConstantId>,
     },
     Range {
@@ -1599,6 +1701,7 @@ impl<'de> Deserialize<'de> for AwbcOpcode {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub enum AwbcInstruction {
     Nop,
     LoadConst {
@@ -1666,7 +1769,6 @@ pub enum AwbcInstruction {
     MakeRecord {
         dst: AwbcRegisterId,
         ty: AwbcTypeId,
-        field_names: Vec<AwbcStringId>,
         fields: Vec<AwbcRegisterId>,
     },
     MakeVariant {

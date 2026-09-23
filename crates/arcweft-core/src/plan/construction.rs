@@ -8,7 +8,10 @@ use std::sync::Arc;
 use thiserror::Error;
 
 mod lower;
+mod nominal_schema;
 mod seed;
+
+pub use nominal_schema::{RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent};
 
 #[cfg(test)]
 mod nominal_domains_tests;
@@ -90,10 +93,17 @@ use super::{
 /// Result identities issued by one atomic semantic graph transaction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanSemanticAdmission {
+    type_ids: Box<[RuntimePlanTypeId]>,
     local_ids: Box<[RuntimeLocalSeedId]>,
 }
 
 impl RuntimePlanSemanticAdmission {
+    /// Type IDs in input-seed order, issued only after the complete transaction.
+    #[must_use]
+    pub const fn type_ids(&self) -> &[RuntimePlanTypeId] {
+        &self.type_ids
+    }
+
     #[must_use]
     pub const fn local_ids(&self) -> &[RuntimeLocalSeedId] {
         &self.local_ids
@@ -118,6 +128,8 @@ pub enum RuntimePlanTable {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanBuildError {
+    #[error(transparent)]
+    NominalSchema(#[from] RuntimePlanNominalSchemaError),
     #[error("runtime-plan construction is poisoned by an earlier post-admission failure")]
     Poisoned,
     #[error(transparent)]
@@ -153,6 +165,12 @@ pub enum RuntimePlanBuildError {
         owner: RuntimePlanTypeId,
         expected: RuntimeNominalTypeId,
         actual: RuntimeNominalTypeId,
+    },
+    #[error("variant domain layout does not match owner type {owner}")]
+    VariantLayoutMismatch {
+        owner: RuntimePlanTypeId,
+        expected: crate::entry::TypeLayoutHash,
+        actual: crate::entry::TypeLayoutHash,
     },
     #[error("nominal owner type {owner} cannot have both record and variant domains")]
     ConflictingNominalDomainKinds { owner: RuntimePlanTypeId },
@@ -353,6 +371,8 @@ pub enum RuntimePlanBuildError {
         context: &'static str,
         semantic_identity: RuntimeSemanticTypeId,
     },
+    #[error("{context} uses a program-owned nominal type in a standalone task outcome")]
+    InvalidStandaloneTaskOutcome { context: &'static str },
     #[error("{context} expected plan type {expected}, found {actual}")]
     TypeMismatch {
         context: &'static str,
@@ -376,6 +396,11 @@ pub enum RuntimePlanBuildError {
     InvalidValueType {
         context: &'static str,
         ty: RuntimePlanTypeId,
+    },
+    #[error("runtime-plan {context} value admission failed: {source}")]
+    ValueAdmission {
+        context: &'static str,
+        source: Box<super::RuntimePlanValueAdmissionError>,
     },
     #[error("nominal record type {owner} has no admitted field domain")]
     UnknownNominalRecordDomain { owner: RuntimePlanTypeId },
@@ -615,7 +640,8 @@ impl RuntimePlanBuilder {
     }
 
     /// Atomically rewrites semantic type, local, record-domain, and
-    /// variant-domain seeds into final plan-local tables.
+    /// variant-domain seeds into final plan-local tables, correlated with the
+    /// complete source nominal schema graph for this batch.
     ///
     /// Every subtable is prepared before any issuer commits. Consequently a
     /// failure in the last domain leaves type and local row counts unchanged.
@@ -625,6 +651,7 @@ impl RuntimePlanBuilder {
         locals: impl IntoIterator<Item = RuntimeLocalDeclarationSeed>,
         nominal_record_domains: impl IntoIterator<Item = RuntimeNominalRecordDomainSeed>,
         variant_domains: impl IntoIterator<Item = RuntimeVariantDomainSeed>,
+        nominal_schema: &crate::entry::RuntimeNominalSchemaGraph,
     ) -> Result<RuntimePlanSemanticAdmission, RuntimePlanBuildError> {
         self.ensure_usable()?;
         let prepared_types = self.types.prepare_batch(types)?;
@@ -639,17 +666,52 @@ impl RuntimePlanBuilder {
 
         let record_domains = nominal_record_domains
             .into_iter()
-            .map(|seed| rewrite_record_domain(&prepared_types, &seed))
+            .map(|seed| {
+                let codec = nominal_schema
+                    .definition(seed.owner())
+                    .map(|definition| definition.codec_uses(nominal_schema.limits()))
+                    .transpose()
+                    .map_err(|source| RuntimePlanNominalSchemaError::CodecUse {
+                        source: Box::new(source),
+                    })?
+                    .flatten();
+                rewrite_record_domain(&prepared_types, &seed)
+                    .map(|domain| domain.with_data_codec(codec))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let variant_domains = variant_domains
             .into_iter()
-            .map(|seed| rewrite_variant_domain(&prepared_types, &seed))
+            .map(|seed| {
+                let codec = nominal_schema
+                    .definition(seed.owner())
+                    .map(|definition| definition.codec_uses(nominal_schema.limits()))
+                    .transpose()
+                    .map_err(|source| RuntimePlanNominalSchemaError::CodecUse {
+                        source: Box::new(source),
+                    })?
+                    .flatten();
+                rewrite_variant_domain(&prepared_types, &seed)
+                    .map(|domain| domain.with_data_codec(codec))
+            })
             .collect::<Result<Vec<_>, _>>()?;
         self.validate_domain_exclusivity(&record_domains, &variant_domains)?;
+        let domain_owners = record_domains
+            .iter()
+            .map(RuntimeNominalRecordDomain::owner)
+            .chain(variant_domains.iter().map(RuntimeVariantDomain::owner))
+            .collect::<Vec<_>>();
         let prepared_records = self.nominal_record_domains.prepare_batch(record_domains)?;
         let prepared_variants = self.variant_domains.prepare_batch(variant_domains)?;
 
-        self.types.commit_batch(prepared_types);
+        nominal_schema::PreparedNominalSchema {
+            existing_types: &self.types,
+            types: &prepared_types,
+            records: &prepared_records,
+            variants: &prepared_variants,
+        }
+        .validate(nominal_schema, domain_owners)?;
+
+        let type_ids = self.types.commit_batch(prepared_types);
         let admitted_local_ids = self.locals.commit_batch(prepared_locals);
         self.nominal_record_domains.commit_batch(prepared_records);
         self.variant_domains.commit_batch(prepared_variants);
@@ -660,7 +722,28 @@ impl RuntimePlanBuilder {
             .map(|(local, ty)| RuntimeLocalSeedId::issued(&self.issuer, local, ty))
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        Ok(RuntimePlanSemanticAdmission { local_ids })
+        Ok(RuntimePlanSemanticAdmission {
+            type_ids,
+            local_ids,
+        })
+    }
+
+    /// Admits ordinary type/local rows without introducing nominal definitions.
+    /// References to already admitted nominal types remain valid; a new nominal
+    /// requires the schema-bearing aggregate transaction instead.
+    pub fn admit_type_batch(
+        &mut self,
+        types: impl IntoIterator<Item = RuntimePlanTypeSeed>,
+        locals: impl IntoIterator<Item = RuntimeLocalDeclarationSeed>,
+    ) -> Result<RuntimePlanSemanticAdmission, RuntimePlanBuildError> {
+        let empty = crate::entry::RuntimeNominalSchemaGraph::try_new(
+            Vec::new(),
+            crate::entry::RuntimeSchemaLimits::engine_default(),
+        )
+        .map_err(|source| RuntimePlanNominalSchemaError::Graph {
+            source: Box::new(source),
+        })?;
+        self.admit_semantic_batch(types, locals, [], [], &empty)
     }
 
     pub fn push_function_site_seed(
@@ -2407,7 +2490,7 @@ fn rewrite_record_domain(
         })?;
     if !matches!(
         owner_declaration.projection(),
-        RuntimePlanTypeProjection::ProjectNominal { .. }
+        RuntimePlanTypeProjection::Nominal { .. }
     ) {
         return Err(RuntimePlanBuildError::InvalidNominalRecordOwner { owner });
     }
@@ -2440,12 +2523,21 @@ fn rewrite_variant_domain(
             semantic_identity: seed.owner(),
         })?;
     match owner_declaration.projection() {
-        RuntimePlanTypeProjection::ProjectNominal { nominal, .. } => {
+        RuntimePlanTypeProjection::Nominal {
+            nominal, layout, ..
+        } => {
             if nominal != seed.nominal() {
                 return Err(RuntimePlanBuildError::VariantNominalMismatch {
                     owner,
                     expected: nominal.clone(),
                     actual: seed.nominal().clone(),
+                });
+            }
+            if *layout != seed.layout() {
+                return Err(RuntimePlanBuildError::VariantLayoutMismatch {
+                    owner,
+                    expected: *layout,
+                    actual: seed.layout(),
                 });
             }
         }
@@ -2466,6 +2558,7 @@ fn rewrite_variant_domain(
     Ok(RuntimeVariantDomain::from_admitted_parts(
         owner,
         seed.nominal().clone(),
+        seed.layout(),
         cases,
     ))
 }
@@ -2504,7 +2597,11 @@ fn require_reserved_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::TypeLayoutHash;
+    use crate::entry::{
+        RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
+        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeSchemaLimits, RuntimeTypeSchema as Schema, TypeLayoutHash,
+    };
     use crate::pattern::RuntimeCheckedType;
     use crate::plan::{
         RuntimeNominalRecordDomainFieldSeed, RuntimePlanTypeProjection,
@@ -2540,13 +2637,32 @@ mod tests {
         assert_eq!(discard.pattern().ty(), target);
     }
 
-    fn type_seeds() -> Vec<RuntimePlanTypeSeed> {
+    fn schema(body: RuntimeNominalSchemaBody) -> RuntimeNominalSchemaGraph {
+        RuntimeNominalSchemaGraph::try_new(
+            vec![RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(nominal(), identity(1)),
+                vec![],
+                body,
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap()
+    }
+
+    fn variant_schema(name: &str, payload: Option<Schema>) -> RuntimeNominalSchemaGraph {
+        schema(RuntimeNominalSchemaBody::Variant {
+            cases: vec![RuntimeNominalSchemaCase::new(0, name.to_owned(), payload)]
+                .into_boxed_slice(),
+        })
+    }
+
+    fn type_seeds(schema: &RuntimeNominalSchemaGraph) -> Vec<RuntimePlanTypeSeed> {
         vec![
             RuntimePlanTypeSeed::new(
                 identity(1),
-                RuntimePlanTypeProjection::ProjectNominal {
+                RuntimePlanTypeProjection::Nominal {
                     nominal: nominal(),
-                    layout: TypeLayoutHash::from_bytes([3; 32]),
+                    layout: schema.try_layout_hash(identity(1)).unwrap(),
                     arguments: Box::new([]),
                 },
             ),
@@ -2556,6 +2672,15 @@ mod tests {
 
     #[test]
     fn record_domain_failure_rolls_back_types_and_locals() {
+        let schema = schema(RuntimeNominalSchemaBody::Record {
+            shape: crate::entry::RuntimeNominalRecordShape::Record,
+            fields: vec![RuntimeNominalSchemaField::new(
+                crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                Some("value".to_owned()),
+                Schema::Bool,
+            )]
+            .into_boxed_slice(),
+        });
         let mut builder = RuntimePlanBuilder::new();
         let invalid = RuntimeNominalRecordDomainSeed::new(
             identity(1),
@@ -2575,10 +2700,11 @@ mod tests {
         );
         assert!(matches!(
             builder.admit_semantic_batch(
-                type_seeds(),
+                type_seeds(&schema),
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
                 [invalid],
-                []
+                [],
+                &schema,
             ),
             Err(RuntimePlanBuildError::NominalRecordDomain(
                 RuntimeNominalRecordDomainError::Shape {
@@ -2599,10 +2725,11 @@ mod tests {
         );
         let admitted = builder
             .admit_semantic_batch(
-                type_seeds(),
+                type_seeds(&schema),
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
                 [valid],
                 [],
+                &schema,
             )
             .expect("failed transaction committed nothing");
         assert_eq!(admitted.local_ids().len(), 1);
@@ -2618,10 +2745,16 @@ mod tests {
 
     #[test]
     fn variant_domain_failure_rolls_back_the_type_batch() {
+        let schema = variant_schema("Ready", Some(Schema::Bool));
         let mut builder = RuntimePlanBuilder::new();
-        let empty = RuntimeVariantDomainSeed::new(identity(1), nominal(), []);
+        let empty = RuntimeVariantDomainSeed::new(
+            identity(1),
+            nominal(),
+            schema.try_layout_hash(identity(1)).unwrap(),
+            [],
+        );
         assert!(matches!(
-            builder.admit_semantic_batch(type_seeds(), [], [], [empty]),
+            builder.admit_semantic_batch(type_seeds(&schema), [], [], [empty], &schema),
             Err(RuntimePlanBuildError::VariantDomain(
                 RuntimeVariantDomainError::EmptyDomain { .. }
             ))
@@ -2630,10 +2763,11 @@ mod tests {
         let valid = RuntimeVariantDomainSeed::new(
             identity(1),
             nominal(),
+            schema.try_layout_hash(identity(1)).unwrap(),
             [RuntimeVariantCaseSeed::new("Ready", Some(identity(2)))],
         );
         builder
-            .admit_semantic_batch(type_seeds(), [], [], [valid])
+            .admit_semantic_batch(type_seeds(&schema), [], [], [valid], &schema)
             .expect("failed transaction committed nothing");
         let plan = builder.finish().expect("sealed plan");
         let variant_ty = plan
@@ -2649,14 +2783,22 @@ mod tests {
 
     #[test]
     fn recursive_variant_domain_is_checked_without_materializing_its_predicate() {
+        let schema = variant_schema(
+            "Next",
+            Some(Schema::NominalRef(RuntimeNominalSchemaIdentity::new(
+                nominal(),
+                identity(1),
+            ))),
+        );
         let mut builder = RuntimePlanBuilder::new();
         let recursive = RuntimeVariantDomainSeed::new(
             identity(1),
             nominal(),
+            schema.try_layout_hash(identity(1)).unwrap(),
             [RuntimeVariantCaseSeed::new("Next", Some(identity(1)))],
         );
         builder
-            .admit_semantic_batch(type_seeds(), [], [], [recursive])
+            .admit_semantic_batch(type_seeds(&schema), [], [], [recursive], &schema)
             .expect("recursive nominal domain is structurally valid");
         let plan = builder.finish().expect("sealed plan");
         let recursive_ty = plan
@@ -2675,28 +2817,82 @@ mod tests {
     }
 
     #[test]
+    fn variant_layout_is_correlated_before_admission_and_value_acceptance() {
+        let schema = variant_schema("Ready", None);
+        let layout = schema.try_layout_hash(identity(1)).unwrap();
+        let wrong_layout = TypeLayoutHash::from_bytes([4; 32]);
+        let domain = |layout| {
+            RuntimeVariantDomainSeed::new(
+                identity(1),
+                nominal(),
+                layout,
+                [RuntimeVariantCaseSeed::new("Ready", None)],
+            )
+        };
+        let mut rejected = RuntimePlanBuilder::new();
+        assert!(matches!(
+            rejected.admit_semantic_batch(type_seeds(&schema), [], [], [domain(wrong_layout)], &schema),
+            Err(RuntimePlanBuildError::VariantLayoutMismatch { expected, actual, .. })
+                if expected == layout && actual == wrong_layout
+        ));
+        assert_eq!(rejected.finish().unwrap().type_table().len(), 0);
+
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_semantic_batch(type_seeds(&schema), [], [], [domain(layout)], &schema)
+            .unwrap();
+        let plan = builder.finish().unwrap();
+        let ty = plan.type_table().id_for_semantic(identity(1)).unwrap();
+        assert_eq!(plan.variant_domains().get(ty).unwrap().layout(), layout);
+        let checked = plan.checked_type(ty).unwrap().unwrap();
+        let value = |layout| RuntimeValue::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
+                nominal: nominal(),
+                semantic_identity: identity(1),
+                layout,
+            },
+            ordinal: 0,
+            name: "Ready".to_owned(),
+            payload: None,
+        };
+        assert!(checked.accepts_value(&value(layout)));
+        assert!(!checked.accepts_value(&value(wrong_layout)));
+        let mut other_layout = checked.clone();
+        let RuntimeCheckedType::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal { layout, .. },
+            ..
+        } = &mut other_layout
+        else {
+            unreachable!()
+        };
+        *layout = TypeLayoutHash::from_bytes([4; 32]);
+        // A derived layout cannot become an input to the semantic identity
+        // from which the nominal graph derives that same layout.
+        assert_eq!(
+            checked.semantic_identity_digest(),
+            other_layout.semantic_identity_digest()
+        );
+    }
+
+    #[test]
     fn conflicting_batch_does_not_commit_local_rows() {
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(1),
                     RuntimePlanTypeProjection::Bool,
                 )],
                 [],
-                [],
-                [],
             )
             .expect("initial bool type");
         assert!(matches!(
-            builder.admit_semantic_batch(
+            builder.admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(1),
                     RuntimePlanTypeProjection::String,
                 )],
                 [RuntimeLocalDeclarationSeed::new(identity(1))],
-                [],
-                [],
             ),
             Err(RuntimePlanBuildError::TypeGraph(
                 RuntimePlanTypeTableError::ConflictingProjection { .. }
@@ -2704,14 +2900,12 @@ mod tests {
         ));
 
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(2),
                     RuntimePlanTypeProjection::String,
                 )],
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
-                [],
-                [],
             )
             .expect("failed batch left no local row");
         let plan = builder.finish().expect("unpoisoned preflight failure");
@@ -2723,28 +2917,24 @@ mod tests {
     fn cross_builder_local_injection_poisoned_the_target_builder() {
         let mut first = RuntimePlanBuilder::new();
         let foreign = first
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(1),
                     RuntimePlanTypeProjection::Bool,
                 )],
                 [RuntimeLocalDeclarationSeed::new(identity(1))],
-                [],
-                [],
             )
             .expect("first admission")
             .local_ids()[0]
             .clone();
         let mut second = RuntimePlanBuilder::new();
         second
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [RuntimePlanTypeSeed::new(
                     identity(1),
                     RuntimePlanTypeProjection::Bool,
                 )],
                 [RuntimeLocalDeclarationSeed::new(identity(1))],
-                [],
-                [],
             )
             .expect("second admission");
 

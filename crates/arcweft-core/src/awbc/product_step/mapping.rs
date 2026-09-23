@@ -382,10 +382,12 @@ pub(super) fn task_spec(
     }
     let request = HostTaskRequest::custom_with_named_args(capability, operation, positional, named);
     let class = request.task_class();
-    let outcome = TaskOutcomeContract::new(
+    let outcome = TaskOutcomeContract::program(
         program
-            .checked_type(record.payload_type)
-            .map_err(|error| ProductStepError::Internal(error.to_string()))?,
+            .runtime_types
+            .get(record.payload_type.index())
+            .ok_or_else(|| ProductStepError::Internal("task payload type is absent".into()))?
+            .semantic_identity(),
     );
     let spec = TaskSpec::new(
         task_id.clone(),

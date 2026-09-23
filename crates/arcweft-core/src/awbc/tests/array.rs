@@ -36,7 +36,7 @@ fn array_length_survives_plan_projection_awbc_codec_and_checked_value_admission(
     for length in [0, 2, u64::MAX] {
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(item_identity, RuntimePlanTypeProjection::Bool),
                     RuntimePlanTypeSeed::new(
@@ -47,8 +47,6 @@ fn array_length_survives_plan_projection_awbc_codec_and_checked_value_admission(
                         },
                     ),
                 ],
-                [],
-                [],
                 [],
             )
             .unwrap();

@@ -22,6 +22,7 @@ pub(crate) use agent::{
     RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
 };
 mod awbc_save;
+mod data_shape;
 mod env;
 mod expression_locals;
 mod integer;
@@ -39,6 +40,9 @@ mod reduction;
 mod sequence_constructors;
 mod sequence_impls;
 mod shape;
+mod view;
+
+pub(crate) use view::{RuntimeRecordView, RuntimeScalarView, RuntimeTupleView, RuntimeValueView};
 
 mod runtime_public_id {
     use arcweft_id::PublicId;
@@ -72,6 +76,7 @@ pub use agent::{
 pub use awbc_save::{
     AwbcRuntimeProjectContinuationSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
 };
+pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
@@ -1307,6 +1312,20 @@ impl RuntimeValue {
         max_encoded_bytes: usize,
     ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
         crate::entry::canonical_runtime_value_digest(self, max_encoded_bytes)
+    }
+
+    /// Hashes persistent data with one shared logical-value budget, including
+    /// opaque payloads. This does not establish nominal or producer type facts.
+    pub fn try_digest_with_limits(
+        &self,
+        limits: crate::entry::RuntimeSchemaLimits,
+    ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+        crate::entry::schema::value_encoding::validate_and_hash(
+            self,
+            limits,
+            &mut crate::entry::schema::value_encoding::NoSchemaValidation,
+            (),
+        )
     }
 
     pub const fn i8(value: i8) -> Self {

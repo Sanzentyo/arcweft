@@ -12,7 +12,7 @@ fn fixture() -> RuntimePlanBuilder {
     use RuntimePlanTypeProjection as Type;
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 Type::Bool,
                 Type::String,
@@ -43,8 +43,6 @@ fn fixture() -> RuntimePlanBuilder {
             .map(|(index, projection)| {
                 RuntimePlanTypeSeed::new(identity(u8::try_from(index + 1).unwrap()), projection)
             }),
-            [],
-            [],
             [],
         )
         .unwrap();
@@ -80,7 +78,7 @@ fn predicate() -> RuntimeExprSeed {
 fn choice_identity_is_an_abi_operand_without_an_authored_expression() {
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
                     identity(5),
@@ -91,8 +89,6 @@ fn choice_identity_is_an_abi_operand_without_an_authored_expression() {
                     RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::Predicate),
                 ),
             ],
-            [],
-            [],
             [],
         )
         .unwrap();

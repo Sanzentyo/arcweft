@@ -6,11 +6,15 @@ use super::{
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
-use crate::plan::{RuntimeReceiverMode, RuntimeTraitMethodId};
-use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::plan::{RuntimePlanTypeProjection, RuntimeReceiverMode, RuntimeTraitMethodId};
+use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
     RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeFunctionValue, RuntimeIterator,
     RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+};
+use crate::{
+    entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId, pure::RuntimeExternalCallContext,
+    task::RuntimeProgramOwner,
 };
 
 pub(crate) struct TraitMethodCallOutcome {
@@ -100,10 +104,161 @@ impl Engine {
         &mut self,
         callee: &RuntimeCallTarget,
         args: &[RuntimeCallArgument],
+        result_type: RuntimePlanTypeId,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let args = self.evaluate_call_args(args, pure_backend)?;
-        Ok(evaluate_runtime_call(callee, &args, pure_backend))
+        let (args, context) = if callee.as_intrinsic().is_some() {
+            (
+                self.evaluate_call_args(args, pure_backend)?,
+                RuntimeExternalCallContext::unbound(),
+            )
+        } else {
+            let (values, argument_types) =
+                self.evaluate_external_call_args(callee, args, pure_backend)?;
+            let result_type = self.external_call_semantic_type(callee, result_type)?;
+            let context = RuntimeExternalCallContext::for_program(
+                RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                argument_types,
+                result_type,
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|error| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().to_owned(),
+                reason: format!(
+                    "external call signature is absent from its selected plan: {error}"
+                ),
+            })?;
+            (values, context)
+        };
+        Ok(evaluate_runtime_call(callee, &args, &context, pure_backend))
+    }
+
+    fn evaluate_external_call_args(
+        &mut self,
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeCallArgument],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<(Vec<RuntimeValue>, Box<[RuntimeSemanticTypeId]>), RuntimeEvalError> {
+        let mut materialized = Vec::with_capacity(args.len());
+        for argument in args {
+            let value = self.evaluate_expr_with_backend(argument.value(), pure_backend)?;
+            let argument_type = argument.value().ty();
+            let (values, semantic_types) = match argument.mode() {
+                RuntimeCallArgumentMode::Value => (
+                    vec![value],
+                    vec![self.external_call_semantic_type(callee, argument_type)?],
+                ),
+                RuntimeCallArgumentMode::Spread => {
+                    let values = runtime_value_into_sequence_values(value).map_err(|value| {
+                        RuntimeEvalError::InvalidSpread(runtime_value_label(&value))
+                    })?;
+                    let semantic_types =
+                        self.external_spread_semantic_types(callee, argument_type, values.len())?;
+                    if values.len() != semantic_types.len() {
+                        return Err(RuntimeEvalError::UnsupportedPure {
+                            name: callee.as_label().to_owned(),
+                            reason: format!(
+                                "external spread produced {} value(s) for {} semantic argument type(s)",
+                                values.len(),
+                                semantic_types.len()
+                            ),
+                        });
+                    }
+                    (values, semantic_types)
+                }
+            };
+            materialized.push((argument.abi_position(), values, semantic_types));
+        }
+        materialized.sort_by_key(|(position, _, _)| *position);
+        let value_count = materialized.iter().map(|(_, values, _)| values.len()).sum();
+        let mut values = Vec::with_capacity(value_count);
+        let mut semantic_types = Vec::with_capacity(value_count);
+        for (_, source_values, source_types) in materialized {
+            if source_values.len() != source_types.len() {
+                return Err(RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: format!(
+                        "external call has {} value(s) for {} semantic argument type(s)",
+                        source_values.len(),
+                        source_types.len()
+                    ),
+                });
+            }
+            values.extend(source_values);
+            semantic_types.extend(source_types);
+        }
+        if values.len() != semantic_types.len() {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().to_owned(),
+                reason: format!(
+                    "external call has {} value(s) for {} semantic argument type(s)",
+                    values.len(),
+                    semantic_types.len()
+                ),
+            });
+        }
+        Ok((values, semantic_types.into_boxed_slice()))
+    }
+
+    fn external_call_semantic_type(
+        &self,
+        callee: &RuntimeCallTarget,
+        ty: RuntimePlanTypeId,
+    ) -> Result<RuntimeSemanticTypeId, RuntimeEvalError> {
+        self.plan
+            .type_table()
+            .get(ty)
+            .map(|declaration| declaration.semantic_identity())
+            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().to_owned(),
+                reason: format!(
+                    "external call references plan type {ty} that is absent from the selected plan"
+                ),
+            })
+    }
+
+    fn external_spread_semantic_types(
+        &self,
+        callee: &RuntimeCallTarget,
+        ty: RuntimePlanTypeId,
+        value_count: usize,
+    ) -> Result<Vec<RuntimeSemanticTypeId>, RuntimeEvalError> {
+        let declaration = self
+            .plan
+            .type_table()
+            .get(ty)
+            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: callee.as_label().to_owned(),
+                reason: format!(
+                    "external spread references plan type {ty} that is absent from the selected plan"
+                ),
+            })?;
+        let child_types = match declaration.projection() {
+            RuntimePlanTypeProjection::Sequence { item, .. }
+            | RuntimePlanTypeProjection::Array { item, .. } => vec![*item; value_count],
+            RuntimePlanTypeProjection::Tuple(items) if items.len() == value_count => items.to_vec(),
+            RuntimePlanTypeProjection::Tuple(items) => {
+                return Err(RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: format!(
+                        "external spread produced {value_count} value(s) for a tuple with {} field type(s)",
+                        items.len()
+                    ),
+                });
+            }
+            _ => {
+                return Err(RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: format!(
+                        "external spread type {ty} has no sequence, array, or tuple element types"
+                    ),
+                });
+            }
+        };
+        child_types
+            .into_iter()
+            .map(|child| self.external_call_semantic_type(callee, child))
+            .collect()
     }
 
     pub(super) fn evaluate_pure_call_expr(

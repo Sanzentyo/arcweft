@@ -80,12 +80,24 @@ impl RuntimeNominalRecordShape {
         Ok(())
     }
 
-    pub(super) const fn tag(self) -> u8 {
+    /// Stable version-one shape tag shared by schemas, AWBC and bundle ABI
+    /// compatibility transcripts.
+    pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::Unit => 0,
             Self::Tuple => 1,
             Self::Record => 2,
             Self::Newtype => 3,
+        }
+    }
+
+    pub(crate) const fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Unit),
+            1 => Some(Self::Tuple),
+            2 => Some(Self::Record),
+            3 => Some(Self::Newtype),
+            _ => None,
         }
     }
 }

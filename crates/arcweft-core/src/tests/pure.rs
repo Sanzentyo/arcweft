@@ -135,7 +135,7 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
     let error_payload_ty = semantic_type(20);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
                     item_ty,
@@ -203,8 +203,6 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                 ),
             ],
             (0..6).map(|_| RuntimeLocalDeclarationSeed::new(item_ty)),
-            [],
-            [],
         )
         .expect("standard map type graph");
 
@@ -385,11 +383,9 @@ fn admit_i64_helper(
 ) -> AdmittedHelper {
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             scalar_type_seeds(),
             (0..arity).map(|_| RuntimeLocalDeclarationSeed::new(i64_semantic_type())),
-            [],
-            [],
         )
         .expect("semantic helper inputs");
     builder
@@ -577,7 +573,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
     let function_semantic_type = semantic_type(FUNCTION_SEMANTIC_MARKER);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 scalar_type_seeds()[0].clone(),
                 RuntimePlanTypeSeed::new(
@@ -595,8 +591,6 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
             ],
-            [],
-            [],
         )
         .expect("closure type graph");
     let captured = admission.local_ids()[0].clone();
@@ -696,7 +690,7 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
     let function_semantic_type = semantic_type(31);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 scalar_type_seeds()[0].clone(),
                 RuntimePlanTypeSeed::new(
@@ -720,8 +714,6 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
             ],
-            [],
-            [],
         )
         .expect("tuple-pattern type graph");
     let closure_binding = admission.local_ids()[0].clone();
@@ -817,7 +809,7 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
     let function_semantic_type = semantic_type(33);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 scalar_type_seeds()[0].clone(),
                 RuntimePlanTypeSeed::new(
@@ -841,8 +833,6 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
                 RuntimeLocalDeclarationSeed::new(sequence_semantic_type),
             ],
-            [],
-            [],
         )
         .expect("sequence-rest type graph");
     let closure_binding = admission.local_ids()[0].clone();
@@ -939,7 +929,7 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
     let function_semantic_type = semantic_type(35);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 scalar_type_seeds()[0].clone(),
                 RuntimePlanTypeSeed::new(
@@ -962,8 +952,6 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
                 RuntimeLocalDeclarationSeed::new(record_semantic_type),
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
             ],
-            [],
-            [],
         )
         .expect("record-pattern type graph");
     let closure_binding = admission.local_ids()[0].clone();
@@ -1053,7 +1041,7 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
     let function_semantic_type = semantic_type(36);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 scalar_type_seeds()[0].clone(),
                 RuntimePlanTypeSeed::new(
@@ -1071,8 +1059,6 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
             ],
-            [],
-            [],
         )
         .expect("positioned-call type graph");
     let closure_binding = admission.local_ids()[0].clone();

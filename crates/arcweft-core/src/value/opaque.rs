@@ -2142,9 +2142,12 @@ mod tests {
         );
         let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
             .expect("live handle snapshots explicitly");
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ));
         assert_eq!(
             snapshot
-                .into_runtime_value()
+                .into_runtime_value_for_program(&program_owner)
                 .expect("snapshot handle restores"),
             value
         );
@@ -2328,9 +2331,12 @@ mod tests {
         assert!(serde_json::to_string(&value).is_err());
         let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&runtime)
             .expect("AWBC snapshot preserves callback authority");
+        let program_owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ));
         assert_eq!(
             snapshot
-                .into_runtime_value()
+                .into_runtime_value_for_program(&program_owner)
                 .expect("AWBC snapshot restores callback"),
             runtime
         );

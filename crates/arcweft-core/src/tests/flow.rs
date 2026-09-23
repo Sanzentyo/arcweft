@@ -4,7 +4,7 @@ mod function_call;
 
 use crate::{
     engine::{Engine, FlowFiberStatus},
-    entry::{RuntimeNominalTypeId, TypeLayoutHash},
+    entry::RuntimeNominalTypeId,
     pattern::RuntimeSemanticTypeId,
     plan::{
         FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeEffectSet,
@@ -67,13 +67,11 @@ fn flow_schema(flow: &crate::plan::FlowRuntimeId) -> RuntimeFlowSchema {
 fn finish_plan(flows: impl IntoIterator<Item = RuntimeFlowSeed>) -> crate::plan::RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 string_type(),
                 RuntimePlanTypeProjection::String,
             )],
-            [],
-            [],
             [],
         )
         .expect("typed scalar admission");
@@ -171,7 +169,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
     let entry = flow_id("flow.project_call_continue");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(
@@ -182,8 +180,6 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
                     },
                 ),
             ],
-            [],
-            [],
             [],
         )
         .expect("project-call continuation types admit");
@@ -250,7 +246,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
     let entry = flow_id("flow.project_call_default");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(tuple, RuntimePlanTypeProjection::Tuple(Box::new([unit]))),
@@ -263,8 +259,6 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(unit)],
-            [],
-            [],
         )
         .expect("project-call attached types admit");
     let target_input = admission
@@ -352,7 +346,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
         });
         let mut builder = RuntimePlanBuilder::new();
         let admission = builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                     RuntimePlanTypeSeed::new(
@@ -364,8 +358,6 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                     ),
                 ],
                 [RuntimeLocalDeclarationSeed::new(sequence)],
-                [],
-                [],
             )
             .expect("rest project-call types admit");
         let target_input = admission
@@ -446,6 +438,11 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
 
 #[test]
 fn native_project_call_evaluates_rest_operands_once_in_source_order() {
+    use crate::entry::{
+        RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField,
+        RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeSchemaLimits,
+        RuntimeTypeSchema,
+    };
     let unit = unit_type();
     let u32_ty = crate::pattern::RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U32)
         .semantic_identity_digest();
@@ -456,7 +453,24 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
     let state_ty = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
     let state_nominal =
         RuntimeNominalTypeId::try_new("test.ProjectCallState").expect("state nominal identity");
-    let state_layout = TypeLayoutHash::from_bytes([0x92; 32]);
+    let schema = RuntimeNominalSchemaGraph::try_new(
+        vec![RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalSchemaIdentity::new(state_nominal.clone(), state_ty),
+            vec![],
+            RuntimeNominalSchemaBody::Record {
+                shape: crate::entry::RuntimeNominalRecordShape::Record,
+                fields: vec![RuntimeNominalSchemaField::new(
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                    Some("value".to_owned()),
+                    RuntimeTypeSchema::U32,
+                )]
+                .into_boxed_slice(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .unwrap();
+    let state_layout = schema.try_layout_hash(state_ty).unwrap();
     let field = RuntimeRecordFieldSeedId::from_zero_based(0);
     let entry = flow_id("flow.project_call_source_once");
     let mut builder = RuntimePlanBuilder::new();
@@ -477,7 +491,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                 ),
                 RuntimePlanTypeSeed::new(
                     state_ty,
-                    RuntimePlanTypeProjection::ProjectNominal {
+                    RuntimePlanTypeProjection::Nominal {
                         nominal: state_nominal,
                         layout: state_layout,
                         arguments: Box::new([]),
@@ -498,6 +512,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                 )],
             )],
             [],
+            &schema,
         )
         .expect("source-once types and state domain admit");
     let state = admission.local_ids()[0].clone();
@@ -642,13 +657,11 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
     let entry = flow_id("flow.project_call_explicit_return");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 string,
                 RuntimePlanTypeProjection::String,
             )],
-            [],
-            [],
             [],
         )
         .expect("project-call return type admits");
@@ -716,13 +729,11 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
     let target = flow_id("flow.project_call_goto_target");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 unit,
                 RuntimePlanTypeProjection::Unit,
             )],
-            [],
-            [],
             [],
         )
         .expect("goto project-call type admits");
@@ -805,13 +816,11 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
     let entry = flow_id("flow.project_call_fallthrough");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [RuntimePlanTypeSeed::new(
                 unit,
                 RuntimePlanTypeProjection::Unit,
             )],
-            [],
-            [],
             [],
         )
         .expect("fallthrough type admits");
@@ -874,13 +883,11 @@ fn native_if_uses_the_admitted_bool_condition() {
     let entry = flow_id("flow.branch");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
             ],
-            [],
-            [],
             [],
         )
         .expect("typed scalar admission");
@@ -921,13 +928,11 @@ fn await_progress_runs_only_the_first_matching_observer() {
     let entry = flow_id("flow.await_observer");
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
             ],
-            [],
-            [],
             [],
         )
         .expect("Await observer types admit");

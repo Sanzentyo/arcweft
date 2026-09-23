@@ -568,6 +568,8 @@ impl FlowRuntimeId {
 /// Failure to validate one complete executable runtime-plan inventory.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanError {
+    #[error("invalid data codec-use policy: {0}")]
+    DataCodecUse(Box<crate::program_types::RuntimeProgramDataShapeError>),
     #[error("duplicate runtime flow `{0}`")]
     DuplicateFlow(String),
     #[error("duplicate runtime entry `{0}`")]
@@ -693,6 +695,11 @@ impl RuntimePlan {
             }
         }
         self.verify_pure_programs(&helper_ids)?;
+        crate::program_types::RuntimeProgramDataShapes::new(
+            crate::program_types::RuntimeProgramTypes::Plan(self),
+        )
+        .validate_codec_uses(crate::entry::RuntimeSchemaLimits::engine_default())
+        .map_err(|error| RuntimePlanError::DataCodecUse(Box::new(error)))?;
         let mut callable_ids = BTreeSet::new();
         for executable in &self.callable_executables {
             if !callable_ids.insert(executable.callable.clone()) {
@@ -1182,29 +1189,27 @@ impl RuntimePlan {
                 entry: entry.canonical_label(),
             });
         }
-        let state_layout = roles.state.schema.try_layout_hash().map_err(|error| {
-            RuntimePlanError::InvalidRoleSchema {
-                entry: entry.canonical_label(),
-                role: "state",
-                message: error.to_string(),
-            }
-        })?;
-        if roles.state.layout != state_layout {
-            return Err(RuntimePlanError::StateLayoutMismatch {
-                entry: entry.canonical_label(),
-            });
-        }
-        let event_layout = roles.event.schema.try_layout_hash().map_err(|error| {
-            RuntimePlanError::InvalidRoleSchema {
-                entry: entry.canonical_label(),
-                role: "event",
-                message: error.to_string(),
-            }
-        })?;
-        if roles.event.layout != event_layout {
-            return Err(RuntimePlanError::EventLayoutMismatch {
-                entry: entry.canonical_label(),
-            });
+        for (name, role) in [("state", &roles.state), ("event", &roles.event)] {
+            role.validate_for_program(crate::program_types::RuntimeProgramTypes::Plan(self))
+                .map_err(|error| match (name, error) {
+                    (
+                        "state",
+                        crate::program_types::RuntimeProgramTypeError::NominalLayout { .. },
+                    ) => RuntimePlanError::StateLayoutMismatch {
+                        entry: entry.canonical_label(),
+                    },
+                    (
+                        "event",
+                        crate::program_types::RuntimeProgramTypeError::NominalLayout { .. },
+                    ) => RuntimePlanError::EventLayoutMismatch {
+                        entry: entry.canonical_label(),
+                    },
+                    (_, error) => RuntimePlanError::InvalidRoleSchema {
+                        entry: entry.canonical_label(),
+                        role: name,
+                        message: error.to_string(),
+                    },
+                })?;
         }
         let Some(flow) = self
             .flow_executables

@@ -324,6 +324,7 @@ mod tests {
             local,
             RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
                 RuntimeNominalTypeId::try_new("game.Pair").unwrap(),
+                crate::pattern::RuntimeSemanticTypeId::from_bytes([9; 32]),
                 TypeLayoutHash::from_bytes([9; 32]),
                 vec![
                     RuntimeValue::Bool(true),

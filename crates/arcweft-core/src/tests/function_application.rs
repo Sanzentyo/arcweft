@@ -24,7 +24,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
     let outer = RuntimeSemanticTypeId::from_bytes([0x72; 32]);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
                 RuntimePlanTypeSeed::new(
@@ -43,8 +43,6 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
                 ),
             ],
             [RuntimeLocalDeclarationSeed::new(unit)],
-            [],
-            [],
         )
         .expect("nested function types admit");
     let inner_site = builder

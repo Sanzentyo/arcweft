@@ -14,9 +14,12 @@ use crate::awbc::schema::{
     AwbcTypeId,
 };
 use crate::effect::RuntimeAssertionGuardId;
-use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles};
+use crate::entry::{
+    RuntimeCallableRole, RuntimeEntryRoles, RuntimeNominalRecordShape, RuntimeSchemaLimits,
+};
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::RuntimeAgentTypeProjection;
+use crate::program_types::{RuntimeProgramDataShapes, RuntimeProgramTypes};
 use crate::value::RuntimeDialogueOpaqueRole;
 use arcweft_id::EffectId;
 use std::cmp::Ordering;
@@ -132,10 +135,11 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Shared(item)
             | AwbcRuntimeTypeShape::Reference(item)
             | AwbcRuntimeTypeShape::Array { item, .. }
-            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(item)) => {
+            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(item))
+            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(item)) => {
                 check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;
             }
-            AwbcRuntimeTypeShape::Map { key, value }
+            AwbcRuntimeTypeShape::Map { key, value, .. }
             | AwbcRuntimeTypeShape::Stream {
                 item: key,
                 error: value,
@@ -156,22 +160,12 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             }
             AwbcRuntimeTypeShape::Record { public_id, fields } => {
                 check_optional_string(program, *public_id, &at)?;
-                let mut names = BTreeSet::new();
-                for field in fields {
-                    check_string(program, field.name, &at)?;
-                    check_index(
-                        program.runtime_types.len(),
-                        field.ty.0,
-                        "runtime_types",
-                        &at,
-                    )?;
-                    if !names.insert(field.name) {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at: at.clone(),
-                            message: "record type contains duplicate field names".to_owned(),
-                        });
-                    }
-                }
+                program
+                    .validate_record_fields(type_id, RuntimeNominalRecordShape::Record, fields)
+                    .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: error.to_string(),
+                    })?;
             }
             AwbcRuntimeTypeShape::Variant {
                 owner,
@@ -214,6 +208,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 public_id,
                 layout,
                 arguments,
+                shape,
                 fields,
             } => {
                 check_string(program, *public_id, &at)?;
@@ -233,30 +228,8 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                             .to_owned(),
                     });
                 }
-                let mut names = BTreeSet::new();
-                for field in fields {
-                    check_string(program, field.name, &at)?;
-                    check_index(
-                        program.runtime_types.len(),
-                        field.ty.0,
-                        "runtime_types",
-                        &at,
-                    )?;
-                    if !names.insert(field.name) {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at: at.clone(),
-                            message: "nominal record type contains duplicate field names"
-                                .to_owned(),
-                        });
-                    }
-                }
                 program
-                    .nominal_record_layout(AwbcTypeId(u32::try_from(index).map_err(|_| {
-                        AwbcVerifyError::InvalidInvariant {
-                            at: at.clone(),
-                            message: "runtime type index exceeds u32".to_owned(),
-                        }
-                    })?))
+                    .validate_record_fields(type_id, *shape, fields)
                     .map_err(|error| AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
                         message: error.to_string(),
@@ -312,7 +285,18 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Dynamic => {}
         }
     }
-    Ok(())
+    program
+        .validate_type_graph()
+        .map_err(|error| AwbcVerifyError::InvalidInvariant {
+            at: "runtime type graph".to_owned(),
+            message: error.to_string(),
+        })?;
+    RuntimeProgramDataShapes::new(RuntimeProgramTypes::Awbc(program))
+        .validate_codec_uses(RuntimeSchemaLimits::engine_default())
+        .map_err(|error| AwbcVerifyError::InvalidInvariant {
+            at: "runtime type codec uses".to_owned(),
+            message: error.to_string(),
+        })
 }
 
 fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
@@ -333,22 +317,8 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     check_index(program.constants.len(), item.0, "constants", &at)?;
                 }
             }
-            AwbcConstant::Record {
-                ty,
-                field_names,
-                fields,
-            } => {
+            AwbcConstant::Record { ty, fields } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                if field_names.len() != fields.len() {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: format!("constant {index}"),
-                        message: "record constant field name count does not match value count"
-                            .to_owned(),
-                    });
-                }
-                for field_name in field_names {
-                    check_string(program, *field_name, &at)?;
-                }
                 for field in fields {
                     check_index(program.constants.len(), field.0, "constants", &at)?;
                 }
@@ -368,17 +338,7 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                                     .to_owned(),
                             });
                         }
-                        for (actual, expected) in field_names.iter().zip(type_fields) {
-                            if *actual != expected.name {
-                                return Err(AwbcVerifyError::InvalidInvariant {
-                                    at: format!("constant {index}"),
-                                    message: "record constant field names do not match type"
-                                        .to_owned(),
-                                });
-                            }
-                        }
                     }
-                    AwbcRuntimeTypeShape::Dynamic => {}
                     _ => {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
@@ -387,14 +347,8 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 }
             }
-            AwbcConstant::Variant {
-                ty,
-                case,
-                case_name,
-                payload,
-            } => {
+            AwbcConstant::Variant { ty, case, payload } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                check_string(program, *case_name, &at)?;
                 if let Some(payload) = payload {
                     check_index(program.constants.len(), payload.0, "constants", &at)?;
                 }
@@ -407,13 +361,6 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                                 at: format!("constant {index}"),
                             });
                         };
-                        if case_layout.name != *case_name {
-                            return Err(AwbcVerifyError::InvalidInvariant {
-                                at: format!("constant {index}"),
-                                message: "variant constant case name does not match type"
-                                    .to_owned(),
-                            });
-                        }
                         if case_layout.payload.is_some() != payload.is_some() {
                             return Err(AwbcVerifyError::InvalidInvariant {
                                 at: format!("constant {index}"),
@@ -2296,8 +2243,15 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                             .to_owned(),
                     });
                 }
-                verify_role_schema(&at, "state", &roles.state.schema, roles.state.layout)?;
-                verify_role_schema(&at, "event", &roles.event.schema, roles.event.layout)?;
+                for (name, role) in [("state", &roles.state), ("event", &roles.event)] {
+                    role.validate_for_program(crate::program_types::RuntimeProgramTypes::Awbc(
+                        program,
+                    ))
+                    .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: format!("{name} role does not match its program type: {error}"),
+                    })?;
+                }
                 referenced_flows
                     .insert((roles.initial_flow.flow.clone(), roles.initial_flow.contract));
             }
@@ -2428,27 +2382,6 @@ fn find_callable_executable<'a>(
         .callable_executables
         .iter()
         .find(|executable| executable.role == *role)
-}
-
-fn verify_role_schema(
-    at: &str,
-    role: &'static str,
-    schema: &crate::entry::RuntimeTypeSchema,
-    layout: crate::entry::TypeLayoutHash,
-) -> Result<(), AwbcVerifyError> {
-    let actual = schema
-        .try_layout_hash()
-        .map_err(|error| AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: format!("{role} schema is invalid: {error}"),
-        })?;
-    if actual != layout {
-        return Err(AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: format!("{role} schema layout does not match checked metadata"),
-        });
-    }
-    Ok(())
 }
 
 fn verify_route_segments(

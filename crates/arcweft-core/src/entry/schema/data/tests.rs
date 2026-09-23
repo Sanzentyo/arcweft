@@ -1,5 +1,6 @@
 use arcweft_data::{
-    BytesFormat, EnumRepr, EnumTagStyle, FieldShape, RecordPolicy, TypeShape, VariantShape,
+    BytesFormat, EnumRepr, EnumTagStyle, FieldShape, MapKind, RecordPolicy, ShapeId, TypeShape,
+    VariantShape,
 };
 
 use crate::entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeTypeSchema};
@@ -17,7 +18,7 @@ fn reflected_record_schema_validates_runtime_widths_and_sequences() {
             deny_unknown_fields: true,
         },
     };
-    let schema = RuntimeTypeSchema::from(&shape);
+    let schema = RuntimeTypeSchema::try_from(&shape).unwrap();
     let limits = RuntimeSchemaLimits::engine_default();
     let packet = |code| {
         RuntimeValue::try_record(vec![
@@ -47,7 +48,7 @@ fn reflected_record_schema_validates_runtime_widths_and_sequences() {
 }
 
 #[test]
-fn reflected_wire_metadata_and_recursive_names_remain_in_canonical_layout() {
+fn reflected_wire_metadata_remains_in_canonical_layout() {
     let shape = TypeShape::Enum {
         name: "Chain".to_owned(),
         variants: vec![
@@ -64,11 +65,7 @@ fn reflected_wire_metadata_and_recursive_names_remain_in_canonical_layout() {
                     )
                     .with_bytes_format(BytesFormat::Hex)
                     .with_default(),
-                    FieldShape::new(
-                        "parent",
-                        "p",
-                        TypeShape::Option(Box::new(TypeShape::Named("Chain".to_owned()))),
-                    ),
+                    FieldShape::new("parent", "p", TypeShape::Option(Box::new(TypeShape::Unit))),
                     FieldShape::new("cache", "c", TypeShape::Unit).skipped(),
                 ],
                 policy: RecordPolicy {
@@ -82,7 +79,7 @@ fn reflected_wire_metadata_and_recursive_names_remain_in_canonical_layout() {
         },
         repr: Some(EnumRepr::I8),
     };
-    let schema = RuntimeTypeSchema::from(&shape);
+    let schema = RuntimeTypeSchema::try_from(&shape).unwrap();
     let original = schema.try_layout_hash().unwrap();
     let RuntimeTypeSchema::Enum {
         variants,
@@ -116,7 +113,7 @@ fn reflected_wire_metadata_and_recursive_names_remain_in_canonical_layout() {
     assert!(fields[2].skip);
     assert_eq!(
         fields[1].schema,
-        RuntimeTypeSchema::Option(Box::new(RuntimeTypeSchema::Named("Chain".to_owned())))
+        RuntimeTypeSchema::option(RuntimeTypeSchema::Unit)
     );
 
     for change in 0..5 {
@@ -145,7 +142,36 @@ fn reflected_wire_metadata_and_recursive_names_remain_in_canonical_layout() {
         }
         assert_ne!(
             original,
-            RuntimeTypeSchema::from(&changed).try_layout_hash().unwrap()
+            RuntimeTypeSchema::try_from(&changed)
+                .unwrap()
+                .try_layout_hash()
+                .unwrap()
         );
     }
+}
+
+#[test]
+fn standalone_reflection_cannot_issue_a_nominal_identity_from_a_shape_index() {
+    let shape = TypeShape::Option(Box::new(TypeShape::Ref(ShapeId::new(7))));
+    assert_eq!(
+        RuntimeTypeSchema::try_from(&shape),
+        Err(super::RuntimeDataSchemaProjectionError::UnboundReference { id: 7 })
+    );
+}
+
+#[test]
+fn map_ordering_policy_is_part_of_the_canonical_type_layout() {
+    let ordered = RuntimeTypeSchema::try_from(&TypeShape::map(
+        TypeShape::String,
+        TypeShape::I64,
+        MapKind::Ordered,
+    ))
+    .unwrap();
+    let sorted = RuntimeTypeSchema::try_from(&TypeShape::map(
+        TypeShape::String,
+        TypeShape::I64,
+        MapKind::Sorted,
+    ))
+    .unwrap();
+    assert_ne!(ordered.try_layout_hash(), sorted.try_layout_hash());
 }

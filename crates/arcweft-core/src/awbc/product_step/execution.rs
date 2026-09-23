@@ -3,17 +3,19 @@ use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPl
 use crate::awbc::vm::{
     VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions, step_with_host_context,
 };
-use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper};
+use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, RuntimeExternalCallContext};
 use crate::step::{
     RuntimeStepInput, RuntimeStepOutput, input_event_text_payload, input_event_trigger_name,
 };
-use crate::stream::StreamRuntimeId;
 use crate::value::RuntimeValue;
+use crate::{entry::RuntimeSchemaLimits, stream::StreamRuntimeId, task::RuntimeProgramOwner};
+use std::sync::Arc;
 
 pub(super) struct ProductVmHost<'a, B> {
     pub(super) backend: &'a mut B,
     pub(super) fallback_stats: &'a mut crate::step::RuntimePureCallStats,
     pub(super) context: VmExecutionContext,
+    pub(super) program_owner: RuntimeProgramOwner,
 }
 
 impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
@@ -27,9 +29,54 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             .intrinsics
             .get(intrinsic.index())
             .ok_or(VmError::MissingIntrinsic(intrinsic))?;
+        let external_context = if record.identity.as_intrinsic().is_some() {
+            RuntimeExternalCallContext::unbound()
+        } else {
+            let signature = program
+                .signatures
+                .get(record.signature.index())
+                .ok_or_else(|| {
+                    VmError::Runtime(format!(
+                        "AWBC intrinsic {} references missing signature {}",
+                        intrinsic.0, record.signature.0
+                    ))
+                })?;
+            if signature.params.len() != args.len() {
+                return Err(VmError::FunctionArgumentCount {
+                    expected: signature.params.len(),
+                    actual: args.len(),
+                });
+            }
+            let argument_types = signature
+                .params
+                .iter()
+                .copied()
+                .map(|ty| semantic_type_for_awbc(program, ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            let result_type = signature.result.ok_or_else(|| {
+                VmError::Runtime(format!(
+                    "AWBC external intrinsic {} has no result type for its runtime call context",
+                    record.identity.as_label()
+                ))
+            })?;
+            let result_type = semantic_type_for_awbc(program, result_type)?;
+            RuntimeExternalCallContext::for_program(
+                self.program_owner.clone(),
+                argument_types,
+                result_type,
+                RuntimeSchemaLimits::engine_default(),
+            )
+            .map_err(|error| {
+                VmError::Runtime(format!(
+                    "AWBC external intrinsic {} has an invalid program type context: {error}",
+                    record.identity.as_label()
+                ))
+            })?
+        };
         Ok(Some(crate::engine::evaluate_runtime_call(
             &record.identity,
             args,
+            &external_context,
             self.backend,
         )))
     }
@@ -67,7 +114,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
 }
 
 pub(super) fn run_function(
-    program: &AwbcProgram,
+    program: &Arc<AwbcProgram>,
     function: AwbcFunctionId,
     args: &[RuntimeValue],
     backend: &mut impl RuntimeCallBackend,
@@ -78,6 +125,7 @@ pub(super) fn run_function(
         backend,
         fallback_stats,
         context,
+        program_owner: RuntimeProgramOwner::Awbc(Arc::clone(program)),
     };
     run_function_with_host(program, function, args, context, &mut host)
 }
@@ -139,6 +187,17 @@ fn context_for_program(program: &AwbcProgram) -> Result<VmExecutionContext, VmEr
     )
     .map_err(|error| VmError::Runtime(error.to_string()))?;
     Ok(VmExecutionContext::new(artifact))
+}
+
+fn semantic_type_for_awbc(
+    program: &AwbcProgram,
+    ty: crate::awbc::schema::AwbcTypeId,
+) -> Result<crate::pattern::RuntimeSemanticTypeId, VmError> {
+    program
+        .runtime_types
+        .get(ty.index())
+        .map(|runtime_type| runtime_type.semantic_identity())
+        .ok_or(VmError::MissingType(ty))
 }
 
 pub(super) fn stream_id_for(program: &AwbcProgram, stream: AwbcStreamPlanId) -> StreamRuntimeId {

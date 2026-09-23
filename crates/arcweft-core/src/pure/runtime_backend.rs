@@ -1,7 +1,8 @@
 use super::{
-    RuntimeExternalCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args,
-    RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend, RuntimePureCallBackend,
-    RuntimePureHelperRef, RuntimePureScalarInteger, VmRuntimePureCallBackend,
+    RuntimeExternalCallBackend, RuntimeExternalCallContext, RuntimeFixedArgs, RuntimeFloat32Args,
+    RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
+    RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalarInteger,
+    VmRuntimePureCallBackend,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
@@ -11,7 +12,7 @@ use crate::value::{
     runtime_value_label,
 };
 
-impl RuntimePureCallBackend for VmRuntimePureCallBackend {
+impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCallBackend<E> {
     fn record_awbc_pure_program_call(&mut self) {
         self.stats.awbc_pure_program_calls = self.stats.awbc_pure_program_calls.saturating_add(1);
     }
@@ -902,8 +903,12 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        self.scratch
-            .evaluate_values(helper.plan(), helper.id(), args)
+        self.scratch.evaluate_values_with_external(
+            helper.plan(),
+            helper.id(),
+            args,
+            &mut self.external,
+        )
     }
 
     fn stats(&self) -> RuntimePureCallStats {
@@ -911,7 +916,7 @@ impl RuntimePureCallBackend for VmRuntimePureCallBackend {
     }
 }
 
-impl RuntimeMathCallBackend for VmRuntimePureCallBackend {
+impl<E> RuntimeMathCallBackend for VmRuntimePureCallBackend<E> {
     fn call_math_matmul_f32(
         &mut self,
         lhs: &DenseMatrixF32,
@@ -991,13 +996,14 @@ impl RuntimeMathCallBackend for VmRuntimePureCallBackend {
     }
 }
 
-impl RuntimeExternalCallBackend for VmRuntimePureCallBackend {
+impl<E: RuntimeExternalCallBackend> RuntimeExternalCallBackend for VmRuntimePureCallBackend<E> {
     fn call_external(
         &mut self,
-        _callee: &RuntimeCallTarget,
-        _args: &[RuntimeValue],
+        context: &RuntimeExternalCallContext,
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
-        None
+        self.external.call_external(context, callee, args)
     }
 }
 

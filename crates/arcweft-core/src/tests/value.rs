@@ -43,6 +43,7 @@ fn test_entity_ref(name: &str) -> RuntimeEntityReference {
 fn nominal_and_anonymous_records_have_distinct_identity_and_bytes() {
     let nominal = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
         RuntimeNominalTypeId::try_new("test.Named").expect("type"),
+        RuntimeSemanticTypeId::from_bytes([7; 32]),
         TypeLayoutHash::from_bytes([7; 32]),
         vec![RuntimeValue::i32(1)],
     ));
@@ -59,6 +60,22 @@ fn nominal_and_anonymous_records_have_distinct_identity_and_bytes() {
             .expect("anonymous bytes")
     );
     assert_eq!(runtime_value_label(&nominal), "nominal-record/test.Named/1");
+}
+
+#[test]
+fn nominal_value_canonical_bytes_commit_source_semantic_identity() {
+    let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+        RuntimeNominalTypeId::try_new("n").unwrap(),
+        RuntimeSemanticTypeId::from_bytes([3; 32]),
+        TypeLayoutHash::from_bytes([5; 32]),
+        vec![],
+    ));
+    let mut expected = vec![15, 1, b'n'];
+    expected.extend_from_slice(&[3; 32]);
+    expected.extend_from_slice(&[5; 32]);
+    expected.push(0);
+    assert_eq!(value.try_canonical_bytes(expected.len()).unwrap(), expected);
+    assert!(value.try_canonical_bytes(expected.len() - 1).is_err());
 }
 
 #[test]
@@ -117,8 +134,13 @@ fn progress_is_typed_saveable_and_canonically_encoded() {
 
     let snapshot = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(&value)
         .expect("progress snapshot");
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        crate::awbc::schema::AwbcProgram::default(),
+    ));
     assert_eq!(
-        snapshot.into_runtime_value().expect("restore progress"),
+        snapshot
+            .into_runtime_value_for_program(&owner)
+            .expect("restore progress"),
         value
     );
     let encoded = serde_json::to_vec(&value).expect("serialize progress runtime value");
@@ -137,6 +159,7 @@ fn runtime_value_nesting_accepts_64_and_rejects_65() {
         (0..depth).fold(RuntimeValue::Unit, |value, _| {
             RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
                 type_id.clone(),
+                RuntimeSemanticTypeId::from_bytes([19; 32]),
                 layout,
                 vec![value],
             ))
@@ -175,6 +198,7 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
         owner: RuntimeVariantIdentity::Nominal {
             nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal identity"),
             semantic_identity: RuntimeSemanticTypeId::from_bytes([3; 32]),
+            layout: crate::entry::TypeLayoutHash::from_bytes([7; 32]),
         },
         ordinal: 0,
         name: "Some".to_owned(),
@@ -297,7 +321,7 @@ fn builtin_option_and_result_reject_flat_legacy_payloads() {
 }
 
 #[test]
-fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
+fn variant_canonical_bytes_retain_closed_owner_ordinal_semantic_identity_and_layout() {
     let option = RuntimeValue::Variant {
         owner: RuntimeVariantIdentity::Builtin(
             crate::pattern::RuntimeBuiltinVariantIdentity::Option,
@@ -307,10 +331,11 @@ fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
         payload: Some(Box::new(RuntimeValue::Unit)),
     };
     let result = RuntimeValue::result_ok(RuntimeValue::Unit);
-    let nominal = |semantic_identity| RuntimeValue::Variant {
+    let nominal = |semantic_identity, layout| RuntimeValue::Variant {
         owner: RuntimeVariantIdentity::Nominal {
             nominal: RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
             semantic_identity: RuntimeSemanticTypeId::from_bytes(semantic_identity),
+            layout: crate::entry::TypeLayoutHash::from_bytes(layout),
         },
         ordinal: 0,
         name: "Some".to_owned(),
@@ -319,7 +344,14 @@ fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
 
     let encode = |value: RuntimeValue| value.try_canonical_bytes(1024).expect("canonical value");
     assert_ne!(encode(option), encode(result));
-    assert_ne!(encode(nominal([1; 32])), encode(nominal([2; 32])));
+    assert_ne!(
+        encode(nominal([1; 32], [3; 32])),
+        encode(nominal([2; 32], [3; 32]))
+    );
+    assert_ne!(
+        encode(nominal([1; 32], [3; 32])),
+        encode(nominal([1; 32], [4; 32]))
+    );
 }
 
 #[test]

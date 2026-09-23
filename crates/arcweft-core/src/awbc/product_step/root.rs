@@ -10,9 +10,10 @@ use crate::root::{
 };
 use crate::step::{RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepOutput};
 use crate::value::RuntimeValue;
+use std::sync::Arc;
 
 pub(super) fn prepare_startup(
-    program: &AwbcProgram,
+    program: &Arc<AwbcProgram>,
     entry: AwbcEntryId,
 ) -> Result<Option<RootStartup>, AwbcProductStepBuildError> {
     let Some(contract) = startup_contract(program, entry).map_err(|error| {
@@ -30,11 +31,15 @@ pub(super) fn prepare_startup(
         backend: &mut backend,
         fallback_stats: &mut fallback_stats,
     };
-    RootRuntime::start(contract, &mut evaluator)
-        .map(Some)
-        .map_err(|error| AwbcProductStepBuildError::RootStartup {
-            message: error.to_string(),
-        })
+    RootRuntime::start(
+        contract,
+        &mut evaluator,
+        crate::program_types::RuntimeProgramTypes::Awbc(program.as_ref()),
+    )
+    .map(Some)
+    .map_err(|error| AwbcProductStepBuildError::RootStartup {
+        message: error.to_string(),
+    })
 }
 
 fn startup_contract(
@@ -155,9 +160,11 @@ impl AwbcProductStepExecutor {
         }
         let contract = startup_contract(&self.program, self.fiber.entry)?;
         let candidate = match (contract, snapshot) {
-            (Some(contract), Some(snapshot)) => {
-                Some(RootRuntime::from_snapshot(contract, snapshot)?)
-            }
+            (Some(contract), Some(snapshot)) => Some(RootRuntime::from_snapshot(
+                contract,
+                snapshot,
+                crate::program_types::RuntimeProgramTypes::Awbc(&self.program),
+            )?),
             (None, None) => None,
             (Some(_), None) | (None, Some(_)) => {
                 return Err(RootRuntimeError::SnapshotRoleMismatch("root presence"));
@@ -189,7 +196,11 @@ impl AwbcProductStepExecutor {
                 backend: pure_backend,
                 fallback_stats: &mut self.compact_pure_stats,
             };
-            root.step(events, &mut evaluator)
+            root.step(
+                events,
+                &mut evaluator,
+                crate::program_types::RuntimeProgramTypes::Awbc(self.program.as_ref()),
+            )
         };
         match result {
             Ok(result) => {
@@ -236,7 +247,7 @@ impl AwbcProductStepExecutor {
 }
 
 struct ProductRootEvaluator<'a, B> {
-    program: &'a AwbcProgram,
+    program: &'a Arc<AwbcProgram>,
     backend: &'a mut B,
     fallback_stats: &'a mut crate::step::RuntimePureCallStats,
 }

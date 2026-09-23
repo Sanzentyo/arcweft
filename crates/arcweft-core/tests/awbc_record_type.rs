@@ -28,7 +28,8 @@ fn structural_record_program(first_name: &str, second_name: &str) -> AwbcProgram
                 AwbcRuntimeTypeShape::Record {
                     public_id: None,
                     fields: vec![AwbcRecordField {
-                        name: AwbcStringId(2),
+                        field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                        name: Some(AwbcStringId(2)),
                         ty: AwbcTypeId(0),
                     }],
                 },
@@ -43,11 +44,13 @@ fn structural_record_program(first_name: &str, second_name: &str) -> AwbcProgram
                     public_id: None,
                     fields: vec![
                         AwbcRecordField {
-                            name: AwbcStringId(0),
+                            field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                            name: Some(AwbcStringId(0)),
                             ty: AwbcTypeId(0),
                         },
                         AwbcRecordField {
-                            name: AwbcStringId(1),
+                            field: RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap(),
+                            name: Some(AwbcStringId(1)),
                             ty: AwbcTypeId(2),
                         },
                     ],

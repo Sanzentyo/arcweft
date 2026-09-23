@@ -6,6 +6,7 @@ use crate::runtime_id::{
     DialogueActivationId, RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
     RuntimeLocalDeclarationId,
 };
+use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::ownership::{RuntimeOwnedSlotId, RuntimeValuePath};
 use crate::value::{
@@ -1665,6 +1666,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
 
     pub(crate) fn into_live(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeDialogueActivationState<T>, crate::value::AwbcRuntimeValueSnapshotError>
     {
         Ok(RuntimeDialogueActivationState {
@@ -1676,9 +1678,9 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
             scheduled: self
                 .scheduled
                 .into_iter()
-                .map(AwbcRuntimeScheduledLineTaskSnapshot::into_live)
+                .map(|scheduled| scheduled.into_live(owner))
                 .collect::<Result<_, _>>()?,
-            result: self.result.into_live()?,
+            result: self.result.into_live(owner)?,
             frame_released: self.frame_released,
             prepared_commands: Vec::new(),
         })
@@ -1724,8 +1726,9 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
 
     fn into_live(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeScheduledLineTask, crate::value::AwbcRuntimeValueSnapshotError> {
-        let custody = self.custody.into_live()?;
+        let custody = self.custody.into_live(owner)?;
         RuntimeScheduledLineTask::try_from_parts(
             self.token,
             self.child,
@@ -1755,16 +1758,17 @@ impl AwbcRuntimeScheduledCaptureCustodySnapshot {
 
     fn into_live(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeScheduledCaptureCustody, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(match self {
             Self::Packet(bindings) => {
-                RuntimeScheduledCaptureCustody::Packet(live_local_bindings(bindings)?)
+                RuntimeScheduledCaptureCustody::Packet(live_local_bindings(bindings, owner)?)
             }
             Self::ChildFiber(locals) => {
                 RuntimeScheduledCaptureCustody::ChildFiber(locals.into_boxed_slice())
             }
             Self::LineScope(bindings) => {
-                RuntimeScheduledCaptureCustody::LineScope(live_local_bindings(bindings)?)
+                RuntimeScheduledCaptureCustody::LineScope(live_local_bindings(bindings, owner)?)
             }
         })
     }
@@ -1786,13 +1790,14 @@ fn snapshot_local_bindings(
 
 fn live_local_bindings(
     bindings: Vec<AwbcRuntimeLocalBindingSnapshot>,
+    owner: &RuntimeProgramOwner,
 ) -> Result<Box<[RuntimeLocalBinding]>, crate::value::AwbcRuntimeValueSnapshotError> {
     bindings
         .into_iter()
         .map(|capture| {
             Ok(RuntimeLocalBinding {
                 local: capture.local,
-                value: capture.value.into_runtime_value()?,
+                value: capture.value.into_runtime_value_for_program(owner)?,
             })
         })
         .collect::<Result<Vec<_>, crate::value::AwbcRuntimeValueSnapshotError>>()
@@ -1838,16 +1843,17 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
 
     fn into_live(
         self,
+        owner: &RuntimeProgramOwner,
     ) -> Result<RuntimeDialogueResultState<T>, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(match self {
             Self::Uncommitted => RuntimeDialogueResultState::Uncommitted,
             Self::Committed { ty, value } => RuntimeDialogueResultState::Committed {
                 ty,
-                value: value.into_runtime_value()?,
+                value: value.into_runtime_value_for_program(owner)?,
             },
             Self::Publishing { ty, value } => RuntimeDialogueResultState::Publishing {
                 ty,
-                value: value.into_runtime_value()?,
+                value: value.into_runtime_value_for_program(owner)?,
             },
             Self::Published => RuntimeDialogueResultState::Published,
             Self::Abandoned => RuntimeDialogueResultState::Abandoned,
@@ -3247,16 +3253,22 @@ pub enum LineRuntimeError {
 mod tests {
     use super::{
         AwbcRuntimeDialogueActivationSnapshot, LineRuntimeError, RuntimeCueLease, RuntimeCueOrigin,
-        RuntimeDialogueActivationState, RuntimeHandleLease, RuntimeHandleLeaseState,
-        RuntimeHandleOwnerSlot, RuntimeHandleResource, RuntimeScheduledLineTask,
+        RuntimeDialogueActivationState, RuntimeDialogueResultState, RuntimeHandleLease,
+        RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
+        RuntimeScheduledLineTask,
+    };
+    use crate::awbc::schema::{
+        AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId,
     };
     use crate::line_task::{LineTaskWorkTag, RuntimeScheduledState};
     use crate::runtime_id::{
         DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineHandleSiteId,
-        RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimePersistentFiberId, RuntimePlanTypeId,
+        RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
+        RuntimePersistentFiberId, RuntimePlanTypeId,
     };
     use crate::time::LogicalDuration;
-    use crate::value::RuntimeValue;
+    use crate::value::{RuntimeAgentValue, RuntimeDataShape, RuntimeLocalBinding, RuntimeValue};
+    use crate::{pattern::RuntimeSemanticTypeId, task::RuntimeProgramOwner};
     use std::num::NonZeroU32;
 
     #[test]
@@ -3302,14 +3314,14 @@ mod tests {
 
     fn scheduled_state() -> (
         DialogueActivationId,
-        RuntimeDialogueActivationState<RuntimePlanTypeId>,
+        RuntimeDialogueActivationState<AwbcTypeId>,
     ) {
         let activation = scheduled_activation();
         let site = RuntimeLineHandleSiteId::from_zero_based(0);
         let child = RuntimeLineTaskNodeId::from_zero_based(1).expect("child");
         let action = RuntimeLineTaskNodeId::from_zero_based(2).expect("action");
         let deadline = LogicalDuration::from_nanos(7);
-        let mut state = RuntimeDialogueActivationState::new();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
         for issuance in 0..2 {
             let token = RuntimeLineHandleToken::new(activation.clone(), site, issuance);
             let work = LineTaskWorkTag::scheduled(token.clone(), action);
@@ -3341,7 +3353,8 @@ mod tests {
             .expect("same-site issuance tokens are distinct packets");
         let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
             .expect("snapshot exact packets");
-        let restored = snapshot.into_live().expect("restore exact packets");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let restored = snapshot.into_live(&owner).expect("restore exact packets");
         restored
             .restore_admit(&activation)
             .expect("round-trip exact packets");
@@ -3353,6 +3366,69 @@ mod tests {
                 .iter()
                 .all(|scheduled| scheduled.state() == RuntimeScheduledState::Armed)
         );
+    }
+
+    #[test]
+    fn dialogue_snapshot_rebinds_data_shape_result_to_selected_program() {
+        let value_type = RuntimeSemanticTypeId::from_bytes([0xc7; 32]);
+        let shape_type = RuntimeSemanticTypeId::from_bytes([0xc8; 32]);
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram {
+            runtime_types: vec![
+                AwbcRuntimeType::new(value_type, AwbcRuntimeTypeShape::Bool),
+                AwbcRuntimeType::new(
+                    shape_type,
+                    AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(AwbcTypeId(0))),
+                ),
+            ],
+            ..AwbcProgram::default()
+        }));
+        let witness = RuntimeDataShape::bind(owner.clone(), shape_type)
+            .expect("selected AWBC contains the DataShape row");
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        state.result = RuntimeDialogueResultState::Committed {
+            ty: AwbcTypeId(0),
+            value: RuntimeValue::Agent(RuntimeAgentValue::DataShape(witness.clone())),
+        };
+        let activation = scheduled_activation();
+        let site = RuntimeLineHandleSiteId::from_zero_based(0);
+        let token = RuntimeLineHandleToken::new(activation, site, 0);
+        let work = LineTaskWorkTag::scheduled(
+            token.clone(),
+            RuntimeLineTaskNodeId::from_zero_based(2).expect("action node"),
+        );
+        let scheduled = RuntimeScheduledLineTask::new(
+            token,
+            RuntimeLineTaskNodeId::from_zero_based(1).expect("child node"),
+            work,
+            LogicalDuration::from_nanos(7),
+            Box::new([RuntimeLocalBinding {
+                local: RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN),
+                value: RuntimeValue::Agent(RuntimeAgentValue::DataShape(witness)),
+            }]),
+        )
+        .expect("scheduled packet accepts unique capture locals");
+        state.scheduled.push(scheduled);
+
+        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("DataShape result and capture snapshot their semantic identities");
+        let unrelated_owner =
+            RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        assert!(snapshot.clone().into_live(&unrelated_owner).is_err());
+        let restored = snapshot
+            .into_live(&owner)
+            .expect("selected program rebinds the DataShape witness");
+        assert_eq!(restored, state);
+        let RuntimeDialogueResultState::Committed {
+            value: RuntimeValue::Agent(RuntimeAgentValue::DataShape(witness)),
+            ..
+        } = &restored.result
+        else {
+            panic!("restored DataShape result")
+        };
+
+        assert!(witness.program_owner().same_program(&owner));
+        assert_eq!(witness.shape_type(), shape_type);
+        assert_eq!(witness.value_type(), value_type);
     }
 
     #[test]

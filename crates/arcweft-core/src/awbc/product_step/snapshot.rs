@@ -797,6 +797,7 @@ fn snapshot_dialogue_phase_for_save(
 
 fn restore_pending_line_operation_from_save(
     pending: AwbcProductPendingLineOperationSaveSnapshot,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcProductPendingLineOperationSnapshot, crate::value::AwbcRuntimeValueSnapshotError> {
     Ok(match pending {
         AwbcProductPendingLineOperationSaveSnapshot::AcquireActor {
@@ -809,7 +810,7 @@ fn restore_pending_line_operation_from_save(
             cursor,
             destination,
             command,
-            value: value.into_runtime_value()?,
+            value: value.into_runtime_value_for_program(owner)?,
             token,
         },
         AwbcProductPendingLineOperationSaveSnapshot::ActorLook {
@@ -822,7 +823,7 @@ fn restore_pending_line_operation_from_save(
             cursor,
             destination,
             command,
-            value: value.into_runtime_value()?,
+            value: value.into_runtime_value_for_program(owner)?,
             token,
         },
         AwbcProductPendingLineOperationSaveSnapshot::StartVoice {
@@ -841,13 +842,16 @@ fn restore_pending_line_operation_from_save(
 
 fn restore_dialogue_phase_from_save(
     phase: AwbcProductDialoguePhaseSaveSnapshot,
+    owner: &crate::task::RuntimeProgramOwner,
 ) -> Result<AwbcProductDialoguePhaseSnapshot, String> {
     Ok(match phase {
         AwbcProductDialoguePhaseSaveSnapshot::Activating { fiber, pending } => {
             AwbcProductDialoguePhaseSnapshot::Activating {
-                fiber: fiber.into_live().map_err(|error| error.to_string())?,
+                fiber: fiber
+                    .into_live_for_program(owner)
+                    .map_err(|error| error.to_string())?,
                 pending: pending
-                    .map(restore_pending_line_operation_from_save)
+                    .map(|pending| restore_pending_line_operation_from_save(pending, owner))
                     .transpose()
                     .map_err(|error| error.to_string())?,
             }
@@ -864,9 +868,13 @@ fn restore_dialogue_phase_from_save(
                 state: match closing.state {
                     AwbcProductDialogueClosingStateSaveSnapshot::Activation { fiber, pending } => {
                         AwbcProductDialogueClosingStateSnapshot::Activation {
-                            fiber: fiber.into_live().map_err(|error| error.to_string())?,
+                            fiber: fiber
+                                .into_live_for_program(owner)
+                                .map_err(|error| error.to_string())?,
                             pending: pending
-                                .map(restore_pending_line_operation_from_save)
+                                .map(|pending| {
+                                    restore_pending_line_operation_from_save(pending, owner)
+                                })
                                 .transpose()
                                 .map_err(|error| error.to_string())?,
                         }
@@ -980,16 +988,25 @@ impl AwbcProductExecutorSaveSnapshot {
         })
     }
 
-    pub fn into_live(self) -> Result<AwbcProductExecutorSnapshot, String> {
+    pub fn into_live_for_program(
+        self,
+        owner: &crate::task::RuntimeProgramOwner,
+    ) -> Result<AwbcProductExecutorSnapshot, String> {
         Ok(AwbcProductExecutorSnapshot {
-            fiber: self.fiber.into_live().map_err(|error| error.to_string())?,
+            fiber: self
+                .fiber
+                .into_live_for_program(owner)
+                .map_err(|error| error.to_string())?,
             child_fibers: self
                 .child_fibers
                 .into_iter()
                 .map(|child| {
                     Ok(AwbcProductChildFiberSnapshot {
                         owner: child.owner,
-                        fiber: child.fiber.into_live().map_err(|error| error.to_string())?,
+                        fiber: child
+                            .fiber
+                            .into_live_for_program(owner)
+                            .map_err(|error| error.to_string())?,
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -1005,7 +1022,7 @@ impl AwbcProductExecutorSaveSnapshot {
             queued_task_events: self
                 .queued_task_events
                 .into_iter()
-                .map(AwbcProductTaskEventSaveSnapshot::into_live)
+                .map(|event| event.into_live(owner))
                 .collect::<Result<VecDeque<_>, _>>()?,
             emitted_content: self.emitted_content,
             stream_sequences: self.stream_sequences,
@@ -1489,10 +1506,15 @@ impl AwbcProductStepExecutor {
         &self,
         snapshot: AwbcProductDialogueSnapshotState,
     ) -> Result<super::ProductDialogueStore, AwbcProductStepBuildError> {
+        let program_owner =
+            crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
         match snapshot {
             AwbcProductDialogueSnapshotState::Live(dialogues) => Ok(dialogues),
             AwbcProductDialogueSnapshotState::Saved(dialogues) => {
-                super::ProductDialogueStore::from_save_snapshot(dialogues, |activation, active, line| {
+                super::ProductDialogueStore::from_save_snapshot(
+                    dialogues,
+                    &program_owner,
+                    |activation, active, line| {
                     let active = AwbcProductActiveDialogueSnapshot {
                         activation: active.activation,
                         content: active.content,
@@ -1503,7 +1525,7 @@ impl AwbcProductStepExecutor {
                             .into_iter()
                             .map(|capture| {
                                 capture
-                                    .into_runtime_value()
+                                    .into_runtime_value_for_program(&program_owner)
                                     .map(RuntimePayload::from)
                                     .map_err(|error| {
                                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
@@ -1522,7 +1544,7 @@ impl AwbcProductStepExecutor {
                                 >(crate::plan::RuntimeDialogueValueBinding {
                                     slot: binding.slot,
                                     role: binding.role,
-                                    value: binding.value.into_runtime_value().map_err(|error| {
+                                    value: binding.value.into_runtime_value_for_program(&program_owner).map_err(|error| {
                                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                                             message: error.to_string(),
                                         }
@@ -1534,7 +1556,7 @@ impl AwbcProductStepExecutor {
                             .effects
                             .into_iter()
                             .map(|binding| {
-                                let value = binding.callback.into_runtime_value().map_err(
+                                let value = binding.callback.into_runtime_value_for_program(&program_owner).map_err(
                                     |error| {
                                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                                             message: error.to_string(),
@@ -1555,7 +1577,7 @@ impl AwbcProductStepExecutor {
                             })
                             .collect::<Result<_, _>>()?,
                         voice: active.voice,
-                        phase: restore_dialogue_phase_from_save(active.phase).map_err(
+                        phase: restore_dialogue_phase_from_save(active.phase, &program_owner).map_err(
                             |message| {
                                 crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                                     message,
@@ -1574,7 +1596,8 @@ impl AwbcProductStepExecutor {
                     })?;
                     validate_product_dialogue_phase(activation, &active, line)?;
                     Ok(active)
-                })
+                    },
+                )
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })
@@ -2262,7 +2285,11 @@ mod tests {
                 super::super::ProductDialogueClosing {
                     failure: closing.failure,
                     state: super::super::ProductDialogueClosingState::Activation {
-                        fiber: fiber.into_live().expect("live fiber"),
+                        fiber: fiber
+                            .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+                                std::sync::Arc::new(crate::awbc::schema::AwbcProgram::default()),
+                            ))
+                            .expect("live fiber"),
                         pending: None,
                     },
                 },

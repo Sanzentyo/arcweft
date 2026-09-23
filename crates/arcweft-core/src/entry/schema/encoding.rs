@@ -3,7 +3,8 @@
 use std::slice;
 
 use super::{
-    CanonicalSink, CanonicalWriter, RuntimeEnumTagStyle, RuntimeSchemaError, RuntimeSchemaField,
+    CanonicalSink, CanonicalWriter, RuntimeBuiltinSchema, RuntimeEnumTagStyle,
+    RuntimeNominalSchemaGraph, RuntimeSchemaError, RuntimeSchemaField, RuntimeSchemaValueField,
     RuntimeSchemaVariant, RuntimeTypeSchema,
 };
 
@@ -16,6 +17,9 @@ enum Work<'a> {
     FieldSuffix(&'a RuntimeSchemaField),
     Variants(slice::Iter<'a, RuntimeSchemaVariant>),
     VariantSuffix(&'a RuntimeSchemaVariant),
+    Schemas(slice::Iter<'a, RuntimeTypeSchema>),
+    ValueFields(slice::Iter<'a, RuntimeSchemaValueField>),
+    BuiltinCases(&'a RuntimeBuiltinSchema, usize),
 }
 
 /// The work stack retains one iterator per active aggregate, independent of
@@ -23,10 +27,39 @@ enum Work<'a> {
 pub(super) fn schema<S: CanonicalSink + ?Sized>(
     root: &RuntimeTypeSchema,
     writer: &mut CanonicalWriter<'_, S>,
+    graph: Option<&RuntimeNominalSchemaGraph>,
 ) -> Result<(), RuntimeSchemaError> {
     let mut work = vec![Work::Schema(root)];
     while let Some(next) = work.pop() {
         match next {
+            Work::BuiltinCases(builtin, ordinal) => {
+                if let Some((case, payload)) = builtin.case(ordinal) {
+                    writer.var_u32(
+                        u32::try_from(ordinal)
+                            .map_err(|_| RuntimeSchemaError::SchemaEncodingOverflow)?,
+                    )?;
+                    writer.string(case.name())?;
+                    writer.u8(u8::from(case.has_payload()))?;
+                    work.push(Work::BuiltinCases(builtin, ordinal + 1));
+                    if let Some(payload) = payload {
+                        work.push(Work::Schema(payload));
+                    }
+                }
+            }
+            Work::Schemas(mut schemas) => {
+                if let Some(schema) = schemas.next() {
+                    work.push(Work::Schemas(schemas));
+                    work.push(Work::Schema(schema));
+                }
+            }
+            Work::ValueFields(mut fields) => {
+                if let Some(field) = fields.next() {
+                    writer.var_u32(field.field().get().get())?;
+                    writer.string(field.name())?;
+                    work.push(Work::ValueFields(fields));
+                    work.push(Work::Schema(field.schema()));
+                }
+            }
             Work::Fields(mut fields) => {
                 if let Some(field) = fields.next() {
                     writer.string(&field.rust_name)?;
@@ -79,20 +112,38 @@ pub(super) fn schema<S: CanonicalSink + ?Sized>(
                 RuntimeTypeSchema::F64 => writer.u8(16)?,
                 RuntimeTypeSchema::String => writer.u8(17)?,
                 RuntimeTypeSchema::Char => writer.u8(18)?,
+                RuntimeTypeSchema::Never => writer.u8(31)?,
+                RuntimeTypeSchema::Duration => writer.u8(32)?,
+                RuntimeTypeSchema::Progress => writer.u8(33)?,
+                RuntimeTypeSchema::EntityReference => writer.u8(34)?,
+                RuntimeTypeSchema::AgentValue => writer.u8(35)?,
+                RuntimeTypeSchema::Choice(alternatives) => {
+                    writer.u8(36)?;
+                    writer.len(alternatives.len())?;
+                    work.push(Work::Schemas(alternatives.iter()));
+                }
                 RuntimeTypeSchema::Bytes { format } => {
                     writer.u8(19)?;
                     writer.u8(format.tag())?;
                 }
-                RuntimeTypeSchema::Option(inner) => {
+                RuntimeTypeSchema::Builtin(builtin) => {
                     writer.u8(20)?;
-                    work.push(Work::Schema(inner));
+                    writer.u8(builtin.owner().semantic_tag())?;
+                    writer.len(builtin.owner().cases().len())?;
+                    work.push(Work::BuiltinCases(builtin, 0));
                 }
                 RuntimeTypeSchema::Seq(inner) => {
                     writer.u8(21)?;
                     work.push(Work::Schema(inner));
                 }
-                RuntimeTypeSchema::Map { key, value } => {
+                RuntimeTypeSchema::Array { item, length } => {
+                    writer.u8(37)?;
+                    writer.u64(*length)?;
+                    work.push(Work::Schema(item));
+                }
+                RuntimeTypeSchema::Map { kind, key, value } => {
                     writer.u8(22)?;
+                    writer.u8(kind.semantic_tag())?;
                     work.push(Work::Schema(value));
                     work.push(Work::Schema(key));
                 }
@@ -134,6 +185,47 @@ pub(super) fn schema<S: CanonicalSink + ?Sized>(
                 RuntimeTypeSchema::Named(name) => {
                     writer.u8(25)?;
                     writer.string(name)?;
+                }
+                RuntimeTypeSchema::Tuple(items) => {
+                    writer.u8(26)?;
+                    writer.len(items.len())?;
+                    work.push(Work::Schemas(items.iter()));
+                }
+                RuntimeTypeSchema::RecordValue { fields } => {
+                    writer.u8(28)?;
+                    writer.len(fields.len())?;
+                    work.push(Work::ValueFields(fields.iter()));
+                }
+                RuntimeTypeSchema::ExactOpaque { owner, arguments } => {
+                    writer.u8(29)?;
+                    writer.string(owner.producer().as_str())?;
+                    writer.extend(owner.semantic_identity().as_bytes())?;
+                    writer.u8(owner.admission().encoded())?;
+                    writer.u8(owner.value_class().semantic_tag())?;
+                    if let crate::value::RuntimeOpaqueValueClass::AffineHandle(kind) =
+                        owner.value_class()
+                    {
+                        writer.u8(kind.encoded())?;
+                    }
+                    writer.u8(owner.persistence().semantic_tag())?;
+                    writer.len(arguments.len())?;
+                    work.push(Work::Schemas(arguments.iter()));
+                }
+                RuntimeTypeSchema::NominalRef(identity) => {
+                    let graph = graph.ok_or_else(|| RuntimeSchemaError::NominalGraphRequired {
+                        identity: identity.clone(),
+                    })?;
+                    if graph
+                        .definition(identity.semantic_identity())
+                        .is_none_or(|definition| definition.identity() != identity)
+                    {
+                        return Err(RuntimeSchemaError::UnresolvedNominal {
+                            identity: identity.clone(),
+                        });
+                    }
+                    writer.u8(30)?;
+                    writer.string(identity.nominal().as_str())?;
+                    writer.extend(identity.semantic_identity().as_bytes())?;
                 }
             },
         }

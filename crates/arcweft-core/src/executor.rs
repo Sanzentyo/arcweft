@@ -303,11 +303,26 @@ impl ArcweftRuntimeExecutor {
     }
 
     /// Returns the canonical program that owns Product AWBC fiber values.
-    pub const fn product_awbc_program(&self) -> Option<&AwbcProgram> {
+    pub fn product_awbc_program(&self) -> Option<&AwbcProgram> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
+        }
+    }
+
+    /// Retains the exact selected program for an asynchronous host result.
+    pub fn program_owner(&self) -> crate::task::RuntimeProgramOwner {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                crate::task::RuntimeProgramOwner::Plan(executor.engine.program_plan())
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                crate::task::RuntimeProgramOwner::Plan(executor.vm.engine.program_plan())
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                crate::task::RuntimeProgramOwner::Awbc(executor.vm.program_arc())
+            }
         }
     }
 

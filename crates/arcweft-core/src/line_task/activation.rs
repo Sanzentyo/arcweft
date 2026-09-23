@@ -5,6 +5,7 @@ use super::{
 };
 use crate::effect::RuntimeDropPolicy;
 use crate::runtime_id::{DialogueActivationId, ExecutionInstanceId};
+use crate::task::RuntimeProgramOwner;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map::Entry};
@@ -162,6 +163,7 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
 
     pub(crate) fn from_save_snapshot<S>(
         snapshot: RuntimeDialogueRegistrySaveSnapshot<S, T>,
+        owner: &RuntimeProgramOwner,
         mut restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -177,7 +179,7 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     frame,
                     line,
                 } => {
-                    let line = line.into_live()?;
+                    let line = line.into_live(owner)?;
                     line.restore_admit(&activation)?;
                     let frame = restore_frame(&activation, frame, &line)?;
                     (

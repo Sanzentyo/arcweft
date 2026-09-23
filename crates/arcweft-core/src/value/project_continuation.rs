@@ -407,8 +407,11 @@ mod tests {
         let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
         let decoded: AwbcRuntimeValueSnapshot =
             serde_json::from_slice(&encoded).expect("snapshot deserializes");
+        let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            crate::awbc::schema::AwbcProgram::default(),
+        ));
         let restored = decoded
-            .into_runtime_value()
+            .into_runtime_value_for_program(&owner)
             .expect("project continuation restores");
         assert_eq!(restored, value);
     }

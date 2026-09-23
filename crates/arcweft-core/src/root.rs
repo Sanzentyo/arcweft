@@ -6,8 +6,8 @@
 
 use crate::entry::{
     EntryBindingIdentity, RootExecutionLimits, RuntimeCallableRole, RuntimeCommandContract,
-    RuntimeSchemaError, RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest,
-    TypeLayoutHash, canonical_runtime_value_bytes,
+    RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest, TypeLayoutHash,
+    canonical_runtime_value_bytes,
 };
 use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeVariantIdentity};
 use crate::plan::{
@@ -207,14 +207,20 @@ pub enum RootRuntimeError {
     MissingInitialFlowExecutable(String),
     #[error("entry initializer failed: {0}")]
     Initializer(#[source] RootCallableEvaluationError),
+    #[error("root {role} role does not match the active program: {source}")]
+    InvalidRole {
+        role: &'static str,
+        #[source]
+        source: crate::program_types::RuntimeProgramTypeError,
+    },
     #[error("entry initializer returned an invalid root value: {0}")]
-    InvalidInitialValue(#[source] RuntimeSchemaError),
+    InvalidInitialValue(#[source] crate::program_types::RuntimeProgramTypeError),
     #[error("saved root metadata does not match the selected {0} role")]
     SnapshotRoleMismatch(&'static str),
     #[error("saved root value is invalid: {0}")]
-    InvalidSnapshotValue(#[source] RuntimeSchemaError),
+    InvalidSnapshotValue(#[source] crate::program_types::RuntimeProgramTypeError),
     #[error("root-event batch is not valid: {0}")]
-    InvalidEvent(#[source] RuntimeSchemaError),
+    InvalidEvent(#[source] crate::program_types::RuntimeProgramTypeError),
     #[error("root-event queue exceeds the selected runtime limit of {limit}")]
     EventQueueLimit { limit: u32 },
     #[error("root-event transition sequence is exhausted")]
@@ -255,6 +261,17 @@ pub trait RootCallableEvaluator {
 }
 
 impl RootStartupContract {
+    fn validate_types(
+        &self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<(), RootRuntimeError> {
+        for (name, role) in [("state", &self.roles.state), ("event", &self.roles.event)] {
+            role.validate_for_program(program)
+                .map_err(|source| RootRuntimeError::InvalidRole { role: name, source })?;
+        }
+        Ok(())
+    }
+
     /// Resolves exact stateful-entry metadata from a verified structured plan.
     pub fn from_runtime_plan(
         plan: &RuntimePlan,
@@ -307,7 +324,9 @@ impl RootRuntime {
     pub fn start(
         contract: RootStartupContract,
         evaluator: &mut impl RootCallableEvaluator,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootStartup, RootRuntimeError> {
+        contract.validate_types(program)?;
         let RootStartupContract {
             entry,
             roles,
@@ -321,13 +340,7 @@ impl RootRuntime {
         let limits = roles.command_policy.root_limits;
         let initializer_state_digest = roles
             .state
-            .schema
-            .validate_nominal_payload(
-                &payload,
-                &roles.state.identity,
-                roles.state.layout,
-                limits.schema,
-            )
+            .accepts_payload(program, &payload, limits.schema)
             .map_err(RootRuntimeError::InvalidInitialValue)?;
         let active = ActiveRootState {
             entry: entry.clone(),
@@ -402,7 +415,9 @@ impl RootRuntime {
     pub fn from_snapshot(
         contract: RootStartupContract,
         snapshot: RootStateSnapshotV1,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<Self, RootRuntimeError> {
+        contract.validate_types(program)?;
         let RootStartupContract {
             entry,
             roles,
@@ -422,13 +437,7 @@ impl RootRuntime {
         let limits = roles.command_policy.root_limits;
         roles
             .state
-            .schema
-            .validate_nominal_payload(
-                &snapshot.value,
-                &roles.state.identity,
-                roles.state.layout,
-                limits.schema,
-            )
+            .accepts_payload(program, &snapshot.value, limits.schema)
             .map_err(RootRuntimeError::InvalidSnapshotValue)?;
         Ok(Self {
             active: ActiveRootState {
@@ -455,14 +464,15 @@ impl RootRuntime {
         &mut self,
         events: Vec<RootEventInput>,
         evaluator: &mut impl RootCallableEvaluator,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootStepResult, RootRuntimeError> {
         if !self.active.committed_commands.is_empty() {
             return Err(RootRuntimeError::PendingCommandsAwaitingDispatch);
         }
-        self.ingress(events)?;
+        self.ingress(events, program)?;
         let mut result = RootStepResult::default();
         while let Some(event) = self.active.queued_events.front().cloned() {
-            match self.reduce_front(&event, evaluator) {
+            match self.reduce_front(&event, evaluator, program) {
                 Ok(RootReductionDisposition::Committed(outcome)) => {
                     result.outcomes.push(outcome);
                 }
@@ -521,7 +531,11 @@ impl RootRuntime {
         Ok(())
     }
 
-    pub fn ingress(&mut self, events: Vec<RootEventInput>) -> Result<(), RootRuntimeError> {
+    pub fn ingress(
+        &mut self,
+        events: Vec<RootEventInput>,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<(), RootRuntimeError> {
         if self.failure.is_some() {
             return Err(RootRuntimeError::Failed);
         }
@@ -544,13 +558,7 @@ impl RootRuntime {
         for event in &events {
             self.roles
                 .event
-                .schema
-                .validate_nominal_payload(
-                    &event.payload,
-                    &self.roles.event.identity,
-                    self.roles.event.layout,
-                    self.limits.schema,
-                )
+                .accepts_payload(program, &event.payload, self.limits.schema)
                 .map_err(RootRuntimeError::InvalidEvent)?;
         }
         let first = match self.active.queued_events.back() {
@@ -593,6 +601,7 @@ impl RootRuntime {
         &mut self,
         event: &SequencedRootEvent,
         evaluator: &mut impl RootCallableEvaluator,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
         if event.sequence != self.active.next_sequence {
             return Err(Self::failure_for(
@@ -614,7 +623,7 @@ impl RootRuntime {
         };
         match parse_reducer_result(returned) {
             Ok(ParsedReducerResult::Committed(reduction)) => {
-                self.commit_reduction(event, reduction)
+                self.commit_reduction(event, reduction, program)
             }
             Ok(ParsedReducerResult::Rejected {
                 code,
@@ -632,6 +641,7 @@ impl RootRuntime {
         &mut self,
         event: &SequencedRootEvent,
         reduction: RuntimeReductionValue,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
         let (state, commands) = reduction.into_parts();
         let commands = commands.into_vec();
@@ -639,13 +649,7 @@ impl RootRuntime {
         let state_digest = self
             .roles
             .state
-            .schema
-            .validate_nominal_payload(
-                &state,
-                &self.roles.state.identity,
-                self.roles.state.layout,
-                self.limits.schema,
-            )
+            .accepts_payload(program, &state, self.limits.schema)
             .map_err(|error| Self::failure_for(event.sequence, &error.to_string()))?;
         let command_digests =
             validate_commands(&commands, &self.roles.command_policy.admitted, self.limits)
@@ -1121,91 +1125,7 @@ pub struct RootSaveBlockers {
 }
 
 #[cfg(test)]
-mod save_blocker_tests {
-    use super::*;
-    use crate::entry::{
-        CallableContractHash, FlowContractHash, RootExecutionLimits, RuntimeCallableId,
-        RuntimeCommandPolicy, RuntimeFlowRole, RuntimeNominalRole, RuntimeTypeSchema,
-    };
-
-    struct Initializer;
-
-    impl RootCallableEvaluator for Initializer {
-        fn evaluate_root_callable(
-            &mut self,
-            _callable: &RuntimeCallableRole,
-            _args: &[RuntimeValue],
-        ) -> Result<RuntimeValue, RootCallableEvaluationError> {
-            Ok(RuntimeValue::i64(1))
-        }
-    }
-
-    #[test]
-    fn save_002_active_reducer_reports_exact_blocker() {
-        let entry =
-            EntryRuntimeId::from_source_entity_body("entry.save_blocker").expect("entry ID");
-        let flow = FlowRuntimeId::from_runtime_target_value("flow.save_blocker").expect("flow ID");
-        let state_schema = RuntimeTypeSchema::I64;
-        let event_schema = RuntimeTypeSchema::I64;
-        let state_layout = state_schema.try_layout_hash().expect("state layout");
-        let event_layout = event_schema.try_layout_hash().expect("event layout");
-        let state_semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([5; 32]);
-        let event_semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([6; 32]);
-        let initializer = RuntimeCallableRole {
-            callable: RuntimeCallableId::try_new("save_blocker.initial").expect("callable ID"),
-            contract: CallableContractHash::from_bytes([1; 32]),
-        };
-        let reducer = RuntimeCallableRole {
-            callable: RuntimeCallableId::try_new("save_blocker.reduce").expect("callable ID"),
-            contract: CallableContractHash::from_bytes([2; 32]),
-        };
-        let initial_flow = RuntimeFlowRole {
-            flow: flow.clone(),
-            contract: FlowContractHash::from_bytes([3; 32]),
-        };
-        let contract = RootStartupContract {
-            entry,
-            roles: RuntimeStatefulEntryRoles {
-                binding: EntryBindingIdentity::from_bytes([4; 32]),
-                state: RuntimeNominalRole {
-                    identity: crate::entry::RuntimeNominalTypeId::try_new("SaveState")
-                        .expect("state ID"),
-                    semantic_identity: state_semantic,
-                    layout: state_layout,
-                    schema: state_schema,
-                },
-                initializer,
-                event: RuntimeNominalRole {
-                    identity: crate::entry::RuntimeNominalTypeId::try_new("SaveEvent")
-                        .expect("event ID"),
-                    semantic_identity: event_semantic,
-                    layout: event_layout,
-                    schema: event_schema,
-                },
-                reducer,
-                initial_flow: initial_flow.clone(),
-                command_policy: RuntimeCommandPolicy::deny_all(
-                    RootExecutionLimits::engine_default(),
-                ),
-            },
-            initial_flow: flow,
-            initial_state_parameter: crate::entry::FlowParameterCoordinate::from_position(0),
-        };
-        let mut root = RootRuntime::start(contract, &mut Initializer)
-            .expect("root starts")
-            .root;
-        root.active.reducer_active = true;
-
-        assert_eq!(
-            root.save_blockers(),
-            RootSaveBlockers {
-                reducer_active: true,
-                pending_events: 0,
-                pending_commands: 0,
-            }
-        );
-    }
-}
+mod tests;
 
 #[cfg(test)]
 mod reducer_result_tests;

@@ -120,7 +120,8 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         64,
     )
     .expect("product executor starts");
-    executor.program.content_units.push(AwbcContentUnit {
+    let program = std::sync::Arc::make_mut(&mut executor.program);
+    program.content_units.push(AwbcContentUnit {
         public_id: AwbcStringId(0),
         template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
             .expect("template identity"),
@@ -131,14 +132,12 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         source: None,
         resources: Vec::new(),
     });
-    executor
-        .program
+    program
         .line_task_nodes
         .push(crate::awbc::schema::AwbcLineTaskNode::Action(
             AwbcFunctionId(0),
         ));
-    executor
-        .program
+    program
         .line_task_groups
         .push(crate::awbc::schema::AwbcLineTaskGroup {
             captures: Vec::new(),
@@ -247,7 +246,11 @@ fn save_snapshot_preserves_queued_progress_publications() {
 
     let saved = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
         .expect("queued Progress snapshots");
-    let restored = saved.into_live().expect("queued Progress restores");
+    let restored = saved
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::clone(&executor.program),
+        ))
+        .expect("queued Progress restores");
 
     assert_eq!(
         restored.queued_task_events,
@@ -433,6 +436,34 @@ fn host_call_request_and_result_resume_at_runtime_step_boundary() {
         third.fiber_status,
         FlowFiberStatus::Done(FlowExit::Return("host-ok".to_owned()))
     );
+}
+
+#[test]
+fn raw_host_result_must_match_pending_signature_even_when_discarded() {
+    let mut program = host_call_program();
+    let AwbcTerminator::HostCall { dst, .. } = &mut program.blocks[0].terminator else {
+        panic!("host-call fixture terminator");
+    };
+    *dst = None;
+    program.signatures[0].result = None;
+    program.blocks[1].terminator = AwbcTerminator::Return { value: None };
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
+        .expect("host-call product executor starts");
+    let first = executor.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    let id = first.output.requests.host_calls[0].id.clone();
+    let second = executor.step(
+        RuntimeStepInput {
+            host_call_results: vec![RuntimeHostCallResult {
+                id,
+                outcome: Ok(RuntimePayload(RuntimeValue::Bool(true))),
+            }],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions::default(),
+    );
+    assert!(matches!(second.fiber_status, FlowFiberStatus::Failed(_)));
+    assert!(!second.output.diagnostics.is_empty());
+    assert!(second.output.flow_events.is_empty());
 }
 
 #[test]

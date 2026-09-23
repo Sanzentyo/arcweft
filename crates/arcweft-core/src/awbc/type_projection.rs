@@ -1,13 +1,14 @@
 //! Projection from verified AWBC type rows to native runtime owners.
 
+mod type_graph;
 mod variant;
 
 use super::schema::{
     AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+    AwbcTypeId, AwbcVariantCase, AwbcVariantIdentity,
 };
-use crate::entry::RuntimeNominalRecordShape;
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
+use crate::entry::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
 use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
     RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
@@ -16,7 +17,7 @@ use crate::pattern::{
 use crate::plan::RuntimeAgentTypeProjection;
 use crate::value::{
     RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeNominalRecordLayoutField,
-    RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeRecordFieldId,
 };
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -58,6 +59,11 @@ pub enum AwbcTypeProjectionError {
     InvalidRecord {
         index: u32,
         source: RuntimeCheckedRecordTypeError,
+    },
+    #[error("AWBC runtime record type {index} has an invalid source shape: {source}")]
+    InvalidRecordShape {
+        index: u32,
+        source: RuntimeNominalRecordShapeError,
     },
 }
 
@@ -108,28 +114,6 @@ struct CheckedVariantProjection<'owner, 'visiting> {
     visiting: &'visiting mut BTreeSet<AwbcTypeId>,
 }
 
-const fn checked_signed_width(kind: AwbcSignedIntKind) -> RuntimeSignedIntWidth {
-    match kind {
-        AwbcSignedIntKind::I8 => RuntimeSignedIntWidth::I8,
-        AwbcSignedIntKind::I16 => RuntimeSignedIntWidth::I16,
-        AwbcSignedIntKind::I32 => RuntimeSignedIntWidth::I32,
-        AwbcSignedIntKind::I64 => RuntimeSignedIntWidth::I64,
-        AwbcSignedIntKind::I128 => RuntimeSignedIntWidth::I128,
-        AwbcSignedIntKind::ISize => RuntimeSignedIntWidth::ISize,
-    }
-}
-
-const fn checked_unsigned_width(kind: AwbcUnsignedIntKind) -> RuntimeUnsignedIntWidth {
-    match kind {
-        AwbcUnsignedIntKind::U8 => RuntimeUnsignedIntWidth::U8,
-        AwbcUnsignedIntKind::U16 => RuntimeUnsignedIntWidth::U16,
-        AwbcUnsignedIntKind::U32 => RuntimeUnsignedIntWidth::U32,
-        AwbcUnsignedIntKind::U64 => RuntimeUnsignedIntWidth::U64,
-        AwbcUnsignedIntKind::U128 => RuntimeUnsignedIntWidth::U128,
-        AwbcUnsignedIntKind::USize => RuntimeUnsignedIntWidth::USize,
-    }
-}
-
 impl AwbcProgram {
     /// Reifies one indexed opaque row through its canonical string table.
     pub fn opaque_owner(
@@ -156,11 +140,13 @@ impl AwbcProgram {
             public_id,
             layout,
             arguments,
+            shape,
             fields,
         } = row.shape()
         else {
             return Ok(None);
         };
+        self.validate_record_fields(ty, *shape, fields)?;
         let nominal = self.nominal_identity(*public_id)?;
         let mut visiting = BTreeSet::new();
         let arguments = arguments
@@ -169,33 +155,17 @@ impl AwbcProgram {
             .collect::<Result<Vec<_>, _>>()?;
         let fields = fields
             .iter()
-            .enumerate()
-            .map(|(ordinal, field)| {
-                let name = self.strings.get(field.name.index()).cloned().ok_or(
-                    AwbcTypeProjectionError::StringOutOfBounds {
-                        index: field.name.0,
-                        role: "nominal record field name",
-                    },
-                )?;
-                let identity = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(
-                    |source| AwbcTypeProjectionError::InvalidNominalRecordLayout {
-                        source: RuntimeNominalRecordLayoutError::InvalidFieldIdentity {
-                            ordinal,
-                            source,
-                        },
-                    },
-                )?;
+            .map(|field| {
+                let name = field.name.map(|name| self.strings[name.index()].clone());
                 self.checked_type_at_depth(field.ty, 0, &mut visiting)
-                    .map(|checked| {
-                        RuntimeNominalRecordLayoutField::new(identity, Some(name), checked)
-                    })
+                    .map(|checked| RuntimeNominalRecordLayoutField::new(field.field, name, checked))
             })
             .collect::<Result<Vec<_>, _>>()?;
         RuntimeNominalRecordLayout::try_from_checked_projection(
             nominal,
             row.semantic_identity(),
             TypeLayoutHash::from_bytes(*layout),
-            RuntimeNominalRecordShape::Record,
+            *shape,
             arguments,
             fields,
         )
@@ -249,12 +219,8 @@ impl AwbcProgram {
             AwbcRuntimeTypeShape::Never => Ok(RuntimeCheckedType::Never),
             AwbcRuntimeTypeShape::Unit => Ok(RuntimeCheckedType::Unit),
             AwbcRuntimeTypeShape::Bool => Ok(RuntimeCheckedType::Bool),
-            AwbcRuntimeTypeShape::Int(kind) => {
-                Ok(RuntimeCheckedType::Signed(checked_signed_width(*kind)))
-            }
-            AwbcRuntimeTypeShape::UInt(kind) => {
-                Ok(RuntimeCheckedType::Unsigned(checked_unsigned_width(*kind)))
-            }
+            AwbcRuntimeTypeShape::Int(kind) => Ok(RuntimeCheckedType::Signed((*kind).into())),
+            AwbcRuntimeTypeShape::UInt(kind) => Ok(RuntimeCheckedType::Unsigned((*kind).into())),
             AwbcRuntimeTypeShape::F32 => Ok(RuntimeCheckedType::F32),
             AwbcRuntimeTypeShape::F64 => Ok(RuntimeCheckedType::F64),
             AwbcRuntimeTypeShape::String => Ok(RuntimeCheckedType::String),
@@ -268,6 +234,15 @@ impl AwbcProgram {
                 .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(Box::new)
                 .map(RuntimeCheckedType::Sequence),
+            AwbcRuntimeTypeShape::Map { kind, key, value } => {
+                let key = self.checked_type_at_depth(*key, depth + 1, visiting)?;
+                let value = self.checked_type_at_depth(*value, depth + 1, visiting)?;
+                Ok(RuntimeCheckedType::Map {
+                    kind: *kind,
+                    key: Box::new(key),
+                    value: Box::new(value),
+                })
+            }
             AwbcRuntimeTypeShape::Array { item, length } => self
                 .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(|item| RuntimeCheckedType::Array {
@@ -322,13 +297,19 @@ impl AwbcProgram {
                 .map(|result| {
                     RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::Probe(Box::new(result)))
                 }),
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(result)) => self
+                .checked_type_at_depth(*result, depth + 1, visiting)
+                .map(|result| {
+                    RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::DataShape(Box::new(
+                        result,
+                    )))
+                }),
             AwbcRuntimeTypeShape::MatrixF32
             | AwbcRuntimeTypeShape::MatrixF64
             | AwbcRuntimeTypeShape::TensorF32
             | AwbcRuntimeTypeShape::TensorF64
             | AwbcRuntimeTypeShape::Range(_)
             | AwbcRuntimeTypeShape::Iterator(_)
-            | AwbcRuntimeTypeShape::Map { .. }
             | AwbcRuntimeTypeShape::Need(_)
             | AwbcRuntimeTypeShape::Task(_)
             | AwbcRuntimeTypeShape::Stream { .. }
@@ -350,23 +331,13 @@ impl AwbcProgram {
         depth: usize,
         visiting: &mut BTreeSet<AwbcTypeId>,
     ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        self.validate_record_fields(ty, RuntimeNominalRecordShape::Record, fields)?;
         let mut checked = Vec::with_capacity(fields.len());
-        for (ordinal, field) in fields.iter().enumerate() {
-            let diagnostic_name = self.strings.get(field.name.index()).cloned().ok_or(
-                AwbcTypeProjectionError::StringOutOfBounds {
-                    index: field.name.0,
-                    role: "structural record field name",
-                },
-            )?;
-            let field_id =
-                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|_| {
-                    AwbcTypeProjectionError::InvalidRecord {
-                        index: ty.0,
-                        source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
-                    }
-                })?;
+        for field in fields {
+            let name = field.name.expect("record shape validation requires names");
+            let diagnostic_name = self.strings[name.index()].clone();
             let field_ty = self.checked_type_at_depth(field.ty, depth + 1, visiting)?;
-            checked.push((field_id, diagnostic_name, field_ty));
+            checked.push((field.field, diagnostic_name, field_ty));
         }
         RuntimeCheckedType::try_record(checked).map_err(|source| {
             AwbcTypeProjectionError::InvalidRecord {
@@ -374,6 +345,55 @@ impl AwbcProgram {
                 source,
             }
         })
+    }
+
+    /// Validates record coordinates, references and source shape without
+    /// unfolding nominal back-edges into a diagnostic checked-type tree.
+    pub(crate) fn validate_record_fields(
+        &self,
+        ty: AwbcTypeId,
+        shape: RuntimeNominalRecordShape,
+        fields: &[AwbcRecordField],
+    ) -> Result<(), AwbcTypeProjectionError> {
+        for (ordinal, field) in fields.iter().enumerate() {
+            let expected =
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|_| {
+                    AwbcTypeProjectionError::InvalidRecord {
+                        index: ty.0,
+                        source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                    }
+                })?;
+            if field.field != expected {
+                return Err(AwbcTypeProjectionError::InvalidRecord {
+                    index: ty.0,
+                    source: RuntimeCheckedRecordTypeError::InvalidFieldCoordinate {
+                        expected,
+                        actual: field.field,
+                    },
+                });
+            }
+            if let Some(name) = field.name {
+                self.strings.get(name.index()).ok_or(
+                    AwbcTypeProjectionError::StringOutOfBounds {
+                        index: name.0,
+                        role: "record field name",
+                    },
+                )?;
+            }
+            self.runtime_types
+                .get(field.ty.index())
+                .ok_or(AwbcTypeProjectionError::RuntimeTypeOutOfBounds { index: field.ty.0 })?;
+        }
+        shape
+            .validate_field_names(
+                fields
+                    .iter()
+                    .map(|field| field.name.map(|name| self.strings[name.index()].as_str())),
+            )
+            .map_err(|source| AwbcTypeProjectionError::InvalidRecordShape {
+                index: ty.0,
+                source,
+            })
     }
 
     fn checked_nominal_type(
@@ -452,10 +472,11 @@ impl AwbcProgram {
             })
             .collect::<Result<Vec<_>, AwbcTypeProjectionError>>()?;
         match owner {
-            AwbcVariantIdentity::Nominal { public_id } => Ok(RuntimeCheckedType::Variant {
+            AwbcVariantIdentity::Nominal { public_id, layout } => Ok(RuntimeCheckedType::Variant {
                 owner: crate::pattern::RuntimeVariantIdentity::Nominal {
                     nominal: self.nominal_identity(*public_id)?,
                     semantic_identity,
+                    layout: TypeLayoutHash::from_bytes(*layout),
                 },
                 arguments: projected_arguments,
                 cases: projected,

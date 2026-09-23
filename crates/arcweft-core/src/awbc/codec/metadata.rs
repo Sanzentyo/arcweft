@@ -12,18 +12,26 @@ use crate::awbc::schema::{
 };
 use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
-    FlowParameterCoordinate, RootExecutionLimits, RuntimeAgentEntryRoles, RuntimeBytesFormat,
-    RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract,
-    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeDialogueContentTemplateDigest,
-    RuntimeEntryRoles, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeFlowExecutable,
-    RuntimeFlowRole, RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaField,
-    RuntimeSchemaLimits, RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
+    FlowParameterCoordinate, RootExecutionLimits, RuntimeAgentEntryRoles, RuntimeBuiltinSchema,
+    RuntimeBytesFormat, RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId,
+    RuntimeCommandContract, RuntimeCommandPolicy, RuntimeCommandTargetId,
+    RuntimeDialogueContentTemplateDigest, RuntimeEntryRoles, RuntimeEnumRepr, RuntimeEnumTagStyle,
+    RuntimeFlowExecutable, RuntimeFlowRole, RuntimeMapKind, RuntimeNominalRole,
+    RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits,
+    RuntimeSchemaValueField, RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
     TypeLayoutHash,
 };
-use crate::pattern::RuntimeSemanticTypeId;
+use crate::pattern::{
+    RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
+};
 use crate::plan::RuntimeDialogueContentEffectTrigger;
 use crate::plan::{EntryRuntimeId, FlowRuntimeId};
 use crate::runtime_id::RuntimeDialogueContentTemplateId;
+use crate::value::RuntimeRecordFieldId;
+
+mod codec_use;
+#[cfg(test)]
+mod schema_tests;
 
 impl Wire for AwbcProgram {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -685,8 +693,7 @@ impl Wire for RuntimeNominalRole {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.identity.write_wire(writer)?;
         self.semantic_identity.write_wire(writer)?;
-        self.layout.write_wire(writer)?;
-        self.schema.write_wire(writer)
+        self.layout.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
@@ -694,7 +701,6 @@ impl Wire for RuntimeNominalRole {
             identity: RuntimeNominalTypeId::read_wire(reader)?,
             semantic_identity: RuntimeSemanticTypeId::read_wire(reader)?,
             layout: TypeLayoutHash::read_wire(reader)?,
-            schema: RuntimeTypeSchema::read_wire(reader)?,
         })
     }
 }
@@ -737,7 +743,8 @@ impl Wire for RuntimeSchemaLimits {
         self.max_nodes.write_wire(writer)?;
         self.max_sequence_items.write_wire(writer)?;
         self.max_string_bytes.write_wire(writer)?;
-        self.max_encoded_bytes.write_wire(writer)
+        self.max_encoded_bytes.write_wire(writer)?;
+        self.max_validation_work.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
@@ -747,6 +754,7 @@ impl Wire for RuntimeSchemaLimits {
             max_sequence_items: u32::read_wire(reader)?,
             max_string_bytes: u64::read_wire(reader)?,
             max_encoded_bytes: u64::read_wire(reader)?,
+            max_validation_work: u64::read_wire(reader)?,
         })
     }
 }
@@ -956,6 +964,23 @@ impl Wire for RuntimeBytesFormat {
     }
 }
 
+impl Wire for RuntimeMapKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "runtime map kind",
+            tag,
+            offset,
+        })
+    }
+}
+
 impl Wire for RuntimeEnumRepr {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(self.semantic_tag());
@@ -1037,16 +1062,18 @@ impl Wire for RuntimeTypeSchema {
                 writer.write_u8(18);
                 format.write_wire(writer)?;
             }
-            Self::Option(value) => {
+            Self::Builtin(builtin) => {
                 writer.write_u8(19);
-                value.write_wire(writer)?;
+                builtin.owner().write_wire(writer)?;
+                writer.write_table(builtin.payloads())?;
             }
             Self::Seq(value) => {
                 writer.write_u8(20);
                 value.write_wire(writer)?;
             }
-            Self::Map { key, value } => {
+            Self::Map { kind, key, value } => {
                 writer.write_u8(21);
+                kind.write_wire(writer)?;
                 key.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
@@ -1075,6 +1102,37 @@ impl Wire for RuntimeTypeSchema {
             Self::Named(name) => {
                 writer.write_u8(24);
                 name.write_wire(writer)?;
+            }
+            Self::Tuple(items) => {
+                writer.write_u8(25);
+                writer.write_table(items)?;
+            }
+            Self::RecordValue { fields } => {
+                writer.write_u8(27);
+                writer.write_table(fields)?;
+            }
+            Self::ExactOpaque { owner, arguments } => {
+                writer.write_u8(28);
+                owner.write_wire(writer)?;
+                writer.write_table(arguments)?;
+            }
+            Self::NominalRef(identity) => {
+                writer.write_u8(29);
+                identity.write_wire(writer)?;
+            }
+            Self::Never => writer.write_u8(30),
+            Self::Duration => writer.write_u8(31),
+            Self::Progress => writer.write_u8(32),
+            Self::EntityReference => writer.write_u8(33),
+            Self::AgentValue => writer.write_u8(34),
+            Self::Choice(alternatives) => {
+                writer.write_u8(35);
+                writer.write_table(alternatives)?;
+            }
+            Self::Array { item, length } => {
+                writer.write_u8(36);
+                length.write_wire(writer)?;
+                item.write_wire(writer)?;
             }
         }
         Ok(())
@@ -1105,9 +1163,20 @@ impl Wire for RuntimeTypeSchema {
                 18 => Self::Bytes {
                     format: RuntimeBytesFormat::read_wire(reader)?,
                 },
-                19 => Self::Option(Box::new(Self::read_wire(reader)?)),
+                19 => {
+                    let owner = RuntimeBuiltinVariantIdentity::read_wire(reader)?;
+                    let count = reader.read_len()?;
+                    RuntimeBuiltinSchema::check_payload_count(owner, count).map_err(|source| {
+                        AwbcCodecError::InvalidBuiltinSchema { offset, source }
+                    })?;
+                    let payloads = reader.read_items::<Self>(count)?;
+                    Self::Builtin(RuntimeBuiltinSchema::try_new(owner, payloads).map_err(
+                        |source| AwbcCodecError::InvalidBuiltinSchema { offset, source },
+                    )?)
+                }
                 20 => Self::Seq(Box::new(Self::read_wire(reader)?)),
                 21 => Self::Map {
+                    kind: RuntimeMapKind::read_wire(reader)?,
                     key: Box::new(Self::read_wire(reader)?),
                     value: Box::new(Self::read_wire(reader)?),
                 },
@@ -1123,6 +1192,25 @@ impl Wire for RuntimeTypeSchema {
                     repr: Option::<RuntimeEnumRepr>::read_wire(reader)?,
                 },
                 24 => Self::Named(String::read_wire(reader)?),
+                25 => Self::Tuple(Vec::<Self>::read_wire(reader)?.into_boxed_slice()),
+                27 => Self::RecordValue {
+                    fields: Vec::<RuntimeSchemaValueField>::read_wire(reader)?.into_boxed_slice(),
+                },
+                28 => Self::ExactOpaque {
+                    owner: RuntimeOpaqueTypeOwner::read_wire(reader)?,
+                    arguments: Vec::<Self>::read_wire(reader)?.into_boxed_slice(),
+                },
+                29 => Self::NominalRef(RuntimeNominalSchemaIdentity::read_wire(reader)?),
+                30 => Self::Never,
+                31 => Self::Duration,
+                32 => Self::Progress,
+                33 => Self::EntityReference,
+                34 => Self::AgentValue,
+                35 => Self::Choice(Vec::<Self>::read_wire(reader)?.into_boxed_slice()),
+                36 => Self::Array {
+                    length: u64::read_wire(reader)?,
+                    item: Box::new(Self::read_wire(reader)?),
+                },
                 tag => {
                     return Err(AwbcCodecError::UnknownTag {
                         kind: "runtime type schema",
@@ -1132,6 +1220,36 @@ impl Wire for RuntimeTypeSchema {
                 }
             })
         })
+    }
+}
+
+impl Wire for RuntimeNominalSchemaIdentity {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.nominal().write_wire(writer)?;
+        self.semantic_identity().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self::new(
+            RuntimeNominalTypeId::read_wire(reader)?,
+            RuntimeSemanticTypeId::read_wire(reader)?,
+        ))
+    }
+}
+
+impl Wire for RuntimeSchemaValueField {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.field().write_wire(writer)?;
+        writer.write_str(self.name())?;
+        self.schema().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self::new(
+            RuntimeRecordFieldId::read_wire(reader)?,
+            String::read_wire(reader)?,
+            RuntimeTypeSchema::read_wire(reader)?,
+        ))
     }
 }
 
@@ -1345,6 +1463,7 @@ mod limit_wire_tests {
             max_sequence_items: u32::MAX,
             max_string_bytes: 0x0102_0304_0506_0708,
             max_encoded_bytes: u64::MAX,
+            max_validation_work: 7,
         };
         let mut writer = Writer::default();
         limits
@@ -1355,7 +1474,7 @@ mod limit_wire_tests {
             bytes,
             vec![
                 0x7f, 0x80, 0x01, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03,
-                0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 7, 0, 0, 0, 0, 0, 0, 0,
             ]
         );
 
@@ -1365,6 +1484,10 @@ mod limit_wire_tests {
             limits
         );
         reader.finish().expect("consume schema limits");
+        for end in bytes.len() - 8..bytes.len() {
+            let mut reader = Reader::new(&bytes[..end], &AwbcDecodeBudget::default());
+            assert!(RuntimeSchemaLimits::read_wire(&mut reader).is_err());
+        }
     }
 
     #[test]
@@ -1387,6 +1510,7 @@ mod limit_wire_tests {
                 max_sequence_items: 1,
                 max_string_bytes: 2,
                 max_encoded_bytes: 3,
+                max_validation_work: 4,
             },
             max_commands_per_transition: 128,
             max_command_bytes_per_transition: 0x0102_0304_0506_0708,
@@ -1399,8 +1523,9 @@ mod limit_wire_tests {
         assert_eq!(
             bytes,
             vec![
-                1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0x80, 1, 0x08, 0x07, 0x06,
-                0x05, 0x04, 0x03, 0x02, 0x01, 0x7f, 0xff, 0xff, 0xff, 0xff, 0x0f,
+                1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0,
+                0x80, 1, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x7f, 0xff, 0xff, 0xff,
+                0xff, 0x0f,
             ]
         );
 

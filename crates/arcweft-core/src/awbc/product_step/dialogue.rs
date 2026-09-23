@@ -192,6 +192,7 @@ impl ProductDialogueStore {
 
     pub(super) fn from_save_snapshot<S>(
         snapshot: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
+        owner: &crate::task::RuntimeProgramOwner,
         restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -204,6 +205,7 @@ impl ProductDialogueStore {
         Ok(Self {
             registry: RuntimeDialogueActivationRegistry::from_save_snapshot(
                 snapshot,
+                owner,
                 restore_frame,
             )?,
         })

@@ -448,19 +448,8 @@ fn apply_instruction(
                 return invalid_type(&at, "sequence input");
             }
         }
-        AwbcInstruction::MakeRecord {
-            dst,
-            ty,
-            field_names,
-            fields,
-        } => {
+        AwbcInstruction::MakeRecord { dst, ty, fields } => {
             check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-            if field_names.len() != fields.len() {
-                return argument_count(&at, field_names.len(), fields.len());
-            }
-            for field_name in field_names {
-                check_string(program, *field_name, &at)?;
-            }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, &at)?;
             match runtime_shape(program, *ty) {
@@ -477,19 +466,9 @@ fn apply_instruction(
                     if type_fields.len() != fields.len() {
                         return argument_count(&at, type_fields.len(), fields.len());
                     }
-                    for ((field_name, field), expected) in
-                        field_names.iter().zip(fields).zip(type_fields)
-                    {
-                        if *field_name != expected.name {
-                            return invalid_type(&at, "record field name");
-                        }
+                    for (field, expected) in fields.iter().zip(type_fields) {
                         let actual = read_register(verifier, function, block, *field, state)?;
                         require_compatible(program, expected.ty, actual, &at)?;
-                    }
-                }
-                Some(AwbcRuntimeTypeShape::Dynamic) => {
-                    for field in fields {
-                        read_register(verifier, function, block, *field, state)?;
                     }
                 }
                 _ => return invalid_type(&at, "record type"),
@@ -628,8 +607,9 @@ fn apply_instruction(
                         AwbcRuntimeTypeShape::Record { fields, .. }
                         | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
                     ) => {
-                        let Some(field_layout) =
-                            fields.iter().find(|candidate| candidate.name == *field)
+                        let Some(field_layout) = fields
+                            .iter()
+                            .find(|candidate| candidate.name == Some(*field))
                         else {
                             return Err(AwbcVerifyError::InvalidInvariant {
                                 at,
@@ -1384,6 +1364,9 @@ impl RuntimeAgentTypeContext for AwbcProgram {
         match runtime_shape(self, ty)? {
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(item)) => {
                 Some(RuntimeAgentTypeProjection::Probe(*item))
+            }
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::DataShape(item)) => {
+                Some(RuntimeAgentTypeProjection::DataShape(*item))
             }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(kind)) => {
                 RuntimeAgentTypeProjection::try_leaf(*kind)
@@ -3499,7 +3482,7 @@ pub(super) fn runtime_type_permits_copy(
             }) => arguments
                 .iter()
                 .all(|argument| visit(program, *argument, depth + 1, active)),
-            Some(AwbcRuntimeTypeShape::Map { key, value }) => {
+            Some(AwbcRuntimeTypeShape::Map { key, value, .. }) => {
                 visit(program, *key, depth + 1, active) && visit(program, *value, depth + 1, active)
             }
             Some(
@@ -3578,7 +3561,7 @@ fn agent_field_value_destination_matches(
             _ => false,
         },
         RuntimeAgentFieldValue::AgentValueMap => match destination {
-            Some(AwbcRuntimeTypeShape::Map { key, value }) => {
+            Some(AwbcRuntimeTypeShape::Map { key, value, .. }) => {
                 matches!(
                     runtime_shape(program, *key),
                     Some(AwbcRuntimeTypeShape::AgentValue)

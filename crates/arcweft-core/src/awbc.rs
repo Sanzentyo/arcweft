@@ -13,6 +13,7 @@ pub mod product_step;
 pub mod schema;
 mod schema_impls;
 pub mod type_projection;
+pub mod value_admission;
 pub mod verify;
 pub mod vm;
 

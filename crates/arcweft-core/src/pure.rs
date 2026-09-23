@@ -28,11 +28,19 @@ use crate::value::{
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
+use crate::{
+    entry::RuntimeSchemaLimits,
+    pattern::RuntimeSemanticTypeId,
+    program_types::{RuntimeProgramTypeError, RuntimeProgramTypes},
+    task::RuntimeProgramOwner,
+};
 use std::ops::Deref;
 use std::sync::Arc;
 
 mod aot;
+mod program;
 mod runtime_backend;
+pub use program::evaluate_pure_program_with_backend;
 
 /// Request for evaluating a deterministic pure helper expression.
 #[derive(Clone, Debug, PartialEq)]
@@ -179,9 +187,107 @@ pub trait RuntimeMathCallBackend {
 /// This mirrors an FFI boundary: Core evaluates argument expressions and keeps
 /// their typed `RuntimeValue` shape, while adapter crates decide which named
 /// calls they own and how to execute them.
+#[derive(Clone, Debug)]
+pub struct RuntimeExternalCallContext {
+    state: RuntimeExternalCallContextState,
+}
+
+#[derive(Clone, Debug)]
+enum RuntimeExternalCallContextState {
+    Program {
+        owner: RuntimeProgramOwner,
+        argument_types: Box<[RuntimeSemanticTypeId]>,
+        result_type: RuntimeSemanticTypeId,
+        limits: RuntimeSchemaLimits,
+    },
+    Unbound,
+}
+
+impl RuntimeExternalCallContext {
+    /// Binds an external call to the exact selected program and its semantic
+    /// argument and result types.
+    pub fn for_program(
+        owner: RuntimeProgramOwner,
+        argument_types: impl IntoIterator<Item = RuntimeSemanticTypeId>,
+        result_type: RuntimeSemanticTypeId,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeProgramTypeError> {
+        let argument_types = argument_types.into_iter().collect::<Box<[_]>>();
+        let types = match &owner {
+            RuntimeProgramOwner::Plan(plan) => RuntimeProgramTypes::Plan(plan),
+            RuntimeProgramOwner::Awbc(program) => RuntimeProgramTypes::Awbc(program),
+        };
+        argument_types
+            .iter()
+            .copied()
+            .chain(std::iter::once(result_type))
+            .try_for_each(|semantic_type| types.require_type(semantic_type))?;
+        Ok(Self {
+            state: RuntimeExternalCallContextState::Program {
+                owner,
+                argument_types,
+                result_type,
+                limits,
+            },
+        })
+    }
+
+    /// Creates the explicit context for a raw call that has no selected
+    /// program or semantic signature.
+    #[must_use]
+    pub const fn unbound() -> Self {
+        Self {
+            state: RuntimeExternalCallContextState::Unbound,
+        }
+    }
+
+    /// Returns the exact selected program owner for a typed call.
+    #[must_use]
+    pub const fn program_owner(&self) -> Option<&RuntimeProgramOwner> {
+        match &self.state {
+            RuntimeExternalCallContextState::Program { owner, .. } => Some(owner),
+            RuntimeExternalCallContextState::Unbound => None,
+        }
+    }
+
+    /// Returns the typed arguments for a program-bound call.
+    #[must_use]
+    pub fn argument_types(&self) -> Option<&[RuntimeSemanticTypeId]> {
+        match &self.state {
+            RuntimeExternalCallContextState::Program { argument_types, .. } => Some(argument_types),
+            RuntimeExternalCallContextState::Unbound => None,
+        }
+    }
+
+    /// Returns the typed result for a program-bound call.
+    #[must_use]
+    pub const fn result_type(&self) -> Option<RuntimeSemanticTypeId> {
+        match &self.state {
+            RuntimeExternalCallContextState::Program { result_type, .. } => Some(*result_type),
+            RuntimeExternalCallContextState::Unbound => None,
+        }
+    }
+
+    /// Returns the schema limits selected for a program-bound call.
+    #[must_use]
+    pub const fn limits(&self) -> Option<RuntimeSchemaLimits> {
+        match &self.state {
+            RuntimeExternalCallContextState::Program { limits, .. } => Some(*limits),
+            RuntimeExternalCallContextState::Unbound => None,
+        }
+    }
+
+    /// Returns whether this call has a selected program and semantic types.
+    #[must_use]
+    pub const fn is_program_bound(&self) -> bool {
+        matches!(&self.state, RuntimeExternalCallContextState::Program { .. })
+    }
+}
+
 pub trait RuntimeExternalCallBackend {
     fn call_external(
         &mut self,
+        context: &RuntimeExternalCallContext,
         callee: &RuntimeCallTarget,
         args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>>;
@@ -612,10 +718,51 @@ pub struct VmPureFunctionScratch {
 pub struct AotPureFunctionBackend;
 
 /// VM runtime backend used when no external pure accelerator is provided.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct VmRuntimePureCallBackend {
+#[derive(Clone, Debug, PartialEq)]
+pub struct VmRuntimePureCallBackend<E = NoRuntimeExternalCalls> {
     stats: RuntimePureCallStats,
     scratch: VmPureFunctionScratch,
+    external: E,
+}
+
+impl Default for VmRuntimePureCallBackend<NoRuntimeExternalCalls> {
+    fn default() -> Self {
+        Self {
+            stats: RuntimePureCallStats::default(),
+            scratch: VmPureFunctionScratch::default(),
+            external: NoRuntimeExternalCalls,
+        }
+    }
+}
+
+/// Explicit absence of host-provided pure external callable implementations.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct NoRuntimeExternalCalls;
+
+impl RuntimeExternalCallBackend for NoRuntimeExternalCalls {
+    fn call_external(
+        &mut self,
+        _context: &RuntimeExternalCallContext,
+        _callee: &RuntimeCallTarget,
+        _args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        None
+    }
+}
+
+impl<E> VmRuntimePureCallBackend<E> {
+    /// Installs the caller-owned implementation of registered pure Rust calls.
+    /// Core retains no I/O service or globally registered default provider.
+    pub fn with_external_calls<X: RuntimeExternalCallBackend>(
+        self,
+        external: X,
+    ) -> VmRuntimePureCallBackend<X> {
+        VmRuntimePureCallBackend {
+            stats: self.stats,
+            scratch: self.scratch,
+            external,
+        }
+    }
 }
 
 /// Compiled AOT plan for the current deterministic `i64` pure-helper subset.
@@ -1255,6 +1402,7 @@ struct PureEvaluator<'a> {
     plan: &'a Arc<RuntimePlan>,
     env: RuntimeEnv,
     stats: PureFunctionStats,
+    external: Option<&'a mut dyn RuntimeExternalCallBackend>,
 }
 
 impl RuntimePureScalar {
@@ -1677,6 +1825,7 @@ impl<'a> PureEvaluator<'a> {
             plan,
             env,
             stats: PureFunctionStats::default(),
+            external: None,
         }
     }
 
@@ -1685,6 +1834,7 @@ impl<'a> PureEvaluator<'a> {
             plan,
             env,
             stats: PureFunctionStats::default(),
+            external: None,
         }
     }
 
@@ -1738,6 +1888,11 @@ impl<'a> PureEvaluator<'a> {
                 expr,
                 body,
             } => self.evaluate_assign_field_expr(*base, *field, expr, body),
+            RuntimeExprKind::Call { callee, args }
+                if callee.as_intrinsic().is_none() && self.external.is_some() =>
+            {
+                self.evaluate_external_call_expr(callee, args, expr.ty())
+            }
             RuntimeExprKind::Call { callee, args } => self.evaluate_call_expr(callee, args),
             RuntimeExprKind::Function { site, captures } => {
                 self.evaluate_function_expr(*site, captures)
@@ -1935,7 +2090,7 @@ impl<'a> PureEvaluator<'a> {
             .type_table()
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
-        let RuntimePlanTypeProjection::ProjectNominal {
+        let RuntimePlanTypeProjection::Nominal {
             nominal, layout, ..
         } = declaration.projection()
         else {
@@ -1979,7 +2134,12 @@ impl<'a> PureEvaluator<'a> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(RuntimeValue::NominalRecord(
-            crate::value::RuntimeNominalRecordValue::new(nominal.clone(), *layout, fields),
+            crate::value::RuntimeNominalRecordValue::new(
+                nominal.clone(),
+                declaration.semantic_identity(),
+                *layout,
+                fields,
+            ),
         ))
     }
 
@@ -2877,7 +3037,7 @@ mod opaque_record_projection_tests {
         );
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .admit_semantic_batch(
+            .admit_type_batch(
                 [
                     RuntimePlanTypeSeed::new(
                         owner.semantic_identity(),
@@ -2891,8 +3051,6 @@ mod opaque_record_projection_tests {
                     ),
                     RuntimePlanTypeSeed::new(identity(102), RuntimePlanTypeProjection::String),
                 ],
-                [],
-                [],
                 [],
             )
             .expect("test type graph");

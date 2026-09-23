@@ -139,6 +139,11 @@ pub enum AwbcCodecError {
     TrailingBytes { count: usize },
     #[error("AWBC nesting depth exceeds {limit}")]
     NestingDepthExceeded { limit: usize },
+    #[error("AWBC builtin schema is invalid at byte offset {offset}: {source}")]
+    InvalidBuiltinSchema {
+        offset: usize,
+        source: crate::entry::RuntimeBuiltinSchemaError,
+    },
     #[error("AWBC {kind} metadata is invalid at byte offset {offset}: {message}")]
     InvalidMetadata {
         kind: &'static str,

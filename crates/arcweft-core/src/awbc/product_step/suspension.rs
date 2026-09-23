@@ -227,8 +227,15 @@ impl AwbcProductStepExecutor {
         self.program
             .task_plans
             .get(plan.index())
-            .and_then(|record| self.program.checked_type(record.payload_type).ok())
-            .is_some_and(|payload| payload.accepts_value(value))
+            .is_some_and(|record| {
+                self.program
+                    .validate_live_value(
+                        record.payload_type,
+                        value,
+                        crate::entry::RuntimeSchemaLimits::engine_default(),
+                    )
+                    .is_ok()
+            })
     }
 
     pub(super) fn fill_await_many(&mut self, output: &mut RuntimeStepOutput) {
@@ -449,15 +456,22 @@ impl AwbcProductStepExecutor {
             );
             return;
         };
-        let result = match signature.result {
-            Some(result) => match self.program.checked_type(result) {
-                Ok(result) => result,
-                Err(error) => {
-                    self.record_error(ProductStepError::Internal(error.to_string()), output);
-                    return;
-                }
-            },
-            None => crate::pattern::RuntimeCheckedType::Unit,
+        let result =
+            match signature.result {
+                Some(result) => self.program.runtime_types.get(result.index()),
+                None => self.program.runtime_types.iter().find(|ty| {
+                    matches!(ty.shape(), crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
+                }),
+            };
+        let Some(result) = result else {
+            self.record_error(
+                ProductStepError::Internal(format!(
+                    "AWBC host call {} result type is absent from the selected program",
+                    call.0
+                )),
+                output,
+            );
+            return;
         };
         let public_id = self
             .program
@@ -520,7 +534,7 @@ impl AwbcProductStepExecutor {
             contract: record.contract,
             args: positional,
             named_args,
-            result,
+            result: result.semantic_identity(),
             mode: match record.mode {
                 AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
                 AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
@@ -556,8 +570,44 @@ impl AwbcProductStepExecutor {
         let Some(result) = results.iter().find(|result| result.id == pending.id) else {
             return false;
         };
+        if pending.call != call {
+            self.pending_host_call = None;
+            self.fail_with_trap(
+                AwbcTrapCode::HostAbiMismatch,
+                "pending host call does not match the selected continuation".to_owned(),
+                None,
+                output,
+            );
+            return true;
+        }
         match &result.outcome {
             Ok(value) => {
+                let checked = self
+                    .program
+                    .host_calls
+                    .get(call.index())
+                    .and_then(|record| self.program.signatures.get(record.signature.index()))
+                    .is_some_and(|signature| match signature.result {
+                        Some(ty) => self
+                            .program
+                            .validate_live_value(
+                                ty,
+                                value.value(),
+                                crate::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .is_ok(),
+                        None => value.value() == &crate::value::RuntimeValue::Unit,
+                    });
+                if !checked {
+                    self.pending_host_call = None;
+                    self.fail_with_trap(
+                        AwbcTrapCode::HostAbiMismatch,
+                        "host-call result does not satisfy the selected program type".to_owned(),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
                 if let Some(destination) = destination
                     && let Ok(frame) = self.fiber.active_frame_mut()
                     && let Err(error) = frame.set_register(destination, value.value().clone())

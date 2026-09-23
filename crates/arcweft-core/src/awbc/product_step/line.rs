@@ -30,6 +30,7 @@ use crate::time::LogicalDuration;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use crate::value::{RuntimeHandleKind, RuntimeLocalBinding, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 
 pub(super) struct ProductActivationProgress {
     pub(super) progressed: bool,
@@ -340,6 +341,7 @@ impl super::AwbcProductStepExecutor {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
             context: crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint),
+            program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
         let context = crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint);
         let step = crate::awbc::vm::step_with_host_context(

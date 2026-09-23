@@ -13,7 +13,7 @@ fn agent_probe_result_survives_plan_and_awbc_projection() {
     )));
     let mut builder = RuntimePlanBuilder::new();
     builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(bool_identity, RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(
@@ -23,8 +23,6 @@ fn agent_probe_result_survives_plan_and_awbc_projection() {
                     )),
                 ),
             ],
-            [],
-            [],
             [],
         )
         .unwrap();
@@ -114,7 +112,10 @@ fn every_agent_leaf_reifies_with_its_existing_semantic_identity() {
         let Some(kind) = RuntimeAgentOperationalType::from_semantic_tag(tag) else {
             continue;
         };
-        if kind == RuntimeAgentOperationalType::Probe {
+        if matches!(
+            kind,
+            RuntimeAgentOperationalType::Probe | RuntimeAgentOperationalType::DataShape
+        ) {
             assert!(
                 RuntimeAgentTypeProjection::<Box<RuntimeCheckedType>>::try_leaf(kind).is_none()
             );

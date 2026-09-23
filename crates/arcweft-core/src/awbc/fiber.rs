@@ -14,7 +14,7 @@ use crate::plan::RuntimeDialogueValueBinding;
 use crate::runtime_id::{
     RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeIdCursor, RuntimeIdNamespace,
 };
-use crate::task::NeedId;
+use crate::task::{NeedId, RuntimeProgramOwner};
 use crate::value::{
     AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFlowParameterBinding, RuntimeFunctionBody,
     RuntimeFunctionValue, RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeValue,
@@ -434,7 +434,7 @@ impl AwbcFiberStateSnapshot {
         })
     }
 
-    pub fn into_live(self) -> AwbcSaveResult<FiberState> {
+    pub fn into_live_for_program(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberState> {
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
@@ -444,23 +444,23 @@ impl AwbcFiberStateSnapshot {
             frames: self
                 .frames
                 .into_iter()
-                .map(AwbcFiberFrameSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
             status: self.status,
             suspension: self
                 .suspension
-                .map(AwbcFiberSuspensionSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .transpose()?,
             terminal: self
                 .terminal
-                .map(AwbcFiberTerminalSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .transpose()?,
             budget: self.budget,
             line_cursor: self.line_cursor,
             streams: self
                 .streams
                 .into_iter()
-                .map(AwbcFiberStreamSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -500,33 +500,33 @@ impl AwbcFiberFrameSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberFrame> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberFrame> {
         Ok(FiberFrame {
             instance: self.instance,
             function: self.function,
             layout: self.layout,
             return_to: self
                 .return_to
-                .map(AwbcFiberReturnPointSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .transpose()?,
             registers: self
                 .registers
                 .into_iter()
                 .map(|value| {
                     value
-                        .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                        .map(|value| value.into_runtime_value_for_program(owner))
                         .transpose()
                 })
                 .collect::<Result<_, _>>()?,
             root_cleanups: self
                 .root_cleanups
                 .into_iter()
-                .map(AwbcFiberScopeCleanupSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
             scopes: self
                 .scopes
                 .into_iter()
-                .map(AwbcFiberScopeSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -541,11 +541,11 @@ impl AwbcFiberReturnPointSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberReturnPoint> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberReturnPoint> {
         Ok(FiberReturnPoint {
             cursor: self.cursor,
             destination: self.destination,
-            continuation: self.continuation.into_live()?,
+            continuation: self.continuation.into_live(owner)?,
         })
     }
 }
@@ -575,7 +575,7 @@ impl AwbcFiberReturnContinuationSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberReturnContinuation> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberReturnContinuation> {
         Ok(match self {
             Self::Ordinary => FiberReturnContinuation::Ordinary,
             Self::ProjectCallDefault {
@@ -586,11 +586,11 @@ impl AwbcFiberReturnContinuationSnapshot {
                 site,
                 prefix_values: prefix_values
                     .into_iter()
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|value| value.into_runtime_value_for_program(owner))
                     .collect::<Result<_, _>>()?,
                 logical_values: logical_values
                     .into_iter()
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|value| value.into_runtime_value_for_program(owner))
                     .collect::<Result<_, _>>()?,
             },
             Self::ProjectCallTarget { site } => FiberReturnContinuation::ProjectCallTarget { site },
@@ -611,14 +611,14 @@ impl AwbcFiberScopeSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberScope> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberScope> {
         Ok(FiberScope {
             id: self.id,
             depth: self.depth,
             cleanups: self
                 .cleanups
                 .into_iter()
-                .map(AwbcFiberScopeCleanupSnapshot::into_live)
+                .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -637,14 +637,14 @@ impl AwbcFiberScopeCleanupSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberScopeCleanup> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberScopeCleanup> {
         Ok(FiberScopeCleanup {
             key: self.key,
             effect: self.effect,
             args: self
                 .args
                 .into_iter()
-                .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                .map(|value| value.into_runtime_value_for_program(owner))
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -658,10 +658,10 @@ impl AwbcFiberSuspensionSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberSuspension> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberSuspension> {
         Ok(FiberSuspension {
             resume: self.resume,
-            reason: self.reason.into_live()?,
+            reason: self.reason.into_live(owner)?,
         })
     }
 }
@@ -721,7 +721,7 @@ impl AwbcFiberSuspensionReasonSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberSuspensionReason> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberSuspensionReason> {
         Ok(match self {
             Self::Dialogue {
                 content,
@@ -735,7 +735,7 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 effects,
                 line_task_captures: line_task_captures
                     .into_iter()
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|value| value.into_runtime_value_for_program(owner))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice(),
                 result,
@@ -752,11 +752,11 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 binding,
                 observer,
             } => FiberSuspensionReason::Await {
-                target: target.into_live()?,
+                target: target.into_live(owner)?,
                 binding,
                 observer,
             },
-            Self::AwaitMany(state) => FiberSuspensionReason::AwaitMany(state.into_live()?),
+            Self::AwaitMany(state) => FiberSuspensionReason::AwaitMany(state.into_live(owner)?),
             Self::HostCall {
                 call,
                 args,
@@ -765,7 +765,7 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 call,
                 args: args
                     .into_iter()
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|value| value.into_runtime_value_for_program(owner))
                     .collect::<Result<_, _>>()?,
                 destination,
             },
@@ -784,9 +784,11 @@ impl AwbcFiberAwaitTargetSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberAwaitTarget> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberAwaitTarget> {
         Ok(match self {
-            Self::Task(value) => FiberAwaitTarget::Task(value.into_runtime_value()?),
+            Self::Task(value) => {
+                FiberAwaitTarget::Task(value.into_runtime_value_for_program(owner)?)
+            }
             Self::Need(need) => FiberAwaitTarget::Need(need),
         })
     }
@@ -817,14 +819,14 @@ impl AwbcFiberAwaitManySnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberAwaitManyState> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberAwaitManyState> {
         Ok(FiberAwaitManyState {
             plan: self.plan,
             binding: self.binding,
             items: self
                 .items
                 .into_iter()
-                .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                .map(|value| value.into_runtime_value_for_program(owner))
                 .collect::<Result<_, _>>()?,
             next_index: self.next_index,
             in_flight: self.in_flight,
@@ -833,7 +835,7 @@ impl AwbcFiberAwaitManySnapshot {
                 .into_iter()
                 .map(|value| {
                     value
-                        .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                        .map(|value| value.into_runtime_value_for_program(owner))
                         .transpose()
                 })
                 .collect::<Result<_, _>>()?,
@@ -855,13 +857,13 @@ impl AwbcFiberStreamSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberStreamState> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberStreamState> {
         Ok(FiberStreamState {
             plan: self.plan,
             queue: self
                 .queue
                 .into_iter()
-                .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                .map(|value| value.into_runtime_value_for_program(owner))
                 .collect::<Result<_, _>>()?,
             closed: self.closed,
             emitted_count: self.emitted_count,
@@ -883,11 +885,11 @@ impl AwbcFiberTerminalSnapshot {
         })
     }
 
-    fn into_live(self) -> AwbcSaveResult<FiberTerminalValue> {
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberTerminalValue> {
         Ok(match self {
             Self::Returned(value) => FiberTerminalValue::Returned(
                 value
-                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .map(|value| value.into_runtime_value_for_program(owner))
                     .transpose()?,
             ),
             Self::Cancelled => FiberTerminalValue::Cancelled,
@@ -3285,11 +3287,16 @@ pub(crate) fn runtime_variant_identity(
     owner: &AwbcVariantIdentity,
 ) -> Option<RuntimeVariantIdentity> {
     match owner {
-        AwbcVariantIdentity::Nominal { public_id } => Some(RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new(program.strings.get(public_id.index())?.clone())
+        AwbcVariantIdentity::Nominal { public_id, layout } => {
+            Some(RuntimeVariantIdentity::Nominal {
+                nominal: RuntimeNominalTypeId::try_new(
+                    program.strings.get(public_id.index())?.clone(),
+                )
                 .ok()?,
-            semantic_identity,
-        }),
+                semantic_identity,
+                layout: crate::entry::TypeLayoutHash::from_bytes(*layout),
+            })
+        }
         AwbcVariantIdentity::Builtin(owner) => Some(RuntimeVariantIdentity::Builtin(*owner)),
     }
 }

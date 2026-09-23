@@ -52,11 +52,32 @@ pub struct RuntimeStatefulEntryRoles {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeNominalRole {
     pub identity: RuntimeNominalTypeId,
     pub semantic_identity: RuntimeSemanticTypeId,
     pub layout: TypeLayoutHash,
-    pub schema: RuntimeTypeSchema,
+}
+
+impl RuntimeNominalRole {
+    /// Resolves the role in the active executable; the role owns no schema copy.
+    pub fn validate_for_program(
+        &self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<(), crate::program_types::RuntimeProgramTypeError> {
+        program.require_nominal(self.semantic_identity, &self.identity, self.layout)
+    }
+
+    /// Validates every value descendant against the program's original rows.
+    pub fn accepts_payload(
+        &self,
+        program: crate::program_types::RuntimeProgramTypes<'_>,
+        payload: &crate::value::RuntimePayload,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<super::RuntimeValueDigest, crate::program_types::RuntimeProgramTypeError> {
+        self.validate_for_program(program)?;
+        program.accepts_value(self.semantic_identity, &payload.0, limits)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -228,6 +249,7 @@ impl RootExecutionLimits {
             && self.schema.max_sequence_items > 0
             && self.schema.max_string_bytes > 0
             && self.schema.max_encoded_bytes > 0
+            && self.schema.max_validation_work > 0
             && self.max_commands_per_transition > 0
             && self.max_command_bytes_per_transition > 0
             && self.max_pending_events > 0

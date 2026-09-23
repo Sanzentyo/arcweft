@@ -282,15 +282,9 @@ impl Wire for AwbcInstruction {
                 sequence.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
-            Self::MakeRecord {
-                dst,
-                ty,
-                field_names,
-                fields,
-            } => {
+            Self::MakeRecord { dst, ty, fields } => {
                 dst.write_wire(writer)?;
                 ty.write_wire(writer)?;
-                field_names.write_wire(writer)?;
                 fields.write_wire(writer)?;
             }
             Self::MakeVariant {
@@ -543,7 +537,6 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::MakeRecord => Self::MakeRecord {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 ty: AwbcTypeId::read_wire(reader)?,
-                field_names: Vec::<AwbcStringId>::read_wire(reader)?,
                 fields: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::MakeVariant => Self::MakeVariant {

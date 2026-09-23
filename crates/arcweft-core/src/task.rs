@@ -1,5 +1,5 @@
 use crate::entry::RuntimeValueDigest;
-use crate::pattern::RuntimeCheckedType;
+use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use std::num::NonZeroU32;
 use thiserror::Error;
+
+pub mod outcome;
+pub use outcome::{
+    BoundTaskOutcome, BoundTaskSpec, RuntimeProgramOwner, TaskOutcomeBindingError,
+    TaskOutcomeValueError,
+};
 
 /// Host-local generation slot used to qualify live runtime state.
 ///
@@ -390,37 +396,85 @@ pub struct RuntimeNeedState {
 /// failures and cancellation are control outcomes and are not alternate typed
 /// payload coordinates.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TaskOutcomeContract {
-    payload: RuntimeCheckedType,
+pub enum TaskOutcomeContract {
+    /// An explicit finite contract owned by a producer without an executable.
+    Standalone { payload: RuntimeCheckedType },
+    /// The result row owned by the selected native or AWBC executable.
+    Program { payload: RuntimeSemanticTypeId },
 }
 
 impl TaskOutcomeContract {
     #[must_use]
     pub const fn new(payload: RuntimeCheckedType) -> Self {
-        Self { payload }
+        Self::Standalone { payload }
     }
 
     #[must_use]
-    pub const fn payload(&self) -> &RuntimeCheckedType {
-        &self.payload
+    pub const fn program(payload: RuntimeSemanticTypeId) -> Self {
+        Self::Program { payload }
+    }
+
+    #[must_use]
+    pub const fn standalone_payload(&self) -> Option<&RuntimeCheckedType> {
+        match self {
+            Self::Standalone { payload } => Some(payload),
+            Self::Program { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn program_payload(&self) -> Option<RuntimeSemanticTypeId> {
+        match self {
+            Self::Standalone { .. } => None,
+            Self::Program { payload } => Some(*payload),
+        }
     }
 
     pub fn try_payload(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        self.payload.try_payload(value)
+        match self {
+            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
+                payload.try_payload(value)
+            }
+            Self::Standalone { .. } => {
+                Err("standalone task outcome needs program authority".into())
+            }
+            Self::Program { .. } => Err("program task result requires its bound executable".into()),
+        }
     }
 
     pub fn try_result_ok(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        self.payload.try_result_payload(Ok(value))
+        match self {
+            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
+                payload.try_result_payload(Ok(value))
+            }
+            Self::Standalone { .. } => {
+                Err("standalone task outcome needs program authority".into())
+            }
+            Self::Program { .. } => Err("program task result requires its bound executable".into()),
+        }
     }
 
     pub fn try_result_err(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        self.payload.try_result_payload(Err(value))
+        match self {
+            Self::Standalone { payload } if self.standalone_contract_is_valid() => {
+                payload.try_result_payload(Err(value))
+            }
+            Self::Standalone { .. } => {
+                Err("standalone task outcome needs program authority".into())
+            }
+            Self::Program { .. } => Err("program task result requires its bound executable".into()),
+        }
     }
 
     #[must_use]
-    pub const fn result_error(&self) -> Option<&RuntimeCheckedType> {
-        match &self.payload {
-            RuntimeCheckedType::Result { error, .. } => Some(error),
+    pub fn result_error(&self) -> Option<&RuntimeCheckedType> {
+        if !self.standalone_contract_is_valid() {
+            return None;
+        }
+        match self {
+            Self::Standalone {
+                payload: RuntimeCheckedType::Result { error, .. },
+            } => Some(error),
             _ => None,
         }
     }
@@ -519,6 +573,21 @@ pub struct TaskSpec {
     pub outcome: TaskOutcomeContract,
     pub request: HostTaskRequest,
     pub debug_label: String,
+}
+
+/// A task identifier was reused with a different accepted specification, or a
+/// same-key join requested work that does not share the owner's complete
+/// scheduling and outcome contract.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum TaskEnsureError {
+    #[error("task identifier {task_id:?} was reused with a different specification")]
+    TaskIdSpecificationConflict { task_id: TaskId },
+    #[error("task {task_id:?} conflicts with owner {owner_id:?} for same-key join {key:?}")]
+    JoinSpecificationConflict {
+        task_id: TaskId,
+        owner_id: TaskId,
+        key: TaskKey,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1210,6 +1279,19 @@ pub struct TaskEvent {
     pub kind: TaskEventKind,
 }
 
+/// A completion publication does not belong to one live scheduler owner.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum TaskCompletionError {
+    #[error("completion references unknown task {task_id:?}")]
+    UnknownTask { task_id: TaskId },
+    #[error("joined waiter {task_id:?} cannot publish directly for owner {owner_id:?}")]
+    JoinedWaiterDirectCompletion { task_id: TaskId, owner_id: TaskId },
+    #[error("task {task_id:?} received more than one terminal completion")]
+    DuplicateTerminalEvent { task_id: TaskId },
+    #[error("task {task_id:?} received a publication after its terminal completion")]
+    EventAfterTerminal { task_id: TaskId },
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskEventKind {
     Ready(RuntimePayload),
@@ -1219,7 +1301,7 @@ pub enum TaskEventKind {
 }
 
 pub trait TaskHost {
-    fn ensure_task(&mut self, spec: TaskSpec) -> TaskHandle;
+    fn ensure_task(&mut self, spec: BoundTaskSpec) -> Result<TaskHandle, TaskEnsureError>;
     fn cancel_scope(&mut self, scope: CancelScopeId);
     fn poll_frame(&mut self, budget: SchedulerBudget) -> Vec<TaskEvent>;
 }

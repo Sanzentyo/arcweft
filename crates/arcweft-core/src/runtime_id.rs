@@ -531,7 +531,7 @@ impl<'de> Deserialize<'de> for RuntimeDialogueContentPlanId {
 /// Failure to decode the sole internal line-handle token carrier.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeLineHandleTokenDecodeError {
-    #[error("line handle token payload is not the canonical internal nominal record")]
+    #[error("line handle token payload does not satisfy the typed internal tuple ABI")]
     Shape,
     #[error("line handle token contains an invalid artifact fingerprint")]
     Artifact,
@@ -544,34 +544,27 @@ impl RuntimeLineHandleToken {
     /// structured, AWBC, save, and replay consumers.
     #[must_use]
     pub fn encode_payload(&self) -> crate::value::RuntimeValue {
-        crate::value::RuntimeValue::NominalRecord(crate::value::RuntimeNominalRecordValue::new(
-            line_handle_token_nominal(),
-            line_handle_token_layout(),
-            vec![
-                crate::value::RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(
-                    self.activation.artifact().as_bytes().to_vec(),
-                )),
-                crate::value::RuntimeValue::u64(self.activation.owner_fiber().get()),
-                crate::value::RuntimeValue::u32(self.activation.content().get().get()),
-                crate::value::RuntimeValue::u64(self.activation.occurrence()),
-                crate::value::RuntimeValue::u32(self.site.get()),
-                crate::value::RuntimeValue::u32(self.issuance),
-            ],
-        ))
+        crate::value::RuntimeValue::Tuple(vec![
+            crate::value::RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(
+                self.activation.artifact().as_bytes().to_vec(),
+            )),
+            crate::value::RuntimeValue::u64(self.activation.owner_fiber().get()),
+            crate::value::RuntimeValue::u32(self.activation.content().get().get()),
+            crate::value::RuntimeValue::u64(self.activation.occurrence()),
+            crate::value::RuntimeValue::u32(self.site.get()),
+            crate::value::RuntimeValue::u32(self.issuance),
+        ])
     }
 
-    /// Decodes only the canonical internal nominal record. Tuple, string, and
-    /// debug-label representations are deliberately not accepted.
+    /// Decodes the exact six-field internal tuple under the line handle's
+    /// opaque owner. The protocol has no source nominal type or layout.
     pub fn try_decode_payload(
         value: &crate::value::RuntimeValue,
     ) -> Result<Self, RuntimeLineHandleTokenDecodeError> {
-        let crate::value::RuntimeValue::NominalRecord(record) = value else {
+        let crate::value::RuntimeValue::Tuple(fields) = value else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
-        record
-            .validate_shape(&line_handle_token_nominal(), line_handle_token_layout(), 6)
-            .map_err(|_| RuntimeLineHandleTokenDecodeError::Shape)?;
-        let [artifact, owner_fiber, content, occurrence, site, issuance] = record.fields() else {
+        let [artifact, owner_fiber, content, occurrence, site, issuance] = fields.as_slice() else {
             return Err(RuntimeLineHandleTokenDecodeError::Shape);
         };
         let crate::value::RuntimeValue::Seq(artifact) = artifact else {
@@ -618,17 +611,6 @@ impl RuntimeLineHandleToken {
             *issuance,
         ))
     }
-}
-
-fn line_handle_token_nominal() -> crate::entry::RuntimeNominalTypeId {
-    crate::entry::RuntimeNominalTypeId::try_new("std.runtime.LineHandleTokenV1")
-        .expect("fixed line-handle token nominal identity is valid")
-}
-
-fn line_handle_token_layout() -> crate::entry::TypeLayoutHash {
-    crate::entry::TypeLayoutHash::from_bytes(
-        *blake3::hash(b"arcweft.runtime.line-handle-token.layout.v1").as_bytes(),
-    )
 }
 
 impl fmt::Display for RuntimeDialogueContentPlanId {
@@ -1192,6 +1174,54 @@ fn reserved_family_segment(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_handle_token_tuple_roundtrip_rejects_tampered_abi_fields() {
+        use crate::value::{RuntimeSeq, RuntimeValue};
+        let token = RuntimeLineHandleToken::new(
+            DialogueActivationId::new(
+                crate::effect::RuntimeArtifactFingerprint::try_from_bytes([7; 32]).unwrap(),
+                RuntimePersistentFiberId::from_allocated(11),
+                RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::new(3).unwrap()),
+                17,
+            ),
+            RuntimeLineHandleSiteId::from_zero_based(3),
+            23,
+        );
+        let payload = token.encode_payload();
+        assert_eq!(
+            RuntimeLineHandleToken::try_decode_payload(&payload),
+            Ok(token.clone())
+        );
+        let encoded = serde_json::to_value(&payload).unwrap();
+        let decoded = serde_json::from_value(encoded).unwrap();
+        assert_eq!(
+            RuntimeLineHandleToken::try_decode_payload(&decoded),
+            Ok(token)
+        );
+        let RuntimeValue::Tuple(fields) = payload else {
+            panic!("internal tuple ABI");
+        };
+        for defect in 0..4 {
+            let mut fields = fields.clone();
+            match defect {
+                0 => {
+                    fields.pop();
+                }
+                1 => fields[0] = RuntimeValue::Seq(RuntimeSeq::dense_bytes(vec![7; 31])),
+                2 => fields[1] = RuntimeValue::i64(11),
+                3 => fields[2] = RuntimeValue::u32(0),
+                _ => unreachable!(),
+            }
+            assert!(
+                RuntimeLineHandleToken::try_decode_payload(&RuntimeValue::Tuple(fields)).is_err()
+            );
+        }
+        assert!(
+            RuntimeLineHandleToken::try_decode_payload(&RuntimeValue::String("token".to_owned()))
+                .is_err()
+        );
+    }
 
     #[test]
     fn runtime_identity_json_is_strict_and_canonical() {

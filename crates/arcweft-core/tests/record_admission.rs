@@ -5,6 +5,9 @@ use arcweft_core::value::{
 
 #[test]
 fn awbc_snapshot_reconstruction_admits_the_same_row_and_column_inventory() {
+    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+        arcweft_core::awbc::schema::AwbcProgram::default(),
+    ));
     let row = RuntimeValue::try_record(vec![
         ("z".to_owned(), RuntimeValue::Unit),
         ("a".to_owned(), RuntimeValue::Unit),
@@ -24,7 +27,10 @@ fn awbc_snapshot_reconstruction_admits_the_same_row_and_column_inventory() {
         let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value).unwrap();
         let encoded = serde_json::to_value(&snapshot).unwrap();
         let decoded: AwbcRuntimeValueSnapshot = serde_json::from_value(encoded.clone()).unwrap();
-        assert_eq!(decoded.into_runtime_value().unwrap(), value);
+        assert_eq!(
+            decoded.into_runtime_value_for_program(&owner).unwrap(),
+            value
+        );
         for (ordinal, field, replacement) in [
             (0, "field", serde_json::json!(2)),
             (1, "field", serde_json::json!(1)),
@@ -34,7 +40,7 @@ fn awbc_snapshot_reconstruction_admits_the_same_row_and_column_inventory() {
             let mut malformed = encoded.clone();
             malformed.pointer_mut(fields_path).unwrap()[ordinal][field] = replacement;
             let snapshot: AwbcRuntimeValueSnapshot = serde_json::from_value(malformed).unwrap();
-            assert!(snapshot.into_runtime_value().is_err());
+            assert!(snapshot.into_runtime_value_for_program(&owner).is_err());
         }
     }
 }

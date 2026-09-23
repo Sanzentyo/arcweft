@@ -248,6 +248,7 @@ impl RuntimeNominalRecordLayoutField {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeNominalRecordValue {
     type_id: RuntimeNominalTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
     fields: Vec<RuntimeValue>,
 }
@@ -259,6 +260,11 @@ pub enum RuntimeNominalRecordError {
     Type {
         expected: RuntimeNominalTypeId,
         actual: RuntimeNominalTypeId,
+    },
+    #[error("nominal record semantic identity does not match the expected source type")]
+    SemanticIdentity {
+        expected: RuntimeSemanticTypeId,
+        actual: RuntimeSemanticTypeId,
     },
     #[error("nominal record layout does not match the expected layout")]
     Layout {
@@ -284,6 +290,7 @@ impl RuntimeNominalRecordValue {
         validate_layout_fields(layout, &fields_in_layout_order)?;
         Ok(Self {
             type_id: layout.nominal().clone(),
+            semantic_identity: layout.semantic_identity(),
             layout: layout.layout(),
             fields: fields_in_layout_order,
         })
@@ -293,11 +300,13 @@ impl RuntimeNominalRecordValue {
     #[must_use]
     pub const fn new(
         type_id: RuntimeNominalTypeId,
+        semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
         fields: Vec<RuntimeValue>,
     ) -> Self {
         Self {
             type_id,
+            semantic_identity,
             layout,
             fields,
         }
@@ -307,6 +316,12 @@ impl RuntimeNominalRecordValue {
     #[must_use]
     pub const fn type_id(&self) -> &RuntimeNominalTypeId {
         &self.type_id
+    }
+
+    /// Source semantic identity of this exact nominal application.
+    #[must_use]
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
     }
 
     /// Exact transitive type-layout identity.
@@ -374,6 +389,12 @@ impl RuntimeNominalRecordValue {
                 actual: self.type_id().clone(),
             });
         }
+        if self.semantic_identity != layout.semantic_identity() {
+            return Err(RuntimeNominalRecordError::SemanticIdentity {
+                expected: layout.semantic_identity(),
+                actual: self.semantic_identity,
+            });
+        }
         if self.layout() != layout.layout() {
             return Err(RuntimeNominalRecordError::Layout {
                 expected: layout.layout(),
@@ -387,6 +408,7 @@ impl RuntimeNominalRecordValue {
     pub fn validate_shape(
         &self,
         expected_type: &RuntimeNominalTypeId,
+        expected_semantic_identity: RuntimeSemanticTypeId,
         expected_layout: TypeLayoutHash,
         expected_fields: usize,
     ) -> Result<(), RuntimeNominalRecordError> {
@@ -394,6 +416,12 @@ impl RuntimeNominalRecordValue {
             return Err(RuntimeNominalRecordError::Type {
                 expected: expected_type.clone(),
                 actual: self.type_id.clone(),
+            });
+        }
+        if self.semantic_identity != expected_semantic_identity {
+            return Err(RuntimeNominalRecordError::SemanticIdentity {
+                expected: expected_semantic_identity,
+                actual: self.semantic_identity,
             });
         }
         if self.layout != expected_layout {
@@ -637,10 +665,26 @@ mod tests {
         let layout = layout(Vec::new());
         let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
             layout.nominal().clone(),
+            layout.semantic_identity(),
             layout.layout(),
             Vec::new(),
         ));
         assert!(layout.checked_type().accepts_value(&value));
+        let wrong_semantic = RuntimeNominalRecordValue::new(
+            layout.nominal().clone(),
+            RuntimeSemanticTypeId::from_bytes([207; 32]),
+            layout.layout(),
+            vec![],
+        );
+        assert!(matches!(
+            wrong_semantic.validate_against_layout(&layout),
+            Err(RuntimeNominalRecordError::SemanticIdentity { .. })
+        ));
+        assert!(
+            !layout
+                .checked_type()
+                .accepts_value(&RuntimeValue::NominalRecord(wrong_semantic))
+        );
 
         let wrong = RuntimeCheckedType::Nominal {
             nominal: layout.nominal().clone(),

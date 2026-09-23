@@ -6,7 +6,9 @@ use arcweft_core::effect::{
     RuntimeArtifactFingerprint, RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionGuardId,
     RuntimeAssertionProfile, RuntimeIdentityDecodeError,
 };
-use arcweft_data::{Codec, DecodeOptions, EncodeOptions, FieldShape, TypeShape};
+use arcweft_data::{
+    Codec, DecodeOptions, EmptyShapeAccess, EncodeOptions, FieldShape, ShapeRef, TypeShape,
+};
 use arcweft_serde_bridge::{from_arcweft_value, to_arcweft_value};
 
 fn artifact_fingerprint_fixture() -> RuntimeArtifactFingerprint {
@@ -49,14 +51,16 @@ fn assert_codec_round_trip(codec: &dyn Codec) {
     let fingerprint_bytes = codec
         .encode_value(
             &fingerprint_value,
-            &fingerprint_shape,
+            ShapeRef::inline(&fingerprint_shape),
+            &EmptyShapeAccess,
             &EncodeOptions::default(),
         )
         .expect("artifact fingerprint encodes");
     let decoded_fingerprint_value = codec
         .decode_value(
             &fingerprint_bytes,
-            &fingerprint_shape,
+            ShapeRef::inline(&fingerprint_shape),
+            &EmptyShapeAccess,
             &DecodeOptions::default(),
         )
         .expect("artifact fingerprint decodes");
@@ -69,10 +73,20 @@ fn assert_codec_round_trip(codec: &dyn Codec) {
     let failure_value = to_arcweft_value(&expected_failure)
         .expect("assertion failure enters the typed data boundary");
     let bytes = codec
-        .encode_value(&failure_value, &failure_shape, &EncodeOptions::default())
+        .encode_value(
+            &failure_value,
+            ShapeRef::inline(&failure_shape),
+            &EmptyShapeAccess,
+            &EncodeOptions::default(),
+        )
         .expect("assertion failure encodes");
     let decoded = codec
-        .decode_value(&bytes, &failure_shape, &DecodeOptions::default())
+        .decode_value(
+            &bytes,
+            ShapeRef::inline(&failure_shape),
+            &EmptyShapeAccess,
+            &DecodeOptions::default(),
+        )
         .expect("assertion failure decodes");
     let actual_failure: RuntimeAssertionFailure =
         from_arcweft_value(&decoded).expect("assertion failure leaves the typed data boundary");
