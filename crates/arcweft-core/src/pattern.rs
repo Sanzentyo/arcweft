@@ -171,12 +171,39 @@ impl RuntimeStandardOpaqueTypeSpec {
     pub const fn persistence(&self) -> RuntimeOpaquePersistence {
         RuntimeOpaquePersistence::ConstantAndSnapshot
     }
+
+    /// Returns the exact owner of a standard opaque type with no arguments.
+    /// Generic standard types require their selected argument identities.
+    #[must_use]
+    pub fn monomorphic_owner(self) -> Option<RuntimeOpaqueTypeOwner> {
+        if self.arity != 0 {
+            return None;
+        }
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        encoder.write_tag(65);
+        encoder.write_u8(0);
+        encoder.write_u8(0);
+        encoder.write_len(self.path.len());
+        for segment in self.path {
+            encoder.write_str(segment);
+        }
+        encoder.write_len(0);
+        Some(RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeOpaqueTypeProducerId::try_new(self.producer)
+                .expect("standard opaque producer identities are valid"),
+            encoder.finish(),
+            self.value_class(),
+            self.persistence(),
+        ))
+    }
 }
 
 pub const RUNTIME_STANDARD_REDUCTION: RuntimeStandardOpaqueTypeSpec =
     RuntimeStandardOpaqueTypeSpec::new(&["Reduction"], 1, "std.reduction");
 pub const RUNTIME_STANDARD_AGENT_ERROR: RuntimeStandardOpaqueTypeSpec =
     RuntimeStandardOpaqueTypeSpec::new(&["AgentError"], 0, "std.agent_error");
+pub const RUNTIME_STANDARD_VIRTUAL_PATH: RuntimeStandardOpaqueTypeSpec =
+    RuntimeStandardOpaqueTypeSpec::new(&["VirtualPath"], 0, "std.virtual_path");
 
 /// Closed standard opaque inventory. Both semantic catalogs and external
 /// adapter references consume this inventory, so producer identity cannot
@@ -185,7 +212,7 @@ pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
     RUNTIME_STANDARD_REDUCTION,
     RuntimeStandardOpaqueTypeSpec::new(&["Watch"], 1, "std.watch"),
     RuntimeStandardOpaqueTypeSpec::new(&["Sample"], 1, "std.sample"),
-    RuntimeStandardOpaqueTypeSpec::new(&["VirtualPath"], 0, "std.virtual_path"),
+    RUNTIME_STANDARD_VIRTUAL_PATH,
     RuntimeStandardOpaqueTypeSpec::new(&["ArcError"], 0, "std.arc_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["ReducerError"], 0, "std.reducer_error"),
     RUNTIME_STANDARD_AGENT_ERROR,

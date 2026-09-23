@@ -41,6 +41,7 @@ mod sequence_constructors;
 mod sequence_impls;
 mod shape;
 mod view;
+mod virtual_path;
 
 pub(crate) use view::{RuntimeRecordView, RuntimeScalarView, RuntimeTupleView, RuntimeValueView};
 
@@ -119,6 +120,7 @@ pub use sequence_constructors::{
 };
 pub use sequence_impls::{RecordSeq, RecordSeqField, TupleSeq};
 pub use shape::RuntimeValueShape;
+pub use virtual_path::{RuntimeVirtualPath, RuntimeVirtualPathError, RuntimeVirtualPathSpace};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeBinding {
@@ -872,10 +874,6 @@ pub enum RuntimeIntrinsic {
     MathMatmulF64,
     MathMatrixAddF64,
     MathTensorAddF64,
-    PathSave,
-    PathAsset,
-    PathTemp,
-    PathExport,
 }
 
 impl RuntimeIntrinsic {
@@ -955,10 +953,6 @@ impl RuntimeIntrinsic {
             "math.matmul_f64" => Some(Self::MathMatmulF64),
             "math.matrix_add_f64" => Some(Self::MathMatrixAddF64),
             "math.tensor_add_f64" => Some(Self::MathTensorAddF64),
-            "path.save" => Some(Self::PathSave),
-            "path.asset" => Some(Self::PathAsset),
-            "path.temp" => Some(Self::PathTemp),
-            "path.export" => Some(Self::PathExport),
             _ => None,
         }
     }
@@ -1039,10 +1033,6 @@ impl RuntimeIntrinsic {
             Self::MathMatmulF64 => "math.matmul_f64",
             Self::MathMatrixAddF64 => "math.matrix_add_f64",
             Self::MathTensorAddF64 => "math.tensor_add_f64",
-            Self::PathSave => "path.save",
-            Self::PathAsset => "path.asset",
-            Self::PathTemp => "path.temp",
-            Self::PathExport => "path.export",
         }
     }
 
@@ -1076,89 +1066,6 @@ impl RuntimeIntrinsic {
                 Some(crate::plan::RuntimeBuiltinIteratorFamily::TupleHomogeneous)
             }
             _ => None,
-        }
-    }
-
-    pub const fn path_space(self) -> Option<&'static str> {
-        match self {
-            Self::PathSave => Some("save"),
-            Self::PathAsset => Some("asset"),
-            Self::PathTemp => Some("temp"),
-            Self::PathExport => Some("export"),
-            Self::Add
-            | Self::CoreRange
-            | Self::CoreIterCollect
-            | Self::CoreRangeIntoIter
-            | Self::CoreSeqIntoIter
-            | Self::CoreStreamIntoIter
-            | Self::CoreVecIntoIter
-            | Self::CoreArrayIntoIter
-            | Self::CoreSliceIntoIter
-            | Self::CoreTupleIntoIter
-            | Self::CoreIterNext
-            | Self::CoreOptionIsSome
-            | Self::CoreOptionUnwrap
-            | Self::CoreIndex
-            | Self::StringTrim
-            | Self::StringToString
-            | Self::StdF32Abs
-            | Self::StdF32Floor
-            | Self::StdF32Ceil
-            | Self::StdF32Round
-            | Self::StdF32Trunc
-            | Self::StdF32Fract
-            | Self::StdF32Sqrt
-            | Self::StdF32Sin
-            | Self::StdF32Cos
-            | Self::StdF32Tan
-            | Self::StdF32Exp
-            | Self::StdF32Exp2
-            | Self::StdF32Ln
-            | Self::StdF32Log2
-            | Self::StdF32Log10
-            | Self::StdF32Powf
-            | Self::StdF32Atan2
-            | Self::StdF32MulAdd
-            | Self::StdF32IsNan
-            | Self::StdF32IsInfinite
-            | Self::StdF32IsFinite
-            | Self::StdF32IsSignPositive
-            | Self::StdF32IsSignNegative
-            | Self::StdF32ToBits
-            | Self::StdF32FromBits
-            | Self::StdF32ToF64
-            | Self::StdF64Abs
-            | Self::StdF64Floor
-            | Self::StdF64Ceil
-            | Self::StdF64Round
-            | Self::StdF64Trunc
-            | Self::StdF64Fract
-            | Self::StdF64Sqrt
-            | Self::StdF64Sin
-            | Self::StdF64Cos
-            | Self::StdF64Tan
-            | Self::StdF64Exp
-            | Self::StdF64Exp2
-            | Self::StdF64Ln
-            | Self::StdF64Log2
-            | Self::StdF64Log10
-            | Self::StdF64Powf
-            | Self::StdF64Atan2
-            | Self::StdF64MulAdd
-            | Self::StdF64IsNan
-            | Self::StdF64IsInfinite
-            | Self::StdF64IsFinite
-            | Self::StdF64IsSignPositive
-            | Self::StdF64IsSignNegative
-            | Self::StdF64ToBits
-            | Self::StdF64FromBits
-            | Self::StdF64ToF32
-            | Self::MathMatmulF32
-            | Self::MathMatrixAddF32
-            | Self::MathTensorAddF32
-            | Self::MathMatmulF64
-            | Self::MathMatrixAddF64
-            | Self::MathTensorAddF64 => None,
         }
     }
 }

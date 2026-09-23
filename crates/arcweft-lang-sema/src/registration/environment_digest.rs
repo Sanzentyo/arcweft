@@ -60,6 +60,16 @@ pub(super) fn derive(
             }
         }
     }
+    match world.typecheck_env().available_host_calls() {
+        None => encoder.byte(0),
+        Some(contracts) => {
+            encoder.byte(1);
+            encoder.len(contracts.len());
+            for contract in contracts {
+                encoder.bytes(contract.as_bytes());
+            }
+        }
+    }
     let mut namespaces = world
         .typecheck_env()
         .namespace_bindings()

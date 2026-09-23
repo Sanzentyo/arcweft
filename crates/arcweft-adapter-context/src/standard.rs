@@ -360,7 +360,7 @@ pub fn native_file_manifest() -> AdapterManifest {
                 "fs.write_bytes",
                 signature(
                     [
-                        ("path", virtual_path),
+                        ("path", virtual_path.clone()),
                         (
                             "body",
                             AdapterTypeKind::Vec {
@@ -374,6 +374,26 @@ pub fn native_file_manifest() -> AdapterManifest {
             )
             .with_domain_error(fs_error),
         )
+        .with_host_call(AdapterHostCall::with_signature(
+            "path.save",
+            signature([("path", AdapterTypeKind::String)], virtual_path.clone()),
+            [],
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "path.asset",
+            signature([("path", AdapterTypeKind::String)], virtual_path.clone()),
+            [],
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "path.temp",
+            signature([("path", AdapterTypeKind::String)], virtual_path.clone()),
+            [],
+        ))
+        .with_host_call(AdapterHostCall::with_signature(
+            "path.export",
+            signature([("path", AdapterTypeKind::String)], virtual_path),
+            [],
+        ))
 }
 
 /// Host math accelerator manifest.

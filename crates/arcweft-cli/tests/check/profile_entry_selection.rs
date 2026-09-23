@@ -85,6 +85,7 @@ version = "0.1.0"
 kind = "cli"
 source = "src/tool.arcw"
 entry = "@entry.cli.main"
+adapter = "native-cli"
 
 [profiles."test.opening"]
 kind = "test"

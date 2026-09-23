@@ -15,7 +15,8 @@ use arcweft_core::task::{
     TaskPriority, TaskSequence, TaskSpec, normalize_task_events,
 };
 use arcweft_core::value::{
-    RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes, runtime_sequence_values,
+    RuntimePayload, RuntimeValue, RuntimeVirtualPath, RuntimeVirtualPathSpace,
+    runtime_sequence_dense_bytes, runtime_sequence_values,
 };
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistry,
@@ -188,8 +189,11 @@ impl NativeTaskBridge {
         HostCallPolicy::from_manifests([manifest.clone()])
     }
 
-    pub fn standard_cli_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
-        Self::standard_policy().union(Self::policy_from_manifest(manifest))
+    /// Admits only the selected adapter and the engine's internal scheduling calls.
+    pub fn selected_policy_for_manifest(manifest: &AdapterManifest) -> HostCallPolicy {
+        Self::policy_from_manifest(manifest).union(HostCallPolicy::from_manifests([
+            internal_scheduler_manifest(),
+        ]))
     }
 
     pub fn stats(&self) -> NativeTaskStats {
@@ -759,6 +763,36 @@ impl HostAdapter for NativeFileAdapter {
     }
 
     fn complete(&self, task: &TaskSpec, bound: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+        if let HostTaskRequest::Custom {
+            capability,
+            operation,
+            args,
+            named_args,
+        } = &task.request
+            && capability.0 == "path"
+        {
+            let space = RuntimeVirtualPathSpace::from_label(operation)?;
+            let argument = match (args.as_slice(), named_args.as_slice()) {
+                ([value], []) => Some(value.value()),
+                ([], [argument]) if argument.name == "path" => Some(argument.value.value()),
+                _ => None,
+            };
+            let completion = match argument {
+                Some(RuntimeValue::String(path)) => bound
+                    .try_payload(RuntimeVirtualPath::new(space, path.clone()).into_value())
+                    .map_or_else(
+                        |error| HostTaskCompletion::Failed(error.to_string()),
+                        HostTaskCompletion::Ready,
+                    ),
+                _ => HostTaskCompletion::Failed(
+                    "path constructor expects exactly one String path argument".to_owned(),
+                ),
+            };
+            return Some(HostTaskOutcome {
+                completion,
+                metrics: HostTaskMetrics::default(),
+            });
+        }
         let (result, metrics) = match &task.request {
             HostTaskRequest::FileReadText(request) => {
                 complete_read_text(&self.roots, &request.path)
@@ -1614,6 +1648,46 @@ mod tests {
         ));
         assert_eq!(bridge.stats().completed_tasks, 0);
         assert_eq!(bridge.stats().failed_tasks, 0);
+    }
+
+    #[test]
+    fn selected_native_policy_does_not_grant_unselected_host_calls() {
+        let empty = NativeTaskBridge::selected_policy_for_manifest(&standard::sans_io_manifest());
+        assert!(!empty.contains("path.save"));
+        assert!(!empty.contains("cli.args"));
+        assert!(empty.contains("flow_thread.run_child"));
+        let file =
+            NativeTaskBridge::selected_policy_for_manifest(&standard::native_file_manifest());
+        assert!(file.contains("path.save"));
+        assert!(file.contains("fs.read_text"));
+        assert!(!file.contains("cli.args"));
+    }
+
+    #[test]
+    fn native_path_constructor_returns_the_exact_standard_opaque_value() {
+        let adapter = NativeFileAdapter {
+            manifest: standard::native_file_manifest(),
+            roots: NativeFileRoots::new("assets", "state"),
+        };
+        let bound = TaskOutcomeContract::new(RuntimeCheckedType::Opaque {
+            owner: RuntimeVirtualPath::exact_owner(),
+        })
+        .bind_standalone()
+        .unwrap();
+        for space in ["save", "asset", "temp", "export"] {
+            let request = HostTaskRequest::custom_with_named_args(
+                "path",
+                space,
+                [RuntimePayload::from("nested/profile.json")],
+                [],
+            );
+            let result = adapter.complete(&task("path", request), &bound).unwrap();
+            let HostTaskCompletion::Ready(value) = result.completion else {
+                panic!("path constructor failed");
+            };
+            let path = RuntimeVirtualPath::try_from(value.value()).unwrap();
+            assert_eq!(path.runtime_label(), format!("{space}:nested/profile.json"));
+        }
     }
 
     #[test]

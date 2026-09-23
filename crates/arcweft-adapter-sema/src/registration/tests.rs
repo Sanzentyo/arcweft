@@ -44,7 +44,7 @@ fn adapter_manifest_applies_effect_capabilities_and_function_effects() {
         .expect("source-backed callable input succeeds");
     assert_eq!(registration.environment().callable_records().len(), 1);
 
-    let target_env = semantic_registration.declare_target_effects(TypeCheckEnv::new());
+    let target_env = semantic_registration.declare_target(TypeCheckEnv::new());
     assert!(
         target_env
             .available_effects()
@@ -55,11 +55,14 @@ fn adapter_manifest_applies_effect_capabilities_and_function_effects() {
 #[test]
 fn an_empty_selected_adapter_provides_no_effects() {
     let manifest = arcweft_adapter_context::standard::sans_io_manifest();
-    let env = AdapterSemanticRegistration::new(&manifest)
-        .declare_target_effects(TypeCheckEnv::standard());
+    let env = AdapterSemanticRegistration::new(&manifest).declare_target(TypeCheckEnv::standard());
     assert!(
         env.available_effects()
             .is_some_and(|effects| effects.is_empty())
+    );
+    assert!(
+        env.available_host_calls()
+            .is_some_and(|calls| calls.is_empty())
     );
 }
 

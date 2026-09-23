@@ -7488,12 +7488,6 @@ fn runtime_call_target(
                     owner,
                     reason: error.to_string(),
                 })?;
-            if mode == RuntimeHostCallMode::Immediate
-                && effects.is_empty()
-                && let Some(intrinsic) = RuntimeIntrinsic::from_label(host.public_id())
-            {
-                return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));
-            }
             return Ok(RuntimeResolvedStaticCallTarget::Host(host));
         }
         return Ok(RuntimeResolvedStaticCallTarget::Declaration(runtime));

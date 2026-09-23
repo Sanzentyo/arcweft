@@ -35,7 +35,20 @@ fn run_fixture_from_temp(
     let temp_path = temp_fixture_copy(path);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_arcw"));
     configure(&mut cmd);
-    cmd.arg(&temp_path);
+    let profile = path.with_extension("toml");
+    if profile.is_file() {
+        let manifest = temp_path
+            .parent()
+            .expect("fixture parent")
+            .join("arcw.toml");
+        fs::copy(profile, &manifest).expect("copy fixture launch profile");
+        cmd.arg("--manifest-path")
+            .arg(manifest)
+            .arg("--profile")
+            .arg("fixture");
+    } else {
+        cmd.arg(&temp_path);
+    }
     let output = cmd.output().expect("arcw run runs");
     if let Some(parent) = temp_path.parent() {
         let _ = fs::remove_dir_all(parent);
@@ -100,10 +113,36 @@ fn current_run_fixtures_pass() {
 }
 
 #[test]
+fn capability_fs_spec_fixture_checks_with_selected_adapter() {
+    let path = fixture_root().join("spec_should_pass/check/010_capability_fs_read.arcw");
+    let output = run_fixture_from_temp(&path, |command| {
+        command.arg("check");
+    });
+    assert!(
+        output.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn spec_should_pass_check_fixtures_pass_after_refactor() {
     for path in arcw_files(&fixture_root().join("spec_should_pass/check")) {
-        let output = run_arcw(&["compile", "--emit", "check"], &path);
-        assert!(output.status.success(), "{} should check", path.display());
+        let output = if path.with_extension("toml").is_file() {
+            run_fixture_from_temp(&path, |cmd| {
+                cmd.arg("check");
+            })
+        } else {
+            run_arcw(&["compile", "--emit", "check"], &path)
+        };
+        assert!(
+            output.status.success(),
+            "{} should check\nstdout:\n{}\nstderr:\n{}",
+            path.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
@@ -119,7 +158,13 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
                 .arg("--steps")
                 .arg("16");
         });
-        assert!(output.status.success(), "{} should run", path.display());
+        assert!(
+            output.status.success(),
+            "{} should run\nstdout:\n{}\nstderr:\n{}",
+            path.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 

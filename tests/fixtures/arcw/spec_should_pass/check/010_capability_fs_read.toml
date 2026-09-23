@@ -1,0 +1,11 @@
+schema = 1
+
+[package]
+id = "org.arcweft.fixture.capability-fs-read"
+version = "0.1.0"
+
+[profiles.fixture]
+kind = "cli"
+source = "010_capability_fs_read.arcw"
+entry = "@entry.main"
+adapter = "native-file"

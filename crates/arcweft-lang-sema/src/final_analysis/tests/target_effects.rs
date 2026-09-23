@@ -68,4 +68,24 @@ fn target_effects_are_part_of_the_registered_environment_identity() {
     assert_ne!(digest(&unrestricted), digest(&empty));
     assert_ne!(digest(&empty), digest(&first));
     assert_eq!(digest(&first), digest(&reordered));
+    let first_contract = arcweft_manifest_model::HostCallContractDigest::from_bytes([1; 32]);
+    let second_contract = arcweft_manifest_model::HostCallContractDigest::from_bytes([2; 32]);
+    let selected = fixture_with_base_environment(
+        source,
+        None,
+        TypeCheckEnv::standard().with_available_host_calls([first_contract, second_contract]),
+    );
+    let selected_reordered = fixture_with_base_environment(
+        source,
+        None,
+        TypeCheckEnv::standard().with_available_host_calls([second_contract, first_contract]),
+    );
+    let no_calls = fixture_with_base_environment(
+        source,
+        None,
+        TypeCheckEnv::standard().with_available_host_calls([]),
+    );
+    assert_eq!(digest(&selected), digest(&selected_reordered));
+    assert_ne!(digest(&selected), digest(&no_calls));
+    assert_ne!(digest(&no_calls), digest(&unrestricted));
 }

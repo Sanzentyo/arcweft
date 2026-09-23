@@ -47,7 +47,7 @@ use arcweft_presentation::fx::{
     BUILTIN_FX_CALLABLE_CATALOG, BuiltinFxCallableParameter, BuiltinFxCallableRow,
     BuiltinFxParameterPresence, BuiltinFxParameterType, FxEnumDomain,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use thiserror::Error;
 
 /// Function or method signature tracked by the semantic environment.
@@ -244,6 +244,7 @@ pub struct TypeCheckEnv {
     pub(crate) standard_methods: Vec<StandardEnvironmentMethod>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
+    available_host_calls: Option<BTreeSet<arcweft_manifest_model::HostCallContractDigest>>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
     statement_ingress_inputs: Box<[StatementIngressTypePublicationInput]>,
 }
@@ -1797,6 +1798,23 @@ impl TypeCheckEnv {
             .get_or_insert_with(HashSet::new)
             .insert(effect.into());
         self
+    }
+
+    /// Selects the exact manifest-owned host contracts provided by this target.
+    #[must_use]
+    pub fn with_available_host_calls(
+        mut self,
+        contracts: impl IntoIterator<Item = arcweft_manifest_model::HostCallContractDigest>,
+    ) -> Self {
+        self.available_host_calls = Some(contracts.into_iter().collect());
+        self
+    }
+
+    /// Returns selected host-call availability; absence means no target was selected.
+    pub fn available_host_calls(
+        &self,
+    ) -> Option<&BTreeSet<arcweft_manifest_model::HostCallContractDigest>> {
+        self.available_host_calls.as_ref()
     }
 
     pub(crate) fn closed_enum(&self, ty: &TypeKind) -> Option<&EnvironmentEnumSchema> {

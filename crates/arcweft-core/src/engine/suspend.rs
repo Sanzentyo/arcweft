@@ -19,7 +19,7 @@ use crate::task::{
     ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest,
     WasmCallRequest,
 };
-use crate::value::{DenseSeq, RuntimeFieldValue};
+use crate::value::{DenseSeq, RuntimeFieldValue, RuntimeVirtualPath};
 
 impl Engine {
     fn task_outcome_accepts_live_value(
@@ -908,18 +908,18 @@ fn spread_host_arg_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Stri
 fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTaskRequest, String> {
     match (call.capability, call.operation) {
         ("file" | "fs", "read_text") => Ok(HostTaskRequest::FileReadText(FileReadTextRequest {
-            path: positional_string(call.args, 0)?,
+            path: positional_virtual_path(call.args, 0)?,
         })),
         ("file" | "fs", "read_bytes") => Ok(HostTaskRequest::FileReadBytes(FileReadBytesRequest {
-            path: positional_string(call.args, 0)?,
+            path: positional_virtual_path(call.args, 0)?,
         })),
         ("file" | "fs", "write_text") => Ok(HostTaskRequest::FileWriteText(FileWriteTextRequest {
-            path: positional_string(call.args, 0)?,
+            path: positional_virtual_path(call.args, 0)?,
             text: positional_string(call.args, 1)?,
         })),
         ("file" | "fs", "write_bytes") => {
             Ok(HostTaskRequest::FileWriteBytes(FileWriteBytesRequest {
-                path: positional_string(call.args, 0)?,
+                path: positional_virtual_path(call.args, 0)?,
                 bytes: positional_bytes(call.args, 1)?,
             }))
         }
@@ -1007,7 +1007,7 @@ fn indexed_task_id(base: &TaskId, index: usize) -> TaskId {
 }
 
 fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {
-    let path = positional_string(args, 0)?;
+    let path = positional_virtual_path(args, 0)?;
     let body =
         positional_arg(args, 1).ok_or_else(|| "missing positional argument #1".to_owned())?;
     match body {
@@ -1032,6 +1032,14 @@ fn positional_after(args: &[EvaluatedHostArg], count: usize) -> Vec<&RuntimeValu
         .skip(count)
         .map(|arg| &arg.value)
         .collect()
+}
+
+fn positional_virtual_path(args: &[EvaluatedHostArg], index: usize) -> Result<String, String> {
+    let value = positional_arg(args, index)
+        .ok_or_else(|| format!("missing positional task argument {index}"))?;
+    RuntimeVirtualPath::try_from(value)
+        .map(|path| path.runtime_label())
+        .map_err(|error| error.to_string())
 }
 
 fn positional_string(args: &[EvaluatedHostArg], index: usize) -> Result<String, String> {

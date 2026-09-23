@@ -178,11 +178,17 @@ impl<'a> AdapterSemanticRegistration<'a> {
         })
     }
 
-    /// Declares this manifest's effects and marks them as target-provided.
-    pub fn declare_target_effects(self, env: TypeCheckEnv) -> TypeCheckEnv {
+    /// Selects this manifest's effects and exact host contracts as target-provided.
+    pub fn declare_target(self, env: TypeCheckEnv) -> TypeCheckEnv {
         self.grant_effect_availability(
             self.declare_effects(
-                env.with_available_effects(std::iter::empty::<EffectCapability>()),
+                env.with_available_effects(std::iter::empty::<EffectCapability>())
+                    .with_available_host_calls(
+                        self.manifest
+                            .host_calls()
+                            .iter()
+                            .map(|call| call.contract_digest()),
+                    ),
             ),
         )
     }

@@ -5101,7 +5101,21 @@ impl<'a> FinalFlowLowerer<'a> {
                 overrides,
             ),
             HirExprKind::Await(awaited) => {
-                self.lower_await_value(expression, awaited, &continuation)
+                for child in self.evaluated_expression_children(awaited.operand())? {
+                    if !overrides.contains_key(&child) {
+                        return self.lower_flow_value_with_overrides(
+                            child,
+                            RuntimeFlowValueContinuation::Compose {
+                                owner: expression,
+                                child,
+                                overrides,
+                                outer: Box::new(continuation),
+                            },
+                            BTreeMap::new(),
+                        );
+                    }
+                }
+                self.lower_await_value(expression, awaited, &continuation, overrides)
             }
             HirExprKind::Choice(choice) => {
                 self.lower_choice_value(expression, choice, continuation)
@@ -5722,6 +5736,7 @@ impl<'a> FinalFlowLowerer<'a> {
         expression: ExprId,
         awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
         continuation: &RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let fact = self.awaited(expression).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -5738,7 +5753,8 @@ impl<'a> FinalFlowLowerer<'a> {
                     "Await expression {expression:?} has no admitted continuation locals"
                 ))
             })?;
-        let await_op = self.lower_await_operation(expression, awaited, &fact, &locals)?;
+        let await_op =
+            self.lower_await_operation(expression, awaited, &fact, &locals, overrides)?;
         let payload = self.expression_type(expression)?.clone();
         let mut ops = vec![await_op];
         ops.extend(self.apply_value_continuation(
@@ -5754,6 +5770,7 @@ impl<'a> FinalFlowLowerer<'a> {
         awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
         fact: &RuntimeAwaitFact,
         locals: &AwaitLocalSeeds,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
         let operand = self
             .module
@@ -5770,7 +5787,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 awaited.operand()
             )));
         };
-        let lowerer = self.expr_lowerer();
+        let lowerer = self.expr_lowerer().with_overrides(overrides);
         let target = lowerer
             .lower_host_call_target(awaited.operand(), call)
             .map_err(RuntimePlanLowerError::new)?

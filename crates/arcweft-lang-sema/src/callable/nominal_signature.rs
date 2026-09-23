@@ -255,8 +255,21 @@ impl<'a> ProjectSignatureResolver<'a> {
                     );
                     self.associated_scope = None;
                     let mut resolved = resolved?;
+                    let declared_effects = function
+                        .effects()
+                        .iter()
+                        .map(|effect| {
+                            crate::effects::project_hir_effect_id(module, *effect)
+                                .map(|(effect, _)| effect)
+                                .map_err(|_| CallableCatalogBuildError::HostCallContractMismatch {
+                                    declaration: declaration.clone(),
+                                    path: path.clone(),
+                                })
+                        })
+                        .collect::<Result<crate::effects::EffectSet, _>>()?;
                     if resolved.parameter_types != projected.parameter_types
                         || resolved.return_type != projected.result_type
+                        || contract.signature().effects().closed_value() != Some(declared_effects)
                     {
                         return Err(CallableCatalogBuildError::HostCallContractMismatch {
                             declaration: declaration.clone(),

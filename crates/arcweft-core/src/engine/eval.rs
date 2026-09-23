@@ -1155,18 +1155,6 @@ fn evaluate_runtime_call_after_intrinsics(
             |error| RuntimeValue::String(format!("math.tensor_add_f64({error})")),
             RuntimeValue::tensor_f64,
         ),
-        (
-            Some(
-                intrinsic @ (RuntimeIntrinsic::PathSave
-                | RuntimeIntrinsic::PathAsset
-                | RuntimeIntrinsic::PathTemp
-                | RuntimeIntrinsic::PathExport),
-            ),
-            [RuntimeValue::String(path)],
-        ) => {
-            let space = intrinsic.path_space().unwrap_or(intrinsic.as_label());
-            RuntimeValue::String(format!("{space}:{path}"))
-        }
         _ => pure_backend
             .call_external(external_context, callee, args)
             .map_or_else(

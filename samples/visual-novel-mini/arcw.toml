@@ -27,6 +27,7 @@ listen = "127.0.0.1:8080"
 kind = "cli"
 source = "src/tool.arcw"
 entry = "@entry.main"
+adapter = "native-cli"
 
 [profiles."test.opening"]
 kind = "test"

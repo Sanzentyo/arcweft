@@ -6,10 +6,14 @@
 use arcweft_adapter_context::manifest::{
     AdapterHostCall, AdapterManifest, AdapterNominalOwner, AdapterTypeKind,
 };
-use arcweft_core::pattern::{RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder};
+use arcweft_core::pattern::{
+    RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder,
+};
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{BoundTaskOutcome, HostTaskRequest, NamedHostArg, TaskId, TaskSpec};
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::value::{
+    RuntimePayload, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -411,24 +415,41 @@ fn encode_adapter_semantic_type(
     ty: &AdapterTypeKind,
 ) {
     match ty {
-        AdapterTypeKind::Bool => encoder.write_tag(1),
-        AdapterTypeKind::I8 => encoder.write_tag(2),
-        AdapterTypeKind::I16 => encoder.write_tag(3),
-        AdapterTypeKind::I32 => encoder.write_tag(4),
-        AdapterTypeKind::I64 => encoder.write_tag(5),
-        AdapterTypeKind::I128 => encoder.write_tag(6),
-        AdapterTypeKind::ISize => encoder.write_tag(7),
-        AdapterTypeKind::U8 => encoder.write_tag(8),
-        AdapterTypeKind::U16 => encoder.write_tag(9),
-        AdapterTypeKind::U32 => encoder.write_tag(10),
-        AdapterTypeKind::U64 => encoder.write_tag(11),
-        AdapterTypeKind::U128 => encoder.write_tag(12),
-        AdapterTypeKind::USize => encoder.write_tag(13),
-        AdapterTypeKind::F32 => encoder.write_tag(14),
-        AdapterTypeKind::F64 => encoder.write_tag(15),
-        AdapterTypeKind::String => encoder.write_tag(16),
-        AdapterTypeKind::Char => encoder.write_tag(17),
-        AdapterTypeKind::Bytes => encoder.write_tag(18),
+        AdapterTypeKind::Unit => RuntimeCheckedType::Unit.encode_semantic_identity(encoder),
+        AdapterTypeKind::Bool => RuntimeCheckedType::Bool.encode_semantic_identity(encoder),
+        AdapterTypeKind::I8 => {
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I8).encode_semantic_identity(encoder)
+        }
+        AdapterTypeKind::I16 => {
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I16).encode_semantic_identity(encoder)
+        }
+        AdapterTypeKind::I32 => {
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I32).encode_semantic_identity(encoder)
+        }
+        AdapterTypeKind::I64 => {
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).encode_semantic_identity(encoder)
+        }
+        AdapterTypeKind::I128 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I128)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::ISize => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::ISize)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::U8 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U8)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::U16 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U16)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::U32 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U32)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::U64 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U64)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::U128 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U128)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::USize => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::USize)
+            .encode_semantic_identity(encoder),
+        AdapterTypeKind::F32 => RuntimeCheckedType::F32.encode_semantic_identity(encoder),
+        AdapterTypeKind::F64 => RuntimeCheckedType::F64.encode_semantic_identity(encoder),
+        AdapterTypeKind::String => RuntimeCheckedType::String.encode_semantic_identity(encoder),
+        AdapterTypeKind::Char => RuntimeCheckedType::Char.encode_semantic_identity(encoder),
+        AdapterTypeKind::Bytes => RuntimeCheckedType::Bytes.encode_semantic_identity(encoder),
         AdapterTypeKind::Vec { item } => {
             encoder.write_tag(48);
             encode_adapter_semantic_type(encoder, item);
@@ -480,7 +501,6 @@ fn encode_adapter_semantic_type(
                 encode_adapter_semantic_type(encoder, item);
             }
         }
-        AdapterTypeKind::Unit => encoder.write_tag(77),
     }
 }
 
@@ -932,6 +952,29 @@ mod tests {
             expected_mode,
             need_identity,
         ));
+    }
+
+    #[test]
+    fn primitive_host_results_share_the_checked_runtime_type_authority() {
+        for (adapter, checked) in [
+            (AdapterTypeKind::Unit, RuntimeCheckedType::Unit),
+            (AdapterTypeKind::Bool, RuntimeCheckedType::Bool),
+            (
+                AdapterTypeKind::I32,
+                RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I32),
+            ),
+            (
+                AdapterTypeKind::U8,
+                RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U8),
+            ),
+            (AdapterTypeKind::String, RuntimeCheckedType::String),
+            (AdapterTypeKind::Bytes, RuntimeCheckedType::Bytes),
+        ] {
+            assert_eq!(
+                adapter_type_semantic_identity(&adapter),
+                checked.semantic_identity_digest()
+            );
+        }
     }
 
     #[test]

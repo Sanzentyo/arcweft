@@ -1471,7 +1471,7 @@ flow main() -> Result<i64, String> {
     )
     .unwrap();
     let context = ProjectCompilationContext::new(
-        Arc::new(registration.declare_target_effects(TypeCheckEnv::standard())),
+        Arc::new(registration.declare_target(TypeCheckEnv::standard())),
         Arc::new(facts),
         Arc::clone(context.resource_types()),
         None,

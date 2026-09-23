@@ -774,7 +774,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .replace_existing_expressions(owner_bound_replacements)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         self.finalize_call_facts(&checked_callables, &semantic_coordinates)?;
-        self.validate_target_effects()?;
+        self.validate_target_capabilities(&checked_callables)?;
         self.finalize_view_fx_applications(&semantic_coordinates)?;
         self.finalize_evaluated_effects(
             &mut input,

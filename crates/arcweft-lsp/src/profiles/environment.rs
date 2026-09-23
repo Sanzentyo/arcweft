@@ -250,7 +250,7 @@ pub(crate) fn register_loaded_environment(
     let (facts, file_documents) = registration.into_parts();
     let facts = Arc::new(facts);
     let base = AdapterSemanticRegistration::new(topology.adapter())
-        .declare_effects(TypeCheckEnv::standard());
+        .declare_target(TypeCheckEnv::standard());
     let characters = registered_character_catalog(&facts)?;
     let source_seeds = accepted_source_seeds(&facts, file_documents);
     let resource_types = Arc::clone(topology.resource_types());

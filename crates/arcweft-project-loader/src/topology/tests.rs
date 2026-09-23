@@ -770,8 +770,8 @@ adapter = "network"
         ["net.read"]
     );
 
-    let read_env = AdapterSemanticRegistration::new(read.adapter())
-        .declare_target_effects(TypeCheckEnv::new());
+    let read_env =
+        AdapterSemanticRegistration::new(read.adapter()).declare_target(TypeCheckEnv::new());
     assert!(read_env.has_capability("fs.read"));
     assert!(
         read_env
@@ -780,8 +780,8 @@ adapter = "network"
     );
     assert!(!read_env.has_capability("net.read"));
 
-    let network_env = AdapterSemanticRegistration::new(network.adapter())
-        .declare_target_effects(TypeCheckEnv::new());
+    let network_env =
+        AdapterSemanticRegistration::new(network.adapter()).declare_target(TypeCheckEnv::new());
     assert!(network_env.has_capability("net.read"));
     assert!(
         network_env
