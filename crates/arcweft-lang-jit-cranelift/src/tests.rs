@@ -213,14 +213,12 @@ fn admit(
 ) -> AdmittedHelper {
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
-        .admit_semantic_batch(
+        .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(bool_ty(), RuntimePlanTypeProjection::Bool),
                 RuntimePlanTypeSeed::new(scalar.ty(), scalar.projection()),
             ],
             (0..locals).map(|_| RuntimeLocalDeclarationSeed::new(scalar.ty())),
-            [],
-            [],
         )
         .expect("semantic admission");
     builder
