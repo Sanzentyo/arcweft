@@ -1,8 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, hash_map::DefaultHasher};
+use std::hash::{Hash, Hasher};
 
 use crate::{
     Bytes, DataError, DataErrorKind, Number, Result,
     shape::{EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape},
+    shape_graph::{EmptyShapeAccess, ShapeAccess, ShapeRef},
     value::Value,
 };
 
@@ -18,11 +20,32 @@ pub enum RawValue {
     F64(f64),
     String(String),
     Bytes(Vec<u8>),
+    Option(Option<Box<RawValue>>),
     Seq(Vec<RawValue>),
     Map(Vec<(RawValue, RawValue)>),
 }
 
 impl RawValue {
+    /// Rewrites explicit option values into collision-safe tagged maps for formats whose
+    /// native value model has no option node.
+    #[must_use]
+    pub fn into_tagged_options(self) -> Self {
+        match self {
+            Self::Option(None) => tagged_option(None),
+            Self::Option(Some(value)) => tagged_option(Some((*value).into_tagged_options())),
+            Self::Seq(values) => {
+                Self::Seq(values.into_iter().map(Self::into_tagged_options).collect())
+            }
+            Self::Map(entries) => Self::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key.into_tagged_options(), value.into_tagged_options()))
+                    .collect(),
+            ),
+            other => other,
+        }
+    }
+
     #[must_use]
     pub const fn type_name(&self) -> &'static str {
         match self {
@@ -34,15 +57,95 @@ impl RawValue {
             Self::F64(_) => "f64",
             Self::String(_) => "string",
             Self::Bytes(_) => "bytes",
+            Self::Option(_) => "option",
             Self::Seq(_) => "sequence",
             Self::Map(_) => "map",
         }
     }
 }
 
+const OPTION_TAG_KEY: &str = "$arcweft";
+const OPTION_TAG_VALUE: &str = "option";
+const OPTION_PRESENT_KEY: &str = "present";
+const OPTION_VALUE_KEY: &str = "value";
+
+fn tagged_option(value: Option<RawValue>) -> RawValue {
+    let mut entries = vec![
+        (
+            RawValue::String(OPTION_TAG_KEY.to_owned()),
+            RawValue::String(OPTION_TAG_VALUE.to_owned()),
+        ),
+        (
+            RawValue::String(OPTION_PRESENT_KEY.to_owned()),
+            RawValue::Bool(value.is_some()),
+        ),
+    ];
+    if let Some(value) = value {
+        entries.push((RawValue::String(OPTION_VALUE_KEY.to_owned()), value));
+    }
+    RawValue::Map(entries)
+}
+
+fn tagged_option_value(raw: &RawValue) -> Result<Option<&RawValue>> {
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type(
+            "tagged option map",
+            raw.type_name(),
+        ));
+    };
+    let fields = string_map(entries)?;
+    if !matches!(fields.get(OPTION_TAG_KEY), Some(RawValue::String(tag)) if tag == OPTION_TAG_VALUE)
+    {
+        return Err(DataError::invalid_type("tagged option map", "map"));
+    }
+    match fields.get(OPTION_PRESENT_KEY) {
+        Some(RawValue::Bool(false)) if fields.len() == 2 => Ok(None),
+        Some(RawValue::Bool(true)) if fields.len() == 3 => match fields.get(OPTION_VALUE_KEY) {
+            Some(value) => Ok(Some(value)),
+            None => Err(DataError::new(
+                DataErrorKind::MissingField,
+                "tagged present option is missing its value",
+            )
+            .at_field(OPTION_VALUE_KEY)),
+        },
+        Some(RawValue::Bool(_)) => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "tagged option fields do not match its presence marker",
+        )),
+        Some(other) => Err(
+            DataError::invalid_type("bool option presence", other.type_name())
+                .at_field(OPTION_PRESENT_KEY),
+        ),
+        None => Err(DataError::new(
+            DataErrorKind::MissingField,
+            "tagged option is missing its presence marker",
+        )
+        .at_field(OPTION_PRESENT_KEY)),
+    }
+}
+
 /// Validates and projects a typed value into a raw value according to shape.
 pub fn encode_with_shape(value: &Value, shape: &TypeShape) -> Result<RawValue> {
-    match shape {
+    encode_inner(value, ShapeRef::Inline(shape), &EmptyShapeAccess)
+}
+
+/// Encodes a value through a root shape identity and its finite shape graph.
+pub fn encode_with_shape_ref(
+    value: &Value,
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    encode_inner(value, shape, access)
+}
+
+fn encode_inner(
+    value: &Value,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => encode_inner(value, ShapeRef::Id(*id), access),
         TypeShape::Unit => match value {
             Value::Unit => Ok(RawValue::Null),
             other => Err(DataError::invalid_type("unit", other.type_name())),
@@ -64,49 +167,75 @@ pub fn encode_with_shape(value: &Value, shape: &TypeShape) -> Result<RawValue> {
             other => Err(DataError::invalid_type("bytes", other.type_name())),
         },
         TypeShape::Option(inner) => match value {
-            Value::Unit => Ok(RawValue::Null),
-            other => encode_with_shape(other, inner),
+            Value::Option(None) => Ok(RawValue::Option(None)),
+            Value::Option(Some(value)) => encode_inner(value, ShapeRef::Inline(inner), access)
+                .map(Box::new)
+                .map(Some)
+                .map(RawValue::Option),
+            other => Err(DataError::invalid_type("option", other.type_name())),
         },
         TypeShape::Seq(inner) => match value {
             Value::Seq(values) => values
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    encode_with_shape(value, inner).map_err(|error| error.at_index(index))
+                    encode_inner(value, ShapeRef::Inline(inner), access)
+                        .map_err(|error| error.at_index(index))
                 })
                 .collect::<Result<Vec<_>>>()
                 .map(RawValue::Seq),
             other => Err(DataError::invalid_type("sequence", other.type_name())),
         },
-        TypeShape::Map { key, value: inner } => {
-            if !matches!(key.as_ref(), TypeShape::String) {
-                return Err(DataError::unsupported(
-                    "arcweft-data v1 raw transcoder supports string map keys only",
-                ));
-            }
-            match value {
-                Value::Map(values) => values
+        TypeShape::Tuple(items) => match value {
+            Value::Tuple(values) if values.len() == items.len() => values
+                .iter()
+                .zip(items)
+                .enumerate()
+                .map(|(index, (value, item_shape))| {
+                    encode_inner(value, ShapeRef::Inline(item_shape), access)
+                        .map_err(|error| error.at_index(index))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(RawValue::Seq),
+            Value::Tuple(values) => Err(tuple_arity_error(items.len(), values.len())),
+            other => Err(DataError::invalid_type("tuple", other.type_name())),
+        },
+        TypeShape::Map {
+            key,
+            value: inner,
+            kind,
+        } => match value {
+            Value::Map {
+                kind: value_kind,
+                entries,
+            } if kind == value_kind => {
+                validate_unique_map_keys(entries)?;
+                entries
                     .iter()
-                    .map(|(key, value)| {
-                        encode_with_shape(value, inner)
-                            .map(|raw| (RawValue::String(key.clone()), raw))
-                            .map_err(|error| error.at_field(key.clone()))
+                    .enumerate()
+                    .map(|(index, (key_value, value))| {
+                        let raw_key = encode_inner(key_value, ShapeRef::Inline(key), access)
+                            .map_err(|error| error.at_index(index))?;
+                        let raw_value = encode_inner(value, ShapeRef::Inline(inner), access)
+                            .map_err(|error| error.at_index(index))?;
+                        Ok((raw_key, raw_value))
                     })
                     .collect::<Result<Vec<_>>>()
-                    .map(RawValue::Map),
-                other => Err(DataError::invalid_type("map", other.type_name())),
+                    .map(RawValue::Map)
             }
-        }
-        TypeShape::Record { fields, policy, .. } => encode_record(value, fields, *policy),
+            Value::Map { .. } => Err(DataError::invalid_type(
+                format!("map with {kind:?} ordering"),
+                "map with different ordering",
+            )),
+            other => Err(DataError::invalid_type("map", other.type_name())),
+        },
+        TypeShape::Record { fields, policy, .. } => encode_record(value, fields, *policy, access),
         TypeShape::Enum {
             variants,
             tag,
             repr,
             ..
-        } => encode_enum(value, variants, tag, *repr),
-        TypeShape::Named(name) => Err(DataError::unsupported(format!(
-            "named shape `{name}` must be resolved before raw transcoding"
-        ))),
+        } => encode_enum(value, variants, tag, *repr, access),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -120,13 +249,32 @@ pub fn encode_with_shape(value: &Value, shape: &TypeShape) -> Result<RawValue> {
         | TypeShape::U128
         | TypeShape::Usize
         | TypeShape::F32
-        | TypeShape::F64 => encode_number(value, shape),
+        | TypeShape::F64 => encode_number(value, shape.as_ref()),
     }
 }
 
 /// Validates and projects a raw value into Arcweft's typed value according to shape.
 pub fn decode_with_shape(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
-    match shape {
+    decode_inner(raw, ShapeRef::Inline(shape), &EmptyShapeAccess)
+}
+
+/// Decodes a raw value through a root shape identity and its finite shape graph.
+pub fn decode_with_shape_ref(
+    raw: &RawValue,
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<Value> {
+    decode_inner(raw, shape, access)
+}
+
+fn decode_inner(
+    raw: &RawValue,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<Value> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => decode_inner(raw, ShapeRef::Id(*id), access),
         TypeShape::Unit => match raw {
             RawValue::Null => Ok(Value::Unit),
             other => Err(DataError::invalid_type("unit", other.type_name())),
@@ -163,52 +311,73 @@ pub fn decode_with_shape(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
             other => Err(DataError::invalid_type("bytes", other.type_name())),
         },
         TypeShape::Option(inner) => match raw {
-            RawValue::Null => Ok(Value::Unit),
-            other => decode_with_shape(other, inner),
+            RawValue::Option(None) => Ok(Value::Option(None)),
+            RawValue::Option(Some(raw)) => decode_inner(raw, ShapeRef::Inline(inner), access)
+                .map(Box::new)
+                .map(Some)
+                .map(Value::Option),
+            RawValue::Map(_) => match tagged_option_value(raw)? {
+                Some(raw) => decode_inner(raw, ShapeRef::Inline(inner), access)
+                    .map(Box::new)
+                    .map(Some)
+                    .map(Value::Option),
+                None => Ok(Value::Option(None)),
+            },
+            other => Err(DataError::invalid_type("tagged option", other.type_name())),
         },
         TypeShape::Seq(inner) => match raw {
             RawValue::Seq(values) => values
                 .iter()
                 .enumerate()
                 .map(|(index, raw)| {
-                    decode_with_shape(raw, inner).map_err(|error| error.at_index(index))
+                    decode_inner(raw, ShapeRef::Inline(inner), access)
+                        .map_err(|error| error.at_index(index))
                 })
                 .collect::<Result<Vec<_>>>()
                 .map(Value::Seq),
             other => Err(DataError::invalid_type("sequence", other.type_name())),
         },
-        TypeShape::Map { key, value } => {
-            if !matches!(key.as_ref(), TypeShape::String) {
-                return Err(DataError::unsupported(
-                    "arcweft-data v1 raw transcoder supports string map keys only",
-                ));
-            }
-            match raw {
-                RawValue::Map(entries) => entries
+        TypeShape::Tuple(items) => match raw {
+            RawValue::Seq(values) if values.len() == items.len() => values
+                .iter()
+                .zip(items)
+                .enumerate()
+                .map(|(index, (raw, item_shape))| {
+                    decode_inner(raw, ShapeRef::Inline(item_shape), access)
+                        .map_err(|error| error.at_index(index))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(Value::Tuple),
+            RawValue::Seq(values) => Err(tuple_arity_error(items.len(), values.len())),
+            other => Err(DataError::invalid_type("tuple sequence", other.type_name())),
+        },
+        TypeShape::Map { key, value, kind } => match raw {
+            RawValue::Map(raw_entries) => {
+                let entries = raw_entries
                     .iter()
-                    .map(|(key, raw_value)| {
-                        let RawValue::String(key) = key else {
-                            return Err(DataError::invalid_type("string map key", key.type_name()));
-                        };
-                        decode_with_shape(raw_value, value)
-                            .map(|value| (key.clone(), value))
-                            .map_err(|error| error.at_field(key.clone()))
+                    .enumerate()
+                    .map(|(index, (raw_key, raw_value))| {
+                        let key = decode_inner(raw_key, ShapeRef::Inline(key), access)
+                            .map_err(|error| error.at_index(index))?;
+                        let value = decode_inner(raw_value, ShapeRef::Inline(value), access)
+                            .map_err(|error| error.at_index(index))?;
+                        Ok((key, value))
                     })
-                    .collect::<Result<BTreeMap<_, _>>>()
-                    .map(Value::Map),
-                other => Err(DataError::invalid_type("map", other.type_name())),
+                    .collect::<Result<Vec<_>>>()?;
+                validate_unique_map_keys(&entries)?;
+                Ok(Value::map(*kind, entries))
             }
+            other => Err(DataError::invalid_type("map", other.type_name())),
+        },
+        TypeShape::Record { fields, policy, .. } => {
+            decode_record(raw, shape_ref, fields, *policy, access)
         }
-        TypeShape::Record { fields, policy, .. } => decode_record(raw, fields, *policy),
         TypeShape::Enum {
             variants,
             tag,
             repr,
             ..
-        } => decode_enum(raw, variants, tag, *repr),
-        TypeShape::Named(name) => Err(DataError::unsupported(format!(
-            "named shape `{name}` must be resolved before raw transcoding"
-        ))),
+        } => decode_enum(raw, variants, tag, *repr, access),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -222,7 +391,117 @@ pub fn decode_with_shape(raw: &RawValue, shape: &TypeShape) -> Result<Value> {
         | TypeShape::U128
         | TypeShape::Usize
         | TypeShape::F32
-        | TypeShape::F64 => decode_number(raw, shape),
+        | TypeShape::F64 => decode_number(raw, shape.as_ref()),
+    }
+}
+
+fn tuple_arity_error(expected: usize, actual: usize) -> DataError {
+    DataError::invalid_type(
+        format!("tuple with {expected} fields"),
+        format!("tuple with {actual} fields"),
+    )
+}
+
+fn validate_unique_map_keys(entries: &[(Value, Value)]) -> Result<()> {
+    let mut keys_by_fingerprint: HashMap<u64, Vec<&Value>> = HashMap::new();
+    for (index, (key, _)) in entries.iter().enumerate() {
+        let mut hasher = DefaultHasher::new();
+        hash_value_key(key, &mut hasher);
+        let equal_keys = keys_by_fingerprint.entry(hasher.finish()).or_default();
+        if equal_keys.iter().any(|previous| *previous == key) {
+            return Err(DataError::new(
+                DataErrorKind::DuplicateField,
+                format!("duplicate map key in entry {index}"),
+            )
+            .at_index(index));
+        }
+        equal_keys.push(key);
+    }
+    Ok(())
+}
+
+fn hash_value_key(value: &Value, hasher: &mut impl Hasher) {
+    match value {
+        Value::Unit => hasher.write_u8(0),
+        Value::Bool(value) => {
+            hasher.write_u8(1);
+            value.hash(hasher);
+        }
+        Value::Number(Number::I(value)) => {
+            hasher.write_u8(2);
+            value.hash(hasher);
+        }
+        Value::Number(Number::U(value)) => {
+            hasher.write_u8(3);
+            value.hash(hasher);
+        }
+        Value::Number(Number::F32(value)) => {
+            hasher.write_u8(4);
+            (if *value == 0.0 { 0 } else { value.to_bits() }).hash(hasher);
+        }
+        Value::Number(Number::F64(value)) => {
+            hasher.write_u8(5);
+            (if *value == 0.0 { 0 } else { value.to_bits() }).hash(hasher);
+        }
+        Value::String(value) => {
+            hasher.write_u8(6);
+            value.hash(hasher);
+        }
+        Value::Char(value) => {
+            hasher.write_u8(7);
+            value.hash(hasher);
+        }
+        Value::Bytes(value) => {
+            hasher.write_u8(8);
+            value.as_slice().hash(hasher);
+        }
+        Value::Option(None) => hasher.write_u8(9),
+        Value::Option(Some(value)) => {
+            hasher.write_u8(10);
+            hash_value_key(value, hasher);
+        }
+        Value::Seq(values) => {
+            hasher.write_u8(11);
+            values.len().hash(hasher);
+            values
+                .iter()
+                .for_each(|value| hash_value_key(value, hasher));
+        }
+        Value::Tuple(values) => {
+            hasher.write_u8(12);
+            values.len().hash(hasher);
+            values
+                .iter()
+                .for_each(|value| hash_value_key(value, hasher));
+        }
+        Value::Map { kind, entries } => {
+            hasher.write_u8(13);
+            kind.hash(hasher);
+            entries.len().hash(hasher);
+            entries.iter().for_each(|(key, value)| {
+                hash_value_key(key, hasher);
+                hash_value_key(value, hasher);
+            });
+        }
+        Value::Record(fields) => {
+            hasher.write_u8(14);
+            fields.len().hash(hasher);
+            fields.iter().for_each(|(name, value)| {
+                name.hash(hasher);
+                hash_value_key(value, hasher);
+            });
+        }
+        Value::Enum { variant, payload } => {
+            hasher.write_u8(15);
+            variant.hash(hasher);
+            match payload {
+                Some(value) => {
+                    hasher.write_u8(1);
+                    hash_value_key(value, hasher);
+                }
+                None => hasher.write_u8(0),
+            }
+        }
     }
 }
 
@@ -230,6 +509,7 @@ fn encode_record(
     value: &Value,
     fields: &[FieldShape],
     policy: crate::shape::RecordPolicy,
+    access: &dyn ShapeAccess,
 ) -> Result<RawValue> {
     let Value::Record(values) = value else {
         return Err(DataError::invalid_type("record", value.type_name()));
@@ -258,7 +538,10 @@ fn encode_record(
                 )
                 .at_field(field.wire_name.clone()));
             };
-            encode_with_shape(value, &field.value_shape())
+            let value_shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()))?;
+            encode_inner(value, ShapeRef::Inline(value_shape.as_ref()), access)
                 .map(|raw| (RawValue::String(field.wire_name.clone()), raw))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -268,8 +551,10 @@ fn encode_record(
 
 fn decode_record(
     raw: &RawValue,
+    record_shape: ShapeRef<'_>,
     fields: &[FieldShape],
     policy: crate::shape::RecordPolicy,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let RawValue::Map(entries) = raw else {
         return Err(DataError::invalid_type("record map", raw.type_name()));
@@ -290,20 +575,23 @@ fn decode_record(
     }
     fields
         .iter()
-        .filter(|field| !field.skip)
-        .map(|field| {
-            let shape = field.value_shape();
-            let Some(raw) = raw_fields.get(&field.wire_name) else {
-                return match shape {
-                    TypeShape::Option(_) => Ok((field.wire_name.clone(), Value::Unit)),
-                    _ => Err(DataError::new(
-                        DataErrorKind::MissingField,
-                        format!("missing record field `{}`", field.wire_name),
+        .enumerate()
+        .map(|(ordinal, field)| {
+            let raw = (!field.skip)
+                .then(|| raw_fields.get(&field.wire_name))
+                .flatten();
+            let Some(raw) = raw else {
+                return field
+                    .missing_value(
+                        crate::FieldDefaultRequest::new(record_shape, ordinal),
+                        access,
                     )
-                    .at_field(field.wire_name.clone())),
-                };
+                    .map(|value| (field.wire_name.clone(), value))
+                    .map_err(|error| error.at_field(field.wire_name.clone()));
             };
-            decode_with_shape(raw, &shape)
+            // Concrete codecs have normalized the byte representation already.
+            // Retain this original graph edge for nested field-default requests.
+            decode_inner(raw, ShapeRef::Inline(&field.shape), access)
                 .map(|value| (field.wire_name.clone(), value))
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
@@ -316,20 +604,25 @@ fn encode_enum(
     variants: &[VariantShape],
     tag: &EnumTagStyle,
     repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
 ) -> Result<RawValue> {
     if let Some(repr) = repr {
         return encode_repr_enum(value, variants, repr);
     }
     match tag {
-        EnumTagStyle::External => encode_external_enum(value, variants),
-        EnumTagStyle::Internal { tag } => encode_internal_enum(value, variants, tag),
+        EnumTagStyle::External => encode_external_enum(value, variants, access),
+        EnumTagStyle::Internal { tag } => encode_internal_enum(value, variants, tag, access),
         EnumTagStyle::Adjacent { tag, content } => {
-            encode_adjacent_enum(value, variants, tag, content)
+            encode_adjacent_enum(value, variants, tag, content, access)
         }
     }
 }
 
-fn encode_external_enum(value: &Value, variants: &[VariantShape]) -> Result<RawValue> {
+fn encode_external_enum(
+    value: &Value,
+    variants: &[VariantShape],
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
     let Value::Enum { variant, payload } = value else {
         return Err(DataError::invalid_type("enum", value.type_name()));
     };
@@ -350,7 +643,8 @@ fn encode_external_enum(value: &Value, variants: &[VariantShape]) -> Result<RawV
         (Some(shape), Some(payload)) => {
             entries.push((
                 RawValue::String("payload".to_owned()),
-                encode_with_shape(payload, shape).map_err(|error| error.at_variant(variant))?,
+                encode_inner(payload, ShapeRef::Inline(shape), access)
+                    .map_err(|error| error.at_variant(variant))?,
             ));
         }
         (None, None) => {}
@@ -373,6 +667,7 @@ fn encode_adjacent_enum(
     variants: &[VariantShape],
     tag: &str,
     content: &str,
+    access: &dyn ShapeAccess,
 ) -> Result<RawValue> {
     let (variant, payload, shape) = enum_parts(value, variants)?;
     let mut entries = vec![(
@@ -383,7 +678,8 @@ fn encode_adjacent_enum(
         (Some(shape), Some(payload)) => {
             entries.push((
                 RawValue::String(content.to_owned()),
-                encode_with_shape(payload, shape).map_err(|error| error.at_variant(variant))?,
+                encode_inner(payload, ShapeRef::Inline(shape), access)
+                    .map_err(|error| error.at_variant(variant))?,
             ));
         }
         (None, None) => {}
@@ -401,7 +697,12 @@ fn encode_adjacent_enum(
     Ok(RawValue::Map(entries))
 }
 
-fn encode_internal_enum(value: &Value, variants: &[VariantShape], tag: &str) -> Result<RawValue> {
+fn encode_internal_enum(
+    value: &Value,
+    variants: &[VariantShape],
+    tag: &str,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
     let (variant, payload, shape) = enum_parts(value, variants)?;
     let mut entries = vec![(
         RawValue::String(tag.to_owned()),
@@ -410,7 +711,8 @@ fn encode_internal_enum(value: &Value, variants: &[VariantShape], tag: &str) -> 
     match (&shape.payload, payload) {
         (Some(shape), Some(payload)) => {
             let RawValue::Map(payload_entries) =
-                encode_with_shape(payload, shape).map_err(|error| error.at_variant(variant))?
+                encode_inner(payload, ShapeRef::Inline(shape), access)
+                    .map_err(|error| error.at_variant(variant))?
             else {
                 return Err(DataError::unsupported(
                     "internally tagged enum payload must be a record",
@@ -528,20 +830,25 @@ fn decode_enum(
     variants: &[VariantShape],
     tag: &EnumTagStyle,
     repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     if let Some(repr) = repr {
         return decode_repr_enum(raw, variants, repr);
     }
     match tag {
-        EnumTagStyle::External => decode_external_enum(raw, variants),
-        EnumTagStyle::Internal { tag } => decode_internal_enum(raw, variants, tag),
+        EnumTagStyle::External => decode_external_enum(raw, variants, access),
+        EnumTagStyle::Internal { tag } => decode_internal_enum(raw, variants, tag, access),
         EnumTagStyle::Adjacent { tag, content } => {
-            decode_adjacent_enum(raw, variants, tag, content)
+            decode_adjacent_enum(raw, variants, tag, content, access)
         }
     }
 }
 
-fn decode_external_enum(raw: &RawValue, variants: &[VariantShape]) -> Result<Value> {
+fn decode_external_enum(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    access: &dyn ShapeAccess,
+) -> Result<Value> {
     let RawValue::Map(entries) = raw else {
         return Err(DataError::invalid_type("enum map", raw.type_name()));
     };
@@ -572,7 +879,8 @@ fn decode_external_enum(raw: &RawValue, variants: &[VariantShape]) -> Result<Val
         })?;
     let payload = match (&shape.payload, fields.get("payload")) {
         (Some(shape), Some(raw)) => Some(Box::new(
-            decode_with_shape(raw, shape).map_err(|error| error.at_variant(variant))?,
+            decode_inner(raw, ShapeRef::Inline(shape), access)
+                .map_err(|error| error.at_variant(variant))?,
         )),
         (None, None) => None,
         (Some(_), None) => {
@@ -597,6 +905,7 @@ fn decode_adjacent_enum(
     variants: &[VariantShape],
     tag: &str,
     content: &str,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let RawValue::Map(entries) = raw else {
         return Err(DataError::invalid_type("enum map", raw.type_name()));
@@ -606,7 +915,8 @@ fn decode_adjacent_enum(
     let shape = enum_shape(variants, variant)?;
     let payload = match (&shape.payload, fields.get(content)) {
         (Some(shape), Some(raw)) => Some(Box::new(
-            decode_with_shape(raw, shape).map_err(|error| error.at_variant(variant))?,
+            decode_inner(raw, ShapeRef::Inline(shape), access)
+                .map_err(|error| error.at_variant(variant))?,
         )),
         (None, None) => None,
         (Some(_), None) => {
@@ -627,7 +937,12 @@ fn decode_adjacent_enum(
     })
 }
 
-fn decode_internal_enum(raw: &RawValue, variants: &[VariantShape], tag: &str) -> Result<Value> {
+fn decode_internal_enum(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    tag: &str,
+    access: &dyn ShapeAccess,
+) -> Result<Value> {
     let RawValue::Map(entries) = raw else {
         return Err(DataError::invalid_type("enum map", raw.type_name()));
     };
@@ -642,8 +957,12 @@ fn decode_internal_enum(raw: &RawValue, variants: &[VariantShape], tag: &str) ->
                 .cloned()
                 .collect::<Vec<_>>();
             Some(Box::new(
-                decode_with_shape(&RawValue::Map(payload_entries), shape)
-                    .map_err(|error| error.at_variant(variant))?,
+                decode_inner(
+                    &RawValue::Map(payload_entries),
+                    ShapeRef::Inline(shape),
+                    access,
+                )
+                .map_err(|error| error.at_variant(variant))?,
             ))
         }
         None if fields.len() == 1 => None,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use arcweft_data::{
     Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FieldShape,
-    FormatId, Number, RecordPolicy, Result, TypeShape, Value,
+    FormatId, Number, RecordPolicy, Result, ShapeAccess, ShapeRef, TypeShape, Value,
 };
 use arrow::array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, NullArray,
@@ -43,10 +43,11 @@ impl Codec for ArrowIpcCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let batch = value_to_batch(value, shape)?;
+        let batch = value_to_batch(value, shape, access)?;
         let mut output = Vec::new();
         let mut writer = arrow::ipc::writer::FileWriter::try_new(&mut output, &batch.schema())
             .map_err(arrow_error)?;
@@ -59,12 +60,13 @@ impl Codec for ArrowIpcCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
-        let row_shape = arrow_row_shape(shape)?;
-        preflight_arrow_ipc_buffers(input, row_shape, &options.limits)?;
+        let row_shape = arrow_row_shape(shape, access)?;
+        preflight_arrow_ipc_buffers(input, &row_shape, &options.limits, access)?;
         let reader = arrow::ipc::reader::FileReader::try_new(Cursor::new(input), None)
             .map_err(arrow_error)?;
         budget.enter_node()?;
@@ -72,7 +74,7 @@ impl Codec for ArrowIpcCodec {
         let mut rows_seen = 0;
         for batch in reader {
             let batch = batch.map_err(arrow_error)?;
-            let batch_rows = batch_to_rows(&batch, row_shape, &mut budget, rows_seen)?;
+            let batch_rows = batch_to_rows(&batch, &row_shape, &mut budget, rows_seen, access)?;
             rows_seen += batch.num_rows();
             rows.extend(batch_rows);
         }
@@ -99,10 +101,11 @@ impl Codec for ParquetCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let batch = value_to_batch(value, shape)?;
+        let batch = value_to_batch(value, shape, access)?;
         let mut output = Vec::new();
         let mut writer = parquet::arrow::ArrowWriter::try_new(&mut output, batch.schema(), None)
             .map_err(arrow_error)?;
@@ -114,11 +117,12 @@ impl Codec for ParquetCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
-        let row_shape = arrow_row_shape(shape)?;
+        let row_shape = arrow_row_shape(shape, access)?;
         let bytes = ByteBuffer::copy_from_slice(input);
         let builder =
             parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(bytes.clone())
@@ -127,7 +131,13 @@ impl Codec for ParquetCodec {
             builder.metadata().file_metadata().num_rows(),
             &options.limits,
         )?;
-        preflight_parquet_buffers(&bytes, builder.metadata(), row_shape, &options.limits)?;
+        preflight_parquet_buffers(
+            &bytes,
+            builder.metadata(),
+            &row_shape,
+            &options.limits,
+            access,
+        )?;
         let reader = builder
             .with_batch_size(parquet_decode_batch_size(options.limits.max_sequence_len))
             .build()
@@ -137,7 +147,7 @@ impl Codec for ParquetCodec {
         let mut rows_seen = 0;
         for batch in reader {
             let batch = batch.map_err(arrow_error)?;
-            let batch_rows = batch_to_rows(&batch, row_shape, &mut budget, rows_seen)?;
+            let batch_rows = batch_to_rows(&batch, &row_shape, &mut budget, rows_seen, access)?;
             rows_seen += batch.num_rows();
             rows.extend(batch_rows);
         }
@@ -148,19 +158,41 @@ impl Codec for ParquetCodec {
     }
 }
 
-#[derive(Clone, Copy)]
-struct ArrowRowShape<'a> {
-    fields: &'a [FieldShape],
-    policy: RecordPolicy,
+#[derive(Clone)]
+struct ArrowRowShape {
+    record: TypeShape,
+    coordinate: Option<arcweft_data::ShapeId>,
 }
 
-fn arrow_row_shape(shape: &TypeShape) -> Result<ArrowRowShape<'_>> {
-    let TypeShape::Seq(row_shape) = shape else {
+impl ArrowRowShape {
+    fn fields(&self) -> &[FieldShape] {
+        let TypeShape::Record { fields, .. } = &self.record else {
+            unreachable!()
+        };
+        fields
+    }
+    fn policy(&self) -> RecordPolicy {
+        let TypeShape::Record { policy, .. } = &self.record else {
+            unreachable!()
+        };
+        *policy
+    }
+    fn reference(&self) -> ShapeRef<'_> {
+        self.coordinate
+            .map_or(ShapeRef::Inline(&self.record), ShapeRef::Id)
+    }
+}
+
+fn arrow_row_shape(shape: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<ArrowRowShape> {
+    let shape = shape.resolve(access)?;
+    let TypeShape::Seq(row_shape) = shape.as_ref() else {
         return Err(DataError::unsupported(
             "Arrow and Parquet require a top-level sequence of record rows",
         ));
     };
-    let TypeShape::Record { fields, policy, .. } = row_shape.as_ref() else {
+    let coordinate = ShapeRef::Inline(row_shape).referenced_id();
+    let row_shape = ShapeRef::Inline(row_shape).resolve(access)?;
+    let TypeShape::Record { fields, .. } = row_shape.as_ref() else {
         return Err(DataError::unsupported(
             "Arrow and Parquet require a top-level sequence of record rows",
         ));
@@ -169,35 +201,83 @@ fn arrow_row_shape(shape: &TypeShape) -> Result<ArrowRowShape<'_>> {
         .iter()
         .filter(|field| !field.skip)
         .try_for_each(|field| {
-            arrow_data_type(&field.value_shape())
+            let cell_shape = arrow_field_cell_shape(field, access)?;
+            arrow_data_type(&cell_shape)
                 .map(|_| ())
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })?;
     Ok(ArrowRowShape {
-        fields,
-        policy: *policy,
+        record: row_shape.into_owned(),
+        coordinate,
     })
 }
 
-fn value_to_batch(value: &Value, shape: &TypeShape) -> Result<RecordBatch> {
-    let row_shape = arrow_row_shape(shape)?;
+fn resolve_arrow_cell_shape(
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+    active: &mut BTreeSet<arcweft_data::ShapeId>,
+) -> Result<TypeShape> {
+    let shape = shape.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => {
+            if !active.insert(*id) {
+                return Err(DataError::unsupported(
+                    "recursive Arrow cell shapes are not supported",
+                ));
+            }
+            let result = resolve_arrow_cell_shape(ShapeRef::Id(*id), access, active);
+            active.remove(id);
+            result
+        }
+        TypeShape::Option(inner) => {
+            resolve_arrow_cell_shape(ShapeRef::Inline(inner), access, active)
+                .map(Box::new)
+                .map(TypeShape::Option)
+        }
+        shape => Ok(shape.clone()),
+    }
+}
+
+pub(crate) fn arrow_field_cell_shape(
+    field: &FieldShape,
+    access: &dyn ShapeAccess,
+) -> Result<TypeShape> {
+    let shape = field
+        .resolve_value_shape(access)
+        .map_err(|error| error.at_field(field.wire_name.clone()))?;
+    resolve_arrow_cell_shape(
+        ShapeRef::Inline(shape.as_ref()),
+        access,
+        &mut BTreeSet::new(),
+    )
+    .map_err(|error| error.at_field(field.wire_name.clone()))
+}
+
+fn value_to_batch(
+    value: &Value,
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<RecordBatch> {
+    let row_shape = arrow_row_shape(shape, access)?;
     let rows = value.as_seq()?;
     let fields = row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .map(|field| {
-            let shape = field.value_shape();
-            arrow_data_type(&shape).map(|data_type| {
-                Field::new(&field.wire_name, data_type, is_nullable_arrow_shape(&shape))
-            })
+            let shape = arrow_field_cell_shape(field, access)?;
+            arrow_data_type(&shape)
+                .map_err(|error| error.at_field(field.wire_name.clone()))
+                .map(|data_type| {
+                    Field::new(&field.wire_name, data_type, is_nullable_arrow_shape(&shape))
+                })
         })
         .collect::<Result<Vec<_>>>()?;
     let arrays = row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
-        .map(|field| build_array(rows, field, row_shape.fields, row_shape.policy))
+        .map(|field| build_array(rows, field, row_shape.fields(), row_shape.policy(), access))
         .collect::<Vec<_>>();
     let schema = Arc::new(Schema::new(fields));
     let arrays = arrays.into_iter().collect::<Result<Vec<_>>>()?;
@@ -206,6 +286,13 @@ fn value_to_batch(value: &Value, shape: &TypeShape) -> Result<RecordBatch> {
 
 fn arrow_data_type(shape: &TypeShape) -> Result<DataType> {
     match shape {
+        TypeShape::Option(inner)
+            if matches!(inner.as_ref(), TypeShape::Unit | TypeShape::Option(_)) =>
+        {
+            Err(DataError::unsupported(
+                "Arrow nullability cannot distinguish this option shape",
+            ))
+        }
         TypeShape::Option(inner) => arrow_data_type(inner),
         TypeShape::Unit => Ok(DataType::Null),
         TypeShape::Bool => Ok(DataType::Boolean),
@@ -223,9 +310,10 @@ fn arrow_data_type(shape: &TypeShape) -> Result<DataType> {
         | TypeShape::U128
         | TypeShape::Seq(_)
         | TypeShape::Map { .. }
+        | TypeShape::Tuple(_)
         | TypeShape::Record { .. }
         | TypeShape::Enum { .. }
-        | TypeShape::Named(_) => Err(DataError::unsupported(format!(
+        | TypeShape::Ref(_) => Err(DataError::unsupported(format!(
             "Arrow scalar shape {} is not supported",
             shape.type_name()
         ))),
@@ -241,8 +329,9 @@ fn build_array(
     field: &FieldShape,
     fields: &[FieldShape],
     policy: RecordPolicy,
+    access: &dyn ShapeAccess,
 ) -> Result<ArrayRef> {
-    let shape = field.value_shape();
+    let shape = arrow_field_cell_shape(field, access)?;
     match arrow_data_type(&shape)? {
         DataType::Null => Ok(Arc::new(NullArray::new(rows.len())) as ArrayRef),
         DataType::Boolean => Ok(Arc::new(BooleanArray::from(
@@ -335,11 +424,16 @@ fn row_value<'a>(
 ) -> Result<Option<&'a Value>> {
     let record = row.as_record().map_err(|error| error.at_index(row_index))?;
     reject_unknown_fields(record, fields, policy).map_err(|error| error.at_index(row_index))?;
-    match record.get(&field.wire_name) {
-        Some(Value::Unit) if matches!(shape, TypeShape::Option(_) | TypeShape::Unit) => Ok(None),
-        Some(value) => Ok(Some(value)),
-        None if matches!(shape, TypeShape::Option(_) | TypeShape::Unit) => Ok(None),
-        None => Err(DataError::new(
+    match (record.get(&field.wire_name), shape) {
+        (Some(Value::Option(None)), TypeShape::Option(_)) => Ok(None),
+        (Some(Value::Option(Some(value))), TypeShape::Option(_)) => Ok(Some(value)),
+        (Some(value), TypeShape::Option(_)) => {
+            Err(DataError::invalid_type("option", value.type_name()))
+        }
+        (Some(Value::Unit), TypeShape::Unit) => Ok(None),
+        (Some(value), _) => Ok(Some(value)),
+        (None, TypeShape::Option(_) | TypeShape::Unit) => Ok(None),
+        (None, _) => Err(DataError::new(
             DataErrorKind::MissingField,
             format!("missing Arrow field `{}`", field.wire_name),
         )
@@ -552,27 +646,43 @@ fn bytes_cell(
 
 fn batch_to_rows(
     batch: &RecordBatch,
-    row_shape: ArrowRowShape<'_>,
+    row_shape: &ArrowRowShape,
     budget: &mut DecodeBudget<'_>,
     row_offset: usize,
+    access: &dyn ShapeAccess,
 ) -> Result<Vec<Value>> {
     reject_unknown_columns(batch, row_shape)?;
     (0..batch.num_rows())
         .map(|row| {
             budget.sequence_item(row_offset + row + 1)?;
             with_budget_node(budget, |budget| {
-                let field_count = row_shape.fields.iter().filter(|field| !field.skip).count();
+                let field_count = row_shape.fields().len();
                 budget.map_len(field_count)?;
                 row_shape
-                    .fields
+                    .fields()
                     .iter()
-                    .filter(|field| !field.skip)
-                    .map(|field| {
-                        let col = batch
-                            .schema()
-                            .index_of(&field.wire_name)
-                            .map_err(arrow_error)?;
-                        column_value(batch.column(col).as_ref(), field, row, budget)
+                    .enumerate()
+                    .map(|(ordinal, field)| {
+                        let col = (!field.skip)
+                            .then(|| batch.schema().index_of(&field.wire_name).ok())
+                            .flatten();
+                        let Some(col) = col else {
+                            return field
+                                .missing_value(
+                                    arcweft_data::FieldDefaultRequest::new(
+                                        row_shape.reference(),
+                                        ordinal,
+                                    ),
+                                    access,
+                                )
+                                .map(|value| (field.wire_name.clone(), value))
+                                .map_err(|error| {
+                                    error
+                                        .at_field(field.wire_name.clone())
+                                        .at_index(row_offset + row)
+                                });
+                        };
+                        column_value(batch.column(col).as_ref(), field, row, budget, access)
                             .map(|value| (field.wire_name.clone(), value))
                     })
                     .collect::<Result<BTreeMap<_, _>>>()
@@ -582,12 +692,12 @@ fn batch_to_rows(
         .collect()
 }
 
-fn reject_unknown_columns(batch: &RecordBatch, row_shape: ArrowRowShape<'_>) -> Result<()> {
-    if !row_shape.policy.deny_unknown_fields {
+fn reject_unknown_columns(batch: &RecordBatch, row_shape: &ArrowRowShape) -> Result<()> {
+    if !row_shape.policy().deny_unknown_fields {
         return Ok(());
     }
     let known = row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .map(|field| field.wire_name.as_str())
@@ -612,23 +722,24 @@ fn column_value(
     field: &FieldShape,
     row: usize,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
-    let shape = field.value_shape();
+    let shape = arrow_field_cell_shape(field, access)?;
     with_budget_node(budget, |budget| {
         if array.is_null(row) {
-            return if is_nullable_arrow_shape(&shape) {
-                Ok(Value::Unit)
-            } else {
-                Err(DataError::new(
+            return match shape {
+                TypeShape::Option(_) => Ok(Value::Option(None)),
+                TypeShape::Unit => Ok(Value::Unit),
+                _ => Err(DataError::new(
                     DataErrorKind::MissingField,
                     format!("null in required Arrow column `{}`", field.wire_name),
                 )
                 .at_field(field.wire_name.clone())
-                .at_index(row))
+                .at_index(row)),
             };
         }
         let data_type = arrow_data_type(&shape)?;
-        match data_type {
+        let value = match data_type {
             DataType::Null => Ok(Value::Unit),
             DataType::Boolean => decode_bool_column(array, row),
             DataType::Int64 => decode_i64_column(array, row, &shape),
@@ -640,6 +751,10 @@ fn column_value(
             other => Err(DataError::unsupported(format!(
                 "Arrow type {other:?} is not mapped yet"
             ))),
+        }?;
+        match shape {
+            TypeShape::Option(_) => Ok(Value::Option(Some(Box::new(value)))),
+            _ => Ok(value),
         }
     })
 }

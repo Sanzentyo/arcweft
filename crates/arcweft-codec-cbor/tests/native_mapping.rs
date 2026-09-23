@@ -1,10 +1,60 @@
+// Inline-shape test adapter. Production Codec callers supply ShapeRef and ShapeAccess directly.
+use self::InlineCodecTestExt as Codec;
+
+trait InlineCodecTestExt {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>>;
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value>;
+}
+
+impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>> {
+        <C as arcweft_data::Codec>::encode_value(
+            self,
+            value,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value> {
+        <C as arcweft_data::Codec>::decode_value(
+            self,
+            input,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+}
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
 use arcweft_codec_cbor::CborCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, Number, RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FieldShape,
+    MapKind, Number, RecordPolicy, TypeShape, Value,
 };
 use ciborium::Value as CborValue;
 
@@ -54,6 +104,67 @@ fn cbor_codec_preserves_native_bytes() {
         .decode_value(&encoded, &asset_shape(), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(decoded, value);
+}
+
+#[test]
+fn cbor_codec_roundtrips_typed_options_tuples_and_ordered_nonstring_maps() {
+    let option_shape = TypeShape::option(TypeShape::Unit);
+    for value in [
+        Value::Option(None),
+        Value::Option(Some(Box::new(Value::Unit))),
+    ] {
+        let encoded = CborCodec
+            .encode_value(&value, &option_shape, &EncodeOptions::default())
+            .expect("encode option");
+        assert_eq!(
+            CborCodec
+                .decode_value(&encoded, &option_shape, &DecodeOptions::default())
+                .expect("decode option"),
+            value
+        );
+    }
+
+    for (shape, value) in [
+        (TypeShape::Tuple(vec![]), Value::Tuple(vec![])),
+        (
+            TypeShape::Tuple(vec![TypeShape::Bool]),
+            Value::Tuple(vec![Value::Bool(true)]),
+        ),
+    ] {
+        let encoded = CborCodec
+            .encode_value(&value, &shape, &EncodeOptions::default())
+            .expect("encode tuple");
+        assert_eq!(
+            CborCodec
+                .decode_value(&encoded, &shape, &DecodeOptions::default())
+                .expect("decode tuple"),
+            value
+        );
+    }
+
+    let shape = TypeShape::map(TypeShape::U8, TypeShape::String, MapKind::Ordered);
+    let value = Value::map(
+        MapKind::Ordered,
+        [
+            (Value::Number(Number::U(2)), Value::String("two".to_owned())),
+            (Value::Number(Number::U(1)), Value::String("one".to_owned())),
+        ],
+    );
+    let encoded = CborCodec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode map");
+    let CborValue::Map(entries) = ciborium::from_reader(Cursor::new(&encoded)).expect("native")
+    else {
+        panic!("expected native map");
+    };
+    assert_eq!(&entries[0].0, &CborValue::Integer(2.into()));
+    assert_eq!(&entries[1].0, &CborValue::Integer(1.into()));
+    assert_eq!(
+        CborCodec
+            .decode_value(&encoded, &shape, &DecodeOptions::default())
+            .expect("decode map"),
+        value
+    );
 }
 
 #[test]

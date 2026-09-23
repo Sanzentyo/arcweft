@@ -1,10 +1,18 @@
-use std::collections::BTreeMap;
+use arcweft_data_derive_support::validation::{
+    validate_field_wire_names, validate_repr_discriminants, validate_variant_wire_names,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 use proc_macro2::Span;
 use quote::quote;
-use syn::{Data, DeriveInput, Expr, Fields, Generics, Ident, Lit, LitStr, Type, WherePredicate};
+use syn::{
+    Data, DeriveInput, Fields, Generics, Ident, LitStr, Type, WherePredicate,
+    visit::{self, Visit},
+};
 
-use crate::attrs::{ContainerAttrs, FieldAttrs, ReprAttr, TagStyleAttr, VariantAttrs};
+use arcweft_data_derive_support::attrs::{
+    ContainerAttrs, FieldAttrs, ReprAttr, TagStyleAttr, VariantAttrs,
+};
 
 pub(crate) fn encode(input: &DeriveInput) -> proc_macro2::TokenStream {
     let name = &input.ident;
@@ -30,27 +38,14 @@ pub(crate) fn encode(input: &DeriveInput) -> proc_macro2::TokenStream {
             &ty_generics,
             where_clause,
         ),
-        Data::Enum(data) => {
-            if let Some(repr) = &container.repr {
-                encode_repr_enum(
-                    name,
-                    data.variants.iter().collect(),
-                    repr,
-                    &impl_generics,
-                    &ty_generics,
-                    where_clause,
-                )
-            } else {
-                encode_enum(
-                    name,
-                    data.variants.iter().collect(),
-                    &container,
-                    &impl_generics,
-                    &ty_generics,
-                    where_clause,
-                )
-            }
-        }
+        Data::Enum(data) => encode_enum(
+            name,
+            data.variants.iter().collect(),
+            &container,
+            &impl_generics,
+            &ty_generics,
+            where_clause,
+        ),
         Data::Union(_) => quote!(compile_error!("ArcweftEncode does not support unions");),
     }
 }
@@ -79,27 +74,14 @@ pub(crate) fn decode(input: &DeriveInput) -> proc_macro2::TokenStream {
             &ty_generics,
             where_clause,
         ),
-        Data::Enum(data) => {
-            if let Some(repr) = &container.repr {
-                decode_repr_enum(
-                    name,
-                    data.variants.iter().collect(),
-                    repr,
-                    &impl_generics,
-                    &ty_generics,
-                    where_clause,
-                )
-            } else {
-                decode_enum(
-                    name,
-                    data.variants.iter(),
-                    &container,
-                    &impl_generics,
-                    &ty_generics,
-                    where_clause,
-                )
-            }
-        }
+        Data::Enum(data) => decode_enum(
+            name,
+            data.variants.iter(),
+            &container,
+            &impl_generics,
+            &ty_generics,
+            where_clause,
+        ),
         Data::Union(_) => quote!(compile_error!("ArcweftDecode does not support unions");),
     }
 }
@@ -114,11 +96,7 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
     if let Err(error) = validate_input_attrs(input, &container) {
         return error.to_compile_error();
     }
-    let generics = add_data_trait_bounds(
-        input.generics.clone(),
-        reflect_bound_types(&input.data),
-        &quote!(::arcweft_data::Reflect),
-    );
+    let generics = add_reflect_generic_bounds(input.generics.clone(), &input.data);
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     match &input.data {
         Data::Struct(data) => {
@@ -126,6 +104,7 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
                 return quote!(compile_error!("ArcweftReflect currently supports named-field structs"););
             };
             let field_shapes = reflected_named_fields(fields, &container);
+            let graph_field_shapes = registered_named_fields(fields, &container);
             let deny_unknown_fields = container.deny_unknown_fields;
             quote! {
                 impl #impl_generics ::arcweft_data::Reflect for #name #ty_generics #where_clause {
@@ -135,6 +114,25 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
                             fields: vec![#(#field_shapes),*],
                             policy: ::arcweft_data::RecordPolicy { deny_unknown_fields: #deny_unknown_fields },
                         }
+                    }
+
+                    fn register_shape(
+                        builder: &mut ::arcweft_data::ShapeGraphBuilder,
+                    ) -> ::arcweft_data::Result<::arcweft_data::ShapeId>
+                    where
+                        Self: 'static + Sized,
+                    {
+                        let (id, is_new) = builder.reserve_type::<Self>();
+                        if !is_new {
+                            return Ok(id);
+                        }
+                        let shape = ::arcweft_data::TypeShape::Record {
+                            name: #type_name.to_owned(),
+                            fields: vec![#(#graph_field_shapes),*],
+                            policy: ::arcweft_data::RecordPolicy { deny_unknown_fields: #deny_unknown_fields },
+                        };
+                        builder.define(id, shape)?;
+                        Ok(id)
                     }
                 }
             }
@@ -152,6 +150,10 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
                 .variants
                 .iter()
                 .map(|variant| reflected_variant(variant, &type_name, &container));
+            let graph_variants = data
+                .variants
+                .iter()
+                .map(|variant| registered_variant(variant, &type_name, &container));
             let tag = container.tag_style().shape_tokens();
             let repr = container
                 .repr
@@ -166,6 +168,26 @@ pub(crate) fn reflect(input: &DeriveInput) -> proc_macro2::TokenStream {
                             tag: #tag,
                             repr: #repr,
                         }
+                    }
+
+                    fn register_shape(
+                        builder: &mut ::arcweft_data::ShapeGraphBuilder,
+                    ) -> ::arcweft_data::Result<::arcweft_data::ShapeId>
+                    where
+                        Self: 'static + Sized,
+                    {
+                        let (id, is_new) = builder.reserve_type::<Self>();
+                        if !is_new {
+                            return Ok(id);
+                        }
+                        let shape = ::arcweft_data::TypeShape::Enum {
+                            name: #type_name.to_owned(),
+                            variants: vec![#(#graph_variants),*],
+                            tag: #tag,
+                            repr: #repr,
+                        };
+                        builder.define(id, shape)?;
+                        Ok(id)
                     }
                 }
             }
@@ -210,40 +232,8 @@ fn encode_struct(
     }
 }
 
-fn encode_repr_enum(
-    name: &Ident,
-    variants: Vec<&syn::Variant>,
-    repr: &ReprAttr,
-    impl_generics: &syn::ImplGenerics<'_>,
-    ty_generics: &syn::TypeGenerics<'_>,
-    where_clause: Option<&syn::WhereClause>,
-) -> proc_macro2::TokenStream {
-    if variants
-        .iter()
-        .any(|variant| !matches!(variant.fields, Fields::Unit))
-    {
-        return quote!(compile_error!("Arcweft repr enums must be C-like unit variants"););
-    }
-    let repr_ty = repr.ty_tokens();
-    let arms = variants.into_iter().map(|variant| {
-        let ident = &variant.ident;
-        let discriminant = quote!(Self::#ident as #repr_ty);
-        let number = repr.number_value_tokens(&discriminant);
-        quote! {
-            Self::#ident => Ok(::arcweft_data::Value::Number(#number))
-        }
-    });
-    quote! {
-        impl #impl_generics ::arcweft_data::Encode for #name #ty_generics #where_clause {
-            fn encode(&self) -> ::arcweft_data::Result<::arcweft_data::Value> {
-                match self {
-                    #(#arms),*
-                }
-            }
-        }
-    }
-}
-
+// Encode and Decode preserve the typed enum carrier. Wire tags and numeric
+// representations are applied exactly once by codecs using Reflect metadata.
 fn encode_enum(
     name: &Ident,
     variants: Vec<&syn::Variant>,
@@ -252,21 +242,18 @@ fn encode_enum(
     ty_generics: &syn::TypeGenerics<'_>,
     where_clause: Option<&syn::WhereClause>,
 ) -> proc_macro2::TokenStream {
-    let tag_style = container.tag_style();
     let arms = variants.into_iter().map(|variant| {
         let ident = &variant.ident;
         let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
             Ok(attrs) => attrs.wire_name,
             Err(error) => return error.to_compile_error(),
         };
-        encode_enum_variant_arm(ident, &wire, &variant.fields, &tag_style, container)
+        encode_enum_variant_arm(ident, &wire, &variant.fields, container)
     });
     quote! {
         impl #impl_generics ::arcweft_data::Encode for #name #ty_generics #where_clause {
             fn encode(&self) -> ::arcweft_data::Result<::arcweft_data::Value> {
-                match self {
-                    #(#arms),*
-                }
+                match self { #(#arms),* }
             }
         }
     }
@@ -276,45 +263,23 @@ fn encode_enum_variant_arm(
     ident: &Ident,
     wire: &str,
     fields: &Fields,
-    tag_style: &TagStyleAttr,
     container: &ContainerAttrs,
 ) -> proc_macro2::TokenStream {
     match fields {
-        Fields::Unit => match tag_style {
-            TagStyleAttr::External => quote! {
-                Self::#ident => Ok(::arcweft_data::Value::Enum { variant: #wire.to_owned(), payload: None })
-            },
-            TagStyleAttr::Internal { tag } | TagStyleAttr::Adjacent { tag, .. } => quote! {
-                Self::#ident => {
-                    let mut record = ::std::collections::BTreeMap::new();
-                    record.insert(#tag.to_owned(), ::arcweft_data::Value::String(#wire.to_owned()));
-                    Ok(::arcweft_data::Value::Record(record))
-                }
-            },
+        Fields::Unit => quote! {
+            Self::#ident => Ok(::arcweft_data::Value::Enum { variant: #wire.to_owned(), payload: None })
         },
-        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => match tag_style {
-            TagStyleAttr::External => quote! {
-                Self::#ident(payload) => Ok(::arcweft_data::Value::Enum {
-                    variant: #wire.to_owned(),
-                    payload: Some(Box::new(::arcweft_data::Encode::encode(payload).map_err(|err| err.at_variant(#wire))?)),
-                })
-            },
-            TagStyleAttr::Adjacent { tag, content } => quote! {
-                Self::#ident(payload) => {
-                    let mut record = ::std::collections::BTreeMap::new();
-                    record.insert(#tag.to_owned(), ::arcweft_data::Value::String(#wire.to_owned()));
-                    record.insert(
-                        #content.to_owned(),
-                        ::arcweft_data::Encode::encode(payload).map_err(|err| err.at_variant(#wire))?,
-                    );
-                    Ok(::arcweft_data::Value::Record(record))
-                }
-            },
-            TagStyleAttr::Internal { .. } => quote! {
-                Self::#ident(..) => Err(::arcweft_data::DataError::unsupported(
-                    "internally tagged enum variants require named fields",
-                ))
-            },
+        Fields::Unnamed(fields) if fields.unnamed.is_empty() => quote! {
+            Self::#ident() => Ok(::arcweft_data::Value::Enum {
+                variant: #wire.to_owned(),
+                payload: Some(Box::new(::arcweft_data::Value::Tuple(::std::vec::Vec::new()))),
+            })
+        },
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => quote! {
+            Self::#ident(payload) => Ok(::arcweft_data::Value::Enum {
+                variant: #wire.to_owned(),
+                payload: Some(Box::new(::arcweft_data::Encode::encode(payload).map_err(|err| err.at_variant(#wire))?)),
+            })
         },
         Fields::Named(fields) => {
             let bindings: Vec<&Ident> = fields
@@ -324,51 +289,25 @@ fn encode_enum_variant_arm(
                 .collect();
             let insertions = fields.named.iter().filter_map(|field| {
                 let field_ident = field.ident.as_ref()?;
-                let attrs =
-                    match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
-                        Ok(attrs) => attrs,
-                        Err(error) => return Some(error.to_compile_error()),
-                    };
-                if attrs.skip {
-                    return None;
-                }
+                let attrs = match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
+                    Ok(attrs) => attrs,
+                    Err(error) => return Some(error.to_compile_error()),
+                };
+                if attrs.skip { return None; }
                 let wire_name = attrs.wire_name;
                 Some(quote! {
                     record.insert(#wire_name.to_owned(), ::arcweft_data::Encode::encode(#field_ident).map_err(|err| err.at_field(#wire_name))?);
                 })
             });
-            match tag_style {
-                TagStyleAttr::External => quote! {
-                    Self::#ident { #(#bindings),* } => {
-                        let mut record = ::std::collections::BTreeMap::new();
-                        #(#insertions)*
-                        Ok(::arcweft_data::Value::Enum {
-                            variant: #wire.to_owned(),
-                            payload: Some(Box::new(::arcweft_data::Value::Record(record))),
-                        })
-                    }
-                },
-                TagStyleAttr::Adjacent { tag, content } => quote! {
-                    Self::#ident { #(#bindings),* } => {
-                        let mut payload = ::std::collections::BTreeMap::new();
-                        {
-                            let record = &mut payload;
-                            #(#insertions)*
-                        }
-                        let mut record = ::std::collections::BTreeMap::new();
-                        record.insert(#tag.to_owned(), ::arcweft_data::Value::String(#wire.to_owned()));
-                        record.insert(#content.to_owned(), ::arcweft_data::Value::Record(payload));
-                        Ok(::arcweft_data::Value::Record(record))
-                    }
-                },
-                TagStyleAttr::Internal { tag } => quote! {
-                    Self::#ident { #(#bindings),* } => {
-                        let mut record = ::std::collections::BTreeMap::new();
-                        record.insert(#tag.to_owned(), ::arcweft_data::Value::String(#wire.to_owned()));
-                        #(#insertions)*
-                        Ok(::arcweft_data::Value::Record(record))
-                    }
-                },
+            quote! {
+                Self::#ident { #(#bindings),* } => {
+                    let mut record = ::std::collections::BTreeMap::new();
+                    #(#insertions)*
+                    Ok(::arcweft_data::Value::Enum {
+                        variant: #wire.to_owned(),
+                        payload: Some(Box::new(::arcweft_data::Value::Record(record))),
+                    })
+                }
             }
         }
         Fields::Unnamed(_) => quote! {
@@ -376,7 +315,6 @@ fn encode_enum_variant_arm(
         },
     }
 }
-
 fn decode_struct(
     name: &Ident,
     fields: &Fields,
@@ -433,44 +371,6 @@ fn decode_struct(
     }
 }
 
-fn decode_repr_enum(
-    name: &Ident,
-    variants: Vec<&syn::Variant>,
-    repr: &ReprAttr,
-    impl_generics: &syn::ImplGenerics<'_>,
-    ty_generics: &syn::TypeGenerics<'_>,
-    where_clause: Option<&syn::WhereClause>,
-) -> proc_macro2::TokenStream {
-    if variants
-        .iter()
-        .any(|variant| !matches!(variant.fields, Fields::Unit))
-    {
-        return quote!(compile_error!("Arcweft repr enums must be C-like unit variants"););
-    }
-    let repr_ty = repr.ty_tokens();
-    let numeric_decode = repr.numeric_decode_tokens();
-    let comparisons = variants.into_iter().map(|variant| {
-        let ident = &variant.ident;
-        quote! {
-            if decoded == Self::#ident as #repr_ty {
-                return Ok(Self::#ident);
-            }
-        }
-    });
-    quote! {
-        impl #impl_generics ::arcweft_data::Decode for #name #ty_generics #where_clause {
-            fn decode(value: &::arcweft_data::Value) -> ::arcweft_data::Result<Self> {
-                let decoded: #repr_ty = #numeric_decode(value)?;
-                #(#comparisons)*
-                Err(::arcweft_data::DataError::new(
-                    ::arcweft_data::DataErrorKind::InvalidEnumTag,
-                    format!("unknown numeric enum discriminant {}", decoded),
-                ))
-            }
-        }
-    }
-}
-
 fn decode_enum<'a>(
     name: &Ident,
     variants: impl IntoIterator<Item = &'a syn::Variant>,
@@ -479,54 +379,27 @@ fn decode_enum<'a>(
     ty_generics: &syn::TypeGenerics<'_>,
     where_clause: Option<&syn::WhereClause>,
 ) -> proc_macro2::TokenStream {
-    let tag_style = container.tag_style();
-    let variants = variants.into_iter();
-    let arms = variants.map(|variant| {
+    let arms = variants.into_iter().map(|variant| {
         let ident = &variant.ident;
         let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
             Ok(attrs) => attrs.wire_name,
             Err(error) => return error.to_compile_error(),
         };
-        decode_enum_variant_arm(ident, &wire, &variant.fields, &tag_style, container)
+        decode_enum_variant_arm(ident, &wire, &variant.fields, container)
     });
-    let decode_body = match &tag_style {
-        TagStyleAttr::External => quote! {
-            match value {
-                ::arcweft_data::Value::Enum { variant, payload } => match variant.as_str() {
-                    #(#arms,)*
-                    other => Err(::arcweft_data::DataError::new(
-                        ::arcweft_data::DataErrorKind::InvalidEnumTag,
-                        format!("unknown variant {other}"),
-                    )),
-                },
-                other => Err(::arcweft_data::DataError::invalid_type("enum", other.type_name())),
-            }
-        },
-        TagStyleAttr::Internal { tag } | TagStyleAttr::Adjacent { tag, .. } => quote! {
-            let record = value.as_record()?;
-            let variant_value = record.get(#tag).ok_or_else(|| {
-                ::arcweft_data::DataError::new(
-                    ::arcweft_data::DataErrorKind::MissingField,
-                    concat!("missing enum tag field ", #tag),
-                ).at_field(#tag)
-            })?;
-            let variant = match variant_value {
-                ::arcweft_data::Value::String(value) => value.as_str(),
-                other => return Err(::arcweft_data::DataError::invalid_type("string enum tag", other.type_name()).at_field(#tag)),
-            };
-            match variant {
-                #(#arms,)*
-                other => Err(::arcweft_data::DataError::new(
-                    ::arcweft_data::DataErrorKind::InvalidEnumTag,
-                    format!("unknown variant {other}"),
-                ).at_field(#tag)),
-            }
-        },
-    };
     quote! {
         impl #impl_generics ::arcweft_data::Decode for #name #ty_generics #where_clause {
             fn decode(value: &::arcweft_data::Value) -> ::arcweft_data::Result<Self> {
-                #decode_body
+                match value {
+                    ::arcweft_data::Value::Enum { variant, payload } => match variant.as_str() {
+                        #(#arms,)*
+                        other => Err(::arcweft_data::DataError::new(
+                            ::arcweft_data::DataErrorKind::InvalidEnumTag,
+                            format!("unknown variant {other}"),
+                        )),
+                    },
+                    other => Err(::arcweft_data::DataError::invalid_type("enum", other.type_name())),
+                }
             }
         }
     }
@@ -536,70 +409,43 @@ fn decode_enum_variant_arm(
     ident: &Ident,
     wire: &str,
     fields: &Fields,
-    tag_style: &TagStyleAttr,
     container: &ContainerAttrs,
 ) -> proc_macro2::TokenStream {
     match fields {
-        Fields::Unit => match tag_style {
-            TagStyleAttr::External => quote! {
-                #wire => {
-                    if payload.is_some() {
-                        return Err(::arcweft_data::DataError::new(
-                            ::arcweft_data::DataErrorKind::UnknownField,
-                            concat!("unexpected payload for unit variant ", #wire),
-                        ).at_variant(#wire));
-                    }
-                    Ok(Self::#ident)
+        Fields::Unit => quote! {
+            #wire => {
+                if payload.is_some() {
+                    return Err(::arcweft_data::DataError::new(
+                        ::arcweft_data::DataErrorKind::UnknownField,
+                        concat!("unexpected payload for unit variant ", #wire),
+                    ).at_variant(#wire));
                 }
-            },
-            TagStyleAttr::Internal { tag } | TagStyleAttr::Adjacent { tag, .. } => {
-                let known = vec![tag.clone()];
-                let unknown_check = unknown_field_check(container.deny_unknown_fields, &known);
-                quote! {
-                    #wire => {
-                        #unknown_check
-                        Ok(Self::#ident)
-                    }
+                Ok(Self::#ident)
+            }
+        },
+        Fields::Unnamed(fields) if fields.unnamed.is_empty() => quote! {
+            #wire => {
+                match payload.as_deref() {
+                    Some(::arcweft_data::Value::Tuple(items)) if items.is_empty() => Ok(Self::#ident()),
+                    _ => Err(::arcweft_data::DataError::new(
+                        ::arcweft_data::DataErrorKind::InvalidType,
+                        concat!("expected empty tuple payload for variant ", #wire),
+                    ).at_variant(#wire)),
                 }
             }
         },
-        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => match tag_style {
-            TagStyleAttr::External => quote! {
-                #wire => {
-                    let payload = payload.as_deref().ok_or_else(|| ::arcweft_data::DataError::new(
-                        ::arcweft_data::DataErrorKind::MissingField,
-                        concat!("missing payload for variant ", #wire),
-                    ).at_variant(#wire))?;
-                    ::arcweft_data::Decode::decode(payload)
-                        .map(Self::#ident)
-                        .map_err(|err| err.at_variant(#wire))
-                }
-            },
-            TagStyleAttr::Adjacent { tag, content } => {
-                let known = vec![tag.clone(), content.clone()];
-                let unknown_check = unknown_field_check(container.deny_unknown_fields, &known);
-                quote! {
-                    #wire => {
-                        #unknown_check
-                        let payload = record.get(#content).ok_or_else(|| ::arcweft_data::DataError::new(
-                            ::arcweft_data::DataErrorKind::MissingField,
-                            concat!("missing content field ", #content),
-                        ).at_variant(#wire).at_field(#content))?;
-                        ::arcweft_data::Decode::decode(payload)
-                            .map(Self::#ident)
-                            .map_err(|err| err.at_variant(#wire).at_field(#content))
-                    }
-                }
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => quote! {
+            #wire => {
+                let payload = payload.as_deref().ok_or_else(|| ::arcweft_data::DataError::new(
+                    ::arcweft_data::DataErrorKind::MissingField,
+                    concat!("missing payload for variant ", #wire),
+                ).at_variant(#wire))?;
+                ::arcweft_data::Decode::decode(payload)
+                    .map(Self::#ident)
+                    .map_err(|err| err.at_variant(#wire))
             }
-            TagStyleAttr::Internal { .. } => quote! {
-                #wire => Err(::arcweft_data::DataError::unsupported(
-                    "internally tagged enum variants require named fields",
-                ).at_variant(#wire))
-            },
         },
-        Fields::Named(fields) => {
-            decode_named_enum_variant_arm(ident, wire, fields, tag_style, container)
-        }
+        Fields::Named(fields) => decode_named_enum_variant_arm(ident, wire, fields, container),
         Fields::Unnamed(_) => quote! {
             #wire => Err(::arcweft_data::DataError::unsupported("multi-field tuple enum variants are not supported by Arcweft derives"))
         },
@@ -610,24 +456,20 @@ fn decode_named_enum_variant_arm(
     ident: &Ident,
     wire: &str,
     fields: &syn::FieldsNamed,
-    tag_style: &TagStyleAttr,
     container: &ContainerAttrs,
 ) -> proc_macro2::TokenStream {
     let known_fields = known_named_fields(fields, container);
     let field_initializers = fields.named.iter().filter_map(|field| {
         let field_ident = field.ident.as_ref()?;
-        let attrs =
-            match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
-                Ok(attrs) => attrs,
-                Err(error) => return Some(error.to_compile_error()),
-            };
+        let attrs = match FieldAttrs::from_attrs(&field.attrs, field_ident, container.rename_all) {
+            Ok(attrs) => attrs,
+            Err(error) => return Some(error.to_compile_error()),
+        };
         let has_default = attrs.has_default();
         let default = attrs.default_value_tokens();
         let wire_name = attrs.wire_name;
         if attrs.skip {
-            Some(quote! {
-                #field_ident: #default
-            })
+            Some(quote! { #field_ident: #default })
         } else if has_default {
             Some(quote! {
                 #field_ident: match record.get(#wire_name) {
@@ -647,54 +489,19 @@ fn decode_named_enum_variant_arm(
             })
         }
     });
-    match tag_style {
-        TagStyleAttr::External => {
-            let unknown_check = unknown_field_check(container.deny_unknown_fields, &known_fields);
-            quote! {
-                #wire => {
-                    let payload = payload.as_deref().ok_or_else(|| ::arcweft_data::DataError::new(
-                        ::arcweft_data::DataErrorKind::MissingField,
-                        concat!("missing payload for variant ", #wire),
-                    ).at_variant(#wire))?;
-                    let record = payload.as_record()?;
-                    #unknown_check
-                    Ok(Self::#ident { #(#field_initializers),* })
-                }
-            }
-        }
-        TagStyleAttr::Adjacent { tag, content } => {
-            let outer_known = vec![tag.clone(), content.clone()];
-            let outer_unknown_check =
-                unknown_field_check(container.deny_unknown_fields, &outer_known);
-            let payload_unknown_check =
-                unknown_field_check(container.deny_unknown_fields, &known_fields);
-            quote! {
-                #wire => {
-                    #outer_unknown_check
-                    let payload = record.get(#content).ok_or_else(|| ::arcweft_data::DataError::new(
-                        ::arcweft_data::DataErrorKind::MissingField,
-                        concat!("missing content field ", #content),
-                    ).at_variant(#wire).at_field(#content))?;
-                    let record = payload.as_record()?;
-                    #payload_unknown_check
-                    Ok(Self::#ident { #(#field_initializers),* })
-                }
-            }
-        }
-        TagStyleAttr::Internal { tag } => {
-            let mut known_with_tag = known_fields;
-            known_with_tag.push(tag.clone());
-            let unknown_check = unknown_field_check(container.deny_unknown_fields, &known_with_tag);
-            quote! {
-                #wire => {
-                    #unknown_check
-                    Ok(Self::#ident { #(#field_initializers),* })
-                }
-            }
+    let unknown_check = unknown_field_check(container.deny_unknown_fields, &known_fields);
+    quote! {
+        #wire => {
+            let payload = payload.as_deref().ok_or_else(|| ::arcweft_data::DataError::new(
+                ::arcweft_data::DataErrorKind::MissingField,
+                concat!("missing payload for variant ", #wire),
+            ).at_variant(#wire))?;
+            let record = payload.as_record()?;
+            #unknown_check
+            Ok(Self::#ident { #(#field_initializers),* })
         }
     }
 }
-
 fn reflected_named_fields(
     fields: &syn::FieldsNamed,
     container: &ContainerAttrs,
@@ -726,6 +533,43 @@ fn reflected_named_fields(
         .collect()
 }
 
+fn registered_named_fields(
+    fields: &syn::FieldsNamed,
+    container: &ContainerAttrs,
+) -> Vec<proc_macro2::TokenStream> {
+    fields
+        .named
+        .iter()
+        .filter_map(|field| {
+            let ident = field.ident.as_ref()?;
+            let ty = &field.ty;
+            let attrs = match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
+                Ok(attrs) => attrs,
+                Err(error) => return Some(error.to_compile_error()),
+            };
+            let rust_name = ident.to_string();
+            let default_call = attrs.has_default().then(|| quote!(.with_default()));
+            let wire_name = attrs.wire_name;
+            let skip_call = attrs.skip.then(|| quote!(.skipped()));
+            let bytes_call = attrs
+                .bytes_format
+                .map(|format| quote!(.with_bytes_format(#format)));
+            Some(quote! {
+                ::arcweft_data::FieldShape::new(
+                    #rust_name,
+                    #wire_name,
+                    ::arcweft_data::TypeShape::Ref(
+                        <#ty as ::arcweft_data::Reflect>::register_shape(builder)?,
+                    ),
+                )
+                #default_call
+                #skip_call
+                #bytes_call
+            })
+        })
+        .collect()
+}
+
 fn reflected_variant(
     variant: &syn::Variant,
     type_name: &str,
@@ -742,12 +586,68 @@ fn reflected_variant(
         .as_ref()
         .map(|_| quote!(.with_discriminant(Self::#ident as i128)));
     match &variant.fields {
+        Fields::Unnamed(fields) if fields.unnamed.is_empty() => quote!(
+            ::arcweft_data::VariantShape::unit(#rust, #wire)
+                .with_payload(::arcweft_data::TypeShape::Tuple(::std::vec::Vec::new()))
+                #discriminant
+        ),
         Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
             let ty = &fields.unnamed.first().expect("one field").ty;
             quote!(::arcweft_data::VariantShape::unit(#rust, #wire).with_payload(<#ty as ::arcweft_data::Reflect>::shape()) #discriminant)
         }
         Fields::Named(fields) => {
             let field_shapes = reflected_named_fields(fields, container);
+            let record_name = format!("{type_name}::{rust}");
+            let deny_unknown_fields = container.deny_unknown_fields;
+            quote! {
+                ::arcweft_data::VariantShape::unit(#rust, #wire)
+                    .with_payload(::arcweft_data::TypeShape::Record {
+                        name: #record_name.to_owned(),
+                        fields: vec![#(#field_shapes),*],
+                        policy: ::arcweft_data::RecordPolicy { deny_unknown_fields: #deny_unknown_fields },
+                    })
+                    #discriminant
+            }
+        }
+        Fields::Unit | Fields::Unnamed(_) => {
+            quote!(::arcweft_data::VariantShape::unit(#rust, #wire) #discriminant)
+        }
+    }
+}
+
+fn registered_variant(
+    variant: &syn::Variant,
+    type_name: &str,
+    container: &ContainerAttrs,
+) -> proc_macro2::TokenStream {
+    let ident = &variant.ident;
+    let wire = match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
+        Ok(attrs) => attrs.wire_name,
+        Err(error) => return error.to_compile_error(),
+    };
+    let rust = ident.to_string();
+    let discriminant = container
+        .repr
+        .as_ref()
+        .map(|_| quote!(.with_discriminant(Self::#ident as i128)));
+    match &variant.fields {
+        Fields::Unnamed(fields) if fields.unnamed.is_empty() => quote!(
+            ::arcweft_data::VariantShape::unit(#rust, #wire)
+                .with_payload(::arcweft_data::TypeShape::Tuple(::std::vec::Vec::new()))
+                #discriminant
+        ),
+        Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            let ty = &fields.unnamed.first().expect("one field").ty;
+            quote!(
+                ::arcweft_data::VariantShape::unit(#rust, #wire)
+                    .with_payload(::arcweft_data::TypeShape::Ref(
+                        <#ty as ::arcweft_data::Reflect>::register_shape(builder)?,
+                    ))
+                    #discriminant
+            )
+        }
+        Fields::Named(fields) => {
+            let field_shapes = registered_named_fields(fields, container);
             let record_name = format!("{type_name}::{rust}");
             let deny_unknown_fields = container.deny_unknown_fields;
             quote! {
@@ -867,6 +767,53 @@ fn reflect_bound_types(data: &Data) -> Vec<&Type> {
     }
 }
 
+fn add_reflect_generic_bounds(mut generics: Generics, data: &Data) -> Generics {
+    let generic_params: BTreeMap<String, Ident> = generics
+        .type_params()
+        .map(|parameter| (parameter.ident.to_string(), parameter.ident.clone()))
+        .collect();
+    let generic_names = generic_params.keys().cloned().collect::<BTreeSet<_>>();
+    let mut collector = ReflectGenericUseCollector {
+        generic_names: &generic_names,
+        used: BTreeSet::new(),
+    };
+    for ty in reflect_bound_types(data) {
+        collector.visit_type(ty);
+    }
+    if !collector.used.is_empty() {
+        let where_clause = generics.make_where_clause();
+        where_clause.predicates.extend(
+            collector
+                .used
+                .into_iter()
+                .filter_map(|name| generic_params.get(&name))
+                .map(|ident| {
+                    syn::parse2::<WherePredicate>(quote!(#ident: ::arcweft_data::Reflect))
+                        .expect("valid Arcweft derive generic bound")
+                }),
+        );
+    }
+    generics
+}
+
+struct ReflectGenericUseCollector<'a> {
+    generic_names: &'a BTreeSet<String>,
+    used: BTreeSet<String>,
+}
+
+impl<'ast> Visit<'ast> for ReflectGenericUseCollector<'_> {
+    fn visit_type_path(&mut self, ty: &'ast syn::TypePath) {
+        if ty.qself.is_none() && ty.path.segments.len() == 1 {
+            let name = ty.path.segments[0].ident.to_string();
+            if self.generic_names.contains(&name) {
+                self.used.insert(name);
+                return;
+            }
+        }
+        visit::visit_type_path(self, ty);
+    }
+}
+
 fn encode_field_bound_types<'a>(
     fields: &'a Fields,
     container: &ContainerAttrs,
@@ -926,130 +873,6 @@ fn validate_enum_variant_policy<'a>(
                 );
             }
             Fields::Unnamed(_) | Fields::Named(_) | Fields::Unit => {}
-        }
-    }
-    errors.map_or(Ok(()), Err)
-}
-
-fn validate_repr_discriminants<'a>(
-    variants: impl IntoIterator<Item = &'a syn::Variant>,
-    repr: &ReprAttr,
-) -> syn::Result<()> {
-    let mut errors = None;
-    let (min, max) = repr.inclusive_i128_bounds();
-    let mut next_value = 0_i128;
-    for variant in variants {
-        let value = match &variant.discriminant {
-            Some((_, expr)) => {
-                if let Some(value) = integer_discriminant(expr) {
-                    value
-                } else {
-                    combine_error(
-                        &mut errors,
-                        syn::Error::new_spanned(
-                            expr,
-                            "Arcweft repr enum discriminants must be integer literals",
-                        ),
-                    );
-                    continue;
-                }
-            }
-            None => next_value,
-        };
-        if !(min..=max).contains(&value) {
-            combine_error(
-                &mut errors,
-                syn::Error::new_spanned(
-                    variant,
-                    format!(
-                        "Arcweft repr enum discriminant {value} is outside the selected repr range {min}..={max}"
-                    ),
-                ),
-            );
-        }
-        next_value = value.saturating_add(1);
-    }
-    errors.map_or(Ok(()), Err)
-}
-
-fn integer_discriminant(expr: &Expr) -> Option<i128> {
-    match expr {
-        Expr::Lit(expr) => match &expr.lit {
-            Lit::Int(value) => value.base10_parse::<i128>().ok(),
-            _ => None,
-        },
-        Expr::Unary(expr) if matches!(expr.op, syn::UnOp::Neg(_)) => {
-            let Expr::Lit(lit) = &*expr.expr else {
-                return None;
-            };
-            let Lit::Int(value) = &lit.lit else {
-                return None;
-            };
-            value
-                .base10_parse::<i128>()
-                .ok()
-                .and_then(i128::checked_neg)
-        }
-        _ => None,
-    }
-}
-
-fn validate_field_wire_names(
-    fields: &syn::FieldsNamed,
-    container: &ContainerAttrs,
-) -> syn::Result<()> {
-    let mut seen = BTreeMap::<String, &Ident>::new();
-    let mut errors = None;
-    for field in &fields.named {
-        let Some(ident) = field.ident.as_ref() else {
-            continue;
-        };
-        match FieldAttrs::from_attrs(&field.attrs, ident, container.rename_all) {
-            Ok(attrs) if attrs.skip => {}
-            Ok(attrs) => {
-                if let Some(previous) = seen.insert(attrs.wire_name.clone(), ident) {
-                    combine_error(
-                        &mut errors,
-                        syn::Error::new_spanned(
-                            ident,
-                            format!(
-                                "duplicate Arcweft wire name `{}` also used by `{previous}`",
-                                attrs.wire_name
-                            ),
-                        ),
-                    );
-                }
-            }
-            Err(error) => combine_error(&mut errors, error),
-        }
-    }
-    errors.map_or(Ok(()), Err)
-}
-
-fn validate_variant_wire_names<'a>(
-    variants: impl IntoIterator<Item = &'a syn::Variant>,
-    container: &ContainerAttrs,
-) -> syn::Result<()> {
-    let mut seen = BTreeMap::<String, &Ident>::new();
-    let mut errors = None;
-    for variant in variants {
-        let ident = &variant.ident;
-        match VariantAttrs::from_attrs(&variant.attrs, ident, container.rename_all) {
-            Ok(attrs) => {
-                if let Some(previous) = seen.insert(attrs.wire_name.clone(), ident) {
-                    combine_error(
-                        &mut errors,
-                        syn::Error::new_spanned(
-                            ident,
-                            format!(
-                                "duplicate Arcweft variant wire name `{}` also used by `{previous}`",
-                                attrs.wire_name
-                            ),
-                        ),
-                    );
-                }
-            }
-            Err(error) => combine_error(&mut errors, error),
         }
     }
     errors.map_or(Ok(()), Err)

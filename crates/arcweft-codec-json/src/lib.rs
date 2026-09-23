@@ -5,8 +5,8 @@ use std::fmt::Write as _;
 
 use arcweft_data::{
     Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions,
-    EncodeOptions, FieldShape, FormatId, RawValue, Result, TypeShape, Value, decode_with_shape,
-    encode_with_shape,
+    EncodeOptions, EnumRepr, EnumTagStyle, FieldShape, FormatId, RawValue, Result, ShapeAccess,
+    ShapeRef, TypeShape, Value, VariantShape, decode_with_shape_ref, encode_with_shape_ref,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
@@ -31,11 +31,12 @@ impl Codec for JsonCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let raw = encode_with_shape(value, shape)?;
-        let json = raw_to_json_value(&raw, shape)?;
+        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
+        let json = raw_to_json_value(&raw, shape, access)?;
         let bytes = if options.pretty {
             serde_json::to_vec_pretty(&json)
         } else {
@@ -48,7 +49,8 @@ impl Codec for JsonCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
@@ -62,8 +64,8 @@ impl Codec for JsonCodec {
             deserializer.end().map_err(|error| json_error(&error))?;
         }
         let json = raw_dynamic_to_json(&dynamic_raw)?;
-        let raw = json_to_raw_value(&json, shape)?;
-        let value = decode_with_shape(&raw, shape)?;
+        let raw = json_to_raw_value(&json, shape, access)?;
+        let value = decode_with_shape_ref(&raw, shape, access)?;
         options.limits.validate(&value)?;
         Ok(value)
     }
@@ -237,8 +239,19 @@ impl BudgetedJsonRawVisitor<'_, '_> {
     }
 }
 
-fn raw_to_json_value(raw: &RawValue, shape: &TypeShape) -> Result<JsonValue> {
-    match (shape, raw) {
+const OPTION_TAG_KEY: &str = "$arcweft";
+const OPTION_TAG_VALUE: &str = "option";
+const OPTION_PRESENT_KEY: &str = "present";
+const OPTION_VALUE_KEY: &str = "value";
+
+fn raw_to_json_value(
+    raw: &RawValue,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<JsonValue> {
+    let shape = shape_ref.resolve(access)?;
+    match (shape.as_ref(), raw) {
+        (TypeShape::Ref(id), raw) => raw_to_json_value(raw, ShapeRef::Id(*id), access),
         (TypeShape::Unit, RawValue::Null) => Ok(JsonValue::Null),
         (TypeShape::Bool, RawValue::Bool(value)) => Ok(JsonValue::Bool(*value)),
         (
@@ -267,25 +280,394 @@ fn raw_to_json_value(raw: &RawValue, shape: &TypeShape) -> Result<JsonValue> {
         (TypeShape::Bytes { format }, RawValue::Bytes(bytes)) => {
             bytes_to_json(&Bytes::new(bytes.clone()), *format)
         }
-        (TypeShape::Option(inner), RawValue::Null) => {
-            let _ = inner;
-            Ok(JsonValue::Null)
+        (TypeShape::Option(inner), raw) => raw_tagged_option_to_json(raw, inner, access),
+        (TypeShape::Seq(inner), RawValue::Seq(values)) => {
+            raw_seq_to_json(values, ShapeRef::Inline(inner), access)
         }
-        (TypeShape::Option(inner), raw) => raw_to_json_value(raw, inner),
-        (TypeShape::Seq(inner), RawValue::Seq(values)) => raw_seq_to_json(values, inner),
-        (TypeShape::Map { key, value }, RawValue::Map(entries))
-            if matches!(key.as_ref(), TypeShape::String) =>
-        {
-            raw_string_map_to_json(entries, value)
+        (TypeShape::Tuple(items), RawValue::Seq(values)) if items.len() == values.len() => items
+            .iter()
+            .zip(values)
+            .enumerate()
+            .map(|(index, (item_shape, value))| {
+                raw_to_json_value(value, ShapeRef::Inline(item_shape), access)
+                    .map_err(|error| error.at_index(index))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(JsonValue::Array),
+        (TypeShape::Tuple(items), RawValue::Seq(values)) => Err(DataError::invalid_type(
+            format!("tuple with {} items", items.len()),
+            format!("tuple with {} items", values.len()),
+        )),
+        (TypeShape::Map { key, value, .. }, RawValue::Map(entries)) => {
+            let key_shape = ShapeRef::Inline(key).resolve(access)?;
+            if matches!(key_shape.as_ref(), TypeShape::String) {
+                raw_string_map_to_json(entries, value, access)
+            } else {
+                raw_map_pairs_to_json(entries, key, value, access)
+            }
         }
         (TypeShape::Record { fields, .. }, RawValue::Map(entries)) => {
-            raw_record_to_json(entries, fields)
+            raw_record_to_json(entries, fields, access)
         }
-        (TypeShape::Enum { .. }, raw) => raw_dynamic_to_json(raw),
-        (TypeShape::Named(_), _) => Err(DataError::unsupported(
-            "named shape must be resolved before JSON encoding",
+        (
+            TypeShape::Enum {
+                variants,
+                tag,
+                repr,
+                ..
+            },
+            raw,
+        ) => raw_enum_to_json(raw, variants, tag, *repr, access),
+        (shape, raw) => Err(DataError::invalid_type(shape.type_name(), raw.type_name())),
+    }
+}
+
+fn raw_enum_to_json(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
+) -> Result<JsonValue> {
+    if repr.is_some() {
+        return raw_dynamic_to_json(raw);
+    }
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type("enum map", raw.type_name()));
+    };
+    let fields = raw_enum_fields(entries)?;
+    let tag_key = match tag {
+        EnumTagStyle::External => "variant",
+        EnumTagStyle::Internal { tag } | EnumTagStyle::Adjacent { tag, .. } => tag,
+    };
+    let variant = match fields.get(tag_key) {
+        Some(RawValue::String(variant)) => variant.as_str(),
+        Some(other) => {
+            return Err(DataError::invalid_type(
+                "enum tag string",
+                other.type_name(),
+            ));
+        }
+        None => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing enum tag field `{tag_key}`"),
+            )
+            .at_field(tag_key.to_owned()));
+        }
+    };
+    let case = json_enum_case(variants, variant)?;
+    match tag {
+        EnumTagStyle::External => {
+            let mut object = Map::new();
+            object.insert("variant".to_owned(), JsonValue::String(variant.to_owned()));
+            match (&case.payload, fields.get("payload")) {
+                (Some(shape), Some(raw)) => {
+                    object.insert(
+                        "payload".to_owned(),
+                        raw_to_json_value(raw, ShapeRef::Inline(shape), access)
+                            .map_err(|error| error.at_variant(variant))?,
+                    );
+                }
+                (None, None) => {}
+                (Some(_), None) => {
+                    return Err(DataError::new(
+                        DataErrorKind::MissingField,
+                        format!("missing payload for enum variant `{variant}`"),
+                    )
+                    .at_variant(variant));
+                }
+                (None, Some(_)) => {
+                    return Err(
+                        DataError::invalid_type("unit enum variant", "payload").at_variant(variant)
+                    );
+                }
+            }
+            Ok(JsonValue::Object(object))
+        }
+        EnumTagStyle::Adjacent { tag, content } => {
+            let mut object = Map::new();
+            object.insert(tag.clone(), JsonValue::String(variant.to_owned()));
+            match (&case.payload, fields.get(content.as_str())) {
+                (Some(shape), Some(raw)) => {
+                    object.insert(
+                        content.clone(),
+                        raw_to_json_value(raw, ShapeRef::Inline(shape), access)
+                            .map_err(|error| error.at_variant(variant))?,
+                    );
+                }
+                (None, None) => {}
+                (Some(_), None) => {
+                    return Err(DataError::new(
+                        DataErrorKind::MissingField,
+                        format!("missing enum content field `{content}`"),
+                    )
+                    .at_variant(variant)
+                    .at_field(content.clone()));
+                }
+                (None, Some(_)) => {
+                    return Err(
+                        DataError::invalid_type("unit enum variant", "payload").at_variant(variant)
+                    );
+                }
+            }
+            Ok(JsonValue::Object(object))
+        }
+        EnumTagStyle::Internal { tag } => {
+            let payload = RawValue::Map(
+                entries
+                    .iter()
+                    .filter(|(key, _)| !matches!(key, RawValue::String(key) if key == tag))
+                    .cloned()
+                    .collect(),
+            );
+            let mut object = Map::new();
+            object.insert(tag.clone(), JsonValue::String(variant.to_owned()));
+            match &case.payload {
+                Some(shape) => {
+                    let JsonValue::Object(payload) =
+                        raw_to_json_value(&payload, ShapeRef::Inline(shape), access)
+                            .map_err(|error| error.at_variant(variant))?
+                    else {
+                        return Err(DataError::unsupported(
+                            "internally tagged enum payload must encode as a record",
+                        )
+                        .at_variant(variant));
+                    };
+                    for (key, value) in payload {
+                        if object.insert(key.clone(), value).is_some() {
+                            return Err(DataError::new(
+                                DataErrorKind::DuplicateField,
+                                format!("internal enum payload duplicates tag field `{key}`"),
+                            )
+                            .at_variant(variant)
+                            .at_field(key));
+                        }
+                    }
+                }
+                None if fields.len() == 1 => {}
+                None => {
+                    for (key, value) in fields {
+                        if key != tag.as_str() {
+                            object.insert(key.to_owned(), raw_dynamic_to_json(value)?);
+                        }
+                    }
+                }
+            }
+            Ok(JsonValue::Object(object))
+        }
+    }
+}
+
+fn json_enum_to_raw(
+    value: &JsonValue,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    if repr.is_some() {
+        return json_integer_to_raw(value);
+    }
+    let JsonValue::Object(fields) = value else {
+        return Err(DataError::invalid_type(
+            "enum object",
+            json_type_name(value),
+        ));
+    };
+    let tag_key = match tag {
+        EnumTagStyle::External => "variant",
+        EnumTagStyle::Internal { tag } | EnumTagStyle::Adjacent { tag, .. } => tag,
+    };
+    let variant = match fields.get(tag_key) {
+        Some(JsonValue::String(variant)) => variant.as_str(),
+        Some(other) => {
+            return Err(DataError::invalid_type(
+                "enum tag string",
+                json_type_name(other),
+            ));
+        }
+        None => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing enum tag field `{tag_key}`"),
+            )
+            .at_field(tag_key.to_owned()));
+        }
+    };
+    let case = json_enum_case(variants, variant)?;
+    let mut entries = vec![(
+        RawValue::String(tag_key.to_owned()),
+        RawValue::String(variant.to_owned()),
+    )];
+    match tag {
+        EnumTagStyle::External => {
+            match (&case.payload, fields.get("payload")) {
+                (Some(shape), Some(payload)) => entries.push((
+                    RawValue::String("payload".to_owned()),
+                    json_to_raw_value(payload, ShapeRef::Inline(shape), access)
+                        .map_err(|error| error.at_variant(variant))?,
+                )),
+                (None, Some(payload)) => entries.push((
+                    RawValue::String("payload".to_owned()),
+                    json_dynamic_to_raw(payload)?,
+                )),
+                _ => {}
+            }
+            for (key, value) in fields {
+                if key != tag_key && key != "payload" {
+                    entries.push((RawValue::String(key.clone()), json_dynamic_to_raw(value)?));
+                }
+            }
+        }
+        EnumTagStyle::Adjacent { content, .. } => {
+            match (&case.payload, fields.get(content)) {
+                (Some(shape), Some(payload)) => entries.push((
+                    RawValue::String(content.clone()),
+                    json_to_raw_value(payload, ShapeRef::Inline(shape), access)
+                        .map_err(|error| error.at_variant(variant))?,
+                )),
+                (None, Some(payload)) => entries.push((
+                    RawValue::String(content.clone()),
+                    json_dynamic_to_raw(payload)?,
+                )),
+                _ => {}
+            }
+            for (key, value) in fields {
+                if key != tag_key && key != content {
+                    entries.push((RawValue::String(key.clone()), json_dynamic_to_raw(value)?));
+                }
+            }
+        }
+        EnumTagStyle::Internal { .. } => {
+            let mut payload_fields = fields.clone();
+            payload_fields.remove(tag_key);
+            if let Some(shape) = &case.payload {
+                let payload = json_to_raw_value(
+                    &JsonValue::Object(payload_fields),
+                    ShapeRef::Inline(shape),
+                    access,
+                )
+                .map_err(|error| error.at_variant(variant))?;
+                let RawValue::Map(payload_entries) = payload else {
+                    return Err(DataError::unsupported(
+                        "internally tagged enum payload must decode as a record",
+                    )
+                    .at_variant(variant));
+                };
+                entries.extend(payload_entries);
+            } else {
+                for (key, value) in payload_fields {
+                    entries.push((RawValue::String(key), json_dynamic_to_raw(&value)?));
+                }
+            }
+        }
+    }
+    Ok(RawValue::Map(entries))
+}
+
+fn raw_enum_fields(entries: &[(RawValue, RawValue)]) -> Result<BTreeMap<&str, &RawValue>> {
+    let mut fields = BTreeMap::new();
+    for (key, value) in entries {
+        let RawValue::String(key) = key else {
+            return Err(DataError::invalid_type(
+                "string enum field",
+                key.type_name(),
+            ));
+        };
+        if fields.insert(key.as_str(), value).is_some() {
+            return Err(DataError::new(
+                DataErrorKind::DuplicateField,
+                format!("duplicate enum field `{key}`"),
+            )
+            .at_field(key.clone()));
+        }
+    }
+    Ok(fields)
+}
+
+fn json_enum_case<'a>(variants: &'a [VariantShape], name: &str) -> Result<&'a VariantShape> {
+    variants
+        .iter()
+        .find(|case| case.wire_name == name)
+        .ok_or_else(|| {
+            DataError::new(
+                DataErrorKind::InvalidEnumTag,
+                format!("unknown enum variant `{name}`"),
+            )
+        })
+}
+
+fn raw_tagged_option_to_json(
+    raw: &RawValue,
+    inner: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<JsonValue> {
+    let payload = tagged_raw_option_payload(raw)?;
+    let mut object = Map::new();
+    object.insert(
+        OPTION_TAG_KEY.to_owned(),
+        JsonValue::String(OPTION_TAG_VALUE.to_owned()),
+    );
+    object.insert(
+        OPTION_PRESENT_KEY.to_owned(),
+        JsonValue::Bool(payload.is_some()),
+    );
+    if let Some(payload) = payload {
+        object.insert(
+            OPTION_VALUE_KEY.to_owned(),
+            raw_to_json_value(payload, ShapeRef::Inline(inner), access)?,
+        );
+    }
+    Ok(JsonValue::Object(object))
+}
+
+fn tagged_raw_option_payload(raw: &RawValue) -> Result<Option<&RawValue>> {
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type(
+            "tagged option map",
+            raw.type_name(),
+        ));
+    };
+    let mut fields = BTreeMap::<&str, &RawValue>::new();
+    for (key, value) in entries {
+        let RawValue::String(key) = key else {
+            return Err(DataError::invalid_type(
+                "string option marker key",
+                key.type_name(),
+            ));
+        };
+        if fields.insert(key, value).is_some() {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "tagged option contains duplicate fields",
+            ));
+        }
+    }
+    if !matches!(fields.get(OPTION_TAG_KEY), Some(RawValue::String(tag)) if tag == OPTION_TAG_VALUE)
+    {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "option value is missing its Arcweft marker",
+        ));
+    }
+    match fields.get(OPTION_PRESENT_KEY) {
+        Some(RawValue::Bool(false)) if fields.len() == 2 => Ok(None),
+        Some(RawValue::Bool(true)) if fields.len() == 3 => fields
+            .get(OPTION_VALUE_KEY)
+            .copied()
+            .map(Some)
+            .ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::MissingField,
+                    "tagged present option is missing its value",
+                )
+                .at_field(OPTION_VALUE_KEY)
+            }),
+        _ => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "tagged option fields do not match its presence marker",
         )),
-        _ => Err(DataError::invalid_type(shape.type_name(), raw.type_name())),
     }
 }
 
@@ -319,12 +701,16 @@ fn float_to_json(value: f64, label: &'static str) -> Result<JsonValue> {
         .ok_or_else(|| DataError::new(DataErrorKind::InvalidEncoding, format!("invalid {label}")))
 }
 
-fn raw_seq_to_json(values: &[RawValue], shape: &TypeShape) -> Result<JsonValue> {
+fn raw_seq_to_json(
+    values: &[RawValue],
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<JsonValue> {
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            raw_to_json_value(value, shape).map_err(|error| error.at_index(index))
+            raw_to_json_value(value, shape, access).map_err(|error| error.at_index(index))
         })
         .collect::<Result<Vec<_>>>()
         .map(JsonValue::Array)
@@ -333,6 +719,7 @@ fn raw_seq_to_json(values: &[RawValue], shape: &TypeShape) -> Result<JsonValue> 
 fn raw_string_map_to_json(
     entries: &[(RawValue, RawValue)],
     shape: &TypeShape,
+    access: &dyn ShapeAccess,
 ) -> Result<JsonValue> {
     entries
         .iter()
@@ -340,7 +727,7 @@ fn raw_string_map_to_json(
             let RawValue::String(key) = key else {
                 return Err(DataError::invalid_type("string map key", key.type_name()));
             };
-            raw_to_json_value(raw_value, shape)
+            raw_to_json_value(raw_value, ShapeRef::Inline(shape), access)
                 .map(|json| (key.clone(), json))
                 .map_err(|error| error.at_field(key.clone()))
         })
@@ -348,9 +735,30 @@ fn raw_string_map_to_json(
         .map(JsonValue::Object)
 }
 
+fn raw_map_pairs_to_json(
+    entries: &[(RawValue, RawValue)],
+    key_shape: &TypeShape,
+    value_shape: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<JsonValue> {
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, (key, value))| {
+            let key = raw_to_json_value(key, ShapeRef::Inline(key_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            let value = raw_to_json_value(value, ShapeRef::Inline(value_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            Ok(JsonValue::Array(vec![key, value]))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(JsonValue::Array)
+}
+
 fn raw_record_to_json(
     entries: &[(RawValue, RawValue)],
     fields: &[FieldShape],
+    access: &dyn ShapeAccess,
 ) -> Result<JsonValue> {
     entries
         .iter()
@@ -358,20 +766,30 @@ fn raw_record_to_json(
             let RawValue::String(key) = key else {
                 return Err(DataError::invalid_type("record field key", key.type_name()));
             };
-            let shape = fields
-                .iter()
-                .find(|field| field.wire_name == *key)
-                .map_or(TypeShape::Unit, json_field_shape);
-            raw_to_json_value(raw_value, &shape)
-                .map(|json| (key.clone(), json))
-                .map_err(|error| error.at_field(key.clone()))
+            let value = match fields.iter().find(|field| field.wire_name == *key) {
+                Some(field) => {
+                    let shape = field
+                        .resolve_value_shape(access)
+                        .map_err(|error| error.at_field(key.clone()))?;
+                    raw_to_json_value(raw_value, ShapeRef::Inline(shape.as_ref()), access)
+                }
+                None => raw_to_json_value(raw_value, ShapeRef::Inline(&TypeShape::Unit), access),
+            }
+            .map_err(|error| error.at_field(key.clone()))?;
+            Ok((key.clone(), value))
         })
         .collect::<Result<Map<_, _>>>()
         .map(JsonValue::Object)
 }
 
-fn json_to_raw_value(value: &JsonValue, shape: &TypeShape) -> Result<RawValue> {
-    match shape {
+fn json_to_raw_value(
+    value: &JsonValue,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => json_to_raw_value(value, ShapeRef::Id(*id), access),
         TypeShape::Unit => match value {
             JsonValue::Null => Ok(RawValue::Null),
             other => Err(DataError::invalid_type("null", json_type_name(other))),
@@ -385,30 +803,66 @@ fn json_to_raw_value(value: &JsonValue, shape: &TypeShape) -> Result<RawValue> {
             other => Err(DataError::invalid_type("string", json_type_name(other))),
         },
         TypeShape::Bytes { format } => json_to_bytes(value, *format).map(RawValue::Bytes),
-        TypeShape::Option(inner) => match value {
-            JsonValue::Null => Ok(RawValue::Null),
-            other => json_to_raw_value(other, inner),
-        },
+        TypeShape::Option(inner) => tagged_json_option_payload(value)?
+            .map(|payload| {
+                json_to_raw_value(payload, ShapeRef::Inline(inner), access).map(Box::new)
+            })
+            .transpose()
+            .map(|payload| RawValue::Option(payload)),
         TypeShape::Seq(inner) => match value {
             JsonValue::Array(values) => values
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    json_to_raw_value(value, inner).map_err(|error| error.at_index(index))
+                    json_to_raw_value(value, ShapeRef::Inline(inner), access)
+                        .map_err(|error| error.at_index(index))
                 })
                 .collect::<Result<Vec<_>>>()
                 .map(RawValue::Seq),
             other => Err(DataError::invalid_type("array", json_type_name(other))),
         },
-        TypeShape::Map { key, value: inner } if matches!(key.as_ref(), TypeShape::String) => {
-            json_object_entries(value, inner).map(RawValue::Map)
+        TypeShape::Tuple(items) => match value {
+            JsonValue::Array(values) if values.len() == items.len() => items
+                .iter()
+                .zip(values)
+                .enumerate()
+                .map(|(index, (item_shape, value))| {
+                    json_to_raw_value(value, ShapeRef::Inline(item_shape), access)
+                        .map_err(|error| error.at_index(index))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(RawValue::Seq),
+            JsonValue::Array(values) => Err(DataError::invalid_type(
+                format!("tuple with {} items", items.len()),
+                format!("tuple with {} items", values.len()),
+            )),
+            other => Err(DataError::invalid_type(
+                "tuple array",
+                json_type_name(other),
+            )),
+        },
+        TypeShape::Map {
+            key, value: inner, ..
+        } => {
+            let key_shape = ShapeRef::Inline(key).resolve(access)?;
+            if matches!(key_shape.as_ref(), TypeShape::String) {
+                json_object_entries(value, inner, access).map(RawValue::Map)
+            } else {
+                json_pair_entries(value, key, inner, access).map(RawValue::Map)
+            }
         }
         TypeShape::Record { fields, .. } => match value {
             JsonValue::Object(entries) => entries
                 .iter()
                 .map(|(key, value)| {
                     let raw = match fields.iter().find(|field| field.wire_name == *key) {
-                        Some(field) => json_to_raw_value(value, &json_field_shape(field)),
+                        Some(field) => {
+                            let shape = field
+                                .resolve_value_shape(access)
+                                .map_err(|error| error.at_field(key.clone()))?;
+                            json_to_raw_value(value, ShapeRef::Inline(shape.as_ref()), access)
+                                .map_err(|error| error.at_field(key.clone()))
+                        }
                         None => json_dynamic_to_raw(value),
                     }?;
                     Ok((RawValue::String(key.clone()), raw))
@@ -417,11 +871,13 @@ fn json_to_raw_value(value: &JsonValue, shape: &TypeShape) -> Result<RawValue> {
                 .map(RawValue::Map),
             other => Err(DataError::invalid_type("object", json_type_name(other))),
         },
-        TypeShape::Enum { .. } => json_dynamic_to_raw(value),
-        TypeShape::Named(_) => Err(DataError::unsupported(
-            "named shape must be resolved before JSON decoding",
-        )),
-        TypeShape::F32 | TypeShape::F64 => json_float_to_raw(value, shape),
+        TypeShape::Enum {
+            variants,
+            tag,
+            repr,
+            ..
+        } => json_enum_to_raw(value, variants, tag, *repr, access),
+        TypeShape::F32 | TypeShape::F64 => json_float_to_raw(value, shape.as_ref()),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -434,18 +890,51 @@ fn json_to_raw_value(value: &JsonValue, shape: &TypeShape) -> Result<RawValue> {
         | TypeShape::U64
         | TypeShape::U128
         | TypeShape::Usize => json_integer_to_raw(value),
-        TypeShape::Map { .. } => Err(DataError::unsupported(
-            "JSON shape codec supports string map keys only",
+    }
+}
+
+fn tagged_json_option_payload(value: &JsonValue) -> Result<Option<&JsonValue>> {
+    let JsonValue::Object(fields) = value else {
+        return Err(DataError::invalid_type(
+            "tagged option object",
+            json_type_name(value),
+        ));
+    };
+    if !matches!(fields.get(OPTION_TAG_KEY), Some(JsonValue::String(tag)) if tag == OPTION_TAG_VALUE)
+    {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "option value is missing its Arcweft marker",
+        ));
+    }
+    match fields.get(OPTION_PRESENT_KEY) {
+        Some(JsonValue::Bool(false)) if fields.len() == 2 => Ok(None),
+        Some(JsonValue::Bool(true)) if fields.len() == 3 => {
+            fields.get(OPTION_VALUE_KEY).map(Some).ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::MissingField,
+                    "tagged present option is missing its value",
+                )
+                .at_field(OPTION_VALUE_KEY)
+            })
+        }
+        _ => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "tagged option fields do not match its presence marker",
         )),
     }
 }
 
-fn json_object_entries(value: &JsonValue, shape: &TypeShape) -> Result<Vec<(RawValue, RawValue)>> {
+fn json_object_entries(
+    value: &JsonValue,
+    shape: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<Vec<(RawValue, RawValue)>> {
     match value {
         JsonValue::Object(entries) => entries
             .iter()
             .map(|(key, value)| {
-                json_to_raw_value(value, shape)
+                json_to_raw_value(value, ShapeRef::Inline(shape), access)
                     .map(|raw| (RawValue::String(key.clone()), raw))
                     .map_err(|error| error.at_field(key.clone()))
             })
@@ -454,17 +943,59 @@ fn json_object_entries(value: &JsonValue, shape: &TypeShape) -> Result<Vec<(RawV
     }
 }
 
-fn raw_map_to_json(entries: &[(RawValue, RawValue)]) -> Result<JsonValue> {
+fn json_pair_entries(
+    value: &JsonValue,
+    key_shape: &TypeShape,
+    value_shape: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<Vec<(RawValue, RawValue)>> {
+    let JsonValue::Array(entries) = value else {
+        return Err(DataError::invalid_type(
+            "map pair array",
+            json_type_name(value),
+        ));
+    };
     entries
         .iter()
-        .map(|(key, value)| {
-            let RawValue::String(key) = key else {
-                return Err(DataError::invalid_type("object key", key.type_name()));
+        .enumerate()
+        .map(|(index, entry)| {
+            let JsonValue::Array(pair) = entry else {
+                return Err(
+                    DataError::invalid_type("map entry pair", json_type_name(entry))
+                        .at_index(index),
+                );
             };
-            raw_dynamic_to_json(value).map(|json| (key.clone(), json))
+            let [key, value] = pair.as_slice() else {
+                return Err(
+                    DataError::invalid_type("map entry pair of length 2", "other length")
+                        .at_index(index),
+                );
+            };
+            let key = json_to_raw_value(key, ShapeRef::Inline(key_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            let value = json_to_raw_value(value, ShapeRef::Inline(value_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            Ok((key, value))
         })
-        .collect::<Result<Map<_, _>>>()
-        .map(JsonValue::Object)
+        .collect()
+}
+
+fn raw_map_to_json(entries: &[(RawValue, RawValue)]) -> Result<JsonValue> {
+    let mut object = Map::new();
+    for (key, value) in entries {
+        let RawValue::String(key) = key else {
+            return Err(DataError::invalid_type("object key", key.type_name()));
+        };
+        if object.contains_key(key) {
+            return Err(DataError::new(
+                DataErrorKind::DuplicateField,
+                format!("duplicate JSON object key `{key}`"),
+            )
+            .at_field(key.clone()));
+        }
+        object.insert(key.clone(), raw_dynamic_to_json(value)?);
+    }
+    Ok(JsonValue::Object(object))
 }
 
 fn json_integer_to_raw(value: &JsonValue) -> Result<RawValue> {
@@ -578,6 +1109,9 @@ fn raw_dynamic_to_json(raw: &RawValue) -> Result<JsonValue> {
             .collect::<Result<Vec<_>>>()
             .map(JsonValue::Array),
         RawValue::Map(entries) => raw_map_to_json(entries),
+        RawValue::Option(_) => Err(DataError::unsupported(
+            "raw option requires shape-aware JSON encoding",
+        )),
     }
 }
 
@@ -651,13 +1185,6 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
-fn json_field_shape(field: &FieldShape) -> TypeShape {
-    match (field.bytes_format, &field.shape) {
-        (Some(format), TypeShape::Bytes { .. }) => TypeShape::Bytes { format },
-        _ => field.shape.clone(),
-    }
-}
-
 const fn json_type_name(value: &JsonValue) -> &'static str {
     match value {
         JsonValue::Null => "null",
@@ -718,7 +1245,69 @@ pub fn to_json_value(value: &Value, bytes_format: BytesFormat) -> Result<JsonVal
             })
             .collect::<Result<Vec<_>>>()
             .map(JsonValue::Array),
-        Value::Map(values) | Value::Record(values) => values
+        Value::Tuple(values) => values
+            .iter()
+            .map(|value| to_json_value(value, bytes_format))
+            .collect::<Result<Vec<_>>>()
+            .map(JsonValue::Array),
+        Value::Option(value) => {
+            let mut object = Map::new();
+            object.insert(
+                OPTION_TAG_KEY.to_owned(),
+                JsonValue::String(OPTION_TAG_VALUE.to_owned()),
+            );
+            object.insert(
+                OPTION_PRESENT_KEY.to_owned(),
+                JsonValue::Bool(value.is_some()),
+            );
+            if let Some(value) = value {
+                object.insert(
+                    OPTION_VALUE_KEY.to_owned(),
+                    to_json_value(value, bytes_format)?,
+                );
+            }
+            Ok(JsonValue::Object(object))
+        }
+        Value::Map { entries, .. } => {
+            if entries
+                .iter()
+                .all(|(key, _)| matches!(key, Value::String(_)))
+            {
+                let mut object = Map::new();
+                for (key, value) in entries {
+                    let Value::String(key) = key else {
+                        unreachable!()
+                    };
+                    if object.contains_key(key) {
+                        return Err(DataError::new(
+                            DataErrorKind::DuplicateField,
+                            format!("duplicate JSON map key `{key}`"),
+                        )
+                        .at_field(key.clone()));
+                    }
+                    object.insert(
+                        key.clone(),
+                        to_json_value(value, bytes_format)
+                            .map_err(|error| error.at_field(key.clone()))?,
+                    );
+                }
+                Ok(JsonValue::Object(object))
+            } else {
+                entries
+                    .iter()
+                    .enumerate()
+                    .map(|(index, (key, value))| {
+                        let key = to_json_value(key, bytes_format)
+                            .map_err(|error| error.at_index(index))?;
+                        let value = to_json_value(value, bytes_format)
+                            .map_err(|error| error.at_index(index))?;
+                        Ok(JsonValue::Array(vec![key, value]))
+                    })
+                    .collect::<Result<Vec<_>>>()
+                    .map(JsonValue::Array)
+            }
+        }
+        Value::Record(values) => values
             .iter()
             .map(|(key, value)| {
                 to_json_value(value, bytes_format)

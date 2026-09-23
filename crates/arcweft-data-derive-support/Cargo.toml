@@ -1,0 +1,16 @@
+[package]
+name = "arcweft-data-derive-support"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared source attribute grammar for Arcweft data and Rust ABI derives."
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn = { workspace = true, features = ["full"] }
+
+[lints]
+workspace = true

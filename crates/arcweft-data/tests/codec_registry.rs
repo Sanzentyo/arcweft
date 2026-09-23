@@ -1,6 +1,6 @@
 use arcweft_data::{
-    Codec, CodecRegistry, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Result, TypeShape,
-    Value,
+    Codec, CodecRegistry, DataErrorKind, DecodeOptions, EncodeOptions, FormatId, Result,
+    ShapeAccess, ShapeRef, Value,
 };
 
 #[derive(Clone, Copy)]
@@ -26,7 +26,8 @@ impl Codec for StaticCodec {
     fn encode_value(
         &self,
         value: &Value,
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
         value
@@ -38,7 +39,8 @@ impl Codec for StaticCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        _shape: &TypeShape,
+        _shape: ShapeRef<'_>,
+        _access: &dyn ShapeAccess,
         _options: &DecodeOptions,
     ) -> Result<Value> {
         String::from_utf8(input.to_vec())

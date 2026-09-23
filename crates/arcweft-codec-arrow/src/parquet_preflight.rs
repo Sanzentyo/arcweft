@@ -1,21 +1,24 @@
 use std::sync::Arc;
 
-use arcweft_data::{DataError, DataErrorKind, DecodeLimits, FieldShape, Result, TypeShape};
+use arcweft_data::{
+    DataError, DataErrorKind, DecodeLimits, FieldShape, Result, ShapeAccess, TypeShape,
+};
 use bytes::Bytes as ByteBuffer;
 use parquet::basic::{Compression, Type as PhysicalType};
 use parquet::column::page::PageReader;
 use parquet::file::metadata::{ColumnChunkMetaData, ParquetMetaData, RowGroupMetaData};
 use parquet::file::reader::SerializedPageReader;
 
-use crate::ArrowRowShape;
+use crate::{ArrowRowShape, arrow_field_cell_shape};
 
 pub(crate) fn preflight_parquet_buffers(
     input: &ByteBuffer,
     metadata: &ParquetMetaData,
-    row_shape: ArrowRowShape<'_>,
+    row_shape: &ArrowRowShape,
     limits: &DecodeLimits,
+    access: &dyn ShapeAccess,
 ) -> Result<()> {
-    let columns = VariableWidthColumns::from_fields(row_shape.fields, limits);
+    let columns = VariableWidthColumns::from_fields(row_shape.fields(), limits, access)?;
     if columns.is_empty() {
         return Ok(());
     }
@@ -124,14 +127,19 @@ struct VariableWidthColumns<'a> {
 }
 
 impl<'a> VariableWidthColumns<'a> {
-    fn from_fields(fields: &'a [FieldShape], limits: &DecodeLimits) -> Self {
-        Self {
-            entries: fields
-                .iter()
-                .filter(|field| !field.skip)
-                .filter_map(|field| VariableWidthColumn::from_field(field, limits))
-                .collect(),
-        }
+    fn from_fields(
+        fields: &'a [FieldShape],
+        limits: &DecodeLimits,
+        access: &dyn ShapeAccess,
+    ) -> Result<Self> {
+        let entries = fields
+            .iter()
+            .filter(|field| !field.skip)
+            .map(|field| VariableWidthColumn::from_field(field, limits, access))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            entries: entries.into_iter().flatten().collect(),
+        })
     }
 
     fn is_empty(&self) -> bool {
@@ -161,16 +169,21 @@ struct VariableWidthColumn<'a> {
 }
 
 impl<'a> VariableWidthColumn<'a> {
-    fn from_field(field: &'a FieldShape, limits: &DecodeLimits) -> Option<Self> {
-        let limit = match option_inner(&field.value_shape()) {
+    fn from_field(
+        field: &'a FieldShape,
+        limits: &DecodeLimits,
+        access: &dyn ShapeAccess,
+    ) -> Result<Option<Self>> {
+        let shape = arrow_field_cell_shape(field, access)?;
+        let limit = match option_inner(&shape) {
             TypeShape::String | TypeShape::Char => limits.max_string_len,
             TypeShape::Bytes { .. } => limits.max_bytes_len,
-            _ => return None,
+            _ => return Ok(None),
         };
-        Some(Self {
+        Ok(Some(Self {
             name: field.wire_name.as_str(),
             limit,
-        })
+        }))
     }
 }
 

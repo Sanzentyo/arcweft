@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
 use crate::error::{DataError, DataErrorKind, Result};
+use crate::shape::MapKind;
 use crate::value::{Bytes, Number, Value};
 
 /// Format-independent decoder from Arcweft's dynamic value tree.
@@ -154,11 +155,59 @@ impl Decode for Bytes {
 impl<T: Decode> Decode for Option<T> {
     fn decode(value: &Value) -> Result<Self> {
         match value {
-            Value::Unit => Ok(None),
-            other => T::decode(other).map(Some),
+            Value::Option(None) => Ok(None),
+            Value::Option(Some(value)) => T::decode(value).map(Some),
+            other => Err(DataError::invalid_type("option", other.type_name())),
         }
     }
 }
+
+impl Decode for () {
+    fn decode(value: &Value) -> Result<Self> {
+        match value {
+            Value::Unit => Ok(()),
+            other => Err(DataError::invalid_type("unit", other.type_name())),
+        }
+    }
+}
+
+fn tuple_values(value: &Value, expected_len: usize) -> Result<&[Value]> {
+    let values = value.as_tuple()?;
+    if values.len() == expected_len {
+        Ok(values)
+    } else {
+        Err(DataError::invalid_type(
+            format!("tuple with {expected_len} fields"),
+            format!("tuple with {} fields", values.len()),
+        ))
+    }
+}
+
+macro_rules! tuple_impls {
+    ($arity:literal; $($ty:ident:$index:tt),+ $(,)?) => {
+        impl<$($ty: Decode),+> Decode for ($($ty,)+) {
+            fn decode(value: &Value) -> Result<Self> {
+                let values = tuple_values(value, $arity)?;
+                Ok(($(
+                    $ty::decode(&values[$index]).map_err(|error| error.at_index($index))?,
+                )+))
+            }
+        }
+    };
+}
+
+tuple_impls!(1; A:0);
+tuple_impls!(2; A:0, B:1);
+tuple_impls!(3; A:0, B:1, C:2);
+tuple_impls!(4; A:0, B:1, C:2, D:3);
+tuple_impls!(5; A:0, B:1, C:2, D:3, E:4);
+tuple_impls!(6; A:0, B:1, C:2, D:3, E:4, F:5);
+tuple_impls!(7; A:0, B:1, C:2, D:3, E:4, F:5, G:6);
+tuple_impls!(8; A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7);
+tuple_impls!(9; A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8);
+tuple_impls!(10; A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9);
+tuple_impls!(11; A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10);
+tuple_impls!(12; A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11);
 
 impl<T: Decode> Decode for Vec<T> {
     fn decode(value: &Value) -> Result<Self> {
@@ -173,17 +222,52 @@ impl<T: Decode> Decode for Vec<T> {
     }
 }
 
-impl<T: Decode> Decode for BTreeMap<String, T> {
+impl<K, T> Decode for BTreeMap<K, T>
+where
+    K: Decode + Ord,
+    T: Decode,
+{
     fn decode(value: &Value) -> Result<Self> {
         match value {
-            Value::Map(values) | Value::Record(values) => values
-                .iter()
-                .map(|(key, value)| {
-                    T::decode(value)
-                        .map(|decoded| (key.clone(), decoded))
-                        .map_err(|err| err.at_field(key.clone()))
-                })
-                .collect(),
+            Value::Map {
+                kind: MapKind::BTree,
+                entries,
+            } => entries.iter().enumerate().try_fold(
+                BTreeMap::new(),
+                |mut decoded, (index, (key, value))| {
+                    let key = K::decode(key).map_err(|error| error.at_index(index))?;
+                    let value = T::decode(value).map_err(|error| error.at_index(index))?;
+                    if decoded.insert(key, value).is_some() {
+                        return Err(DataError::new(
+                            DataErrorKind::DuplicateField,
+                            format!("duplicate key in map entry {index}"),
+                        )
+                        .at_index(index));
+                    }
+                    Ok(decoded)
+                },
+            ),
+            Value::Map { kind, .. } => Err(DataError::invalid_type(
+                "BTree map",
+                format!("{kind:?} map"),
+            )),
+            Value::Record(values) => {
+                values
+                    .iter()
+                    .try_fold(BTreeMap::new(), |mut decoded, (key_name, value)| {
+                        let key = K::decode(&Value::String(key_name.clone()))
+                            .map_err(|error| error.at_field(key_name.clone()))?;
+                        let value =
+                            T::decode(value).map_err(|error| error.at_field(key_name.clone()))?;
+                        if decoded.insert(key, value).is_some() {
+                            return Err(DataError::new(
+                                DataErrorKind::DuplicateField,
+                                "record contains duplicate decoded map keys",
+                            ));
+                        }
+                        Ok(decoded)
+                    })
+            }
             other => Err(DataError::invalid_type("map", other.type_name())),
         }
     }

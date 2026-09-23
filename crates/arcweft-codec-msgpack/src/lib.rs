@@ -4,7 +4,7 @@ use std::io::Cursor;
 
 use arcweft_data::{
     Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FormatId,
-    RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    RawValue, Result, ShapeAccess, ShapeRef, Value, decode_with_shape_ref, encode_with_shape_ref,
 };
 use rmp::Marker;
 use rmp::decode::{RmpRead, read_marker};
@@ -29,10 +29,11 @@ impl Codec for MessagePackCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let raw = encode_with_shape(value, shape)?;
+        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let message_pack = raw_to_message_pack(raw)?;
         let mut out = Vec::new();
         rmpv::encode::write_value(&mut out, &message_pack)
@@ -43,7 +44,8 @@ impl Codec for MessagePackCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
@@ -55,7 +57,7 @@ impl Codec for MessagePackCodec {
                 "trailing MessagePack bytes",
             ));
         }
-        let value = decode_with_shape(&raw, shape)?;
+        let value = decode_with_shape_ref(&raw, shape, access)?;
         options.limits.validate(&value)?;
         Ok(value)
     }
@@ -94,6 +96,12 @@ fn raw_to_message_pack(raw: RawValue) -> Result<MessagePackValue> {
                 })
                 .collect::<Result<Vec<_>>>()?,
         ),
+        RawValue::Option(_) => {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "MessagePack option value was not lowered to its tagged map",
+            ));
+        }
     })
 }
 

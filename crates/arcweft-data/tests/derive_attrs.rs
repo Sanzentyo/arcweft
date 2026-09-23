@@ -1,10 +1,9 @@
 #![cfg(feature = "derive")]
 
-use std::collections::BTreeMap;
-
 use arcweft_data::{
     ArcweftDecode, ArcweftEncode, ArcweftReflect, Bytes, BytesFormat, DataErrorKind, Decode,
-    Encode, EnumRepr, EnumTagStyle, Number, Reflect, TypeShape, Value,
+    Encode, EnumRepr, EnumTagStyle, RawValue, Reflect, TypeShape, Value, decode_with_shape,
+    encode_with_shape,
 };
 
 #[derive(Debug, Default, PartialEq, ArcweftEncode, ArcweftDecode, ArcweftReflect)]
@@ -98,13 +97,22 @@ fn struct_attrs_drive_wire_names_defaults_skip_bytes_shape_and_unknown_policy() 
 }
 
 #[test]
-fn repr_enum_uses_numeric_value_and_reflects_discriminants() {
+fn repr_enum_preserves_typed_value_and_codec_applies_discriminants() {
+    let encoded = SaveKind::Full.encode().expect("encode");
     assert_eq!(
-        SaveKind::Full.encode().expect("encode"),
-        Value::Number(Number::U(1))
+        encoded,
+        Value::Enum {
+            variant: "full".to_owned(),
+            payload: None
+        }
     );
     assert_eq!(
-        SaveKind::decode(&Value::Number(Number::U(2))).expect("decode"),
+        encode_with_shape(&encoded, &SaveKind::shape()).unwrap(),
+        RawValue::Unsigned(1)
+    );
+    assert_eq!(
+        SaveKind::decode(&decode_with_shape(&RawValue::Unsigned(2), &SaveKind::shape()).unwrap())
+            .expect("decode"),
         SaveKind::Quick
     );
 
@@ -126,14 +134,31 @@ fn adjacent_tagged_enum_round_trips_named_unit_and_newtype_variants() {
     let encoded = event.encode().expect("encode");
     assert_eq!(AdjacentEvent::decode(&encoded).expect("decode"), event);
 
-    let Value::Record(record) = &encoded else {
-        panic!("expected adjacent record");
+    let Value::Enum { variant, payload } = &encoded else {
+        panic!("expected typed enum");
     };
-    assert_eq!(
-        record.get("kind"),
-        Some(&Value::String("line_shown".to_owned()))
+    assert_eq!(variant, "line_shown");
+    assert!(matches!(payload.as_deref(), Some(Value::Record(_))));
+    let raw = encode_with_shape(&encoded, &AdjacentEvent::shape()).unwrap();
+    let RawValue::Map(fields) = &raw else {
+        panic!("tagged wire map")
+    };
+    assert!(
+        fields
+            .iter()
+            .any(|(key, value)| key == &RawValue::String("kind".to_owned())
+                && value == &RawValue::String("line_shown".to_owned()))
     );
-    assert!(matches!(record.get("value"), Some(Value::Record(_))));
+    assert!(
+        fields
+            .iter()
+            .any(|(key, value)| key == &RawValue::String("value".to_owned())
+                && matches!(value, RawValue::Map(_)))
+    );
+    assert_eq!(
+        AdjacentEvent::decode(&decode_with_shape(&raw, &AdjacentEvent::shape()).unwrap()).unwrap(),
+        event
+    );
 
     let score = AdjacentEvent::Score(42);
     assert_eq!(
@@ -171,30 +196,36 @@ fn external_unit_variant_rejects_unexpected_payload() {
 }
 
 #[test]
-fn internal_tagged_enum_merges_named_fields_with_tag() {
+fn internal_tagged_enum_keeps_payload_typed_until_codec_projection() {
     let event = InternalEvent::LineShown {
         line_id: "l002".to_owned(),
     };
     let encoded = event.encode().expect("encode");
     assert_eq!(InternalEvent::decode(&encoded).expect("decode"), event);
 
-    let Value::Record(record) = encoded else {
-        panic!("expected internal record");
+    let raw = encode_with_shape(&encoded, &InternalEvent::shape()).unwrap();
+    let RawValue::Map(record) = &raw else {
+        panic!("expected tagged wire record");
+    };
+    assert!(record.contains(&(
+        RawValue::String("kind".to_owned()),
+        RawValue::String("line_shown".to_owned())
+    )));
+    assert!(record.contains(&(
+        RawValue::String("line_id".to_owned()),
+        RawValue::String("l002".to_owned())
+    )));
+    assert_eq!(record.len(), 2);
+    assert_eq!(
+        InternalEvent::decode(&decode_with_shape(&raw, &InternalEvent::shape()).unwrap()).unwrap(),
+        event
+    );
+    let unit = Value::Enum {
+        variant: "started".to_owned(),
+        payload: None,
     };
     assert_eq!(
-        record.get("kind"),
-        Some(&Value::String("line_shown".to_owned()))
-    );
-    assert_eq!(
-        record.get("line_id"),
-        Some(&Value::String("l002".to_owned()))
-    );
-    assert!(!record.contains_key("value"));
-
-    let mut unit = BTreeMap::new();
-    unit.insert("kind".to_owned(), Value::String("started".to_owned()));
-    assert_eq!(
-        InternalEvent::decode(&Value::Record(unit)).expect("unit decode"),
+        InternalEvent::decode(&unit).expect("unit decode"),
         InternalEvent::Started
     );
 

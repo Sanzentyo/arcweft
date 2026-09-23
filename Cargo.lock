@@ -811,6 +811,18 @@ dependencies = [
 name = "arcweft-data-derive"
 version = "0.1.0"
 dependencies = [
+ "arcweft-data",
+ "arcweft-data-derive-support",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+ "trybuild",
+]
+
+[[package]]
+name = "arcweft-data-derive-support"
+version = "0.1.0"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6557,6 +6569,7 @@ version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",

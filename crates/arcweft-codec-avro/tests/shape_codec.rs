@@ -1,3 +1,53 @@
+// Inline-shape test adapter. Production Codec callers supply ShapeRef and ShapeAccess directly.
+use self::InlineCodecTestExt as Codec;
+
+trait InlineCodecTestExt {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>>;
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value>;
+}
+
+impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>> {
+        <C as arcweft_data::Codec>::encode_value(
+            self,
+            value,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value> {
+        <C as arcweft_data::Codec>::decode_value(
+            self,
+            input,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+}
 use std::collections::BTreeMap;
 
 use apache_avro::{
@@ -5,8 +55,8 @@ use apache_avro::{
 };
 use arcweft_codec_avro::codec::AvroCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, Number, RecordPolicy, TypeShape, Value, VariantShape,
+    Bytes, BytesFormat, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FieldShape,
+    MapKind, Number, RecordPolicy, TypeShape, Value, VariantShape,
 };
 
 const ROW_SCHEMA: &str = r#"
@@ -22,7 +72,6 @@ const ROW_SCHEMA: &str = r#"
     {"name": "blob", "type": "bytes"},
     {"name": "nickname", "type": ["null", "string"], "default": null},
     {"name": "tags", "type": {"type": "array", "items": "string"}},
-    {"name": "meta", "type": {"type": "map", "values": "long"}},
     {"name": "kind", "type": {"type": "enum", "name": "AssetKind", "symbols": ["full", "empty"]}}
   ]
 }
@@ -46,11 +95,6 @@ fn row_shape() -> TypeShape {
             ),
             FieldShape::new("nickname", "nickname", TypeShape::option(TypeShape::String)),
             FieldShape::new("tags", "tags", TypeShape::seq(TypeShape::String)),
-            FieldShape::new(
-                "meta",
-                "meta",
-                TypeShape::map(TypeShape::String, TypeShape::I64),
-            ),
             FieldShape::new(
                 "kind",
                 "kind",
@@ -78,15 +122,6 @@ fn record(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     )
 }
 
-fn map(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
-    Value::Map(
-        fields
-            .into_iter()
-            .map(|(key, value)| (key.to_owned(), value))
-            .collect(),
-    )
-}
-
 fn sample_rows() -> Value {
     Value::Seq(vec![
         record([
@@ -96,7 +131,10 @@ fn sample_rows() -> Value {
             ("name", Value::String("hero".to_owned())),
             ("initial", Value::Char('h')),
             ("blob", Value::Bytes(Bytes::from([1_u8, 2, 3].as_slice()))),
-            ("nickname", Value::String("ace".to_owned())),
+            (
+                "nickname",
+                Value::Option(Some(Box::new(Value::String("ace".to_owned())))),
+            ),
             (
                 "tags",
                 Value::Seq(vec![
@@ -104,7 +142,6 @@ fn sample_rows() -> Value {
                     Value::String("rare".to_owned()),
                 ]),
             ),
-            ("meta", map([("hp", Value::Number(Number::I(10)))])),
             (
                 "kind",
                 Value::Enum {
@@ -120,9 +157,8 @@ fn sample_rows() -> Value {
             ("name", Value::String("sidekick".to_owned())),
             ("initial", Value::Char('s')),
             ("blob", Value::Bytes(Bytes::from([4_u8].as_slice()))),
-            ("nickname", Value::Unit),
+            ("nickname", Value::Option(None)),
             ("tags", Value::Seq(Vec::new())),
-            ("meta", map([("hp", Value::Number(Number::I(5)))])),
             (
                 "kind",
                 Value::Enum {
@@ -144,6 +180,36 @@ fn avro_codec_roundtrips_shape_driven_rows() {
         .decode_value(&encoded, &row_shape(), &DecodeOptions::default())
         .expect("decode");
     assert_eq!(decoded, sample_rows());
+}
+
+#[test]
+fn avro_rejects_maps_when_the_format_cannot_preserve_entry_order() {
+    let schema = r#"{
+      "type":"record",
+      "name":"MapRow",
+      "fields":[{"name":"meta","type":{"type":"map","values":"long"}}]
+    }"#;
+    let shape = TypeShape::record(
+        "MapRow",
+        [FieldShape::new(
+            "meta",
+            "meta",
+            TypeShape::map(TypeShape::String, TypeShape::I64, MapKind::Ordered),
+        )],
+    );
+    let value = record([(
+        "meta",
+        Value::map(
+            MapKind::Ordered,
+            [(Value::String("hp".to_owned()), Value::Number(Number::I(10)))],
+        ),
+    )]);
+    let codec = AvroCodec::new(schema).expect("schema");
+    let error = codec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect_err("Avro maps are unordered");
+    assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
+    assert_eq!(error.path().to_string(), "$.meta");
 }
 
 #[test]
@@ -212,9 +278,8 @@ fn avro_codec_enforces_numeric_edge_policy() {
         ("name", Value::String("bad".to_owned())),
         ("initial", Value::Char('b')),
         ("blob", Value::Bytes(Bytes::from([0_u8].as_slice()))),
-        ("nickname", Value::Unit),
+        ("nickname", Value::Option(None)),
         ("tags", Value::Seq(Vec::new())),
-        ("meta", map([("hp", Value::Number(Number::I(1)))])),
         (
             "kind",
             Value::Enum {

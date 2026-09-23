@@ -68,6 +68,7 @@ members = [
     "crates/arcweft-audio-device-cpal",
     "crates/arcweft-data",
     "crates/arcweft-data-derive",
+    "crates/arcweft-data-derive-support",
     "crates/arcweft-codec-json",
     "crates/arcweft-codec-yaml",
     "crates/arcweft-codec-toml",
@@ -147,6 +148,7 @@ arcweft-content-policy = { path = "crates/arcweft-content-policy" }
 arcweft-core = { path = "crates/arcweft-core" }
 arcweft-data = { path = "crates/arcweft-data" }
 arcweft-data-derive = { path = "crates/arcweft-data-derive" }
+arcweft-data-derive-support = { path = "crates/arcweft-data-derive-support" }
 arcweft-debug-model = { path = "crates/arcweft-debug-model" }
 arcweft-debug-sqlite = { path = "crates/arcweft-debug-sqlite" }
 arcweft-desktop-contract = { path = "crates/arcweft-desktop-contract" }

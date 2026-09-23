@@ -36,16 +36,16 @@ impl AttrName {
 }
 
 #[derive(Default)]
-pub(crate) struct ContainerAttrs {
-    pub(crate) rename_all: RenameRuleAttr,
-    pub(crate) deny_unknown_fields: bool,
+pub struct ContainerAttrs {
+    pub rename_all: RenameRuleAttr,
+    pub deny_unknown_fields: bool,
     tag: Option<String>,
     content: Option<String>,
-    pub(crate) repr: Option<ReprAttr>,
+    pub repr: Option<ReprAttr>,
 }
 
 impl ContainerAttrs {
-    pub(crate) fn from_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
+    pub fn from_attrs(attrs: &[Attribute]) -> syn::Result<Self> {
         let mut out = Self {
             rename_all: RenameRuleAttr::None,
             deny_unknown_fields: true,
@@ -80,7 +80,7 @@ impl ContainerAttrs {
         Ok(out)
     }
 
-    pub(crate) fn tag_style(&self) -> TagStyleAttr {
+    pub fn tag_style(&self) -> TagStyleAttr {
         match (&self.tag, &self.content) {
             (Some(tag), Some(content)) => TagStyleAttr::Adjacent {
                 tag: tag.clone(),
@@ -91,8 +91,17 @@ impl ContainerAttrs {
         }
     }
 
-    pub(crate) fn validate_for_input(&self, input: &DeriveInput) -> syn::Result<()> {
+    pub fn validate_for_input(&self, input: &DeriveInput) -> syn::Result<()> {
         let mut errors = None;
+        if self.tag.is_some() && self.tag == self.content {
+            combine_error(
+                &mut errors,
+                syn::Error::new_spanned(
+                    &input.ident,
+                    "enum tag and content must use distinct keys",
+                ),
+            );
+        }
         if self.content.is_some() && self.tag.is_none() {
             combine_error(
                 &mut errors,
@@ -136,14 +145,14 @@ impl ContainerAttrs {
 }
 
 #[derive(Clone)]
-pub(crate) enum TagStyleAttr {
+pub enum TagStyleAttr {
     External,
     Internal { tag: String },
     Adjacent { tag: String, content: String },
 }
 
 impl TagStyleAttr {
-    pub(crate) fn shape_tokens(&self) -> TokenStream {
+    pub fn shape_tokens(&self) -> TokenStream {
         match self {
             Self::External => quote!(::arcweft_data::EnumTagStyle::External),
             Self::Internal { tag } => {
@@ -160,66 +169,30 @@ impl TagStyleAttr {
 }
 
 #[derive(Clone)]
-pub(crate) struct ReprAttr {
+pub struct ReprAttr {
     kind: IntegerRepr,
 }
 
 impl ReprAttr {
+    pub const fn kind(&self) -> IntegerRepr {
+        self.kind
+    }
     fn parse(value: &str) -> Option<Self> {
         IntegerRepr::parse(value).map(|kind| Self { kind })
     }
 
-    pub(crate) fn ty_tokens(&self) -> TokenStream {
-        self.kind.ty_tokens()
-    }
-
-    pub(crate) fn inclusive_i128_bounds(&self) -> (i128, i128) {
+    pub fn inclusive_i128_bounds(&self) -> (i128, i128) {
         self.kind.inclusive_i128_bounds()
     }
 
-    pub(crate) fn number_value_tokens(&self, value: &TokenStream) -> TokenStream {
-        if self.kind.is_signed() {
-            quote!(::arcweft_data::Number::I((#value) as i128))
-        } else {
-            quote!(::arcweft_data::Number::U((#value) as u128))
-        }
-    }
-
-    pub(crate) fn numeric_decode_tokens(&self) -> TokenStream {
-        let ty = self.ty_tokens();
-        quote! {
-            |value: &::arcweft_data::Value| -> ::arcweft_data::Result<#ty> {
-                match value {
-                    ::arcweft_data::Value::Number(::arcweft_data::Number::I(value)) => {
-                        <#ty as ::core::convert::TryFrom<i128>>::try_from(*value).map_err(|_| {
-                            ::arcweft_data::DataError::new(
-                                ::arcweft_data::DataErrorKind::NumberOutOfRange,
-                                format!("cannot fit {value} into {}", stringify!(#ty)),
-                            )
-                        })
-                    }
-                    ::arcweft_data::Value::Number(::arcweft_data::Number::U(value)) => {
-                        <#ty as ::core::convert::TryFrom<u128>>::try_from(*value).map_err(|_| {
-                            ::arcweft_data::DataError::new(
-                                ::arcweft_data::DataErrorKind::NumberOutOfRange,
-                                format!("cannot fit {value} into {}", stringify!(#ty)),
-                            )
-                        })
-                    }
-                    other => Err(::arcweft_data::DataError::invalid_type("numeric enum discriminant", other.type_name())),
-                }
-            }
-        }
-    }
-
-    pub(crate) fn shape_option_tokens(&self) -> TokenStream {
+    pub fn shape_option_tokens(&self) -> TokenStream {
         let shape = self.kind.shape_tokens();
         quote!(Some(#shape))
     }
 }
 
 #[derive(Clone, Copy)]
-enum IntegerRepr {
+pub enum IntegerRepr {
     I8,
     I16,
     I32,
@@ -271,30 +244,6 @@ impl IntegerRepr {
         }
     }
 
-    const fn is_signed(self) -> bool {
-        match self {
-            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::Isize => true,
-            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128 | Self::Usize => false,
-        }
-    }
-
-    fn ty_tokens(self) -> TokenStream {
-        match self {
-            Self::I8 => quote!(::core::primitive::i8),
-            Self::I16 => quote!(::core::primitive::i16),
-            Self::I32 => quote!(::core::primitive::i32),
-            Self::I64 => quote!(::core::primitive::i64),
-            Self::I128 => quote!(::core::primitive::i128),
-            Self::Isize => quote!(::core::primitive::isize),
-            Self::U8 => quote!(::core::primitive::u8),
-            Self::U16 => quote!(::core::primitive::u16),
-            Self::U32 => quote!(::core::primitive::u32),
-            Self::U64 => quote!(::core::primitive::u64),
-            Self::U128 => quote!(::core::primitive::u128),
-            Self::Usize => quote!(::core::primitive::usize),
-        }
-    }
-
     fn shape_tokens(self) -> TokenStream {
         match self {
             Self::I8 => quote!(::arcweft_data::EnumRepr::I8),
@@ -329,15 +278,15 @@ impl IntegerRepr {
 }
 
 #[derive(Default)]
-pub(crate) struct FieldAttrs {
-    pub(crate) wire_name: String,
+pub struct FieldAttrs {
+    pub wire_name: String,
     default: DefaultAttr,
-    pub(crate) skip: bool,
-    pub(crate) bytes_format: Option<TokenStream>,
+    pub skip: bool,
+    pub bytes_format: Option<BytesFormatAttr>,
 }
 
 impl FieldAttrs {
-    pub(crate) fn from_attrs(
+    pub fn from_attrs(
         attrs: &[Attribute],
         ident: &Ident,
         rename_all: RenameRuleAttr,
@@ -363,7 +312,7 @@ impl FieldAttrs {
                 return Ok(());
             }
             if meta.path.is_ident(AttrName::Bytes.as_str()) {
-                out.bytes_format = Some(parse_bytes_format(&meta)?.tokens());
+                out.bytes_format = Some(parse_bytes_format(&meta)?);
                 return Ok(());
             }
             Err(meta.error("unsupported #[arcweft(...)] field attribute"))
@@ -371,11 +320,15 @@ impl FieldAttrs {
         Ok(out)
     }
 
-    pub(crate) const fn has_default(&self) -> bool {
+    pub const fn has_default(&self) -> bool {
         !matches!(self.default, DefaultAttr::None)
     }
 
-    pub(crate) fn default_value_tokens(&self) -> TokenStream {
+    pub const fn default(&self) -> &DefaultAttr {
+        &self.default
+    }
+
+    pub fn default_value_tokens(&self) -> TokenStream {
         match &self.default {
             DefaultAttr::None | DefaultAttr::Trait => quote!(::core::default::Default::default()),
             DefaultAttr::Path(path) => quote!(#path()),
@@ -384,19 +337,19 @@ impl FieldAttrs {
 }
 
 #[derive(Default)]
-pub(crate) enum DefaultAttr {
+pub enum DefaultAttr {
     #[default]
     None,
     Trait,
     Path(Path),
 }
 
-pub(crate) struct VariantAttrs {
-    pub(crate) wire_name: String,
+pub struct VariantAttrs {
+    pub wire_name: String,
 }
 
 impl VariantAttrs {
-    pub(crate) fn from_attrs(
+    pub fn from_attrs(
         attrs: &[Attribute],
         ident: &Ident,
         rename_all: RenameRuleAttr,
@@ -416,11 +369,17 @@ impl VariantAttrs {
 }
 
 #[derive(Clone, Copy)]
-enum BytesFormatAttr {
+pub enum BytesFormatAttr {
     Binary,
     Base64,
     Hex,
     Array,
+}
+
+impl quote::ToTokens for BytesFormatAttr {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(self.tokens());
+    }
 }
 
 impl BytesFormatAttr {
@@ -475,7 +434,7 @@ fn combine_error(errors: &mut Option<syn::Error>, error: syn::Error) {
 }
 
 fn ensure_flag(meta: &ParseNestedMeta<'_>) -> syn::Result<()> {
-    if meta.input.is_empty() {
+    if meta.input.is_empty() || meta.input.peek(syn::Token![,]) {
         Ok(())
     } else {
         Err(meta.error("attribute does not take a value"))
@@ -498,7 +457,7 @@ fn parse_repr(meta: &ParseNestedMeta<'_>) -> syn::Result<ReprAttr> {
 }
 
 fn parse_default(meta: &ParseNestedMeta<'_>) -> syn::Result<DefaultAttr> {
-    if meta.input.is_empty() {
+    if !meta.input.peek(syn::Token![=]) {
         return Ok(DefaultAttr::Trait);
     }
     let value = parse_string_value(meta)?;
@@ -508,7 +467,7 @@ fn parse_default(meta: &ParseNestedMeta<'_>) -> syn::Result<DefaultAttr> {
 }
 
 fn parse_bytes_format(meta: &ParseNestedMeta<'_>) -> syn::Result<BytesFormatAttr> {
-    if meta.input.is_empty() {
+    if !meta.input.peek(syn::Token![=]) {
         return Ok(BytesFormatAttr::Binary);
     }
     let value = parse_string_value(meta)?;

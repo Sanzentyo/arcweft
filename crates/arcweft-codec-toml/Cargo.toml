@@ -10,7 +10,7 @@ description = "TOML codec adapter for Arcweft config-like data."
 arcweft-data = { workspace = true }
 base64.workspace = true
 serde.workspace = true
-toml.workspace = true
+toml = { workspace = true, features = ["preserve_order"] }
 
 [lints]
 workspace = true

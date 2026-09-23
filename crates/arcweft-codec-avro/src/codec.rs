@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 
 use apache_avro::schema::{RecordField, Schema};
 use apache_avro::types::Value as AvroValue;
 use apache_avro::{Reader, Writer};
 use arcweft_data::{
     Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FieldShape,
-    FormatId, Number, RecordPolicy, Result, TypeShape, Value,
+    FormatId, Number, RecordPolicy, Result, ShapeAccess, ShapeRef, TypeShape, Value,
 };
 
 use crate::avro_preflight::{AvroTopLevel, preflight_avro_container};
@@ -40,17 +40,25 @@ impl Codec for AvroCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
-        _options: &EncodeOptions,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
+        options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        match shape {
+        let resolved_shape = shape.resolve(access)?;
+        match resolved_shape.as_ref() {
+            TypeShape::Ref(id) => self.encode_value(value, ShapeRef::Id(*id), access, options),
             TypeShape::Seq(item_shape) => {
-                validate_schema(item_shape, &self.schema)?;
+                validate_schema(ShapeRef::Inline(item_shape), access, &self.schema)?;
                 let rows = value.as_seq()?;
                 let mut writer = Writer::new(&self.schema, Vec::new());
                 rows.iter().enumerate().try_for_each(|(index, value)| {
                     writer
-                        .append(value_to_avro(value, item_shape, &self.schema)?)
+                        .append(value_to_avro(
+                            value,
+                            ShapeRef::Inline(item_shape),
+                            &self.schema,
+                            access,
+                        )?)
                         .map(|_| ())
                         .map_err(|error| {
                             DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
@@ -60,10 +68,15 @@ impl Codec for AvroCodec {
                 writer.into_inner().map_err(invalid_encoding_error)
             }
             other => {
-                validate_schema(other, &self.schema)?;
+                validate_schema(ShapeRef::Inline(other), access, &self.schema)?;
                 let mut writer = Writer::new(&self.schema, Vec::new());
                 writer
-                    .append(value_to_avro(value, other, &self.schema)?)
+                    .append(value_to_avro(
+                        value,
+                        ShapeRef::Inline(other),
+                        &self.schema,
+                        access,
+                    )?)
                     .map(|_| ())
                     .map_err(invalid_encoding_error)?;
                 writer.into_inner().map_err(invalid_encoding_error)
@@ -74,13 +87,16 @@ impl Codec for AvroCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
-        match shape {
+        let resolved_shape = shape.resolve(access)?;
+        match resolved_shape.as_ref() {
+            TypeShape::Ref(id) => self.decode_value(input, ShapeRef::Id(*id), access, options),
             TypeShape::Seq(item_shape) => {
-                validate_schema(item_shape, &self.schema)?;
+                validate_schema(ShapeRef::Inline(item_shape), access, &self.schema)?;
                 preflight_avro_container(input, &options.limits, AvroTopLevel::Sequence)?;
                 let reader = Reader::new(input).map_err(invalid_encoding_error)?;
                 budget.enter_node()?;
@@ -94,8 +110,14 @@ impl Codec for AvroCodec {
                                     .at_index(index)
                             })
                             .and_then(|value| {
-                                avro_to_value(&value, item_shape, &self.schema, &mut budget)
-                                    .map_err(|error| error.at_index(index))
+                                avro_to_value(
+                                    &value,
+                                    ShapeRef::Inline(item_shape),
+                                    &self.schema,
+                                    &mut budget,
+                                    access,
+                                )
+                                .map_err(|error| error.at_index(index))
                             })
                     })
                     .collect::<Result<Vec<_>>>();
@@ -106,7 +128,7 @@ impl Codec for AvroCodec {
                 Ok(value)
             }
             other => {
-                validate_schema(other, &self.schema)?;
+                validate_schema(ShapeRef::Inline(other), access, &self.schema)?;
                 preflight_avro_container(input, &options.limits, AvroTopLevel::Scalar)?;
                 let mut reader = Reader::new(input).map_err(invalid_encoding_error)?;
                 let Some(value) = reader.next() else {
@@ -127,7 +149,7 @@ impl Codec for AvroCodec {
                         "expected exactly one Avro datum, found more than one",
                     ));
                 }
-                let value = avro_to_value(&value, other, &self.schema, &mut budget)?;
+                let value = avro_to_value(&value, shape, &self.schema, &mut budget, access)?;
                 options.limits.validate(&value)?;
                 Ok(value)
             }
@@ -139,11 +161,25 @@ fn invalid_encoding_error(error: impl std::fmt::Display) -> DataError {
     DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
 }
 
-pub(super) fn validate_schema(shape: &TypeShape, schema: &Schema) -> Result<()> {
-    match shape {
+pub(super) fn validate_schema(
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+    schema: &Schema,
+) -> Result<()> {
+    let resolved_shape = shape.resolve(access)?;
+    match resolved_shape.as_ref() {
+        TypeShape::Ref(id) => validate_schema(ShapeRef::Id(*id), access, schema),
+        TypeShape::Option(inner)
+            if shape_is_unit(ShapeRef::Inline(inner), access)?
+                || shape_is_option(ShapeRef::Inline(inner), access)? =>
+        {
+            Err(DataError::unsupported(
+                "Avro union nullability cannot distinguish this option shape",
+            ))
+        }
         TypeShape::Option(inner) => {
             let (_, _, inner_schema) = option_schema(schema)?;
-            validate_schema(inner, inner_schema)
+            validate_schema(ShapeRef::Inline(inner), access, inner_schema)
         }
         TypeShape::Unit => expect_schema(schema, matches!(schema, Schema::Null), "Avro null"),
         TypeShape::Bool => expect_schema(schema, matches!(schema, Schema::Boolean), "Avro boolean"),
@@ -175,41 +211,54 @@ pub(super) fn validate_schema(shape: &TypeShape, schema: &Schema) -> Result<()> 
             let Schema::Array(array) = schema else {
                 return Err(schema_mismatch("Avro array", schema));
             };
-            validate_schema(item_shape, &array.items)
+            validate_schema(ShapeRef::Inline(item_shape), access, &array.items)
         }
-        TypeShape::Map { key, value } => {
-            if !matches!(key.as_ref(), TypeShape::String) {
-                return Err(DataError::unsupported(
-                    "Avro maps require Arcweft string keys",
-                ));
-            }
-            let Schema::Map(map) = schema else {
-                return Err(schema_mismatch("Avro map", schema));
-            };
-            validate_schema(value, &map.types)
+        TypeShape::Tuple(_) => Err(DataError::unsupported(
+            "Avro does not provide a positional heterogeneous tuple type",
+        )),
+        TypeShape::Map { .. } => Err(DataError::unsupported(
+            "Avro maps do not preserve Arcweft map entry order",
+        )),
+        TypeShape::Record { fields, policy, .. } => {
+            validate_record_schema(fields, *policy, access, schema)
         }
-        TypeShape::Record { fields, policy, .. } => validate_record_schema(fields, *policy, schema),
         TypeShape::Enum {
             variants,
             tag,
             repr,
             ..
-        } => enum_value::validate_enum_schema(variants, tag, repr.as_ref(), schema),
+        } => enum_value::validate_enum_schema(variants, tag, repr.as_ref(), access, schema),
         TypeShape::I128 | TypeShape::U64 | TypeShape::U128 | TypeShape::Usize => {
             Err(DataError::unsupported(format!(
                 "Avro cannot represent the full {} range",
-                shape.type_name()
+                resolved_shape.type_name()
             )))
         }
-        TypeShape::Named(name) => Err(DataError::unsupported(format!(
-            "Avro codec cannot resolve named Arcweft shape `{name}`"
-        ))),
+    }
+}
+
+fn shape_is_unit(shape: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<bool> {
+    let resolved = shape.resolve(access)?;
+    match resolved.as_ref() {
+        TypeShape::Ref(id) => shape_is_unit(ShapeRef::Id(*id), access),
+        TypeShape::Unit => Ok(true),
+        _ => Ok(false),
+    }
+}
+
+fn shape_is_option(shape: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<bool> {
+    let resolved = shape.resolve(access)?;
+    match resolved.as_ref() {
+        TypeShape::Ref(id) => shape_is_option(ShapeRef::Id(*id), access),
+        TypeShape::Option(_) => Ok(true),
+        _ => Ok(false),
     }
 }
 
 fn validate_record_schema(
     fields: &[FieldShape],
     policy: RecordPolicy,
+    access: &dyn ShapeAccess,
     schema: &Schema,
 ) -> Result<()> {
     let Schema::Record(record) = schema else {
@@ -242,14 +291,21 @@ fn validate_record_schema(
         .iter()
         .filter(|field| !field.skip)
         .try_for_each(|field| {
-            let avro_field = avro_fields.get(field.wire_name.as_str()).ok_or_else(|| {
-                DataError::new(
-                    DataErrorKind::MissingField,
-                    format!("missing Avro schema field `{}`", field.wire_name),
-                )
-                .at_field(field.wire_name.clone())
-            })?;
-            validate_schema(&field.value_shape(), &avro_field.schema)
+            let shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()))?;
+            let Some(avro_field) = avro_fields.get(field.wire_name.as_str()) else {
+                return if field.has_default || matches!(shape.as_ref(), TypeShape::Option(_)) {
+                    Ok(())
+                } else {
+                    Err(DataError::new(
+                        DataErrorKind::MissingField,
+                        format!("missing Avro schema field `{}`", field.wire_name),
+                    )
+                    .at_field(field.wire_name.clone()))
+                };
+            };
+            validate_schema(ShapeRef::Inline(shape.as_ref()), access, &avro_field.schema)
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })
 }
@@ -322,36 +378,53 @@ fn option_schema(schema: &Schema) -> Result<(usize, usize, &Schema)> {
 
 pub(super) fn value_to_avro(
     value: &Value,
-    shape: &TypeShape,
+    shape_ref: ShapeRef<'_>,
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
-    match shape {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => value_to_avro(value, ShapeRef::Id(*id), schema, access),
         TypeShape::Option(inner) => {
             let (null_index, value_index, inner_schema) = option_schema(schema)?;
             match value {
-                Value::Unit => Ok(AvroValue::Union(
+                Value::Option(None) => Ok(AvroValue::Union(
                     u32::try_from(null_index).expect("union index fits u32"),
                     Box::new(AvroValue::Null),
                 )),
-                other => value_to_avro(other, inner, inner_schema).map(|value| {
-                    AvroValue::Union(
-                        u32::try_from(value_index).expect("union index fits u32"),
-                        Box::new(value),
+                Value::Option(Some(value)) => {
+                    value_to_avro(value, ShapeRef::Inline(inner), inner_schema, access).map(
+                        |value| {
+                            AvroValue::Union(
+                                u32::try_from(value_index).expect("union index fits u32"),
+                                Box::new(value),
+                            )
+                        },
                     )
-                }),
+                }
+                other => Err(DataError::invalid_type("option", other.type_name())),
             }
         }
         TypeShape::Unit
         | TypeShape::Bool
         | TypeShape::String
         | TypeShape::Char
-        | TypeShape::Bytes { .. } => value_to_avro_scalar(value, shape, schema),
-        TypeShape::Seq(item_shape) => value_to_avro_array(value, item_shape, schema),
-        TypeShape::Map { key, value: inner } => value_to_avro_map(value, key, inner, schema),
-        TypeShape::Record { fields, policy, .. } => {
-            value_to_avro_record(value, fields, *policy, schema)
+        | TypeShape::Bytes { .. } => value_to_avro_scalar(value, shape.as_ref(), schema),
+        TypeShape::Seq(item_shape) => {
+            value_to_avro_array(value, ShapeRef::Inline(item_shape), schema, access)
         }
-        TypeShape::Enum { variants, .. } => enum_value::value_to_avro_enum(value, variants, schema),
+        TypeShape::Tuple(_) => Err(DataError::unsupported(
+            "Avro does not provide a positional heterogeneous tuple type",
+        )),
+        TypeShape::Map { .. } => Err(DataError::unsupported(
+            "Avro maps do not preserve Arcweft map entry order",
+        )),
+        TypeShape::Record { fields, policy, .. } => {
+            value_to_avro_record(value, fields, *policy, schema, access)
+        }
+        TypeShape::Enum { variants, .. } => {
+            enum_value::value_to_avro_enum(value, variants, schema, access)
+        }
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -359,8 +432,8 @@ pub(super) fn value_to_avro(
         | TypeShape::Isize
         | TypeShape::U8
         | TypeShape::U16
-        | TypeShape::U32 => value_to_avro_integer(value, shape, schema),
-        TypeShape::F32 | TypeShape::F64 => value_to_avro_float(value, shape),
+        | TypeShape::U32 => value_to_avro_integer(value, shape.as_ref(), schema),
+        TypeShape::F32 | TypeShape::F64 => value_to_avro_float(value, shape.as_ref()),
         unsupported => Err(DataError::unsupported(format!(
             "Avro shape {} is not supported",
             unsupported.type_name()
@@ -416,8 +489,9 @@ fn value_to_avro_bytes(value: &Value, schema: &Schema) -> Result<AvroValue> {
 
 fn value_to_avro_array(
     value: &Value,
-    item_shape: &TypeShape,
+    item_shape: ShapeRef<'_>,
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
     let Schema::Array(array) = schema else {
         return Err(schema_mismatch("Avro array", schema));
@@ -427,38 +501,11 @@ fn value_to_avro_array(
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            value_to_avro(value, item_shape, &array.items).map_err(|error| error.at_index(index))
+            value_to_avro(value, item_shape, &array.items, access)
+                .map_err(|error| error.at_index(index))
         })
         .collect::<Result<Vec<_>>>()
         .map(AvroValue::Array)
-}
-
-fn value_to_avro_map(
-    value: &Value,
-    key: &TypeShape,
-    inner: &TypeShape,
-    schema: &Schema,
-) -> Result<AvroValue> {
-    if !matches!(key, TypeShape::String) {
-        return Err(DataError::unsupported(
-            "Avro maps require Arcweft string keys",
-        ));
-    }
-    let Schema::Map(map) = schema else {
-        return Err(schema_mismatch("Avro map", schema));
-    };
-    let Value::Map(values) = value else {
-        return Err(DataError::invalid_type("map", value.type_name()));
-    };
-    values
-        .iter()
-        .map(|(key, value)| {
-            value_to_avro(value, inner, &map.types)
-                .map(|value| (key.clone(), value))
-                .map_err(|error| error.at_field(key.clone()))
-        })
-        .collect::<Result<HashMap<_, _>>>()
-        .map(AvroValue::Map)
 }
 
 fn value_to_avro_record(
@@ -466,6 +513,7 @@ fn value_to_avro_record(
     fields: &[FieldShape],
     policy: RecordPolicy,
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
     let Schema::Record(record_schema) = schema else {
         return Err(schema_mismatch("Avro record", schema));
@@ -477,11 +525,23 @@ fn value_to_avro_record(
         .filter(|field| !field.skip)
         .map(|field| {
             let avro_field = avro_record_field(record_schema, &field.wire_name)?;
-            let shape = field.value_shape();
+            let shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()))?;
             match record.get(&field.wire_name) {
-                Some(value) => value_to_avro(value, &shape, &avro_field.schema),
-                None if matches!(shape, TypeShape::Option(_)) => {
-                    value_to_avro(&Value::Unit, &shape, &avro_field.schema)
+                Some(value) => value_to_avro(
+                    value,
+                    ShapeRef::Inline(shape.as_ref()),
+                    &avro_field.schema,
+                    access,
+                ),
+                None if shape_is_option(ShapeRef::Inline(shape.as_ref()), access)? => {
+                    value_to_avro(
+                        &Value::Option(None),
+                        ShapeRef::Inline(shape.as_ref()),
+                        &avro_field.schema,
+                        access,
+                    )
                 }
                 None => Err(DataError::new(
                     DataErrorKind::MissingField,
@@ -611,52 +671,73 @@ fn value_to_avro_float(value: &Value, shape: &TypeShape) -> Result<AvroValue> {
 
 pub(super) fn avro_to_value(
     value: &AvroValue,
-    shape: &TypeShape,
+    shape: ShapeRef<'_>,
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     budget.enter_node()?;
-    let result = avro_to_value_inner(value, shape, schema, budget);
+    let result = avro_to_value_inner(value, shape, schema, budget, access);
     budget.exit_node();
     result
 }
 
 fn avro_to_value_inner(
     value: &AvroValue,
-    shape: &TypeShape,
+    shape_ref: ShapeRef<'_>,
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
-    match shape {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => avro_to_value(value, ShapeRef::Id(*id), schema, budget, access),
         TypeShape::Option(inner) => {
             let (_, _, inner_schema) = option_schema(schema)?;
             match value {
-                AvroValue::Null => Ok(Value::Unit),
+                AvroValue::Null => Ok(Value::Option(None)),
                 AvroValue::Union(_, inner_value)
                     if matches!(inner_value.as_ref(), AvroValue::Null) =>
                 {
-                    Ok(Value::Unit)
+                    Ok(Value::Option(None))
                 }
-                AvroValue::Union(_, inner_value) => {
-                    avro_to_value(inner_value, inner, inner_schema, budget)
+                AvroValue::Union(_, inner_value) => avro_to_value(
+                    inner_value,
+                    ShapeRef::Inline(inner),
+                    inner_schema,
+                    budget,
+                    access,
+                )
+                .map(Box::new)
+                .map(Some)
+                .map(Value::Option),
+                other => {
+                    avro_to_value(other, ShapeRef::Inline(inner), inner_schema, budget, access)
+                        .map(Box::new)
+                        .map(Some)
+                        .map(Value::Option)
                 }
-                other => avro_to_value(other, inner, inner_schema, budget),
             }
         }
         TypeShape::Unit
         | TypeShape::Bool
         | TypeShape::String
         | TypeShape::Char
-        | TypeShape::Bytes { .. } => avro_to_value_scalar(value, shape, budget),
-        TypeShape::Seq(item_shape) => avro_to_value_array(value, item_shape, schema, budget),
-        TypeShape::Map { key, value: inner } => {
-            avro_to_value_map(value, key, inner, schema, budget)
+        | TypeShape::Bytes { .. } => avro_to_value_scalar(value, shape.as_ref(), budget),
+        TypeShape::Seq(item_shape) => {
+            avro_to_value_array(value, ShapeRef::Inline(item_shape), schema, budget, access)
         }
+        TypeShape::Tuple(_) => Err(DataError::unsupported(
+            "Avro does not provide a positional heterogeneous tuple type",
+        )),
+        TypeShape::Map { .. } => Err(DataError::unsupported(
+            "Avro maps do not preserve Arcweft map entry order",
+        )),
         TypeShape::Record { fields, policy, .. } => {
-            avro_to_value_record(value, fields, *policy, schema, budget)
+            avro_to_value_record(value, shape_ref, fields, *policy, schema, budget, access)
         }
         TypeShape::Enum { variants, .. } => {
-            enum_value::avro_to_value_enum(value, variants, schema, budget)
+            enum_value::avro_to_value_enum(value, variants, schema, budget, access)
         }
         TypeShape::I8
         | TypeShape::I16
@@ -665,8 +746,8 @@ fn avro_to_value_inner(
         | TypeShape::Isize
         | TypeShape::U8
         | TypeShape::U16
-        | TypeShape::U32 => avro_to_value_integer(value, shape),
-        TypeShape::F32 | TypeShape::F64 => avro_to_value_float(value, shape),
+        | TypeShape::U32 => avro_to_value_integer(value, shape.as_ref()),
+        TypeShape::F32 | TypeShape::F64 => avro_to_value_float(value, shape.as_ref()),
         unsupported => Err(DataError::unsupported(format!(
             "Avro shape {} is not supported",
             unsupported.type_name()
@@ -718,9 +799,10 @@ fn avro_to_value_scalar(
 
 fn avro_to_value_array(
     value: &AvroValue,
-    item_shape: &TypeShape,
+    item_shape: ShapeRef<'_>,
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let Schema::Array(array) = schema else {
         return Err(schema_mismatch("Avro array", schema));
@@ -733,50 +815,21 @@ fn avro_to_value_array(
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            avro_to_value(value, item_shape, &array.items, budget)
+            avro_to_value(value, item_shape, &array.items, budget, access)
                 .map_err(|error| error.at_index(index))
         })
         .collect::<Result<Vec<_>>>()
         .map(Value::Seq)
 }
 
-fn avro_to_value_map(
-    value: &AvroValue,
-    key: &TypeShape,
-    inner: &TypeShape,
-    schema: &Schema,
-    budget: &mut DecodeBudget<'_>,
-) -> Result<Value> {
-    if !matches!(key, TypeShape::String) {
-        return Err(DataError::unsupported(
-            "Avro maps require Arcweft string keys",
-        ));
-    }
-    let Schema::Map(map) = schema else {
-        return Err(schema_mismatch("Avro map", schema));
-    };
-    let AvroValue::Map(values) = value else {
-        return Err(DataError::invalid_type("map", avro_value_label(value)));
-    };
-    budget.map_len(values.len())?;
-    values
-        .iter()
-        .map(|(key, value)| {
-            budget.string_len(key.len())?;
-            avro_to_value(value, inner, &map.types, budget)
-                .map(|value| (key.clone(), value))
-                .map_err(|error| error.at_field(key.clone()))
-        })
-        .collect::<Result<BTreeMap<_, _>>>()
-        .map(Value::Map)
-}
-
 fn avro_to_value_record(
     value: &AvroValue,
+    record_shape: ShapeRef<'_>,
     fields: &[FieldShape],
     policy: RecordPolicy,
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let Schema::Record(record_schema) = schema else {
         return Err(schema_mismatch("Avro record", schema));
@@ -789,20 +842,31 @@ fn avro_to_value_record(
         .map(|(key, value)| (key.as_str(), value))
         .collect::<BTreeMap<_, _>>();
     reject_unknown_value_fields(values.keys().copied(), fields, policy)?;
-    budget.map_len(fields.iter().filter(|field| !field.skip).count())?;
+    budget.map_len(fields.len())?;
     fields
         .iter()
-        .filter(|field| !field.skip)
-        .map(|field| {
-            let avro_field = avro_record_field(record_schema, &field.wire_name)?;
-            let shape = field.value_shape();
-            match values.get(field.wire_name.as_str()) {
-                Some(value) => avro_to_value(value, &shape, &avro_field.schema, budget),
-                None if matches!(shape, TypeShape::Option(_)) => Ok(Value::Unit),
-                None => Err(DataError::new(
-                    DataErrorKind::MissingField,
-                    format!("missing Avro field `{}`", field.wire_name),
-                )),
+        .enumerate()
+        .map(|(ordinal, field)| {
+            match (!field.skip)
+                .then(|| values.get(field.wire_name.as_str()))
+                .flatten()
+            {
+                Some(value) => {
+                    let avro_field = avro_record_field(record_schema, &field.wire_name)?;
+                    // Avro bytes are already normalized; retain the declaration
+                    // edge so nested defaults keep their original coordinate.
+                    avro_to_value(
+                        value,
+                        ShapeRef::Inline(&field.shape),
+                        &avro_field.schema,
+                        budget,
+                        access,
+                    )
+                }
+                None => field.missing_value(
+                    arcweft_data::FieldDefaultRequest::new(record_shape, ordinal),
+                    access,
+                ),
             }
             .map(|value| (field.wire_name.clone(), value))
             .map_err(|error| error.at_field(field.wire_name.clone()))

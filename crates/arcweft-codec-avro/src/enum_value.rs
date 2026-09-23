@@ -1,7 +1,8 @@
 use apache_avro::schema::{RecordField, Schema};
 use apache_avro::types::Value as AvroValue;
 use arcweft_data::{
-    DataError, DataErrorKind, DecodeBudget, EnumTagStyle, Result, Value, VariantShape,
+    DataError, DataErrorKind, DecodeBudget, EnumTagStyle, Result, ShapeAccess, ShapeRef, Value,
+    VariantShape,
 };
 
 use crate::codec::{
@@ -12,6 +13,7 @@ pub(super) fn validate_enum_schema(
     variants: &[VariantShape],
     tag: &EnumTagStyle,
     repr: Option<&arcweft_data::EnumRepr>,
+    access: &dyn ShapeAccess,
     schema: &Schema,
 ) -> Result<()> {
     if repr.is_some() {
@@ -28,7 +30,7 @@ pub(super) fn validate_enum_schema(
     {
         return validate_native_enum_schema(variants, schema);
     }
-    validate_payload_enum_schema(variants, schema)
+    validate_payload_enum_schema(variants, access, schema)
 }
 
 fn validate_native_enum_schema(variants: &[VariantShape], schema: &Schema) -> Result<()> {
@@ -54,7 +56,11 @@ fn validate_native_enum_schema(variants: &[VariantShape], schema: &Schema) -> Re
     }
 }
 
-fn validate_payload_enum_schema(variants: &[VariantShape], schema: &Schema) -> Result<()> {
+fn validate_payload_enum_schema(
+    variants: &[VariantShape],
+    access: &dyn ShapeAccess,
+    schema: &Schema,
+) -> Result<()> {
     let Schema::Union(union) = schema else {
         return Err(schema_mismatch("Avro union of variant records", schema));
     };
@@ -73,12 +79,16 @@ fn validate_payload_enum_schema(variants: &[VariantShape], schema: &Schema) -> R
         .iter()
         .zip(branches)
         .try_for_each(|(variant, schema)| {
-            validate_variant_record_schema(variant, schema)
+            validate_variant_record_schema(variant, access, schema)
                 .map_err(|error| error.at_variant(variant.wire_name.clone()))
         })
 }
 
-fn validate_variant_record_schema(variant: &VariantShape, schema: &Schema) -> Result<()> {
+fn validate_variant_record_schema(
+    variant: &VariantShape,
+    access: &dyn ShapeAccess,
+    schema: &Schema,
+) -> Result<()> {
     let Schema::Record(record) = schema else {
         return Err(schema_mismatch("Avro variant record", schema));
     };
@@ -94,7 +104,7 @@ fn validate_variant_record_schema(variant: &VariantShape, schema: &Schema) -> Re
     match &variant.payload {
         Some(payload_shape) => {
             let field = variant_payload_field(record, &variant.wire_name)?;
-            validate_schema(payload_shape, &field.schema)
+            validate_schema(ShapeRef::Inline(payload_shape), access, &field.schema)
         }
         None if record.fields.is_empty() => Ok(()),
         None => Err(DataError::new(
@@ -111,11 +121,12 @@ pub(super) fn value_to_avro_enum(
     value: &Value,
     variants: &[VariantShape],
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
     if matches!(schema, Schema::Enum(_)) {
         return value_to_avro_native_enum(value, variants, schema);
     }
-    value_to_avro_payload_enum(value, variants, schema)
+    value_to_avro_payload_enum(value, variants, schema, access)
 }
 
 fn value_to_avro_native_enum(
@@ -167,6 +178,7 @@ fn value_to_avro_payload_enum(
     value: &Value,
     variants: &[VariantShape],
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
     let Schema::Union(union) = schema else {
         return Err(schema_mismatch("Avro union of variant records", schema));
@@ -190,7 +202,7 @@ fn value_to_avro_payload_enum(
             format!("missing Avro branch for enum variant `{variant}`"),
         )
     })?;
-    let record = value_to_variant_record(variant_shape, payload.as_deref(), branch_schema)?;
+    let record = value_to_variant_record(variant_shape, payload.as_deref(), branch_schema, access)?;
     Ok(AvroValue::Union(
         u32::try_from(index).expect("enum union index fits u32"),
         Box::new(record),
@@ -201,6 +213,7 @@ fn value_to_variant_record(
     variant: &VariantShape,
     payload: Option<&Value>,
     schema: &Schema,
+    access: &dyn ShapeAccess,
 ) -> Result<AvroValue> {
     let Schema::Record(record) = schema else {
         return Err(schema_mismatch("Avro variant record", schema));
@@ -217,9 +230,14 @@ fn value_to_variant_record(
     match (&variant.payload, payload) {
         (Some(payload_shape), Some(payload)) => {
             let field = variant_payload_field(record, &variant.wire_name)?;
-            value_to_avro(payload, payload_shape, &field.schema)
-                .map(|payload| AvroValue::Record(vec![("payload".to_owned(), payload)]))
-                .map_err(|error| error.at_variant(variant.wire_name.clone()))
+            value_to_avro(
+                payload,
+                ShapeRef::Inline(payload_shape),
+                &field.schema,
+                access,
+            )
+            .map(|payload| AvroValue::Record(vec![("payload".to_owned(), payload)]))
+            .map_err(|error| error.at_variant(variant.wire_name.clone()))
         }
         (Some(_), None) => Err(DataError::new(
             DataErrorKind::MissingField,
@@ -257,11 +275,12 @@ pub(super) fn avro_to_value_enum(
     variants: &[VariantShape],
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     if matches!(schema, Schema::Enum(_)) {
         return avro_to_value_native_enum(value, variants, schema);
     }
-    avro_to_value_payload_enum(value, variants, schema, budget)
+    avro_to_value_payload_enum(value, variants, schema, budget, access)
 }
 
 fn avro_to_value_native_enum(
@@ -311,6 +330,7 @@ fn avro_to_value_payload_enum(
     variants: &[VariantShape],
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let Schema::Union(union) = schema else {
         return Err(schema_mismatch("Avro union of variant records", schema));
@@ -334,7 +354,7 @@ fn avro_to_value_payload_enum(
             format!("Avro enum union index {index} is outside schema branch list"),
         )
     })?;
-    avro_variant_record_to_value(inner, variant, branch_schema, budget)
+    avro_variant_record_to_value(inner, variant, branch_schema, budget, access)
         .map_err(|error| error.at_variant(variant.wire_name.clone()))
 }
 
@@ -343,6 +363,7 @@ fn avro_variant_record_to_value(
     variant: &VariantShape,
     schema: &Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<Value> {
     let Schema::Record(record_schema) = schema else {
         return Err(schema_mismatch("Avro variant record", schema));
@@ -371,7 +392,13 @@ fn avro_variant_record_to_value(
                         format!("missing Avro payload for variant `{}`", variant.wire_name),
                     )
                 })?;
-            let payload = avro_to_value(&payload.1, payload_shape, &schema_field.schema, budget)?;
+            let payload = avro_to_value(
+                &payload.1,
+                ShapeRef::Inline(payload_shape),
+                &schema_field.schema,
+                budget,
+                access,
+            )?;
             Ok(Value::Enum {
                 variant: variant.wire_name.clone(),
                 payload: Some(Box::new(payload)),

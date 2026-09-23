@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::Reflect;
 use crate::error::{DataError, DataErrorKind, Result};
-use crate::shape::TypeShape;
+use crate::shape::{MapKind, TypeShape};
 use crate::value::{Bytes, Number, Value};
 
 /// Format-independent encoder into Arcweft's dynamic value tree.
@@ -173,13 +173,28 @@ impl Reflect for Bytes {
 
 impl<T: Encode> Encode for Option<T> {
     fn encode(&self) -> Result<Value> {
-        self.as_ref().map_or(Ok(Value::Unit), Encode::encode)
+        self.as_ref()
+            .map(|value| value.encode())
+            .transpose()
+            .map(|value| Value::Option(value.map(Box::new)))
     }
 }
 
 impl<T: Reflect> Reflect for Option<T> {
     fn shape() -> TypeShape {
         TypeShape::option(T::shape())
+    }
+
+    fn register_shape(builder: &mut crate::ShapeGraphBuilder) -> Result<crate::ShapeId>
+    where
+        Self: 'static,
+    {
+        let (id, is_new) = builder.reserve_type::<Self>();
+        if is_new {
+            let inner = T::register_shape(builder)?;
+            builder.define(id, TypeShape::option(TypeShape::Ref(inner)))?;
+        }
+        Ok(id)
     }
 }
 
@@ -197,24 +212,117 @@ impl<T: Reflect> Reflect for Vec<T> {
     fn shape() -> TypeShape {
         TypeShape::seq(T::shape())
     }
-}
 
-impl<T: Encode> Encode for BTreeMap<String, T> {
-    fn encode(&self) -> Result<Value> {
-        self.iter()
-            .map(|(key, value)| {
-                value
-                    .encode()
-                    .map(|encoded| (key.clone(), encoded))
-                    .map_err(|err| err.at_field(key.clone()))
-            })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .map(Value::Map)
+    fn register_shape(builder: &mut crate::ShapeGraphBuilder) -> Result<crate::ShapeId>
+    where
+        Self: 'static,
+    {
+        let (id, is_new) = builder.reserve_type::<Self>();
+        if is_new {
+            let inner = T::register_shape(builder)?;
+            builder.define(id, TypeShape::seq(TypeShape::Ref(inner)))?;
+        }
+        Ok(id)
     }
 }
 
-impl<T: Reflect> Reflect for BTreeMap<String, T> {
+impl Encode for () {
+    fn encode(&self) -> Result<Value> {
+        Ok(Value::Unit)
+    }
+}
+
+impl Reflect for () {
     fn shape() -> TypeShape {
-        TypeShape::map(TypeShape::String, T::shape())
+        TypeShape::Unit
+    }
+}
+
+macro_rules! tuple_impls {
+    ($($ty:ident:$index:tt),+ $(,)?) => {
+        impl<$($ty: Encode),+> Encode for ($($ty,)+) {
+            fn encode(&self) -> Result<Value> {
+                Ok(Value::Tuple(vec![$(
+                    self.$index.encode().map_err(|error| error.at_index($index))?,
+                )+]))
+            }
+        }
+
+        impl<$($ty: Reflect),+> Reflect for ($($ty,)+) {
+            fn shape() -> TypeShape {
+                TypeShape::tuple([$($ty::shape(),)+])
+            }
+
+            fn register_shape(builder: &mut crate::ShapeGraphBuilder) -> Result<crate::ShapeId>
+            where
+                Self: 'static,
+            {
+                let (id, is_new) = builder.reserve_type::<Self>();
+                if is_new {
+                    let mut items = Vec::new();
+                    $(items.push(TypeShape::Ref($ty::register_shape(builder)?));)+
+                    builder.define(id, TypeShape::Tuple(items))?;
+                }
+                Ok(id)
+            }
+        }
+    };
+}
+
+tuple_impls!(A:0);
+tuple_impls!(A:0, B:1);
+tuple_impls!(A:0, B:1, C:2);
+tuple_impls!(A:0, B:1, C:2, D:3);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10);
+tuple_impls!(A:0, B:1, C:2, D:3, E:4, F:5, G:6, H:7, I:8, J:9, K:10, L:11);
+
+impl<K, T> Encode for BTreeMap<K, T>
+where
+    K: Encode + Ord,
+    T: Encode,
+{
+    fn encode(&self) -> Result<Value> {
+        self.iter()
+            .enumerate()
+            .map(|(index, (key, value))| {
+                Ok((
+                    key.encode().map_err(|error| error.at_index(index))?,
+                    value.encode().map_err(|error| error.at_index(index))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|entries| Value::map(MapKind::BTree, entries))
+    }
+}
+
+impl<K, T> Reflect for BTreeMap<K, T>
+where
+    K: Reflect + Ord,
+    T: Reflect,
+{
+    fn shape() -> TypeShape {
+        TypeShape::map(K::shape(), T::shape(), MapKind::BTree)
+    }
+
+    fn register_shape(builder: &mut crate::ShapeGraphBuilder) -> Result<crate::ShapeId>
+    where
+        Self: 'static,
+    {
+        let (id, is_new) = builder.reserve_type::<Self>();
+        if is_new {
+            let key = K::register_shape(builder)?;
+            let value = T::register_shape(builder)?;
+            builder.define(
+                id,
+                TypeShape::map(TypeShape::Ref(key), TypeShape::Ref(value), MapKind::BTree),
+            )?;
+        }
+        Ok(id)
     }
 }

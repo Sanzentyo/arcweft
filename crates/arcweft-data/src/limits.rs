@@ -190,10 +190,41 @@ fn validate_value(value: &Value, limits: &DecodeLimits, depth: usize) -> Result<
                 validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
             })
         }
-        Value::Map(values) | Value::Record(values) => {
-            if values.len() > limits.max_map_len {
+        Value::Tuple(values) => {
+            if values.len() > limits.max_sequence_len {
+                return Err(DataError::limit(format!(
+                    "tuple length {} exceeds {}",
+                    values.len(),
+                    limits.max_sequence_len
+                )));
+            }
+            values.iter().enumerate().try_for_each(|(index, value)| {
+                validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
+            })
+        }
+        Value::Option(value) => value
+            .as_deref()
+            .map_or(Ok(()), |value| validate_value(value, limits, depth + 1)),
+        Value::Map { entries, .. } => {
+            if entries.len() > limits.max_map_len {
                 return Err(DataError::limit(format!(
                     "map length {} exceeds {}",
+                    entries.len(),
+                    limits.max_map_len
+                )));
+            }
+            entries
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, (key, value))| {
+                    validate_value(key, limits, depth + 1).map_err(|err| err.at_index(index))?;
+                    validate_value(value, limits, depth + 1).map_err(|err| err.at_index(index))
+                })
+        }
+        Value::Record(values) => {
+            if values.len() > limits.max_map_len {
+                return Err(DataError::limit(format!(
+                    "record length {} exceeds {}",
                     values.len(),
                     limits.max_map_len
                 )));

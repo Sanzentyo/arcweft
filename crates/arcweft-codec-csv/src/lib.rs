@@ -7,7 +7,8 @@ use std::{
 
 use arcweft_data::{
     Bytes, BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeLimits, DecodeOptions,
-    EncodeOptions, FieldShape, FormatId, Number, RecordPolicy, Result, TypeShape, Value,
+    EncodeOptions, FieldShape, FormatId, Number, RecordPolicy, Result, ShapeAccess, ShapeRef,
+    TypeShape, Value,
 };
 use base64::{
     decoded_len_estimate,
@@ -34,19 +35,20 @@ impl Codec for CsvCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let row_shape = csv_row_shape(shape)?;
+        let row_shape = csv_row_shape(shape, access)?;
         let rows = value.as_seq()?;
-        let headers = csv_headers(row_shape.fields);
+        let headers = csv_headers(row_shape.fields());
         let mut writer = csv::Writer::from_writer(Vec::new());
         writer
             .write_record(&headers)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))?;
-        rows.iter()
-            .enumerate()
-            .try_for_each(|(index, row)| write_row(&mut writer, row, row_shape, &headers, index))?;
+        rows.iter().enumerate().try_for_each(|(index, row)| {
+            write_row(&mut writer, row, &row_shape, &headers, index, access)
+        })?;
         writer
             .into_inner()
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
@@ -55,11 +57,12 @@ impl Codec for CsvCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
-        let row_shape = csv_row_shape(shape)?;
-        preflight_csv_budget(input, row_shape, &options.limits)?;
+        let row_shape = csv_row_shape(shape, access)?;
+        preflight_csv_budget(input, &row_shape, access, &options.limits)?;
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
         let mut reader = csv::Reader::from_reader(input);
         let headers = reader
@@ -68,8 +71,8 @@ impl Codec for CsvCodec {
             .iter()
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        validate_headers(&headers, row_shape)?;
-        let row_indexes = row_indexes(&headers, row_shape.fields);
+        validate_headers(&headers, &row_shape, access)?;
+        let row_indexes = row_indexes(&headers, row_shape.fields());
         budget.enter_node()?;
         let rows = reader
             .records()
@@ -82,9 +85,10 @@ impl Codec for CsvCodec {
                 })?;
                 decode_row(
                     &record,
-                    row_shape.fields,
+                    &row_shape,
                     &row_indexes,
                     row_index,
+                    access,
                     &mut budget,
                 )
             })
@@ -98,7 +102,8 @@ impl Codec for CsvCodec {
 
 fn preflight_csv_budget(
     input: &[u8],
-    row_shape: CsvRowShape<'_>,
+    row_shape: &CsvRowShape,
+    access: &dyn ShapeAccess,
     limits: &DecodeLimits,
 ) -> Result<()> {
     let mut budget = DecodeBudget::new(input.len(), limits)?;
@@ -162,10 +167,14 @@ fn preflight_csv_budget(
                 field_len = 0;
                 if record_end {
                     if record_index == 0 {
-                        if let Err(error) = validate_headers(&header_fields, row_shape) {
+                        if let Err(error) = validate_headers(&header_fields, row_shape, access) {
                             break Err(error);
                         }
-                        byte_formats = header_byte_formats(&header_fields, row_shape.fields);
+                        byte_formats =
+                            match header_byte_formats(&header_fields, row_shape.fields(), access) {
+                                Ok(byte_formats) => byte_formats,
+                                Err(error) => break Err(error),
+                            };
                     } else {
                         if let Err(error) = budget.sequence_item(record_index) {
                             break Err(error);
@@ -192,23 +201,40 @@ fn preflight_csv_budget(
     result
 }
 
-fn header_byte_formats(headers: &[String], fields: &[FieldShape]) -> Vec<Option<BytesFormat>> {
+fn header_byte_formats(
+    headers: &[String],
+    fields: &[FieldShape],
+    access: &dyn ShapeAccess,
+) -> Result<Vec<Option<BytesFormat>>> {
     headers
         .iter()
         .map(|header| {
             fields
                 .iter()
                 .find(|field| !field.skip && field.wire_name == *header)
-                .and_then(|field| bytes_format_for_shape(&field.value_shape()))
+                .map(|field| {
+                    let shape = field
+                        .resolve_value_shape(access)
+                        .map_err(|error| error.at_field(field.wire_name.clone()))?;
+                    bytes_format_for_shape(ShapeRef::Inline(shape.as_ref()), access)
+                        .map_err(|error| error.at_field(field.wire_name.clone()))
+                })
+                .transpose()
+                .map(Option::flatten)
         })
         .collect()
 }
 
-fn bytes_format_for_shape(shape: &TypeShape) -> Option<BytesFormat> {
-    match shape {
-        TypeShape::Bytes { format } => Some(*format),
-        TypeShape::Option(inner) => bytes_format_for_shape(inner),
-        _ => None,
+fn bytes_format_for_shape(
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<Option<BytesFormat>> {
+    let shape = shape.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Bytes { format } => Ok(Some(*format)),
+        TypeShape::Option(inner) => bytes_format_for_shape(ShapeRef::Inline(inner), access),
+        TypeShape::Ref(id) => bytes_format_for_shape(ShapeRef::Id(*id), access),
+        _ => Ok(None),
     }
 }
 
@@ -244,19 +270,43 @@ fn reject_encoded_csv_bytes_len_over_budget(
     }
 }
 
-#[derive(Clone, Copy)]
-struct CsvRowShape<'a> {
-    fields: &'a [FieldShape],
-    policy: RecordPolicy,
+struct CsvRowShape {
+    record: TypeShape,
+    coordinate: Option<arcweft_data::ShapeId>,
 }
 
-fn csv_row_shape(shape: &TypeShape) -> Result<CsvRowShape<'_>> {
-    let TypeShape::Seq(row_shape) = shape else {
+impl CsvRowShape {
+    fn fields(&self) -> &[FieldShape] {
+        let TypeShape::Record { fields, .. } = &self.record else {
+            unreachable!()
+        };
+        fields
+    }
+    fn policy(&self) -> RecordPolicy {
+        let TypeShape::Record { policy, .. } = &self.record else {
+            unreachable!()
+        };
+        *policy
+    }
+    fn reference(&self) -> ShapeRef<'_> {
+        self.coordinate
+            .map_or(ShapeRef::Inline(&self.record), ShapeRef::Id)
+    }
+}
+
+const CSV_OPTION_NONE: &str = "~arcweft-option:none";
+const CSV_OPTION_SOME_PREFIX: &str = "~arcweft-option:some:";
+
+fn csv_row_shape(shape: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<CsvRowShape> {
+    let shape = shape.resolve(access)?;
+    let TypeShape::Seq(row_shape) = shape.as_ref() else {
         return Err(DataError::unsupported(
             "CSV requires a top-level sequence of record rows",
         ));
     };
-    let TypeShape::Record { fields, policy, .. } = row_shape.as_ref() else {
+    let coordinate = ShapeRef::Inline(row_shape).referenced_id();
+    let row_shape = ShapeRef::Inline(row_shape).resolve(access)?;
+    let TypeShape::Record { fields, .. } = row_shape.as_ref() else {
         return Err(DataError::unsupported(
             "CSV requires a top-level sequence of record rows",
         ));
@@ -265,17 +315,21 @@ fn csv_row_shape(shape: &TypeShape) -> Result<CsvRowShape<'_>> {
         .iter()
         .filter(|field| !field.skip)
         .try_for_each(|field| {
-            validate_cell_shape(&field.value_shape())
+            let shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()))?;
+            validate_cell_shape(ShapeRef::Inline(shape.as_ref()), access)
                 .map_err(|error| error.at_field(field.wire_name.clone()))
         })?;
     Ok(CsvRowShape {
-        fields,
-        policy: *policy,
+        record: row_shape.into_owned(),
+        coordinate,
     })
 }
 
-fn validate_cell_shape(shape: &TypeShape) -> Result<()> {
-    match shape {
+fn validate_cell_shape(shape: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<()> {
+    let shape = shape.resolve(access)?;
+    match shape.as_ref() {
         TypeShape::Unit
         | TypeShape::Bool
         | TypeShape::I8
@@ -295,12 +349,13 @@ fn validate_cell_shape(shape: &TypeShape) -> Result<()> {
         | TypeShape::String
         | TypeShape::Char
         | TypeShape::Bytes { .. } => Ok(()),
-        TypeShape::Option(inner) => validate_cell_shape(inner),
+        TypeShape::Option(inner) => validate_cell_shape(ShapeRef::Inline(inner), access),
+        TypeShape::Ref(id) => validate_cell_shape(ShapeRef::Id(*id), access),
         TypeShape::Seq(_)
         | TypeShape::Map { .. }
+        | TypeShape::Tuple(_)
         | TypeShape::Record { .. }
-        | TypeShape::Enum { .. }
-        | TypeShape::Named(_) => Err(DataError::unsupported(format!(
+        | TypeShape::Enum { .. } => Err(DataError::unsupported(format!(
             "CSV cell shape {} is not supported",
             shape.type_name()
         ))),
@@ -318,22 +373,26 @@ fn csv_headers(fields: &[FieldShape]) -> Vec<String> {
 fn write_row(
     writer: &mut csv::Writer<Vec<u8>>,
     row: &Value,
-    row_shape: CsvRowShape<'_>,
+    row_shape: &CsvRowShape,
     headers: &[String],
     row_index: usize,
+    access: &dyn ShapeAccess,
 ) -> Result<()> {
     let record = row.as_record().map_err(|error| error.at_index(row_index))?;
-    reject_unknown_fields(record.keys(), row_shape.fields, row_shape.policy)
+    reject_unknown_fields(record.keys(), row_shape.fields(), row_shape.policy())
         .map_err(|error| error.at_index(row_index))?;
     let values = row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .map(|field| {
-            let shape = field.value_shape();
+            let shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()).at_index(row_index))?;
+            let is_option = matches!(shape.as_ref(), TypeShape::Option(_));
             match record.get(&field.wire_name) {
-                Some(value) => encode_cell(value, &shape),
-                None if matches!(shape, TypeShape::Option(_)) => Ok(String::new()),
+                Some(value) => encode_cell(value, ShapeRef::Inline(shape.as_ref()), access),
+                None if is_option => Ok(CSV_OPTION_NONE.to_owned()),
                 None => Err(DataError::new(
                     DataErrorKind::MissingField,
                     format!("missing CSV field `{}`", field.wire_name),
@@ -348,16 +407,26 @@ fn write_row(
     })
 }
 
-fn validate_headers(headers: &[String], row_shape: CsvRowShape<'_>) -> Result<()> {
+fn validate_headers(
+    headers: &[String],
+    row_shape: &CsvRowShape,
+    access: &dyn ShapeAccess,
+) -> Result<()> {
     reject_duplicate_headers(headers)?;
-    reject_unknown_fields(headers.iter(), row_shape.fields, row_shape.policy)?;
+    reject_unknown_fields(headers.iter(), row_shape.fields(), row_shape.policy())?;
     let present = headers.iter().map(String::as_str).collect::<BTreeSet<_>>();
     row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .try_for_each(|field| {
-            if present.contains(field.wire_name.as_str()) {
+            if present.contains(field.wire_name.as_str())
+                || field.has_default
+                || matches!(
+                    field.resolve_value_shape(access)?.as_ref(),
+                    TypeShape::Option(_)
+                )
+            {
                 Ok(())
             } else {
                 Err(DataError::new(
@@ -425,28 +494,39 @@ fn row_indexes(headers: &[String], fields: &[FieldShape]) -> BTreeMap<String, us
 
 fn decode_row(
     record: &csv::StringRecord,
-    fields: &[FieldShape],
+    row_shape: &CsvRowShape,
     row_indexes: &BTreeMap<String, usize>,
     row_index: usize,
+    access: &dyn ShapeAccess,
     budget: &mut DecodeBudget<'_>,
 ) -> Result<Value> {
     budget.enter_node()?;
-    budget.map_len(fields.iter().filter(|field| !field.skip).count())?;
-    let row = fields
+    budget.map_len(row_shape.fields().len())?;
+    let row = row_shape
+        .fields()
         .iter()
-        .filter(|field| !field.skip)
-        .map(|field| {
-            let shape = field.value_shape();
-            let value = row_indexes
-                .get(&field.wire_name)
-                .and_then(|index| record.get(*index))
-                .ok_or_else(|| {
-                    DataError::new(
-                        DataErrorKind::MissingField,
-                        format!("missing CSV column `{}`", field.wire_name),
+        .enumerate()
+        .map(|(ordinal, field)| {
+            let shape = field
+                .resolve_value_shape(access)
+                .map_err(|error| error.at_field(field.wire_name.clone()).at_index(row_index))?;
+            let value = (!field.skip)
+                .then(|| {
+                    row_indexes
+                        .get(&field.wire_name)
+                        .and_then(|index| record.get(*index))
+                })
+                .flatten();
+            let Some(value) = value else {
+                return field
+                    .missing_value(
+                        arcweft_data::FieldDefaultRequest::new(row_shape.reference(), ordinal),
+                        access,
                     )
-                })?;
-            decode_cell(value, &shape, budget)
+                    .map(|value| (field.wire_name.clone(), value))
+                    .map_err(|error| error.at_field(field.wire_name.clone()).at_index(row_index));
+            };
+            decode_cell(value, ShapeRef::Inline(shape.as_ref()), access, budget)
                 .map(|value| (field.wire_name.clone(), value))
                 .map_err(|error| error.at_field(field.wire_name.clone()).at_index(row_index))
         })
@@ -455,11 +535,20 @@ fn decode_row(
     Ok(Value::Record(row))
 }
 
-fn encode_cell(value: &Value, shape: &TypeShape) -> Result<String> {
-    match shape {
+fn encode_cell(value: &Value, shape_ref: ShapeRef<'_>, access: &dyn ShapeAccess) -> Result<String> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => encode_cell(value, ShapeRef::Id(*id), access),
         TypeShape::Option(inner) => match value {
-            Value::Unit => Ok(String::new()),
-            other => encode_cell(other, inner),
+            Value::Option(None) => Ok(CSV_OPTION_NONE.to_owned()),
+            Value::Option(Some(value)) => {
+                let encoded = encode_cell(value, ShapeRef::Inline(inner), access)?;
+                Ok(format!(
+                    "{CSV_OPTION_SOME_PREFIX}{}",
+                    BASE64_STANDARD.encode(encoded.as_bytes())
+                ))
+            }
+            other => Err(DataError::invalid_type("option", other.type_name())),
         },
         TypeShape::Unit => match value {
             Value::Unit => Ok(String::new()),
@@ -481,7 +570,7 @@ fn encode_cell(value: &Value, shape: &TypeShape) -> Result<String> {
             Value::Bytes(bytes) => encode_bytes(bytes.as_slice(), *format),
             other => Err(DataError::invalid_type("bytes", other.type_name())),
         },
-        TypeShape::F32 | TypeShape::F64 => encode_float_cell(value, shape),
+        TypeShape::F32 | TypeShape::F64 => encode_float_cell(value, shape.as_ref()),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -493,7 +582,7 @@ fn encode_cell(value: &Value, shape: &TypeShape) -> Result<String> {
         | TypeShape::U32
         | TypeShape::U64
         | TypeShape::U128
-        | TypeShape::Usize => encode_integer_cell(value, shape),
+        | TypeShape::Usize => encode_integer_cell(value, shape.as_ref()),
         other => Err(DataError::unsupported(format!(
             "CSV cell shape {} is not supported",
             other.type_name()
@@ -501,10 +590,35 @@ fn encode_cell(value: &Value, shape: &TypeShape) -> Result<String> {
     }
 }
 
-fn decode_cell(value: &str, shape: &TypeShape, budget: &DecodeBudget<'_>) -> Result<Value> {
-    match shape {
-        TypeShape::Option(inner) if value.is_empty() => Ok(Value::Unit),
-        TypeShape::Option(inner) => decode_cell(value, inner, budget),
+fn decode_cell(
+    value: &str,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+    budget: &DecodeBudget<'_>,
+) -> Result<Value> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => decode_cell(value, ShapeRef::Id(*id), access, budget),
+        TypeShape::Option(inner) if value == CSV_OPTION_NONE => Ok(Value::Option(None)),
+        TypeShape::Option(inner) if value.starts_with(CSV_OPTION_SOME_PREFIX) => {
+            let encoded = &value[CSV_OPTION_SOME_PREFIX.len()..];
+            let bytes = BASE64_STANDARD
+                .decode(encoded.as_bytes())
+                .map_err(|error| {
+                    DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+                })?;
+            let payload = String::from_utf8(bytes).map_err(|error| {
+                DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+            })?;
+            decode_cell(&payload, ShapeRef::Inline(inner), access, budget)
+                .map(Box::new)
+                .map(Some)
+                .map(Value::Option)
+        }
+        TypeShape::Option(_) => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "CSV option cell is missing its presence marker",
+        )),
         TypeShape::Unit if value.is_empty() => Ok(Value::Unit),
         TypeShape::Unit => Err(DataError::invalid_type(
             "empty unit cell",
@@ -521,7 +635,7 @@ fn decode_cell(value: &str, shape: &TypeShape, budget: &DecodeBudget<'_>) -> Res
             let bytes = decode_bytes(value, *format, budget)?;
             Ok(Value::Bytes(Bytes::new(bytes)))
         }
-        TypeShape::F32 | TypeShape::F64 => parse_float(value, shape),
+        TypeShape::F32 | TypeShape::F64 => parse_float(value, shape.as_ref()),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -533,7 +647,7 @@ fn decode_cell(value: &str, shape: &TypeShape, budget: &DecodeBudget<'_>) -> Res
         | TypeShape::U32
         | TypeShape::U64
         | TypeShape::U128
-        | TypeShape::Usize => parse_integer(value, shape),
+        | TypeShape::Usize => parse_integer(value, shape.as_ref()),
         other => Err(DataError::unsupported(format!(
             "CSV cell shape {} is not supported",
             other.type_name()

@@ -1,9 +1,59 @@
+// Inline-shape test adapter. Production Codec callers supply ShapeRef and ShapeAccess directly.
+use self::InlineCodecTestExt as Codec;
+
+trait InlineCodecTestExt {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>>;
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value>;
+}
+
+impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>> {
+        <C as arcweft_data::Codec>::encode_value(
+            self,
+            value,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value> {
+        <C as arcweft_data::Codec>::decode_value(
+            self,
+            input,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+}
 use std::collections::BTreeMap;
 
 use arcweft_codec_arrow::{ArrowIpcCodec, ParquetCodec};
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, Number, RecordPolicy, TypeShape, Value, VariantShape,
+    Bytes, BytesFormat, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FieldShape,
+    MapKind, Number, RecordPolicy, TypeShape, Value, VariantShape,
 };
 
 fn row_shape() -> TypeShape {
@@ -39,6 +89,10 @@ fn record(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     )
 }
 
+fn optional_string(value: Option<&str>) -> Value {
+    Value::Option(value.map(|value| Box::new(Value::String(value.to_owned()))))
+}
+
 fn sample_rows() -> Value {
     Value::Seq(vec![
         record([
@@ -48,7 +102,7 @@ fn sample_rows() -> Value {
             ("name", Value::String("hero".to_owned())),
             ("initial", Value::Char('h')),
             ("blob", Value::Bytes(Bytes::from([1_u8, 2, 3].as_slice()))),
-            ("nickname", Value::String("ace".to_owned())),
+            ("nickname", optional_string(Some("ace"))),
         ]),
         record([
             ("active", Value::Bool(false)),
@@ -57,7 +111,7 @@ fn sample_rows() -> Value {
             ("name", Value::String("sidekick".to_owned())),
             ("initial", Value::Char('s')),
             ("blob", Value::Bytes(Bytes::from([4_u8].as_slice()))),
-            ("nickname", Value::Unit),
+            ("nickname", optional_string(None)),
         ]),
     ])
 }
@@ -134,7 +188,7 @@ fn enforces_numeric_edge_policy(codec: &impl Codec) {
         ("name", Value::String("bad".to_owned())),
         ("initial", Value::Char('b')),
         ("blob", Value::Bytes(Bytes::from([0_u8].as_slice()))),
-        ("nickname", Value::Unit),
+        ("nickname", optional_string(None)),
     ])]);
     let error = codec
         .encode_value(&value, &row_shape(), &EncodeOptions::default())
@@ -288,7 +342,7 @@ fn arrow_ipc_codec_preflights_string_budget_before_record_batch() {
         ("name", Value::String("a".repeat(16 * 1024))),
         ("initial", Value::Char('a')),
         ("blob", Value::Bytes(Bytes::from([0_u8].as_slice()))),
-        ("nickname", Value::Unit),
+        ("nickname", optional_string(None)),
     ])]);
     let encoded = ArrowIpcCodec
         .encode_value(&value, &row_shape(), &EncodeOptions::default())
@@ -315,7 +369,7 @@ fn parquet_codec_preflights_string_budget_before_record_batch() {
         ("name", Value::String("a".repeat(16 * 1024))),
         ("initial", Value::Char('a')),
         ("blob", Value::Bytes(Bytes::from([0_u8].as_slice()))),
-        ("nickname", Value::Unit),
+        ("nickname", optional_string(None)),
     ])]);
     let encoded = ParquetCodec
         .encode_value(&value, &row_shape(), &EncodeOptions::default())
@@ -368,7 +422,7 @@ fn arrow_ipc_codec_preflights_bytes_budget_before_record_batch() {
         ("name", Value::String("hero".to_owned())),
         ("initial", Value::Char('h')),
         ("blob", Value::Bytes(Bytes::from(vec![1_u8; 16 * 1024]))),
-        ("nickname", Value::Unit),
+        ("nickname", optional_string(None)),
     ])]);
     let encoded = ArrowIpcCodec
         .encode_value(&value, &row_shape(), &EncodeOptions::default())
@@ -395,7 +449,7 @@ fn parquet_codec_preflights_bytes_budget_before_record_batch() {
         ("name", Value::String("hero".to_owned())),
         ("initial", Value::Char('h')),
         ("blob", Value::Bytes(Bytes::from(vec![1_u8; 16 * 1024]))),
-        ("nickname", Value::Unit),
+        ("nickname", optional_string(None)),
     ])]);
     let encoded = ParquetCodec
         .encode_value(&value, &row_shape(), &EncodeOptions::default())
@@ -466,4 +520,50 @@ fn rejects_nested_or_enum_shapes_explicitly(codec: &impl Codec) {
         )
         .expect_err("nested unsupported");
     assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
+}
+
+#[test]
+fn arrow_ipc_codec_rejects_unrepresentable_general_shapes_with_paths() {
+    rejects_unrepresentable_general_shapes_with_paths(&ArrowIpcCodec);
+}
+
+#[test]
+fn parquet_codec_rejects_unrepresentable_general_shapes_with_paths() {
+    rejects_unrepresentable_general_shapes_with_paths(&ParquetCodec);
+}
+
+fn rejects_unrepresentable_general_shapes_with_paths(codec: &impl Codec) {
+    let cases = [
+        (
+            "optional_unit",
+            TypeShape::option(TypeShape::Unit),
+            Value::Option(Some(Box::new(Value::Unit))),
+        ),
+        (
+            "tuple",
+            TypeShape::Tuple(vec![TypeShape::Bool]),
+            Value::Tuple(vec![Value::Bool(true)]),
+        ),
+        (
+            "map",
+            TypeShape::map(TypeShape::U8, TypeShape::String, MapKind::Ordered),
+            Value::map(
+                MapKind::Ordered,
+                [(Value::Number(Number::U(1)), Value::String("one".to_owned()))],
+            ),
+        ),
+    ];
+
+    for (field_name, field_shape, field_value) in cases {
+        let shape = TypeShape::seq(TypeShape::record(
+            "UnsupportedRow",
+            [FieldShape::new(field_name, field_name, field_shape)],
+        ));
+        let value = Value::Seq(vec![record([(field_name, field_value)])]);
+        let error = codec
+            .encode_value(&value, &shape, &EncodeOptions::default())
+            .expect_err("unsupported Arrow-compatible shape");
+        assert_eq!(error.kind(), &DataErrorKind::UnsupportedFormat);
+        assert_eq!(error.path().to_string(), format!("$.{field_name}"));
+    }
 }

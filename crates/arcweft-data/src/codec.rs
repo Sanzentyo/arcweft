@@ -2,7 +2,8 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use crate::error::{DataError, DataErrorKind, Result};
 use crate::limits::DecodeLimits;
-use crate::shape::{BytesFormat, TypeShape};
+use crate::shape::BytesFormat;
+use crate::shape_graph::{ShapeAccess, ShapeRef};
 use crate::value::Value;
 
 /// Built-in data codec format selected by Arcweft source and runtime APIs.
@@ -183,14 +184,16 @@ pub trait Codec: Send + Sync {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &EncodeOptions,
     ) -> Result<Vec<u8>>;
 
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value>;
 }

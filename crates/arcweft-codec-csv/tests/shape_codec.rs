@@ -1,9 +1,59 @@
+// Inline-shape test adapter. Production Codec callers supply ShapeRef and ShapeAccess directly.
+use self::InlineCodecTestExt as Codec;
+
+trait InlineCodecTestExt {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>>;
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value>;
+}
+
+impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>> {
+        <C as arcweft_data::Codec>::encode_value(
+            self,
+            value,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value> {
+        <C as arcweft_data::Codec>::decode_value(
+            self,
+            input,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+}
 use std::collections::BTreeMap;
 
 use arcweft_codec_csv::CsvCodec;
 use arcweft_data::{
-    Bytes, BytesFormat, Codec, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions,
-    FieldShape, Number, RecordPolicy, TypeShape, Value,
+    Bytes, BytesFormat, DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FieldShape,
+    Number, RecordPolicy, TypeShape, Value,
 };
 
 fn row_shape() -> TypeShape {
@@ -46,14 +96,17 @@ fn csv_codec_uses_shape_headers_and_cell_types() {
             ("score", Value::Number(Number::U(7))),
             ("name", Value::String("hero".to_owned())),
             ("hash", Value::Bytes(Bytes::from([1_u8, 2, 255].as_slice()))),
-            ("nickname", Value::String("ace".to_owned())),
+            (
+                "nickname",
+                Value::Option(Some(Box::new(Value::String("ace".to_owned())))),
+            ),
         ]),
         record([
             ("active", Value::Bool(false)),
             ("score", Value::Number(Number::U(0))),
             ("name", Value::String("sidekick".to_owned())),
             ("hash", Value::Bytes(Bytes::from([0_u8].as_slice()))),
-            ("nickname", Value::Unit),
+            ("nickname", Value::Option(None)),
         ]),
     ]);
 
@@ -73,10 +126,44 @@ fn csv_codec_uses_shape_headers_and_cell_types() {
 }
 
 #[test]
+fn csv_codec_distinguishes_none_some_unit_and_some_empty_string() {
+    let shape = TypeShape::seq(TypeShape::record(
+        "OptionRow",
+        [
+            FieldShape::new("unit", "unit", TypeShape::option(TypeShape::Unit)),
+            FieldShape::new("text", "text", TypeShape::option(TypeShape::String)),
+        ],
+    ));
+    let value = Value::Seq(vec![
+        record([("unit", Value::Option(None)), ("text", Value::Option(None))]),
+        record([
+            ("unit", Value::Option(Some(Box::new(Value::Unit)))),
+            (
+                "text",
+                Value::Option(Some(Box::new(Value::String(String::new())))),
+            ),
+        ]),
+    ]);
+
+    let encoded = CsvCodec
+        .encode_value(&value, &shape, &EncodeOptions::default())
+        .expect("encode typed options");
+    let text = std::str::from_utf8(&encoded).expect("utf8");
+    assert!(text.contains("~arcweft-option:none"));
+    assert!(text.contains("~arcweft-option:some:"));
+    assert_eq!(
+        CsvCodec
+            .decode_value(&encoded, &shape, &DecodeOptions::default())
+            .expect("decode typed options"),
+        value
+    );
+}
+
+#[test]
 fn csv_codec_rejects_unknown_columns_when_policy_denies_them() {
     let error = CsvCodec
         .decode_value(
-            b"active,score,name,hash,nickname,extra\ntrue,1,hero,00,,ignored\n",
+            b"active,score,name,hash,nickname,extra\ntrue,1,hero,00,~arcweft-option:none,ignored\n",
             &row_shape(),
             &DecodeOptions::default(),
         )
@@ -106,7 +193,7 @@ fn csv_codec_rejects_unknown_encode_fields_when_policy_denies_them() {
             "hash".to_owned(),
             Value::Bytes(Bytes::from([0_u8].as_slice())),
         ),
-        ("nickname".to_owned(), Value::Unit),
+        ("nickname".to_owned(), Value::Option(None)),
         ("extra".to_owned(), Value::String("ignored".to_owned())),
     ]))]);
 
@@ -184,7 +271,7 @@ fn csv_decode_consumes_row_budget_during_reader_iteration() {
 
     let error = CsvCodec
         .decode_value(
-            b"active,score,name,hash,nickname\ntrue,1,a,00,\ntrue,2,b,00,\ntrue,3,c,00,\n",
+            b"active,score,name,hash,nickname\ntrue,1,a,00,~arcweft-option:none\ntrue,2,b,00,~arcweft-option:none\ntrue,3,c,00,~arcweft-option:none\n",
             &row_shape(),
             &options,
         )
@@ -203,7 +290,7 @@ fn csv_decode_consumes_cell_string_budget_during_reader_iteration() {
 
     let error = CsvCodec
         .decode_value(
-            b"active,score,name,hash,nickname\ntrue,1,hero,00,\n",
+            b"active,score,name,hash,nickname\ntrue,1,hero,00,~arcweft-option:none\n",
             &row_shape(),
             &options,
         )

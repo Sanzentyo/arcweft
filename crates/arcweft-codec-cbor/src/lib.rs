@@ -4,7 +4,7 @@ use std::io::Cursor;
 
 use arcweft_data::{
     Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FormatId,
-    RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    RawValue, Result, ShapeAccess, ShapeRef, Value, decode_with_shape_ref, encode_with_shape_ref,
 };
 use ciborium::Value as CborValue;
 use ciborium::value::Integer as CborInteger;
@@ -30,10 +30,11 @@ impl Codec for CborCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let raw = encode_with_shape(value, shape)?;
+        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
         let cbor = raw_to_cbor(raw)?;
         let mut out = Vec::new();
         ciborium::into_writer(&cbor, &mut out)
@@ -44,7 +45,8 @@ impl Codec for CborCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
@@ -56,7 +58,7 @@ impl Codec for CborCodec {
                 "trailing CBOR bytes",
             ));
         }
-        let value = decode_with_shape(&raw, shape)?;
+        let value = decode_with_shape_ref(&raw, shape, access)?;
         options.limits.validate(&value)?;
         Ok(value)
     }
@@ -93,6 +95,12 @@ fn raw_to_cbor(raw: RawValue) -> Result<CborValue> {
                 })
                 .collect::<Result<Vec<_>>>()?,
         ),
+        RawValue::Option(_) => {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "CBOR option value was not lowered to its tagged map",
+            ));
+        }
     })
 }
 

@@ -1,9 +1,7 @@
 #![forbid(unsafe_code)]
 //! Syntax-derived data traits for Arcweft.
 
-mod attrs;
 mod expand;
-mod rename;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};

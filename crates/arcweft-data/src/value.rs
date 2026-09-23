@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::error::{DataError, Result};
+use crate::shape::MapKind;
 
 /// Exact numeric value carried across formats.
 #[derive(Clone, Debug, PartialEq)]
@@ -65,8 +66,13 @@ pub enum Value {
     String(String),
     Char(char),
     Bytes(Bytes),
+    Option(Option<Box<Value>>),
     Seq(Vec<Value>),
-    Map(BTreeMap<String, Value>),
+    Tuple(Vec<Value>),
+    Map {
+        kind: MapKind,
+        entries: Vec<(Value, Value)>,
+    },
     Record(BTreeMap<String, Value>),
     Enum {
         variant: String,
@@ -84,8 +90,10 @@ impl Value {
             Self::String(_) => "string",
             Self::Char(_) => "char",
             Self::Bytes(_) => "bytes",
+            Self::Option(_) => "option",
             Self::Seq(_) => "sequence",
-            Self::Map(_) => "map",
+            Self::Tuple(_) => "tuple",
+            Self::Map { .. } => "map",
             Self::Record(_) => "record",
             Self::Enum { .. } => "enum",
         }
@@ -105,6 +113,20 @@ impl Value {
         }
     }
 
+    pub fn as_tuple(&self) -> Result<&[Value]> {
+        match self {
+            Self::Tuple(values) => Ok(values),
+            other => Err(DataError::invalid_type("tuple", other.type_name())),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<(MapKind, &[(Value, Value)])> {
+        match self {
+            Self::Map { kind, entries } => Ok((*kind, entries)),
+            other => Err(DataError::invalid_type("map", other.type_name())),
+        }
+    }
+
     #[must_use]
     pub fn stringify_scalar(&self) -> Option<String> {
         match self {
@@ -116,9 +138,21 @@ impl Value {
             Self::Number(Number::F64(value)) => Some(value.to_string()),
             Self::String(value) => Some(value.clone()),
             Self::Char(value) => Some(value.to_string()),
-            Self::Bytes(_) | Self::Seq(_) | Self::Map(_) | Self::Record(_) | Self::Enum { .. } => {
-                None
-            }
+            Self::Bytes(_)
+            | Self::Option(_)
+            | Self::Seq(_)
+            | Self::Tuple(_)
+            | Self::Map { .. }
+            | Self::Record(_)
+            | Self::Enum { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn map(kind: MapKind, entries: impl IntoIterator<Item = (Value, Value)>) -> Self {
+        Self::Map {
+            kind,
+            entries: entries.into_iter().collect(),
         }
     }
 }

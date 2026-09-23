@@ -1,0 +1,5 @@
+error: unsupported #[arcweft(...)] field attribute
+ --> tests/ui/unknown_reflection_attribute.rs:5:15
+  |
+5 |     #[arcweft(guess_default)]
+  |               ^^^^^^^^^^^^^

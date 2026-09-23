@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use arcweft_data::{
     Bytes, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions, FormatId,
-    Number, Result, TypeShape, Value,
+    MapKind, Number, Result, ShapeAccess, ShapeRef, Value, encode_with_shape_ref,
 };
 
 const MAGIC: &[u8; 5] = b"AWBN1";
@@ -28,9 +28,11 @@ impl Codec for ArcweftBinaryCodec {
     fn encode_value(
         &self,
         value: &Value,
-        _shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
+        encode_with_shape_ref(value, shape, access)?;
         let mut out = MAGIC.to_vec();
         write_value(&mut out, value)?;
         Ok(out)
@@ -39,7 +41,8 @@ impl Codec for ArcweftBinaryCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        _shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut reader = Reader::new(input, &options.limits)?;
@@ -51,6 +54,7 @@ impl Codec for ArcweftBinaryCodec {
                 "binary payload has trailing data",
             ));
         }
+        encode_with_shape_ref(&value, shape, access)?;
         options.limits.validate(&value)?;
         Ok(value)
     }
@@ -79,18 +83,24 @@ impl Codec for BincodeInteropCodec {
     fn encode_value(
         &self,
         value: &Value,
-        _shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
         #[cfg(feature = "bincode-interop")]
         {
-            let json = arcweft_codec_json::to_json_value(value, options.bytes_format)?;
+            let codec = arcweft_codec_json::JsonCodec;
+            let json: serde_json::Value =
+                serde_json::from_slice(&codec.encode_value(value, shape, access, options)?)
+                    .map_err(|error| {
+                        DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+                    })?;
             bincode::serde::encode_to_vec(&json, bincode::config::standard())
                 .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
         }
         #[cfg(not(feature = "bincode-interop"))]
         {
-            let _ = (value, options);
+            let _ = (value, shape, access, options);
             Err(DataError::unsupported(
                 "bincode interop support is disabled; enable feature `bincode-interop` only for explicit interop",
             ))
@@ -100,7 +110,8 @@ impl Codec for BincodeInteropCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        _shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         #[cfg(feature = "bincode-interop")]
@@ -115,13 +126,17 @@ impl Codec for BincodeInteropCodec {
                     "bincode payload has trailing data",
                 ));
             }
-            let value = arcweft_codec_json::from_json_value(&json)?;
+            let codec = arcweft_codec_json::JsonCodec;
+            let json = serde_json::to_vec(&json).map_err(|error| {
+                DataError::new(DataErrorKind::InvalidEncoding, error.to_string())
+            })?;
+            let value = codec.decode_value(&json, shape, access, options)?;
             options.limits.validate(&value)?;
             Ok(value)
         }
         #[cfg(not(feature = "bincode-interop"))]
         {
-            let _ = (input, options);
+            let _ = (input, shape, access, options);
             Err(DataError::unsupported(
                 "bincode interop support is disabled; enable feature `bincode-interop` only for explicit interop",
             ))
@@ -169,9 +184,31 @@ fn write_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
                 .iter()
                 .try_for_each(|value| write_value(out, value))?;
         }
-        Value::Map(values) => {
+        Value::Tuple(values) => {
+            out.push(15);
+            write_len(out, values.len())?;
+            values
+                .iter()
+                .try_for_each(|value| write_value(out, value))?;
+        }
+        Value::Option(value) => {
+            out.push(14);
+            match value {
+                Some(value) => {
+                    out.push(1);
+                    write_value(out, value)?;
+                }
+                None => out.push(0),
+            }
+        }
+        Value::Map { kind, entries } => {
             out.push(11);
-            write_map(out, values)?;
+            out.push(map_kind_tag(*kind));
+            write_len(out, entries.len())?;
+            entries.iter().try_for_each(|(key, value)| {
+                write_value(out, key)?;
+                write_value(out, value)
+            })?;
         }
         Value::Record(values) => {
             out.push(12);
@@ -190,6 +227,26 @@ fn write_value(out: &mut Vec<u8>, value: &Value) -> Result<()> {
         }
     }
     Ok(())
+}
+
+const fn map_kind_tag(kind: MapKind) -> u8 {
+    match kind {
+        MapKind::Ordered => 0,
+        MapKind::Sorted => 1,
+        MapKind::BTree => 2,
+    }
+}
+
+fn map_kind_from_tag(tag: u8) -> Result<MapKind> {
+    match tag {
+        0 => Ok(MapKind::Ordered),
+        1 => Ok(MapKind::Sorted),
+        2 => Ok(MapKind::BTree),
+        _ => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            format!("invalid binary map ordering tag {tag}"),
+        )),
+    }
 }
 
 fn write_map(out: &mut Vec<u8>, values: &BTreeMap<String, Value>) -> Result<()> {
@@ -295,8 +352,11 @@ impl<'a> Reader<'a> {
                 }
                 Ok(Value::Seq(values))
             }
-            11 => self.read_map().map(Value::Map),
-            12 => self.read_map().map(Value::Record),
+            11 => {
+                let kind = map_kind_from_tag(self.read_u8()?)?;
+                self.read_value_map(kind)
+            }
+            12 => self.read_record().map(Value::Record),
             13 => {
                 let variant =
                     String::from_utf8(self.read_string_bytes()?.to_vec()).map_err(|error| {
@@ -319,6 +379,22 @@ impl<'a> Reader<'a> {
                 };
                 Ok(Value::Enum { variant, payload })
             }
+            14 => match self.read_u8()? {
+                0 => Ok(Value::Option(None)),
+                1 => self.read_value().map(Box::new).map(Some).map(Value::Option),
+                flag => Err(DataError::new(
+                    DataErrorKind::InvalidEncoding,
+                    format!("invalid binary option flag {flag}"),
+                )),
+            },
+            15 => {
+                let len = self.read_len()?;
+                self.budget.sequence_len(len)?;
+                let values = (0..len)
+                    .map(|index| self.read_value().map_err(|error| error.at_index(index)))
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(Value::Tuple(values))
+            }
             tag => Err(DataError::new(
                 DataErrorKind::InvalidEncoding,
                 format!("unknown binary tag {tag}"),
@@ -326,7 +402,20 @@ impl<'a> Reader<'a> {
         }
     }
 
-    fn read_map(&mut self) -> Result<BTreeMap<String, Value>> {
+    fn read_value_map(&mut self, kind: MapKind) -> Result<Value> {
+        let len = self.read_len()?;
+        self.budget.map_len(len)?;
+        (0..len)
+            .map(|index| {
+                let key = self.read_value().map_err(|error| error.at_index(index))?;
+                let value = self.read_value().map_err(|error| error.at_index(index))?;
+                Ok((key, value))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(|entries| Value::map(kind, entries))
+    }
+
+    fn read_record(&mut self) -> Result<BTreeMap<String, Value>> {
         let len = self.read_len()?;
         self.budget.map_len(len)?;
         let mut out = BTreeMap::new();
@@ -338,7 +427,7 @@ impl<'a> Reader<'a> {
             if out.insert(key.clone(), value).is_some() {
                 return Err(DataError::new(
                     DataErrorKind::DuplicateField,
-                    format!("duplicate binary map key `{key}`"),
+                    format!("duplicate binary record field `{key}`"),
                 )
                 .at_field(key));
             }

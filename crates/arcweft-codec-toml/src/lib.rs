@@ -5,7 +5,8 @@ use std::fmt::Write as _;
 
 use arcweft_data::{
     BytesFormat, Codec, DataError, DataErrorKind, DecodeBudget, DecodeOptions, EncodeOptions,
-    FormatId, Number, RawValue, Result, TypeShape, Value, decode_with_shape, encode_with_shape,
+    EnumRepr, EnumTagStyle, FormatId, Number, RawValue, Result, ShapeAccess, ShapeRef, TypeShape,
+    Value, VariantShape, decode_with_shape_ref, encode_with_shape_ref,
 };
 use base64::prelude::{BASE64_STANDARD, Engine as _};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
@@ -33,11 +34,12 @@ impl Codec for TomlCodec {
     fn encode_value(
         &self,
         value: &Value,
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         _options: &EncodeOptions,
     ) -> Result<Vec<u8>> {
-        let raw = encode_with_shape(value, shape)?;
-        let toml = raw_to_toml_value(&raw, shape)?;
+        let raw = encode_with_shape_ref(value, shape, access)?.into_tagged_options();
+        let toml = raw_to_toml_value(&raw, shape, access)?;
         toml::to_string_pretty(&toml)
             .map(String::into_bytes)
             .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))
@@ -46,7 +48,8 @@ impl Codec for TomlCodec {
     fn decode_value(
         &self,
         input: &[u8],
-        shape: &TypeShape,
+        shape: ShapeRef<'_>,
+        access: &dyn ShapeAccess,
         options: &DecodeOptions,
     ) -> Result<Value> {
         let mut budget = DecodeBudget::new(input.len(), &options.limits)?;
@@ -61,8 +64,8 @@ impl Codec for TomlCodec {
         .deserialize(deserializer)
         .map_err(|error| DataError::new(DataErrorKind::InvalidEncoding, error.to_string()))??;
         let toml = raw_dynamic_to_toml(&dynamic_raw)?;
-        let raw = toml_to_raw_value(&toml, shape)?;
-        let value = decode_with_shape(&raw, shape)?;
+        let raw = toml_to_raw_value(&toml, shape, access)?;
+        let value = decode_with_shape_ref(&raw, shape, access)?;
         options.limits.validate(&value)?;
         Ok(value)
     }
@@ -243,8 +246,14 @@ impl BudgetedTomlRawVisitor<'_, '_> {
     }
 }
 
-fn raw_to_toml_value(raw: &RawValue, shape: &TypeShape) -> Result<TomlValue> {
-    match (shape, raw) {
+fn raw_to_toml_value(
+    raw: &RawValue,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<TomlValue> {
+    let shape = shape_ref.resolve(access)?;
+    match (shape.as_ref(), raw) {
+        (TypeShape::Ref(id), raw) => raw_to_toml_value(raw, ShapeRef::Id(*id), access),
         (TypeShape::Bool, RawValue::Bool(value)) => Ok(TomlValue::Boolean(*value)),
         (
             TypeShape::I8
@@ -270,22 +279,346 @@ fn raw_to_toml_value(raw: &RawValue, shape: &TypeShape) -> Result<TomlValue> {
             Ok(TomlValue::String(value.clone()))
         }
         (TypeShape::Bytes { format }, RawValue::Bytes(bytes)) => bytes_to_toml(bytes, *format),
-        (TypeShape::Unit | TypeShape::Option(_), RawValue::Null) => Err(toml_null_error()),
-        (TypeShape::Option(inner), raw) => raw_to_toml_value(raw, inner),
-        (TypeShape::Seq(inner), RawValue::Seq(values)) => raw_seq_to_toml(values, inner),
-        (TypeShape::Map { key, value }, RawValue::Map(entries))
-            if matches!(key.as_ref(), TypeShape::String) =>
-        {
-            raw_string_map_to_toml(entries, value)
+        (TypeShape::Unit, RawValue::Null) => Err(toml_null_error()),
+        (TypeShape::Option(inner), raw) => raw_tagged_option_to_toml(raw, inner, access),
+        (TypeShape::Seq(inner), RawValue::Seq(values)) => {
+            raw_seq_to_toml(values, ShapeRef::Inline(inner), access)
+        }
+        (TypeShape::Tuple(items), RawValue::Seq(values)) if items.len() == values.len() => items
+            .iter()
+            .zip(values)
+            .enumerate()
+            .map(|(index, (item_shape, value))| {
+                raw_to_toml_value(value, ShapeRef::Inline(item_shape), access)
+                    .map_err(|error| error.at_index(index))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(TomlValue::Array),
+        (TypeShape::Tuple(items), RawValue::Seq(values)) => Err(DataError::invalid_type(
+            format!("tuple with {} items", items.len()),
+            format!("tuple with {} items", values.len()),
+        )),
+        (TypeShape::Map { key, value, .. }, RawValue::Map(entries)) => {
+            let key_shape = ShapeRef::Inline(key).resolve(access)?;
+            if matches!(key_shape.as_ref(), TypeShape::String) {
+                raw_string_map_to_toml(entries, value, access)
+            } else {
+                raw_map_pairs_to_toml(entries, key, value, access)
+            }
         }
         (TypeShape::Record { fields, .. }, RawValue::Map(entries)) => {
-            raw_record_to_toml(entries, fields)
+            raw_record_to_toml(entries, fields, access)
         }
-        (TypeShape::Enum { .. }, raw) => raw_dynamic_to_toml(raw),
-        (TypeShape::Named(_), _) => Err(DataError::unsupported(
-            "named shape must be resolved before TOML encoding",
+        (
+            TypeShape::Enum {
+                variants,
+                tag,
+                repr,
+                ..
+            },
+            raw,
+        ) => raw_enum_to_toml(raw, variants, tag, *repr, access),
+        (shape, raw) => Err(DataError::invalid_type(shape.type_name(), raw.type_name())),
+    }
+}
+
+fn raw_enum_to_toml(
+    raw: &RawValue,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
+) -> Result<TomlValue> {
+    if repr.is_some() {
+        return raw_dynamic_to_toml(raw);
+    }
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type("enum table", raw.type_name()));
+    };
+    let fields = raw_enum_fields(entries)?;
+    let (tag_key, content_key) = match tag {
+        EnumTagStyle::External => ("variant", Some("payload")),
+        EnumTagStyle::Internal { tag } => (tag.as_str(), None),
+        EnumTagStyle::Adjacent { tag, content } => (tag.as_str(), Some(content.as_str())),
+    };
+    let variant = match fields.get(tag_key).copied() {
+        Some(RawValue::String(variant)) => variant.as_str(),
+        Some(other) => {
+            return Err(DataError::invalid_type(
+                "enum tag string",
+                other.type_name(),
+            ));
+        }
+        None => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing enum tag field `{tag_key}`"),
+            )
+            .at_field(tag_key.to_owned()));
+        }
+    };
+    let case = toml_enum_case(variants, variant)?;
+    let mut table = toml::Table::new();
+    table.insert(tag_key.to_owned(), TomlValue::String(variant.to_owned()));
+    if let Some(content_key) = content_key {
+        match (&case.payload, fields.get(content_key).copied()) {
+            (Some(shape), Some(raw)) => {
+                table.insert(
+                    content_key.to_owned(),
+                    raw_to_toml_value(raw, ShapeRef::Inline(shape), access)
+                        .map_err(|error| error.at_variant(variant))?,
+                );
+            }
+            (None, None) => {}
+            (Some(_), None) => {
+                return Err(DataError::new(
+                    DataErrorKind::MissingField,
+                    format!("missing enum content field `{content_key}`"),
+                )
+                .at_variant(variant)
+                .at_field(content_key.to_owned()));
+            }
+            (None, Some(_)) => {
+                return Err(
+                    DataError::invalid_type("unit enum variant", "payload").at_variant(variant)
+                );
+            }
+        }
+        for (key, value) in fields {
+            if key != tag_key && key != content_key {
+                table.insert(key.to_owned(), raw_dynamic_to_toml(value)?);
+            }
+        }
+    } else {
+        let payload = RawValue::Map(
+            entries
+                .iter()
+                .filter(|(key, _)| !matches!(key, RawValue::String(key) if key == tag_key))
+                .cloned()
+                .collect(),
+        );
+        match &case.payload {
+            Some(shape) => {
+                let TomlValue::Table(payload) =
+                    raw_to_toml_value(&payload, ShapeRef::Inline(shape), access)
+                        .map_err(|error| error.at_variant(variant))?
+                else {
+                    return Err(DataError::unsupported(
+                        "internally tagged enum payload must encode as a table",
+                    )
+                    .at_variant(variant));
+                };
+                for (key, value) in payload {
+                    if table.insert(key.clone(), value).is_some() {
+                        return Err(DataError::new(
+                            DataErrorKind::DuplicateField,
+                            format!("internal enum payload duplicates tag field `{key}`"),
+                        )
+                        .at_variant(variant)
+                        .at_field(key));
+                    }
+                }
+            }
+            None if fields.len() == 1 => {}
+            None => {
+                for (key, value) in fields {
+                    if key != tag_key {
+                        table.insert(key.to_owned(), raw_dynamic_to_toml(value)?);
+                    }
+                }
+            }
+        }
+    }
+    Ok(TomlValue::Table(table))
+}
+
+fn toml_enum_to_raw(
+    value: &TomlValue,
+    variants: &[VariantShape],
+    tag: &EnumTagStyle,
+    repr: Option<EnumRepr>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    if let Some(repr) = repr {
+        return toml_integer_to_raw(value, &repr.type_shape());
+    }
+    let TomlValue::Table(fields) = value else {
+        return Err(DataError::invalid_type("enum table", toml_type_name(value)));
+    };
+    let (tag_key, content_key) = match tag {
+        EnumTagStyle::External => ("variant", Some("payload")),
+        EnumTagStyle::Internal { tag } => (tag.as_str(), None),
+        EnumTagStyle::Adjacent { tag, content } => (tag.as_str(), Some(content.as_str())),
+    };
+    let variant = match fields.get(tag_key) {
+        Some(TomlValue::String(variant)) => variant.as_str(),
+        Some(other) => {
+            return Err(DataError::invalid_type(
+                "enum tag string",
+                toml_type_name(other),
+            ));
+        }
+        None => {
+            return Err(DataError::new(
+                DataErrorKind::MissingField,
+                format!("missing enum tag field `{tag_key}`"),
+            )
+            .at_field(tag_key.to_owned()));
+        }
+    };
+    let case = toml_enum_case(variants, variant)?;
+    let mut entries = vec![(
+        RawValue::String(tag_key.to_owned()),
+        RawValue::String(variant.to_owned()),
+    )];
+    if let Some(content_key) = content_key {
+        for (key, value) in fields {
+            if key == tag_key {
+                continue;
+            }
+            let raw = if key == content_key {
+                match &case.payload {
+                    Some(shape) => toml_to_raw_value(value, ShapeRef::Inline(shape), access)
+                        .map_err(|error| error.at_variant(variant))?,
+                    None => toml_dynamic_to_raw(value)?,
+                }
+            } else {
+                toml_dynamic_to_raw(value)?
+            };
+            entries.push((RawValue::String(key.clone()), raw));
+        }
+    } else {
+        let mut payload = fields.clone();
+        payload.remove(tag_key);
+        if let Some(shape) = &case.payload {
+            let raw =
+                toml_to_raw_value(&TomlValue::Table(payload), ShapeRef::Inline(shape), access)
+                    .map_err(|error| error.at_variant(variant))?;
+            let RawValue::Map(payload_entries) = raw else {
+                return Err(DataError::unsupported(
+                    "internally tagged enum payload must decode as a record",
+                )
+                .at_variant(variant));
+            };
+            entries.extend(payload_entries);
+        } else {
+            for (key, value) in payload {
+                entries.push((RawValue::String(key), toml_dynamic_to_raw(&value)?));
+            }
+        }
+    }
+    Ok(RawValue::Map(entries))
+}
+
+fn raw_enum_fields(entries: &[(RawValue, RawValue)]) -> Result<BTreeMap<&str, &RawValue>> {
+    let mut fields = BTreeMap::new();
+    for (key, value) in entries {
+        let RawValue::String(key) = key else {
+            return Err(DataError::invalid_type(
+                "string enum field",
+                key.type_name(),
+            ));
+        };
+        if fields.insert(key.as_str(), value).is_some() {
+            return Err(DataError::new(
+                DataErrorKind::DuplicateField,
+                format!("duplicate enum field `{key}`"),
+            )
+            .at_field(key.clone()));
+        }
+    }
+    Ok(fields)
+}
+
+fn toml_enum_case<'a>(variants: &'a [VariantShape], name: &str) -> Result<&'a VariantShape> {
+    variants
+        .iter()
+        .find(|case| case.wire_name == name)
+        .ok_or_else(|| {
+            DataError::new(
+                DataErrorKind::InvalidEnumTag,
+                format!("unknown enum variant `{name}`"),
+            )
+        })
+}
+
+const OPTION_TAG_KEY: &str = "$arcweft";
+const OPTION_TAG_VALUE: &str = "option";
+const OPTION_PRESENT_KEY: &str = "present";
+const OPTION_VALUE_KEY: &str = "value";
+
+fn raw_tagged_option_to_toml(
+    raw: &RawValue,
+    inner: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<TomlValue> {
+    let payload = tagged_raw_option_payload(raw)?;
+    let mut table = toml::Table::new();
+    table.insert(
+        OPTION_TAG_KEY.to_owned(),
+        TomlValue::String(OPTION_TAG_VALUE.to_owned()),
+    );
+    table.insert(
+        OPTION_PRESENT_KEY.to_owned(),
+        TomlValue::Boolean(payload.is_some()),
+    );
+    if let Some(payload) = payload {
+        let value = if matches!(inner, TypeShape::Unit) && matches!(payload, RawValue::Null) {
+            TomlValue::String(String::new())
+        } else {
+            raw_to_toml_value(payload, ShapeRef::Inline(inner), access)?
+        };
+        table.insert(OPTION_VALUE_KEY.to_owned(), value);
+    }
+    Ok(TomlValue::Table(table))
+}
+
+fn tagged_raw_option_payload(raw: &RawValue) -> Result<Option<&RawValue>> {
+    let RawValue::Map(entries) = raw else {
+        return Err(DataError::invalid_type(
+            "tagged option table",
+            raw.type_name(),
+        ));
+    };
+    let mut fields = BTreeMap::<&str, &RawValue>::new();
+    for (key, value) in entries {
+        let RawValue::String(key) = key else {
+            return Err(DataError::invalid_type(
+                "string option marker key",
+                key.type_name(),
+            ));
+        };
+        if fields.insert(key, value).is_some() {
+            return Err(DataError::new(
+                DataErrorKind::InvalidEncoding,
+                "tagged option contains duplicate fields",
+            ));
+        }
+    }
+    if !matches!(fields.get(OPTION_TAG_KEY), Some(RawValue::String(tag)) if tag == OPTION_TAG_VALUE)
+    {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "option value is missing its Arcweft marker",
+        ));
+    }
+    match fields.get(OPTION_PRESENT_KEY) {
+        Some(RawValue::Bool(false)) if fields.len() == 2 => Ok(None),
+        Some(RawValue::Bool(true)) if fields.len() == 3 => fields
+            .get(OPTION_VALUE_KEY)
+            .copied()
+            .map(Some)
+            .ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::MissingField,
+                    "tagged present option is missing its value",
+                )
+                .at_field(OPTION_VALUE_KEY)
+            }),
+        _ => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "tagged option fields do not match its presence marker",
         )),
-        _ => Err(DataError::invalid_type(shape.type_name(), raw.type_name())),
     }
 }
 
@@ -301,12 +634,16 @@ fn unsigned_to_toml(value: u128) -> Result<TomlValue> {
         .map_err(|_| toml_integer_range_error())
 }
 
-fn raw_seq_to_toml(values: &[RawValue], shape: &TypeShape) -> Result<TomlValue> {
+fn raw_seq_to_toml(
+    values: &[RawValue],
+    shape: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<TomlValue> {
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            raw_to_toml_value(value, shape).map_err(|error| error.at_index(index))
+            raw_to_toml_value(value, shape, access).map_err(|error| error.at_index(index))
         })
         .collect::<Result<Vec<_>>>()
         .map(TomlValue::Array)
@@ -315,6 +652,7 @@ fn raw_seq_to_toml(values: &[RawValue], shape: &TypeShape) -> Result<TomlValue> 
 fn raw_string_map_to_toml(
     entries: &[(RawValue, RawValue)],
     shape: &TypeShape,
+    access: &dyn ShapeAccess,
 ) -> Result<TomlValue> {
     entries
         .iter()
@@ -322,7 +660,7 @@ fn raw_string_map_to_toml(
             let RawValue::String(key) = key else {
                 return Err(DataError::invalid_type("string map key", key.type_name()));
             };
-            raw_to_toml_value(raw_value, shape)
+            raw_to_toml_value(raw_value, ShapeRef::Inline(shape), access)
                 .map(|toml| (key.clone(), toml))
                 .map_err(|error| error.at_field(key.clone()))
         })
@@ -330,31 +668,48 @@ fn raw_string_map_to_toml(
         .map(TomlValue::Table)
 }
 
-fn raw_record_to_toml(
+fn raw_map_pairs_to_toml(
     entries: &[(RawValue, RawValue)],
-    fields: &[arcweft_data::FieldShape],
+    key_shape: &TypeShape,
+    value_shape: &TypeShape,
+    access: &dyn ShapeAccess,
 ) -> Result<TomlValue> {
     entries
         .iter()
-        .filter_map(|(key, raw_value)| {
+        .enumerate()
+        .map(|(index, (key, value))| {
+            let key = raw_to_toml_value(key, ShapeRef::Inline(key_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            let value = raw_to_toml_value(value, ShapeRef::Inline(value_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            Ok(TomlValue::Array(vec![key, value]))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(TomlValue::Array)
+}
+
+fn raw_record_to_toml(
+    entries: &[(RawValue, RawValue)],
+    fields: &[arcweft_data::FieldShape],
+    access: &dyn ShapeAccess,
+) -> Result<TomlValue> {
+    entries
+        .iter()
+        .map(|(key, raw_value)| {
             let RawValue::String(key) = key else {
-                return Some(Err(DataError::invalid_type(
-                    "record field key",
-                    key.type_name(),
-                )));
+                return Err(DataError::invalid_type("record field key", key.type_name()));
             };
-            let shape = fields
-                .iter()
-                .find(|field| field.wire_name == *key)
-                .map_or(TypeShape::Unit, arcweft_data::FieldShape::value_shape);
-            if matches!(shape, TypeShape::Option(_)) && matches!(raw_value, RawValue::Null) {
-                return None;
+            let value = match fields.iter().find(|field| field.wire_name == *key) {
+                Some(field) => {
+                    let shape = field
+                        .resolve_value_shape(access)
+                        .map_err(|error| error.at_field(key.clone()))?;
+                    raw_to_toml_value(raw_value, ShapeRef::Inline(shape.as_ref()), access)
+                }
+                None => raw_to_toml_value(raw_value, ShapeRef::Inline(&TypeShape::Unit), access),
             }
-            Some(
-                raw_to_toml_value(raw_value, &shape)
-                    .map(|toml| (key.clone(), toml))
-                    .map_err(|error| error.at_field(key.clone())),
-            )
+            .map_err(|error| error.at_field(key.clone()))?;
+            Ok((key.clone(), value))
         })
         .collect::<Result<toml::Table>>()
         .map(TomlValue::Table)
@@ -373,8 +728,14 @@ fn raw_map_to_toml(entries: &[(RawValue, RawValue)]) -> Result<TomlValue> {
         .map(TomlValue::Table)
 }
 
-fn toml_to_raw_value(value: &TomlValue, shape: &TypeShape) -> Result<RawValue> {
-    match shape {
+fn toml_to_raw_value(
+    value: &TomlValue,
+    shape_ref: ShapeRef<'_>,
+    access: &dyn ShapeAccess,
+) -> Result<RawValue> {
+    let shape = shape_ref.resolve(access)?;
+    match shape.as_ref() {
+        TypeShape::Ref(id) => toml_to_raw_value(value, ShapeRef::Id(*id), access),
         TypeShape::Unit => Err(DataError::invalid_type("null", toml_type_name(value))),
         TypeShape::Bool => match value {
             TomlValue::Boolean(value) => Ok(RawValue::Bool(*value)),
@@ -386,27 +747,72 @@ fn toml_to_raw_value(value: &TomlValue, shape: &TypeShape) -> Result<RawValue> {
             other => Err(DataError::invalid_type("string", toml_type_name(other))),
         },
         TypeShape::Bytes { format } => toml_to_bytes(value, *format).map(RawValue::Bytes),
-        TypeShape::Option(inner) => toml_to_raw_value(value, inner),
+        TypeShape::Option(inner) => match tagged_toml_option_payload(value)? {
+            None => Ok(RawValue::Option(None)),
+            Some(TomlValue::String(payload))
+                if matches!(inner.as_ref(), TypeShape::Unit) && payload.is_empty() =>
+            {
+                Ok(RawValue::Option(Some(Box::new(RawValue::Null))))
+            }
+            Some(payload) => toml_to_raw_value(payload, ShapeRef::Inline(inner), access)
+                .map(Box::new)
+                .map(Some)
+                .map(RawValue::Option),
+        },
         TypeShape::Seq(inner) => match value {
             TomlValue::Array(values) => values
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    toml_to_raw_value(value, inner).map_err(|error| error.at_index(index))
+                    toml_to_raw_value(value, ShapeRef::Inline(inner), access)
+                        .map_err(|error| error.at_index(index))
                 })
                 .collect::<Result<Vec<_>>>()
                 .map(RawValue::Seq),
             other => Err(DataError::invalid_type("array", toml_type_name(other))),
         },
-        TypeShape::Map { key, value: inner } if matches!(key.as_ref(), TypeShape::String) => {
-            toml_table_entries(value, inner).map(RawValue::Map)
+        TypeShape::Tuple(items) => match value {
+            TomlValue::Array(values) if values.len() == items.len() => items
+                .iter()
+                .zip(values)
+                .enumerate()
+                .map(|(index, (item_shape, value))| {
+                    toml_to_raw_value(value, ShapeRef::Inline(item_shape), access)
+                        .map_err(|error| error.at_index(index))
+                })
+                .collect::<Result<Vec<_>>>()
+                .map(RawValue::Seq),
+            TomlValue::Array(values) => Err(DataError::invalid_type(
+                format!("tuple with {} items", items.len()),
+                format!("tuple with {} items", values.len()),
+            )),
+            other => Err(DataError::invalid_type(
+                "tuple array",
+                toml_type_name(other),
+            )),
+        },
+        TypeShape::Map {
+            key, value: inner, ..
+        } => {
+            let key_shape = ShapeRef::Inline(key).resolve(access)?;
+            if matches!(key_shape.as_ref(), TypeShape::String) {
+                toml_table_entries(value, inner, access).map(RawValue::Map)
+            } else {
+                toml_pair_entries(value, key, inner, access).map(RawValue::Map)
+            }
         }
         TypeShape::Record { fields, .. } => match value {
             TomlValue::Table(entries) => entries
                 .iter()
                 .map(|(key, value)| {
                     let raw = match fields.iter().find(|field| field.wire_name == *key) {
-                        Some(field) => toml_to_raw_value(value, &field.value_shape()),
+                        Some(field) => {
+                            let shape = field
+                                .resolve_value_shape(access)
+                                .map_err(|error| error.at_field(key.clone()))?;
+                            toml_to_raw_value(value, ShapeRef::Inline(shape.as_ref()), access)
+                                .map_err(|error| error.at_field(key.clone()))
+                        }
                         None => toml_dynamic_to_raw(value),
                     }?;
                     Ok((RawValue::String(key.clone()), raw))
@@ -415,11 +821,13 @@ fn toml_to_raw_value(value: &TomlValue, shape: &TypeShape) -> Result<RawValue> {
                 .map(RawValue::Map),
             other => Err(DataError::invalid_type("table", toml_type_name(other))),
         },
-        TypeShape::Enum { .. } => toml_dynamic_to_raw(value),
-        TypeShape::Named(_) => Err(DataError::unsupported(
-            "named shape must be resolved before TOML decoding",
-        )),
-        TypeShape::F32 | TypeShape::F64 => toml_float_to_raw(value, shape),
+        TypeShape::Enum {
+            variants,
+            tag,
+            repr,
+            ..
+        } => toml_enum_to_raw(value, variants, tag, *repr, access),
+        TypeShape::F32 | TypeShape::F64 => toml_float_to_raw(value, shape.as_ref()),
         TypeShape::I8
         | TypeShape::I16
         | TypeShape::I32
@@ -431,25 +839,95 @@ fn toml_to_raw_value(value: &TomlValue, shape: &TypeShape) -> Result<RawValue> {
         | TypeShape::U32
         | TypeShape::U64
         | TypeShape::U128
-        | TypeShape::Usize => toml_integer_to_raw(value, shape),
-        TypeShape::Map { .. } => Err(DataError::unsupported(
-            "TOML shape codec supports string map keys only",
+        | TypeShape::Usize => toml_integer_to_raw(value, shape.as_ref()),
+    }
+}
+
+fn tagged_toml_option_payload(value: &TomlValue) -> Result<Option<&TomlValue>> {
+    let TomlValue::Table(fields) = value else {
+        return Err(DataError::invalid_type(
+            "tagged option table",
+            toml_type_name(value),
+        ));
+    };
+    if !matches!(fields.get(OPTION_TAG_KEY), Some(TomlValue::String(tag)) if tag == OPTION_TAG_VALUE)
+    {
+        return Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "option value is missing its Arcweft marker",
+        ));
+    }
+    match fields.get(OPTION_PRESENT_KEY) {
+        Some(TomlValue::Boolean(false)) if fields.len() == 2 => Ok(None),
+        Some(TomlValue::Boolean(true)) if fields.len() == 3 => {
+            fields.get(OPTION_VALUE_KEY).map(Some).ok_or_else(|| {
+                DataError::new(
+                    DataErrorKind::MissingField,
+                    "tagged present option is missing its value",
+                )
+                .at_field(OPTION_VALUE_KEY)
+            })
+        }
+        _ => Err(DataError::new(
+            DataErrorKind::InvalidEncoding,
+            "tagged option fields do not match its presence marker",
         )),
     }
 }
 
-fn toml_table_entries(value: &TomlValue, shape: &TypeShape) -> Result<Vec<(RawValue, RawValue)>> {
+fn toml_table_entries(
+    value: &TomlValue,
+    shape: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<Vec<(RawValue, RawValue)>> {
     match value {
         TomlValue::Table(entries) => entries
             .iter()
             .map(|(key, value)| {
-                toml_to_raw_value(value, shape)
+                toml_to_raw_value(value, ShapeRef::Inline(shape), access)
                     .map(|raw| (RawValue::String(key.clone()), raw))
                     .map_err(|error| error.at_field(key.clone()))
             })
             .collect(),
         other => Err(DataError::invalid_type("table", toml_type_name(other))),
     }
+}
+
+fn toml_pair_entries(
+    value: &TomlValue,
+    key_shape: &TypeShape,
+    value_shape: &TypeShape,
+    access: &dyn ShapeAccess,
+) -> Result<Vec<(RawValue, RawValue)>> {
+    let TomlValue::Array(entries) = value else {
+        return Err(DataError::invalid_type(
+            "map pair array",
+            toml_type_name(value),
+        ));
+    };
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let TomlValue::Array(pair) = entry else {
+                return Err(
+                    DataError::invalid_type("map entry pair", toml_type_name(entry))
+                        .at_index(index),
+                );
+            };
+            let [key, value] = pair.as_slice() else {
+                return Err(
+                    DataError::invalid_type("map entry pair of length 2", "other length")
+                        .at_index(index),
+                );
+            };
+            let key = toml_to_raw_value(key, ShapeRef::Inline(key_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            let value = toml_to_raw_value(value, ShapeRef::Inline(value_shape), access)
+                .map_err(|error| error.at_index(index))?;
+            Ok((key, value))
+        })
+        .collect()
 }
 
 fn toml_integer_to_raw(value: &TomlValue, _shape: &TypeShape) -> Result<RawValue> {
@@ -539,6 +1017,9 @@ fn raw_dynamic_to_toml(raw: &RawValue) -> Result<TomlValue> {
             .collect::<Result<Vec<_>>>()
             .map(TomlValue::Array),
         RawValue::Map(entries) => raw_map_to_toml(entries),
+        RawValue::Option(_) => Err(DataError::unsupported(
+            "raw option requires shape-aware TOML encoding",
+        )),
     }
 }
 
@@ -573,7 +1054,61 @@ pub fn to_toml(value: &Value, bytes_format: BytesFormat) -> Result<TomlValue> {
             .map(|(index, value)| to_toml(value, bytes_format).map_err(|err| err.at_index(index)))
             .collect::<Result<Vec<_>>>()
             .map(TomlValue::Array),
-        Value::Map(values) | Value::Record(values) => values
+        Value::Tuple(values) => values
+            .iter()
+            .map(|value| to_toml(value, bytes_format))
+            .collect::<Result<Vec<_>>>()
+            .map(TomlValue::Array),
+        Value::Option(value) => {
+            let mut table = toml::Table::new();
+            table.insert(
+                OPTION_TAG_KEY.to_owned(),
+                TomlValue::String(OPTION_TAG_VALUE.to_owned()),
+            );
+            table.insert(
+                OPTION_PRESENT_KEY.to_owned(),
+                TomlValue::Boolean(value.is_some()),
+            );
+            if let Some(value) = value {
+                table.insert(OPTION_VALUE_KEY.to_owned(), to_toml(value, bytes_format)?);
+            }
+            Ok(TomlValue::Table(table))
+        }
+        Value::Map { entries, .. }
+            if entries
+                .iter()
+                .all(|(key, _)| matches!(key, Value::String(_))) =>
+        {
+            let mut table = toml::Table::new();
+            for (key, value) in entries {
+                let Value::String(key) = key else {
+                    unreachable!()
+                };
+                if table.contains_key(key) {
+                    return Err(DataError::new(
+                        DataErrorKind::DuplicateField,
+                        format!("duplicate TOML map key `{key}`"),
+                    )
+                    .at_field(key.clone()));
+                }
+                table.insert(
+                    key.clone(),
+                    to_toml(value, bytes_format).map_err(|error| error.at_field(key.clone()))?,
+                );
+            }
+            Ok(TomlValue::Table(table))
+        }
+        Value::Map { entries, .. } => entries
+            .iter()
+            .enumerate()
+            .map(|(index, (key, value))| {
+                let key = to_toml(key, bytes_format).map_err(|error| error.at_index(index))?;
+                let value = to_toml(value, bytes_format).map_err(|error| error.at_index(index))?;
+                Ok(TomlValue::Array(vec![key, value]))
+            })
+            .collect::<Result<Vec<_>>>()
+            .map(TomlValue::Array),
+        Value::Record(values) => values
             .iter()
             .map(|(key, value)| {
                 to_toml(value, bytes_format)

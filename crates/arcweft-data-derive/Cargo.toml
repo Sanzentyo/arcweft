@@ -10,9 +10,14 @@ description = "Derives Arcweft data Encode, Decode, and Reflect."
 proc-macro = true
 
 [dependencies]
+arcweft-data-derive-support.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
-syn = { workspace = true, features = ["full"] }
+syn = { workspace = true, features = ["full", "visit"] }
+
+[dev-dependencies]
+arcweft-data.workspace = true
+trybuild.workspace = true
 
 [lints]
 workspace = true

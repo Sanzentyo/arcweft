@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use arcweft_data::{
     Bytes, BytesFormat, DataErrorKind, EnumRepr, EnumTagStyle, FieldShape, Number, RawValue,
-    RecordPolicy, TypeShape, Value, VariantShape, decode_with_shape, encode_with_shape,
+    RecordPolicy, ShapeGraphBuilder, ShapeRef, TypeShape, Value, VariantShape, decode_with_shape,
+    decode_with_shape_ref, encode_with_shape, encode_with_shape_ref,
 };
 
 #[test]
@@ -49,6 +50,68 @@ fn raw_shape_roundtrips_bytes_and_records() {
 }
 
 #[test]
+fn field_bytes_formats_resolve_shared_shape_graph_nodes_per_field() {
+    let mut builder = ShapeGraphBuilder::new();
+    let bytes_node = builder.reserve();
+    let record_node = builder.reserve();
+    let fields = vec![
+        FieldShape::new("base64", "base64", TypeShape::Ref(bytes_node))
+            .with_bytes_format(BytesFormat::Base64),
+        FieldShape::new("hex", "hex", TypeShape::Ref(bytes_node))
+            .with_bytes_format(BytesFormat::Hex),
+    ];
+    builder
+        .define(
+            bytes_node,
+            TypeShape::Bytes {
+                format: BytesFormat::Binary,
+            },
+        )
+        .expect("define shared bytes node");
+    builder
+        .define(record_node, TypeShape::record("Payload", fields.clone()))
+        .expect("define record node");
+    let graph = builder.finish().expect("shape graph");
+
+    assert!(matches!(
+        fields[0]
+            .resolve_value_shape(&graph)
+            .expect("resolve base64 field")
+            .as_ref(),
+        TypeShape::Bytes {
+            format: BytesFormat::Base64
+        }
+    ));
+    assert!(matches!(
+        fields[1]
+            .resolve_value_shape(&graph)
+            .expect("resolve hex field")
+            .as_ref(),
+        TypeShape::Bytes {
+            format: BytesFormat::Hex
+        }
+    ));
+
+    let value = Value::Record(BTreeMap::from([
+        (
+            "base64".to_owned(),
+            Value::Bytes(Bytes::from([1_u8, 2, 255].as_slice())),
+        ),
+        (
+            "hex".to_owned(),
+            Value::Bytes(Bytes::from([1_u8, 2, 255].as_slice())),
+        ),
+    ]));
+    let raw = encode_with_shape_ref(&value, ShapeRef::Id(record_node), &graph)
+        .expect("encode through shared node");
+    assert_eq!(
+        decode_with_shape_ref(&raw, ShapeRef::Id(record_node), &graph)
+            .expect("decode through shared node"),
+        value
+    );
+}
+
+#[test]
 fn raw_shape_rejects_unknown_record_fields() {
     let shape = TypeShape::record(
         "Config",
@@ -68,7 +131,7 @@ fn raw_shape_rejects_unknown_record_fields() {
 }
 
 #[test]
-fn raw_shape_decodes_missing_optional_record_field_as_unit() {
+fn raw_shape_decodes_missing_optional_record_field_as_none() {
     let shape = TypeShape::record(
         "Config",
         [
@@ -86,7 +149,7 @@ fn raw_shape_decodes_missing_optional_record_field_as_unit() {
         decoded,
         Value::Record(BTreeMap::from([
             ("name".to_owned(), Value::String("ok".to_owned())),
-            ("tag".to_owned(), Value::Unit),
+            ("tag".to_owned(), Value::Option(None)),
         ]))
     );
 }

@@ -1,5 +1,58 @@
+// Inline-shape test adapter. Production Codec callers supply ShapeRef and ShapeAccess directly.
+use self::InlineCodecTestExt as Codec;
+
+trait InlineCodecTestExt {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>>;
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value>;
+}
+
+impl<C: arcweft_data::Codec + ?Sized> InlineCodecTestExt for C {
+    fn encode_value(
+        &self,
+        value: &arcweft_data::Value,
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::EncodeOptions,
+    ) -> arcweft_data::Result<Vec<u8>> {
+        <C as arcweft_data::Codec>::encode_value(
+            self,
+            value,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+
+    fn decode_value(
+        &self,
+        input: &[u8],
+        shape: &arcweft_data::TypeShape,
+        options: &arcweft_data::DecodeOptions,
+    ) -> arcweft_data::Result<arcweft_data::Value> {
+        <C as arcweft_data::Codec>::decode_value(
+            self,
+            input,
+            arcweft_data::ShapeRef::Inline(shape),
+            &arcweft_data::EmptyShapeAccess,
+            options,
+        )
+    }
+}
 use arcweft_codec_binary::ArcweftBinaryCodec;
-use arcweft_data::{Codec, DataErrorKind, DecodeLimits, DecodeOptions, TypeShape, Value};
+use arcweft_data::{
+    DataErrorKind, DecodeLimits, DecodeOptions, EncodeOptions, FieldShape, MapKind, Number,
+    TypeShape, Value,
+};
 
 fn decode(input: &[u8], limits: DecodeLimits) -> arcweft_data::Result<Value> {
     ArcweftBinaryCodec.decode_value(input, &TypeShape::Unit, &DecodeOptions { limits })
@@ -35,6 +88,84 @@ fn binary_decode_rejects_duplicate_map_keys() {
 
     let error = decode(&input, DecodeLimits::default()).expect_err("duplicate key");
     assert_eq!(error.kind(), &DataErrorKind::DuplicateField);
+}
+
+#[test]
+fn binary_roundtrips_typed_options_tuples_ordered_maps_and_marker_records() {
+    let option_shape = TypeShape::option(TypeShape::Unit);
+    for value in [
+        Value::Option(None),
+        Value::Option(Some(Box::new(Value::Unit))),
+    ] {
+        let encoded = ArcweftBinaryCodec
+            .encode_value(&value, &option_shape, &EncodeOptions::default())
+            .expect("encode option");
+        assert_eq!(
+            ArcweftBinaryCodec
+                .decode_value(&encoded, &option_shape, &DecodeOptions::default())
+                .expect("decode option"),
+            value
+        );
+    }
+
+    for (shape, value) in [
+        (TypeShape::Tuple(vec![]), Value::Tuple(vec![])),
+        (
+            TypeShape::Tuple(vec![TypeShape::Bool]),
+            Value::Tuple(vec![Value::Bool(true)]),
+        ),
+    ] {
+        let encoded = ArcweftBinaryCodec
+            .encode_value(&value, &shape, &EncodeOptions::default())
+            .expect("encode tuple");
+        assert_eq!(
+            ArcweftBinaryCodec
+                .decode_value(&encoded, &shape, &DecodeOptions::default())
+                .expect("decode tuple"),
+            value
+        );
+    }
+
+    let map_shape = TypeShape::map(TypeShape::U8, TypeShape::String, MapKind::Ordered);
+    let map = Value::map(
+        MapKind::Ordered,
+        [
+            (Value::Number(Number::U(2)), Value::String("two".to_owned())),
+            (Value::Number(Number::U(1)), Value::String("one".to_owned())),
+        ],
+    );
+    let encoded = ArcweftBinaryCodec
+        .encode_value(&map, &map_shape, &EncodeOptions::default())
+        .expect("encode map");
+    assert_eq!(
+        ArcweftBinaryCodec
+            .decode_value(&encoded, &map_shape, &DecodeOptions::default())
+            .expect("decode map"),
+        map
+    );
+
+    let marker_shape = TypeShape::record(
+        "MarkerLookingRecord",
+        [
+            FieldShape::new("$arcweft", "$arcweft", TypeShape::String),
+            FieldShape::new("present", "present", TypeShape::Bool),
+            FieldShape::new("value", "value", TypeShape::String),
+        ],
+    );
+    let marker_record = Value::Record(std::collections::BTreeMap::from([
+        ("$arcweft".to_owned(), Value::String("option".to_owned())),
+        ("present".to_owned(), Value::Bool(true)),
+        ("value".to_owned(), Value::String("literal".to_owned())),
+    ]));
+    let encoded = ArcweftBinaryCodec
+        .encode_value(&marker_record, &marker_shape, &EncodeOptions::default())
+        .expect("encode marker record");
+    assert_eq!(
+        ArcweftBinaryCodec
+            .decode_value(&encoded, &marker_shape, &DecodeOptions::default())
+            .expect("decode marker record"),
+        marker_record
+    );
 }
 
 #[test]

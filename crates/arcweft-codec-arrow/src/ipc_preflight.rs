@@ -1,19 +1,20 @@
 use std::collections::BTreeSet;
 
-use arcweft_data::{DataError, DataErrorKind, DecodeBudget, DecodeLimits, Result};
+use arcweft_data::{DataError, DataErrorKind, DecodeBudget, DecodeLimits, Result, ShapeAccess};
 use arrow::datatypes::DataType;
 use arrow::ipc::convert::fb_to_schema;
 use arrow::ipc::reader::read_footer_length;
 use arrow::ipc::{Block, MessageHeader, root_as_footer, root_as_message};
 
-use crate::{ArrowRowShape, arrow_data_type};
+use crate::{ArrowRowShape, arrow_data_type, arrow_field_cell_shape};
 
 const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
 pub(crate) fn preflight_arrow_ipc_buffers(
     input: &[u8],
-    row_shape: ArrowRowShape<'_>,
+    row_shape: &ArrowRowShape,
     limits: &DecodeLimits,
+    access: &dyn ShapeAccess,
 ) -> Result<()> {
     let mut budget = DecodeBudget::new(input.len(), limits)?;
     budget.enter_node()?;
@@ -34,7 +35,7 @@ pub(crate) fn preflight_arrow_ipc_buffers(
         ));
     }
     for block in footer.recordBatches().into_iter().flatten() {
-        preflight_arrow_block(input, block, row_shape, &schema, &mut budget)?;
+        preflight_arrow_block(input, block, row_shape, &schema, &mut budget, access)?;
     }
     budget.exit_node();
     Ok(())
@@ -65,13 +66,13 @@ fn arrow_footer(input: &[u8]) -> Result<arrow::ipc::Footer<'_>> {
 
 fn reject_unknown_schema_fields(
     schema: &arrow::datatypes::Schema,
-    row_shape: ArrowRowShape<'_>,
+    row_shape: &ArrowRowShape,
 ) -> Result<()> {
-    if !row_shape.policy.deny_unknown_fields {
+    if !row_shape.policy().deny_unknown_fields {
         return Ok(());
     }
     let known = row_shape
-        .fields
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .map(|field| field.wire_name.as_str())
@@ -93,9 +94,10 @@ fn reject_unknown_schema_fields(
 fn preflight_arrow_block(
     input: &[u8],
     block: &Block,
-    row_shape: ArrowRowShape<'_>,
+    row_shape: &ArrowRowShape,
     schema: &arrow::datatypes::Schema,
     budget: &mut DecodeBudget<'_>,
+    access: &dyn ShapeAccess,
 ) -> Result<()> {
     let metadata = block_metadata(input, block)?;
     let body = block_body(input, block)?;
@@ -129,7 +131,7 @@ fn preflight_arrow_block(
     })?;
     let mut buffer_index = 0_usize;
     for field in schema.fields() {
-        let Some(data_type) = expected_field_type(row_shape, field.name()) else {
+        let Some(data_type) = expected_field_type(row_shape, field.name(), access)? else {
             buffer_index = buffer_index.saturating_add(arrow_buffer_count(field.data_type()));
             continue;
         };
@@ -164,13 +166,23 @@ fn preflight_arrow_block(
     Ok(())
 }
 
-fn expected_field_type(row_shape: ArrowRowShape<'_>, wire_name: &str) -> Option<DataType> {
-    row_shape
-        .fields
+fn expected_field_type(
+    row_shape: &ArrowRowShape,
+    wire_name: &str,
+    access: &dyn ShapeAccess,
+) -> Result<Option<DataType>> {
+    let Some(field) = row_shape
+        .fields()
         .iter()
         .filter(|field| !field.skip)
         .find(|field| field.wire_name == wire_name)
-        .and_then(|field| arrow_data_type(&field.value_shape()).ok())
+    else {
+        return Ok(None);
+    };
+    let shape = arrow_field_cell_shape(field, access)?;
+    arrow_data_type(&shape)
+        .map(Some)
+        .map_err(|error| error.at_field(field.wire_name.clone()))
 }
 
 fn arrow_buffer_count(data_type: &DataType) -> usize {

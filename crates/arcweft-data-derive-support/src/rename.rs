@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Default)]
-pub(crate) enum RenameRuleAttr {
+pub enum RenameRuleAttr {
     #[default]
     None,
     SnakeCase,
@@ -16,7 +16,7 @@ impl RenameRuleAttr {
     const PASCAL_CASE: &'static str = "PascalCase";
     const PASCAL_CASE_ALIAS: &'static str = "pascal_case";
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             Self::SNAKE_CASE => Some(Self::SnakeCase),
             Self::KEBAB_CASE => Some(Self::KebabCase),
@@ -26,7 +26,7 @@ impl RenameRuleAttr {
         }
     }
 
-    pub(crate) fn apply(self, input: &str) -> String {
+    pub fn apply(self, input: &str) -> String {
         match self {
             Self::None => input.to_owned(),
             Self::SnakeCase => to_words(input).join("_"),

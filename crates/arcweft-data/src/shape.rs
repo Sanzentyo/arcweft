@@ -1,3 +1,10 @@
+use std::borrow::Cow;
+
+use crate::{
+    Result,
+    shape_graph::{ShapeAccess, ShapeRef},
+};
+
 /// Byte representation policy. This is the Arcweft-native counterpart of
 /// common `serde_bytes` use-cases, without depending on serde in the builtin layer.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -120,6 +127,18 @@ impl RenameRule {
     }
 }
 
+/// Ordering contract for a map's entries.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum MapKind {
+    /// Entry order is meaningful and must be preserved as supplied.
+    #[default]
+    Ordered,
+    /// Entries are supplied in a key order selected by the map owner.
+    Sorted,
+    /// Entries follow the source key type's `Ord` order, as in a `BTreeMap`.
+    BTree,
+}
+
 fn push_pascal(out: &mut String, word: &str) {
     let mut chars = word.chars();
     if let Some(first) = chars.next() {
@@ -206,6 +225,19 @@ impl FieldShape {
             _ => self.shape.clone(),
         }
     }
+
+    /// Resolves this field's root shape through its graph and applies its bytes
+    /// annotation after resolution, while leaving child references intact.
+    pub fn resolve_value_shape<'a, A: ShapeAccess + ?Sized>(
+        &'a self,
+        access: &'a A,
+    ) -> Result<Cow<'a, TypeShape>> {
+        let shape = ShapeRef::Inline(&self.shape).resolve(access)?;
+        match (self.bytes_format, shape.as_ref()) {
+            (Some(format), TypeShape::Bytes { .. }) => Ok(Cow::Owned(TypeShape::Bytes { format })),
+            _ => Ok(shape),
+        }
+    }
 }
 
 /// Reflected enum variant metadata.
@@ -267,9 +299,11 @@ pub enum TypeShape {
     },
     Option(Box<TypeShape>),
     Seq(Box<TypeShape>),
+    Tuple(Vec<TypeShape>),
     Map {
         key: Box<TypeShape>,
         value: Box<TypeShape>,
+        kind: MapKind,
     },
     Record {
         name: String,
@@ -282,7 +316,8 @@ pub enum TypeShape {
         tag: EnumTagStyle,
         repr: Option<EnumRepr>,
     },
-    Named(String),
+    /// Reference to a node in a [`ShapeGraph`](crate::ShapeGraph).
+    Ref(crate::ShapeId),
 }
 
 impl TypeShape {
@@ -310,10 +345,11 @@ impl TypeShape {
             Self::Bytes { .. } => "bytes",
             Self::Option(_) => "option",
             Self::Seq(_) => "sequence",
+            Self::Tuple(_) => "tuple",
             Self::Map { .. } => "map",
             Self::Record { .. } => "record",
             Self::Enum { .. } => "enum",
-            Self::Named(_) => "named shape",
+            Self::Ref(_) => "shape reference",
         }
     }
 
@@ -350,10 +386,16 @@ impl TypeShape {
     }
 
     #[must_use]
-    pub fn map(key: Self, value: Self) -> Self {
+    pub fn tuple(items: impl IntoIterator<Item = Self>) -> Self {
+        Self::Tuple(items.into_iter().collect())
+    }
+
+    #[must_use]
+    pub fn map(key: Self, value: Self, kind: MapKind) -> Self {
         Self::Map {
             key: Box::new(key),
             value: Box::new(value),
+            kind,
         }
     }
 
