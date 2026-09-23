@@ -1777,7 +1777,13 @@ pub(super) fn validate_patterns(
                     }
                     Err(TypeCompatibilityFailure::Control(error)) => match error {},
                 };
-                types.get(annotation) == Some(checked.annotation())
+                types
+                    .get(annotation)
+                    .and_then(|annotation| {
+                        super::CheckedTypedBinding::try_new(annotation.clone(), fact.ty())
+                    })
+                    .as_ref()
+                    == Some(checked)
                     && checked.has_valid_semantic_identity()
                     && compatible
             }

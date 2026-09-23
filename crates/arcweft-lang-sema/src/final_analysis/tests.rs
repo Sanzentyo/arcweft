@@ -5775,11 +5775,15 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                     assert_eq!(actual_binder, expected_binder);
                     assert_eq!(actual_params, expected_params);
                     assert_eq!(actual_return, expected_return);
-                    assert_eq!(
-                        actual_effects.constant_effects().expect("known effect row"),
-                        expected_effects
+                    assert!(
+                        !expected_effects.is_known(),
+                        "the fixture deliberately omits its input row"
+                    );
+                    assert!(
+                        actual_effects
                             .constant_effects()
-                            .expect("known effect row")
+                            .expect("admitted effect parameter")
+                            .is_empty()
                     );
                     assert!(actual_effects.is_known() && !actual_effects.is_closed());
                 }

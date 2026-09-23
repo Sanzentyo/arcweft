@@ -89,6 +89,136 @@ impl TypeCompatibilityControl for NoopTypeCompatibilityControl {
 }
 
 impl TypeKind {
+    /// Completes omitted effect annotations from an already checked initializer.
+    /// Authored type structure and explicit effect bounds remain the binding's
+    /// interface; only unknown rows at corresponding structural positions are
+    /// filled by the initializer's solved row. No new generic binder is issued.
+    pub(crate) fn binding_type_with_inferred_effects(&self, actual: &Self) -> Option<Self> {
+        use super::constraints::TypeConstraintShape;
+
+        enum Task<'a> {
+            Enter(&'a TypeKind, &'a TypeKind),
+            Finish(TypeConstraintShape<'a>, usize, Option<EffectRow>),
+        }
+
+        fn has_omitted_effects(ty: &TypeKind) -> bool {
+            let mut pending = vec![ty];
+            while let Some(ty) = pending.pop() {
+                let shape = ty.constraint_shape();
+                if matches!(shape, TypeConstraintShape::Function { effects, .. } if !effects.is_known())
+                {
+                    return true;
+                }
+                pending.extend(shape.children());
+            }
+            false
+        }
+
+        fn corresponding_choice_arms(left: &TypeKind, right: &TypeKind) -> bool {
+            let mut pending = vec![(left, right)];
+            while let Some((left, right)) = pending.pop() {
+                let left = left.constraint_shape();
+                let right = right.constraint_shape();
+                if !left.same_header(right) {
+                    return false;
+                }
+                pending.extend(left.children().zip(right.children()));
+            }
+            true
+        }
+
+        if !self.accepts(actual) {
+            return None;
+        }
+        if !has_omitted_effects(self) {
+            return Some(self.clone());
+        }
+        let mut pending = vec![Task::Enter(self, actual)];
+        let mut completed = Vec::new();
+        while let Some(task) = pending.pop() {
+            match task {
+                Task::Enter(declared, actual) => {
+                    let shape = declared.constraint_shape();
+                    let actual_shape = actual.constraint_shape();
+                    if !shape.same_header(actual_shape) {
+                        if has_omitted_effects(declared) {
+                            return None;
+                        }
+                        completed.push(declared.clone());
+                        continue;
+                    }
+                    if matches!(
+                        shape,
+                        TypeConstraintShape::Unresolved
+                            | TypeConstraintShape::Leaf(_)
+                            | TypeConstraintShape::Never
+                            | TypeConstraintShape::Generic(_)
+                    ) {
+                        completed.push(declared.clone());
+                        continue;
+                    }
+                    let effects = match (shape, actual_shape) {
+                        (
+                            TypeConstraintShape::Function { effects, .. },
+                            TypeConstraintShape::Function {
+                                effects: actual, ..
+                            },
+                        ) if !effects.is_known() => {
+                            if !actual.is_known() {
+                                return None;
+                            }
+                            Some(actual.clone())
+                        }
+                        _ => None,
+                    };
+                    let children = match (shape, actual_shape) {
+                        (
+                            TypeConstraintShape::Choice(declared),
+                            TypeConstraintShape::Choice(actual),
+                        ) => {
+                            let mut children = Vec::with_capacity(declared.len());
+                            let mut admitted = std::collections::BTreeSet::new();
+                            for declared in declared {
+                                let mut matching =
+                                    actual.iter().enumerate().filter(|(index, actual)| {
+                                        !admitted.contains(index)
+                                            && corresponding_choice_arms(declared, actual)
+                                    });
+                                let (index, actual) = matching.next()?;
+                                if matching.next().is_some() {
+                                    return None;
+                                }
+                                admitted.insert(index);
+                                children.push((declared, actual));
+                            }
+                            children
+                        }
+                        _ => shape.children().zip(actual_shape.children()).collect(),
+                    };
+                    pending.push(Task::Finish(shape, children.len(), effects));
+                    pending.extend(
+                        children
+                            .into_iter()
+                            .rev()
+                            .map(|(declared, actual)| Task::Enter(declared, actual)),
+                    );
+                }
+                Task::Finish(shape, count, effects) => {
+                    let children = completed.split_off(completed.len().checked_sub(count)?);
+                    let mut ty = shape.rebuild(children).ok()?;
+                    if let Some(inferred) = effects {
+                        let TypeKind::Function { effects, .. } = &mut ty else {
+                            return None;
+                        };
+                        *effects = inferred;
+                    }
+                    completed.push(ty);
+                }
+            }
+        }
+        completed.pop()
+    }
+
     /// Returns whether an earlier authoritative resolution failure prevents a
     /// second compatibility diagnostic from adding useful information.
     pub(crate) fn is_unresolved_for_compatibility(&self) -> bool {

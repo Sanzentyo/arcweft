@@ -59,6 +59,52 @@ fn direct_closure_call_preserves_its_expression_role() {
 }
 
 #[test]
+fn annotated_local_callbacks_preserve_inferred_rows_and_explicit_bounds() {
+    let fixture = fixture(
+        r#"
+fn read(value: i64) -> i64 effects { fs.read } { value }
+flow main() -> i64 {
+    let inferred: i64 -> i64 = |value: i64| read(value)
+    let bounded: i64 -> i64 effects { fs.write } = |value: i64| value
+    let pair: (i64 -> i64, i64) = (|value: i64| read(value), 7i64)
+    let alias = inferred
+    return alias(42i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("binding annotations complete their omitted rows");
+    let project = fixture.project.analysis_view().expect("executable fixture");
+    let (_, module) = project.modules().next().expect("module");
+    for (name, expected) in [
+        ("inferred", "fs.read"),
+        ("bounded", "fs.write"),
+        ("alias", "fs.read"),
+        ("pair", "fs.read"),
+    ] {
+        let local = module
+            .locals()
+            .find_map(|(owner, local)| (local.name().as_str() == name).then_some(owner))
+            .expect("binding");
+        let mut ty = analysis.local(local).expect("checked binding").ty();
+        if let TypeKind::Tuple(items) = ty {
+            ty = &items[0];
+        }
+        let TypeKind::Function { effects, .. } = ty else {
+            panic!("callback binding")
+        };
+        assert_eq!(
+            effects
+                .closed_value()
+                .expect("solved binding row")
+                .to_labels(),
+            [expected],
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn surplus_function_arguments_leave_no_selected_application() {
     let fixture = fixture(
         r#"

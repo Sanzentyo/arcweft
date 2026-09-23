@@ -228,34 +228,26 @@ impl Analyzer<'_, '_, '_> {
             &mut patterns,
         )?;
         for (owner, value) in locals {
-            if self
-                .facts
-                .locals()
-                .get(&owner)
-                .is_some_and(|existing| existing != &value)
-            {
+            if self.facts.locals().get(&owner).is_some_and(|existing| {
+                existing != &value
+                    && existing.binding_type_with_inferred_effects(&value).as_ref() != Some(&value)
+            }) {
                 return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner });
             }
-            if !self.facts.locals().contains_key(&owner) {
-                self.facts
-                    .set_local_type(owner, value)
-                    .map_err(FinalSemanticAnalysisError::from)?;
-            }
+            self.facts
+                .set_local_type(owner, value)
+                .map_err(FinalSemanticAnalysisError::from)?;
         }
         for (owner, value) in patterns {
-            if self
-                .facts
-                .patterns()
-                .get(&owner)
-                .is_some_and(|existing| existing != &value)
-            {
+            if self.facts.patterns().get(&owner).is_some_and(|existing| {
+                existing != &value
+                    && existing.binding_type_with_inferred_effects(&value).as_ref() != Some(&value)
+            }) {
                 return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
             }
-            if !self.facts.patterns().contains_key(&owner) {
-                self.facts
-                    .set_pattern_type(owner, value)
-                    .map_err(FinalSemanticAnalysisError::from)?;
-            }
+            self.facts
+                .set_pattern_type(owner, value)
+                .map_err(FinalSemanticAnalysisError::from)?;
         }
         Ok(())
     }
@@ -860,7 +852,13 @@ impl PatternSeeder<'_, '_> {
         if !compatible {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
         }
-        seed_pattern_binding(binding, annotation_ty, self.locals)
+        let completed = if annotation_ty.accepts(ty) {
+            annotation_ty.binding_type_with_inferred_effects(ty)
+        } else {
+            annotation_ty.binding_type_with_inferred_effects(annotation_ty)
+        }
+        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
+        seed_pattern_binding(binding, &completed, self.locals)
     }
 }
 

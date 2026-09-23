@@ -15,6 +15,11 @@ impl CheckedTypedBinding {
         annotation: TypeKind,
         scrutinee: &TypeKind,
     ) -> Option<Self> {
+        let annotation = if annotation.accepts(scrutinee) {
+            annotation.binding_type_with_inferred_effects(scrutinee)?
+        } else {
+            annotation.binding_type_with_inferred_effects(&annotation)?
+        };
         let annotation_digest = annotation.semantic_identity_digest().ok()?;
         let choice_alternatives = match scrutinee {
             TypeKind::Choice(alternatives) => alternatives

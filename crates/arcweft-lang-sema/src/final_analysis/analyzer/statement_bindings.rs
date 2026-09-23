@@ -146,8 +146,9 @@ impl Analyzer<'_, '_, '_> {
             .value_type()
             .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?;
         let binding = match expected {
-            Some(expected) if expected.accepts(actual_type) => expected,
-            Some(_) => return Err(AnalyzerExpressionError::rejected(initializer)),
+            Some(expected) => expected
+                .binding_type_with_inferred_effects(actual_type)
+                .ok_or_else(|| AnalyzerExpressionError::rejected(initializer))?,
             None => dialogue_application_binding_type(module, initializer, actual_type)
                 .unwrap_or_else(|| actual_type.clone()),
         };
