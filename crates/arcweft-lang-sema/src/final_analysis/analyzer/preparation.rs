@@ -9,7 +9,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CallableName, CallablePath, associated_scope_for},
-    nominal::AssociatedTypeScope,
+    nominal::{AssociatedTypeScope, NominalTypeDiagnosticKind, TypeResolutionReport},
     types::EntityKind,
 };
 
@@ -74,6 +74,27 @@ fn type_tree_contains(module: &HirModule, root: TypeId, target: TypeId) -> bool 
 pub(super) enum AssociatedReceiverTypeResolution {
     Complete(TypeKind),
     WrongArity(TypeKind),
+    UnresolvedNominal,
+}
+
+fn is_unknown_nominal_receiver(
+    module: &HirModule,
+    owner: TypeId,
+    report: &TypeResolutionReport,
+) -> bool {
+    let [diagnostic] = report.diagnostics() else {
+        return false;
+    };
+    let Ok(node) = module.resolve_type(owner) else {
+        return false;
+    };
+    matches!(
+        (node.kind(), diagnostic.kind()),
+        (
+            arcweft_lang_hir::type_ref::HirTypeKind::Path(path),
+            NominalTypeDiagnosticKind::Unknown { path: unknown }
+        ) if path == unknown
+    )
 }
 
 impl Analyzer<'_, '_, '_> {
@@ -147,7 +168,8 @@ impl Analyzer<'_, '_, '_> {
         self.resolve_type_with_associated_recovery(owner, resolving_impl_self, false)
             .and_then(|resolved| match resolved {
                 AssociatedReceiverTypeResolution::Complete(ty) => Ok(ty),
-                AssociatedReceiverTypeResolution::WrongArity(_) => {
+                AssociatedReceiverTypeResolution::WrongArity(_)
+                | AssociatedReceiverTypeResolution::UnresolvedNominal => {
                     Err(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
                 }
             })
@@ -164,14 +186,20 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         owner: TypeId,
         resolving_impl_self: bool,
-        accept_wrong_arity: bool,
+        retain_receiver_candidate_outcomes: bool,
     ) -> Result<AssociatedReceiverTypeResolution, FinalSemanticAnalysisError> {
         if let Some(ty) = self.types.get(&owner) {
+            if retain_receiver_candidate_outcomes
+                && let Some(report) = self.type_reports.get(&owner)
+                && is_unknown_nominal_receiver(self.module(owner.module())?, owner, report)
+            {
+                return Ok(AssociatedReceiverTypeResolution::UnresolvedNominal);
+            }
             let wrong_arity = self
                 .type_reports
                 .get(&owner)
                 .is_some_and(|report| type_report_root_has_wrong_arity(report, owner));
-            if wrong_arity && !accept_wrong_arity {
+            if wrong_arity && !retain_receiver_candidate_outcomes {
                 return Err(FinalSemanticAnalysisError::TypeResolutionFailed { owner });
             }
             if ty.contains_nominal_poison() && !wrong_arity {
@@ -222,7 +250,12 @@ impl Analyzer<'_, '_, '_> {
         .map_err(|_| FinalSemanticAnalysisError::TypeResolutionInput { owner })?;
         let report = resolve_type_ref(&input)
             .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
-        let wrong_arity = accept_wrong_arity && type_report_root_has_wrong_arity(&report, owner);
+        if retain_receiver_candidate_outcomes && is_unknown_nominal_receiver(module, owner, &report)
+        {
+            return Ok(AssociatedReceiverTypeResolution::UnresolvedNominal);
+        }
+        let wrong_arity =
+            retain_receiver_candidate_outcomes && type_report_root_has_wrong_arity(&report, owner);
         let ty = match report.outcome() {
             ResolvedTypeRefOutcome::Complete(product) => product.recovered().clone(),
             ResolvedTypeRefOutcome::Poisoned(poisoned) if wrong_arity => {

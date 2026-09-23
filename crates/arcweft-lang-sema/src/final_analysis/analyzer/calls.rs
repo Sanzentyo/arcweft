@@ -4218,6 +4218,8 @@ impl Analyzer<'_, '_, '_> {
                                             .map_err(AnalyzerExpressionError::fatal)?
                                         {
                                             AssociatedReceiverTypeResolution::Complete(_) => {}
+                                            AssociatedReceiverTypeResolution::UnresolvedNominal => {
+                                            }
                                             AssociatedReceiverTypeResolution::WrongArity(
                                                 result,
                                             ) => {
@@ -4252,6 +4254,11 @@ impl Analyzer<'_, '_, '_> {
                     .map_err(AnalyzerExpressionError::fatal)?
                 {
                     AssociatedReceiverTypeResolution::Complete(_) => {}
+                    AssociatedReceiverTypeResolution::UnresolvedNominal => {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::TypeResolutionFailed { owner: receiver },
+                        ));
+                    }
                     AssociatedReceiverTypeResolution::WrongArity(result) => {
                         return Ok(StagedCallCalleeChildren {
                             recovery: Some(AssociatedReceiverRecovery {

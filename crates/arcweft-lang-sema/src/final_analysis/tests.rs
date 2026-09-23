@@ -8060,6 +8060,35 @@ fn production_analyzer_routes_string_preserving_value_methods_through_capacity_f
             .selected_application()
             .is_some_and(|application| application.result().value_type() == Some(&TypeKind::String))
     }));
+    let module = fixture
+        .project
+        .analysis_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let mut dot_fallback_count = 0;
+    for (owner, _) in report.calls() {
+        let expression = module.resolve_expr(owner).expect("value-method call");
+        let HirExprKind::Call(call) = expression.kind() else {
+            panic!("value-method owner must be a HIR Call")
+        };
+        let HirCallCallee::UnresolvedDot {
+            nominal_receiver, ..
+        } = call.callee()
+        else {
+            continue;
+        };
+        dot_fallback_count += 1;
+        let receiver = nominal_receiver
+            .type_id()
+            .expect("dot fallback retains its nominal candidate owner");
+        assert_eq!(report.ty(receiver), None);
+        assert_eq!(report.type_resolution(receiver), None);
+    }
+    assert!(
+        dot_fallback_count > 0,
+        "fixture contains a dot-fallback call"
+    );
 }
 
 #[test]
@@ -8191,8 +8220,25 @@ fn unknown_associated_receiver_does_not_enter_candidate_neutral_arity_recovery()
     let fixture = fixture("fn caller() { Unknown.with_capacity(1, 2); }\n", None);
     assert!(matches!(
         analyze(&fixture),
-        Err(FinalSemanticAnalysisError::TypeResolutionFailed { .. })
+        Err(FinalSemanticAnalysisError::CallResolutionFailed { .. })
     ));
+}
+
+#[test]
+fn unknown_explicit_path_does_not_enter_dot_fallback() {
+    let fixture = fixture("fn caller() { Unknown::with_capacity(1, 2); }\n", None);
+    let result = analyze(&fixture);
+    assert!(
+        matches!(
+            &result,
+            Err(FinalSemanticAnalysisError::UnknownCallTarget {
+                kind: UnknownCallKind::Free,
+                name,
+                ..
+            }) if name == "Unknown.with_capacity"
+        ),
+        "explicit path is not a dot-fallback nominal probe: {result:?}"
+    );
 }
 
 #[test]
