@@ -16,7 +16,7 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     callable::{CheckedCallableSourceCategory, CheckedCallableSourceKey},
-    effects::EffectSet,
+    effect_row::EffectRow,
     final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis},
     types::TypeKind,
 };
@@ -300,8 +300,7 @@ fn closure_effect_row_hover(
     let effects = analysis
         .checked_callables()
         .closure_at_source(&target.source)
-        .ok()?
-        .concrete();
+        .ok()?;
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(checked_effect_hover_text(
             "closure expression",
@@ -378,20 +377,22 @@ fn callable_effect_row_hover(
     let (module, analysis) = accepted_module_and_analysis(profile, document)?;
     let callable = callable_at_word(module.as_ref(), word, word_range)?;
     let effects = match &callable.owner {
-        CallableEffectOwner::Flow(owner) => analysis.item(*owner)?.effects(),
+        CallableEffectOwner::Flow(owner) => {
+            EffectRow::closed(analysis.item(*owner)?.effects().clone())
+        }
         CallableEffectOwner::CheckedCallable(source) => {
             let catalog = analysis.checked_callables();
             catalog
                 .callable_at_source(source)
                 .ok()?
                 .exposed_row()
-                .concrete()
+                .clone()
         }
     };
     Some(Hover {
         contents: HoverContents::Scalar(MarkedString::String(checked_effect_hover_text(
             callable.label.as_str(),
-            effects,
+            &effects,
         ))),
         range: Some(
             document
@@ -487,13 +488,8 @@ fn source_range_for_query(module: &HirModule, query: HirSourceQuery) -> Option<T
     Some(TextRange::new(span.range().start(), span.range().end()))
 }
 
-fn checked_effect_hover_text(label: &str, effects: &EffectSet) -> String {
-    let labels = effects.to_labels();
-    let effects = if labels.is_empty() {
-        "{ }".to_owned()
-    } else {
-        format!("{{ {} }}", labels.join(", "))
-    };
+fn checked_effect_hover_text(label: &str, effects: &EffectRow) -> String {
+    let effects = effects.display_label();
     format!("checked effects for `{label}`\n\neffects: {effects}")
 }
 
@@ -780,7 +776,10 @@ effects { }
 
     #[test]
     fn checked_effect_hover_text_renders_exact_final_effects() {
-        let effects = EffectSet::from_labels(["fs.read"]).expect("valid checked effects");
+        let effects = EffectRow::closed(
+            arcweft_lang_sema::effects::EffectSet::from_labels(["fs.read"])
+                .expect("valid checked effects"),
+        );
         let text = checked_effect_hover_text("callback", &effects);
         assert!(text.contains("checked effects for `callback`"));
         assert!(text.contains("effects: { fs.read }"));

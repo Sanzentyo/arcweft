@@ -890,6 +890,7 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
         AdapterTypeKind::F64 => "f64".to_owned(),
         AdapterTypeKind::String => "String".to_owned(),
         AdapterTypeKind::Char => "Char".to_owned(),
+        AdapterTypeKind::Bytes => "Bytes".to_owned(),
         AdapterTypeKind::Unit => "()".to_owned(),
         AdapterTypeKind::Vec { item } => format!("Vec<{}>", type_kind_label(item)),
         AdapterTypeKind::Seq { item } => format!("Seq<{}>", type_kind_label(item)),
@@ -949,11 +950,10 @@ mod tests {
         AdapterToolingDoc,
     };
     use arcweft_rust_abi::{
-        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest,
-        ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
-        ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape, ArcweftRustTypeDecl,
-        ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef,
-        ArcweftRustVariant, ArcweftRustVariantPayload,
+        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+        ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+        ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
     };
     use arcweft_verify::{
         SourceSpan as VerifySourceSpan, ToolActionApplicability, ToolActionCommand,
@@ -1142,15 +1142,16 @@ mod tests {
             metadata_hash: None,
         })
         .with_type(ArcweftRustTypeDecl {
+            data_policy: None,
             path: rust_type_path(["Rank"]),
             rust_path: "truck_game::Rank".to_owned(),
-            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: Vec::new(),
             },
         })
         .with_function(ArcweftRustFunction {
+            role: Default::default(),
             name: "score_to_rank".to_owned(),
             rust_path: "truck_game::score_to_rank".to_owned(),
             params: vec![ArcweftRustParam {
@@ -1236,24 +1237,36 @@ mod tests {
 
     fn player_stats_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
+            data_policy: None,
             path: rust_type_path(["PlayerStats"]),
             rust_path: "quest_logic::PlayerStats".to_owned(),
-            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Struct {
                 shape: ArcweftRustStructShape::Record {
                     fields: vec![
                         ArcweftRustField {
+                            wire_name: None,
+                            bytes_format: None,
+                            default: None,
+                            skip: false,
                             name: "score".to_owned(),
                             ty: ArcweftRustTypeRef::I32,
                         },
                         ArcweftRustField {
+                            wire_name: None,
+                            bytes_format: None,
+                            default: None,
+                            skip: false,
                             name: "tags".to_owned(),
                             ty: ArcweftRustTypeRef::Vec {
                                 item: Box::new(ArcweftRustTypeRef::String),
                             },
                         },
                         ArcweftRustField {
+                            wire_name: None,
+                            bytes_format: None,
+                            default: None,
+                            skip: false,
                             name: "rank".to_owned(),
                             ty: ArcweftRustTypeRef::Option {
                                 item: Box::new(rust_nominal("quest_logic", ["Rank"])),
@@ -1267,20 +1280,28 @@ mod tests {
 
     fn rank_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
+            data_policy: None,
             path: rust_type_path(["Rank"]),
             rust_path: "quest_logic::Rank".to_owned(),
-            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: vec![
                     ArcweftRustVariant {
+                        wire_name: None,
+                        discriminant: None,
                         name: "Bronze".to_owned(),
                         payload: ArcweftRustVariantPayload::Unit,
                     },
                     ArcweftRustVariant {
+                        wire_name: None,
+                        discriminant: None,
                         name: "Custom".to_owned(),
                         payload: ArcweftRustVariantPayload::Record {
                             fields: vec![ArcweftRustField {
+                                wire_name: None,
+                                bytes_format: None,
+                                default: None,
+                                skip: false,
                                 name: "label".to_owned(),
                                 ty: ArcweftRustTypeRef::String,
                             }],
@@ -1293,9 +1314,9 @@ mod tests {
 
     fn session_id_type() -> ArcweftRustTypeDecl {
         ArcweftRustTypeDecl {
+            data_policy: None,
             path: rust_type_path(["SessionId"]),
             rust_path: "quest_logic::SessionId".to_owned(),
-            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Newtype {
                 inner: ArcweftRustTypeRef::U64,
@@ -1305,6 +1326,7 @@ mod tests {
 
     fn evaluate_function() -> ArcweftRustFunction {
         ArcweftRustFunction {
+            role: Default::default(),
             name: "quest_evaluate".to_owned(),
             rust_path: "quest_logic::evaluate".to_owned(),
             params: vec![
@@ -1326,11 +1348,6 @@ mod tests {
             purity: ArcweftRustPurity::Pure,
             effects: Vec::new(),
         }
-    }
-
-    fn fixture_rust_producer() -> ArcweftRustOpaqueTypeProducerId {
-        ArcweftRustOpaqueTypeProducerId::try_new("fixture.project.external-types")
-            .expect("fixture producer is valid")
     }
 
     #[test]

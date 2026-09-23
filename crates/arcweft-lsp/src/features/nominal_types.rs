@@ -921,11 +921,10 @@ mod tests {
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
     use arcweft_rust_abi::{
-        ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
-        ArcweftRustPackageId, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeParameter,
-        ArcweftRustTypeParameterIndex, ArcweftRustTypeParameterName, ArcweftRustTypePath,
-        ArcweftRustTypePathSegment, ArcweftRustTypeRef, ArcweftRustVariant,
-        ArcweftRustVariantPayload,
+        ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
+        ArcweftRustTypeKind, ArcweftRustTypeParameter, ArcweftRustTypeParameterIndex,
+        ArcweftRustTypeParameterName, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
     };
     use lsp_types::{
         DidOpenTextDocumentParams, GotoDefinitionResponse, HoverContents, MarkedString,
@@ -1646,27 +1645,23 @@ source = "src/main.arcw"
             metadata_hash: None,
         })
         .with_type(ArcweftRustTypeDecl {
+            data_policy: None,
             path: type_path("Rank"),
             rust_path: "tooling_types::Rank".to_owned(),
-            opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(
-                "fixture.project.external-types",
-            )
-            .expect("fixture producer is valid"),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: vec![ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: "First".to_owned(),
                     payload: ArcweftRustVariantPayload::Unit,
                 }],
             },
         })
         .with_type(ArcweftRustTypeDecl {
+            data_policy: None,
             path: type_path("Envelope"),
             rust_path: "tooling_types::Envelope".to_owned(),
-            opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(
-                "fixture.project.external-types",
-            )
-            .expect("fixture producer is valid"),
             parameters: vec![ArcweftRustTypeParameter {
                 index: parameter_index,
                 name: ArcweftRustTypeParameterName::try_new("T").expect("generic parameter name"),
