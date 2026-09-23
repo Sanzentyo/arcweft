@@ -13,6 +13,7 @@ fn manifest(package: &str, names: &[&str]) -> ArcweftRustManifest {
         }),
         |manifest, (index, name)| {
             manifest.with_function(ArcweftRustFunction {
+                role: Default::default(),
                 name: (*name).to_owned(),
                 rust_path: format!("{package}::function_{index}"),
                 params: vec![],

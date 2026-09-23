@@ -1,10 +1,9 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
 use arcweft_rust_abi::{
-    ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest,
-    ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustParam,
-    ArcweftRustPurity, ArcweftRustStructShape, ArcweftRustTypeDecl, ArcweftRustTypeKind,
-    ArcweftRustTypeRef, ArcweftRustVariantPayload,
+    ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+    ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef, ArcweftRustVariantPayload,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -76,12 +75,19 @@ pub enum AdapterTypeKind {
     String,
     /// Unicode scalar value.
     Char,
+    Bytes,
     /// Owned vector.
-    Vec { item: Box<AdapterTypeKind> },
+    Vec {
+        item: Box<AdapterTypeKind>,
+    },
     /// Deterministic sequence.
-    Seq { item: Box<AdapterTypeKind> },
+    Seq {
+        item: Box<AdapterTypeKind>,
+    },
     /// Optional value.
-    Option { item: Box<AdapterTypeKind> },
+    Option {
+        item: Box<AdapterTypeKind>,
+    },
     /// Fallible value.
     Result {
         /// Success payload.
@@ -90,11 +96,17 @@ pub enum AdapterTypeKind {
         error: Box<AdapterTypeKind>,
     },
     /// Tuple value.
-    Tuple { items: Box<[AdapterTypeKind]> },
+    Tuple {
+        items: Box<[AdapterTypeKind]>,
+    },
     /// One-shot temporal value. Fallible producers use a `Result` payload.
-    Need { item: Box<AdapterTypeKind> },
+    Need {
+        item: Box<AdapterTypeKind>,
+    },
     /// Exact adapter or Rust-package nominal type.
-    Nominal { nominal: AdapterNominalTypeRef },
+    Nominal {
+        nominal: AdapterNominalTypeRef,
+    },
 }
 
 /// A symbol injected by a host adapter into the checked source environment.
@@ -151,6 +163,7 @@ pub struct AdapterRustFunction {
     rust_path: String,
     signature: AdapterFunctionSignature,
     purity: ArcweftRustPurity,
+    role: arcweft_rust_abi::ArcweftRustCallableRole,
     effects: Vec<AdapterEffectCapability>,
 }
 
@@ -243,6 +256,7 @@ impl AdapterTypeKind {
             "f64" => Some(Self::F64),
             "String" => Some(Self::String),
             "char" => Some(Self::Char),
+            "Bytes" => Some(Self::Bytes),
             _ => None,
         }
     }
@@ -524,6 +538,10 @@ impl AdapterRustFunction {
         self.purity
     }
 
+    pub const fn role(&self) -> arcweft_rust_abi::ArcweftRustCallableRole {
+        self.role
+    }
+
     /// Effects declared by Rust ABI metadata.
     pub fn effects(&self) -> &[AdapterEffectCapability] {
         &self.effects
@@ -544,11 +562,6 @@ impl AdapterRustType {
     /// Exported Rust ADT declaration.
     pub const fn decl(&self) -> &ArcweftRustTypeDecl {
         &self.decl
-    }
-
-    /// Reviewed opaque producer authority retained by the Rust declaration.
-    pub const fn opaque_producer(&self) -> &ArcweftRustOpaqueTypeProducerId {
-        self.decl.opaque_producer()
     }
 }
 
@@ -828,6 +841,7 @@ fn adapter_rust_function(
             rust_type_ref_to_adapter_type_kind(mounts, &function.return_type)?,
         )?,
         purity: function.purity,
+        role: function.role,
         effects: function
             .effects
             .iter()
@@ -888,6 +902,7 @@ fn rust_type_ref_to_adapter_type_kind(
         ArcweftRustTypeRef::F64 => AdapterTypeKind::F64,
         ArcweftRustTypeRef::String => AdapterTypeKind::String,
         ArcweftRustTypeRef::Char => AdapterTypeKind::Char,
+        ArcweftRustTypeRef::Bytes => AdapterTypeKind::Bytes,
         ArcweftRustTypeRef::Vec { item } => AdapterTypeKind::Vec {
             item: Box::new(rust_type_ref_to_adapter_type_kind(mounts, item)?),
         },
@@ -1020,6 +1035,7 @@ fn require_type_ref_mounts(
         | ArcweftRustTypeRef::F64
         | ArcweftRustTypeRef::String
         | ArcweftRustTypeRef::Char
+        | ArcweftRustTypeRef::Bytes
         | ArcweftRustTypeRef::TypeParameter { .. } => Ok(()),
     }
 }

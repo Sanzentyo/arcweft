@@ -1,9 +1,9 @@
 use super::*;
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
-    ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl,
-    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef,
-    ArcweftRustVariant, ArcweftRustVariantPayload,
+    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId,
+    ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+    ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef, ArcweftRustVariant,
+    ArcweftRustVariantPayload,
 };
 
 #[test]
@@ -82,21 +82,28 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
         metadata_hash: None,
     })
     .with_type(ArcweftRustTypeDecl {
+        data_policy: None,
         path: rust_type_path("Rank"),
         rust_path: "truck_game::Rank".to_owned(),
-        opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new("fixture.adapter-context.rank")
-            .expect("valid producer"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![
                 ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: "Bronze".to_owned(),
                     payload: ArcweftRustVariantPayload::Unit,
                 },
                 ArcweftRustVariant {
+                    wire_name: None,
+                    discriminant: None,
                     name: "Custom".to_owned(),
                     payload: ArcweftRustVariantPayload::Record {
                         fields: vec![arcweft_rust_abi::ArcweftRustField {
+                            wire_name: None,
+                            bytes_format: None,
+                            default: None,
+                            skip: false,
                             name: "label".to_owned(),
                             ty: ArcweftRustTypeRef::String,
                         }],
@@ -106,6 +113,7 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
         },
     })
     .with_function(ArcweftRustFunction {
+        role: Default::default(),
         name: "score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
         params: vec![ArcweftRustParam {

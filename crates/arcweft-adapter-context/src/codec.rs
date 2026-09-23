@@ -216,6 +216,7 @@ enum AdapterTypeKindFile {
     F64 {},
     String {},
     Char {},
+    Bytes {},
     Vec { item: Box<Self> },
     Seq { item: Box<Self> },
     Option { item: Box<Self> },
@@ -859,6 +860,7 @@ impl TypeConversionBudget {
             AdapterTypeKindFile::F64 {} => AdapterTypeKind::F64,
             AdapterTypeKindFile::String {} => AdapterTypeKind::String,
             AdapterTypeKindFile::Char {} => AdapterTypeKind::Char,
+            AdapterTypeKindFile::Bytes {} => AdapterTypeKind::Bytes,
             AdapterTypeKindFile::Vec { item } => AdapterTypeKind::Vec {
                 item: Box::new(self.convert(*item, environment_owner, child_depth)?),
             },
