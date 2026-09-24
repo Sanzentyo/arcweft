@@ -728,3 +728,35 @@ physical LOC から 188148 bytes / 4321 physical LOC へ 43行増えた。
 追加した処理は既存の文式評価 walk に、同じ行結果 authority で型付けする
 `out` の期待型を渡すもの。同じ `Analyzer` の facts・topology を使い、
 別 state、I/O、逆向き依存、重複 traversal を追加しないため owner を維持する。
+
+**2026-09-25 入力 action の実行経路 checkpoint:**
+
+確認した main/`origin/main` は
+`51bc16cf0940e8638018d49589b7d585c5c4ca98`、working tree は clean。
+同 commit は authored dialogue View の action button から、観測した dialogue
+occurrence の完全な token と型付き `InputActionId` を driver に渡し、core の
+activation 固有の入力イベントとして native/AWBC 共通 reducer に接続する。
+入力の epoch/sequence を保存し、古い activation や再送を取消に流用せず、
+dialogue mark と action trigger を分離した。AWBC の schema marker は1のまま。
+保存復元では未処理 action を保存 blocker に含め、復元した button の mount
+provenance を sealed View の投影と照合する。
+
+core の action順序・mark分離・snapshot replay・codec round trip の focused
+4件、scene の button/semantic admission 16件、View projector 2件、driver の
+activation/stale revision と復元 provenance 各1件が通過。`cargo check
+--workspace --all-targets --all-features`、同 Clippy、workspace fmt、
+`just structure-audit-gate` は終了コード0（Clippy は既存 warning あり、
+構造 blocking violation 0）。`just test-workspace` は CLI fixture より前の
+workspace lib/integration と CLI の先行 named test が通過したが、
+`arcw_fixtures_check_run` で3/7失敗して終了コード1。019 は実行側 `defer`
+未接続、spec run 011 は final expression type 未確定、spec check 022 は
+nominal type resolution 未確定で停止した。後二者はこの commit で変更して
+いない Sema に属するが、HEAD 単体での合格は未確認であり、回帰と断定しない。
+WebAssembly 単独 check は transitive `getrandom 0.3.4` の `wasm_js` 設定不足で
+止まり、web target の合格証拠にはしない。
+
+この checkpoint は入力 trigger の producer/consumer 移行であり、
+実行時に到達した `defer` の登録・LIFO unwind、取消 branch の結果選択・
+transfer、および 019/023 の end-to-end 受理を完了したものではない。
+次は line result `R` と取消 disposition の仕様章を整合させ、動的 cleanup と
+native/AWBC の最終公開を同じ authority で実装する。
