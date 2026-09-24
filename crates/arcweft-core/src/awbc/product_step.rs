@@ -779,6 +779,14 @@ impl AwbcProductStepExecutor {
         &mut self,
         program: AwbcProgram,
     ) -> Result<(), AwbcProductStepBuildError> {
+        self.replace_program_preserving_state_arc(Arc::new(program))
+    }
+
+    /// Rebinds the exact generation lease shared with upper-layer consumers.
+    pub fn replace_program_preserving_state_arc(
+        &mut self,
+        program: Arc<AwbcProgram>,
+    ) -> Result<(), AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -787,7 +795,7 @@ impl AwbcProductStepExecutor {
         let snapshot = self.snapshot();
         let mut candidate = self.clone();
         candidate.artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        candidate.program = Arc::new(program);
+        candidate.program = program;
         candidate.validate_snapshot(&snapshot)?;
         candidate.rebuild_facade_stream_states_from_compact();
         candidate.sync_facade();
@@ -800,7 +808,15 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let program = Arc::new(program);
+        Self::for_entry_arc(Arc::new(program), entry, budget_quantum)
+    }
+
+    /// Starts against the same immutable program lease used by its generation.
+    pub fn for_entry_arc(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {

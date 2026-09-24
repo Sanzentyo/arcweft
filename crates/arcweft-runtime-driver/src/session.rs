@@ -1410,6 +1410,20 @@ mod view_handler_queue_tests {
     }
 
     #[test]
+    fn session_runtime_and_executor_share_the_exact_awbc_generation_lease() {
+        let session = BundleSession::new(&session_bundle(), BundleSessionOptions::default())
+            .expect("valid product session");
+        let runtime = session
+            .runtime_images
+            .get(GenerationId::new(0))
+            .expect("initial generation")
+            .runtime();
+        assert!(session.program_owner().same_program(
+            &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&runtime.program))
+        ));
+    }
+
+    #[test]
     fn session_queues_the_exact_token_selected_by_the_player_invocation() {
         let bundle = session_bundle();
         let mut session = BundleSession::new(&bundle, BundleSessionOptions::default())

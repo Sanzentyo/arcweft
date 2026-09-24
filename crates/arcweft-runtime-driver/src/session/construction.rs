@@ -17,7 +17,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub(super) struct SessionRuntime {
     pub(super) source_label: String,
-    pub(super) program: AwbcProgram,
+    pub(super) program: Arc<AwbcProgram>,
     pub(super) entry: AwbcEntryId,
     pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) dialogue_content: DialogueContentCatalog,
@@ -207,11 +207,11 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
 impl SessionRuntime {
     fn new(
         source_label: String,
-        program: AwbcProgram,
+        program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let executor = ArcweftRuntimeExecutor::from_awbc_product(program.clone(), entry)?;
+        let executor = ArcweftRuntimeExecutor::from_awbc_product_arc(Arc::clone(&program), entry)?;
         Ok(Self::with_executor(
             source_label,
             program,
@@ -223,7 +223,7 @@ impl SessionRuntime {
 
     fn with_executor(
         source_label: String,
-        program: AwbcProgram,
+        program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
         resources: SessionRuntimeResources,
         executor: ArcweftRuntimeExecutor,
@@ -314,7 +314,7 @@ fn build_session_runtime_with_executor(
         ));
     }
 
-    let program = bundle.product_awbc_program().clone();
+    let program = Arc::new(bundle.product_awbc_program().clone());
     let entry = selected_awbc_entry(&program, bundle, options)?;
     ensure_session_awbc_entry_selects_flow(&program, entry)?;
     validate_root_command_host_call_catalog(&program, entry, &options.root_command_host_calls)?;
@@ -353,7 +353,7 @@ fn build_session_runtime_with_executor(
     let view_runtime = BundleViewRuntime::try_new_with_awbc(
         view_product,
         bundle.view_text.clone(),
-        Arc::new(program.clone()),
+        Arc::clone(&program),
     )?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
@@ -378,7 +378,7 @@ fn build_session_runtime_with_executor(
     match preserved_executor {
         Some(executor) => {
             let mut executor = executor.clone();
-            executor.replace_product_awbc_program(program.clone())?;
+            executor.replace_product_awbc_program_arc(Arc::clone(&program))?;
             Ok(SessionRuntime::with_executor(
                 bundle.source_display_name().to_owned(),
                 program,

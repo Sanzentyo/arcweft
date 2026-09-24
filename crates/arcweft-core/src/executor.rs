@@ -11,6 +11,7 @@ use crate::root::{
     RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
 };
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
@@ -262,7 +263,16 @@ impl ArcweftRuntimeExecutor {
         program: AwbcProgram,
         entry: AwbcEntryId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let vm = AwbcProductStepExecutor::for_entry(program, entry, 64)?;
+        Self::from_awbc_product_arc(Arc::new(program), entry)
+    }
+
+    /// Starts Product AWBC with an exact executable lease shared by its
+    /// generation-local consumers.
+    pub fn from_awbc_product_arc(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm = AwbcProductStepExecutor::for_entry_arc(program, entry, 64)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -332,9 +342,17 @@ impl ArcweftRuntimeExecutor {
         &mut self,
         program: AwbcProgram,
     ) -> Result<(), AwbcProductStepBuildError> {
+        self.replace_product_awbc_program_arc(Arc::new(program))
+    }
+
+    /// Rebinds a compatible exact lease while retaining the live fiber state.
+    pub fn replace_product_awbc_program_arc(
+        &mut self,
+        program: Arc<AwbcProgram>,
+    ) -> Result<(), AwbcProductStepBuildError> {
         match &mut self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
-                executor.vm.replace_program_preserving_state(program)
+                executor.vm.replace_program_preserving_state_arc(program)
             }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
