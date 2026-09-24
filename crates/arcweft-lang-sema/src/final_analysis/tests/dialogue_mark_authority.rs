@@ -281,6 +281,50 @@ flow main() -> String {
 }
 
 #[test]
+fn reached_defer_bodies_publish_checked_free_local_capture_abi() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+flow main() -> String {
+    let message = "captured";
+    alice: hello[p]
+    with:
+        defer { log.info(message) }
+        defer on failed { log.info("literal") }
+        out ()
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("defer bodies retain checked capture authority");
+    let defers = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::Defer(defer) => Some(defer.as_ref()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(defers.len(), 2);
+    let [capture] = defers[0].captures() else {
+        panic!("outer message is captured by the first defer body")
+    };
+    assert_eq!(capture.ty(), &crate::types::TypeKind::String);
+    assert_eq!(
+        report
+            .local(capture.local())
+            .expect("capture local remains checked")
+            .ty(),
+        capture.ty()
+    );
+    assert!(defers[1].captures().is_empty());
+    assert_eq!(
+        defers[1].outcome(),
+        arcweft_lang_syntax::ast::line_plan::DeferOutcome::Failed
+    );
+}
+
+#[test]
 fn p12_equal_local_mark_names_in_two_applications_have_distinct_coordinates() {
     let fixture = fixture(
         r#"

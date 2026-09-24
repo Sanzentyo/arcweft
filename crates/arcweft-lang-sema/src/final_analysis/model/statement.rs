@@ -11,9 +11,14 @@ use crate::{
     types::TypeKind,
 };
 
-use super::{CheckedEvaluatedEffect, CheckedFieldSelection, CheckedProjectNominal};
+use super::{
+    CheckedEvaluatedEffect, CheckedExecutableCapture, CheckedFieldSelection, CheckedProjectNominal,
+};
 use crate::final_analysis::statement_effects::CompletedStatementEffectFold;
-use arcweft_lang_hir::{identity::LocalId, project::HirRuntimeIteratorWitnessMethodRole};
+use arcweft_lang_hir::{
+    identity::{ExprId, LocalId},
+    project::HirRuntimeIteratorWitnessMethodRole,
+};
 
 /// Built-in iteration families whose runtime behavior is language-owned.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -507,13 +512,47 @@ impl CheckedIncludeFlowTarget {
     }
 }
 
+/// Checked source defer registration and executable body capture ABI.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDefer {
+    outcome: DeferOutcome,
+    body: ExprId,
+    captures: Box<[CheckedExecutableCapture]>,
+}
+
+impl CheckedDefer {
+    pub(crate) fn new(
+        outcome: DeferOutcome,
+        body: ExprId,
+        captures: Box<[CheckedExecutableCapture]>,
+    ) -> Self {
+        Self {
+            outcome,
+            body,
+            captures,
+        }
+    }
+
+    pub const fn outcome(&self) -> DeferOutcome {
+        self.outcome
+    }
+
+    pub const fn body(&self) -> ExprId {
+        self.body
+    }
+
+    pub const fn captures(&self) -> &[CheckedExecutableCapture] {
+        &self.captures
+    }
+}
+
 /// Complete non-child semantic payload for one accepted statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedStatementPayload {
     Structural,
     Assignment(Box<CheckedAssignment>),
     Assertion(CheckedAssertionDisposition),
-    Defer(DeferOutcome),
+    Defer(Box<CheckedDefer>),
     EvaluatedEffect(Box<CheckedEvaluatedEffect>),
     Iteration(Box<CheckedIteration>),
     ControlTransfer(CheckedControlTransferTarget),

@@ -691,9 +691,13 @@ pub use pipe::{
 #[path = "model/dialogue_line_plan.rs"]
 mod dialogue_line_plan;
 pub use dialogue_line_plan::{
-    CheckedDialogueEffectCapture, CheckedDialogueEffectPlan, CheckedDialogueEffectSite,
-    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
+    CheckedDialogueEffectPlan, CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal,
+    CheckedDialogueEffectTrigger,
 };
+
+#[path = "model/executable_capture.rs"]
+mod executable_capture;
+pub use executable_capture::CheckedExecutableCapture;
 
 /// Semantic payload needed in addition to the final-HIR expression family.
 ///
@@ -2522,7 +2526,7 @@ pub use evaluated_effect::{
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{
-    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace,
+    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace, CheckedDefer,
     CheckedIncludeFlowTarget, CheckedIteration, CheckedIteratorFamily, CheckedScopeIdentity,
     CheckedSelectBranchHead, CheckedSelectStatement, CheckedSelectStatementView, CheckedStatement,
     CheckedStatementPayload, CheckedSuspensionStatement, CheckedTraitConformance,

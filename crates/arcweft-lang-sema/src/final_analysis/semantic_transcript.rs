@@ -1663,16 +1663,25 @@ fn write_statement_payload(
                 }]
             );
         }
-        CheckedStatementPayload::Defer(outcome) => {
+        CheckedStatementPayload::Defer(defer) => {
             transcript_update!(
                 hasher,
-                &[match outcome {
+                &[match defer.outcome() {
                     arcweft_lang_syntax::ast::line_plan::DeferOutcome::Always => 0,
                     arcweft_lang_syntax::ast::line_plan::DeferOutcome::Completed => 1,
                     arcweft_lang_syntax::ast::line_plan::DeferOutcome::Cancelled => 2,
                     arcweft_lang_syntax::ast::line_plan::DeferOutcome::Failed => 3,
                 }]
             );
+            write_bytes(
+                hasher,
+                &coordinates.expression(defer.body())?.canonical_bytes()?,
+            )?;
+            write_len(hasher, defer.captures().len())?;
+            for capture in defer.captures() {
+                write_bytes(hasher, &capture.origin().canonical_bytes()?)?;
+                transcript_update!(hasher, capture.ty().semantic_identity_digest()?.as_bytes());
+            }
         }
         CheckedStatementPayload::EvaluatedEffect(effect) => {
             write_evaluated_effect(hasher, effect)?;

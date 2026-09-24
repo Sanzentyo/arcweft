@@ -1079,6 +1079,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
                 &locals,
                 checked_callables.as_ref(),
                 &coordinates,
+                &structural_edges,
                 project,
             );
             super::statement_effects::seal_statement_effects(

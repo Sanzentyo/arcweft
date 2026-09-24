@@ -1,10 +1,8 @@
-use arcweft_lang_hir::identity::{ExprId, LocalId};
+use arcweft_lang_hir::identity::ExprId;
 
+use super::{CheckedEvaluatedEffect, CheckedExecutableCapture};
 use crate::checked_rich_text::CheckedDuration;
 use crate::effects::EffectSet;
-use crate::semantic_coordinate::StableCheckedBindingCoordinate;
-
-use super::{CheckedEvaluatedEffect, TypeKind};
 
 /// Checked effect sites for one content owner. Marker actions are retained in
 /// the source-ordered checked rich-text tokens, so this record has no
@@ -52,41 +50,7 @@ pub struct CheckedDialogueEffectSite {
     trigger: CheckedDialogueEffectTrigger,
     effects: EffectSet,
     effect: Box<CheckedEvaluatedEffect>,
-    captures: Box<[CheckedDialogueEffectCapture]>,
-}
-
-/// Exact source-ordered free-local capture for one reveal-time dialogue
-/// effect callback.
-///
-/// `local` is generation-local lowering evidence. Stable identity and
-/// transcripts use `origin` plus the exact semantic type instead.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedDialogueEffectCapture {
-    local: LocalId,
-    origin: StableCheckedBindingCoordinate,
-    ty: TypeKind,
-}
-
-impl CheckedDialogueEffectCapture {
-    pub(crate) const fn new(
-        local: LocalId,
-        origin: StableCheckedBindingCoordinate,
-        ty: TypeKind,
-    ) -> Self {
-        Self { local, origin, ty }
-    }
-
-    pub const fn local(&self) -> LocalId {
-        self.local
-    }
-
-    pub const fn origin(&self) -> &StableCheckedBindingCoordinate {
-        &self.origin
-    }
-
-    pub const fn ty(&self) -> &TypeKind {
-        &self.ty
-    }
+    captures: Box<[CheckedExecutableCapture]>,
 }
 
 impl CheckedDialogueEffectSite {
@@ -95,7 +59,7 @@ impl CheckedDialogueEffectSite {
         trigger: CheckedDialogueEffectTrigger,
         effects: EffectSet,
         effect: Box<CheckedEvaluatedEffect>,
-        captures: Box<[CheckedDialogueEffectCapture]>,
+        captures: Box<[CheckedExecutableCapture]>,
     ) -> Self {
         Self {
             id,
@@ -130,7 +94,7 @@ impl CheckedDialogueEffectSite {
         &self.effect
     }
 
-    pub const fn captures(&self) -> &[CheckedDialogueEffectCapture] {
+    pub const fn captures(&self) -> &[CheckedExecutableCapture] {
         &self.captures
     }
 }

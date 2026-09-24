@@ -23,7 +23,7 @@ use crate::{
 };
 
 use super::{
-    CheckedAssignment, CheckedAssignmentPlace, CheckedBinding, CheckedExpression,
+    CheckedAssignment, CheckedAssignmentPlace, CheckedBinding, CheckedDefer, CheckedExpression,
     CheckedExpressionResolution, CheckedIncludeFlowTarget, CheckedScopeIdentity,
     CheckedSelectBranchHead, CheckedSelectResolution, CheckedSelectStatement, CheckedStatement,
     CheckedStatementPayload, CheckedTrigger, CheckedUnsafeAudit, FinalSemanticAnalysisError,
@@ -40,6 +40,7 @@ pub(crate) struct CheckedStatementSeal<'a, 'project, 'coordinate> {
     locals: &'a BTreeMap<LocalId, CheckedBinding>,
     callables: &'a CheckedCallableCatalog,
     coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
+    structural_edges: &'coordinate super::match_edges::CheckedStructuralEdgeDraft,
     project: HirAnalysisProjectView<'project>,
 }
 
@@ -50,6 +51,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         locals: &'a BTreeMap<LocalId, CheckedBinding>,
         callables: &'a CheckedCallableCatalog,
         coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
+        structural_edges: &'coordinate super::match_edges::CheckedStructuralEdgeDraft,
         project: HirAnalysisProjectView<'project>,
     ) -> Self {
         let (includes, scrutinees) = ingress.into_parts();
@@ -60,6 +62,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             locals,
             callables,
             coordinates,
+            structural_edges,
             project,
         }
     }
@@ -495,14 +498,46 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             HirStmtKind::Return { .. } => self.structural(owner),
             HirStmtKind::Out { .. } => self.control_transfer(owner, HirControlTransferKind::Out),
             HirStmtKind::Goto { .. } => self.structural(owner),
-            HirStmtKind::Defer { outcome, .. } => {
+            HirStmtKind::Defer {
+                outcome,
+                expression,
+            } => {
                 if !matches!(
                     self.take_prepared(owner)?,
                     PreparedStatementPayload::HirOwned
                 ) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                Ok(CheckedStatementPayload::Defer(*outcome))
+                let actual = expressions
+                    .get(expression)
+                    .and_then(CheckedExpression::value_type)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: *expression,
+                    })?;
+                if actual != &TypeKind::Unit {
+                    return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                        statement: owner,
+                        owner: *expression,
+                        expected: Box::new(TypeKind::Unit),
+                        actual: Box::new(actual.clone()),
+                    });
+                }
+                let captures = super::free_capture::collect_checked_free_locals(
+                    *expression,
+                    self.coordinates,
+                    self.structural_edges,
+                    |child| {
+                        expressions
+                            .get(&child)
+                            .map(super::free_capture::CheckedCaptureExpression::from_checked)
+                    },
+                    |local| self.locals.get(&local).map(|binding| binding.ty().clone()),
+                )?;
+                Ok(CheckedStatementPayload::Defer(Box::new(CheckedDefer::new(
+                    *outcome,
+                    *expression,
+                    captures,
+                ))))
             }
             HirStmtKind::Yield { .. } => self.yield_statement(owner),
             HirStmtKind::Signal { .. } => self.structural(owner),

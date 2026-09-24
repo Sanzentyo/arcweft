@@ -21,10 +21,10 @@ use crate::{
     },
     env::{StandardDropPolicyCase, StandardDropPolicyValue, StandardEnvironmentValue},
     final_analysis::{
-        CheckedContentApplication, CheckedContentApplicationEdges, CheckedDialogueEffectCapture,
-        CheckedDialogueEffectPlan, CheckedDialogueEffectSite, CheckedDropFade,
-        CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField,
-        CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
+        CheckedContentApplication, CheckedContentApplicationEdges, CheckedDialogueEffectPlan,
+        CheckedDialogueEffectSite, CheckedDropFade, CheckedDropFadeOperand, CheckedDropInvocation,
+        CheckedDropPolicySource, CheckedEffectField, CheckedEvaluatedEffect,
+        CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation, CheckedExecutableCapture,
         CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionResolution,
         CheckedValueResolution, PreparedContentApplication, PreparedContentEmission,
         PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedEvaluatedEffect,
@@ -52,9 +52,7 @@ use crate::checked_text_proxy::{
     PreparedCheckedTextProxyOrigin, PreparedCheckedTextProxyValue,
 };
 use arcweft_lang_hir::{
-    dialogue_application::HirAttachedContentApplicationFamily,
-    expr::HirExprKind,
-    identity::{ExprId, LocalId},
+    dialogue_application::HirAttachedContentApplicationFamily, expr::HirExprKind, identity::ExprId,
     module::HirModule,
 };
 
@@ -1372,47 +1370,20 @@ impl Analyzer<'_, '_, '_> {
         root: ExprId,
         coordinates: &SemanticCoordinateIndex<'_, '_>,
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
-    ) -> Result<Box<[CheckedDialogueEffectCapture]>, FinalSemanticAnalysisError> {
-        let root_path = coordinates
-            .expression_evidence(root)
-            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?
-            .into_coordinate();
-        let mut pending = vec![root];
-        let mut visited = BTreeSet::new();
-        let mut captured = BTreeSet::<LocalId>::new();
-        let mut captures = Vec::new();
-        while let Some(owner) = pending.pop() {
-            if !visited.insert(owner) {
-                continue;
-            }
-            let checked = self
-                .facts
-                .expressions()
-                .get(&owner)
-                .and_then(PreparedExpressionFact::complete)
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if let Some(local) = checked.execution_local_use() {
-                let ty = self
-                    .facts
-                    .locals()
-                    .get(&local)
-                    .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-                if checked.source_value_type() != Some(ty) {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                let origin = coordinates
-                    .binding(local)
-                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                if !origin.path().is_at_or_below(&root_path) && captured.insert(local) {
-                    captures.push(CheckedDialogueEffectCapture::new(local, origin, ty.clone()));
-                }
-            }
-            let children = structural_edges
-                .expression_children(owner)
-                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            pending.extend(children.iter().rev().map(|(child, _)| *child));
-        }
-        Ok(captures.into_boxed_slice())
+    ) -> Result<Box<[CheckedExecutableCapture]>, FinalSemanticAnalysisError> {
+        super::super::free_capture::collect_checked_free_locals(
+            root,
+            coordinates,
+            structural_edges,
+            |owner| {
+                self.facts
+                    .expressions()
+                    .get(&owner)
+                    .and_then(PreparedExpressionFact::complete)
+                    .map(super::super::free_capture::CheckedCaptureExpression::from_checked)
+            },
+            |local| self.facts.locals().get(&local).cloned(),
+        )
     }
 
     /// Seals one prepared evaluated effect for either an ordinary statement
