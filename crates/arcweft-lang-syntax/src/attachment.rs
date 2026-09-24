@@ -180,8 +180,8 @@ pub use snapshot::{
 pub use source_file::{AttachedPath, AttachedPathRoot};
 pub use statement::{
     AttachedBreakStatement, AttachedContinueStatement, AttachedControlLabel,
-    AttachedDeferStatement, AttachedGotoStatement, AttachedOnStatement, AttachedOutStatement,
-    AttachedSignalStatement,
+    AttachedDeferBlockBody, AttachedDeferBlockStatement, AttachedDeferStatement,
+    AttachedGotoStatement, AttachedOnStatement, AttachedOutStatement, AttachedSignalStatement,
 };
 pub use style::{
     AttachedStyleAssignment, AttachedStyleAssignmentState, AttachedStyleBody,

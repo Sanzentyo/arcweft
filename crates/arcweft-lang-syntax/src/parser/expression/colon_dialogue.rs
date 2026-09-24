@@ -23,6 +23,10 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
     if colon == end {
         return None;
     }
+    let plan_start = crate::parser::statement::dialogue_plan::colon_dialogue_plan_start(
+        parser, start, colon, end,
+    );
+    let content_end = plan_start.unwrap_or(end);
 
     let target = emit_expression_node(parser, colon, role);
     let target_range = parser
@@ -50,10 +54,10 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
             .offset_at_token_boundary(content_start)
             .expect("dialogue content starts at a lexer boundary"),
         parser
-            .offset_at_token_boundary(end)
+            .offset_at_token_boundary(content_end)
             .expect("dialogue content ends at a lexer boundary"),
     );
-    let indented = (content_start..end).any(|index| {
+    let indented = (content_start..content_end).any(|index| {
         parser
             .token_at(index)
             .is_some_and(|token| token.kind() == SyntaxKind::NewlineToken)
@@ -67,7 +71,7 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
             insertion: content_range.end(),
         }
     };
-    let emitted = emit_dialogue_content(parser, end, missing_boundary);
+    let emitted = emit_dialogue_content(parser, content_end, missing_boundary);
     let (content, mut components, _) = emitted.into_parts();
     let mut outer = vec![
         PendingExpressionComponent::new(ExpressionComponentRole::Target, target_range),
@@ -76,6 +80,18 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
         PendingExpressionComponent::new(ExpressionComponentRole::ContentBody, content_range),
     ];
     outer.append(&mut components);
+    if let Some(with) = plan_start {
+        bump_until(parser, with);
+        let plan = crate::parser::statement::dialogue_plan::emit_dialogue_line_plan(
+            parser,
+            end,
+            SyntaxKind::FlowItem,
+        );
+        outer.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::Plan,
+            plan,
+        ));
+    }
     parser.set_expression_projection(
         owner,
         PendingExpressionProjection::new(
@@ -83,7 +99,7 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
                 SyntaxAttachedContentApplicationProjection::new(
                     SyntaxAttachedContentApplicationForm::Colon,
                     content,
-                    false,
+                    plan_start.is_some(),
                 ),
             ),
             outer,

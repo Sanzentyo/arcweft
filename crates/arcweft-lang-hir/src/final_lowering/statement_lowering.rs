@@ -832,6 +832,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             SyntaxKind::OutStatement
             | SyntaxKind::GotoStatement
+            | SyntaxKind::DeferBlockStatement
             | SyntaxKind::DeferStatement
             | SyntaxKind::SignalStatement
             | SyntaxKind::BreakStatement

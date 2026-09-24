@@ -114,6 +114,152 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
 }
 
 #[test]
+fn outcome_qualified_defer_keeps_its_block_expression_and_outcome() {
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-plan-defer-outcomes",
+        concat!(
+            "pub character alice { display = \"Alice\" }\n",
+            "flow defer_outcomes() -> String {\n",
+            "    alice(voice=auto):\n",
+            "        Long line.[p]\n",
+            "    with:\n",
+            "        defer { log.info(\"always\") }\n",
+            "        defer on completed:\n",
+            "            log.info(\"completed\")\n",
+            "        defer on cancelled:\n",
+            "            log.info(\"cancelled\")\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let [
+        HirThreadFlowItem::DialogueApplication(dialogue),
+        HirThreadFlowItem::Statement(_return),
+    ] = flow.body().items()
+    else {
+        panic!(
+            "Dialogue application and return stay as two Flow items: {:#?}",
+            flow.body().items()
+        )
+    };
+    let expression = module.resolve_expr(*dialogue).unwrap();
+    let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+        panic!("Dialogue application owns the outcome cleanup line plan")
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("line plan remains attached to the DialogueLine family")
+    };
+    let expected = [
+        arcweft_lang_syntax::ast::line_plan::DeferOutcome::Always,
+        arcweft_lang_syntax::ast::line_plan::DeferOutcome::Completed,
+        arcweft_lang_syntax::ast::line_plan::DeferOutcome::Cancelled,
+    ];
+    assert_eq!(plan.items().len(), expected.len());
+    for (item, outcome) in plan.items().iter().zip(expected) {
+        let HirLinePlanItem::Statement(statement) = item else {
+            panic!("outcome defer retains a statement-owned cleanup")
+        };
+        let statement = module.resolve_stmt(*statement).unwrap();
+        let HirStmtKind::Defer {
+            outcome: actual,
+            expression,
+        } = statement.kind()
+        else {
+            panic!("line-plan cleanup remains a Defer statement")
+        };
+        assert_eq!(*actual, outcome);
+        let expression = module.resolve_expr(*expression).unwrap();
+        let HirExprKind::Block(body) = expression.kind() else {
+            panic!("cleanup body remains an owned Block expression")
+        };
+        assert!(matches!(
+            module.resolve_expr(body.tail()).unwrap().kind(),
+            HirExprKind::Call(_)
+        ));
+    }
+}
+
+#[test]
+fn outcome_qualified_defer_missing_body_keeps_recovered_statement_owner() {
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-plan-missing-defer-body",
+        concat!(
+            "flow missing_defer_body() -> String {\n",
+            "    alice(voice=auto):\n",
+            "        Long line.[p]\n",
+            "    with:\n",
+            "        defer on completed:\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.statement.missing_defer_body" }),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let (_, _, flow) = resolve_flow(&module, 0);
+    let [
+        HirThreadFlowItem::DialogueApplication(dialogue),
+        HirThreadFlowItem::Statement(_return),
+    ] = flow.body().items()
+    else {
+        panic!("Dialogue application and return stay as two Flow items")
+    };
+    let expression = module.resolve_expr(*dialogue).unwrap();
+    let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+        panic!("Dialogue application owns the recovered cleanup line plan")
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("line plan remains attached to the DialogueLine family")
+    };
+    let [HirLinePlanItem::Error(statement)] = plan.items() else {
+        panic!("missing cleanup body is retained as one recovered line-plan item")
+    };
+    let statement = module.resolve_stmt(*statement).unwrap();
+    assert!(matches!(statement.state(), HirStmtPoisonState::Poisoned(_)));
+    assert!(matches!(
+        statement.kind(),
+        HirStmtKind::Defer {
+            outcome: arcweft_lang_syntax::ast::line_plan::DeferOutcome::Completed,
+            expression,
+        } if matches!(module.resolve_expr(*expression).unwrap().kind(), HirExprKind::Error(_))
+    ));
+}
+
+#[test]
 fn let_else_owns_failure_block_and_publishes_success_bindings() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-let-else",

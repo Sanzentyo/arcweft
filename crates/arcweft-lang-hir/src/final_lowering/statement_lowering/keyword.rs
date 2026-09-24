@@ -2,11 +2,11 @@
 
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use arcweft_lang_syntax::attachment::node::{
-    BreakStatementKind, ContinueStatementKind, DeferStatementKind, GotoStatementKind,
-    OutStatementKind, SignalStatementKind,
+    BreakStatementKind, ContinueStatementKind, DeferBlockStatementKind, DeferStatementKind,
+    GotoStatementKind, OutStatementKind, SignalStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AttachedControlLabel, RequiredStatementExpressionNode, StatementNode,
+    AttachedControlLabel, AttachedDeferBlockBody, RequiredStatementExpressionNode, StatementNode,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
@@ -96,6 +96,43 @@ impl StagedHirModuleTransaction<'_> {
                         expression,
                     },
                     recovery,
+                ))
+            }
+            SyntaxKind::DeferBlockStatement => {
+                let statement = attached
+                    .cast::<DeferBlockStatementKind>()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+                    .semantics()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let (expression, body_recovery) = match statement.body() {
+                    AttachedDeferBlockBody::Expression(body) => {
+                        let expression = self.lower_attached_expression(body, scope)?;
+                        let recovery = self.staged_expression_is_poisoned(expression)?.then_some(
+                            HirStmtRecoveryIssue::RecoveredChild {
+                                role: HirStmtChildRole::Initializer,
+                            },
+                        );
+                        (expression, recovery)
+                    }
+                    AttachedDeferBlockBody::Missing(body) => (
+                        self.lower_missing_statement_expression(
+                            owner,
+                            scope,
+                            HirStmtRecoveryOperandSlot::DeferExpression {
+                                insertion: body.range().start(),
+                            },
+                        )?,
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Initializer,
+                        }),
+                    ),
+                };
+                Ok((
+                    HirStmtKind::Defer {
+                        outcome: statement.outcome(),
+                        expression,
+                    },
+                    body_recovery,
                 ))
             }
             SyntaxKind::SignalStatement => {

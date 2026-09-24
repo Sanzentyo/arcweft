@@ -68,6 +68,16 @@ pub(super) fn emit_expression(parser: &mut DocumentParser<'_, '_>, end: usize, r
     let _ = emit_expression_node(parser, end, role);
 }
 
+/// Emits an indentation-owned block as the same typed Block expression used
+/// by the brace form. The caller owns the `:` introducer and suite boundary.
+pub(super) fn emit_unbraced_block_expression(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    control::emit_unbraced_block_expression(parser, end, role);
+}
+
 pub(super) fn emit_expression_node(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,

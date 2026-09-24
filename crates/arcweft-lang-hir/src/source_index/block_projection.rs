@@ -1134,6 +1134,7 @@ pub(super) fn statement_matches(
         (
             SyntaxKind::OutStatement
             | SyntaxKind::GotoStatement
+            | SyntaxKind::DeferBlockStatement
             | SyntaxKind::DeferStatement
             | SyntaxKind::SignalStatement
             | SyntaxKind::BreakStatement

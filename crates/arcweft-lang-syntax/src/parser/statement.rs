@@ -8,6 +8,8 @@ mod trigger;
 
 use arcweft_source::SourceRange;
 
+use crate::ast::line_plan::DeferOutcome;
+
 use super::cursor::DocumentParser;
 use super::expression::{
     emit_colon_dialogue_application, emit_entity_reference, emit_expression, emit_expression_node,
@@ -514,8 +516,102 @@ fn emit_statement_with_role(
     item_kind: SyntaxKind,
     role: SyntaxRole,
 ) {
+    if let Some(head) = defer_on_head(parser, parser.cursor(), end)
+        && !defer_on_head_is_well_formed(parser, head)
+    {
+        emit_invalid_defer_on_statement(parser, end, role);
+        return;
+    }
     let kind = classify_statement(parser, end, item_kind);
     emit_statement_kind(parser, end, item_kind, role, kind, false);
+}
+
+/// Returns the end of one outcome-qualified indentation body when measuring
+/// source-ordered items inside a braced Dialogue line plan.
+pub(super) fn line_plan_defer_item_end(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    let head = defer_on_head(parser, start, end)?;
+    let colon = head.body_token?;
+    if token_text(parser, colon) != Some(":") {
+        return None;
+    }
+    let interval = indentation::indented_suite_interval(parser, start, colon, end);
+    interval
+        .issue()
+        .is_none()
+        .then(|| trimmed_end(parser, start, interval.end()))
+}
+
+#[derive(Clone, Copy)]
+struct DeferOnHead {
+    outcome_token: Option<usize>,
+    outcome: Option<DeferOutcome>,
+    body_token: Option<usize>,
+}
+
+fn defer_on_head(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<DeferOnHead> {
+    (token_text(parser, start) == Some("defer")
+        && first_significant(parser, start.saturating_add(1), end)
+            .and_then(|index| token_text(parser, index))
+            == Some("on"))
+    .then(|| {
+        let head_end = indentation::physical_line_end(parser, start, end);
+        let on = first_significant(parser, start.saturating_add(1), head_end)
+            .expect("defer-on predicate retained its `on` token");
+        let outcome_token = first_significant(parser, on.saturating_add(1), head_end);
+        let outcome = outcome_token.and_then(|index| match token_text(parser, index) {
+            Some("completed") => Some(DeferOutcome::Completed),
+            Some("cancelled") => Some(DeferOutcome::Cancelled),
+            Some("failed") => Some(DeferOutcome::Failed),
+            _ => None,
+        });
+        DeferOnHead {
+            outcome_token,
+            outcome,
+            body_token: indentation::head_body_introducer(parser, start, head_end),
+        }
+    })
+}
+
+fn defer_on_head_is_well_formed(parser: &DocumentParser<'_, '_>, head: DeferOnHead) -> bool {
+    let (Some(outcome_token), Some(_), Some(body_token)) =
+        (head.outcome_token, head.outcome, head.body_token)
+    else {
+        return false;
+    };
+    if body_token <= outcome_token {
+        return false;
+    }
+    matches!(token_text(parser, body_token), Some("{" | ":"))
+}
+
+fn emit_invalid_defer_on_statement(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) {
+    let start = parser
+        .current()
+        .expect("invalid defer-on statement retains its first token")
+        .range()
+        .start();
+    let finish = end
+        .checked_sub(1)
+        .and_then(|index| parser.token_at(index))
+        .map_or(start, |token| token.range().end());
+    parser.start(SyntaxKind::ErrorStatement, role);
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    bump_until(parser, end);
+    parser.finish();
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.dialogue.line_plan_invalid_defer",
+        SourceRange::new(start, finish),
+        "outcome-qualified defer requires `completed`, `cancelled`, or `failed` and a block body",
+    )));
 }
 
 fn emit_statement_kind(
@@ -1305,6 +1401,9 @@ fn classify_statement(
         // owner beside `ThreadExpression` and force final HIR to special-case
         // an otherwise ordinary `HirStmtKind::Expression`.
         Some("thread" | "loop") => SyntaxKind::ExpressionStatement,
+        Some("defer") if defer_on_head(parser, start, end).is_some() => {
+            SyntaxKind::DeferBlockStatement
+        }
         Some("defer") if find_statement_open_brace(parser, start, end).is_some() => {
             SyntaxKind::DeferBlockStatement
         }
@@ -1645,6 +1744,10 @@ fn emit_control_children(
     kind: SyntaxKind,
     thread_flow_context: bool,
 ) {
+    if kind == SyntaxKind::DeferBlockStatement {
+        emit_defer_block_children(parser, end, item_kind);
+        return;
+    }
     if kind == SyntaxKind::UnsafeLifetimeStatement {
         let open = find_statement_open_brace(parser, parser.cursor(), end);
         emit_unsafe_lifetime_children(parser, open, end, item_kind);
@@ -1723,6 +1826,68 @@ fn emit_control_children(
         "syntax.statement.missing_block_close",
         thread_flow_context,
     );
+}
+
+fn emit_defer_block_children(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    _item_kind: SyntaxKind,
+) {
+    let owner_start = parser.cursor();
+    debug_assert_eq!(parser.current_text(), Some("defer"));
+    parser.bump();
+    parser.bump_trivia();
+
+    if parser.at("on") {
+        parser.bump();
+        parser.bump_trivia();
+        let outcome = match parser.current_text() {
+            Some("completed" | "cancelled" | "failed") => true,
+            _ => false,
+        };
+        if outcome {
+            parser.start(SyntaxKind::NameReference, SyntaxRole::Kind);
+            parser.bump();
+            parser.finish();
+            parser.bump_trivia();
+        }
+    }
+
+    let head_end = indentation::physical_line_end(parser, owner_start, end);
+    let Some(body_token) = indentation::head_body_introducer(parser, owner_start, head_end) else {
+        emit_expression(parser, end, SyntaxRole::Body);
+        return;
+    };
+    match token_text(parser, body_token) {
+        Some("{") => {
+            bump_until(parser, body_token);
+            emit_expression(parser, end, SyntaxRole::Body);
+        }
+        Some(":") => {
+            bump_until(parser, body_token);
+            parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+            parser.bump();
+            parser.finish();
+            let interval =
+                indentation::indented_suite_interval(parser, owner_start, body_token, end);
+            if interval.issue().is_some() {
+                emit_required_statement_body_recovery(
+                    parser,
+                    "syntax.statement.missing_defer_body",
+                    "outcome-qualified defer requires an indented block body",
+                );
+            } else {
+                bump_until(parser, interval.first_item());
+                super::expression::emit_unbraced_block_expression(
+                    parser,
+                    interval.end(),
+                    SyntaxRole::Body,
+                );
+                bump_until(parser, interval.end());
+            }
+        }
+        _ => emit_expression(parser, end, SyntaxRole::Body),
+    }
 }
 
 fn emit_unsafe_lifetime_children(

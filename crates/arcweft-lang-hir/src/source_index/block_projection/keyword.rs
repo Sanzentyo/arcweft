@@ -2,11 +2,11 @@
 
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use arcweft_lang_syntax::attachment::node::{
-    BreakStatementKind, ContinueStatementKind, DeferStatementKind, GotoStatementKind,
-    OutStatementKind, SignalStatementKind,
+    BreakStatementKind, ContinueStatementKind, DeferBlockStatementKind, DeferStatementKind,
+    GotoStatementKind, OutStatementKind, SignalStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AttachedControlLabel, RequiredStatementExpressionNode, StatementNode,
+    AttachedControlLabel, AttachedDeferBlockBody, RequiredStatementExpressionNode, StatementNode,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
@@ -111,6 +111,48 @@ pub(super) fn keyword_statement_evidence(
                 },
             );
             (expression_matches, recovery)
+        }
+        (
+            SyntaxKind::DeferBlockStatement,
+            HirStmtKind::Defer {
+                outcome,
+                expression,
+            },
+        ) => {
+            let source = attached
+                .cast::<DeferBlockStatementKind>()
+                .ok()?
+                .semantics()
+                .ok()?;
+            let expression_matches = match source.body() {
+                AttachedDeferBlockBody::Expression(body) => {
+                    source_expression_matches(slots, expressions, *expression, body, scope)
+                }
+                AttachedDeferBlockBody::Missing(body) => missing_statement_expression_matches(
+                    parsed,
+                    slots,
+                    expressions,
+                    statement,
+                    *expression,
+                    scope,
+                    HirStmtRecoveryOperandSlot::DeferExpression {
+                        insertion: body.range().start(),
+                    },
+                ),
+            };
+            let recovery = match source.body() {
+                AttachedDeferBlockBody::Missing(_) => Some(HirStmtRecoveryIssue::RecoveredChild {
+                    role: HirStmtChildRole::Initializer,
+                }),
+                AttachedDeferBlockBody::Expression(_) => {
+                    expression_is_poisoned(slots, expressions, *expression).then_some(
+                        HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Initializer,
+                        },
+                    )
+                }
+            };
+            (*outcome == source.outcome() && expression_matches, recovery)
         }
         (SyntaxKind::SignalStatement, HirStmtKind::Signal { target, value }) => {
             let source = attached

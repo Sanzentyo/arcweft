@@ -62,6 +62,29 @@ pub(in crate::parser) fn emit_dialogue_line_plan(
     SourceRange::new(start, parser.current_offset())
 }
 
+/// Finds the exact same-indent `with` that follows an indentation-owned
+/// colon Dialogue body. The content suite's dedent is the ownership boundary.
+pub(in crate::parser) fn colon_dialogue_plan_start(
+    parser: &DocumentParser<'_, '_>,
+    owner_start: usize,
+    colon: usize,
+    end: usize,
+) -> Option<usize> {
+    let content = indented_suite_interval(parser, owner_start, colon, end);
+    let with = match content.issue() {
+        None => first_significant(parser, content.end(), end)?,
+        Some(super::indentation::IndentedSuiteIssue::MissingNewline) => {
+            let line_end = physical_line_end(parser, owner_start, end);
+            first_significant(parser, line_end.saturating_add(1), end)?
+        }
+        Some(super::indentation::IndentedSuiteIssue::MissingIndentedItem) => return None,
+    };
+    (token_text(parser, with) == Some("with")
+        && super::indentation::token_indent(parser, with)
+            == super::indentation::token_indent(parser, owner_start))
+    .then_some(with)
+}
+
 fn emit_braced_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.start(SyntaxKind::DialogueLinePlanBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
@@ -73,7 +96,9 @@ fn emit_braced_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
             break;
         }
         let start = parser.cursor();
-        let terminator = find_statement_terminator(parser, start, close);
+        let terminator = super::line_plan_defer_item_end(parser, start, close)
+            .map(|end| (end, false))
+            .or_else(|| find_statement_terminator(parser, start, close));
         let segment_end = terminator.map_or(close, |(index, _)| index);
         let significant_end = trimmed_end(parser, start, segment_end);
         if start < significant_end {
@@ -284,16 +309,22 @@ pub(super) fn dialogue_plan_end(
             _ => {}
         }
     }
-    if !saw_postfix_close {
-        return None;
-    }
-    let with = with.or_else(|| {
+    let with = if let Some(with) = with {
+        Some(with)
+    } else if let Some(colon) = head_body_introducer(parser, statement_start, head_end)
+        .filter(|index| token_text(parser, *index) == Some(":"))
+    {
+        colon_dialogue_plan_start(parser, statement_start, colon, limit)
+    } else {
+        if !saw_postfix_close {
+            return None;
+        }
         let next = first_significant(parser, head_end.saturating_add(1), limit)?;
         (token_text(parser, next) == Some("with")
             && super::indentation::token_indent(parser, next)
                 == super::indentation::token_indent(parser, statement_start))
         .then_some(next)
-    })?;
+    }?;
     let introducer = first_significant(parser, with.saturating_add(1), limit)?;
     match token_text(parser, introducer) {
         Some("{") => find_matching_close_before(parser, introducer + 1, limit, "{")

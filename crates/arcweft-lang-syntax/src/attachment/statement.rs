@@ -5,14 +5,18 @@ use super::access::RequiredStatementExpressionNode;
 use super::expression::AttachedExpressionNode;
 use super::family::ExpressionFamily;
 use super::family::{StatementFamily, StatementNode};
+use super::node::MissingBodyKind;
 use super::node::{
-    AstKind, AstNode, BreakStatementKind, ContinueStatementKind, DeferStatementKind, ErrorNodeKind,
-    GotoStatementKind, NameReferenceKind, OnStatementKind, OutStatementKind, SignalStatementKind,
+    AstKind, AstNode, BreakStatementKind, ContinueStatementKind, DeferBlockStatementKind,
+    DeferStatementKind, ErrorNodeKind, GotoStatementKind, NameReferenceKind, OnStatementKind,
+    OutStatementKind, SignalStatementKind,
 };
 use super::trigger::{AttachedTriggerPattern, attach_trigger_pattern};
+use crate::ast::line_plan::DeferOutcome;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::{SyntaxRole, SyntaxRoleClass};
 use crate::name::{SyntaxName, SyntaxNameIssue};
+use arcweft_source::SourceSpan;
 
 /// One parser-classified control label and its exact CST owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +95,63 @@ impl AttachedDeferStatement {
 
     pub const fn expression(&self) -> &RequiredStatementExpressionNode {
         &self.expression
+    }
+}
+
+/// Typed body owned by a block-form `defer` statement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedDeferBlockBody {
+    Expression(AttachedExpressionNode),
+    Missing(AstNode<MissingBodyKind>),
+}
+
+impl AttachedDeferBlockBody {
+    /// Exact source owner of the authored or recovered cleanup body.
+    pub fn source_span(&self) -> SourceSpan {
+        match self {
+            Self::Expression(expression) => expression.whole_source_span(),
+            Self::Missing(missing) => missing.source_span(),
+        }
+    }
+
+    pub const fn expression(&self) -> Option<&AttachedExpressionNode> {
+        match self {
+            Self::Expression(expression) => Some(expression),
+            Self::Missing(_) => None,
+        }
+    }
+}
+
+/// Complete typed block-form `defer` relation, including outcome ownership.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedDeferBlockStatement {
+    syntax: AstNode<DeferBlockStatementKind>,
+    outcome: DeferOutcome,
+    outcome_source: Option<AstNode<NameReferenceKind>>,
+    body: AttachedDeferBlockBody,
+}
+
+impl AttachedDeferBlockStatement {
+    pub const fn syntax(&self) -> &AstNode<DeferBlockStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn outcome(&self) -> DeferOutcome {
+        self.outcome
+    }
+
+    /// Exact source span of the authored outcome word, absent for `Always`.
+    pub fn outcome_source_span(&self) -> Option<SourceSpan> {
+        self.outcome_source.as_ref().map(AstNode::source_span)
+    }
+
+    /// Exact name node that supplied the qualified outcome, when authored.
+    pub const fn outcome_source(&self) -> Option<&AstNode<NameReferenceKind>> {
+        self.outcome_source.as_ref()
+    }
+
+    pub const fn body(&self) -> &AttachedDeferBlockBody {
+        &self.body
     }
 }
 
@@ -236,6 +297,47 @@ impl AstNode<DeferStatementKind> {
         Ok(AttachedDeferStatement {
             syntax: self.clone(),
             expression: required_expression(self, SyntaxRole::Initializer)?,
+        })
+    }
+}
+
+impl AstNode<DeferBlockStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedDeferBlockStatement, SyntaxAccessError> {
+        require_roles(
+            self,
+            &[
+                SyntaxRole::Body,
+                SyntaxRole::Kind,
+                SyntaxRole::Colon,
+                SyntaxRole::Recovery(0),
+            ],
+        )?;
+        let outcome_source = self.optional_exact_child::<NameReferenceKind>(SyntaxRole::Kind)?;
+        let outcome = match outcome_source.as_ref().map(AstNode::source_text) {
+            None => DeferOutcome::Always,
+            Some("completed") => DeferOutcome::Completed,
+            Some("cancelled") => DeferOutcome::Cancelled,
+            Some("failed") => DeferOutcome::Failed,
+            Some(_) => return Err(invalid(self)),
+        };
+        let bodies = self.syntax().children_with_role(SyntaxRole::Body);
+        let [body] = bodies.as_slice() else {
+            return Err(invalid(self));
+        };
+        let body = match body.kind() {
+            crate::grammar::SyntaxKind::MissingBody => {
+                AttachedDeferBlockBody::Missing(body.clone().cast::<MissingBodyKind>()?)
+            }
+            kind if kind.is_expression() => AttachedDeferBlockBody::Expression(
+                AttachedExpressionNode::from_syntax(body.clone())?,
+            ),
+            _ => return Err(invalid(self)),
+        };
+        Ok(AttachedDeferBlockStatement {
+            syntax: self.clone(),
+            outcome,
+            outcome_source,
+            body,
         })
     }
 }

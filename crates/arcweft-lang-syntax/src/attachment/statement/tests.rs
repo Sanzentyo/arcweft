@@ -6,12 +6,13 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    AstNode, BreakStatementKind, ContinueStatementKind, DeferStatementKind, GotoStatementKind,
-    OutStatementKind, RequiredStatementExpressionNode, SignalStatementKind,
+    AstNode, BreakStatementKind, ContinueStatementKind, DeferBlockStatementKind,
+    DeferStatementKind, GotoStatementKind, OutStatementKind, RequiredStatementExpressionNode,
+    SignalStatementKind,
 };
 use crate::attachment::{
-    GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
-    SyntaxSnapshotId, attach_typed_tree,
+    AttachedDeferBlockBody, AttachedExpressionNode, GrammarIdentityMap, SyntaxDatabaseId,
+    SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::grammar::SyntaxKind;
 use crate::parser::{ParseOptions, parse_document};
@@ -197,4 +198,162 @@ fn keyword_statement_views_keep_required_slots_and_typed_recovery() {
             .iter()
             .all(super::AttachedControlLabel::is_recovered)
     );
+}
+
+#[test]
+fn line_plan_defer_attaches_outcome_body_and_authored_spans() {
+    let source = concat!(
+        "flow line_defer() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Hello[p]\n",
+        "    with:\n",
+        "        defer on completed { cleanup() }\n",
+        "        defer on failed:\n",
+        "            cleanup()\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let snapshot = attach(source);
+    let defers = snapshot
+        .nodes()
+        .filter(|node| node.kind() == SyntaxKind::DeferBlockStatement)
+        .map(|node| {
+            node.cast::<DeferBlockStatementKind>()
+                .unwrap()
+                .semantics()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        defers.len(),
+        2,
+        "kinds={:#?}",
+        snapshot.nodes().map(|node| node.kind()).collect::<Vec<_>>()
+    );
+
+    assert_eq!(
+        defers[0].outcome(),
+        crate::ast::line_plan::DeferOutcome::Completed
+    );
+    let completed = defers[0].outcome_source_span().unwrap();
+    assert_eq!(
+        completed.range(),
+        source
+            .find("completed")
+            .map(|start| { arcweft_source::SourceRange::new(start, start + "completed".len()) })
+            .unwrap()
+    );
+    let AttachedDeferBlockBody::Expression(body) = defers[0].body() else {
+        panic!("braced defer body must be a Block expression");
+    };
+    assert!(matches!(
+        body.projection(),
+        crate::expressions::ExpressionProjection::Block
+    ));
+    assert_eq!(body.syntax().source_text(), "{ cleanup() }");
+
+    assert_eq!(
+        defers[1].outcome(),
+        crate::ast::line_plan::DeferOutcome::Failed
+    );
+    let failed = defers[1].outcome_source_span().unwrap();
+    let failed_start = source.find("failed").unwrap();
+    assert_eq!(
+        failed.range(),
+        arcweft_source::SourceRange::new(failed_start, failed_start + "failed".len())
+    );
+    let AttachedDeferBlockBody::Expression(body) = defers[1].body() else {
+        panic!("indented defer body must be a Block expression");
+    };
+    assert!(matches!(
+        body.projection(),
+        crate::expressions::ExpressionProjection::Block
+    ));
+    assert_eq!(body.syntax().source_text(), "cleanup()");
+}
+
+#[test]
+fn line_plan_defer_rejects_unknown_outcomes_and_missing_indented_bodies() {
+    let source = concat!(
+        "flow malformed_defer() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Hello[p]\n",
+        "    with:\n",
+        "        defer on succeeded { cleanup() }\n",
+        "        defer on completed:\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcw:/malformed-defer-test").unwrap(),
+            SourceName::path("malformed-defer-test.arcw"),
+            source,
+        )
+        .unwrap(),
+    );
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
+    assert_eq!(build.green().to_string(), source);
+    assert!(
+        build
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.dialogue.line_plan_invalid_defer" })
+    );
+    assert!(
+        build
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.statement.missing_defer_body" })
+    );
+    assert_eq!(
+        build
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::DeferBlockStatement)
+            .count(),
+        1
+    );
+    let snapshot = attach(source);
+    let missing_body = snapshot
+        .nodes()
+        .find(|node| node.kind() == SyntaxKind::DeferBlockStatement)
+        .unwrap()
+        .cast::<DeferBlockStatementKind>()
+        .unwrap()
+        .semantics()
+        .unwrap();
+    assert_eq!(
+        missing_body.outcome(),
+        crate::ast::line_plan::DeferOutcome::Completed
+    );
+    assert!(matches!(
+        missing_body.body(),
+        AttachedDeferBlockBody::Missing(_)
+    ));
+}
+
+#[test]
+fn inline_colon_dialogue_keeps_same_indent_line_plan_after_content() {
+    let source = concat!(
+        "flow main() -> String {\n",
+        "    alice: hello[mark @.end]\n",
+        "    with:\n",
+        "        on mark(@.end) => log.info(\"end\")\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let snapshot = attach(source);
+    let application = snapshot
+        .nodes()
+        .find(|node| node.kind() == SyntaxKind::AttachedContentApplicationExpression)
+        .unwrap();
+    let application = AttachedExpressionNode::from_syntax(application).unwrap();
+    let plan = application
+        .dialogue_line_plan()
+        .unwrap()
+        .expect("same-indent with plan follows inline colon Dialogue content");
+    assert_eq!(plan.body().items().len(), 1);
+    assert_eq!(plan.body().items()[0].kind(), SyntaxKind::OnStatement);
 }
