@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+use arcweft_character::catalog::{CharacterCatalog, CharacterVisualManifestEvidence};
 use arcweft_compiler::{
     lower::{RuntimeEmissionMode, project_runtime_reachability, project_runtime_semantic_facts},
     project::{
@@ -85,7 +86,10 @@ fn ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc() {
 }
 
 fn assert_single_dialogue_execution(
-    executor: &mut impl arcweft_core::executor::RuntimeExecutor,
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
     template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
 ) -> arcweft_core::value::RuntimeOpaqueValue {
     use arcweft_core::{
@@ -98,16 +102,19 @@ fn assert_single_dialogue_execution(
     let mut seen = 0;
     let mut selected_target = None;
     for tick in 0..256 {
-        let output = executor
-            .step(
-                RuntimeStepInput {
-                    tick: TickId(tick),
-                    dialogue_advances: std::mem::take(&mut advances),
-                    ..RuntimeStepInput::default()
-                },
-                RuntimeStepOptions::default(),
-            )
-            .output;
+        let result = step(
+            RuntimeStepInput {
+                tick: TickId(tick),
+                dialogue_advances: std::mem::take(&mut advances),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+        );
+        let arcweft_core::step::RuntimeStepResult {
+            output,
+            fiber_status: status,
+            ..
+        } = result;
         assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
         for event in output.flow_events {
             if let FlowEvent::DialogueLine {
@@ -128,7 +135,7 @@ fn assert_single_dialogue_execution(
                 advances.push(activation);
             }
         }
-        match &executor.fiber().status {
+        match &status {
             FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(*exit, FlowExit::Done);
@@ -139,6 +146,47 @@ fn assert_single_dialogue_execution(
         }
     }
     panic!("execution exceeded its deterministic step bound");
+}
+
+fn bind_test_character_dialogue_schema(
+    compiled: &CompiledProject,
+    owner: arcweft_core::task::RuntimeProgramOwner,
+) -> arcweft_dialogue::CharacterDialogueRuntimeSchema {
+    let generation = compiled
+        .runtime_plan()
+        .character_dialogue_generation
+        .as_ref()
+        .expect("the dialogue fixture publishes a CharacterDialogue generation");
+    let environment = compiled.analysis_lease().registered_environment();
+    let characters =
+        CharacterCatalog::try_from_declarations(generation.characters().keys().map(|character| {
+            let visual = environment.character_manifest(character).cloned().map_or(
+                CharacterVisualManifestEvidence::Absent,
+                CharacterVisualManifestEvidence::Present,
+            );
+            (character.clone(), visual)
+        }))
+        .expect("the accepted Character inventory and visual evidence form a catalog");
+
+    let product = compiled.dialogue_profile().product();
+    let program = product
+        .program()
+        .expect("the accepted dialogue profile retains its View program");
+    let mut views = arcweft_view::ViewRegistry::default();
+    program
+        .register_runtime_views(&mut views)
+        .expect("the accepted dialogue View registry");
+    let style_digest = product.style().map(|style| {
+        style
+            .resource()
+            .canonical_digest()
+            .map(|digest| arcweft_core::entry::RuntimeValueDigest::from_bytes(digest.as_bytes()))
+            .expect("the accepted dialogue Style fingerprint")
+    });
+
+    generation
+        .bind_runtime(Arc::new(views), Arc::new(characters), style_digest, owner)
+        .expect("the schema binds to this exact executable generation")
 }
 
 fn assert_candidate_program_executes_in_native_and_awbc(compiled: &CompiledProject) {
@@ -172,13 +220,32 @@ fn assert_candidate_program_executes_in_native_and_awbc(compiled: &CompiledProje
     )
     .unwrap();
     let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
-    let native_target = assert_single_dialogue_execution(&mut native, template.id());
+    let native_schema = bind_test_character_dialogue_schema(
+        compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+        );
+    let native_target = assert_single_dialogue_execution(
+        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+        template.id(),
+    );
     let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
         decoded,
         arcweft_core::awbc::schema::AwbcEntryId(0),
     )
     .unwrap();
-    let awbc_target = assert_single_dialogue_execution(&mut awbc, template.id());
+    let awbc_schema = bind_test_character_dialogue_schema(compiled, awbc.program_owner());
+    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+        );
+    let awbc_target = assert_single_dialogue_execution(
+        |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+        template.id(),
+    );
     assert_eq!(native_target, awbc_target);
     let character = arcweft_character::id::CharacterId::try_new("character.alice").unwrap();
     assert_eq!(
