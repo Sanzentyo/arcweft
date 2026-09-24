@@ -124,14 +124,12 @@ pub fn Character(
 ) -> DialogueContentCall
 ```
 
-A `DialogueContentCall` accepts a content block and optional line plan, then returns `LineOutcome`.
-
-```arcw
-pub enum LineOutcome {
-    Completed,
-    Cancelled(LineCancel),
-}
-```
+A `DialogueContentCall` accepts a content block and optional line plan. Its
+non-escaping `DialogueLine<R>` operation suspends and then produces the line
+plan's `out` value `R`, or `()` when there is no `out`. A cancellation branch
+that resumes the caller uses the pending normal `R` with `continue` or selects
+another value of the same `R` with `out`. Callers that need to observe
+cancellation can choose `R = Result<T, LineCancel>` explicitly.
 
 ---
 
@@ -524,25 +522,31 @@ with {
 }
 ```
 
-Cancellation can return an outcome:
+Cancellation can select an ordinary line result:
 
 ```arcw
 let outcome = alice(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
-    cancel on input(.SkipLine) => LineCancel.Skipped
-    cancel on input(.BackToTitle) => LineCancel.Goto(@flow.title)
+    cancel on input(.SkipLine) {
+        out Err(LineCancel.Skipped)
+    }
+    cancel on input(.BackToTitle) {
+        goto @flow.title
+    }
+    out Ok(())
 }
 
 match outcome {
-    .Completed => continue
-    .Cancelled(.Skipped) => continue
-    .Cancelled(.Goto(flow)) => return Ok(FlowExit.Goto(flow))
+    .Ok(()) => continue
+    .Err(.Skipped) => continue
 }
 ```
 
-If the result is ignored, the default line policy is used. A `goto` cancellation terminates the current flow segment and produces a `FlowExit.Goto`.
+`goto` transfers control after child and line cleanup; it does not bind an
+ordinary line result. If the result is ignored, the line still closes and runs
+its applicable cleanup.
 
 An `input(.Action)` rule matches a semantic action routed from the dialogue
 View for the exact observed line activation. It does not match a content mark or

@@ -760,3 +760,18 @@ WebAssembly 単独 check は transitive `getrandom 0.3.4` の `wasm_js` 設定�
 transfer、および 019/023 の end-to-end 受理を完了したものではない。
 次は line result `R` と取消 disposition の仕様章を整合させ、動的 cleanup と
 native/AWBC の最終公開を同じ authority で実装する。
+
+**2026-09-25 行結果契約の整合判断:**
+
+`74625a45c` の main/`origin/main`、clean tree から維持仕様を再照合した。
+受理済み `DialogueLine<R>` は非 escaping operation で、実行後に著者へ渡る
+値は `R`（`out` がなければ `()`）。古い `LineOutcome` ラッパーは `R` を
+保持できず、既存の tuple/handle binding と Sema/runtime の型経路にも
+一致しないため現行仕様から除く。取消を著者が観測したい場合は通常の
+`R = Result<T, LineCancel>` を選び、正常側と取消側で同じ `R` を `out`
+する。`try` は通常の Result 伝播として扱う。cancel `continue` は
+pending の正常 `R`、cancel `out` は同型の別 `R`、`goto`/`return` は
+値を公開しない transfer とし、子 scope・行 scope の cleanup 完了後に
+一度だけ公開または transfer する。cleanup 途中の失敗では再 unwind せず
+終端を失敗にする。この判断を維持仕様の例へ反映したが、runtime の結果
+選択と dynamic `defer` 実装は未完了。

@@ -220,7 +220,8 @@ If a cancellation branch can complete the line differently, it must either:
 ```text
 - out the same result type,
 - perform non-returning flow control such as goto/return FlowExit,
-- or make the whole expression return Result<R, LineCancel> with try-line syntax.
+- or choose an ordinary line result type `Result<T, LineCancel>` and `out`
+  `Ok(T)` or `Err(LineCancel)` on the corresponding paths.
 ```
 
 The normal `out` value is the pending result while the line is active. A
@@ -231,7 +232,7 @@ cancelled children and the applicable scoped cleanup have finished.
 Example with explicit cancel result:
 
 ```arcw
-let result = try alice(voice=auto)[
+let result = alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -240,6 +241,9 @@ with:
 
     out Ok(())
 ```
+
+Here `result` has type `Result<(), LineCancel>`. Applying ordinary `try` to
+the line expression instead propagates `Err` and binds the unwrapped `()`.
 
 For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return Ok(FlowExit....)`, so ordinary bindings remain ergonomic.
 

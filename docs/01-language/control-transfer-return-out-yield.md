@@ -71,8 +71,9 @@ let outcome = alice()[長い台詞です。[p]]
 with 'line {
     cancel on input(.SkipLine) {
         text.flush(mode = .Instant)
-        out 'line .Skipped
+        out 'line Err(LineCancel.Skipped)
     }
+    out 'line Ok(())
 }
 ```
 

@@ -669,8 +669,8 @@ alice(id=@say.opening.dream_hint, voice=auto, look=.smile)[
 ]
 with {
     reveal = voice
-    cancel on input(.SkipLine) => continue
-    cancel on input(.BackToTitle) => goto @flow.title
+    cancel on input(.SkipLine) { continue }
+    cancel on input(.BackToTitle) { goto @flow.title }
 
     at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
     at(end-250ms) { alice.stage.animate(@anim.breath.once) }
