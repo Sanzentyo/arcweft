@@ -200,6 +200,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::CopyValue
         | AwbcOpcode::RegisterCleanup
         | AwbcOpcode::CancelCleanup
+        | AwbcOpcode::RegisterDefer
         | AwbcOpcode::Jump
         | AwbcOpcode::Branch
         | AwbcOpcode::Match
