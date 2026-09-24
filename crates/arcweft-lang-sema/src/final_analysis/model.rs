@@ -1,5 +1,7 @@
 //! Generation-bound checked semantic fact model.
 
+use std::sync::Arc;
+
 use super::CheckedViewFxApplication;
 use super::fx_application::SealedContentFxEdgePlan;
 use super::match_edges::NestedPathEvidence;
@@ -1918,15 +1920,31 @@ impl CheckedMatchFact {
 pub struct CheckedTypedExpressionResult {
     ty: TypeKind,
     type_selection: CheckedTypeSelection,
+    specialization: Option<Arc<crate::callable::CheckedFunctionSpecialization>>,
 }
 
 impl CheckedTypedExpressionResult {
     pub const fn new(ty: TypeKind, type_selection: CheckedTypeSelection) -> Self {
-        Self { ty, type_selection }
+        Self {
+            ty,
+            type_selection,
+            specialization: None,
+        }
     }
 
     pub const fn ty(&self) -> &TypeKind {
         &self.ty
+    }
+
+    pub fn source_type(&self) -> &TypeKind {
+        match &self.specialization {
+            Some(specialization) => specialization.source_type(),
+            None => &self.ty,
+        }
+    }
+
+    pub fn specialization(&self) -> Option<&crate::callable::CheckedFunctionSpecialization> {
+        self.specialization.as_deref()
     }
 
     pub const fn type_selection(&self) -> CheckedTypeSelection {
@@ -2242,6 +2260,43 @@ impl CheckedExpression {
         self.data.result.value_type()
     }
 
+    /// The type proved by the source resolution before an optional scheme use.
+    pub fn source_value_type(&self) -> Option<&TypeKind> {
+        match &self.data.result {
+            CheckedExpressionResult::Value(value) => Some(value.source_type()),
+            CheckedExpressionResult::NonValue(_) | CheckedExpressionResult::Unavailable => None,
+        }
+    }
+
+    pub fn function_specialization(
+        &self,
+    ) -> Option<&crate::callable::CheckedFunctionSpecialization> {
+        match &self.data.result {
+            CheckedExpressionResult::Value(value) => value.specialization(),
+            CheckedExpressionResult::NonValue(_) | CheckedExpressionResult::Unavailable => None,
+        }
+    }
+
+    pub(crate) fn with_function_specialization(
+        mut self,
+        owner: ExprId,
+        specialization: Arc<crate::callable::CheckedFunctionSpecialization>,
+    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
+        let CheckedExpressionResult::Value(value) = &mut self.data.result else {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        };
+        if specialization.owner() != owner {
+            return Err(crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
+        if value.specialization.is_some() || value.source_type() != specialization.source_type() {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
+        value.ty = specialization.specialized_type().clone();
+        value.specialization = Some(specialization);
+        value.type_selection = CheckedTypeSelection::Expected;
+        Ok(self)
+    }
+
     pub const fn type_selection(&self) -> Option<CheckedTypeSelection> {
         self.data.result.type_selection()
     }
@@ -2354,7 +2409,9 @@ impl CheckedExpression {
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
-        if let Some(ty) = self.value_type() {
+        if let Some(specialization) = self.function_specialization() {
+            specialization.visit_types(visitor)?;
+        } else if let Some(ty) = self.value_type() {
             visitor(ty)?;
         }
         self.data.resolution.visit_types(visitor)

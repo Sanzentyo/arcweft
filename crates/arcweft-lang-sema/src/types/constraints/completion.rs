@@ -80,15 +80,15 @@ impl<D: ConstraintDomain> CompletedCandidateAlternatives<D> {
 }
 
 #[derive(Eq, PartialEq)]
-pub(crate) struct CompletedConstraintApplication<P> {
+pub(crate) struct CompletedConstraintApplication<A, P> {
     solution: Arc<TypeConstraintSolution>,
-    projections: Box<[KeyedConstraintProjection<P>]>,
+    projections: Box<[KeyedConstraintProjection<A, P>]>,
 }
 
-impl<P> CompletedConstraintApplication<P> {
+impl<A, P> CompletedConstraintApplication<A, P> {
     pub(super) fn new(
         solution: Arc<TypeConstraintSolution>,
-        projections: Box<[KeyedConstraintProjection<P>]>,
+        projections: Box<[KeyedConstraintProjection<A, P>]>,
     ) -> Self {
         Self {
             solution,
@@ -100,14 +100,23 @@ impl<P> CompletedConstraintApplication<P> {
         &self.solution
     }
 
-    pub(crate) fn projections(&self) -> &[KeyedConstraintProjection<P>] {
+    pub(crate) fn projections(&self) -> &[KeyedConstraintProjection<A, P>] {
         &self.projections
     }
 }
 
+/// A dependency names a projection in this completed component by its domain
+/// owner. Live opening identities never enter completed value-use evidence.
+#[derive(Debug, Eq, PartialEq)]
+pub(super) struct CompletedProjectionAddress<A, P> {
+    pub(super) application: A,
+    pub(super) key: Arc<P>,
+}
+
 pub(crate) struct CompletedConstraintComponent<D: ConstraintDomain> {
     selected: D::Application,
-    applications: BTreeMap<D::Application, CompletedConstraintApplication<D::Projection>>,
+    applications:
+        BTreeMap<D::Application, CompletedConstraintApplication<D::Application, D::Projection>>,
     sources: ClosedConstraintSourceTrace<D>,
 }
 
@@ -134,6 +143,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
             for (left, right) in left.projections.iter().zip(&right.projections) {
                 context.enter_node()?;
                 if left.key() != right.key()
+                    || left.source() != right.source()
                     || left.value().scope() != right.value().scope()
                     || !super::normalization::completed_types_equal(
                         left.value().value(),
@@ -143,6 +153,15 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
                 {
                     return Ok(false);
                 }
+                match (left.input_type(), right.input_type()) {
+                    (Some(left), Some(right)) => {
+                        if !super::normalization::completed_types_equal(left, right, context)? {
+                            return Ok(false);
+                        }
+                    }
+                    (None, None) => {}
+                    _ => return Ok(false),
+                }
             }
         }
         self.sources.equal_with(&other.sources, context)
@@ -150,7 +169,10 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
 
     pub(super) fn new(
         selected: D::Application,
-        applications: BTreeMap<D::Application, CompletedConstraintApplication<D::Projection>>,
+        applications: BTreeMap<
+            D::Application,
+            CompletedConstraintApplication<D::Application, D::Projection>,
+        >,
         sources: ClosedConstraintSourceTrace<D>,
     ) -> Self {
         assert!(
@@ -164,7 +186,9 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
         }
     }
 
-    pub(crate) fn selected(&self) -> &CompletedConstraintApplication<D::Projection> {
+    pub(crate) fn selected(
+        &self,
+    ) -> &CompletedConstraintApplication<D::Application, D::Projection> {
         self.application(self.selected)
             .expect("completed component retains its selected application")
     }
@@ -172,7 +196,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
     pub(crate) fn application(
         &self,
         application: D::Application,
-    ) -> Option<&CompletedConstraintApplication<D::Projection>> {
+    ) -> Option<&CompletedConstraintApplication<D::Application, D::Projection>> {
         self.applications.get(&application)
     }
 
@@ -181,7 +205,7 @@ impl<D: ConstraintDomain> CompletedConstraintComponent<D> {
     ) -> impl ExactSizeIterator<
         Item = (
             D::Application,
-            &CompletedConstraintApplication<D::Projection>,
+            &CompletedConstraintApplication<D::Application, D::Projection>,
         ),
     > {
         self.applications

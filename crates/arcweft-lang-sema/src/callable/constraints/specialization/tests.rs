@@ -29,7 +29,7 @@ impl ConstraintDomain for Domain {
     type EvidenceRule = ();
     type ObservedEvidence = ();
     type CheckedEvidence = ();
-    type ProbeSemanticBranch = ();
+    type ProbeSemanticBranch = u8;
     type SealedBranchValue = ();
     type Projection = u8;
     type SourceErrorCause = ();
@@ -52,6 +52,7 @@ impl ConstraintDomain for Domain {
 
 enum Source {
     Scheme(TypeKind),
+    ReturnedScheme(TypeKind),
     Value(TypeKind),
 }
 
@@ -87,9 +88,9 @@ impl TypeConstraintClient<Domain> for Client<'_> {
         let source = probe.source().local();
         match &self.sources[usize::from(source)] {
             Source::Value(value) => {
-                probe.observe(SourceProbeResult::checked(value.clone(), (), 0, ()))
+                probe.observe(SourceProbeResult::checked(value.clone(), 0, 0, ()))
             }
-            Source::Scheme(scheme) => {
+            Source::Scheme(scheme) | Source::ReturnedScheme(scheme) => {
                 if self.check_foreign_graph {
                     let foreign = PreparedCallGraph::<()>::new();
                     assert!(matches!(
@@ -111,31 +112,72 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                 if self.cancel_during_probe {
                     self.cancellation.store(true, Ordering::Release);
                 }
-                let pending = probe
-                    .specialize_function_value(
-                        self.graph,
-                        CallableConstraintApplication::Specialize(
-                            self.application_owners[usize::from(source)],
-                        ),
-                        scheme,
-                        &enclosing(),
-                        &PRODUCTION_CALLABLE_LIMITS,
-                        0,
-                    )
-                    .map_err(|failure| match failure {
-                        FunctionSpecializationFailure::Prepared(error) => {
-                            panic!("valid scheme preparation: {error:?}")
-                        }
-                        FunctionSpecializationFailure::Constraint(
-                            TypeConstraintFailure::Abort(error),
-                        ) => SourceCallbackFailure::Abort(error),
-                        FunctionSpecializationFailure::Constraint(error) => {
-                            panic!("valid deferred scheme: {error:?}")
-                        }
-                    })?;
+                let specialized =
+                    if matches!(self.sources[usize::from(source)], Source::ReturnedScheme(_)) {
+                        let owner = self.application_owners[1];
+                        let parameter = super::super::tests::accepted_type(900, 0);
+                        let template = TypeKind::generic_parameter(parameter.clone());
+                        let parameters = TypeConstraintParameterScope::new([(
+                            parameter,
+                            TypeConstraintParameterEligibility::Bindable,
+                        )])
+                        .unwrap();
+                        let nested = probe.ticket.fork_for_child(probe.context).unwrap();
+                        let mut child = TypeConstraintTransaction::initialize_from_nested_path(
+                            probe.context,
+                            CallableConstraintApplication::Call(owner),
+                            parameters,
+                            None,
+                            nested,
+                        )
+                        .unwrap();
+                        child.constrain(
+                            probe.context,
+                            &template,
+                            scheme,
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        );
+                        child.request_projection(
+                            probe.context,
+                            0,
+                            &template,
+                            crate::types::constraints::TypeConstraintProjectionClosure::Closed,
+                        );
+                        let pending = child.defer_child_result(0).unwrap().with_probe_branch(9);
+                        probe.specialize_pending_function_value(
+                            self.graph,
+                            CallableConstraintApplication::Specialize(owner),
+                            pending,
+                            &enclosing(),
+                            &PRODUCTION_CALLABLE_LIMITS,
+                            0,
+                        )
+                    } else {
+                        probe.specialize_function_value(
+                            self.graph,
+                            CallableConstraintApplication::Specialize(
+                                self.application_owners[usize::from(source)],
+                            ),
+                            scheme,
+                            &enclosing(),
+                            &PRODUCTION_CALLABLE_LIMITS,
+                            0,
+                        )
+                    };
+                let pending = specialized.map_err(|failure| match failure {
+                    FunctionSpecializationFailure::Prepared(error) => {
+                        panic!("valid scheme preparation: {error:?}")
+                    }
+                    FunctionSpecializationFailure::Constraint(TypeConstraintFailure::Abort(
+                        error,
+                    )) => SourceCallbackFailure::Abort(error),
+                    FunctionSpecializationFailure::Constraint(error) => {
+                        panic!("valid deferred scheme: {error:?}")
+                    }
+                })?;
                 probe.observe_child(
                     pending,
-                    (),
+                    0,
                     SourceProbeSelection::Checked {
                         alternative: 0,
                         evidence: Arc::new(()),
@@ -175,6 +217,49 @@ impl TypeConstraintClient<Domain> for Client<'_> {
             if let Some(result) = &result {
                 assert_eq!(result.projection().value().value(), request.actual());
                 assert!(result.projection().value().scope().binders().is_empty());
+                let (Source::Scheme(source) | Source::ReturnedScheme(source)) =
+                    &self.sources[usize::from(request.source().local())]
+                else {
+                    panic!("only function scheme uses have specialization results");
+                };
+                let witness = crate::callable::CheckedFunctionSpecialization::seal(
+                    result,
+                    &mut crate::types::UnmeteredTypeProjection,
+                )
+                .unwrap();
+                let source_fact = crate::final_analysis::CheckedExpression::value(
+                    source.clone(),
+                    crate::final_analysis::CheckedTypeSelection::Inferred,
+                    EffectSet::from_labels(["fs.read"]).unwrap(),
+                    crate::final_analysis::CheckedExpressionResolution::Call,
+                );
+                let checked = source_fact
+                    .clone()
+                    .with_function_specialization(witness.owner(), witness)
+                    .unwrap();
+                assert_eq!(checked.value_type(), Some(request.actual()));
+                assert_eq!(checked.source_value_type(), Some(source));
+                assert_eq!(checked.effects(), source_fact.effects());
+                assert_eq!(checked.resolution(), source_fact.resolution());
+                assert_eq!(checked.execution_plan(), source_fact.execution_plan());
+                if let Source::ReturnedScheme(source) =
+                    &self.sources[usize::from(request.source().local())]
+                {
+                    assert_eq!(
+                        *request.canonical_branch(),
+                        9,
+                        "the child choice survives specialization"
+                    );
+                    let origin = result
+                        .source()
+                        .expect("specialization retains the producing call port");
+                    assert_eq!(
+                        origin.application_id(),
+                        CallableConstraintApplication::Call(result.application_id().expression())
+                    );
+                    assert_eq!(origin.projection().value().value(), source);
+                    assert!(origin.source().is_none());
+                }
             }
             self.observations.lock().unwrap().push((
                 request.source().local(),
@@ -361,6 +446,36 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
 }
 
 mod nested;
+mod witness;
+
+#[test]
+fn pending_call_result_specializes_on_its_own_path_and_retains_same_expression_origin() {
+    let graph = PreparedCallGraph::<()>::new();
+    let source = scheme();
+    let sources = [Source::ReturnedScheme(source.clone())];
+    let expected = concrete(TypeKind::I64, 4, &["fs.read"]);
+    let observations = Arc::new(Mutex::new(Vec::new()));
+    let cancellation = AtomicBool::new(false);
+    let solved = drive(
+        &graph,
+        Client {
+            graph: &graph,
+            application_owners: Vec::new(),
+            sources: &sources,
+            observations: Arc::clone(&observations),
+            cancellation: &cancellation,
+            cancel_during_probe: false,
+            check_foreign_graph: false,
+        },
+        TypeConstraintParameterScope::empty(),
+        std::slice::from_ref(&expected),
+        PRODUCTION_CALLABLE_LIMITS,
+    )
+    .unwrap();
+    assert_eq!(solved.component.applications().len(), 3);
+    assert_eq!(observations.lock().unwrap()[0].1, expected);
+    assert_eq!(source, scheme());
+}
 
 #[test]
 fn source_predicate_rejects_forbidden_specialization_before_materialization() {

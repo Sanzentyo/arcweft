@@ -26,6 +26,7 @@ mod projection;
 mod publication;
 mod resolver;
 mod schema;
+mod specialization;
 mod view_modifier;
 
 pub use catalog::{
@@ -236,4 +237,5 @@ pub(crate) use schema::{
     CallableGenericParameterInventory, CallableGenericTypeUse, CallableSchemaGenericRole,
     ObservedSemanticValueEvidence, presentation_content_schema,
 };
+pub use specialization::{CheckedFunctionSpecialization, CheckedFunctionSpecializationDigest};
 pub use view_modifier::ViewModifierId;

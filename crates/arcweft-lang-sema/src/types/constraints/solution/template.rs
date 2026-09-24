@@ -32,20 +32,31 @@ impl TypeConstraintSolution {
         &self,
         ty: &TypeKind,
     ) -> Result<ScopedType, TypeInstantiationError> {
+        self.apply_template_with_control(ty, &mut UnmeteredTypeProjection)
+            .map_err(TypeProjectionError::into_instantiation)
+    }
+
+    pub(crate) fn apply_template_with_control<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
         let residual = self.residual.scope();
         let template = self.authority.parameter_scope.template_scope();
-        let value = map_term(
+        let value = map_term_with_control(
             ty,
             template,
             residual,
-            &|reference, source, target| {
+            1,
+            control,
+            &|reference, source, target, depth, control| {
                 if let Some(parameter) = reference.template_key(template, source)? {
                     if let Ok(index) = self
                         .bindings
                         .binary_search_by(|row| row.parameter.cmp(&parameter))
                     {
                         let value = ScopedTypeView::sealed(&self.bindings[index].value, residual);
-                        return lift_value(value, target);
+                        return lift_value(value, target, depth, control);
                     }
                     if let Some(slot) = self.residual.type_slot(&parameter) {
                         return Ok(TypeKind::GenericParam(
@@ -53,18 +64,25 @@ impl TypeConstraintSolution {
                         ));
                     }
                     if matches!(parameter, GenericTypeReference::Bound(_)) {
-                        return Err(TypeInstantiationError::UnboundType { parameter });
+                        return Err(TypeInstantiationError::UnboundType { parameter }.into());
                     }
                 }
-                keep_type(reference, source)
+                keep_type(reference, source).map_err(Into::into)
             },
-            &|reference, source, target| {
+            &|length, source, target, _, _| {
+                let ArrayLength::Generic(reference) = length else {
+                    return match length {
+                        ArrayLength::Const(_) => Ok(length.clone()),
+                        _ => Err(TypeInstantiationError::UnresolvedType.into()),
+                    };
+                };
                 if let Some(parameter) = reference.template_key(template, source)? {
                     if let Ok(index) = self
                         .const_bindings
                         .binary_search_by(|row| row.parameter.cmp(&parameter))
                     {
-                        return lift_length(&self.const_bindings[index].value, residual, target);
+                        return lift_length(&self.const_bindings[index].value, residual, target)
+                            .map_err(Into::into);
                     }
                     if let Some(slot) = self.residual.const_slot(&parameter) {
                         return Ok(ArrayLength::Generic(
@@ -72,13 +90,13 @@ impl TypeConstraintSolution {
                         ));
                     }
                     if matches!(parameter, GenericConstReference::Bound(_)) {
-                        return Err(TypeInstantiationError::UnboundConst { parameter });
+                        return Err(TypeInstantiationError::UnboundConst { parameter }.into());
                     }
                 }
-                keep_const(reference, source)
+                keep_const(reference, source).map_err(Into::into)
             },
-            &|row, source, target| {
-                map_effects(row, &|reference| {
+            &|row, source, target, depth, control| {
+                map_effects_with_control(row, depth, control, &|reference, control| {
                     if let Some(parameter) = reference.template_key(template, source)? {
                         if let Ok(index) = self
                             .effect_bindings
@@ -88,6 +106,8 @@ impl TypeConstraintSolution {
                                 &self.effect_bindings[index].value,
                                 residual,
                                 target,
+                                depth,
+                                control,
                             );
                         }
                         if let Some(slot) = self.residual.effect_slot(&parameter) {
@@ -97,7 +117,7 @@ impl TypeConstraintSolution {
                             ));
                         }
                         if matches!(parameter, GenericEffectReference::Bound(_)) {
-                            return Err(TypeInstantiationError::UnboundEffect { parameter });
+                            return Err(TypeInstantiationError::UnboundEffect { parameter }.into());
                         }
                     }
                     Ok(EffectRow::open(
@@ -340,19 +360,23 @@ fn depth_difference(
         .ok_or_else(|| GenericScopeError::UnknownDepth { depth: u32::MAX }.into())
 }
 
-fn lift_value(
+fn lift_value<C: TypeProjectionControl>(
     value: ScopedTypeView<'_>,
     target: &GenericScope,
-) -> Result<TypeKind, TypeInstantiationError> {
+    depth: u64,
+    control: &mut C,
+) -> Result<TypeKind, TypeProjectionError<C::Error>> {
     let inserted = depth_difference(target, value.scope())?;
     let root_depth = value.scope().binders().len();
-    map_term(
+    map_term_with_control(
         value.value(),
         value.scope(),
         target,
-        &|reference, source, target| {
+        depth,
+        control,
+        &|reference, source, target, _, _| {
             let GenericTypeReference::Bound(parameter) = reference else {
-                return keep_type(reference, source);
+                return keep_type(reference, source).map_err(Into::into);
             };
             source.bound_type(parameter.depth(), parameter.slot())?;
             let local = source.binders().len() - root_depth;
@@ -370,9 +394,15 @@ fn lift_value(
                 target.bound_type(depth, parameter.slot())?,
             ))
         },
-        &|reference, source, target| {
+        &|length, source, target, _, _| {
+            let ArrayLength::Generic(reference) = length else {
+                return match length {
+                    ArrayLength::Const(_) => Ok(length.clone()),
+                    _ => Err(TypeInstantiationError::UnresolvedType.into()),
+                };
+            };
             let GenericConstReference::Bound(parameter) = reference else {
-                return keep_const(reference, source);
+                return keep_const(reference, source).map_err(Into::into);
             };
             source.bound_const(parameter.depth(), parameter.slot())?;
             let local = source.binders().len() - root_depth;
@@ -390,8 +420,8 @@ fn lift_value(
                 target.bound_const(depth, parameter.slot())?,
             ))
         },
-        &|row, source, target| {
-            map_effects(row, &|reference| {
+        &|row, source, target, depth, control| {
+            map_effects_with_control(row, depth, control, &|reference, _| {
                 let reference = lift_effect(reference, source, target, root_depth, inserted)?;
                 Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
             })
@@ -498,13 +528,15 @@ fn lift_effect(
     Ok(target.bound_effect(depth, parameter.slot())?)
 }
 
-fn lift_effects(
+fn lift_effects<C: TypeProjectionControl>(
     row: &EffectRow,
     source: &GenericScope,
     target: &GenericScope,
-) -> Result<EffectRow, TypeInstantiationError> {
+    depth: u64,
+    control: &mut C,
+) -> Result<EffectRow, TypeProjectionError<C::Error>> {
     let inserted = depth_difference(target, source)?;
-    map_effects(row, &|reference| {
+    map_effects_with_control(row, depth, control, &|reference, _| {
         Ok(EffectRow::open(
             crate::effects::EffectSet::new(),
             lift_effect(reference, source, target, source.binders().len(), inserted)?,

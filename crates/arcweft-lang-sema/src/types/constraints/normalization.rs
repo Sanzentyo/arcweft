@@ -249,17 +249,41 @@ where
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct KeyedConstraintProjection<P> {
+pub(crate) struct KeyedConstraintProjection<A, P> {
     key: Arc<P>,
     value: super::super::ScopedType,
+    source: Option<super::completion::CompletedProjectionAddress<A, P>>,
+    input: Option<TypeKind>,
 }
 
-impl<P> KeyedConstraintProjection<P> {
+impl<A, P> KeyedConstraintProjection<A, P> {
     pub(super) fn new(key: Arc<P>, value: TypeKind, scope: super::super::GenericScope) -> Self {
         Self {
             key,
             value: super::super::ScopedType::new(value, scope),
+            source: None,
+            input: None,
         }
+    }
+
+    pub(super) fn with_source(
+        mut self,
+        source: Option<super::completion::CompletedProjectionAddress<A, P>>,
+        input: Option<TypeKind>,
+    ) -> Self {
+        self.source = source;
+        self.input = input;
+        self
+    }
+
+    pub(crate) const fn input_type(&self) -> Option<&TypeKind> {
+        self.input.as_ref()
+    }
+
+    pub(super) const fn source(
+        &self,
+    ) -> Option<&super::completion::CompletedProjectionAddress<A, P>> {
+        self.source.as_ref()
     }
 
     pub(crate) fn key(&self) -> &P {

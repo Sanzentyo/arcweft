@@ -602,6 +602,8 @@ pub(super) struct ProjectionRequest<D: ConstraintDomain> {
     key: Arc<D::Projection>,
     value: TypeKind,
     closure: TypeConstraintProjectionClosure,
+    source: Option<ConstraintResultProjection<D>>,
+    input: Option<TypeKind>,
 }
 
 struct ProbeOperation<D: ConstraintDomain> {
@@ -962,6 +964,31 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
+        self.request_projection_inner(key, value, closure, None);
+    }
+
+    pub(crate) fn request_value_use_projection<A: TypeConstraintAccounting>(
+        &mut self,
+        _context: &mut TypeConstraintContext<'_, A, D>,
+        key: D::Projection,
+        input: &TypeKind,
+        value: &TypeKind,
+    ) {
+        self.request_projection_inner(
+            key,
+            value,
+            TypeConstraintProjectionClosure::Closed,
+            Some(input.clone()),
+        );
+    }
+
+    fn request_projection_inner(
+        &mut self,
+        key: D::Projection,
+        value: &TypeKind,
+        closure: TypeConstraintProjectionClosure,
+        input: Option<TypeKind>,
+    ) {
         if self.first_failure.is_none() && !self.closed {
             if self.probe.is_some() || self.probe_group.is_some() {
                 self.record_failure(
@@ -974,6 +1001,8 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 key: Arc::new(key),
                 value: value.clone(),
                 closure,
+                source: None,
+                input,
             });
             for path in &mut self.frontier {
                 path.projections.push(Arc::clone(&request));
@@ -1970,7 +1999,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         application: ConstraintApplicationId,
         solution: &TypeConstraintSolution,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Box<[super::KeyedConstraintProjection<D::Projection>]>, TypeConstraintError>
+    ) -> Result<
+        Box<[super::KeyedConstraintProjection<D::Application, D::Projection>]>,
+        TypeConstraintError,
+    >
     where
         A: TypeConstraintAccounting,
     {
@@ -2005,6 +2037,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             if policy != ConstraintClosurePolicy::ProjectionFuture {
                 validate_selected_call_self(&value, context).map_err(projection_error)?;
             }
+            let input = request
+                .input
+                .as_ref()
+                .map(|input| {
+                    project_type(
+                        input,
+                        path.projection_view(),
+                        ConstraintClosurePolicy::ProjectionClosed,
+                        context,
+                    )
+                    .map(|projected| projected.value)
+                    .map_err(projection_error)
+                })
+                .transpose()?;
             projections.push(
                 solution
                     .reify_projection(
@@ -2015,7 +2061,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         policy,
                         context,
                     )
-                    .map_err(projection_error)?,
+                    .map_err(projection_error)?
+                    .with_source(
+                        request.source.as_ref().map(|source| {
+                            super::completion::CompletedProjectionAddress {
+                                application: path
+                                    .applications
+                                    .require_application(source.application)
+                                    .expect("projection source was admitted on this path")
+                                    .application(),
+                                key: Arc::clone(&source.key),
+                            }
+                        }),
+                        input,
+                    ),
             );
         }
         projections.sort_by(|left, right| left.key().cmp(right.key()));
@@ -2129,6 +2188,8 @@ fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
         }
     }
 }
+
+mod result_port;
 
 fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,

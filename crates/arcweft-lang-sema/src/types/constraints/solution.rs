@@ -113,6 +113,10 @@ pub(crate) struct TypeConstraintSolution {
 }
 
 impl TypeConstraintSolution {
+    pub(crate) fn template_scope(&self) -> &GenericScope {
+        self.authority.parameter_scope.template_scope()
+    }
+
     pub(super) fn equal_with<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         other: &Self,
@@ -228,7 +232,7 @@ impl TypeConstraintSolution {
         application: super::application::ConstraintApplicationId,
         closure: ConstraintClosurePolicy,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<super::KeyedConstraintProjection<P>, TypeConstraintError> {
+    ) -> Result<super::KeyedConstraintProjection<D::Application, P>, TypeConstraintError> {
         let application =
             path.applications
                 .application(application)

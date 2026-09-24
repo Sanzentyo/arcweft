@@ -650,9 +650,10 @@ pub(crate) struct MaterializedSourceRequest<'h, D: ConstraintDomain> {
 /// type. Both references come from the same completed component; callers do
 /// not reconstruct a child from its source expression or result schema.
 pub(crate) struct CompletedResultProjectionView<'h, D: ConstraintDomain> {
+    component: &'h super::CompletedConstraintComponent<D>,
     application_id: D::Application,
-    application: &'h super::CompletedConstraintApplication<D::Projection>,
-    projection: &'h super::KeyedConstraintProjection<D::Projection>,
+    application: &'h super::CompletedConstraintApplication<D::Application, D::Projection>,
+    projection: &'h super::KeyedConstraintProjection<D::Application, D::Projection>,
 }
 
 impl<'h, D: ConstraintDomain> CompletedResultProjectionView<'h, D> {
@@ -662,12 +663,42 @@ impl<'h, D: ConstraintDomain> CompletedResultProjectionView<'h, D> {
 
     pub(crate) const fn application(
         &self,
-    ) -> &'h super::CompletedConstraintApplication<D::Projection> {
+    ) -> &'h super::CompletedConstraintApplication<D::Application, D::Projection> {
         self.application
     }
 
-    pub(crate) const fn projection(&self) -> &'h super::KeyedConstraintProjection<D::Projection> {
+    pub(crate) const fn projection(
+        &self,
+    ) -> &'h super::KeyedConstraintProjection<D::Application, D::Projection> {
         self.projection
+    }
+
+    /// A value-use conversion retains the result it consumed. Both ports are
+    /// resolved within this same closed component, including when Call and
+    /// Specialize share an expression owner.
+    pub(crate) fn source(&self) -> Option<Self> {
+        let source = self.projection.source()?;
+        self.component.projection(source.application, &source.key)
+    }
+}
+
+impl<D: ConstraintDomain> super::CompletedConstraintComponent<D> {
+    pub(crate) fn projection(
+        &self,
+        application_id: D::Application,
+        key: &D::Projection,
+    ) -> Option<CompletedResultProjectionView<'_, D>> {
+        let application = self.application(application_id)?;
+        let projection = application
+            .projections()
+            .iter()
+            .find(|value| value.key() == key)?;
+        Some(CompletedResultProjectionView {
+            component: self,
+            application_id,
+            application,
+            projection,
+        })
     }
 }
 
@@ -694,7 +725,9 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
             .domain_application(self.source.source().application())
     }
 
-    pub(crate) fn application(&self) -> &'h super::CompletedConstraintApplication<D::Projection> {
+    pub(crate) fn application(
+        &self,
+    ) -> &'h super::CompletedConstraintApplication<D::Application, D::Projection> {
         self.component
             .application(self.application_id())
             .expect("completed source retains its admitted application")
@@ -736,19 +769,6 @@ impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
             .component
             .sources()
             .domain_application(origin.application());
-        let application = self.component.application(application_id)?;
-        let mut projections = application
-            .projections()
-            .iter()
-            .filter(|projection| projection.key() == origin.key());
-        let projection = projections.next()?;
-        if projections.next().is_some() {
-            return None;
-        }
-        Some(CompletedResultProjectionView {
-            application_id,
-            application,
-            projection,
-        })
+        self.component.projection(application_id, origin.key())
     }
 }
