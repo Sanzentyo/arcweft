@@ -11,7 +11,8 @@ flow cancel_edge() -> String {
         defer on cancelled:
             log.info("cancelled")
         cancel on input(.SkipLine) {
-            out .Skipped
+            out "Skipped"
         }
+        out "Completed"
     return "done"
 }
