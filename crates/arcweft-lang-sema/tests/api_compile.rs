@@ -64,9 +64,9 @@ fn detached_source_expression_effect_reader_is_unavailable() {
 }
 
 #[test]
-fn checked_match_reference_is_an_opaque_nonserializable_compiler_certificate() {
+fn checked_match_reference_is_not_an_external_authority() {
     let cases = trybuild::TestCases::new();
-    cases.compile_fail("tests/ui/checked_match_ref_*.rs");
+    cases.compile_fail("tests/ui/checked_match_ref_private.rs");
 }
 
 #[test]

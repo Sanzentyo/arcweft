@@ -22,8 +22,8 @@ error[E0603]: struct `PreparedCheckedDialogueMark` is private
 note: the struct `PreparedCheckedDialogueMark` is defined here
  --> src/checked_rich_text.rs
   |
-  |     PreparedCheckedDialogueContent, PreparedCheckedDialogueMark,
-  |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     PreparedCheckedContentCatalog, PreparedCheckedDialogueContent, PreparedCheckedDialogueMark,
+  |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `analyzer` is private
  --> tests/ui/removed_checked_statement_authorities.rs:2:40
@@ -48,5 +48,5 @@ error[E0603]: struct `PreparedEventScrutineeProof` is private
 note: the struct `PreparedEventScrutineeProof` is defined here
  --> src/final_analysis.rs
   |
-  |     PreparedEventScrutineeProof, PreparedExpressionFact, PreparedExpressionShell,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     PreparedEntryReference, PreparedEventScrutineeProof, PreparedExpressionFact,
+  |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^

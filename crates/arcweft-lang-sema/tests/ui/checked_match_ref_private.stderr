@@ -1,0 +1,11 @@
+error[E0603]: struct `CheckedMatchRef` is private
+ --> tests/ui/checked_match_ref_private.rs:1:40
+  |
+1 | use arcweft_lang_sema::final_analysis::CheckedMatchRef;
+  |                                        ^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `CheckedMatchRef` is defined here
+ --> src/final_analysis.rs
+  |
+  | pub(crate) use model::CheckedMatchRef;
+  |                ^^^^^^^^^^^^^^^^^^^^^^
