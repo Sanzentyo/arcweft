@@ -710,3 +710,21 @@ all-feature Clippy と workspace fmt は終了コード0（既存 warning あり
 RuntimePlan が未完成の実行投影を明示的に拒否する。したがってこの commit
 は source→checked fact の完了証拠であり、取消実行・戻り値選択・cleanup
 の受理証拠ではない。workspace 全 gate はこの変更後に再実行していない。
+
+**2026-09-25 取消時の行結果型:** 023 fixture は取消側だけに `out` があり、
+通常経路は `()` になるため、維持仕様の同一行結果型へ直した。
+`9af741b691229dfed5b28207dbc11e9414d01e3b` で push 済み。
+Sema は通常経路の `out` と期待された `DialogueLine<R>` から結果型を確定し、
+取消 body 内の対象 `out` を同じ型で検査する。型不一致と通常 `out` 不在の
+取消結果は拒否する。`c4d80862887c90ae172a5b9e53dc7b2009727ad0` を push 済み。
+Sema lib 914/914、workspace fmt、Sema all-target/all-feature Clippy は
+終了コード0（既存 warning あり）。この変更後の workspace 全 gate、
+019/023 の実行受理は未完了。Sema 変更前の CLI では、019 の集約検証と
+修正後 023 の単独検証が RuntimePlan の `defer` 未接続で停止した。
+
+構造 disposition: `crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs`
+は production Sema の一式評価 owner。基準 commit の 185892 bytes / 4278
+physical LOC から 188148 bytes / 4321 physical LOC へ 43行増えた。
+追加した処理は既存の文式評価 walk に、同じ行結果 authority で型付けする
+`out` の期待型を渡すもの。同じ `Analyzer` の facts・topology を使い、
+別 state、I/O、逆向き依存、重複 traversal を追加しないため owner を維持する。
