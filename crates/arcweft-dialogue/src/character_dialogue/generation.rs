@@ -1,10 +1,13 @@
 //! Compiler-neutral, generation-owned CharacterDialogue declaration.
 
 use super::{
+    CharacterDialogueConfig, CharacterDialogueRichTextValue,
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
     CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
-    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes, CharacterDialogueType,
-    CharacterDialogueValueError, InlineFailurePolicy, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
+    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueStyleValue,
+    CharacterDialogueType, CharacterDialogueTypedValue, CharacterDialogueValueError,
+    InlineFailurePolicy, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
 };
 use crate::{
     DialoguePresentationProfile, DialogueProfileRevision, FallbackStylePolicy, InlineFallback,
@@ -13,9 +16,13 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::{
     character_nominal::CharacterNominalType,
     entry::RuntimeValueDigest,
-    pattern::RuntimeSemanticTypeId,
-    value::{RuntimeSeq, RuntimeValue},
+    pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId},
+    value::{
+        RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeSeq,
+        RuntimeValue,
+    },
 };
+use arcweft_id::DeclarationIdentityFamily;
 use std::{collections::BTreeMap, error::Error};
 use thiserror::Error as ThisError;
 
@@ -240,6 +247,61 @@ impl CharacterDialoguePresentationContract {
     }
 }
 
+impl CharacterDialogueConfig {
+    /// Builds the engine default from the accepted presentation profile and
+    /// exact role identities. Optional roles remain absent and hooks empty.
+    pub fn try_from_presentation_profile<T: CharacterDialogueTypeReference>(
+        profile: &DialoguePresentationProfile,
+        roles: &CharacterDialogueRuntimeRoleTypes<T>,
+    ) -> Result<Self, CharacterDialogueValueError> {
+        validate_role_payload_bindings(roles)?;
+        let rich_text_index = Role::AUTHORED_BASE
+            .iter()
+            .position(|role| *role == Role::RichText)
+            .expect("RichText has a fixed authored role slot");
+        let binding = &roles.authored_refs()[rich_text_index];
+        let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body_ref() else {
+            return Err(CharacterDialogueValueError::RoleType {
+                role: Role::RichText,
+                reason: "RichText has no accepted payload codec",
+            });
+        };
+        let schema = codec.payload_schema()?;
+        if payload.semantic_identity() != schema.root() {
+            return Err(CharacterDialogueValueError::RoleType {
+                role: Role::RichText,
+                reason: "RichText payload identity differs from its codec root",
+            });
+        }
+        let rich_text_owner = RuntimeOpaqueTypeOwner::exact_with(
+            CharacterDialogueRuntimeSchema::opaque_type_producer(),
+            binding.value_ref().semantic_identity(),
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let rich_text_value = rich_text_owner.try_wrap(codec.no_overrides_payload()?)?;
+        let rich_text = CharacterDialogueRichTextValue::try_new(
+            CharacterDialogueTypedValue::try_new(rich_text_value)?,
+        )?;
+        let style_value = profile.style().map_or_else(
+            || rich_text.typed().value().clone(),
+            |style| {
+                RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                    family: DeclarationIdentityFamily::Style,
+                    public_id: style.public_id().clone(),
+                })
+            },
+        );
+        let style = CharacterDialogueStyleValue::try_new(CharacterDialogueTypedValue::try_new(
+            style_value,
+        )?)?;
+        let mut config = Self::try_new(profile.view().clone(), style, rich_text)?;
+        config.inline_failure = profile.inline_failure().clone();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T> {
     pub fn try_new(
         characters: impl IntoIterator<Item = (CharacterId, CharacterDialogueCharacterDeclaration<T>)>,
@@ -259,6 +321,8 @@ impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T
                 },
             );
         }
+
+        validate_role_payload_bindings(&roles)?;
 
         let mut rows = BTreeMap::new();
         let mut default_digests = BTreeMap::new();
@@ -440,27 +504,27 @@ impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T
         let mapped_authored = [
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(first.value_ref())?,
-                map_ref(first.payload_ref())?,
+                map_role_body(first.body_ref(), &mut map_ref)?,
             ),
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(second.value_ref())?,
-                map_ref(second.payload_ref())?,
+                map_role_body(second.body_ref(), &mut map_ref)?,
             ),
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(third.value_ref())?,
-                map_ref(third.payload_ref())?,
+                map_role_body(third.body_ref(), &mut map_ref)?,
             ),
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(fourth.value_ref())?,
-                map_ref(fourth.payload_ref())?,
+                map_role_body(fourth.body_ref(), &mut map_ref)?,
             ),
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(fifth.value_ref())?,
-                map_ref(fifth.payload_ref())?,
+                map_role_body(fifth.body_ref(), &mut map_ref)?,
             ),
             CharacterDialogueRuntimeRoleType::new(
                 map_ref(sixth.value_ref())?,
-                map_ref(sixth.payload_ref())?,
+                map_role_body(sixth.body_ref(), &mut map_ref)?,
             ),
         ];
         let roles = CharacterDialogueRuntimeRoleTypes::new(
@@ -531,7 +595,16 @@ impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T
         {
             encoder.write_u8(role.canonical_tag())?;
             encoder.write_type_ref(binding.value_ref())?;
-            encoder.write_type_ref(binding.payload_ref())?;
+            match binding.body_ref() {
+                CharacterDialogueRuntimeRoleBody::Unbound => encoder.write_u8(0)?,
+                CharacterDialogueRuntimeRoleBody::Bound { payload, codec } => {
+                    encoder.write_u8(1)?;
+                    encoder.write_type_ref(payload)?;
+                    encoder.write_u8(codec.canonical_tag())?;
+                    let schema_digest = codec.payload_schema()?.schema_digest();
+                    encoder.write_bytes(schema_digest.as_bytes())?;
+                }
+            }
         }
         encoder.write_u8(Role::Style.canonical_tag())?;
         encoder.write_type_ref(roles.style_ref())?;
@@ -539,6 +612,58 @@ impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T
         write_presentation_contract(&mut encoder, presentation)?;
         Ok(encoder.finish())
     }
+}
+
+fn map_role_body<T, U, E>(
+    body: &CharacterDialogueRuntimeRoleBody<T>,
+    map_ref: &mut impl FnMut(&T) -> Result<U, CharacterDialogueTypeReferenceMapError<E>>,
+) -> Result<CharacterDialogueRuntimeRoleBody<U>, CharacterDialogueTypeReferenceMapError<E>>
+where
+    E: Error + 'static,
+{
+    match body {
+        CharacterDialogueRuntimeRoleBody::Unbound => Ok(CharacterDialogueRuntimeRoleBody::Unbound),
+        CharacterDialogueRuntimeRoleBody::Bound { payload, codec } => {
+            Ok(CharacterDialogueRuntimeRoleBody::Bound {
+                payload: map_ref(payload)?,
+                codec: *codec,
+            })
+        }
+    }
+}
+
+fn validate_role_payload_bindings<T: CharacterDialogueTypeReference>(
+    roles: &CharacterDialogueRuntimeRoleTypes<T>,
+) -> Result<(), CharacterDialogueValueError> {
+    for (role, binding) in Role::AUTHORED_BASE
+        .into_iter()
+        .zip(roles.authored_refs().iter())
+    {
+        if role == Role::RichText {
+            let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body_ref()
+            else {
+                return Err(CharacterDialogueValueError::RoleType {
+                    role,
+                    reason: "RichText has no accepted payload codec",
+                });
+            };
+            if payload.semantic_identity() != codec.payload_schema()?.root() {
+                return Err(CharacterDialogueValueError::RoleType {
+                    role,
+                    reason: "RichText payload identity differs from its codec root",
+                });
+            }
+        } else if !matches!(
+            binding.body_ref(),
+            CharacterDialogueRuntimeRoleBody::Unbound
+        ) {
+            return Err(CharacterDialogueValueError::RoleType {
+                role,
+                reason: "role body has no Dialogue-owned payload codec for this role",
+            });
+        }
+    }
+    Ok(())
 }
 
 fn try_map_type_ref<T, U, E>(

@@ -67,10 +67,9 @@ fn nominal_typed(fields: Vec<RuntimeValue>) -> CharacterDialogueTypedValue {
 fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
     CharacterDialogueStyleValue::try_new(runtime_schema::role_value(
         crate::CharacterDialogueRuntimeRole::RichText,
-        RuntimeValue::Tuple(vec![
-            RuntimeValue::option_none(),
-            RuntimeValue::option_none(),
-        ]),
+        crate::CharacterDialogueRolePayloadCodec::RichTextProperties
+            .no_overrides_payload()
+            .unwrap(),
     ))
     .unwrap()
 }
@@ -78,10 +77,9 @@ fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
 fn rich_text(_layout_byte: u8) -> CharacterDialogueRichTextValue {
     CharacterDialogueRichTextValue::try_new(runtime_schema::role_value(
         crate::CharacterDialogueRuntimeRole::RichText,
-        RuntimeValue::Tuple(vec![
-            RuntimeValue::option_none(),
-            RuntimeValue::option_none(),
-        ]),
+        crate::CharacterDialogueRolePayloadCodec::RichTextProperties
+            .no_overrides_payload()
+            .unwrap(),
     ))
     .unwrap()
 }

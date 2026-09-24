@@ -2,7 +2,8 @@ use super::*;
 use crate::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationDeclaration,
     CharacterDialogueGenerationDeclarationError, CharacterDialoguePresentationContract,
-    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
+    CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeDefault,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
     CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
     CharacterDialogueTypeReference, CharacterDialogueTypeReferenceMapError,
     CharacterDialogueVisualType, DialoguePresentationProfile, DialogueProfileRevision,
@@ -73,10 +74,18 @@ fn presentation_contract(
 fn role_types() -> CharacterDialogueRuntimeRoleTypes {
     CharacterDialogueRuntimeRoleTypes::new(
         Role::AUTHORED_BASE.map(|role| {
-            CharacterDialogueRuntimeRoleType::new(
-                semantic(40 + role.canonical_tag()),
-                semantic(50 + role.canonical_tag()),
-            )
+            let body = if role == Role::RichText {
+                CharacterDialogueRuntimeRoleBody::bound(
+                    CharacterDialogueRolePayloadCodec::RichTextProperties
+                        .payload_schema()
+                        .expect("RichText payload schema")
+                        .root(),
+                    CharacterDialogueRolePayloadCodec::RichTextProperties,
+                )
+            } else {
+                CharacterDialogueRuntimeRoleBody::Unbound
+            };
+            CharacterDialogueRuntimeRoleType::new(semantic(40 + role.canonical_tag()), body)
         }),
         semantic(60),
     )
@@ -196,7 +205,7 @@ fn generation_type_reference_mapping_preserves_identity_and_digest() {
     );
     let mut visited = Vec::new();
     declaration.visit_type_refs(&mut |ty| visited.push(*ty));
-    assert_eq!(visited.len(), 2 + 1 + Role::AUTHORED_BASE.len() * 2 + 1);
+    assert_eq!(visited.len(), 2 + 1 + Role::AUTHORED_BASE.len() + 1 + 1);
 
     let mapped = declaration
         .try_map_type_refs(|ty| {

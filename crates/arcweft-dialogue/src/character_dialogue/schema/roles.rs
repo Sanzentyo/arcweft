@@ -14,26 +14,26 @@ use arcweft_id::DeclarationIdentityFamily;
 
 use super::super::{CharacterDialogueRuntimeRole as Role, CharacterDialogueValueError};
 use super::CharacterDialogueRuntimeSchema;
+use super::role_payload::{CharacterDialogueRolePayloadCodec, CharacterDialogueRolePayloadSchema};
 
-/// Source identities for one authored opaque role and its producer-owned body.
-/// Both refer to the selected program; neither is an independent type schema.
+/// Source identity and body-evidence binding for one authored opaque role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CharacterDialogueRuntimeRoleType<T = RuntimeSemanticTypeId> {
     value: T,
-    payload: T,
+    body: CharacterDialogueRuntimeRoleBody<T>,
 }
 
 impl<T> CharacterDialogueRuntimeRoleType<T> {
-    pub const fn new(value: T, payload: T) -> Self {
-        Self { value, payload }
+    pub const fn new(value: T, body: CharacterDialogueRuntimeRoleBody<T>) -> Self {
+        Self { value, body }
     }
 
     pub const fn value_ref(&self) -> &T {
         &self.value
     }
 
-    pub const fn payload_ref(&self) -> &T {
-        &self.payload
+    pub const fn body_ref(&self) -> &CharacterDialogueRuntimeRoleBody<T> {
+        &self.body
     }
 }
 
@@ -42,8 +42,53 @@ impl<T: Copy> CharacterDialogueRuntimeRoleType<T> {
         self.value
     }
 
-    pub const fn payload(self) -> T {
-        self.payload
+    pub const fn body(self) -> CharacterDialogueRuntimeRoleBody<T> {
+        self.body
+    }
+}
+
+/// Evidence that an authored role has a usable payload schema.
+///
+/// An unbound role still has its total outer opaque identity, but accepts no
+/// opaque body value until Dialogue owns a real constructor and validator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CharacterDialogueRuntimeRoleBody<T = RuntimeSemanticTypeId> {
+    /// The role is retained in the outer schema but has no accepted body.
+    Unbound,
+    /// The role payload is admitted by this exact Dialogue-owned codec.
+    Bound {
+        /// Semantic identity of the payload root.
+        payload: T,
+        /// Closed schema and value codec for that payload.
+        codec: CharacterDialogueRolePayloadCodec,
+    },
+}
+
+impl<T> CharacterDialogueRuntimeRoleBody<T> {
+    #[must_use]
+    pub const fn unbound() -> Self {
+        Self::Unbound
+    }
+
+    #[must_use]
+    pub const fn bound(payload: T, codec: CharacterDialogueRolePayloadCodec) -> Self {
+        Self::Bound { payload, codec }
+    }
+
+    #[must_use]
+    pub const fn payload_ref(&self) -> Option<&T> {
+        match self {
+            Self::Unbound => None,
+            Self::Bound { payload, .. } => Some(payload),
+        }
+    }
+
+    #[must_use]
+    pub const fn codec(&self) -> Option<CharacterDialogueRolePayloadCodec> {
+        match self {
+            Self::Unbound => None,
+            Self::Bound { codec, .. } => Some(*codec),
+        }
     }
 }
 
@@ -73,7 +118,9 @@ impl<T> CharacterDialogueRuntimeRoleTypes<T> {
     pub fn visit_type_refs<'a>(&'a self, visit: &mut impl FnMut(&'a T)) {
         for binding in &self.authored {
             visit(binding.value_ref());
-            visit(binding.payload_ref());
+            if let Some(payload) = binding.body_ref().payload_ref() {
+                visit(payload);
+            }
         }
         visit(&self.style);
     }
@@ -119,9 +166,26 @@ impl CharacterDialogueRuntimeRoleTypes<RuntimeSemanticTypeId> {
                     "authored role has a different exact opaque contract",
                 ));
             }
-            program.require_type(binding.payload)?;
             if role == Role::RichText {
+                let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body_ref()
+                else {
+                    return Err(invalid("RichText has no accepted payload codec"));
+                };
+                let schema = codec.payload_schema()?;
+                if *payload != schema.root() {
+                    return Err(invalid(
+                        "RichText payload identity differs from its codec root",
+                    ));
+                }
+                Self::validate_payload_schema(role, schema, program)?;
                 rich_text = Some(owner);
+            } else if !matches!(
+                binding.body_ref(),
+                CharacterDialogueRuntimeRoleBody::Unbound
+            ) {
+                return Err(invalid(
+                    "role body has no Dialogue-owned payload codec for this role",
+                ));
             }
         }
         let rich_text = rich_text.expect("complete authored role inventory contains RichText");
@@ -138,6 +202,26 @@ impl CharacterDialogueRuntimeRoleTypes<RuntimeSemanticTypeId> {
             });
         }
         Ok(rich_text)
+    }
+
+    fn validate_payload_schema(
+        role: Role,
+        schema: &CharacterDialogueRolePayloadSchema,
+        program: RuntimeProgramTypes<'_>,
+    ) -> Result<(), CharacterDialogueValueError> {
+        for seed in schema.types() {
+            let expected = schema
+                .checked_type(seed.semantic_identity())
+                .expect("every payload seed has its codec-owned checked projection");
+            let actual = program.checked_type(seed.semantic_identity())?;
+            if actual != *expected {
+                return Err(CharacterDialogueValueError::RoleType {
+                    role,
+                    reason: "payload graph differs from the bound Dialogue codec",
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -179,8 +263,15 @@ impl CharacterDialogueRuntimeSchema {
             .roles
             .authored(authored)
             .expect("authored role has a fixed slot");
+        let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body() else {
+            return Err(CharacterDialogueValueError::RoleType {
+                role: authored,
+                reason: "role has no accepted payload codec",
+            });
+        };
         self.program_types()
-            .accepts_value(binding.payload, value.payload(), Self::limits())?;
+            .accepts_value(payload, value.payload(), Self::limits())?;
+        codec.decode_properties(value.payload())?;
         Ok(())
     }
 }

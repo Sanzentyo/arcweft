@@ -1,8 +1,9 @@
 use super::*;
 use crate::{
-    CharacterDialogueConfig, CharacterDialogueRuntimeCustomFieldDescriptor,
-    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeDefaultCatalog,
-    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueConfig, CharacterDialogueRolePayloadCodec,
+    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeDefault,
+    CharacterDialogueRuntimeDefaultCatalog, CharacterDialogueRuntimeRole as Role,
+    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
     CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
 };
 use arcweft_character::catalog::CharacterVisualManifestEvidence;
@@ -31,7 +32,8 @@ use arcweft_core::{
     task::RuntimeProgramOwner,
     value::{
         RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-        RuntimeOpaqueValueClass, RuntimeRecordFieldId, runtime_sequence_dense_bytes,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth,
+        RuntimeUnsignedIntWidth, runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
@@ -39,7 +41,7 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialogueFieldCoordinate as Coordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation as Operation,
 };
-use arcweft_view::ViewId;
+use arcweft_view::{ViewId, ViewStyleSheetId};
 use std::{collections::BTreeSet, sync::Arc};
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
@@ -47,6 +49,97 @@ fn semantic(tag: u8) -> RuntimeSemanticTypeId {
 }
 fn role_semantic(role: Role) -> RuntimeSemanticTypeId {
     semantic(20 + role.canonical_tag())
+}
+fn role_types() -> CharacterDialogueRuntimeRoleTypes {
+    CharacterDialogueRuntimeRoleTypes::new(
+        Role::AUTHORED_BASE.map(|role| {
+            let body = if role == Role::RichText {
+                CharacterDialogueRuntimeRoleBody::bound(
+                    CharacterDialogueRolePayloadCodec::RichTextProperties
+                        .payload_schema()
+                        .expect("RichText payload schema")
+                        .root(),
+                    CharacterDialogueRolePayloadCodec::RichTextProperties,
+                )
+            } else {
+                CharacterDialogueRuntimeRoleBody::Unbound
+            };
+            CharacterDialogueRuntimeRoleType::new(role_semantic(role), body)
+        }),
+        semantic(50),
+    )
+}
+
+fn append_rich_text_awbc_types(runtime_types: &mut Vec<AwbcRuntimeType>) {
+    let seeds = CharacterDialogueRolePayloadCodec::RichTextProperties
+        .payload_schema()
+        .expect("RichText payload schema")
+        .types();
+    let first = runtime_types.len();
+    let mut ids = std::collections::BTreeMap::new();
+    for (offset, seed) in seeds.iter().enumerate() {
+        let index = first + offset;
+        ids.insert(
+            seed.semantic_identity(),
+            AwbcTypeId(u32::try_from(index).expect("bounded runtime type count")),
+        );
+    }
+    let id = |identity: RuntimeSemanticTypeId| {
+        *ids.get(&identity)
+            .expect("codec seed graph contains every child identity")
+    };
+    for seed in seeds {
+        let shape = match seed.projection() {
+            Type::Bool => AwbcType::Bool,
+            Type::Signed(width) => AwbcType::Int(match width {
+                RuntimeSignedIntWidth::I8 => arcweft_core::awbc::schema::AwbcSignedIntKind::I8,
+                RuntimeSignedIntWidth::I16 => arcweft_core::awbc::schema::AwbcSignedIntKind::I16,
+                RuntimeSignedIntWidth::I32 => arcweft_core::awbc::schema::AwbcSignedIntKind::I32,
+                RuntimeSignedIntWidth::I64 => arcweft_core::awbc::schema::AwbcSignedIntKind::I64,
+                RuntimeSignedIntWidth::I128 => arcweft_core::awbc::schema::AwbcSignedIntKind::I128,
+                RuntimeSignedIntWidth::ISize => {
+                    arcweft_core::awbc::schema::AwbcSignedIntKind::ISize
+                }
+            }),
+            Type::Unsigned(width) => AwbcType::UInt(match width {
+                RuntimeUnsignedIntWidth::U8 => arcweft_core::awbc::schema::AwbcUnsignedIntKind::U8,
+                RuntimeUnsignedIntWidth::U16 => {
+                    arcweft_core::awbc::schema::AwbcUnsignedIntKind::U16
+                }
+                RuntimeUnsignedIntWidth::U32 => {
+                    arcweft_core::awbc::schema::AwbcUnsignedIntKind::U32
+                }
+                RuntimeUnsignedIntWidth::U64 => {
+                    arcweft_core::awbc::schema::AwbcUnsignedIntKind::U64
+                }
+                RuntimeUnsignedIntWidth::U128 => {
+                    arcweft_core::awbc::schema::AwbcUnsignedIntKind::U128
+                }
+                RuntimeUnsignedIntWidth::USize => {
+                    arcweft_core::awbc::schema::AwbcUnsignedIntKind::USize
+                }
+            }),
+            Type::String => AwbcType::String,
+            Type::Tuple(items) => AwbcType::Tuple(items.iter().map(|item| id(*item)).collect()),
+            Type::Choice(items) => AwbcType::Choice(items.iter().map(|item| id(*item)).collect()),
+            Type::Option { some_payload, .. } => AwbcType::Variant {
+                owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                arguments: vec![],
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(7),
+                        payload: Some(id(*some_payload)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(8),
+                        payload: None,
+                    },
+                ],
+            },
+            _ => panic!("RichText codec emitted a non-structural plan seed"),
+        };
+        runtime_types.push(AwbcRuntimeType::new(seed.semantic_identity(), shape));
+    }
 }
 fn voice_source_type() -> RuntimeSemanticTypeId {
     semantic(56)
@@ -186,13 +279,16 @@ impl Types {
                 )
             })
             .collect::<Vec<_>>();
+        let rich_text_schema = CharacterDialogueRolePayloadCodec::RichTextProperties
+            .payload_schema()
+            .expect("RichText payload schema");
+        seeds.extend(rich_text_schema.types().iter().cloned());
         seeds.extend([
             RuntimePlanTypeSeed::new(
                 semantic(50),
                 Type::Choice(vec![semantic(51), role_semantic(Role::RichText)].into()),
             ),
             RuntimePlanTypeSeed::new(semantic(51), Type::EntityReference),
-            RuntimePlanTypeSeed::new(semantic(52), Type::Tuple(Box::new([]))),
             RuntimePlanTypeSeed::new(semantic(53), Type::String),
             RuntimePlanTypeSeed::new(
                 semantic(54),
@@ -203,26 +299,6 @@ impl Types {
                 },
             ),
             RuntimePlanTypeSeed::new(semantic(55), Type::Bool),
-            RuntimePlanTypeSeed::new(
-                semantic(58),
-                Type::Option {
-                    item: semantic(55),
-                    some_payload: semantic(60),
-                },
-            ),
-            RuntimePlanTypeSeed::new(
-                semantic(59),
-                Type::Option {
-                    item: semantic(53),
-                    some_payload: semantic(61),
-                },
-            ),
-            RuntimePlanTypeSeed::new(semantic(60), Type::Tuple(vec![semantic(55)].into())),
-            RuntimePlanTypeSeed::new(semantic(61), Type::Tuple(vec![semantic(53)].into())),
-            RuntimePlanTypeSeed::new(
-                semantic(62),
-                Type::Tuple(vec![semantic(58), semantic(59)].into()),
-            ),
             RuntimePlanTypeSeed::new(
                 voice_source_type(),
                 Type::Nominal {
@@ -313,7 +389,6 @@ impl Types {
                 AwbcType::Choice(vec![AwbcTypeId(7), AwbcTypeId(5)]),
             ),
             AwbcRuntimeType::new(semantic(51), AwbcType::EntityRef),
-            AwbcRuntimeType::new(semantic(52), AwbcType::Tuple(vec![])),
             AwbcRuntimeType::new(semantic(53), AwbcType::String),
             AwbcRuntimeType::new(
                 semantic(54),
@@ -325,7 +400,7 @@ impl Types {
                     fields: vec![AwbcRecordField {
                         field,
                         name: Some(AwbcStringId(2)),
-                        ty: AwbcTypeId(11),
+                        ty: AwbcTypeId(10),
                     }],
                 },
             ),
@@ -344,46 +419,6 @@ impl Types {
             ));
         }
         runtime_types.extend([
-            AwbcRuntimeType::new(
-                semantic(58),
-                AwbcType::Variant {
-                    owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                    arguments: vec![],
-                    cases: vec![
-                        AwbcVariantCase {
-                            name: AwbcStringId(7),
-                            payload: Some(AwbcTypeId(16)),
-                        },
-                        AwbcVariantCase {
-                            name: AwbcStringId(8),
-                            payload: None,
-                        },
-                    ],
-                },
-            ),
-            AwbcRuntimeType::new(
-                semantic(59),
-                AwbcType::Variant {
-                    owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                    arguments: vec![],
-                    cases: vec![
-                        AwbcVariantCase {
-                            name: AwbcStringId(7),
-                            payload: Some(AwbcTypeId(17)),
-                        },
-                        AwbcVariantCase {
-                            name: AwbcStringId(8),
-                            payload: None,
-                        },
-                    ],
-                },
-            ),
-            AwbcRuntimeType::new(semantic(60), AwbcType::Tuple(vec![AwbcTypeId(11)])),
-            AwbcRuntimeType::new(semantic(61), AwbcType::Tuple(vec![AwbcTypeId(9)])),
-            AwbcRuntimeType::new(
-                semantic(62),
-                AwbcType::Tuple(vec![AwbcTypeId(14), AwbcTypeId(15)]),
-            ),
             AwbcRuntimeType::new(
                 voice_source_type(),
                 AwbcType::Variant {
@@ -413,6 +448,7 @@ impl Types {
                 },
             ),
         ]);
+        append_rich_text_awbc_types(&mut runtime_types);
         let awbc = AwbcProgram {
             strings: vec![
                 producer.as_str().to_owned(),
@@ -428,21 +464,7 @@ impl Types {
             runtime_types,
             ..AwbcProgram::default()
         };
-        let roles = CharacterDialogueRuntimeRoleTypes::new(
-            Role::AUTHORED_BASE.map(|role| {
-                CharacterDialogueRuntimeRoleType::new(
-                    role_semantic(role),
-                    if role == Role::Hook {
-                        semantic(54)
-                    } else if role == Role::RichText {
-                        semantic(62)
-                    } else {
-                        semantic(52)
-                    },
-                )
-            }),
-            semantic(50),
-        );
+        let roles = role_types();
         Self {
             plan,
             awbc,
@@ -518,26 +540,9 @@ impl Types {
     }
 
     fn default_config() -> CharacterDialogueConfig {
-        let style = CharacterDialogueStyleValue::try_new(role_value(
-            Role::RichText,
-            RuntimeValue::Tuple(vec![
-                RuntimeValue::option_none(),
-                RuntimeValue::option_none(),
-            ]),
-        ))
-        .unwrap();
-        let rich_text = CharacterDialogueRichTextValue::try_new(role_value(
-            Role::RichText,
-            RuntimeValue::Tuple(vec![
-                RuntimeValue::option_none(),
-                RuntimeValue::option_none(),
-            ]),
-        ))
-        .unwrap();
-        CharacterDialogueConfig::try_new(
-            ViewId::try_new_engine_owned("std.view.dialogue").unwrap(),
-            style,
-            rich_text,
+        CharacterDialogueConfig::try_from_presentation_profile(
+            &crate::DialoguePresentationProfile::engine_default(),
+            &role_types(),
         )
         .unwrap()
     }
@@ -639,21 +644,7 @@ fn native_and_awbc_round_trip_the_tuple_and_every_policy_case() {
                 .patched(
                     &CharacterDialoguePatch::default()
                         .with_inline_failure(PatchField::Set(policy.clone()))
-                        .with_voice(voice.map_or(PatchField::Clear, PatchField::Set))
-                        .with_stage(PatchField::Set(
-                            crate::CharacterDialogueStageValue::try_new(role_value(
-                                Role::Stage,
-                                RuntimeValue::Tuple(vec![]),
-                            ))
-                            .unwrap(),
-                        ))
-                        .with_hooks(PatchField::Set(vec![
-                            CharacterDialogueHookValue::try_new(role_value(
-                                Role::Hook,
-                                types.nominal(RuntimeValue::Bool(true)),
-                            ))
-                            .unwrap(),
-                        ])),
+                        .with_voice(voice.map_or(PatchField::Clear, PatchField::Set)),
                 )
                 .unwrap();
             let mut digests = Vec::new();
@@ -806,6 +797,10 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
             sample_manifest().character(),
             types.character_type,
         );
+        let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id: PublicId::try_new(sample_manifest().character().as_str()).unwrap(),
+        });
         for payload in [
             types.nominal(RuntimeValue::String("wrong child".into())),
             RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
@@ -821,16 +816,18 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
                 vec![RuntimeValue::Bool(true)],
             )),
         ] {
-            let bad = base
-                .patched(
-                    &CharacterDialoguePatch::default().with_hooks(PatchField::Set(vec![
-                        CharacterDialogueHookValue::try_new(role_value(Role::Hook, payload))
-                            .unwrap(),
-                    ])),
-                )
-                .unwrap();
+            let bad = schema.apply(
+                &owner,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[CharacterDialoguePatchField {
+                    coordinate: Coordinate::RichText,
+                    operation: Operation::Set(role_value(Role::RichText, payload).into_value()),
+                }],
+                types.any_type,
+            );
             assert!(matches!(
-                schema.encode(&bad),
+                bad,
                 Err(CharacterDialogueValueError::ProgramType(_))
             ));
         }
@@ -968,15 +965,35 @@ fn custom_entries_use_active_types_and_require_canonical_id_order() {
 fn schema_preflights_unused_role_payloads_and_custom_types() {
     let (_, characters, views, custom) = fixture();
     let mut types = Types::new();
-    types.roles = CharacterDialogueRuntimeRoleTypes::new(
-        Role::AUTHORED_BASE
-            .map(|role| CharacterDialogueRuntimeRoleType::new(role_semantic(role), semantic(99))),
-        semantic(50),
-    );
+    let invalid_roles = Role::AUTHORED_BASE.map(|role| {
+        CharacterDialogueRuntimeRoleType::new(
+            role_semantic(role),
+            if role == Role::Stage {
+                CharacterDialogueRuntimeRoleBody::bound(
+                    semantic(99),
+                    CharacterDialogueRolePayloadCodec::RichTextProperties,
+                )
+            } else if role == Role::RichText {
+                CharacterDialogueRuntimeRoleBody::bound(
+                    CharacterDialogueRolePayloadCodec::RichTextProperties
+                        .payload_schema()
+                        .unwrap()
+                        .root(),
+                    CharacterDialogueRolePayloadCodec::RichTextProperties,
+                )
+            } else {
+                CharacterDialogueRuntimeRoleBody::Unbound
+            },
+        )
+    });
+    types.roles = CharacterDialogueRuntimeRoleTypes::new(invalid_roles, semantic(50));
     for owner in types.program_owners() {
         assert!(matches!(
             types.try_schema(&characters, &views, &custom, owner),
-            Err(CharacterDialogueValueError::ProgramType(_))
+            Err(CharacterDialogueValueError::RoleType {
+                role: Role::Stage,
+                ..
+            })
         ));
     }
     let types = Types::new();
@@ -995,6 +1012,111 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
             Err(CharacterDialogueValueError::ProgramType(_))
         ));
     }
+}
+
+#[test]
+fn unbound_optional_roles_reject_set_and_profile_style_clear_is_no_overrides() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let owner = types.program_owners()[0].clone();
+    let character = sample_manifest().character().clone();
+    let roles = role_types();
+    let style_sheet = ViewStyleSheetId::try_new("style.dialogue").unwrap();
+    let profile = crate::DialoguePresentationProfile::new(
+        ViewId::standard_dialogue(),
+        Some(style_sheet.clone()),
+        crate::InlineFailurePolicy::Discard,
+    );
+    let config = CharacterDialogueConfig::try_from_presentation_profile(&profile, &roles).unwrap();
+    assert_eq!(config.view(), profile.view());
+    assert_eq!(config.inline_failure(), profile.inline_failure());
+    assert_eq!(
+        config.rich_text().typed().value(),
+        &role_value(
+            Role::RichText,
+            CharacterDialogueRolePayloadCodec::RichTextProperties
+                .no_overrides_payload()
+                .unwrap(),
+        )
+        .value()
+        .clone()
+    );
+    assert!(matches!(
+        config.style().typed().value(),
+        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Style,
+            public_id,
+        }) if public_id == style_sheet.public_id()
+    ));
+
+    let defaults =
+        CharacterDialogueRuntimeDefaultCatalog::try_new([CharacterDialogueRuntimeDefault::new(
+            character.clone(),
+            config,
+        )])
+        .unwrap();
+    let authority = types.look_authority(&characters, owner.clone());
+    let schema = CharacterDialogueRuntimeSchema::try_new(
+        Arc::new(views.clone()),
+        Arc::new(custom.clone()),
+        Arc::new(defaults),
+        roles,
+        voice_source_type(),
+        authority,
+        owner.clone(),
+    )
+    .unwrap();
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+
+    let unbound = schema.construct(
+        &owner,
+        &target,
+        &[CharacterDialoguePatchField {
+            coordinate: Coordinate::Stage,
+            operation: Operation::Set(role_value(Role::Stage, RuntimeValue::Unit).into_value()),
+        }],
+        types.any_type,
+    );
+    assert!(matches!(
+        unbound,
+        Err(CharacterDialogueValueError::RoleType {
+            role: Role::Stage,
+            ..
+        })
+    ));
+
+    let cleared = schema
+        .construct(
+            &owner,
+            &target,
+            &[CharacterDialoguePatchField {
+                coordinate: Coordinate::Style,
+                operation: Operation::Clear,
+            }],
+            types.any_type,
+        )
+        .unwrap();
+    let cleared = schema
+        .admit(&owner, &cleared.into_runtime_value(), types.any_type)
+        .unwrap();
+    assert_eq!(
+        cleared.dialogue().config().style().typed().value(),
+        &role_value(
+            Role::RichText,
+            CharacterDialogueRolePayloadCodec::RichTextProperties
+                .no_overrides_payload()
+                .unwrap(),
+        )
+        .value()
+        .clone()
+    );
+    assert_eq!(
+        cleared.dialogue().config().inline_failure(),
+        &crate::InlineFailurePolicy::Discard
+    );
 }
 
 #[test]
@@ -1121,8 +1243,14 @@ fn source_voice_and_look_values_are_joined_through_exact_program_rows() {
         family: DeclarationIdentityFamily::Character,
         public_id: PublicId::try_new(character.as_str()).unwrap(),
     });
-    let rich_text = |first, second| {
-        role_value(Role::RichText, RuntimeValue::Tuple(vec![first, second])).into_value()
+    let rich_text = || {
+        role_value(
+            Role::RichText,
+            CharacterDialogueRolePayloadCodec::RichTextProperties
+                .no_overrides_payload()
+                .unwrap(),
+        )
+        .into_value()
     };
     for owner in types.program_owners() {
         let schema = types.schema(&characters, &views, &custom, owner.clone());
@@ -1145,31 +1273,19 @@ fn source_voice_and_look_values_are_joined_through_exact_program_rows() {
                     },
                     CharacterDialoguePatchField {
                         coordinate: Coordinate::RichText,
-                        operation: Operation::Set(rich_text(
-                            RuntimeValue::option_some(RuntimeValue::Bool(true)),
-                            RuntimeValue::option_none(),
-                        )),
+                        operation: Operation::Set(rich_text()),
                     },
                     CharacterDialoguePatchField {
                         coordinate: Coordinate::RichText,
-                        operation: Operation::Set(rich_text(
-                            RuntimeValue::option_some(RuntimeValue::Bool(false)),
-                            RuntimeValue::option_some(RuntimeValue::String("new".into())),
-                        )),
+                        operation: Operation::Set(rich_text()),
                     },
                     CharacterDialoguePatchField {
                         coordinate: Coordinate::Style,
-                        operation: Operation::Set(rich_text(
-                            RuntimeValue::option_some(RuntimeValue::Bool(true)),
-                            RuntimeValue::option_none(),
-                        )),
+                        operation: Operation::Set(rich_text()),
                     },
                     CharacterDialoguePatchField {
                         coordinate: Coordinate::Style,
-                        operation: Operation::Set(rich_text(
-                            RuntimeValue::option_none(),
-                            RuntimeValue::option_some(RuntimeValue::String("style".into())),
-                        )),
+                        operation: Operation::Set(rich_text()),
                     },
                 ],
                 types.any_type,
@@ -1196,20 +1312,18 @@ fn source_voice_and_look_values_are_joined_through_exact_program_rows() {
         };
         assert_eq!(
             rich_text.payload(),
-            &RuntimeValue::Tuple(vec![
-                RuntimeValue::option_some(RuntimeValue::Bool(false)),
-                RuntimeValue::option_some(RuntimeValue::String("new".into())),
-            ])
+            &CharacterDialogueRolePayloadCodec::RichTextProperties
+                .no_overrides_payload()
+                .unwrap()
         );
         let RuntimeValue::Opaque(style) = value.dialogue().config().style().typed().value() else {
             panic!("structured Style branch")
         };
         assert_eq!(
             style.payload(),
-            &RuntimeValue::Tuple(vec![
-                RuntimeValue::option_some(RuntimeValue::Bool(true)),
-                RuntimeValue::option_some(RuntimeValue::String("style".into())),
-            ])
+            &CharacterDialogueRolePayloadCodec::RichTextProperties
+                .no_overrides_payload()
+                .unwrap()
         );
         assert_ne!(
             schema.effective_config_digest(value.dialogue()).unwrap(),

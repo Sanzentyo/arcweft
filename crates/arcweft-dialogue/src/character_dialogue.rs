@@ -38,10 +38,13 @@ pub use limits::{CharacterDialogueLimits, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, StructuredPatch};
 pub use runtime_type::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use schema::{
+    CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
+    CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,
+    CharacterDialogueRolePayloadCodec, CharacterDialogueRolePayloadSchema,
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
     CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeDefaultCatalog,
-    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
-    CharacterDialogueRuntimeSchema, CharacterDialogueValue,
+    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueValue,
 };
 pub use typed_value::{
     CharacterDialogueCleanupValue, CharacterDialogueCustomValue, CharacterDialogueFocusValue,

@@ -337,7 +337,14 @@ pub(super) fn apply_patch(
         PatchField::Clear => candidate.hooks.clear(),
     }
     if !patch.style.is_empty() {
-        candidate.style = apply_style(&candidate.style, &patch.style)?;
+        let style_base = if matches!(candidate.style.typed().value(), RuntimeValue::EntityRef(_)) {
+            CharacterDialogueStyleValue::try_new(rich_text_no_overrides_like(
+                &candidate.rich_text,
+            )?)?
+        } else {
+            candidate.style.clone()
+        };
+        candidate.style = apply_style(&style_base, &patch.style)?;
     }
     if !patch.rich_text.is_empty() {
         candidate.rich_text = apply_rich_text(&candidate.rich_text, &patch.rich_text)?;
@@ -384,6 +391,26 @@ fn apply_rich_text(
 ) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
     let typed = apply_structured(base.typed(), patch)?;
     CharacterDialogueRichTextValue::try_new(typed)
+}
+
+fn rich_text_no_overrides_like(
+    reference: &CharacterDialogueRichTextValue,
+) -> Result<super::CharacterDialogueTypedValue, CharacterDialogueValueError> {
+    let RuntimeValue::Opaque(reference) = reference.typed().value() else {
+        return Err(CharacterDialogueValueError::Field {
+            field: "style",
+            reason: "Style patch needs the accepted RichText owner".to_owned(),
+        });
+    };
+    let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
+        reference.producer().clone(),
+        reference.semantic_identity(),
+        reference.value_class(),
+        reference.persistence(),
+    );
+    let payload = super::schema::CharacterDialogueRolePayloadCodec::RichTextProperties
+        .no_overrides_payload()?;
+    super::CharacterDialogueTypedValue::try_new(owner.try_wrap(payload)?)
 }
 
 fn apply_structured<T>(
@@ -579,18 +606,6 @@ fn validate_assignment_paths<'a>(
 pub(super) fn standard_dialogue_view() -> ViewId {
     ViewId::try_new_engine_owned("std.view.dialogue")
         .expect("reserved standard dialogue View identity is valid")
-}
-
-pub(super) fn clear_style(
-    value: &CharacterDialogueStyleValue,
-) -> Result<CharacterDialogueStyleValue, CharacterDialogueValueError> {
-    apply_style(value, &StructuredPatch::clear_all())
-}
-
-pub(super) fn clear_rich_text(
-    value: &CharacterDialogueRichTextValue,
-) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
-    apply_rich_text(value, &StructuredPatch::clear_all())
 }
 
 pub(super) fn merge_style_set(

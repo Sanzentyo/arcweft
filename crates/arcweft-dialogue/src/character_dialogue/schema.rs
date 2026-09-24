@@ -1,6 +1,7 @@
 //! Program-bound admission and producer-owned tuple encoding of `CharacterDialogue`.
 
 mod policies;
+mod role_payload;
 mod roles;
 
 use super::{
@@ -39,7 +40,15 @@ use arcweft_interaction_model::dialogue::{
 };
 use arcweft_view::{ViewId, ViewRegistry};
 use policies::{DialoguePolicyTypes, DialogueRuntimeVariantOwner};
-pub use roles::{CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes};
+pub use role_payload::{
+    CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
+    CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,
+    CharacterDialogueRolePayloadCodec, CharacterDialogueRolePayloadSchema,
+};
+pub use roles::{
+    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueRuntimeRoleTypes,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -954,10 +963,11 @@ impl CharacterDialogueRuntimeSchema {
             CharacterDialogueFieldCoordinate::SourceLocale => config.source_locale = None,
             CharacterDialogueFieldCoordinate::Hooks => config.hooks.clear(),
             CharacterDialogueFieldCoordinate::Style => {
-                config.style = super::patch::clear_style(&config.style)?;
+                let empty = self.canonical_rich_text_no_overrides()?;
+                config.style = CharacterDialogueStyleValue::try_new(empty.typed().clone())?;
             }
             CharacterDialogueFieldCoordinate::RichText => {
-                config.rich_text = super::patch::clear_rich_text(&config.rich_text)?;
+                config.rich_text = self.canonical_rich_text_no_overrides()?;
             }
             CharacterDialogueFieldCoordinate::InlineFailure => {
                 config.inline_failure = InlineFailurePolicy::FailLine;
@@ -977,6 +987,29 @@ impl CharacterDialogueRuntimeSchema {
             }
         }
         Ok(())
+    }
+
+    fn canonical_rich_text_no_overrides(
+        &self,
+    ) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
+        let binding = self
+            .roles
+            .authored(Role::RichText)
+            .expect("RichText has a fixed authored role slot");
+        let CharacterDialogueRuntimeRoleBody::Bound { codec, .. } = binding.body() else {
+            return Err(CharacterDialogueValueError::RoleType {
+                role: Role::RichText,
+                reason: "RichText has no accepted payload codec",
+            });
+        };
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            Self::opaque_type_producer(),
+            binding.value(),
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let value = owner.try_wrap(codec.no_overrides_payload()?)?;
+        CharacterDialogueRichTextValue::try_new(CharacterDialogueTypedValue::try_new(value)?)
     }
 
     fn decode_role_value(

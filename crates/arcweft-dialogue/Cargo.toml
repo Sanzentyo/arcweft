@@ -11,6 +11,7 @@ arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-interaction-model.workspace = true
+arcweft-presentation.workspace = true
 arcweft-ref = { workspace = true }
 arcweft-resource-model.workspace = true
 arcweft-rich-text-schema = { workspace = true }
