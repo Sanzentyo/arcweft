@@ -17,6 +17,9 @@ use super::{
 #[cfg(test)]
 mod tests;
 
+mod declaration;
+pub(crate) use declaration::GenericDeclarationBinder;
+
 /// Owned lexical context for a projected type term. Consumers must explicitly
 /// close it at the root or transfer its incoming binders to a function scheme.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +29,13 @@ pub(crate) struct ScopedType {
 }
 
 impl ScopedType {
+    pub(crate) fn at_root(value: TypeKind) -> Self {
+        Self {
+            value,
+            scope: GenericScope::default(),
+        }
+    }
+
     pub(in crate::types) const fn new(value: TypeKind, scope: GenericScope) -> Self {
         Self { value, scope }
     }

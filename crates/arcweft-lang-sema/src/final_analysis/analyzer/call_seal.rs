@@ -1256,12 +1256,67 @@ impl SealedSelectedCall {
             return Ok(Some((callee, PreparedExpressionFact::from(updated))));
         }
         let ty = selected_callable_type(&self.application, checked_callables)?;
+        let specialization = previous
+            .value_type()
+            .filter(|source| {
+                self.application
+                    .core()
+                    .candidates()
+                    .selected()
+                    .requires_value_callee()
+                    && matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty())
+                    && matches!(
+                        self.application.core().candidates().selected().state(),
+                        ResolvedCallableState::Base
+                    )
+            })
+            .map(|source| {
+                self.application
+                    .core()
+                    .solution()
+                    .function_input_specialization_with_control(
+                        callee,
+                        source,
+                        &mut crate::types::UnmeteredTypeProjection,
+                    )
+            })
+            .transpose()
+            .map_err(|error| {
+                let failure = match error {
+                    crate::callable::FunctionSpecializationSealFailure::Invariant(error) => error,
+                    crate::callable::FunctionSpecializationSealFailure::Projection(error) => {
+                        error.into_instantiation().into()
+                    }
+                };
+                final_call_seal_error(
+                    FinalCallSealLocation::Site(self.application.core().site()),
+                    failure,
+                )
+            })?;
+        if specialization
+            .as_ref()
+            .is_some_and(|witness| witness.specialized_type() != &ty)
+        {
+            return Err(final_call_seal_error(
+                FinalCallSealLocation::Site(self.application.core().site()),
+                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            ));
+        }
         let updated = match previous {
             PreparedExpressionFact::Method(prepared) => PreparedExpressionFact::from(
                 prepared
                     .with_type(ty)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             ),
+            PreparedExpressionFact::Complete(previous) if specialization.is_some() => previous
+                .with_function_specialization(callee, specialization.expect("guarded above"))
+                .map_err(|error| {
+                    final_call_seal_error(
+                        FinalCallSealLocation::Site(self.application.core().site()),
+                        error,
+                    )
+                })?
+                .into(),
             PreparedExpressionFact::Complete(previous) => previous
                 .clone()
                 .with_sealed_value(

@@ -912,6 +912,19 @@ impl PreparedResolvedCallable {
                     let pattern = self
                         .definition
                         .projected_function_type_from_group(current_group, effects)?;
+                    if matches!(actual, TypeKind::Function { binder, .. } if !binder.is_empty()) {
+                        // The candidate opening already owns these quantifiers.
+                        // Constraining its opened arrow against the whole scheme
+                        // would open an unrelated second binder. Instead verify
+                        // that this is the exact source contract being applied.
+                        let source = self.schema().quantify_function_value(&pattern)?;
+                        if &source != actual {
+                            return Err(
+                                super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                            );
+                        }
+                        return Ok(CallableProjection::Ready(None));
+                    }
                     Ok(CallableProjection::Ready(Some((pattern, actual.clone()))))
                 }
                 CallableTerminalEffectProjection::Pending(checked) => {

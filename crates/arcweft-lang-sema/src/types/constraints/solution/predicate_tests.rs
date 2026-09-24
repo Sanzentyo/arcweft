@@ -359,7 +359,6 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
 fn function_scheme_use_declaration_closure_preserves_nested_binders_and_predicates() {
     use crate::types::{
         ArrayLength, GenericConstParameterId, GenericConstReference, GenericTypeReference,
-        ScopedTypeView,
     };
     let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(87_539));
     let ty = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
@@ -388,9 +387,15 @@ fn function_scheme_use_declaration_closure_preserves_nested_binders_and_predicat
         ),
         EffectRow::closed(EffectSet::new()),
     );
-    let closed = ScopedTypeView::at_root(&source)
-        .quantify_parameters(&[ty], &[length], &[effect])
-        .unwrap();
+    let closed = crate::types::GenericDeclarationBinder::new(
+        GenericScope::default(),
+        Box::new([ty]),
+        Box::new([length]),
+        Box::new([effect]),
+    )
+    .unwrap()
+    .quantify_function_with_control(&source, &mut crate::types::UnmeteredTypeProjection)
+    .unwrap();
     let nested = local.with_binder(binder);
     let expected = TypeKind::function_with_contract(
         binder,

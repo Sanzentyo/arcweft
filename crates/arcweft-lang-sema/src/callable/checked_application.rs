@@ -928,6 +928,33 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
 }
 
 impl FrozenCallTypeSolution {
+    pub(crate) fn function_input_specialization_with_control<
+        C: crate::types::TypeProjectionControl,
+    >(
+        &self,
+        owner: ExprId,
+        source: &TypeKind,
+        control: &mut C,
+    ) -> Result<
+        Arc<super::CheckedFunctionSpecialization>,
+        super::FunctionSpecializationSealFailure<C::Error>,
+    > {
+        super::CheckedFunctionSpecialization::seal_call_input(
+            owner,
+            source,
+            &self.solution,
+            control,
+        )
+    }
+
+    pub(crate) fn project_template_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<crate::types::ScopedType, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.apply_template_with_control(ty, control)
+    }
+
     pub(crate) fn close_residual_with_control<C: crate::types::TypeProjectionControl>(
         &self,
         arguments: &crate::types::constraints::ClosedTypeInstantiation,
@@ -2782,7 +2809,10 @@ impl ResolvedCallableStableIdentity {
                     || !matches!(candidate, CallableCandidateId::FunctionValue(id)
                         if id.expression() == producer && id.ordinal() == ordinal)
                     || checked.schema().effects().fixed_row() != Some(&effects)
-                    || schema_function_type(checked.schema())? != function_type
+                    || checked
+                        .schema()
+                        .quantify_function_value(&schema_function_type(checked.schema())?)?
+                        != function_type
                 {
                     return Err(CallConstraintInvariant::PreparedBaseMismatch);
                 }

@@ -32,7 +32,14 @@ use super::{
     ResolvedCallableOrigin, ResolvedCallableState,
 };
 
+mod source;
 mod specialization;
+pub use source::{
+    CheckedProjectFunctionCallableAttached, CheckedProjectFunctionCallableOrigin,
+    CheckedProjectFunctionCallableParameter, CheckedProjectFunctionCallableRetainedParameter,
+    CheckedProjectFunctionCallableSource, CheckedProjectFunctionCallableSourceDigest,
+    select_project_function_value_runtime,
+};
 pub use specialization::CheckedProjectFunctionSpecialization;
 
 /// Failure while joining one final call fact with the current callable
@@ -520,69 +527,6 @@ pub enum CheckedProjectFunctionInstanceProjectionError<E: std::error::Error + 's
     Projection(#[from] crate::types::TypeProjectionError<E>),
 }
 
-/// Closes the latent body of a declaration used as a value. This is a producer
-/// selection, so it neither invents a source application nor invokes a group.
-pub fn select_project_function_value_runtime(
-    declaration: &CallableDeclarationKey,
-    catalog: &CheckedCallableCatalog,
-) -> Result<CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError>
-{
-    if declaration.owner() != CallableDeclarationOwner::Function {
-        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidRootDeclaration);
-    }
-    let checked = catalog
-        .project_callable(declaration)
-        .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
-    if !matches!(
-        checked.execution(),
-        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame)
-    ) {
-        return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
-    }
-    if !checked.signature().generic_inventory().types().is_empty()
-        || !checked.signature().generic_inventory().consts().is_empty()
-    {
-        return Err(CheckedProjectFunctionRuntimeSelectionError::OpenRootInstantiation);
-    }
-    let group = checked
-        .signature()
-        .groups()
-        .last()
-        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
-        .index();
-    let callable_type = checked
-        .signature()
-        .declared_function_type_from_group(CallableGroupIndex::ZERO, checked.exposed_row())?;
-    let solution = ClosedTypeInstantiation::default();
-    let callable_type = solution.instantiate_type(&callable_type)?;
-    let mut function_type = &callable_type;
-    for _ in 0..group.get() {
-        let TypeKind::Function { return_type, .. } = function_type else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
-        };
-        function_type = return_type;
-    }
-    let function_type = function_type.clone();
-    let effects = checked
-        .exposed_row()
-        .resolve(&EffectSubstitution::new())
-        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
-    let instantiation = empty_callable_instantiation_digest()
-        .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript)?;
-    Ok(CheckedProjectFunctionRootRuntimeSelection {
-        declaration: declaration.clone(),
-        group,
-        function_type: function_type.clone(),
-        effects,
-        solution: CheckedProjectFunctionInstanceSolution {
-            solution: Arc::new(solution),
-            instantiation,
-            function_type,
-            callable_type,
-        },
-    })
-}
-
 impl CheckedProjectFunctionRootRuntimeSelection {
     pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
@@ -979,11 +923,10 @@ fn checked_project_function_parameter_materialization(
             .base()
             .project_parameter_type(coordinate)?;
         let abi_type = solution.instantiate_template(&declared)?;
-        let binding_type = if rest {
-            TypeKind::Vec(Box::new(abi_type.clone()))
-        } else {
-            abi_type.clone()
-        };
+        let binding_type = parameter
+            .passing()
+            .value_binding_type(abi_type.clone())
+            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
         rows.push(CheckedProjectFunctionParameterMaterialization {
             coordinate,
             passing: parameter.passing(),
@@ -1018,15 +961,10 @@ fn checked_project_function_parameter_binding_types(
                         parameter.index(),
                     ))?;
             let abi_type = solution.instantiate_template(&declared)?;
-            match parameter.passing() {
-                CallableParameterPassing::RestPositional => Ok(TypeKind::Vec(Box::new(abi_type))),
-                CallableParameterPassing::RestNamed => {
-                    Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)
-                }
-                CallableParameterPassing::PositionalOnly
-                | CallableParameterPassing::PositionalOrNamed
-                | CallableParameterPassing::NamedOnly => Ok(abi_type),
-            }
+            parameter
+                .passing()
+                .value_binding_type(abi_type)
+                .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)
         })
         .collect()
 }

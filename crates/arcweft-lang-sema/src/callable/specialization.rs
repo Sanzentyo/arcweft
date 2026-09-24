@@ -96,6 +96,56 @@ pub(crate) enum FunctionSpecializationSealFailure<E: std::error::Error + 'static
 }
 
 impl CheckedFunctionSpecialization {
+    /// The input of an invocation is specialized by that invocation's completed
+    /// solution. It shares the candidate opening; no second solve or fabricated
+    /// value-use application is involved.
+    pub(crate) fn seal_call_input<C: TypeProjectionControl>(
+        owner: ExprId,
+        source: &TypeKind,
+        solution: &Arc<TypeConstraintSolution>,
+        control: &mut C,
+    ) -> Result<Arc<Self>, FunctionSpecializationSealFailure<C::Error>> {
+        let TypeKind::Function {
+            binder,
+            predicate,
+            params,
+            return_type,
+            effects,
+        } = source
+        else {
+            return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch.into());
+        };
+        if binder.is_empty() || solution.template_scope().binders() != [*binder] {
+            return Err(CallConstraintInvariant::PreparedSchemaMismatch.into());
+        }
+        let template = TypeKind::function_with_contract(
+            GenericBinder::EMPTY,
+            predicate.clone(),
+            params.clone(),
+            return_type.as_ref().clone(),
+            effects.clone(),
+        );
+        let projected = solution.apply_template_with_control(&template, control)?;
+        let specialized = projected.view().to_quantified_type_with_control(control)?;
+        let source_digest = source
+            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)?;
+        let target_digest = specialized
+            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)?;
+        let digest = CheckedFunctionSpecializationDigest::issue(
+            source_digest,
+            target_digest,
+            solution,
+            control,
+        )?;
+        Ok(Arc::new(Self {
+            owner,
+            source: source.clone(),
+            specialized,
+            solution: Arc::clone(solution),
+            digest,
+        }))
+    }
+
     pub(crate) fn seal<D, C>(
         result: &CompletedResultProjectionView<'_, D>,
         control: &mut C,

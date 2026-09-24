@@ -2463,17 +2463,10 @@ fn validate_attached_content_interface(
             let abi_type = schema_parameter
                 .declared_type()
                 .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
-            let expected_binding_type = match schema_parameter.passing() {
-                CallableParameterPassing::RestPositional => {
-                    TypeKind::Vec(Box::new(abi_type.clone()))
-                }
-                CallableParameterPassing::RestNamed => {
-                    return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
-                }
-                CallableParameterPassing::PositionalOnly
-                | CallableParameterPassing::PositionalOrNamed
-                | CallableParameterPassing::NamedOnly => abi_type.clone(),
-            };
+            let expected_binding_type = schema_parameter
+                .passing()
+                .value_binding_type(abi_type.clone())
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
             let mut binding_locals = BTreeSet::new();
             let mut binding_origins = BTreeSet::new();
             let binding_evidence_valid = capture.bindings().len()

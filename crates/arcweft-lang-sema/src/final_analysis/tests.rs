@@ -100,6 +100,8 @@ mod generic_calls;
 mod higher_order_effects;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
+#[path = "tests/project_callable_source.rs"]
+mod project_callable_source;
 #[path = "tests/project_specialization.rs"]
 mod project_specialization;
 #[path = "tests/statement_contextual.rs"]

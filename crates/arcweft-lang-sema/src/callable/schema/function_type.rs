@@ -28,6 +28,18 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
     Projection(E),
 }
 
+impl CallableParameterPassing {
+    /// Binding storage for an ordinary runtime parameter. Named rest values
+    /// have no ordinary project-function ABI and remain a typed absence.
+    pub(crate) fn value_binding_type(self, abi_type: TypeKind) -> Option<TypeKind> {
+        match self {
+            Self::RestPositional => Some(TypeKind::Vec(Box::new(abi_type))),
+            Self::RestNamed => None,
+            Self::PositionalOnly | Self::PositionalOrNamed | Self::NamedOnly => Some(abi_type),
+        }
+    }
+}
+
 impl CallableSignatureSchema {
     /// A declaration's value owns its used generic slots as lexical binders.
     /// Rigid references from an enclosing declaration remain free.
@@ -35,26 +47,39 @@ impl CallableSignatureSchema {
         &self,
         value: &TypeKind,
     ) -> Result<TypeKind, crate::types::TypeInstantiationError> {
+        self.function_value_binder()?
+            .quantify_function_with_control(value, &mut crate::types::UnmeteredTypeProjection)
+            .map_err(crate::types::TypeProjectionError::into_instantiation)
+    }
+
+    pub(crate) fn function_value_binder(
+        &self,
+    ) -> Result<crate::types::GenericDeclarationBinder, crate::types::GenericScopeError> {
         let inventory = self.generic_inventory();
         let types = inventory
             .types()
             .iter()
             .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
             .map(|entry| entry.parameter().clone())
-            .collect::<Vec<_>>();
+            .collect::<Box<[_]>>();
         let consts = inventory
             .consts()
             .iter()
             .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
             .map(|entry| entry.parameter().clone())
-            .collect::<Vec<_>>();
+            .collect::<Box<[_]>>();
         let effects = inventory
             .effects()
             .iter()
             .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
             .map(|entry| entry.parameter().clone())
-            .collect::<Vec<_>>();
-        crate::types::ScopedTypeView::at_root(value).quantify_parameters(&types, &consts, &effects)
+            .collect::<Box<[_]>>();
+        crate::types::GenericDeclarationBinder::new(
+            inventory.template_scope().clone(),
+            types,
+            consts,
+            effects,
+        )
     }
 
     pub(crate) fn parameter_type(

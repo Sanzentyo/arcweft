@@ -11,8 +11,8 @@ use crate::types::{
     ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference,
     GenericParameterKind, GenericScope, GenericScopeError, GenericTypeReference,
     ScopedArrayLengthView, ScopedConstReferenceView, ScopedEffectReferenceView,
-    ScopedEffectRowView, ScopedTypeReferenceView, ScopedTypeView, TypeKind, TypeProjectionControl,
-    TypeProjectionError, TypeProjectionNodeKind,
+    ScopedEffectRowView, ScopedType, ScopedTypeReferenceView, ScopedTypeView, TypeKind,
+    TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
 };
 
 use crate::types::projection_control::{
@@ -276,14 +276,50 @@ impl ClosedTypeInstantiation {
         incoming: &GenericScope,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-        super::template::map_term_with_control(
+        self.project_contextual_type_with_control(
             ty,
             incoming,
+            incoming,
             &GenericScope::default(),
+            control,
+        )
+    }
+
+    /// Close caller-owned free references while retaining the incoming lexical
+    /// binder of a scheme's parameter or result edge.
+    pub(crate) fn instantiate_scoped_type_with_control<C: TypeProjectionControl>(
+        &self,
+        ty: ScopedTypeView<'_>,
+        control: &mut C,
+    ) -> Result<ScopedType, TypeProjectionError<C::Error>> {
+        Ok(ScopedType::new(
+            self.project_contextual_type_with_control(
+                ty.value(),
+                ty.scope(),
+                &GenericScope::default(),
+                ty.scope(),
+                control,
+            )?,
+            ty.scope().clone(),
+        ))
+    }
+
+    fn project_contextual_type_with_control<C: TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        source: &GenericScope,
+        template: &GenericScope,
+        target: &GenericScope,
+        control: &mut C,
+    ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
+        super::template::map_term_with_control(
+            ty,
+            source,
+            target,
             1,
             control,
             &|reference, scope, _, depth, control| {
-                if let Some(parameter) = reference.template_key(incoming, scope)? {
+                if let Some(parameter) = reference.template_key(template, scope)? {
                     let index = self
                         .bindings
                         .binary_search_by(|row| row.parameter.cmp(&parameter))
@@ -310,7 +346,7 @@ impl ClosedTypeInstantiation {
                 }
             },
             &|length, scope, _, depth, control| {
-                self.project_length_with_control(length, incoming, scope, depth, control)
+                self.project_length_with_control(length, template, scope, depth, control)
             },
             &|row, source, target, depth, control| {
                 super::template::map_effects_with_control(
@@ -318,7 +354,7 @@ impl ClosedTypeInstantiation {
                     depth,
                     control,
                     &|reference, control| {
-                        if let Some(parameter) = reference.template_key(incoming, source)? {
+                        if let Some(parameter) = reference.template_key(template, source)? {
                             let replacement = self
                                 .effect_binding(&parameter)
                                 .ok_or(TypeInstantiationError::UnboundEffect { parameter })?;

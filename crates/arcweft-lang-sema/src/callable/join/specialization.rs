@@ -1,18 +1,19 @@
-//! The checked function-value and invocation paths share one specialization
-//! proof. A proof names one source continuation; it never selects code from a
-//! function type or reconstructs a producing expression.
+//! Value uses and calls share one proof from a checked source to a body instance.
+//! The source owns declaration identity and the producing environment; a type
+//! match never chooses a declaration or reconstructs its producing expression.
 
 use super::{
-    Arc, ArrayLength, CallableGroupIndex, CallableInstantiationDigestError,
-    CheckedCallContinuationDigest, CheckedCallableCatalog, CheckedProjectContinuationRuntimeAbi,
+    ArrayLength, CallableGroupIndex, CheckedCallableCatalog,
     CheckedProjectFunctionInstanceProjectionError, CheckedProjectFunctionInstanceSolution,
-    CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeInput,
-    CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-    CheckedProjectFunctionRuntimeSelectionError, ClosedTypeInstantiation, EffectSubstitution,
-    TypeKind, callable_instantiation_digest_from_bindings,
+    CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeOutcome,
+    CheckedProjectFunctionRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError,
+    ClosedTypeInstantiation, TypeKind,
+    source::{
+        CheckedProjectFunctionCallableOrigin, CheckedProjectFunctionCallableSource,
+        CheckedProjectFunctionCallableSourceDigest,
+    },
 };
 use crate::{
-    callable::CheckedFunctionSpecialization,
     effects::EffectSet,
     types::{GenericScope, TypeProjectionControl, TypeProjectionError},
 };
@@ -22,7 +23,8 @@ use crate::{
 /// of declaration names and caller expression identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectFunctionSpecialization {
-    lineage: CheckedCallContinuationDigest,
+    source: CheckedProjectFunctionCallableOrigin,
+    source_digest: CheckedProjectFunctionCallableSourceDigest,
     next_group: CallableGroupIndex,
     source_type: TypeKind,
     specialized_type: TypeKind,
@@ -33,8 +35,11 @@ pub struct CheckedProjectFunctionSpecialization {
 }
 
 impl CheckedProjectFunctionSpecialization {
-    pub const fn lineage(&self) -> CheckedCallContinuationDigest {
-        self.lineage
+    pub const fn source(&self) -> CheckedProjectFunctionCallableOrigin {
+        self.source
+    }
+    pub const fn source_digest(&self) -> CheckedProjectFunctionCallableSourceDigest {
+        self.source_digest
     }
     pub const fn next_group(&self) -> CallableGroupIndex {
         self.next_group
@@ -57,156 +62,17 @@ impl CheckedProjectFunctionSpecialization {
     pub const fn closed_selection(&self) -> &CheckedProjectFunctionRootRuntimeSelection {
         &self.closed_selection
     }
-}
 
-struct ProjectSpecializationSeed<'a> {
-    source: &'a CheckedProjectContinuationRuntimeAbi,
-    next_group: CallableGroupIndex,
-    arguments: ClosedTypeInstantiation,
-    body: ClosedTypeInstantiation,
-}
-
-impl CheckedProjectFunctionRuntimeSelection {
-    /// Join a value-use witness to this exact prefix's latent body. The
-    /// witness supplies only checked substitution; this selection supplies
-    /// declaration, continuation lineage and retained-prefix authority.
-    /// The source and value use may belong to different enclosing instances;
-    /// each owns its free references and is closed exactly once.
-    pub fn specialize_callable_value_with_control<C: TypeProjectionControl>(
-        &self,
-        catalog: &CheckedCallableCatalog,
-        witness: &CheckedFunctionSpecialization,
-        source_enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
-        witness_enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+    pub(super) fn seal<C: TypeProjectionControl>(
+        source: &CheckedProjectFunctionCallableSource,
+        arguments: ClosedTypeInstantiation,
+        closed_selection: CheckedProjectFunctionRootRuntimeSelection,
         control: &mut C,
-    ) -> Result<
-        CheckedProjectFunctionSpecialization,
-        CheckedProjectFunctionInstanceProjectionError<C::Error>,
-    > {
-        control.check().map_err(TypeProjectionError::Control)?;
-        let CheckedProjectFunctionRuntimeOutcome::Continue { abi, next_group } = &self.outcome
-        else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
-        };
-        let empty = ClosedTypeInstantiation::default();
-        let source_caller = source_enclosing.map_or(&empty, |row| row.solution.as_ref());
-        let witness_caller = witness_enclosing.map_or(&empty, |row| row.solution.as_ref());
-        let source = source_caller.instantiate_type_with_control(abi.function_type(), control)?;
-        let witness_source =
-            witness_caller.instantiate_type_with_control(witness.source_type(), control)?;
-        if !same_type(&source, &witness_source, control)? {
-            return Err(
-                CheckedProjectFunctionRuntimeSelectionError::SpecializationSourceMismatch.into(),
-            );
-        }
-        let arguments = witness.close_arguments_with_control(Some(witness_caller), control)?;
-        let body =
-            self.solution
-                .close_residual_with_control(&arguments, Some(source_caller), control)?;
-        let proof = self.seal_specialization(
-            ProjectSpecializationSeed {
-                source: abi,
-                next_group: *next_group,
-                arguments,
-                body,
-            },
-            catalog,
-            source_enclosing,
-            control,
-        )?;
-        let expected =
-            witness_caller.instantiate_type_with_control(witness.specialized_type(), control)?;
-        if !same_type(proof.specialized_type(), &expected, control)? {
-            return Err(
-                CheckedProjectFunctionRuntimeSelectionError::SpecializationResultMismatch.into(),
-            );
-        }
-        Ok(proof)
-    }
-
-    /// Issue the same proof from a terminal checked call. Its completed
-    /// solution supplies the arguments for the input continuation's residual
-    /// slots; the inherited prefix is verified by forward composition.
-    pub fn specialize_continuation_with_control<C: TypeProjectionControl>(
-        &self,
-        catalog: &CheckedCallableCatalog,
-        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
-        control: &mut C,
-    ) -> Result<
-        CheckedProjectFunctionSpecialization,
-        CheckedProjectFunctionInstanceProjectionError<C::Error>,
-    > {
-        control.check().map_err(TypeProjectionError::Control)?;
-        let (CheckedProjectFunctionRuntimeInput::Continuation { abi }, Some(continuation)) =
-            (&self.input, &self.input_continuation)
-        else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
-        };
-        if !matches!(
-            self.outcome,
-            CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
-        ) || abi.lineage() != continuation.digest()
-            || self.group != continuation.next_group()
-        {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
-        }
-        let caller = enclosing.map(|row| row.solution.as_ref());
-        let body = self
-            .solution
-            .close_instantiation_with_control(caller, control)?;
-        let arguments = continuation
-            .inherited_solution()
-            .residual_arguments_with_control(&body, caller, control)?;
-        self.seal_specialization(
-            ProjectSpecializationSeed {
-                source: abi,
-                next_group: self.group,
-                arguments,
-                body,
-            },
-            catalog,
-            enclosing,
-            control,
-        )
-    }
-
-    fn seal_specialization<C: TypeProjectionControl>(
-        &self,
-        seed: ProjectSpecializationSeed<'_>,
-        catalog: &CheckedCallableCatalog,
-        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
-        control: &mut C,
-    ) -> Result<
-        CheckedProjectFunctionSpecialization,
-        CheckedProjectFunctionInstanceProjectionError<C::Error>,
-    > {
-        let empty = ClosedTypeInstantiation::default();
-        let caller = enclosing.map_or(&empty, |row| row.solution.as_ref());
-        let source_type =
-            caller.instantiate_type_with_control(seed.source.function_type(), control)?;
-        let specialized_type = seed.arguments.specialize_function_with_control(
-            seed.source.function_type(),
-            Some(caller),
-            control,
-        )?;
-        let checked = catalog
-            .project_callable(&self.declaration)
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
-        let terminal = checked
-            .signature()
-            .groups()
-            .last()
-            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
-            .index();
-        let declared = checked
-            .signature()
-            .declared_function_type_from_group(CallableGroupIndex::ZERO, checked.exposed_row())
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?;
-        let callable_type = seed
-            .body
-            .instantiate_type_with_control(&declared, control)?;
+    ) -> Result<Self, CheckedProjectFunctionInstanceProjectionError<C::Error>> {
+        let specialized_type =
+            arguments.specialize_function_with_control(source.function_type(), None, control)?;
         if !same_type(
-            group_type(&callable_type, seed.next_group)?,
+            group_type(closed_selection.solution().callable_type(), source.group())?,
             &specialized_type,
             control,
         )? {
@@ -214,43 +80,19 @@ impl CheckedProjectFunctionRuntimeSelection {
                 CheckedProjectFunctionRuntimeSelectionError::SpecializationResultMismatch.into(),
             );
         }
-        let function_type = group_type(&callable_type, terminal)?.clone();
-        let TypeKind::Function { effects, .. } = &function_type else {
-            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
-        };
-        let effects = effects
-            .resolve(&EffectSubstitution::new())
-            .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
-        let instantiation = callable_instantiation_digest_from_bindings(
-            &self.base_instantiation,
-            seed.body.type_bindings(),
-            seed.body.const_bindings(),
-            seed.body.effect_bindings(),
-            |ty, control| caller.instantiate_type_with_control(ty, control),
-            control,
-        )
-        .map_err(|error| match error {
-            CallableInstantiationDigestError::Projection(error) => {
-                CheckedProjectFunctionInstanceProjectionError::Projection(error)
-            }
-            CallableInstantiationDigestError::TranscriptLength => {
-                CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript.into()
-            }
-        })?;
-        let type_arguments = seed
-            .arguments
+        let empty = ClosedTypeInstantiation::default();
+        let type_arguments = arguments
             .type_bindings()
             .map(|(_, value)| {
                 control
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
-                // The arguments have already been closed in their caller. A root
-                // projection charges their structure without reapplying callee keys.
+                // The RHS has already been closed in its owning environment.
+                // A root projection charges structure without applying callee keys.
                 empty.instantiate_type_with_control(value.value(), control)
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
-        let const_arguments = seed
-            .arguments
+        let const_arguments = arguments
             .const_bindings()
             .map(|(_, value)| {
                 control
@@ -259,8 +101,7 @@ impl CheckedProjectFunctionRuntimeSelection {
                 empty.instantiate_array_length_with_control(value.value(), control)
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
-        let effect_arguments = seed
-            .arguments
+        let effect_arguments = arguments
             .effect_bindings()
             .map(|(_, value)| {
                 control
@@ -269,31 +110,50 @@ impl CheckedProjectFunctionRuntimeSelection {
                 empty.project_effect_row_with_control(value.value(), 1, control)
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
-        Ok(CheckedProjectFunctionSpecialization {
-            lineage: seed.source.lineage(),
-            next_group: seed.next_group,
-            source_type,
+        Ok(Self {
+            source: source.origin(),
+            source_digest: source.source_digest(),
+            next_group: source.group(),
+            source_type: empty.instantiate_type_with_control(source.function_type(), control)?,
             specialized_type,
             type_arguments,
             const_arguments,
             effect_arguments,
-            closed_selection: CheckedProjectFunctionRootRuntimeSelection {
-                declaration: self.declaration.clone(),
-                group: terminal,
-                function_type: function_type.clone(),
-                effects,
-                solution: CheckedProjectFunctionInstanceSolution {
-                    solution: Arc::new(seed.body),
-                    instantiation,
-                    function_type,
-                    callable_type,
-                },
-            },
+            closed_selection,
         })
     }
 }
 
-fn group_type(
+impl CheckedProjectFunctionRuntimeSelection {
+    /// The terminal call's frozen solution supplies source-binder arguments.
+    /// Declaration roots and saved continuations use the same source authority;
+    /// both verify the inverse mapping by forward composition.
+    pub fn specialize_input_callable_with_control<C: TypeProjectionControl>(
+        &self,
+        catalog: &CheckedCallableCatalog,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+        control: &mut C,
+    ) -> Result<
+        CheckedProjectFunctionSpecialization,
+        CheckedProjectFunctionInstanceProjectionError<C::Error>,
+    > {
+        control.check().map_err(TypeProjectionError::Control)?;
+        if !matches!(
+            self.outcome,
+            CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
+        ) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi.into());
+        }
+        let source = self.input_callable_source(catalog, enclosing, control)?;
+        let body = self.solution.close_instantiation_with_control(
+            enclosing.map(|row| row.solution.as_ref()),
+            control,
+        )?;
+        source.specialize_completed_call(body, control)
+    }
+}
+
+pub(super) fn group_type(
     mut ty: &TypeKind,
     group: CallableGroupIndex,
 ) -> Result<&TypeKind, CheckedProjectFunctionRuntimeSelectionError> {
@@ -309,7 +169,7 @@ fn group_type(
     Ok(ty)
 }
 
-fn same_type<C: TypeProjectionControl>(
+pub(super) fn same_type<C: TypeProjectionControl>(
     left: &TypeKind,
     right: &TypeKind,
     control: &mut C,

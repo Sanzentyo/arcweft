@@ -219,6 +219,142 @@ impl TypeConstraintSolution {
 }
 
 impl ClosedTypeInstantiation {
+    /// Re-key source-binder arguments using the same declaration mapping that
+    /// produced the source scheme and its parameter types.
+    pub(crate) fn for_declaration_with_control<C: TypeProjectionControl>(
+        &self,
+        declaration: &crate::types::GenericDeclarationBinder,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<C::Error>> {
+        control.check().map_err(TypeProjectionError::Control)?;
+        if &self.template_scope != declaration.scope() {
+            return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
+        }
+        let mut types = BTreeMap::new();
+        for (slot, parameter) in (0u16..).zip(declaration.type_parameters()) {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            let value = self.instantiate_type_with_control(
+                &TypeKind::GenericParam(declaration.scope().bound_type(0, slot)?),
+                control,
+            )?;
+            if types.insert(parameter.clone(), value).is_some() {
+                return Err(TypeInstantiationError::SpecializationConflict.into());
+            }
+        }
+        let mut consts = BTreeMap::new();
+        for (slot, parameter) in (0u16..).zip(declaration.const_parameters()) {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            let value = self.instantiate_array_length_with_control(
+                &ArrayLength::Generic(declaration.scope().bound_const(0, slot)?),
+                control,
+            )?;
+            if consts.insert(parameter.clone(), value).is_some() {
+                return Err(TypeInstantiationError::SpecializationConflict.into());
+            }
+        }
+        let mut effects = BTreeMap::new();
+        for (slot, parameter) in (0u32..).zip(declaration.effect_parameters()) {
+            control
+                .visit_binding()
+                .map_err(TypeProjectionError::Control)?;
+            let value = EffectRow::closed(self.project_effect_row_with_control(
+                &EffectRow::open(EffectSet::new(), declaration.scope().bound_effect(0, slot)?),
+                1,
+                control,
+            )?);
+            if effects.insert(parameter.clone(), value).is_some() {
+                return Err(TypeInstantiationError::SpecializationConflict.into());
+            }
+        }
+        Ok(Self {
+            template_scope: declaration.template_scope().clone(),
+            bindings: types
+                .into_iter()
+                .map(|(key, value)| CheckedTypeArgumentBinding::new(key, value))
+                .collect(),
+            const_bindings: consts
+                .into_iter()
+                .map(|(key, value)| CheckedConstArgumentBinding::new(key, value))
+                .collect(),
+            effect_bindings: effects
+                .into_iter()
+                .map(|(key, value)| CheckedEffectArgumentBinding::new(key, value))
+                .collect(),
+        })
+    }
+
+    /// Extract the source root's arguments from a terminal checked call.
+    pub(crate) fn declaration_arguments_with_control<C: TypeProjectionControl>(
+        &self,
+        declaration: &crate::types::GenericDeclarationBinder,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<C::Error>> {
+        control.check().map_err(TypeProjectionError::Control)?;
+        if &self.template_scope != declaration.template_scope() {
+            return Err(TypeInstantiationError::SpecializationScopeMismatch.into());
+        }
+        let bindings = (0u16..)
+            .zip(declaration.type_parameters())
+            .map(|(slot, parameter)| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                Ok(CheckedTypeArgumentBinding::new(
+                    declaration.scope().bound_type(0, slot)?,
+                    self.instantiate_type_with_control(
+                        &TypeKind::GenericParam(parameter.clone()),
+                        control,
+                    )?,
+                ))
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        let const_bindings = (0u16..)
+            .zip(declaration.const_parameters())
+            .map(|(slot, parameter)| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                Ok(CheckedConstArgumentBinding::new(
+                    declaration.scope().bound_const(0, slot)?,
+                    self.instantiate_array_length_with_control(
+                        &ArrayLength::Generic(parameter.clone()),
+                        control,
+                    )?,
+                ))
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        let effect_bindings = (0u32..)
+            .zip(declaration.effect_parameters())
+            .map(|(slot, parameter)| {
+                control
+                    .visit_binding()
+                    .map_err(TypeProjectionError::Control)?;
+                Ok(CheckedEffectArgumentBinding::new(
+                    declaration.scope().bound_effect(0, slot)?,
+                    EffectRow::closed(self.project_effect_row_with_control(
+                        &EffectRow::open(EffectSet::new(), parameter.clone()),
+                        1,
+                        control,
+                    )?),
+                ))
+            })
+            .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
+        let arguments = Self {
+            template_scope: declaration.scope().clone(),
+            bindings,
+            const_bindings,
+            effect_bindings,
+        };
+        if arguments.for_declaration_with_control(declaration, control)? != *self {
+            return Err(TypeInstantiationError::SpecializationConflict.into());
+        }
+        Ok(arguments)
+    }
+
     /// Close a whole source function binder using this simultaneous argument
     /// environment. Nested function binders and their predicates remain local.
     pub(crate) fn specialize_function_with_control<C: TypeProjectionControl>(

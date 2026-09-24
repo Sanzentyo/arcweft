@@ -61,6 +61,57 @@ fn arguments(binder: GenericBinder, effects: &[&str]) -> ClosedTypeInstantiation
 }
 
 #[test]
+fn project_callable_source_declaration_arguments_round_trip_all_namespaces() {
+    let template = GenericScope::default().with_binder(GenericBinder::new(2, 1, 1));
+    // The declaration key and value-scheme ordinal are deliberately different.
+    let declaration = crate::types::GenericDeclarationBinder::new(
+        template.clone(),
+        Box::new([template.bound_type(0, 1).unwrap()]),
+        Box::new([template.bound_const(0, 0).unwrap()]),
+        Box::new([template.bound_effect(0, 0).unwrap()]),
+    )
+    .unwrap();
+    let supplied = arguments(GenericBinder::new(1, 1, 1), &["fs.read"]);
+    let body = supplied
+        .for_declaration_with_control(&declaration, &mut UnmeteredTypeProjection)
+        .unwrap();
+    assert_eq!(
+        body.instantiate_type(&TypeKind::GenericParam(template.bound_type(0, 1).unwrap()))
+            .unwrap(),
+        TypeKind::I64
+    );
+    assert_eq!(
+        body.instantiate_array_length(&ArrayLength::Generic(template.bound_const(0, 0).unwrap()))
+            .unwrap(),
+        ArrayLength::Const(7)
+    );
+    assert_eq!(
+        body.instantiate_effect_row(&EffectRow::open(
+            EffectSet::new(),
+            template.bound_effect(0, 0).unwrap()
+        ))
+        .unwrap(),
+        EffectSet::from_labels(["fs.read"]).unwrap()
+    );
+    assert_eq!(
+        body.declaration_arguments_with_control(&declaration, &mut UnmeteredTypeProjection)
+            .unwrap(),
+        supplied
+    );
+    assert!(matches!(
+        supplied.for_declaration_with_control(&declaration, &mut ProjectionRecorder::new(0)),
+        Err(TypeProjectionError::Control(ProjectionStop::Node { .. }))
+    ));
+    assert!(matches!(
+        ClosedTypeInstantiation::default()
+            .for_declaration_with_control(&declaration, &mut UnmeteredTypeProjection),
+        Err(TypeProjectionError::Instantiation(
+            TypeInstantiationError::SpecializationScopeMismatch
+        ))
+    ));
+}
+
+#[test]
 fn project_specialization_preserves_nested_binders_and_enforces_the_source_predicate() {
     let binder = GenericBinder::new(1, 1, 1);
     let outer = GenericScope::default().with_binder(binder);

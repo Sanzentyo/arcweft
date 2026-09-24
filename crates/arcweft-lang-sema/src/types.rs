@@ -43,7 +43,6 @@ pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{
     StableGenericReferenceUseCollector, TypeGenericReferenceUseCollector,
 };
-pub(crate) use generics::ScopedType;
 pub use generics::{
     BoundConstParameter, BoundEffectParameter, BoundTypeParameter, GenericBinder,
     GenericConstReference, GenericEffectReference, GenericParameterKind, GenericScope,
@@ -52,6 +51,7 @@ pub use generics::{
     ScopedEffectPredicateView, ScopedEffectReferenceView, ScopedEffectRowView,
     ScopedTypeReferenceView, ScopedTypeView, ScopedView,
 };
+pub(crate) use generics::{GenericDeclarationBinder, ScopedType};
 pub(crate) use match_domain::{MatchDomainFamily, MatchDomainInvalidity};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{

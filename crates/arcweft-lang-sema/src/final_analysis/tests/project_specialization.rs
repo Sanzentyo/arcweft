@@ -13,7 +13,7 @@ use crate::{
 };
 use arcweft_lang_hir::symbol::CallableDeclarationKey;
 
-fn selections(
+pub(super) fn selections(
     analysis: &FinalSemanticAnalysis,
     name: &str,
 ) -> Vec<CheckedProjectFunctionRuntimeSelection> {
@@ -73,10 +73,15 @@ flow main() -> i64 {
         .find_map(|(_, fact)| fact.function_specialization())
         .expect("callback specialization witness");
     let value = prefix
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap()
         .specialize_callable_value_with_control(
             analysis.checked_callables(),
             witness,
-            None,
             None,
             &mut UnmeteredTypeProjection,
         )
@@ -100,7 +105,7 @@ flow main() -> i64 {
         })
         .map(|selection| {
             selection
-                .specialize_continuation_with_control(
+                .specialize_input_callable_with_control(
                     analysis.checked_callables(),
                     None,
                     &mut UnmeteredTypeProjection,
@@ -116,8 +121,8 @@ flow main() -> i64 {
             .unwrap(),
     );
     let text = terminal.pop().unwrap();
-    assert_eq!(value.lineage(), number.lineage());
-    assert_eq!(value.lineage(), text.lineage());
+    assert_eq!(value.source(), number.source());
+    assert_eq!(value.source(), text.source());
     assert_eq!(value.next_group(), number.next_group());
     assert_eq!(value.closed_selection(), number.closed_selection());
     assert_eq!(text.type_arguments(), [TypeKind::String]);
@@ -152,11 +157,17 @@ flow main() -> i64 {
         .find_map(|(_, fact)| fact.function_specialization())
         .unwrap();
     let other = selections(&analysis, "different").remove(0);
+    let other = other
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            None,
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
     assert!(matches!(
         other.specialize_callable_value_with_control(
             analysis.checked_callables(),
             witness,
-            None,
             None,
             &mut UnmeteredTypeProjection,
         ),
@@ -192,10 +203,15 @@ flow main() -> i64 { return outer(42i64) }
         .find_map(|(_, fact)| fact.function_specialization())
         .unwrap();
     let proof = prefix
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            Some(&caller),
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap()
         .specialize_callable_value_with_control(
             analysis.checked_callables(),
             witness,
-            Some(&caller),
             Some(&caller),
             &mut UnmeteredTypeProjection,
         )
@@ -251,11 +267,31 @@ flow main() -> bool { let text = outer("saved", "text"); return outer(true, fals
         .unwrap();
     // Both instances use the same free T identity. A source-state registry
     // must close it in the producing context and demand context independently.
-    let proof = prefix
+    let source = prefix
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            Some(source_enclosing),
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
+    let other_source = prefix
+        .callable_value_source_with_control(
+            analysis.checked_callables(),
+            Some(witness_enclosing),
+            &mut UnmeteredTypeProjection,
+        )
+        .unwrap();
+    assert_eq!(source.origin(), other_source.origin());
+    assert_eq!(source.function_type(), other_source.function_type());
+    assert_ne!(
+        source.source_digest(),
+        other_source.source_digest(),
+        "the shared source arrow does not erase known earlier substitutions"
+    );
+    let proof = source
         .specialize_callable_value_with_control(
             analysis.checked_callables(),
             witness,
-            Some(source_enclosing),
             Some(witness_enclosing),
             &mut UnmeteredTypeProjection,
         )
