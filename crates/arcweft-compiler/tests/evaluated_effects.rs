@@ -87,7 +87,7 @@ fn ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc() {
 fn assert_single_dialogue_execution(
     executor: &mut impl arcweft_core::executor::RuntimeExecutor,
     template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
-) {
+) -> arcweft_core::value::RuntimeOpaqueValue {
     use arcweft_core::{
         engine::{FlowExit, FlowFiberStatus},
         plan::FlowEvent,
@@ -96,6 +96,7 @@ fn assert_single_dialogue_execution(
     };
     let mut advances = Vec::new();
     let mut seen = 0;
+    let mut selected_target = None;
     for tick in 0..256 {
         let output = executor
             .step(
@@ -112,6 +113,7 @@ fn assert_single_dialogue_execution(
             if let FlowEvent::DialogueLine {
                 activation,
                 template: actual,
+                target,
                 values,
                 ..
             } = event
@@ -122,6 +124,7 @@ fn assert_single_dialogue_execution(
                     "the fixture retains all static content in its selected template"
                 );
                 seen += 1;
+                assert!(selected_target.replace(target).is_none());
                 advances.push(activation);
             }
         }
@@ -130,7 +133,7 @@ fn assert_single_dialogue_execution(
             FlowFiberStatus::Done(exit) => {
                 assert_eq!(*exit, FlowExit::Done);
                 assert_eq!(seen, 1, "the selected line executes once");
-                return;
+                return selected_target.expect("dialogue line retains its exact target");
             }
             status => panic!("execution stopped unexpectedly: {status:?}"),
         }
@@ -169,13 +172,19 @@ fn assert_candidate_program_executes_in_native_and_awbc(compiled: &CompiledProje
     )
     .unwrap();
     let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
-    assert_single_dialogue_execution(&mut native, template.id());
+    let native_target = assert_single_dialogue_execution(&mut native, template.id());
     let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
         decoded,
         arcweft_core::awbc::schema::AwbcEntryId(0),
     )
     .unwrap();
-    assert_single_dialogue_execution(&mut awbc, template.id());
+    let awbc_target = assert_single_dialogue_execution(&mut awbc, template.id());
+    assert_eq!(native_target, awbc_target);
+    let character = arcweft_character::id::CharacterId::try_new("character.alice").unwrap();
+    assert_eq!(
+        native_target.semantic_identity(),
+        arcweft_dialogue::CharacterDialogueType::exact(character).runtime_semantic_identity()
+    );
 }
 
 #[test]

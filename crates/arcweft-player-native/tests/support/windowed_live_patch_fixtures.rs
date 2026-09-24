@@ -1035,6 +1035,29 @@ fn dialogue_runtime_plan(
     let done = FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id");
     let template = fixture_dialogue_template(display_text);
     let mut builder = fixture_plan_builder();
+    let dialogue_target_type = arcweft_dialogue::CharacterDialogueType::exact(
+        arcweft_character::id::CharacterId::try_new("character.fixture")
+            .expect("fixture character ID"),
+    );
+    let dialogue_target_owner = dialogue_target_type.runtime_opaque_owner();
+    let dialogue_target_value = dialogue_target_owner
+        .try_wrap(RuntimeValue::Unit)
+        .expect("fixture CharacterDialogue value wraps");
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                dialogue_target_type.runtime_semantic_identity(),
+                RuntimePlanTypeProjection::Opaque {
+                    producer: dialogue_target_owner.producer().clone(),
+                    admission: dialogue_target_owner.admission(),
+                    value_class: dialogue_target_owner.value_class(),
+                    persistence: dialogue_target_owner.persistence(),
+                    arguments: Box::default(),
+                },
+            )],
+            [],
+        )
+        .expect("dialogue target type admits");
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: line.clone(),
@@ -1069,7 +1092,14 @@ fn dialogue_runtime_plan(
     push_fixture_flow(
         &mut builder,
         main.clone(),
-        dialogue_main_ops(content, changed_main_code),
+        dialogue_main_ops(
+            content,
+            changed_main_code,
+            RuntimeExprSeed::new(
+                dialogue_target_type.runtime_semantic_identity(),
+                RuntimeExprSeedKind::Value(dialogue_target_value),
+            ),
+        ),
     );
     push_fixture_flow(
         &mut builder,
@@ -1099,12 +1129,14 @@ fn dialogue_runtime_plan(
 fn dialogue_main_ops(
     content: arcweft_core::plan::RuntimeDialogueContentPlanSeedId,
     changed_main_code: bool,
+    target: RuntimeExprSeed,
 ) -> Vec<RuntimeFlowOpSeed> {
     if changed_main_code {
         return vec![RuntimeFlowOpSeed::Return("changed".to_owned())];
     }
     vec![
         RuntimeFlowOpSeed::Dialogue {
+            target,
             content,
             result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
                 arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),

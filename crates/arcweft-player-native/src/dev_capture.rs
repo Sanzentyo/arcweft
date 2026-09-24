@@ -479,15 +479,35 @@ mod tests {
         let unit_result = arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
             arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
         );
+        let dialogue_target_type = arcweft_dialogue::CharacterDialogueType::exact(
+            arcweft_character::id::CharacterId::try_new("character.fixture")
+                .expect("fixture character ID"),
+        );
+        let dialogue_target_owner = dialogue_target_type.runtime_opaque_owner();
+        let dialogue_target_value = dialogue_target_owner
+            .try_wrap(arcweft_core::value::RuntimeValue::Unit)
+            .expect("fixture CharacterDialogue value wraps");
         builder
             .admit_type_batch(
-                [arcweft_core::plan::RuntimePlanTypeSeed::new(
-                    unit_result.ty(),
-                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
-                )],
+                [
+                    arcweft_core::plan::RuntimePlanTypeSeed::new(
+                        unit_result.ty(),
+                        arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+                    ),
+                    arcweft_core::plan::RuntimePlanTypeSeed::new(
+                        dialogue_target_type.runtime_semantic_identity(),
+                        arcweft_core::plan::RuntimePlanTypeProjection::Opaque {
+                            producer: dialogue_target_owner.producer().clone(),
+                            admission: dialogue_target_owner.admission(),
+                            value_class: dialogue_target_owner.value_class(),
+                            persistence: dialogue_target_owner.persistence(),
+                            arguments: Box::default(),
+                        },
+                    ),
+                ],
                 [],
             )
-            .expect("unit result type admits");
+            .expect("dialogue target and unit result types admit");
         let content = builder
             .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
                 line: line.clone(),
@@ -533,6 +553,10 @@ mod tests {
                 arcweft_core::plan::RuntimeEffectSet::empty(),
                 vec![
                     RuntimeFlowOpSeed::Dialogue {
+                        target: arcweft_core::plan::RuntimeExprSeed::new(
+                            dialogue_target_type.runtime_semantic_identity(),
+                            arcweft_core::plan::RuntimeExprSeedKind::Value(dialogue_target_value),
+                        ),
                         content,
                         result: unit_result,
                     },
