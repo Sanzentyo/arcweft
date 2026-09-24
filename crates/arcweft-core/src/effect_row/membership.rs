@@ -29,7 +29,7 @@ pub(super) struct Membership<V> {
 pub struct EffectFormula<V>(pub(super) Membership<V>);
 
 /// A relation that must hold for every effect label under finite row valuations.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectPredicate<V>(pub(super) Membership<V>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -136,7 +136,19 @@ where
                     };
                     let enclosing = (!shape.binder().is_empty())
                         .then(|| context.enter_binder_scope(shape.binder()));
-                    if let TypeConstraintShape::Function { effects, .. } = shape {
+                    if let TypeConstraintShape::Function {
+                        effects, predicate, ..
+                    } = shape
+                    {
+                        context.validate_effect_predicate(predicate, view)?;
+                        for variable in predicate.variables() {
+                            if context.effect_eligibility(variable, view)
+                                != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
+                            {
+                                remaining
+                                    .insert(RemainingConstraintParameter(variable.clone().into()));
+                            }
+                        }
                         if effects.is_known() {
                             context.validate_effect_row(effects, view)?;
                             for variable in effects.variables().expect("validated effect row") {
@@ -227,6 +239,7 @@ fn rebuild<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &mut (),
         |(), _| Ok(length.expect("array length was projected before its children")),
         |(), row| Ok(row.clone()),
+        |(), predicate| Ok(predicate.clone()),
     )
 }
 

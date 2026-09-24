@@ -2383,6 +2383,7 @@ mod tests {
         rejected(
             TypeKind::Function {
                 binder: crate::types::GenericBinder::EMPTY,
+                predicate: crate::effect_row::EffectPredicate::unconstrained(),
                 params: vec![TypeKind::I32],
                 return_type: Box::new(TypeKind::Unit),
                 effects: EffectRow::closed(crate::effects::EffectSet::new()),
@@ -2395,6 +2396,7 @@ mod tests {
     fn data_shape_ownership_visits_its_typed_child() {
         let function = TypeKind::Function {
             binder: crate::types::GenericBinder::EMPTY,
+            predicate: crate::effect_row::EffectPredicate::unconstrained(),
             params: vec![TypeKind::I32],
             return_type: Box::new(TypeKind::Unit),
             effects: EffectRow::closed(crate::effects::EffectSet::new()),

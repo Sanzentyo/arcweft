@@ -458,12 +458,20 @@ impl EffectRow {
 
 impl super::ScopedEffectPredicateView<'_> {
     pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
-        let mut encoder =
-            Encoder::scoped(self.scope(), &mut (), &|()| Ok::<(), GenericScopeError>(()))?;
+        self.scope().effect_predicate_identity_digest(self.value())
+    }
+}
+
+impl GenericScope {
+    pub(crate) fn effect_predicate_identity_digest(
+        &self,
+        predicate: &crate::effect_row::EffectPredicate,
+    ) -> Result<SemanticTypeDigest, GenericScopeError> {
+        let mut encoder = Encoder::scoped(self, &mut (), &|()| Ok::<(), GenericScopeError>(()))?;
         // This root is a universally interpreted predicate, distinct from a
         // finite effect row and from every runtime type constructor.
         encoder.tag(97);
-        self.value().encode(&mut EffectRowTypeEncoding {
+        predicate.encode(&mut EffectRowTypeEncoding {
             encoder: &mut encoder,
             control: &mut (),
             node: &|_: &mut (), _: super::TypeProjectionNodeKind, _: u64| {
@@ -507,6 +515,12 @@ impl Encoder {
         node(control, super::TypeProjectionNodeKind::Type, 2)?;
         encoder.checked(&RuntimeCheckedType::Unit);
         encoder.effect_row(row, 2, control, node)?;
+        encoder.effect_predicate(
+            &crate::effect_row::EffectPredicate::unconstrained(),
+            2,
+            control,
+            node,
+        )?;
         Ok(SemanticTypeDigest(*encoder.finish()?.as_bytes()))
     }
 
@@ -771,6 +785,7 @@ impl Encoder {
             }
             TypeKind::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
@@ -783,6 +798,7 @@ impl Encoder {
                 let enclosing = std::mem::replace(&mut self.scope, nested);
                 tasks.push(EncodingTask::FunctionEnd {
                     effects,
+                    predicate,
                     enclosing,
                     depth: child_depth,
                 });
@@ -1250,6 +1266,21 @@ impl Encoder {
         node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
     ) -> Result<(), E> {
         row.encode(&mut EffectRowTypeEncoding {
+            encoder: self,
+            control,
+            node,
+            depth: traversal::depth_u64(depth),
+        })
+    }
+
+    fn effect_predicate<C, E>(
+        &mut self,
+        predicate: &crate::effect_row::EffectPredicate,
+        depth: usize,
+        control: &mut C,
+        node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+    ) -> Result<(), E> {
+        predicate.encode(&mut EffectRowTypeEncoding {
             encoder: self,
             control,
             node,

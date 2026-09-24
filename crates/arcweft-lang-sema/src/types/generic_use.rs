@@ -431,6 +431,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             }
             TypeKind::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
@@ -439,6 +440,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
                 let enclosing = std::mem::replace(&mut self.scope, nested);
                 let result = (|| {
                     self.visit_effect_row_at(effects, position)?;
+                    self.visit_effect_predicate_at(predicate, position)?;
                     for parameter in params {
                         self.visit_at(parameter, position)?;
                     }
@@ -565,6 +567,26 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
                         .and_modify(|first| *first = (*first).min(position))
                         .or_insert(position);
                 }
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn visit_effect_predicate_at(
+        &mut self,
+        predicate: &crate::effect_row::EffectPredicate,
+        position: u32,
+    ) -> Result<(), TypeGenericUseError> {
+        for reference in predicate.variables() {
+            if let Some(key) = M::effect_key(
+                reference,
+                &self.scope,
+                self.scope.binders().len() - self.incoming_depth,
+            )? {
+                self.effects
+                    .entry(key)
+                    .and_modify(|first| *first = (*first).min(position))
+                    .or_insert(position);
             }
         }
         Ok(())
@@ -794,6 +816,7 @@ mod tests {
             TypeKind::Shared(Box::new(generic(118))),
             TypeKind::Function {
                 binder: crate::types::GenericBinder::EMPTY,
+                predicate: crate::effect_row::EffectPredicate::unconstrained(),
                 params: vec![generic(119)],
                 return_type: Box::new(generic(120)),
                 effects: EffectRow::closed(EffectSet::new()),

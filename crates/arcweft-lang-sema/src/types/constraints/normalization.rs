@@ -734,14 +734,17 @@ fn type_shapes_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
     if let (
         TypeConstraintShape::Function {
             effects: left_effects,
+            predicate: left_predicate,
             ..
         },
         TypeConstraintShape::Function {
             effects: right_effects,
+            predicate: right_predicate,
             ..
         },
     ) = (left_shape, right_shape)
-        && !left_effects.equal_with(right_effects, context)?
+        && (!left_effects.equal_with(right_effects, context)?
+            || !left_predicate.equal_with(right_predicate, context)?)
     {
         return Ok(false);
     }

@@ -1664,6 +1664,7 @@ fn inherited_failure_for(value: TypeKind) -> InheritedFailureClass {
 fn forbidden_completed_rows_are_solution_owner_invariants() {
     let unknown_effect_function = TypeKind::Function {
         binder: crate::types::GenericBinder::EMPTY,
+        predicate: crate::effect_row::EffectPredicate::unconstrained(),
         params: Vec::new(),
         return_type: Box::new(TypeKind::I32),
         effects: EffectRow::unknown(),
@@ -2105,6 +2106,7 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
         (
             TypeKind::Function {
                 binder: crate::types::GenericBinder::EMPTY,
+                predicate: crate::effect_row::EffectPredicate::unconstrained(),
                 params: Vec::new(),
                 return_type: Box::new(TypeKind::I32),
                 effects: EffectRow::unknown(),

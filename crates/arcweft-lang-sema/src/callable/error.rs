@@ -117,6 +117,8 @@ pub enum CallableSchemaError {
     },
     #[error("callable generic parameter issuer has an invalid owner arity")]
     InvalidCandidateIssuer,
+    #[error("callable function scheme has an unsatisfiable effect predicate")]
+    UnsatisfiableEffectPredicate,
     #[error("callable schema must contain an initial parameter group")]
     EmptyGroups,
     #[error("callable has {actual} groups; maximum is {limit}")]

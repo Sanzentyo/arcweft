@@ -572,23 +572,26 @@ impl<'a> EntryContractBuilder<'a> {
             },
             TypeKind::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
-            } if binder.is_empty() && effects.is_closed() => CanonicalType::Function {
-                params: params
-                    .iter()
-                    .map(|parameter| self.canonical_type_kind(parameter))
-                    .collect::<Result<Vec<_>, _>>()?,
-                result: Box::new(self.canonical_type_kind(return_type)?),
-                effects: CanonicalEffectRow {
-                    effects: effects
-                        .closed_value()
-                        .expect("closed function row")
-                        .to_labels(),
-                    tail: 0,
-                },
-            },
+            } if binder.is_empty() && predicate.is_unconstrained() && effects.is_closed() => {
+                CanonicalType::Function {
+                    params: params
+                        .iter()
+                        .map(|parameter| self.canonical_type_kind(parameter))
+                        .collect::<Result<Vec<_>, _>>()?,
+                    result: Box::new(self.canonical_type_kind(return_type)?),
+                    effects: CanonicalEffectRow {
+                        effects: effects
+                            .closed_value()
+                            .expect("closed function row")
+                            .to_labels(),
+                        tail: 0,
+                    },
+                }
+            }
             TypeKind::Tuple(items) => CanonicalType::Tuple(
                 items
                     .iter()

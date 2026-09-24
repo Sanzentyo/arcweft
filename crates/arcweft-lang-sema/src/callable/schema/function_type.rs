@@ -97,7 +97,17 @@ impl CallableSignatureSchema {
             } else {
                 EffectRow::closed(EffectSet::new())
             };
-            result = TypeKind::function_with_effects(parameters, result, effects);
+            result = TypeKind::function_with_contract(
+                crate::types::GenericBinder::EMPTY,
+                if group.index() == first_group {
+                    self.effect_predicate().clone()
+                } else {
+                    crate::effect_row::EffectPredicate::unconstrained()
+                },
+                parameters,
+                result,
+                effects,
+            );
         }
         Ok(result)
     }
@@ -109,6 +119,7 @@ impl CallableSignatureSchema {
     ) -> Result<Self, CallableSchemaError> {
         let TypeKind::Function {
             binder,
+            predicate,
             params,
             return_type,
             effects,
@@ -161,7 +172,7 @@ impl CallableSignatureSchema {
                 SpreadArgumentPolicy::FixedLiteralOnly,
             ),
             CallableValidator::Ordinary,
-            CallableGenericParameterIssuer::function_scheme(*binder),
+            CallableGenericParameterIssuer::function_scheme(*binder, predicate.clone()),
             limits,
         )
     }

@@ -463,6 +463,7 @@ pub(super) struct CallableSignatureContents {
     pub(super) groups: Arc<[CallableParameterGroup]>,
     pub(super) result: CallableResultSchema,
     pub(super) generic_inventory: CallableGenericParameterInventory,
+    pub(super) predicate: crate::effect_row::EffectPredicate,
     pub(super) effects: CallableEffectSchema,
     pub(super) argument_policy: CallableArgumentPolicy,
     pub(super) reserved_open_names: Arc<[CallableName]>,
@@ -488,6 +489,7 @@ pub(crate) enum CallableGenericIssuerOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableGenericParameterIssuer {
     authority: CallableGenericParameterAuthority,
+    predicate: crate::effect_row::EffectPredicate,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -565,6 +567,7 @@ impl CallableGenericParameterIssuer {
     pub fn empty() -> Self {
         Self {
             authority: CallableGenericParameterAuthority::Empty,
+            predicate: crate::effect_row::EffectPredicate::unconstrained(),
         }
     }
 
@@ -604,9 +607,13 @@ impl CallableGenericParameterIssuer {
         )
     }
 
-    fn function_scheme(binder: crate::types::GenericBinder) -> Self {
+    fn function_scheme(
+        binder: crate::types::GenericBinder,
+        predicate: crate::effect_row::EffectPredicate,
+    ) -> Self {
         Self {
             authority: CallableGenericParameterAuthority::FunctionScheme(binder),
+            predicate,
         }
     }
 
@@ -627,6 +634,7 @@ impl CallableGenericParameterIssuer {
                 const_count,
                 effect_count: 0,
             },
+            predicate: crate::effect_row::EffectPredicate::unconstrained(),
         })
     }
 
@@ -2471,12 +2479,16 @@ impl CallableSignatureSchema {
             });
         }
         generic_issuer.seal_input_effect_parameters(&mut groups)?;
+        if generic_issuer.predicate.is_impossible() {
+            return Err(CallableSchemaError::UnsatisfiableEffectPredicate);
+        }
         let generic_inventory =
             seal_generic_inventory(&groups, &result, &effects, &generic_issuer)?;
         Self::seal(CallableSignatureContents {
             groups: groups.into(),
             result,
             generic_inventory,
+            predicate: generic_issuer.predicate,
             effects,
             argument_policy,
             reserved_open_names: Arc::new([]),
@@ -2602,6 +2614,10 @@ impl CallableSignatureSchema {
     }
     pub const fn effects(&self) -> &CallableEffectSchema {
         &self.core.effects
+    }
+
+    pub const fn effect_predicate(&self) -> &crate::effect_row::EffectPredicate {
+        &self.core.predicate
     }
     pub const fn argument_policy(&self) -> CallableArgumentPolicy {
         self.core.argument_policy
@@ -2819,6 +2835,7 @@ fn seal_generic_inventory(
     if let Some(row) = effects.fixed_row() {
         collector.visit_effect_row_at(row, 0)?;
     }
+    collector.visit_effect_predicate_at(&issuer.predicate, result_position)?;
     let collected = collector.finish();
     let candidate_types = issuer.type_parameters()?;
     for parameter in &candidate_types {

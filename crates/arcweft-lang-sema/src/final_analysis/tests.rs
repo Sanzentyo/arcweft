@@ -5892,18 +5892,21 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                 (
                     TypeKind::Function {
                         binder: actual_binder,
+                        predicate: actual_predicate,
                         params: actual_params,
                         return_type: actual_return,
                         effects: actual_effects,
                     },
                     TypeKind::Function {
                         binder: expected_binder,
+                        predicate: expected_predicate,
                         params: expected_params,
                         return_type: expected_return,
                         effects: expected_effects,
                     },
                 ) => {
                     assert_eq!(actual_binder, expected_binder);
+                    assert_eq!(actual_predicate, expected_predicate);
                     assert_eq!(actual_params, expected_params);
                     assert_eq!(actual_return, expected_return);
                     assert!(
@@ -5937,18 +5940,21 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
             (
                 TypeKind::Function {
                     binder: published_binder,
+                    predicate: published_predicate,
                     params: published_params,
                     return_type: published_return,
                     effects: published_effects,
                 },
                 TypeKind::Function {
                     binder: expected_binder,
+                    predicate: expected_predicate,
                     params: expected_params,
                     return_type: expected_return,
                     effects: expected_effects,
                 },
             ) => {
                 assert_eq!(published_binder, expected_binder);
+                assert_eq!(published_predicate, expected_predicate);
                 assert_eq!(published_params, expected_params);
                 assert_eq!(published_return, expected_return);
                 assert_eq!(

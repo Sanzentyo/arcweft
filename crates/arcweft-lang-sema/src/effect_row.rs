@@ -1049,6 +1049,25 @@ impl EffectSubstitution {
         self.0.get(variable)
     }
 
+    /// The declaration substitution API has no work lease. It still uses the
+    /// same transitive row resolution and simultaneous predicate substitution;
+    /// bounded application/type folds supply their own DecisionControl instead.
+    pub(crate) fn resolve_predicate(
+        &self,
+        predicate: &EffectPredicate,
+    ) -> Result<EffectPredicate, EffectRowError> {
+        struct Unmetered;
+        impl DecisionControl for Unmetered {
+            type Error = EffectRowError;
+            fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+                Ok(())
+            }
+        }
+        predicate.try_substitute_variables(&mut Unmetered, &mut |reference, _| {
+            EffectRow::open(EffectSet::new(), reference.clone()).resolve_partial(self)
+        })
+    }
+
     pub(crate) fn bind_row(
         &mut self,
         variable: GenericEffectReference,

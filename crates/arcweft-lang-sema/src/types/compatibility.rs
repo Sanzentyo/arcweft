@@ -788,18 +788,31 @@ where
         (
             TypeKind::Function {
                 binder: expected_binder,
+                predicate: expected_predicate,
                 params: expected_params,
                 return_type: expected_return,
                 effects: expected_effects,
             },
             TypeKind::Function {
                 binder: actual_binder,
+                predicate: actual_predicate,
                 params: actual_params,
                 return_type: actual_return,
                 effects: actual_effects,
             },
         ) => {
             if expected_binder != actual_binder
+                || !expected_predicate
+                    .equal_with(
+                        actual_predicate,
+                        &mut EffectCompatibilityControl {
+                            control,
+                            expected,
+                            actual,
+                            meter,
+                        },
+                    )
+                    .map_err(TypeCompatibilityFailure::Control)?
                 || expected_params.len() != actual_params.len()
                 || if structural {
                     expected_effects != actual_effects

@@ -67,8 +67,14 @@ where
         if let TypeKind::Array { len, .. } = &mut result {
             *len = map_length(len, mapping, application, path, context)?;
         }
-        if let TypeKind::Function { effects, .. } = &mut result {
+        if let TypeKind::Function {
+            effects, predicate, ..
+        } = &mut result
+        {
             *effects = map_effect_row(effects, mapping, application, path, context)?;
+            *predicate = predicate.map_references(context, &mut |reference, context| {
+                mapping.effect_reference(reference, application, path, context)
+            })?;
         }
         Ok(result)
     })

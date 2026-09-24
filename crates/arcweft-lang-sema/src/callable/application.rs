@@ -104,12 +104,9 @@ impl PreparedCallableApplication {
             .result_schema_for_group(completed_group, terminal_effects)?
             .into_ready()?;
         let result = match declared {
-            CallableResultSchema::Value(value) => CallableResultSchema::Value(
-                solution
-                    .apply_template(&value)?
-                    .view()
-                    .to_quantified_type()?,
-            ),
+            CallableResultSchema::Value(value) => {
+                CallableResultSchema::Value(solution.apply_result_template(&value)?)
+            }
             CallableResultSchema::ContentEmission(operation) => {
                 CallableResultSchema::ContentEmission(operation)
             }

@@ -27,6 +27,8 @@ use super::{
 mod residual;
 use residual::ResidualGenericBinder;
 mod instantiation;
+#[cfg(test)]
+mod predicate_tests;
 mod template;
 #[cfg(test)]
 mod tests;
@@ -235,8 +237,9 @@ impl TypeConstraintSolution {
                         super::TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
                     ),
                 ))?;
-        let value = self.residual.reify_type(ty, path, application, context)?;
+        let mut value = self.residual.reify_type(ty, path, application, context)?;
         if closure == ConstraintClosurePolicy::ProjectionFuture {
+            self.retain_result_predicate(&mut value, context)?;
             self.residual
                 .validate_reified_future_type(&value, path, context)?;
         }
@@ -245,6 +248,57 @@ impl TypeConstraintSolution {
             value,
             self.residual.scope().clone(),
         ))
+    }
+
+    /// The result function owns the residual relation before a completed
+    /// projection leaves this solution. Its local binder shifts only incoming
+    /// predicate references; references already owned by that function stay put.
+    fn retain_result_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        value: &mut TypeKind,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let TypeKind::Function {
+            binder, predicate, ..
+        } = value
+        else {
+            return Ok(());
+        };
+        if self.effect_predicate.is_unconstrained() {
+            return Ok(());
+        }
+        let source = self.residual.scope();
+        let target = source.with_binder(*binder);
+        let inserted = u32::from(!binder.is_empty());
+        let lifted = self
+            .effect_predicate
+            .map_references(context, &mut |reference, _| match reference {
+                GenericEffectReference::Bound(parameter) => {
+                    source
+                        .bound_effect(parameter.depth(), parameter.slot())
+                        .map_err(TypeConstraintInvariant::GenericScope)?;
+                    let depth = parameter.depth().checked_add(inserted).ok_or(
+                        TypeConstraintInvariant::GenericScope(
+                            super::super::GenericScopeError::UnknownDepth {
+                                depth: parameter.depth(),
+                            },
+                        ),
+                    )?;
+                    target
+                        .bound_effect(depth, parameter.slot())
+                        .map_err(TypeConstraintInvariant::GenericScope)
+                        .map_err(Into::into)
+                }
+                GenericEffectReference::Free(_) => Ok(reference.clone()),
+                GenericEffectReference::Inference(_) => Err(TypeConstraintInvariant::GenericScope(
+                    super::super::GenericScopeError::EscapedInference {
+                        kind: super::super::GenericParameterKind::Effect,
+                    },
+                )
+                .into()),
+            })?;
+        *predicate = predicate.and(&lifted, context)?;
+        Ok(())
     }
 
     /// Complete and seal one active lower path. No caller may publish or

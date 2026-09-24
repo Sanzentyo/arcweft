@@ -212,10 +212,10 @@ fn controlled_projection_visits_type_const_and_effect_occurrences() {
             crate::effects::EffectSet::from_labels(["fs.read", "fs.write"]).expect("effects"),
         ),
     );
-    let mut control = ProjectionRecorder::new(16);
+    let mut control = ProjectionRecorder::new(19);
     let actual = super::ClosedTypeInstantiation::default()
         .instantiate_type_with_control(&ty, &mut control)
-        .expect("six type/constant visits and ten membership-grammar visits");
+        .expect("six type/constant visits, three predicate tokens and ten row tokens");
     assert_eq!(actual, ty);
     assert_eq!(
         control.nodes,
@@ -226,6 +226,9 @@ fn controlled_projection_visits_type_const_and_effect_occurrences() {
             (Type, 2),
             (Type, 3),
             (Const, 3),
+            (Effect, 2),
+            (Effect, 2),
+            (Effect, 2),
             (Effect, 2),
             (Effect, 2),
             (Effect, 2),

@@ -823,12 +823,14 @@ impl TypeKind {
             }
             Self::Function {
                 binder: expected_binder,
+                predicate: expected_predicate,
                 params: expected_params,
                 return_type: expected_return,
                 effects: expected_effects,
             } => {
                 let Self::Function {
                     binder: actual_binder,
+                    predicate: actual_predicate,
                     params: actual_params,
                     return_type: actual_return,
                     effects: actual_effects,
@@ -853,7 +855,9 @@ impl TypeKind {
                             actual: actual_params.len(),
                         },
                     ))
-                } else if expected_effects != actual_effects {
+                } else if expected_effects != actual_effects
+                    || expected_predicate != actual_predicate
+                {
                     Some(TypeMismatch::at(
                         self,
                         actual,

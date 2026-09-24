@@ -11,7 +11,8 @@ use std::{
 };
 
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable, EffectRow,
+    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable,
+    EffectPredicate, EffectRow,
 };
 
 use super::super::generics::OpenedGenericScope;
@@ -175,12 +176,30 @@ pub(crate) struct TypeConstraintEffectScope {
     variables: Box<[EffectConstraintVariable]>,
     free_variables: Box<[EffectConstraintVariable]>,
     required_inherited: Box<[GenericEffectReference]>,
+    predicate: EffectPredicate,
 }
 
 impl TypeConstraintEffectScope {
+    #[cfg(test)]
     pub(crate) fn seal_call_scope<V, R>(
         variables: V,
         required_inherited: R,
+    ) -> Result<Self, TypeConstraintInvariant>
+    where
+        V: IntoIterator<Item = EffectConstraintVariable>,
+        R: IntoIterator<Item = GenericEffectReference>,
+    {
+        Self::seal_call_scope_with_predicate(
+            variables,
+            required_inherited,
+            EffectPredicate::unconstrained(),
+        )
+    }
+
+    pub(crate) fn seal_call_scope_with_predicate<V, R>(
+        variables: V,
+        required_inherited: R,
+        predicate: EffectPredicate,
     ) -> Result<Self, TypeConstraintInvariant>
     where
         V: IntoIterator<Item = EffectConstraintVariable>,
@@ -227,10 +246,23 @@ impl TypeConstraintEffectScope {
                 ));
             }
         }
+        for reference in predicate.variables() {
+            if !free_variables
+                .iter()
+                .chain(&variables)
+                .any(|row| row.variable() == reference)
+            {
+                return Err(effect_scope_invariant(
+                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                    Some(reference.clone()),
+                ));
+            }
+        }
         Ok(Self {
             variables: variables.into_boxed_slice(),
             free_variables: free_variables.into_boxed_slice(),
             required_inherited: required_inherited.into_boxed_slice(),
+            predicate,
         })
     }
 
@@ -258,6 +290,7 @@ impl TypeConstraintEffectScope {
 
     pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
         self.free_variables == other.free_variables
+            && self.predicate == other.predicate
             && self.variables.len() == other.variables.len()
             && self
                 .variables
@@ -785,6 +818,33 @@ impl TypeConstraintParameterScope {
             .collect::<Vec<_>>();
         rows.sort_by(|left, right| left.variable().cmp(right.variable()));
         rows
+    }
+
+    fn opened_effect_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<EffectPredicate, TypeConstraintError> {
+        self.contract
+            .effects
+            .predicate
+            .map_references(context, &mut |reference, _| {
+                if self
+                    .contract
+                    .effects
+                    .free_variables
+                    .iter()
+                    .any(|row| row.variable() == reference)
+                {
+                    Ok(reference.clone())
+                } else {
+                    self.effect_reference(reference).ok_or_else(|| {
+                        effect_invariant(
+                            super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                            Some(reference.clone()),
+                        )
+                    })
+                }
+            })
     }
 
     pub(super) fn type_declaration(
@@ -1351,6 +1411,25 @@ where
         }
         Ok(())
     }
+
+    pub(crate) fn validate_effect_predicate(
+        &self,
+        predicate: &EffectPredicate,
+        view: ConstraintProjectionView<'_, D>,
+    ) -> Result<(), TypeConstraintError> {
+        for variable in predicate.variables() {
+            if self.effect_eligibility(variable, view).is_none() {
+                return Err(effect_invariant(
+                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                    Some(variable.clone()),
+                ));
+            }
+        }
+        if predicate.is_impossible() {
+            return Err(super::TypeConstraintRejection::Mismatch.into());
+        }
+        Ok(())
+    }
     pub(crate) fn enter_node(&mut self) -> Result<(), TypeConstraintError> {
         self.charge_counter(1, Counter::Nodes)
     }
@@ -1376,9 +1455,13 @@ where
         imported: Option<super::ImportedGenericParameterScopeLease>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
-        let effects =
+        let mut effects =
             EffectConstraintEnvironment::new(&application.parameters().opened_effect_variables())
                 .map_err(TypeConstraintError::from)?;
+        if !application.effects().predicate.is_unconstrained() {
+            let predicate = application.parameters().opened_effect_predicate(self)?;
+            effects.restore_predicate(&predicate, self)?;
+        }
         Ok(ConstraintPath::empty_with_imported(
             application,
             effects,
@@ -1422,6 +1505,10 @@ where
         path.effects
             .admit_variables(&application.parameters().opened_effect_variables())
             .map_err(TypeConstraintError::from)?;
+        if !application.effects().predicate.is_unconstrained() {
+            let predicate = application.parameters().opened_effect_predicate(self)?;
+            path.effects.restore_predicate(&predicate, self)?;
+        }
         std::sync::Arc::make_mut(&mut path.applications)
             .admit(application)
             .map_err(|error| {

@@ -4,7 +4,7 @@ use std::slice;
 
 use arcweft_lang_syntax::reference::BorrowKind;
 
-use crate::effect_row::EffectRow;
+use crate::effect_row::{EffectPredicate, EffectRow};
 
 use super::super::{
     AcceptedNominalType, ArrayLength, EntityType, GenericBinder, GenericTypeReference,
@@ -174,11 +174,13 @@ impl TypeKind {
             },
             Self::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
             } => TypeConstraintShape::Function {
                 binder,
+                predicate,
                 params,
                 result: return_type,
                 effects,
@@ -238,6 +240,7 @@ pub(crate) enum TypeConstraintShape<'a> {
     },
     Function {
         binder: &'a GenericBinder,
+        predicate: &'a EffectPredicate,
         params: &'a [TypeKind],
         result: &'a TypeKind,
         effects: &'a EffectRow,
@@ -351,6 +354,7 @@ impl<'a> TypeConstraintShape<'a> {
             &mut (),
             |(), length| Ok(length.clone()),
             |(), row| Ok(row.clone()),
+            |(), predicate| Ok(predicate.clone()),
         )
     }
 
@@ -362,6 +366,7 @@ impl<'a> TypeConstraintShape<'a> {
         context: &mut C,
         length: impl FnOnce(&mut C, &ArrayLength) -> Result<ArrayLength, E>,
         effects_row: impl FnOnce(&mut C, &EffectRow) -> Result<EffectRow, E>,
+        effect_predicate: impl FnOnce(&mut C, &EffectPredicate) -> Result<EffectPredicate, E>,
     ) -> Result<TypeKind, E> {
         let mut children = children.into_iter();
         let rebuilt = match self {
@@ -403,7 +408,10 @@ impl<'a> TypeConstraintShape<'a> {
                 kind.rebuild(next_child(&mut children), next_child(&mut children))
             }
             Self::Function {
-                binder, effects, ..
+                binder,
+                predicate,
+                effects,
+                ..
             } => {
                 let mut children = children.collect::<Vec<_>>();
                 let result = children
@@ -411,6 +419,7 @@ impl<'a> TypeConstraintShape<'a> {
                     .expect("function shape retains one result child");
                 TypeKind::Function {
                     binder: *binder,
+                    predicate: effect_predicate(context, predicate)?,
                     params: children,
                     return_type: Box::new(result),
                     effects: effects_row(context, effects)?,

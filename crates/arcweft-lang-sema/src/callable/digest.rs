@@ -220,6 +220,15 @@ impl CanonicalEncoder {
             }
         }
         self.effect_schema(&schema.effects);
+        match self
+            .scope
+            .effect_predicate_identity_digest(&schema.predicate)
+        {
+            Ok(digest) => self.bytes(digest.as_bytes()),
+            Err(error) => {
+                self.error.get_or_insert(error);
+            }
+        }
         self.argument_policy(schema.argument_policy);
         self.option(schema.attached_content.as_ref(), |encoder, parameter| {
             encoder.attached_content(*parameter);

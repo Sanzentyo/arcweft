@@ -1143,11 +1143,7 @@ impl FrozenCallTypeSolution {
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, CallConstraintInvariant> {
-        Ok(self
-            .solution
-            .apply_template(ty)?
-            .view()
-            .to_quantified_type()?)
+        Ok(self.solution.apply_result_template(ty)?)
     }
 
     /// Source values are already normalized by source completion.

@@ -2522,11 +2522,13 @@ fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind
         }
         TypeKind::Function {
             binder,
+            predicate,
             params,
             return_type,
             effects,
-        } => TypeKind::function_with_binder(
+        } => TypeKind::function_with_contract(
             binder,
+            predicate,
             params
                 .into_iter()
                 .map(|parameter| map_named_type_kind(parameter, resolve_named)),

@@ -1,6 +1,6 @@
 //! Capture-avoiding application of completed rows to declaration templates.
 
-use crate::effect_row::EffectRow;
+use crate::effect_row::{EffectPredicate, EffectRow};
 use crate::types::{
     ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference,
     GenericParameterKind, GenericScope, GenericScopeError, GenericTypeReference, ScopedType,
@@ -8,12 +8,23 @@ use crate::types::{
 };
 
 use super::super::shape::{TypeConstraintChildren, TypeConstraintShape};
-use crate::types::projection_control::visit_effect_row;
 use crate::types::projection_control::{EffectProjectionControl, UnmeteredTypeProjection};
+use crate::types::projection_control::{visit_effect_predicate, visit_effect_row};
 
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
 impl TypeConstraintSolution {
+    /// A returned callable carries the exact residual predicate owned by the
+    /// same solution that projects its parameter and result terms.
+    pub(crate) fn apply_result_template(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, TypeInstantiationError> {
+        self.apply_template(ty)?
+            .view()
+            .to_quantified_type_with_predicate(&self.effect_predicate)
+    }
+
     /// Template references name this solution's formal parameters. Replacement
     /// values are caller-owned: their free declarations are never looked up in
     /// this solution again, including same-declaration recursive applications.
@@ -127,11 +138,34 @@ impl ScopedTypeView<'_> {
     /// existing function-local binders are preserved, with depth and slot
     /// remapping when the incoming and root function binders are combined.
     pub(crate) fn to_quantified_type(self) -> Result<TypeKind, TypeInstantiationError> {
+        self.to_quantified_type_with_predicate(&EffectPredicate::unconstrained())
+    }
+
+    fn to_quantified_type_with_predicate(
+        self,
+        incoming_predicate: &EffectPredicate,
+    ) -> Result<TypeKind, TypeInstantiationError> {
         if self.scope().binders().is_empty() {
-            return self.to_root_type();
+            let mut value = self.to_root_type()?;
+            if !incoming_predicate.is_unconstrained() {
+                let TypeKind::Function { predicate, .. } = &mut value else {
+                    return Ok(value);
+                };
+                *predicate = predicate
+                    .and(
+                        incoming_predicate,
+                        &mut EffectProjectionControl {
+                            control: &mut UnmeteredTypeProjection,
+                            depth: 1,
+                        },
+                    )
+                    .map_err(TypeProjectionError::into_instantiation)?;
+            }
+            return Ok(value);
         }
         let TypeKind::Function {
             binder,
+            predicate,
             params,
             return_type,
             effects,
@@ -215,8 +249,39 @@ impl ScopedTypeView<'_> {
         };
         let project =
             |ty: &TypeKind| map_term(ty, &source, &target, &type_map, &const_map, &effect_map);
-        Ok(TypeKind::function_with_binder(
+        let project_predicate = |predicate: &EffectPredicate| {
+            map_predicate(predicate, &|reference| {
+                effect_map(
+                    &EffectRow::open(crate::effects::EffectSet::new(), reference.clone()),
+                    &source,
+                    &target,
+                )
+            })
+        };
+        let lifted_incoming = map_predicate(incoming_predicate, &|reference| {
+            Ok(EffectRow::open(
+                crate::effects::EffectSet::new(),
+                lift_effect(
+                    reference,
+                    self.scope(),
+                    &source,
+                    self.scope().binders().len(),
+                    depth_difference(&source, self.scope())?,
+                )?,
+            ))
+        })?;
+        let predicate = project_predicate(predicate)?
+            .and(
+                &project_predicate(&lifted_incoming)?,
+                &mut EffectProjectionControl {
+                    control: &mut UnmeteredTypeProjection,
+                    depth: 1,
+                },
+            )
+            .map_err(TypeProjectionError::into_instantiation)?;
+        Ok(TypeKind::function_with_contract(
             merged,
+            predicate,
             params.iter().map(project).collect::<Result<Vec<_>, _>>()?,
             project(return_type)?,
             effect_map(effects, &source, &target)?,
@@ -457,6 +522,35 @@ fn map_effects(
     .map_err(TypeProjectionError::into_instantiation)
 }
 
+fn map_predicate(
+    predicate: &EffectPredicate,
+    mapping: &impl Fn(&GenericEffectReference) -> Result<EffectRow, TypeInstantiationError>,
+) -> Result<EffectPredicate, TypeInstantiationError> {
+    map_predicate_with_control(
+        predicate,
+        1,
+        &mut UnmeteredTypeProjection,
+        &|reference, _| mapping(reference).map_err(Into::into),
+    )
+    .map_err(TypeProjectionError::into_instantiation)
+}
+
+fn map_predicate_with_control<C: TypeProjectionControl>(
+    predicate: &EffectPredicate,
+    depth: u64,
+    control: &mut C,
+    mapping: &impl Fn(
+        &GenericEffectReference,
+        &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
+) -> Result<EffectPredicate, TypeProjectionError<C::Error>> {
+    visit_effect_predicate(control, predicate, depth)?;
+    predicate.try_substitute_variables(
+        &mut EffectProjectionControl { control, depth },
+        &mut |reference, adapter| mapping(reference, adapter.control),
+    )
+}
+
 pub(super) fn map_effects_with_control<C: TypeProjectionControl>(
     row: &EffectRow,
     depth: u64,
@@ -652,6 +746,18 @@ impl ProjectionFrame<'_> {
                     child_depth(self.depth)?,
                     control,
                 )
+            },
+            |control, predicate| {
+                let depth = child_depth(self.depth)?;
+                map_predicate_with_control(predicate, depth, control, &|reference, control| {
+                    effects(
+                        &EffectRow::open(crate::effects::EffectSet::new(), reference.clone()),
+                        &self.source,
+                        &self.target,
+                        depth,
+                        control,
+                    )
+                })
             },
         )
     }

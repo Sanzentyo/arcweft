@@ -1,4 +1,4 @@
-use crate::effect_row::EffectRow;
+use crate::effect_row::{EffectPredicate, EffectRow};
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_id::closed_enum::ClosedEnumDomainId;
@@ -1063,6 +1063,7 @@ pub enum TypeKind {
     Shared(Box<TypeKind>),
     Function {
         binder: GenericBinder,
+        predicate: EffectPredicate,
         params: Vec<TypeKind>,
         return_type: Box<TypeKind>,
         effects: EffectRow,
@@ -1251,6 +1252,7 @@ impl TypeKind {
                 params,
                 return_type,
                 effects,
+                ..
             } => {
                 let function = Self::function_source_label(params, return_type, effects);
                 if binder.is_empty() {
@@ -1449,8 +1451,25 @@ impl TypeKind {
         return_type: TypeKind,
         effects: EffectRow,
     ) -> Self {
+        Self::function_with_contract(
+            binder,
+            EffectPredicate::unconstrained(),
+            params,
+            return_type,
+            effects,
+        )
+    }
+
+    pub(crate) fn function_with_contract(
+        binder: GenericBinder,
+        predicate: EffectPredicate,
+        params: impl IntoIterator<Item = TypeKind>,
+        return_type: TypeKind,
+        effects: EffectRow,
+    ) -> Self {
         Self::Function {
             binder,
+            predicate,
             params: params.into_iter().collect(),
             return_type: Box::new(return_type),
             effects,

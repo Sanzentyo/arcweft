@@ -2423,8 +2423,12 @@ where
             EffectConstraintVariable::new(reference, EffectConstraintEligibility::Rigid)
         })
         .chain(effect_rows.into_iter().flatten());
-    let effect_scope = TypeConstraintEffectScope::seal_call_scope(effect_rows, required_effects)
-        .map_err(CallConstraintInvariant::Lower)?;
+    let effect_scope = TypeConstraintEffectScope::seal_call_scope_with_predicate(
+        effect_rows,
+        required_effects,
+        candidate.schema().effect_predicate().clone(),
+    )
+    .map_err(CallConstraintInvariant::Lower)?;
     let scope = TypeConstraintParameterScope::seal_call_scope(
         inventory.template_binder(),
         type_rows,

@@ -93,8 +93,9 @@ fn encoding_visits_constants_effects_and_exact_depth_before_finishing() {
         ),
     );
     // Six type/constant occurrences plus the complete ten-token membership
-    // grammar for a closed row with two named label classes.
-    let mut exact = EncodingBudget::new(16, 3);
+    // grammar for a closed row with two named label classes, followed by the
+    // three-token unconstrained predicate owned by the function type.
+    let mut exact = EncodingBudget::new(19, 3);
     assert_eq!(
         ty.semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut exact)
             .expect("exact bound"),
@@ -119,14 +120,17 @@ fn encoding_visits_constants_effects_and_exact_depth_before_finishing() {
             (Effect, 3),
             (Effect, 2),
             (Effect, 2),
+            (Effect, 2),
+            (Effect, 2),
+            (Effect, 2),
         ]
     );
-    let mut limited = EncodingBudget::new(15, 3);
+    let mut limited = EncodingBudget::new(18, 3);
     assert!(matches!(
         ty.semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut limited),
         Err(TypeProjectionError::Control(EncodingStop::Nodes)),
     ));
-    assert_eq!(limited.nodes.len(), 15);
+    assert_eq!(limited.nodes.len(), 18);
     assert_eq!(limited.bindings, 0);
 }
 
@@ -327,8 +331,8 @@ fn nested_scopes_and_payload_hashes_keep_version_one_identity() {
             .expect("root identity")
             .as_bytes(),
         &[
-            186, 104, 146, 70, 255, 139, 151, 158, 14, 99, 109, 209, 229, 143, 87, 17, 59, 29, 174,
-            219, 8, 131, 128, 58, 122, 25, 199, 199, 34, 155, 238, 47,
+            200, 215, 104, 167, 223, 158, 115, 203, 92, 187, 51, 106, 83, 208, 152, 67, 243, 171,
+            46, 242, 72, 134, 57, 18, 196, 244, 161, 45, 86, 202, 252, 25,
         ]
     );
     assert_eq!(

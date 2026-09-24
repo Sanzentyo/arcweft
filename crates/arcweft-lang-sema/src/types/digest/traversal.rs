@@ -3,7 +3,7 @@
 use std::slice;
 
 use super::{Encoder, GenericScope, GenericScopeError, SemanticTypeDigest, TypeKind};
-use crate::effect_row::EffectRow;
+use crate::effect_row::{EffectPredicate, EffectRow};
 use crate::types::{
     ArrayLength, TypeProjectionNodeKind, VariantPayloadType, VariantPayloadTypeChildren,
 };
@@ -14,6 +14,7 @@ pub(super) enum EncodingTask<'ty> {
     Length(&'ty ArrayLength, usize),
     FunctionEnd {
         effects: &'ty EffectRow,
+        predicate: &'ty EffectPredicate,
         enclosing: GenericScope,
         depth: usize,
     },
@@ -77,10 +78,12 @@ impl Encoder {
                 }
                 EncodingTask::FunctionEnd {
                     effects,
+                    predicate,
                     enclosing,
                     depth,
                 } => {
                     encoder.effect_row(effects, depth, control, node)?;
+                    encoder.effect_predicate(predicate, depth, control, node)?;
                     encoder.scope = enclosing;
                 }
                 EncodingTask::ProjectionTail { trait_name, assoc } => {

@@ -306,11 +306,13 @@ impl TypeKind {
             },
             Self::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
-            } => Self::function_with_binder(
+            } => Self::function_with_contract(
                 *binder,
+                predicate.clone(),
                 params
                     .iter()
                     .map(|param| param.substitute_type_parameters(substitutions)),
@@ -438,6 +440,7 @@ impl TypeKind {
             },
             Self::Function {
                 binder,
+                predicate,
                 params,
                 return_type,
                 effects,
@@ -451,8 +454,9 @@ impl TypeKind {
                     Err(EffectRowError::UnknownRow) => crate::effect_row::EffectRow::unknown(),
                     Err(error) => return Err(error),
                 };
-                Self::function_with_binder(
+                Self::function_with_contract(
                     *binder,
+                    substitutions.resolve_predicate(predicate)?,
                     params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
                     recurse(return_type)?,
                     effects,

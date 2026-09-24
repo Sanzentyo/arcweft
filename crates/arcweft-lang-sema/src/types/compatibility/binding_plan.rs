@@ -739,18 +739,23 @@ where
         (
             TypeConstraintShape::Function {
                 binder: expected_binder,
+                predicate: expected_predicate,
                 params: expected_params,
                 result: expected_result,
                 effects: expected_effects,
             },
             TypeConstraintShape::Function {
                 binder: found_binder,
+                predicate: found_predicate,
                 params: found_params,
                 result: found_result,
                 effects: found_effects,
             },
         ) if expected_binder == found_binder && expected_params.len() == found_params.len() => {
             context.with_binder(*expected_binder, |context| {
+                if !expected_predicate.equal_with(found_predicate, context)? {
+                    return Ok(Vec::new());
+                }
                 let parameter_acceptance = match acceptance {
                     ConstraintAcceptance::PatternAcceptsActual => {
                         ConstraintAcceptance::ActualAcceptsPattern

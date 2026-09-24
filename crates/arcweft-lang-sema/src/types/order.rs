@@ -150,18 +150,21 @@ impl TypeKind {
                 (
                     Self::Function {
                         binder: left_binder,
+                        predicate: left_predicate,
                         params: left_params,
                         return_type: left_return,
                         effects: left_effects,
                     },
                     Self::Function {
                         binder: right_binder,
+                        predicate: right_predicate,
                         params: right_params,
                         return_type: right_return,
                         effects: right_effects,
                     },
                 ) => left_binder
                     .cmp(right_binder)
+                    .then_with(|| left_predicate.cmp(right_predicate))
                     .then_with(|| type_slice_ordering(left_params, right_params))
                     .then_with(|| left_return.stable_ordering(right_return))
                     .then_with(|| effect_row_ordering(left_effects, right_effects)),
