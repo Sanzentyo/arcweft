@@ -1108,3 +1108,33 @@ item facts and called Flow body facts. The CLI `022` fixture remains unrun after
 this cut because the AWBC/runtime-plan callable lowerer is still under migration.
 The callable execution tests, final workspace gates, and later goal phases remain
 open.
+
+## Program-owned callable state checkpoint — 2026-09-24
+
+The integrated monomorphic callable cut was committed and pushed to `main` in
+three reviewable layers:
+
+| Layer | Full Git SHA |
+| --- | --- |
+| Core/AWBC callable state, execution, codec, verifier, ownership and sequence-kind layout | `a7f3573baa33e703ec42f22a95174682f0f0d617` |
+| Final-HIR/Sema callable values, compiler projection and runtime-plan lowering | `94e7dafe434dfabae93339ae695bf1a844fa5423` |
+| Runtime consumers, exact AWBC program lease, save/restore and corrected design contract | `ee24824429a810df4c3b2a1b89555ea4f6c094fd` |
+
+On the integrated tree, Core library tests passed 550/550, HIR 902/902
+(8 ignored), Sema 887/887, RuntimePlan 73/73, and Bundle 143/143. The
+runtime-codegen exact-program-lease regression passed 1/1. Runtime-driver
+callable save round-trip and foreign-program rejection each passed 1/1.
+`cargo fmt --all -- --check`, `git diff --check`, and all-target/all-feature
+Clippy for Core, HIR, Sema, RuntimePlan, compiler, runtime-codegen, and
+runtime-driver succeeded; Clippy emitted warnings. The CLI fixture
+`022_family_relative_test_bench_ids.arcw` passed direct `compile --emit check`
+with zero warnings and zero obligations.
+
+Compiler `callable_execution` passed 81/87 on Native and AWBC. The six remaining
+failures are the two backend cases for each of CharacterDialogue factory,
+generic prefix as a monomorphic callback, and shared prefix with distinct later
+types. These are required next-cut implementation gaps, not accepted failures or
+skips. CharacterDialogue needs the complete typed producer and consumers;
+generic/shared prefix needs scoped scheme transport and specialization across
+Sema, runtime types, callable states, and both backends. The final workspace
+gates and later goal phases remain open.
