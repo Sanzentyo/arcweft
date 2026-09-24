@@ -366,7 +366,8 @@ fn resolve_selected_call(
     }
 
     check_query_step(request)?;
-    if let Some(id) = CollectionMethodId::resolve(method)
+    if let Some(id) =
+        CollectionMethodId::resolve_for_receiver(receiver_type, method, arguments.len())
         && let Some(schema) = id.signature_schema(receiver_type)
     {
         candidates.push(prepare_language_method(

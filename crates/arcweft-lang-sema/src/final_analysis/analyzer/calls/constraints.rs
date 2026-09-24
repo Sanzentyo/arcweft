@@ -4210,7 +4210,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
         ));
     }
-    let type_application_constraints = match inputs.type_application() {
+    let mut type_application_constraints = match inputs.type_application() {
         crate::callable::PreparedCallTypeApplication::Absent => Vec::new(),
         crate::callable::PreparedCallTypeApplication::Present(arguments) => {
             let mut constraints = Vec::with_capacity(arguments.len());
@@ -4238,6 +4238,37 @@ pub(crate) fn validate_and_prepare_call_constraints(
             constraints
         }
     };
+    if let crate::callable::CallableCandidateId::CollectionMethod(
+        crate::callable::CollectionMethodId::Collect { item },
+    ) = candidate.id()
+    {
+        let mut destination_parameters = candidate
+            .schema()
+            .generic_inventory()
+            .types()
+            .iter()
+            .filter(|entry| entry.role() == CallableSchemaGenericRole::Candidate);
+        let Some(destination) = destination_parameters.next() else {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(
+                    CallConstraintInvariant::MalformedSchemaInventory,
+                ),
+            ));
+        };
+        if destination_parameters.next().is_some() {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(
+                    CallConstraintInvariant::MalformedSchemaInventory,
+                ),
+            ));
+        }
+        type_application_constraints.push(PreparedCallTypeConstraint {
+            source: AnalyzerCallConstraintSource::BaseInstantiation,
+            pattern: TypeKind::GenericParam(destination.parameter().clone()),
+            actual: TypeKind::Vec(Box::new(item.clone())),
+            acceptance: ConstraintAcceptance::PatternAcceptsActual,
+        });
+    }
     let type_application_constraints = type_application_constraints.into_boxed_slice();
     let view_fx_runtime_parameters = consumer.runtime_parameters();
     let mut compile_time_scalar_admission_map = BTreeMap::new();

@@ -367,7 +367,7 @@ fn language_identity(
             PreparedLanguageCallableIdentity::Content(*identity)
         }
         (CallableCandidateId::CollectionMethod(id), LanguageCallableFamily::CollectionMethod) => {
-            PreparedLanguageCallableIdentity::Collection(*id)
+            PreparedLanguageCallableIdentity::Collection(id.clone())
         }
         (
             CallableCandidateId::PresentationHandleMethod(id),

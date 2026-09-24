@@ -316,7 +316,6 @@ pub enum CheckedCapacityOperation {
     ToString,
     Pop,
     PopFront,
-    Collect,
     Push,
     Reserve,
     ShrinkTo,
@@ -348,7 +347,6 @@ impl CheckedCapacityMethodIdentity {
             "to_string" => CheckedCapacityOperation::ToString,
             "pop" => CheckedCapacityOperation::Pop,
             "pop_front" => CheckedCapacityOperation::PopFront,
-            "collect" => CheckedCapacityOperation::Collect,
             "push" => CheckedCapacityOperation::Push,
             "reserve" => CheckedCapacityOperation::Reserve,
             "shrink_to" => CheckedCapacityOperation::ShrinkTo,
@@ -3809,7 +3807,16 @@ impl CheckedCallCanonicalEncoder {
             }
             CheckedLanguageCallableIdentity::Collection(id) => {
                 self.tag(8);
-                self.tag(collection_tag(*id));
+                match id {
+                    CollectionMethodId::Len => self.tag(0),
+                    CollectionMethodId::Filter => self.tag(2),
+                    CollectionMethodId::Sum => self.tag(3),
+                    CollectionMethodId::Contains => self.tag(4),
+                    CollectionMethodId::Collect { item } => {
+                        self.tag(5);
+                        self.type_kind(item)?;
+                    }
+                }
             }
             CheckedLanguageCallableIdentity::PresentationHandle(id) => {
                 self.tag(9);
@@ -4382,14 +4389,6 @@ const fn dialogue_tag(id: DialogueCallableId) -> u8 {
         DialogueCallableId::ContentCall => 3,
     }
 }
-const fn collection_tag(id: CollectionMethodId) -> u8 {
-    match id {
-        CollectionMethodId::Len => 0,
-        CollectionMethodId::Filter => 2,
-        CollectionMethodId::Sum => 3,
-        CollectionMethodId::Contains => 4,
-    }
-}
 const fn presentation_handle_tag(id: PresentationHandleMethodId) -> u8 {
     match id {
         PresentationHandleMethodId::Show => 0,
@@ -4414,7 +4413,6 @@ const fn capacity_tag(id: CheckedCapacityOperation) -> u8 {
         CheckedCapacityOperation::ToString => 2,
         CheckedCapacityOperation::Pop => 3,
         CheckedCapacityOperation::PopFront => 4,
-        CheckedCapacityOperation::Collect => 5,
         CheckedCapacityOperation::Push => 6,
         CheckedCapacityOperation::Reserve => 7,
         CheckedCapacityOperation::ShrinkTo => 8,

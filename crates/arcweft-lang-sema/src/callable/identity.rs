@@ -908,12 +908,13 @@ impl FunctionValueSignatureId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CollectionMethodId {
     Len,
     Filter,
     Sum,
     Contains,
+    Collect { item: TypeKind },
 }
 
 impl CollectionMethodId {
@@ -1164,9 +1165,6 @@ impl CapacityMethodId {
         } else if let TypeKind::Vec(_) = receiver
             && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
         {
-        } else if let TypeKind::Vec(_) = receiver
-            && matches!((method.as_str(), arity), ("collect", 0))
-        {
         } else if matches!(
             receiver,
             TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes
@@ -1186,7 +1184,6 @@ impl CapacityMethodId {
             (receiver, "with_capacity") => receiver.clone(),
             (TypeKind::String, "trim" | "to_string") => TypeKind::String,
             (TypeKind::Vec(item), "pop" | "pop_front") => TypeKind::Option(item.clone()),
-            (TypeKind::Vec(item), "collect") => TypeKind::Vec(item.clone()),
             (
                 TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes,
                 "push" | "reserve" | "shrink_to" | "shrink",

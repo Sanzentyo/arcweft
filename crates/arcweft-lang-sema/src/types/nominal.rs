@@ -32,6 +32,7 @@ pub enum LanguageIntrinsicGenericOwner {
     OptionConstructor,
     ResultConstructor,
     StandardMap(StandardMapFamily),
+    CollectionCollect,
     FxExists,
     AgentSignal,
     AgentMetric,
@@ -47,7 +48,7 @@ pub enum LanguageIntrinsicGenericOwner {
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
         Self::StandardMap(StandardMapFamily::Vec),
@@ -59,6 +60,7 @@ impl LanguageIntrinsicGenericOwner {
         Self::StandardMap(StandardMapFamily::Need),
         Self::StandardMap(StandardMapFamily::Parser),
         Self::StandardMap(StandardMapFamily::Stream),
+        Self::CollectionCollect,
         Self::FxExists,
         Self::AgentSignal,
         Self::AgentMetric,
@@ -79,6 +81,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::OptionConstructor => 0,
             Self::ResultConstructor => 1,
             Self::StandardMap(family) => family.intrinsic_owner_tag(),
+            Self::CollectionCollect => 23,
             Self::FxExists => 11,
             Self::AgentSignal => 12,
             Self::AgentMetric => 13,
@@ -97,6 +100,7 @@ impl LanguageIntrinsicGenericOwner {
     pub(crate) const fn generic_arity(self) -> (u16, u16) {
         match self {
             Self::OptionConstructor
+            | Self::CollectionCollect
             | Self::FxExists
             | Self::AgentSignal
             | Self::AgentMetric
@@ -119,6 +123,7 @@ impl LanguageIntrinsicGenericOwner {
             Self::OptionConstructor => "language.option-constructor",
             Self::ResultConstructor => "language.result-constructor",
             Self::StandardMap(family) => family.intrinsic_owner_label(),
+            Self::CollectionCollect => "language.collection-collect",
             Self::FxExists => "language.fx-exists",
             Self::AgentSignal => "language.agent-signal",
             Self::AgentMetric => "language.agent-metric",

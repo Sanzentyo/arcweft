@@ -797,9 +797,51 @@ impl OptionConstructorKind {
 }
 
 impl CollectionMethodId {
-    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
+    pub(crate) fn resolve_for_receiver(
+        receiver: &TypeKind,
+        method: &CallableName,
+        arity: usize,
+    ) -> Option<Self> {
+        if method.as_str() == "collect" {
+            if arity != 0 {
+                return None;
+            }
+            let (TypeKind::Vec(item) | TypeKind::Seq(item)) = receiver else {
+                return None;
+            };
+            return Some(Self::Collect {
+                item: item.as_ref().clone(),
+            });
+        }
+        Self::resolve(method)
+    }
+
+    pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
+        let validator = CallableValidator::Collection(self.clone());
+        if let Self::Collect { item } = self {
+            let receiver_item = match receiver {
+                TypeKind::Vec(receiver_item) | TypeKind::Seq(receiver_item) => {
+                    receiver_item.as_ref()
+                }
+                _ => return None,
+            };
+            if receiver_item != item {
+                return None;
+            }
+            let owner = LanguageIntrinsicGenericOwner::CollectionCollect;
+            let destination = generic(GenericParameterOwnerId::LanguageIntrinsic(owner), 0);
+            return Some(schema_with_issuer(
+                Vec::new(),
+                destination,
+                &[],
+                closed(),
+                validator,
+                CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+                    .expect("collect owns one explicit destination type parameter"),
+            ));
+        }
+
         let item = sequence_item(receiver)?;
-        let validator = CallableValidator::Collection(self);
         Some(match self {
             Self::Len => empty(TypeKind::USize, &[], validator),
             Self::Filter => one_positional(
@@ -811,6 +853,7 @@ impl CollectionMethodId {
             ),
             Self::Sum => empty(TypeKind::I64, &[], validator),
             Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
+            Self::Collect { .. } => unreachable!("collect schema returned above"),
         })
     }
 }

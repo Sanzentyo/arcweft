@@ -60,6 +60,76 @@ fn apply<T>(value: T) -> T {
 }
 
 #[test]
+fn collect_destination_is_tied_to_the_sequence_item_type() {
+    let fixture = fixture(
+        r#"
+fn collect_explicit(items: Seq<i64>) -> Vec<i64> {
+    items.collect<Vec<i64>>()
+}
+fn collect_generic<T>(items: Seq<T>) -> Vec<T> {
+    items.collect<Vec<T>>()
+}
+fn collect_inferred(items: Vec<i64>) -> Vec<i64> {
+    items.collect()
+}
+flow main() -> Vec<i64> {
+    let xs = [1i64, 2i64, 3i64]
+    let ys = xs.map(|x| x + 1i64).collect<Vec<i64>>()
+    return ys
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("collect returns the item-matched Vec destination");
+    let mut collection_item_types = Vec::new();
+    for (_, facts) in analysis.calls() {
+        let application = facts.selected_application().expect("selected call");
+        if let crate::callable::CallableCandidateId::CollectionMethod(
+            crate::callable::CollectionMethodId::Collect { item },
+        ) = application.core().candidates().selected().id()
+        {
+            let crate::callable::CheckedCallResult::Value(result) = application.result() else {
+                panic!("collect has a value result");
+            };
+            assert_eq!(result, &TypeKind::Vec(Box::new(item.clone())));
+            collection_item_types.push(item.clone());
+        }
+    }
+    assert_eq!(collection_item_types.len(), 4);
+    assert_eq!(
+        collection_item_types
+            .iter()
+            .filter(|item| **item == TypeKind::I64)
+            .count(),
+        3
+    );
+    assert_eq!(
+        collection_item_types
+            .iter()
+            .filter(|item| matches!(item, TypeKind::GenericParam(_)))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn collect_rejects_a_destination_with_a_different_item_type() {
+    let fixture = fixture(
+        r#"
+fn collect_wrong_item(items: Seq<i64>) -> Vec<String> {
+    items.collect<Vec<String>>()
+}
+flow main() -> String { return "done" }
+"#,
+        None,
+    );
+    assert!(
+        analyze(&fixture).is_err(),
+        "the selected Vec destination must retain the source sequence item type"
+    );
+}
+
+#[test]
 fn generic_constructor_cannot_bind_an_enclosing_parameter_to_another_type() {
     let fixture = fixture(
         r"
