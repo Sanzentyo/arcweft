@@ -1477,7 +1477,7 @@ fn checked_attached_content_default_captures(
             let local_ty = analysis
                 .local(local)
                 .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-            if checked.value_type() != Some(local_ty.ty()) {
+            if checked.source_value_type() != Some(local_ty.ty()) {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
             let origin = coordinates

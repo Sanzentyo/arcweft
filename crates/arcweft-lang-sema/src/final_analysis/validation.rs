@@ -524,6 +524,13 @@ pub(super) fn validate_expressions(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let fact_type = fact.value_type();
+        if let Some(specialization) = fact.function_specialization()
+            && (specialization.owner() != owner
+                || fact_type != Some(specialization.specialized_type())
+                || fact.source_value_type() != Some(specialization.source_type()))
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         match fact.result() {
             super::CheckedExpressionResult::Value(_) => {}
             super::CheckedExpressionResult::NonValue(_)
@@ -593,7 +600,7 @@ pub(super) fn validate_expressions(
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        if let Some(fact_type) = fact_type {
+        if let Some(fact_type) = fact.source_value_type() {
             validate_expression_resolution(
                 symbols,
                 topology,
@@ -1452,7 +1459,7 @@ fn validate_implicit_callable(
         .get(&owner)
         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
     let checked_type = checked
-        .value_type()
+        .source_value_type()
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
     let TypeKind::Function {
         params,
@@ -1490,7 +1497,7 @@ fn validate_implicit_callable(
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             (
                 fact.resolution(),
-                fact.value_type() == Some(callable.parameter()),
+                fact.source_value_type() == Some(callable.parameter()),
             )
         };
         if !matches!(
@@ -2469,7 +2476,7 @@ fn validate_call_result(
         .ok_or(FinalSemanticAnalysisError::CallFactMismatch);
     };
     let effects = application.core().effects();
-    if application.result().value_type() != checked.value_type()
+    if application.result().value_type() != checked.source_value_type()
         || !effects.is_known()
         || !effects
             .constant_effects()

@@ -1113,20 +1113,6 @@ impl PreparedFunctionValueOriginQuery {
         checked: &BTreeMap<ExprId, PreparedExpressionFact>,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
         self.local_origins(module)?;
-        let record = module
-            .resolve_expr(self.current)
-            .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?;
-        if matches!(record.kind(), HirExprKind::Call(_)) {
-            return Ok(PreparedFunctionValueOriginProgress::Ready(
-                PreparedFunctionValueOriginEvidence::new(
-                    self.callee,
-                    PreparedFunctionValueOriginProducer::Call(super::CheckedCallSite::HirCall(
-                        self.current,
-                    )),
-                    Vec::new(),
-                ),
-            ));
-        }
         let Some(fact) = checked.get(&self.current) else {
             return Ok(PreparedFunctionValueOriginProgress::Need(
                 PreparedFunctionValueOriginNeed {
@@ -1168,6 +1154,26 @@ impl PreparedFunctionValueOriginQuery {
         let fact = fact
             .complete()
             .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+        if fact.function_specialization().is_some() {
+            return Ok(PreparedFunctionValueOriginProgress::Ready(
+                PreparedFunctionValueOriginEvidence::new(
+                    self.callee,
+                    PreparedFunctionValueOriginProducer::IndependentExpression {
+                        producer: self.current,
+                    },
+                    self.validated_terminal_capture_rows(self.current, fact)?,
+                ),
+            ));
+        }
+        if let Some(site) = fact.resolution().checked_call_site(self.current) {
+            return Ok(PreparedFunctionValueOriginProgress::Ready(
+                PreparedFunctionValueOriginEvidence::new(
+                    self.callee,
+                    PreparedFunctionValueOriginProducer::Call(site),
+                    Vec::new(),
+                ),
+            ));
+        }
         let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
             fact.resolution()
         else {
@@ -1194,20 +1200,6 @@ impl PreparedFunctionValueOriginQuery {
                     return Err(PreparedFunctionValueOriginQueryError::Invalid);
                 }
                 self.current = initializer;
-                let initializer_record = module
-                    .resolve_expr(initializer)
-                    .map_err(|_| PreparedFunctionValueOriginQueryError::Invalid)?;
-                if matches!(initializer_record.kind(), HirExprKind::Call(_)) {
-                    return Ok(PreparedFunctionValueOriginProgress::Ready(
-                        PreparedFunctionValueOriginEvidence::new(
-                            self.callee,
-                            PreparedFunctionValueOriginProducer::Call(
-                                super::CheckedCallSite::HirCall(initializer),
-                            ),
-                            Vec::new(),
-                        ),
-                    ));
-                }
                 Ok(PreparedFunctionValueOriginProgress::Need(
                     PreparedFunctionValueOriginNeed {
                         expression: initializer,

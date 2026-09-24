@@ -1448,12 +1448,11 @@ fn seal_prepared_entry_expression(
     let reference =
         crate::final_analysis::CheckedEntryReference::seal(reference, value_type, binding)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    let (ty, type_selection, effects) = shell
+    let (value, effects) = shell
         .into_value_parts()
         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    Ok(CheckedExpression::value(
-        ty,
-        type_selection,
+    Ok(CheckedExpression::typed_value(
+        value,
         effects,
         CheckedExpressionResolution::Value(crate::final_analysis::CheckedValueResolution::Entry(
             reference,
@@ -1602,13 +1601,12 @@ fn seal_prepared_expression(
             let owner = seal_variant_owner(owner, project_nominals)?;
             let resolution = CheckedVariantResolution::try_new(owner, selected_ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            let (ty, type_selection, effects) = shell
+            let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             Ok((
-                CheckedExpression::value(
-                    ty,
-                    type_selection,
+                CheckedExpression::typed_value(
+                    value,
                     effects,
                     CheckedExpressionResolution::Variant(resolution),
                 )
@@ -1622,20 +1620,19 @@ fn seal_prepared_expression(
             }
             let (shell, nominal) = prepared.into_parts();
             let type_value = project_nominals.issue_type_value(&nominal)?;
-            let (ty, type_selection, effects) = shell
+            let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if type_selection != CheckedTypeSelection::Expected
+            if value.type_selection() != CheckedTypeSelection::Expected
                 || !effects.is_empty()
-                || ty != type_value.ty()
+                || value.source_type() != &type_value.ty()
                 || &nominal != type_value.nominal()
             {
                 return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
             }
             Ok((
-                CheckedExpression::value(
-                    ty,
-                    type_selection,
+                CheckedExpression::typed_value(
+                    value,
                     effects,
                     CheckedExpressionResolution::TypeValue(type_value),
                 )
@@ -1661,10 +1658,10 @@ fn seal_prepared_expression(
                     declaration_ordinal,
                     field_type_digest,
                 ));
-            let (ty, type_selection, effects) = shell
+            let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if ty != field_type {
+            if value.source_type() != &field_type {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
             let selection = crate::final_analysis::CheckedFieldSelection::try_new(
@@ -1677,9 +1674,8 @@ fn seal_prepared_expression(
             )
             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
             Ok((
-                CheckedExpression::value(
-                    ty,
-                    type_selection,
+                CheckedExpression::typed_value(
+                    value,
                     effects,
                     CheckedExpressionResolution::Select(
                         crate::final_analysis::CheckedSelectResolution::Field(selection),
@@ -1697,16 +1693,15 @@ fn seal_prepared_expression(
                         && sealed.fields.len() == prepared_fields.len()
                 })
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            let (ty, type_selection, effects) = shell
+            let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            if ty.semantic_identity_digest()? != nominal.identity() {
+            if value.source_type().semantic_identity_digest()? != nominal.identity() {
                 return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
             }
             Ok((
-                CheckedExpression::value(
-                    ty,
-                    type_selection,
+                CheckedExpression::typed_value(
+                    value,
                     effects,
                     CheckedExpressionResolution::Nominal(nominal),
                 )

@@ -1092,7 +1092,12 @@ fn expression_digest_at_with_state(
     transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
     match checked.result() {
         super::CheckedExpressionResult::Value(value) => {
-            transcript_update!(hasher, &[0]);
+            if let Some(specialization) = value.specialization() {
+                transcript_update!(hasher, &[3]);
+                transcript_update!(hasher, specialization.digest().as_bytes());
+            } else {
+                transcript_update!(hasher, &[0]);
+            }
             transcript_update!(hasher, value.ty().semantic_identity_digest()?.as_bytes());
         }
         super::CheckedExpressionResult::NonValue(
@@ -1119,7 +1124,7 @@ fn expression_digest_at_with_state(
         &mut hasher,
         owner,
         checked.resolution(),
-        checked_type,
+        checked.source_value_type(),
         coordinates,
         analysis,
         expression_digests,

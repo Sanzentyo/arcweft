@@ -54,7 +54,10 @@ use crate::final_analysis::{
 };
 
 use super::super::{
-    expression_error::{AnalyzerExpressionContext, PhysicalCallAttemptId},
+    expression_error::{
+        AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionInvariant,
+        PhysicalCallAttemptId,
+    },
     expressions::AnalyzerExpressionExpectation,
     state::{
         ActiveCallbackFactScope, CandidateSemanticProjection, CandidateSemanticReplayMismatch,
@@ -1008,6 +1011,84 @@ enum AnalyzerCallCheckFailure {
     Invariant(AnalyzerCallClientInvariant),
 }
 
+impl AnalyzerCallCheckFailure {
+    fn expression(
+        source_id: AnalyzerCallConstraintSourceId,
+        phase: SourcePhase,
+        error: AnalyzerExpressionError,
+    ) -> Self {
+        let source = source_id.local();
+        match error {
+            AnalyzerExpressionError::Rejected(_) => Self::Mismatch,
+            AnalyzerExpressionError::Abort(error) => Self::Abort(error),
+            AnalyzerExpressionError::Fatal(error) => Self::Fatal(SourceError::new(
+                source_id,
+                phase,
+                AnalyzerCallSourceFailureCause::FinalSemantic(error),
+            )),
+            AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::Fact(violation)) => {
+                Self::Invariant(AnalyzerCallClientInvariant::fact_transaction(
+                    source, *violation,
+                ))
+            }
+            AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::Semantic(error)) => {
+                Self::Invariant(AnalyzerCallClientInvariant::final_semantic(source, *error))
+            }
+            AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::Cycle { owner }) => {
+                Self::Invariant(AnalyzerCallClientInvariant::final_semantic(
+                    source,
+                    crate::final_analysis::FinalSemanticAnalysisError::ExpressionCycle { owner },
+                ))
+            }
+            AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::CallFrame {
+                owner,
+                violation,
+            }) => Self::Invariant(AnalyzerCallClientInvariant::call_frame(
+                source, owner, *violation,
+            )),
+            AnalyzerExpressionError::Call { owner, failure } => match failure {
+                CallAnalysisFailure::Abort(error) => Self::Abort(error),
+                CallAnalysisFailure::Invariant(error) => Self::Invariant(
+                    AnalyzerCallClientInvariant::nested_call(source, owner, error),
+                ),
+                CallAnalysisFailure::FatalSource(error) => Self::Fatal(SourceError::new(
+                    source_id,
+                    phase,
+                    AnalyzerCallSourceFailureCause::NestedCallFatal {
+                        owner,
+                        error: Box::new(error),
+                    },
+                )),
+            },
+        }
+    }
+
+    fn specialization(
+        source: AnalyzerCallConstraintSource,
+        error: crate::callable::FunctionSpecializationFailure<AnalyzerCallConstraintDomain>,
+    ) -> Self {
+        match error {
+            crate::callable::FunctionSpecializationFailure::Prepared(error) => {
+                Self::Invariant(AnalyzerCallClientInvariant::constraint(source, error))
+            }
+            crate::callable::FunctionSpecializationFailure::Constraint(error) => match error {
+                TypeConstraintFailure::Rejected(_) => Self::Mismatch,
+                TypeConstraintFailure::FatalSource(error) => Self::Fatal(*error),
+                TypeConstraintFailure::Abort(error) => Self::Abort(error),
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                    error,
+                )) => Self::Invariant(AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::Lower(error),
+                )),
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(error)) => {
+                    Self::Invariant(*error)
+                }
+            },
+        }
+    }
+}
+
 struct AnalyzerCallActiveFactScope {
     scope: ActiveCallbackFactScope,
     coordinate: AnalyzerCallScopeCoordinate,
@@ -1291,6 +1372,15 @@ impl<'a, 'project, 'catalog, 'control>
         >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
         let source = source_id.local();
+        let expectation = if phase == SourcePhase::Probe
+            && parent_probe.is_some()
+            && compile_time_scalar.is_none()
+        {
+            expectation.function_value_source()
+        } else {
+            expectation
+        };
+        let function_value_use = expectation.defers_function_value_use();
         self.active_source_check(source_id, phase)
             .map_err(AnalyzerCallCheckFailure::Invariant)?;
         if application_context.is_some_and(|recipe| {
@@ -1489,6 +1579,33 @@ impl<'a, 'project, 'catalog, 'control>
                         },
                 })?;
                 if let Some(pending) = pending {
+                    let pending = if function_value_use {
+                        let enclosing = self
+                            .analyzer
+                            .enclosing_constraint_scope(module, expression_owner, None)
+                            .map_err(|error| {
+                                AnalyzerCallCheckFailure::expression(source_id, phase, error)
+                            })?;
+                        let graph = self.analyzer.facts.prepared_calls().map_err(|error| {
+                            AnalyzerCallCheckFailure::Invariant(
+                                AnalyzerCallClientInvariant::fact_transaction(source, error),
+                            )
+                        })?;
+                        parent_probe
+                            .specialize_pending_function_value(
+                                graph,
+                                CallableConstraintApplication::Specialize(expression_owner),
+                                pending,
+                                &enclosing,
+                                &self.analyzer.catalogs.callable_limits,
+                                AnalyzerCallProjection::Result,
+                            )
+                            .map_err(|error| {
+                                AnalyzerCallCheckFailure::specialization(source, error)
+                            })?
+                    } else {
+                        pending
+                    };
                     return Ok(AnalyzerCallObservedSource::child(
                         pending,
                         ObservedSemanticValueEvidence::NoVariantCase,
@@ -1522,6 +1639,25 @@ impl<'a, 'project, 'catalog, 'control>
                 let Some(checked_type) = checked.value_type() else {
                     return Err(AnalyzerCallCheckFailure::Mismatch);
                 };
+                if function_value_use
+                    && matches!(checked_type, TypeKind::Function { binder, .. } if !binder.is_empty())
+                    && let Some(probe) = parent_probe.as_deref_mut()
+                    && let Some(owner) = source.expression_owner()
+                {
+                    let module = self.analyzer.module(owner.module()).map_err(|error| {
+                        AnalyzerCallCheckFailure::Fatal(SourceError::new(source_id, phase, AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error))))
+                    })?;
+                    let enclosing = self.analyzer.enclosing_constraint_scope(module, owner, None)
+                        .map_err(|error| AnalyzerCallCheckFailure::expression(source_id, phase, error))?;
+                    let graph = self.analyzer.facts.prepared_calls().map_err(|error| {
+                        AnalyzerCallCheckFailure::Invariant(AnalyzerCallClientInvariant::fact_transaction(source, error))
+                    })?;
+                    let pending = probe.specialize_function_value(
+                        graph, CallableConstraintApplication::Specialize(owner), checked_type, &enclosing,
+                        &self.analyzer.catalogs.callable_limits, AnalyzerCallProjection::Result,
+                    ).map_err(|error| AnalyzerCallCheckFailure::specialization(source, error))?;
+                    return Ok(AnalyzerCallObservedSource::child(pending, ObservedSemanticValueEvidence::NoVariantCase, Vec::new()));
+                }
                 let variant = match &checked {
                     crate::final_analysis::PreparedExpressionFact::Variant(prepared) => {
                         if &prepared.owner().ty() != checked_type
@@ -2192,6 +2328,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             &requests,
             &requests_by_application,
             &mut visited_applications,
+            work,
         )?;
         if requests_by_application
             .keys()
@@ -2291,6 +2428,83 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 })?;
             }
             let checked = if let Some(result) = request.result_projection() {
+                if matches!(
+                    result.application_id(),
+                    CallableConstraintApplication::Specialize(_)
+                ) && result.source().is_none()
+                {
+                    let specialization = seal_function_value_use(&result, source, work)?;
+                    let observed = self
+                        .check_source(
+                            source_id,
+                            AnalyzerExpressionExpectation::Unconstrained,
+                            None,
+                            application_context,
+                            SourcePhase::Materialize,
+                            None,
+                        )
+                        .map_err(|error| match error {
+                            AnalyzerCallCheckFailure::Mismatch => {
+                                crate::callable::SourceCallbackFailure::invariant(
+                                    AnalyzerCallClientInvariant::constraint(
+                                        source,
+                                        CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                                    ),
+                                )
+                            }
+                            AnalyzerCallCheckFailure::Fatal(error) => {
+                                crate::callable::SourceCallbackFailure::fatal(error)
+                            }
+                            AnalyzerCallCheckFailure::Abort(error) => {
+                                crate::callable::SourceCallbackFailure::Abort(error)
+                            }
+                            AnalyzerCallCheckFailure::Invariant(error) => {
+                                crate::callable::SourceCallbackFailure::invariant(error)
+                            }
+                        })?;
+                    let owner = specialization.owner();
+                    if source.expression_owner() != Some(owner)
+                        || observed.actual.as_ref() != Some(specialization.source_type())
+                    {
+                        return Err(crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                            ),
+                        ));
+                    }
+                    let checked = self
+                        .analyzer
+                        .facts
+                        .expressions()
+                        .get(&owner)
+                        .cloned()
+                        .ok_or_else(|| {
+                            crate::callable::SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::constraint(
+                                    source,
+                                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                                ),
+                            )
+                        })?
+                        .with_function_specialization(owner, specialization)
+                        .map_err(|error| {
+                            crate::callable::SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::constraint(source, error),
+                            )
+                        })?;
+                    self.analyzer
+                        .facts
+                        .replace_existing_expression(owner, checked)
+                        .map_err(|_| {
+                            crate::callable::SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::constraint(
+                                    source,
+                                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                                ),
+                            )
+                        })?;
+                }
                 let actual = result
                     .projection()
                     .value()
@@ -2685,6 +2899,7 @@ impl AnalyzerCallConsumerAdmission {
 /// carrier as one affine value, so a caller cannot provide a token from one
 /// candidate with the mapping or source plans from another.
 pub(crate) struct PreparedCallConstraintSet {
+    enclosing: EnclosingGenericParameterScope,
     candidate: Arc<PreparedResolvedCallable>,
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
@@ -3062,6 +3277,16 @@ impl RanCandidateTransaction {
 }
 
 impl PreparedCallApplicationTransaction {
+    pub(super) fn specialization_result(
+        &self,
+    ) -> Option<
+        crate::types::constraints::CompletedResultProjectionView<'_, AnalyzerCallConstraintDomain>,
+    > {
+        self.data.component.component().projection(
+            CallableConstraintApplication::Specialize(self.data.component.application()),
+            &AnalyzerCallProjection::Result,
+        )
+    }
     pub(crate) fn from_completed_nested_call(
         recipe: &super::PreparedCorrelatedCallRecipe,
         component: Arc<
@@ -4750,6 +4975,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         }
     }));
     Ok(PreparedCallConstraintSet {
+        enclosing: enclosing.clone(),
         candidate,
         consumer,
         callee_inputs,
@@ -5039,6 +5265,7 @@ pub(crate) fn run_prepared_candidate(
     set: PreparedCallConstraintSet,
 ) -> Result<RanCandidateTransaction, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
+        enclosing,
         candidate,
         consumer,
         callee_inputs,
@@ -5073,6 +5300,7 @@ pub(crate) fn run_prepared_candidate(
                 TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow)
             }
         })?;
+    let limits = analyzer.catalogs.callable_limits;
     let mut prepared_child_calls = Vec::new();
     let operations = AnalyzerCallExpressionClient::new(
         analyzer,
@@ -5125,18 +5353,27 @@ pub(crate) fn run_prepared_candidate(
                 for group in source_groups {
                     driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
                 }
+                for request in projection_requests {
+                    driver.request_projection(request.key, &request.value, request.closure);
+                }
                 if let Some(constraint) = result_constraint {
                     let _ = constraint.source;
-                    if constraint.pattern != constraint.actual {
+                    if matches!(&constraint.actual, TypeKind::Function { binder, .. } if binder.is_empty()) {
+                        driver.constrain_function_result_use(
+                            CallableConstraintApplication::Specialize(application),
+                            AnalyzerCallProjection::Result,
+                            &constraint.actual,
+                            &enclosing,
+                            &limits,
+                            |error| AnalyzerCallClientInvariant::constraint(AnalyzerCallConstraintSource::Result { source: application }, error),
+                        )?;
+                    } else if constraint.pattern != constraint.actual {
                         driver.constrain(
                             &constraint.pattern,
                             &constraint.actual,
                             constraint.acceptance,
                         );
                     }
-                }
-                for request in projection_requests {
-                    driver.request_projection(request.key, &request.value, request.closure);
                 }
                 driver.finish_alternatives()
             },
@@ -5357,6 +5594,43 @@ fn discard_completed_candidate_alternatives(
     Ok(())
 }
 
+fn seal_function_value_use(
+    result: &crate::types::constraints::CompletedResultProjectionView<
+        '_,
+        AnalyzerCallConstraintDomain,
+    >,
+    source: AnalyzerCallConstraintSource,
+    work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+) -> Result<
+    Arc<crate::callable::CheckedFunctionSpecialization>,
+    crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
+> {
+    crate::callable::CheckedFunctionSpecialization::seal(result, work).map_err(|error| {
+        use crate::callable::FunctionSpecializationSealFailure;
+        use crate::types::{TypeProjectionError, constraints::TypeConstraintError};
+        let error = match error {
+            FunctionSpecializationSealFailure::Invariant(error) => error,
+            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Instantiation(
+                error,
+            )) => error.into(),
+            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
+                TypeConstraintError::Abort(error),
+            )) => return crate::callable::SourceCallbackFailure::Abort(error),
+            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
+                TypeConstraintError::Invariant(error),
+            )) => CallConstraintInvariant::Lower(error),
+            FunctionSpecializationSealFailure::Projection(TypeProjectionError::Control(
+                TypeConstraintError::Rejected(error),
+            )) => CallConstraintInvariant::Lower(TypeConstraintInvariant::Projection(
+                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(error),
+            )),
+        };
+        crate::callable::SourceCallbackFailure::invariant(AnalyzerCallClientInvariant::constraint(
+            source, error,
+        ))
+    })
+}
+
 fn collect_completed_nested_calls<'h>(
     application: ExprId,
     recipes: &[super::PreparedCorrelatedCallRecipe],
@@ -5364,6 +5638,7 @@ fn collect_completed_nested_calls<'h>(
     requests: &[MaterializedSourceRequest<'h, AnalyzerCallConstraintDomain>],
     requests_by_application: &BTreeMap<ExprId, Vec<usize>>,
     visited_applications: &mut BTreeSet<ExprId>,
+    work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
 ) -> Result<
     (
         Vec<super::PreparedSelectedNestedCall>,
@@ -5436,6 +5711,44 @@ fn collect_completed_nested_calls<'h>(
                         ),
                     )
                 })?;
+                let specialization = match result.application_id() {
+                    CallableConstraintApplication::Call(_) => None,
+                    CallableConstraintApplication::Specialize(_) => {
+                        Some(seal_function_value_use(&result, source, work)?)
+                    }
+                };
+                let actual = result
+                    .projection()
+                    .value()
+                    .to_quantified_type()
+                    .map_err(|_| {
+                        crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                            ),
+                        )
+                    })?;
+                if &actual != request.actual() {
+                    return Err(crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                        ),
+                    ));
+                }
+                let result = if specialization.is_some() {
+                    result.source().ok_or_else(|| {
+                        crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::PreparedCallSiteMismatch,
+                            ),
+                        )
+                    })?
+                } else {
+                    result
+                };
                 let child_application =
                     result
                         .application_id()
@@ -5473,26 +5786,15 @@ fn collect_completed_nested_calls<'h>(
                             ),
                         )
                     })?;
-                if &actual != request.actual() {
-                    return Err(crate::callable::SourceCallbackFailure::invariant(
-                        AnalyzerCallClientInvariant::constraint(
-                            source,
-                            CallConstraintInvariant::Lower(TypeConstraintInvariant::Projection(
-                                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
-                                    crate::types::constraints::TypeConstraintRejection::Mismatch,
-                                ),
-                            )),
-                        ),
-                    ));
-                }
-
                 let selection = if request.expected().is_some() {
                     super::CheckedTypeSelection::Expected
                 } else {
                     super::CheckedTypeSelection::Inferred
                 };
                 let child_index = if let Some(index) = child_indexes.get(&child_application) {
-                    if !children[*index].recipe.semantic_replay_eq(recipe) {
+                    if !children[*index].recipe.semantic_replay_eq(recipe)
+                        || children[*index].specialization != specialization
+                    {
                         return Err(crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
                                 source,
@@ -5511,6 +5813,7 @@ fn collect_completed_nested_calls<'h>(
                         recipe: recipe.clone(),
                         rank: recipe.rank_seed,
                         selection,
+                        specialization,
                     });
                     index
                 };
@@ -5526,6 +5829,11 @@ fn collect_completed_nested_calls<'h>(
                         })?;
                 }
             }
+            (Some(result), None)
+                if matches!(
+                    result.application_id(),
+                    CallableConstraintApplication::Specialize(_)
+                ) && result.source().is_none() => {}
             (Some(_), None) | (None, Some(_)) => {
                 return Err(crate::callable::SourceCallbackFailure::invariant(
                     AnalyzerCallClientInvariant::constraint(
@@ -5575,6 +5883,7 @@ fn collect_completed_nested_calls<'h>(
             requests,
             requests_by_application,
             visited_applications,
+            work,
         )?;
         child.rank = rank.ok_or_else(|| {
             crate::callable::SourceCallbackFailure::invariant(
@@ -5830,6 +6139,7 @@ pub(crate) fn run_prepared_child_candidate(
     set: PreparedCallConstraintSet,
 ) -> Result<PreparedChildCandidateRun, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
+        enclosing: _,
         candidate,
         consumer,
         callee_inputs: _,

@@ -408,6 +408,230 @@ fn contextual_constructor_sources_combine_complementary_type_evidence() {
     }
 }
 
+#[test]
+fn function_scheme_use_callback_keeps_independent_prefix_instances() {
+    let fixture = fixture(
+        r#"
+fn choose<A, B>(first: A)(second: B) -> B { second }
+fn apply<T>(handler: T -> T effects {}, value: T) -> T { handler(value) }
+flow main() -> i64 {
+    let prefix = choose("saved")
+    let text = prefix("text")
+    return apply(prefix, 42i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("later parent argument specializes the saved scheme");
+    assert_selected_calls(&analysis, 4);
+    let uses = analysis
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            expression
+                .function_specialization()
+                .map(|witness| (owner, expression, witness))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(uses.len(), 1);
+    let (owner, expression, witness) = uses[0];
+    assert_eq!(witness.owner(), owner);
+    assert_eq!(expression.source_value_type(), Some(witness.source_type()));
+    assert!(
+        matches!(witness.source_type(), TypeKind::Function { binder, .. } if !binder.is_empty())
+    );
+    assert!(
+        matches!(witness.specialized_type(), TypeKind::Function { binder, params, return_type, .. }
+        if binder.is_empty() && params.as_ref() == [TypeKind::I64] && **return_type == TypeKind::I64)
+    );
+    assert!(analysis.calls().any(|(_, call)| matches!(
+        call.selected_application().map(|call| call.result()),
+        Some(crate::callable::CheckedCallResult::Value(TypeKind::String))
+    )));
+}
+
+#[test]
+fn function_scheme_use_pending_call_retains_its_original_call_result() {
+    for actual in ["identity(prefix)", "identity(identity(prefix))"] {
+        let source = format!(
+            r#"
+fn choose<A, B>(first: A)(second: B) -> B {{ second }}
+fn identity<T>(value: T) -> T {{ value }}
+fn apply<T>(handler: T -> T effects {{}}, value: T) -> T {{ handler(value) }}
+flow main() -> i64 {{ let prefix = choose("saved"); return apply({actual}, 42i64) }}
+"#
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).unwrap_or_else(|error| panic!("{actual}: {error:?}"));
+        let uses = analysis
+            .expressions()
+            .filter_map(|(owner, expression)| {
+                expression
+                    .function_specialization()
+                    .map(|witness| (owner, expression, witness))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(uses.len(), 1, "one pending value conversion for {actual}");
+        let (owner, expression, witness) = uses[0];
+        let call = analysis
+            .call(owner)
+            .and_then(|call| call.selected_application())
+            .expect("Call and Specialize retain the same expression owner");
+        assert_eq!(call.result().value_type(), Some(witness.source_type()));
+        assert_eq!(expression.value_type(), Some(witness.specialized_type()));
+        assert_eq!(
+            expression.execution_plan().unwrap().call_application(),
+            Some(call.digest())
+        );
+    }
+}
+
+#[test]
+fn function_scheme_use_future_only_call_head_keeps_correlated_inference() {
+    // The future-only head still belongs to the live producing Call. There
+    // is no previously quantified source scheme to instantiate at this use.
+    for actual in ["choose(\"pending\")", "identity(choose(\"pending\"))"] {
+        let source = format!(
+            r#"
+fn choose<A, B>(first: A)(second: B) -> B {{ second }}
+fn identity<T>(value: T) -> T {{ value }}
+fn apply<T>(handler: T -> T effects {{}}, value: T) -> T {{ handler(value) }}
+flow main() -> i64 {{ return apply({actual}, 42i64) }}
+"#
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).unwrap_or_else(|error| panic!("{actual}: {error:?}"));
+        assert!(
+            analysis
+                .calls()
+                .all(|(_, call)| call.selected_application().is_some())
+        );
+        assert!(
+            analysis
+                .expressions()
+                .all(|(_, expression)| expression.function_specialization().is_none())
+        );
+        assert!(analysis.calls().any(|(_, call)| matches!(call.selected_application().unwrap().result().value_type(), Some(TypeKind::Function { binder, params, return_type, .. }) if binder.is_empty() && params.as_ref() == [TypeKind::I64] && **return_type == TypeKind::I64)));
+    }
+}
+
+#[test]
+fn function_scheme_use_typed_local_retains_its_generic_source() {
+    let fixture = fixture(
+        r#"
+fn choose<A, B>(first: A)(second: B) -> B { second }
+flow main() -> i64 {
+    let prefix = choose("saved")
+    let handler: i64 -> i64 effects {} = prefix
+    let text = prefix("still generic")
+    return handler(42i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("typed local specializes only its initializer use");
+    assert_selected_calls(&analysis, 3);
+    assert_eq!(
+        analysis
+            .expressions()
+            .filter(|(_, expression)| expression.function_specialization().is_some())
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn function_scheme_use_root_call_specializes_before_closing_its_component() {
+    let fixture = fixture(
+        r#"
+fn choose<A, B>(first: A)(second: B) -> B { second }
+fn identity<T>(value: T) -> T { value }
+flow main() -> i64 {
+    let prefix = choose("saved")
+    let handler: i64 -> i64 effects {} = identity(prefix)
+    return handler(42i64)
+}
+"#,
+        None,
+    );
+    let analysis =
+        analyze(&fixture).expect("root call result is specialized inside its own component");
+    assert_selected_calls(&analysis, 3);
+    let (owner, expression) = analysis
+        .expressions()
+        .find(|(_, expression)| expression.function_specialization().is_some())
+        .expect("root call witness");
+    let source = expression.source_value_type().unwrap();
+    assert_eq!(
+        analysis
+            .call(owner)
+            .unwrap()
+            .selected_application()
+            .unwrap()
+            .result()
+            .value_type(),
+        Some(source)
+    );
+    assert!(matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty()));
+}
+
+#[test]
+fn function_scheme_use_return_and_tail_preserve_the_source_scheme() {
+    for body in [
+        "return prefix",
+        "prefix",
+        "return identity(prefix)",
+        "identity(prefix)",
+    ] {
+        let source = format!(
+            r#"
+fn choose<A, B>(first: A)(second: B) -> B {{ second }}
+fn identity<T>(value: T) -> T {{ value }}
+fn maker() -> (i64 -> i64 effects {{}}) {{
+    let prefix = choose("saved")
+    {body}
+}}
+flow main() -> i64 {{ let handler = maker(); return handler(42i64) }}
+"#
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).unwrap_or_else(|error| panic!("{body}: {error:?}"));
+        assert!(
+            analysis
+                .calls()
+                .all(|(_, call)| call.selected_application().is_some())
+        );
+        assert_eq!(
+            analysis
+                .expressions()
+                .filter(|(_, expression)| expression.function_specialization().is_some())
+                .count(),
+            1,
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn function_scheme_use_named_value_uses_the_same_specialization_boundary() {
+    let fixture = fixture(
+        r"
+fn identity<T>(value: T) -> T { value }
+fn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }
+flow main() -> i64 { return apply(identity, 42i64) }
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("named scheme is a checked value use");
+    assert_selected_calls(&analysis, 2);
+    assert_eq!(
+        analysis
+            .expressions()
+            .filter(|(_, expression)| expression.function_specialization().is_some())
+            .count(),
+        1
+    );
+}
+
 fn assert_selected_calls(analysis: &FinalSemanticAnalysis, expected_count: usize) {
     let calls = analysis.calls().collect::<Vec<_>>();
     assert_eq!(calls.len(), expected_count);

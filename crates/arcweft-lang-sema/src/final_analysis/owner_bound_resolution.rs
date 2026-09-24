@@ -193,19 +193,18 @@ pub(super) fn seal(
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
         let (shell, _ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (ty, selection, _) = shell
+        let (value, _) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if ty.semantic_identity_digest()? != seed.function_type
+        if value.source_type().semantic_identity_digest()? != seed.function_type
             || callables.insert(owner, checked.clone()).is_some()
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::value(
-                ty,
-                selection,
+            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                value,
                 effects,
                 CheckedExpressionResolution::ImplicitCallable(Box::new(checked)),
             )),
@@ -233,14 +232,13 @@ pub(super) fn seal(
             coordinates,
         )?;
         let (shell, _, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (ty, selection, _) = shell
+        let (value, _) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::value(
-                ty,
-                selection,
+            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                value,
                 effects,
                 CheckedExpressionResolution::Try(checked),
             )),
@@ -267,7 +265,7 @@ pub(super) fn seal(
             .find(|occurrence| occurrence.lookup_expression() == owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let (shell, ty, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (_, selection, _) = shell
+        let (value, _) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         if ty.semantic_identity_digest()? != callable.parameter().semantic_identity_digest()? {
@@ -275,9 +273,8 @@ pub(super) fn seal(
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::value(
-                parameter.parameter().clone(),
-                selection,
+            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                value,
                 effects,
                 CheckedExpressionResolution::ImplicitParameter(CheckedImplicitParameter::new(
                     callable.identity(),
@@ -318,7 +315,7 @@ pub(super) fn seal(
             .find(|occurrence| occurrence.lookup_expression() == owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let (shell, value_type, effects) = prepared_shell_parts(prepared.shell(), owner)?;
-        let (ty, selection, _) = shell
+        let (value, _) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let value_type = value_type.semantic_identity_digest()?;
@@ -331,9 +328,8 @@ pub(super) fn seal(
         }
         replacements.insert(
             owner,
-            PreparedExpressionFact::Complete(CheckedExpression::value(
-                ty,
-                selection,
+            PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                value,
                 effects,
                 CheckedExpressionResolution::PipeLeft(CheckedPipeLeft::new(
                     pipe.binding_identity(),
@@ -354,7 +350,7 @@ fn prepared_shell_parts(
     owner: ExprId,
 ) -> Result<(PreparedExpressionShell, TypeKind, EffectSet), FinalSemanticAnalysisError> {
     let ty = shell
-        .value_type()
+        .source_value_type()
         .cloned()
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
     Ok((shell.clone(), ty, shell.effects().clone()))
@@ -414,14 +410,13 @@ fn seal_pipe_rows(
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             };
             let (shell, _, effects) = prepared_shell_parts(prepared.shell(), *owner)?;
-            let (ty, selection, _) = shell
+            let (value, _) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             replacements.insert(
                 *owner,
-                PreparedExpressionFact::Complete(CheckedExpression::value(
-                    ty,
-                    selection,
+                PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                    value,
                     effects,
                     CheckedExpressionResolution::Pipe(checked),
                 )),

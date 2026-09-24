@@ -803,15 +803,14 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
             };
             let (shell, _diagnostic_name) = previous.into_parts();
-            let (ty, type_selection, effects) = shell
+            let (value, effects) = shell
                 .into_value_parts()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             self.facts
                 .replace_existing_expression(
                     owner,
-                    CheckedExpression::value(
-                        ty,
-                        type_selection,
+                    CheckedExpression::typed_value(
+                        value,
                         effects,
                         CheckedExpressionResolution::Select(CheckedSelectResolution::Method(
                             selection,
@@ -997,6 +996,8 @@ mod expression_error;
 mod expression_types;
 #[path = "analyzer/expressions.rs"]
 mod expressions;
+#[path = "analyzer/function_value_use.rs"]
+mod function_value_use;
 #[path = "analyzer/fx_definition.rs"]
 mod fx_definition;
 #[path = "analyzer/view_fx.rs"]

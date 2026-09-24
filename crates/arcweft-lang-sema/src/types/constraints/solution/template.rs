@@ -132,6 +132,77 @@ impl TypeConstraintSolution {
 }
 
 impl ScopedTypeView<'_> {
+    /// Close the supplied declaration-owned parameters over a known function
+    /// value. This is a binder fold, with no inference or application identity.
+    pub(crate) fn quantify_parameters(
+        self,
+        types: &[GenericTypeReference],
+        consts: &[GenericConstReference],
+        effects: &[GenericEffectReference],
+    ) -> Result<TypeKind, TypeInstantiationError> {
+        let arity = |kind, count| GenericScopeError::BinderArityOverflow { kind, count };
+        let binder = GenericBinder::new(
+            u16::try_from(types.len())
+                .map_err(|_| arity(GenericParameterKind::Type, types.len()))?,
+            u16::try_from(consts.len())
+                .map_err(|_| arity(GenericParameterKind::Const, consts.len()))?,
+            u32::try_from(effects.len())
+                .map_err(|_| arity(GenericParameterKind::Effect, effects.len()))?,
+        );
+        let scope = GenericScope::default().with_binder(binder);
+        let value = map_term(
+            self.value(),
+            self.scope(),
+            &scope,
+            &|reference, source, target| {
+                if let Some(key) = reference.template_key(self.scope(), source)?
+                    && let Some(slot) = types.iter().position(|candidate| candidate == &key)
+                {
+                    return Ok(TypeKind::GenericParam(
+                        target.bound_type(
+                            depth_difference(target, &scope)?,
+                            u16::try_from(slot)
+                                .map_err(|_| arity(GenericParameterKind::Type, types.len()))?,
+                        )?,
+                    ));
+                }
+                keep_type(reference, source)
+            },
+            &|reference, source, target| {
+                if let Some(key) = reference.template_key(self.scope(), source)?
+                    && let Some(slot) = consts.iter().position(|candidate| candidate == &key)
+                {
+                    return Ok(ArrayLength::Generic(
+                        target.bound_const(
+                            depth_difference(target, &scope)?,
+                            u16::try_from(slot)
+                                .map_err(|_| arity(GenericParameterKind::Const, consts.len()))?,
+                        )?,
+                    ));
+                }
+                keep_const(reference, source)
+            },
+            &|row, source, target| {
+                map_effects(row, &|reference| {
+                    let reference = if let Some(key) =
+                        reference.template_key(self.scope(), source)?
+                        && let Some(slot) = effects.iter().position(|candidate| candidate == &key)
+                    {
+                        target.bound_effect(
+                            depth_difference(target, &scope)?,
+                            u32::try_from(slot)
+                                .map_err(|_| arity(GenericParameterKind::Effect, effects.len()))?,
+                        )?
+                    } else {
+                        keep_effect(reference, source)?
+                    };
+                    Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
+                })
+            },
+        )?;
+        ScopedTypeView::sealed(&value, &scope).to_quantified_type()
+    }
+
     /// Closes a value projection without granting it the solution's residual
     /// quantifiers. Unused incoming scope can disappear only after this walk
     /// proves every retained bound reference has an owner in the value itself.

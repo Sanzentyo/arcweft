@@ -1262,13 +1262,20 @@ impl SealedSelectedCall {
                     .with_type(ty)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             ),
-            PreparedExpressionFact::Complete(previous) => CheckedExpression::value(
-                ty,
-                previous.required_type_selection(callee)?,
-                previous.effects().clone(),
-                previous.resolution().clone(),
-            )
-            .into(),
+            PreparedExpressionFact::Complete(previous) => previous
+                .clone()
+                .with_sealed_value(
+                    ty,
+                    previous.effects().clone(),
+                    previous.resolution().clone(),
+                )
+                .map_err(|error| {
+                    final_call_seal_error(
+                        FinalCallSealLocation::Site(self.application.core().site()),
+                        error,
+                    )
+                })?
+                .into(),
             PreparedExpressionFact::CompileTimeScalar(prepared) => {
                 let (shell, scalar, original) = prepared.into_parts();
                 let PreparedExpressionFact::Complete(previous) = original else {
@@ -1887,13 +1894,20 @@ impl super::Analyzer<'_, '_, '_> {
                                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
                                 )
                             }
-                            previous => CheckedExpression::value(
-                                result,
-                                previous.required_type_selection(pending.owner)?,
-                                update.effects,
-                                resolution,
-                            )
-                            .into(),
+                            PreparedExpressionFact::Complete(previous) => previous
+                                .with_sealed_value(result, update.effects, resolution)
+                                .map_err(|error| {
+                                    final_call_seal_error(
+                                        FinalCallSealLocation::Site(
+                                            crate::callable::CheckedCallSite::HirCall(
+                                                pending.owner,
+                                            ),
+                                        ),
+                                        error,
+                                    )
+                                })?
+                                .into(),
+                            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
                         }
                     }
                     AnalyzerPreparedExpressionResolution::DialogueApplication => {

@@ -27,6 +27,7 @@ use crate::types::{ConstraintAcceptance, TypeKind};
 use std::sync::Arc;
 
 mod specialization;
+pub(crate) use specialization::FunctionSpecializationFailure;
 
 /// The callback vocabulary is deliberately owned by callable.  Source facts
 /// cross the boundary only as typed lower results, while checkpoint closure

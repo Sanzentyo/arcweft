@@ -6,6 +6,7 @@ use arcweft_lang_hir::{
     leaf::HirName,
     symbol::CallableDeclarationKey,
 };
+use std::sync::Arc;
 
 use crate::{
     callable::ContentCallableIdentity,
@@ -18,7 +19,7 @@ use crate::{
 pub(crate) use super::model::{PreparedVariantCaseSeed, PreparedVariantOwnerSeed};
 use super::{
     CheckedExpression, CheckedExpressionResolution, CheckedPattern, CheckedProjectNominal,
-    CheckedTryCarrier, CheckedTypeSelection,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedTypedExpressionResult,
 };
 
 #[path = "prepared/evaluated_effect.rs"]
@@ -38,28 +39,6 @@ pub(crate) use statement::{
     PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
 };
 
-/// Common checked expression state retained while a projection-dependent row
-/// is awaiting the one project-wide seal.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedTypedExpressionResult {
-    ty: TypeKind,
-    type_selection: CheckedTypeSelection,
-}
-
-impl PreparedTypedExpressionResult {
-    pub(crate) const fn new(ty: TypeKind, type_selection: CheckedTypeSelection) -> Self {
-        Self { ty, type_selection }
-    }
-
-    pub(crate) const fn ty(&self) -> &TypeKind {
-        &self.ty
-    }
-
-    pub(crate) const fn type_selection(&self) -> CheckedTypeSelection {
-        self.type_selection
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum PreparedNonValueExpressionResult {
     ContentEmission(ContentCallableIdentity),
@@ -69,7 +48,7 @@ impl PreparedNonValueExpressionResult {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedExpressionResult {
-    Value(PreparedTypedExpressionResult),
+    Value(CheckedTypedExpressionResult),
     NonValue(PreparedNonValueExpressionResult),
 }
 
@@ -104,7 +83,7 @@ impl PreparedExpressionShell {
         effects: EffectSet,
     ) -> Self {
         Self {
-            result: PreparedExpressionResult::Value(PreparedTypedExpressionResult::new(
+            result: PreparedExpressionResult::Value(CheckedTypedExpressionResult::new(
                 ty,
                 type_selection,
             )),
@@ -140,11 +119,43 @@ impl PreparedExpressionShell {
         &self.effects
     }
 
-    pub(crate) fn into_value_parts(self) -> Option<(TypeKind, CheckedTypeSelection, EffectSet)> {
+    pub(crate) fn into_value_parts(self) -> Option<(CheckedTypedExpressionResult, EffectSet)> {
         let PreparedExpressionResult::Value(value) = self.result else {
             return None;
         };
-        Some((value.ty, value.type_selection, self.effects))
+        Some((value, self.effects))
+    }
+
+    pub(crate) fn source_value_type(&self) -> Option<&TypeKind> {
+        match &self.result {
+            PreparedExpressionResult::Value(value) => Some(value.source_type()),
+            PreparedExpressionResult::NonValue(_) => None,
+        }
+    }
+
+    fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let PreparedExpressionResult::Value(value) = &self.result {
+            visitor(value.ty())?;
+            if let Some(specialization) = value.specialization() {
+                specialization.visit_types(visitor)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn specialize(
+        &mut self,
+        owner: ExprId,
+        witness: Arc<crate::callable::CheckedFunctionSpecialization>,
+    ) -> Result<(), crate::callable::CallConstraintInvariant> {
+        let PreparedExpressionResult::Value(value) = &mut self.result else {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        };
+        *value = value.clone().with_function_specialization(owner, witness)?;
+        Ok(())
     }
 }
 
@@ -176,9 +187,9 @@ impl PreparedMethodExpression {
 
     #[must_use]
     pub(crate) fn with_type(self, ty: TypeKind) -> Option<Self> {
-        let (_, type_selection, effects) = self.shell.into_value_parts()?;
+        let (value, effects) = self.shell.into_value_parts()?;
         Some(Self {
-            shell: PreparedExpressionShell::value(ty, type_selection, effects),
+            shell: PreparedExpressionShell::value(ty, value.type_selection(), effects),
             diagnostic_name: self.diagnostic_name,
         })
     }
@@ -472,9 +483,7 @@ impl PreparedOwnerBoundExpression {
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
-        if let Some(ty) = self.value_type() {
-            visitor(ty)?;
-        }
+        self.shell.visit_types(visitor)?;
         match self.resolution() {
             PreparedOwnerBoundResolution::ImplicitCallable(callable) => {
                 visitor(callable.parameter())?;
@@ -954,6 +963,27 @@ impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact 
 }
 
 impl PreparedExpressionFact {
+    pub(crate) fn with_function_specialization(
+        mut self,
+        owner: ExprId,
+        witness: Arc<crate::callable::CheckedFunctionSpecialization>,
+    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
+        match &mut self {
+            Self::Complete(value) => {
+                return value
+                    .clone()
+                    .with_function_specialization(owner, witness)
+                    .map(Self::Complete);
+            }
+            Self::OwnerBound(value) => value.shell.specialize(owner, witness)?,
+            Self::ProjectField(value) => value.shell.specialize(owner, witness)?,
+            _ => {
+                return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+            }
+        }
+        Ok(self)
+    }
+
     /// Returns the execution-local use represented directly by this prepared
     /// expression fact.
     ///
@@ -1105,7 +1135,7 @@ impl PreparedExpressionFact {
             Self::OwnerBound(value) => Err(Self::OwnerBound(value)),
             Self::CompileTimeScalar(value) => {
                 let (shell, scalar, original) = value.into_parts();
-                let Some((ty, type_selection, effects)) = shell.clone().into_value_parts() else {
+                let Some((value, effects)) = shell.clone().into_value_parts() else {
                     return Err(Self::from(PreparedCompileTimeScalarExpression {
                         shell,
                         value: scalar,
@@ -1120,12 +1150,7 @@ impl PreparedExpressionFact {
                                 complete.resolution().clone(),
                             ),
                         );
-                        Ok(CheckedExpression::value(
-                            ty,
-                            type_selection,
-                            effects,
-                            resolution,
-                        ))
+                        Ok(CheckedExpression::typed_value(value, effects, resolution))
                     }
                     Err(original) => Err(Self::from(PreparedCompileTimeScalarExpression {
                         shell,
@@ -1249,9 +1274,7 @@ impl PreparedExpressionFact {
                 value.owner().visit_types(visitor)
             }
             Self::ProjectField(value) => {
-                if let Some(ty) = value.shell().value_type() {
-                    visitor(ty)?;
-                }
+                value.shell().visit_types(visitor)?;
                 value.nominal().visit_types(visitor)?;
                 visitor(value.field_type())
             }

@@ -95,8 +95,8 @@ pub use checked_catalog::{
 pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
 pub(crate) use constraints::{
     CandidateConstraintDriverStartFailure, CandidateConstraintSourceContext,
-    CandidateConstraintWorkSession, PreparedSourceConstraintGroup, SourceCallbackFailure,
-    SourceCheckpointFailure, TypeConstraintClient,
+    CandidateConstraintWorkSession, FunctionSpecializationFailure, PreparedSourceConstraintGroup,
+    SourceCallbackFailure, SourceCheckpointFailure, TypeConstraintClient,
 };
 pub(crate) use continuation::{
     CallConstraintInvariant, CallableConstraintApplication, EnclosingGenericParameterScope,
@@ -237,5 +237,6 @@ pub(crate) use schema::{
     CallableGenericParameterInventory, CallableGenericTypeUse, CallableSchemaGenericRole,
     ObservedSemanticValueEvidence, presentation_content_schema,
 };
+pub(crate) use specialization::FunctionSpecializationSealFailure;
 pub use specialization::{CheckedFunctionSpecialization, CheckedFunctionSpecializationDigest};
 pub use view_modifier::ViewModifierId;

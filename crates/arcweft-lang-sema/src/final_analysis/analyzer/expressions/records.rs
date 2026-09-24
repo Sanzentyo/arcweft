@@ -194,6 +194,7 @@ fn expected_project_record_nominal<'a>(
             Ok(ExpectedProjectRecordNominal::Parametric(nominal))
         }
         AnalyzerExpressionExpectation::Unconstrained
+        | AnalyzerExpressionExpectation::FunctionValueSource(_)
         | AnalyzerExpressionExpectation::Parametric { .. } => {
             Ok(ExpectedProjectRecordNominal::None)
         }

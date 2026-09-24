@@ -74,6 +74,9 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
     /// their project item and never become strings by source spelling.
     CompileTimePublicId(&'a TypeKind),
     EnumConstructorHead(&'a TypeKind),
+    /// The borrowed callable component owns the conversion. Expression
+    /// checking supplies its original scheme; it never opens a second solver.
+    FunctionValueSource(Box<Self>),
     Parametric {
         expected: &'a TypeKind,
         unbound: Arc<[crate::types::constraints::ConstraintGenericParameterId]>,
@@ -82,6 +85,27 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
 }
 
 impl<'a> AnalyzerExpressionExpectation<'a> {
+    pub(super) fn function_value_source(self) -> Self {
+        if matches!(self, Self::FunctionValueSource(_)) {
+            return self;
+        }
+        if matches!(self.contextual_shape(), Some(TypeKind::Function { binder, .. }) if binder.is_empty())
+        {
+            Self::FunctionValueSource(Box::new(self))
+        } else {
+            self
+        }
+    }
+
+    pub(super) fn function_value_target(&self) -> Option<&'a TypeKind> {
+        self.contextual_shape()
+            .filter(|ty| matches!(ty, TypeKind::Function { binder, .. } if binder.is_empty()))
+    }
+
+    pub(super) const fn defers_function_value_use(&self) -> bool {
+        matches!(self, Self::FunctionValueSource(_))
+    }
+
     pub(super) fn from_complete(expected: Option<&'a TypeKind>) -> Self {
         expected.map_or(Self::Unconstrained, Self::Complete)
     }
@@ -137,6 +161,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
         match self {
             Self::Unconstrained => None,
+            Self::FunctionValueSource(expected) => expected.contextual_shape(),
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
@@ -156,8 +181,9 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     /// Expectations usable by expression checks that require a closed result
     /// type. Nested calls use `nested_call_type` plus the retained scope lease.
-    pub(super) const fn complete_type(&self) -> Option<&'a TypeKind> {
+    pub(super) fn complete_type(&self) -> Option<&'a TypeKind> {
         match self {
+            Self::FunctionValueSource(expected) => expected.complete_type(),
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
@@ -178,7 +204,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
                 scope_lease: Some(_),
                 ..
             } => Some(expected),
-            Self::Unconstrained | Self::Parametric { .. } => None,
+            Self::Unconstrained | Self::Parametric { .. } | Self::FunctionValueSource(_) => None,
         }
     }
 
@@ -196,6 +222,10 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     fn accepts_cached(&self, checked: &super::PreparedExpressionFact) -> bool {
         match self {
+            Self::FunctionValueSource(expected) => {
+                matches!(checked.value_type(), Some(TypeKind::Function { binder, .. }) if !binder.is_empty())
+                    || expected.accepts_cached(checked)
+            }
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => checked
@@ -227,6 +257,11 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         let Some(expected) = expected else {
             return Ok(AnalyzerExpressionExpectation::Unconstrained);
         };
+        if let Self::FunctionValueSource(source) = self {
+            return source
+                .project(Some(expected))
+                .map(AnalyzerExpressionExpectation::function_value_source);
+        }
         let Self::Parametric {
             unbound,
             scope_lease,
@@ -374,6 +409,25 @@ impl Analyzer<'_, '_, '_> {
                     .any(|scope| scope.owner == owner)
         });
         if let Some(checked) = cached {
+            let previous = checked.clone();
+            let checked = self.specialize_checked_function_value(owner, checked, &expectation)?;
+            if checked != previous {
+                let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
+                    |this, _, _| {
+                        this.facts
+                            .replace_contextual_expression(owner, checked.clone())
+                            .map_err(|_| {
+                                AnalyzerExpressionError::fact(
+                                    super::CandidateFactTransactionViolation::ProjectionUnavailable,
+                                )
+                            })?;
+                        Ok(CandidateFactTransactionAction::Commit(()))
+                    },
+                )?;
+                outcome
+                    .into_committed()
+                    .map_err(AnalyzerExpressionError::fact)?;
+            }
             if expectation.accepts_cached(&checked) {
                 self.record_implicit_capture_fact(owner, &checked)
                     .map_err(AnalyzerExpressionError::fatal)?;
@@ -491,7 +545,8 @@ impl Analyzer<'_, '_, '_> {
                             &transaction_authority,
                         )
                     };
-                    let checked = checked?;
+                    let checked =
+                        this.specialize_checked_function_value(owner, checked?, &expectation)?;
                     let checked = this.attach_nested_path_evidence(owner, checked)?;
                     this.record_implicit_capture_fact(owner, &checked)
                         .map_err(AnalyzerExpressionError::fatal)?;

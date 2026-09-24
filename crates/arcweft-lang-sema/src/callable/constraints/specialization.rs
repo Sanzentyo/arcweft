@@ -35,6 +35,16 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
         let mut transformed: Option<PendingChildConstraint<D>> = None;
         for alternative in alternatives {
             let source = alternative.source_type();
+            if !matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty()) {
+                let unchanged = alternative.into_pending();
+                match &mut transformed {
+                    Some(transformed) => transformed
+                        .append(unchanged)
+                        .map_err(|error| FunctionSpecializationFailure::Constraint(error.into()))?,
+                    None => transformed = Some(unchanged),
+                }
+                continue;
+            }
             source
                 .semantic_identity_digest_in_scope_with_control(
                     &GenericScope::default(),
@@ -153,6 +163,141 @@ impl<'control, D: ConstraintDomain> CandidateConstraintSourceContext<'_, 'contro
         lower
             .defer_child_result(result)
             .map_err(FunctionSpecializationFailure::Constraint)
+    }
+}
+
+impl CandidateConstraintWorkSession<'_> {
+    /// A known value outside a borrowed constraint component starts its own
+    /// specialization application. No callable candidate or invocation is
+    /// synthesized, and the closed source is never resolved a second time.
+    pub(crate) fn specialize_root_function_value<D, P, U>(
+        self,
+        graph: &PreparedCallGraph<P, U>,
+        application: crate::callable::CallableConstraintApplication,
+        source: &TypeKind,
+        expected: &TypeKind,
+        enclosing: &EnclosingGenericParameterScope,
+        limits: &CallableLimits,
+        result: D::Projection,
+    ) -> Result<Arc<crate::callable::CheckedFunctionSpecialization>, FunctionSpecializationFailure<D>>
+    where
+        D: ConstraintDomain<Application = crate::callable::CallableConstraintApplication>,
+        D::Projection: Clone,
+    {
+        let mut context = TypeConstraintContext::with_accounting(self);
+        source
+            .semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut context)
+            .map_err(|error| match error {
+                TypeProjectionError::Control(error) => {
+                    FunctionSpecializationFailure::Constraint(error.into())
+                }
+                TypeProjectionError::Instantiation(error) => {
+                    FunctionSpecializationFailure::Prepared(error.into())
+                }
+            })?;
+        let (initialization, source, template) = graph
+            .prepare_root_function_specialization(source, enclosing, limits)
+            .map_err(FunctionSpecializationFailure::Prepared)?
+            .into_parts();
+        let (_, parameters, inherited, imported) = initialization
+            .into_lower_parts()
+            .map_err(FunctionSpecializationFailure::Prepared)?;
+        let mut lower = TypeConstraintTransaction::<D>::initialize_with_imported(
+            &mut context,
+            application,
+            parameters,
+            inherited,
+            imported,
+        )
+        .map_err(|error| {
+            FunctionSpecializationFailure::Constraint(match error {
+                TypeConstraintInitializationFailure::Abort(error) => {
+                    TypeConstraintFailure::Abort(error)
+                }
+                TypeConstraintInitializationFailure::Invariant(error) => {
+                    TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                        error,
+                    ))
+                }
+            })
+        })?;
+        lower.request_value_use_projection(&mut context, result.clone(), &source, &template);
+        lower.constrain(
+            &mut context,
+            &template,
+            expected,
+            ConstraintAcceptance::ActualAcceptsPattern,
+        );
+        let completed = lower
+            .finish(&mut context)
+            .map_err(FunctionSpecializationFailure::Constraint)?;
+        let result = completed.component.projection(application, &result).ok_or(
+            FunctionSpecializationFailure::Prepared(
+                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            ),
+        )?;
+        crate::callable::CheckedFunctionSpecialization::seal(&result, &mut context).map_err(
+            |error| match error {
+                crate::callable::specialization::FunctionSpecializationSealFailure::Invariant(
+                    error,
+                ) => FunctionSpecializationFailure::Prepared(error),
+                crate::callable::specialization::FunctionSpecializationSealFailure::Projection(
+                    TypeProjectionError::Control(error),
+                ) => FunctionSpecializationFailure::Constraint(error.into()),
+                crate::callable::specialization::FunctionSpecializationSealFailure::Projection(
+                    TypeProjectionError::Instantiation(error),
+                ) => FunctionSpecializationFailure::Prepared(error.into()),
+            },
+        )
+    }
+}
+
+impl<D, C> CandidateConstraintDriver<'_, '_, D, C>
+where
+    D: ConstraintDomain,
+    C: TypeConstraintClient<D>,
+    D::Projection: Clone,
+{
+    pub(crate) fn constrain_function_result_use(
+        &mut self,
+        application: D::Application,
+        result: D::Projection,
+        expected: &TypeKind,
+        enclosing: &EnclosingGenericParameterScope,
+        limits: &CallableLimits,
+        invariant: impl Fn(CallConstraintInvariant) -> D::ClientInvariant,
+    ) -> Result<(), TypeConstraintFailure<D>> {
+        let authority = &self.authority;
+        self.lower
+            .constrain_result_use(self.context, result, expected, |source, context| {
+                if !matches!(source, TypeKind::Function { binder, .. } if !binder.is_empty()) {
+                    return Ok(None);
+                }
+                source
+                    .semantic_identity_digest_in_scope_with_control(
+                        &GenericScope::default(),
+                        context,
+                    )
+                    .map_err(|error| match error {
+                        TypeProjectionError::Control(error) => TypeConstraintFailure::from(error),
+                        TypeProjectionError::Instantiation(error) => {
+                            TypeConstraintFailure::client_invariant(invariant(error.into()))
+                        }
+                    })?;
+                let (initialization, _, template) = authority
+                    .prepare_function_specialization(source, enclosing, limits)
+                    .map_err(|error| TypeConstraintFailure::client_invariant(invariant(error)))?
+                    .into_parts();
+                let (_, parameters, inherited, imported) = initialization
+                    .into_lower_parts()
+                    .map_err(|error| TypeConstraintFailure::client_invariant(invariant(error)))?;
+                if inherited.is_some() || imported.is_some() {
+                    return Err(TypeConstraintFailure::client_invariant(invariant(
+                        CallConstraintInvariant::MalformedSchemaInventory,
+                    )));
+                }
+                Ok(Some((application, parameters, template)))
+            })
     }
 }
 

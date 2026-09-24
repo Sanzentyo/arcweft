@@ -1924,6 +1924,22 @@ pub struct CheckedTypedExpressionResult {
 }
 
 impl CheckedTypedExpressionResult {
+    pub(crate) fn with_function_specialization(
+        mut self,
+        owner: ExprId,
+        specialization: Arc<crate::callable::CheckedFunctionSpecialization>,
+    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
+        if specialization.owner() != owner {
+            return Err(crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
+        if self.specialization.is_some() || self.source_type() != specialization.source_type() {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        }
+        self.ty = specialization.specialized_type().clone();
+        self.specialization = Some(specialization);
+        self.type_selection = CheckedTypeSelection::Expected;
+        Ok(self)
+    }
     pub const fn new(ty: TypeKind, type_selection: CheckedTypeSelection) -> Self {
         Self {
             ty,
@@ -2212,12 +2228,21 @@ impl CheckedExpression {
         effects: EffectSet,
         resolution: CheckedExpressionResolution,
     ) -> Self {
+        Self::typed_value(
+            CheckedTypedExpressionResult::new(ty, type_selection),
+            effects,
+            resolution,
+        )
+    }
+
+    pub(crate) fn typed_value(
+        result: CheckedTypedExpressionResult,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Self {
         Self {
             data: Box::new(CheckedExpressionData {
-                result: CheckedExpressionResult::Value(CheckedTypedExpressionResult::new(
-                    ty,
-                    type_selection,
-                )),
+                result: CheckedExpressionResult::Value(result),
                 effects,
                 resolution,
                 execution: Some(CheckedExpressionExecutionPlan::structural(
@@ -2277,6 +2302,29 @@ impl CheckedExpression {
         }
     }
 
+    /// Final call sealing can refine an unspecialized source. A specialized
+    /// value must keep the exact source type proved by its component.
+    pub(crate) fn with_sealed_value(
+        mut self,
+        source: TypeKind,
+        effects: EffectSet,
+        resolution: CheckedExpressionResolution,
+    ) -> Result<Self, crate::callable::CallConstraintInvariant> {
+        let CheckedExpressionResult::Value(value) = &mut self.data.result else {
+            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        };
+        if value.specialization.is_some() {
+            if value.source_type() != &source {
+                return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+            }
+        } else {
+            value.ty = source;
+        }
+        self.data.effects = effects;
+        self.data.resolution = resolution;
+        Ok(self)
+    }
+
     pub(crate) fn with_function_specialization(
         mut self,
         owner: ExprId,
@@ -2285,15 +2333,9 @@ impl CheckedExpression {
         let CheckedExpressionResult::Value(value) = &mut self.data.result else {
             return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
         };
-        if specialization.owner() != owner {
-            return Err(crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch);
-        }
-        if value.specialization.is_some() || value.source_type() != specialization.source_type() {
-            return Err(crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        }
-        value.ty = specialization.specialized_type().clone();
-        value.specialization = Some(specialization);
-        value.type_selection = CheckedTypeSelection::Expected;
+        *value = value
+            .clone()
+            .with_function_specialization(owner, specialization)?;
         Ok(self)
     }
 

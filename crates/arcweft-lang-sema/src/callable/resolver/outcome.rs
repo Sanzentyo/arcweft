@@ -868,8 +868,9 @@ impl PreparedResolvedCallable {
                             )
                         },
                     )
+                    .map_err(super::super::CallConstraintInvariant::from)
+                    .and_then(|value| schema.quantify_function_value(&value).map_err(Into::into))
                     .map(CallableProjection::Ready)
-                    .map_err(Into::into)
             }
             CallableTerminalEffectProjection::Pending(checked) => {
                 Ok(CallableProjection::Pending(CallableProjectionPending {

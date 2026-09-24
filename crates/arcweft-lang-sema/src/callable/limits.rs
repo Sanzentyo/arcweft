@@ -512,6 +512,33 @@ impl Drop for CandidateConstraintWorkSession<'_> {
     }
 }
 
+impl crate::types::TypeProjectionControl for CandidateConstraintWorkSession<'_> {
+    type Error = TypeConstraintError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.check_cancelled().map_err(TypeConstraintError::Abort)
+    }
+
+    fn visit_node(
+        &mut self,
+        _: crate::types::TypeProjectionNodeKind,
+        _: u64,
+    ) -> Result<(), Self::Error> {
+        self.charge_constraint(
+            &TypeConstraintWorkReport {
+                work: 1,
+                nodes: 1,
+                ..TypeConstraintWorkReport::ZERO
+            },
+            self.limits,
+        )
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.visit_node(crate::types::TypeProjectionNodeKind::Type, 1)
+    }
+}
+
 impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
     fn charge_constraint(
         &mut self,
@@ -520,6 +547,24 @@ impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
     ) -> Result<(), TypeConstraintError> {
         if self.cancellation.load(Ordering::Acquire) {
             return Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled));
+        }
+        // Projection during materialization borrows this same reservation.
+        // Its nodes and the driver's nodes share the component-wide bound.
+        let nodes = self
+            .reservation
+            .proposed
+            .type_constraint_report
+            .nodes
+            .checked_sub(self.reservation.previous.type_constraint_report.nodes)
+            .and_then(|nodes| nodes.checked_add(delta.nodes))
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        if nodes > self.limits.max_nodes {
+            return Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
+                actual: nodes,
+                limit: self.limits.max_nodes,
+            }));
         }
         let source_probes = self
             .source_probes

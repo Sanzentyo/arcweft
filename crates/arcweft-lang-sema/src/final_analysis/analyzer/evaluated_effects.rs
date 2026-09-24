@@ -590,10 +590,12 @@ impl Analyzer<'_, '_, '_> {
             traversal,
         )?;
         traversal.leave(content.owner());
-        let (ty, type_selection, effects) = shell
+        let (value, effects) = shell
             .into_value_parts()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if ty != crate::types::TypeKind::DialogueLine(Box::new(line_result.clone())) {
+        if value.source_type()
+            != &crate::types::TypeKind::DialogueLine(Box::new(line_result.clone()))
+        {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let resolution = CheckedExpressionResolution::DialogueApplication {
@@ -602,7 +604,7 @@ impl Analyzer<'_, '_, '_> {
             rich_text: Box::new(rich_text),
             line_result,
         };
-        let expression = CheckedExpression::value(ty, type_selection, effects, resolution);
+        let expression = CheckedExpression::typed_value(value, effects, resolution);
         Ok(match nested_path {
             Some(evidence) => {
                 PreparedExpressionFact::Complete(expression.with_nested_path_evidence(evidence))
@@ -1055,11 +1057,8 @@ impl Analyzer<'_, '_, '_> {
             CheckedExpressionResolution::ContentApplication(Box::new(content_application));
         let expression = match result {
             super::super::prepared::PreparedExpressionResult::Value(value) => {
-                PreparedExpressionFact::Complete(CheckedExpression::value(
-                    value.ty().clone(),
-                    value.type_selection(),
-                    effects,
-                    resolution,
+                PreparedExpressionFact::Complete(CheckedExpression::typed_value(
+                    value, effects, resolution,
                 ))
             }
             super::super::prepared::PreparedExpressionResult::NonValue(
@@ -1398,7 +1397,7 @@ impl Analyzer<'_, '_, '_> {
                     .locals()
                     .get(&local)
                     .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
-                if checked.value_type() != Some(ty) {
+                if checked.source_value_type() != Some(ty) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 let origin = coordinates

@@ -6,10 +6,23 @@ use crate::types::constraints::{ConstraintDomain, ConstraintSourceReceipt};
 /// Affine authorization for a source scheme, bound to its live probe receipt.
 /// This is a value conversion, so it has no call site or argument mapping.
 pub(in crate::callable) struct PreparedFunctionSpecialization<D: ConstraintDomain> {
-    initialization: PreparedConstraintInitialization,
+    scope: PreparedFunctionSpecializationScope,
     receipt: ConstraintSourceReceipt<D>,
     application: D::Application,
+}
+
+pub(in crate::callable) struct PreparedFunctionSpecializationScope {
+    initialization: PreparedConstraintInitialization,
+    source: TypeKind,
     template: TypeKind,
+}
+
+impl PreparedFunctionSpecializationScope {
+    pub(in crate::callable) fn into_parts(
+        self,
+    ) -> (PreparedConstraintInitialization, TypeKind, TypeKind) {
+        (self.initialization, self.source, self.template)
+    }
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
@@ -23,6 +36,33 @@ impl<P, U> PreparedCallGraph<P, U> {
         limits: &crate::callable::CallableLimits,
     ) -> Result<PreparedFunctionSpecialization<D>, CallConstraintInvariant> {
         self.validate_constraint_authority(parent)?;
+        Ok(PreparedFunctionSpecialization {
+            scope: parent.prepare_function_specialization(source, enclosing, limits)?,
+            receipt,
+            application,
+        })
+    }
+
+    pub(in crate::callable) fn prepare_root_function_specialization(
+        &self,
+        source: &TypeKind,
+        enclosing: &EnclosingGenericParameterScope,
+        limits: &crate::callable::CallableLimits,
+    ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
+        PreparedConstraintAuthority {
+            issuer: Arc::clone(&self.issuer),
+        }
+        .prepare_function_specialization(source, enclosing, limits)
+    }
+}
+
+impl PreparedConstraintAuthority {
+    pub(in crate::callable) fn prepare_function_specialization(
+        &self,
+        source: &TypeKind,
+        enclosing: &EnclosingGenericParameterScope,
+        limits: &crate::callable::CallableLimits,
+    ) -> Result<PreparedFunctionSpecializationScope, CallConstraintInvariant> {
         let TypeKind::Function {
             binder,
             params,
@@ -52,10 +92,9 @@ impl<P, U> PreparedCallGraph<P, U> {
             return_type.as_ref().clone(),
             effects.clone(),
         );
-        Ok(PreparedFunctionSpecialization {
+        Ok(PreparedFunctionSpecializationScope {
             initialization,
-            receipt,
-            application,
+            source: source.clone(),
             template,
         })
     }
@@ -68,16 +107,16 @@ impl<D: ConstraintDomain> PreparedFunctionSpecialization<D> {
         receipt: &ConstraintSourceReceipt<D>,
     ) -> Result<(D::Application, TypeConstraintParameterScope, TypeKind), CallConstraintInvariant>
     {
-        if !Arc::ptr_eq(&self.initialization.issuer, &authority.issuer) {
+        if !Arc::ptr_eq(&self.scope.initialization.issuer, &authority.issuer) {
             return Err(CallConstraintInvariant::ForeignPreparedIssuer);
         }
         if !self.receipt.matches(receipt) {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
-        let (_, parameters, inherited, imported) = self.initialization.into_lower_parts()?;
+        let (_, parameters, inherited, imported) = self.scope.initialization.into_lower_parts()?;
         if inherited.is_some() || imported.is_some() {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
-        Ok((self.application, parameters, self.template))
+        Ok((self.application, parameters, self.scope.template))
     }
 }

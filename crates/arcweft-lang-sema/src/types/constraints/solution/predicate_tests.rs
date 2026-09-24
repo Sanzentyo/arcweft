@@ -355,6 +355,67 @@ fn returned_scheme_fuses_residual_and_local_predicates_in_templates_and_complete
     assert_eq!(projection.value().to_quantified_type().unwrap(), result);
 }
 
+#[test]
+fn function_scheme_use_declaration_closure_preserves_nested_binders_and_predicates() {
+    use crate::types::{
+        ArrayLength, GenericConstParameterId, GenericConstReference, GenericTypeReference,
+        ScopedTypeView,
+    };
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(87_539));
+    let ty = GenericTypeReference::Free(GenericTypeParameterId::new(owner.clone(), 0));
+    let length = GenericConstReference::Free(GenericConstParameterId::new(owner.clone(), 0));
+    let effect = GenericEffectReference::Free(GenericEffectParameterId::new(owner, 0));
+    let binder = GenericBinder::new(1, 1, 1);
+    let local = GenericScope::default().with_binder(binder);
+    let nested_parameter = TypeKind::Array {
+        item: Box::new(TypeKind::GenericParam(local.bound_type(0, 0).unwrap())),
+        len: ArrayLength::Generic(local.bound_const(0, 0).unwrap()),
+    };
+    let predicate = subset(local.bound_effect(0, 0).unwrap(), &["ui.write"]);
+    let source = TypeKind::function_with_contract(
+        GenericBinder::EMPTY,
+        subset(effect.clone(), &["fs.read"]),
+        [TypeKind::GenericParam(ty.clone())],
+        TypeKind::function_with_contract(
+            binder,
+            predicate.clone(),
+            [nested_parameter.clone()],
+            TypeKind::Array {
+                item: Box::new(TypeKind::GenericParam(ty.clone())),
+                len: ArrayLength::Generic(length.clone()),
+            },
+            EffectRow::open(EffectSet::new(), effect.clone()),
+        ),
+        EffectRow::closed(EffectSet::new()),
+    );
+    let closed = ScopedTypeView::at_root(&source)
+        .quantify_parameters(&[ty], &[length], &[effect])
+        .unwrap();
+    let nested = local.with_binder(binder);
+    let expected = TypeKind::function_with_contract(
+        binder,
+        subset(local.bound_effect(0, 0).unwrap(), &["fs.read"]),
+        [TypeKind::GenericParam(local.bound_type(0, 0).unwrap())],
+        TypeKind::function_with_contract(
+            binder,
+            predicate,
+            [nested_parameter],
+            TypeKind::Array {
+                item: Box::new(TypeKind::GenericParam(nested.bound_type(1, 0).unwrap())),
+                len: ArrayLength::Generic(nested.bound_const(1, 0).unwrap()),
+            },
+            EffectRow::open(EffectSet::new(), nested.bound_effect(1, 0).unwrap()),
+        ),
+        EffectRow::closed(EffectSet::new()),
+    );
+    assert_eq!(closed, expected);
+    assert!(closed.semantic_identity_digest().is_ok());
+    assert!(
+        source.semantic_identity_digest().is_ok(),
+        "the declaration source is unchanged"
+    );
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("predicate projection budget exhausted")]
 struct Stop;

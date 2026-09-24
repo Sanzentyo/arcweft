@@ -29,6 +29,34 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
 }
 
 impl CallableSignatureSchema {
+    /// A declaration's value owns its used generic slots as lexical binders.
+    /// Rigid references from an enclosing declaration remain free.
+    pub(crate) fn quantify_function_value(
+        &self,
+        value: &TypeKind,
+    ) -> Result<TypeKind, crate::types::TypeInstantiationError> {
+        let inventory = self.generic_inventory();
+        let types = inventory
+            .types()
+            .iter()
+            .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
+            .map(|entry| entry.parameter().clone())
+            .collect::<Vec<_>>();
+        let consts = inventory
+            .consts()
+            .iter()
+            .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
+            .map(|entry| entry.parameter().clone())
+            .collect::<Vec<_>>();
+        let effects = inventory
+            .effects()
+            .iter()
+            .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
+            .map(|entry| entry.parameter().clone())
+            .collect::<Vec<_>>();
+        crate::types::ScopedTypeView::at_root(value).quantify_parameters(&types, &consts, &effects)
+    }
+
     pub(crate) fn parameter_type(
         &self,
         coordinate: CallableParameterCoordinate,

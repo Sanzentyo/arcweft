@@ -7,8 +7,10 @@ mod constraints;
 #[path = "calls/semantics.rs"]
 mod semantics;
 
-pub(in crate::final_analysis::analyzer) use constraints::AnalyzerCallConstraintDomain;
 pub(crate) use constraints::CallAnalysisFailure;
+pub(in crate::final_analysis::analyzer) use constraints::{
+    AnalyzerCallConstraintDomain, AnalyzerCallProjection,
+};
 pub(crate) use constraints::{
     AnalyzerCallConstraintSource, AnalyzerDetachedCandidateRecord,
     AnalyzerDetachedConsideredCandidate, AnalyzerDetachedUnselectedCall,
@@ -116,7 +118,7 @@ fn terminal_call_constraint_failure(
     AnalyzerExpressionError::Call { owner, failure }
 }
 
-fn terminal_lower_constraint_failure(
+pub(super) fn terminal_lower_constraint_failure(
     owner: ExprId,
     failure: crate::types::constraints::TypeConstraintFailure<
         constraints::AnalyzerCallConstraintDomain,
@@ -389,6 +391,7 @@ pub(super) struct PreparedSelectedNestedCall {
     recipe: PreparedCorrelatedCallRecipe,
     rank: AcceptedCandidateRank,
     selection: CheckedTypeSelection,
+    specialization: Option<Arc<crate::callable::CheckedFunctionSpecialization>>,
 }
 
 impl PreparedSelectedNestedCall {
@@ -396,6 +399,7 @@ impl PreparedSelectedNestedCall {
         self.recipe.semantic_replay_eq(&other.recipe)
             && self.rank == other.rank
             && self.selection == other.selection
+            && self.specialization == other.specialization
     }
 }
 
@@ -1273,6 +1277,11 @@ impl Analyzer<'_, '_, '_> {
             } else {
                 candidate.call_group()
             };
+            // Declaration body prerequisites are independent of candidate
+            // argument solving. Retain them with the callee transaction;
+            // candidate probes deliberately discard their source facts.
+            self.prepare_pending_result_projection(source.site, candidate)
+                .map_err(AnalyzerExpressionError::fatal)?;
             let prepared = self
                 .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
                     |this, authority, _transaction_authority| {
@@ -3089,6 +3098,12 @@ impl Analyzer<'_, '_, '_> {
             .map_err(CandidateFactOperationFailure::Expression)?;
             (replay_transaction, replay_outer_projection)
         };
+        let specialization = selected_transaction
+            .specialization_result()
+            .map(|result| {
+                self.seal_function_result_use(source.owner, &result, &mut resolution.work)
+            })
+            .transpose()?;
         let result = selected_transaction.result().map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
                 owner: source.owner,
@@ -3198,16 +3213,27 @@ impl Analyzer<'_, '_, '_> {
         // retain their declared rows or project-body edges until the existing
         // callable closure and final execution-effect publication complete them.
         match result {
-            CallableResultSchema::Value(result) => Ok(CheckedExpression::value(
-                result,
-                if source.expectation.complete_type().is_some() {
-                    CheckedTypeSelection::Expected
-                } else {
-                    CheckedTypeSelection::Inferred
-                },
-                direct_effects,
-                expression_resolution,
-            )),
+            CallableResultSchema::Value(result) => {
+                let checked = CheckedExpression::value(
+                    result,
+                    if source.expectation.complete_type().is_some() {
+                        CheckedTypeSelection::Expected
+                    } else {
+                        CheckedTypeSelection::Inferred
+                    },
+                    direct_effects,
+                    expression_resolution,
+                );
+                match specialization {
+                    Some(witness) => checked
+                        .with_function_specialization(source.owner, witness)
+                        .map_err(|error| {
+                            super::function_value_use::specialization_invariant(source.owner, error)
+                                .into()
+                        }),
+                    None => Ok(checked),
+                }
+            }
             CallableResultSchema::ContentEmission(callable) => {
                 if source.expectation.complete_type().is_some() {
                     return Err(CandidateFactOperationFailure::Expression(
@@ -3367,6 +3393,7 @@ impl Analyzer<'_, '_, '_> {
         let PreparedSelectedNestedCall {
             mut recipe,
             selection,
+            specialization,
             ..
         } = selected;
         let owner = recipe.owner;
@@ -3624,6 +3651,19 @@ impl Analyzer<'_, '_, '_> {
         };
         let checked =
             CheckedExpression::value(value, selection, direct_effects, expression_resolution);
+        let checked = match specialization {
+            Some(specialization) => checked
+                .with_function_specialization(owner, specialization)
+                .map_err(|error| {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                        owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error,
+                        )),
+                    })
+                })?,
+            None => checked,
+        };
         let checked = self
             .attach_nested_path_evidence(owner, checked.into())
             .map_err(CandidateFactOperationFailure::Expression)?;
@@ -4552,6 +4592,92 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    pub(super) fn enclosing_constraint_scope(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
+    ) -> Result<EnclosingGenericParameterScope, AnalyzerExpressionError> {
+        let enclosing_declaration = self
+            .enclosing_callable(module, owner)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let enclosing_inventory = enclosing_declaration
+            .as_ref()
+            .map(|declaration| {
+                self.catalogs
+                    .world
+                    .environment()
+                    .callable_catalog()
+                    .project_record(declaration)
+                    .map(|record| record.schema().generic_inventory())
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CheckedCallableCatalog,
+                        )
+                    })
+            })
+            .transpose()?;
+        let enclosing_types = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.types().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericTypeReference::Free)
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                        )
+                    })
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericTypeReference>, _>>()?;
+        let enclosing_consts = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.consts().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericConstReference::Free)
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                        )
+                    })
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericConstReference>, _>>()?;
+        let enclosing_effects = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.effects().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericEffectReference::Free)
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                        )
+                    })
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericEffectReference>, _>>()?;
+        EnclosingGenericParameterScope::sealed_with_imported_scope(
+            enclosing_types,
+            enclosing_consts,
+            enclosing_effects,
+            imported,
+        )
+        .map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
+                owner,
+            })
+        })
+    }
+
     fn prepare_child_candidate(
         &mut self,
         request: PreparedCandidateRequest<'_, '_>,
@@ -4808,87 +4934,14 @@ impl Analyzer<'_, '_, '_> {
                 )
             }
         };
-        let enclosing_declaration = self
-            .enclosing_callable(module, owner)
-            .map_err(AnalyzerExpressionError::fatal)?;
-        let enclosing_inventory = enclosing_declaration
-            .as_ref()
-            .map(|declaration| {
-                self.catalogs
-                    .world
-                    .environment()
-                    .callable_catalog()
-                    .project_record(declaration)
-                    .map(|record| record.schema().generic_inventory())
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CheckedCallableCatalog,
-                        )
-                    })
-            })
-            .transpose()?;
-        let enclosing_types = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.types().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericTypeReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericTypeReference>, _>>()?;
-        let enclosing_consts = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.consts().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericConstReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericConstReference>, _>>()?;
-        let enclosing_effects = enclosing_inventory
-            .into_iter()
-            .flat_map(|inventory| inventory.effects().iter())
-            .map(|entry| {
-                entry
-                    .parameter()
-                    .free_parameter()
-                    .cloned()
-                    .map(crate::types::GenericEffectReference::Free)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })
-            })
-            .collect::<Result<BTreeSet<crate::types::GenericEffectReference>, _>>()?;
-        let enclosing = EnclosingGenericParameterScope::sealed_with_imported_scope(
-            enclosing_types,
-            enclosing_consts,
-            enclosing_effects,
+        let enclosing = self.enclosing_constraint_scope(
+            module,
+            owner,
             parent_source
                 .is_none()
                 .then_some(expected_result_scope)
                 .flatten(),
-        )
-        .map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner,
-            })
-        })?;
+        )?;
         let constraint_set = validate_and_prepare_call_constraints(
             self.facts
                 .prepared_calls()
