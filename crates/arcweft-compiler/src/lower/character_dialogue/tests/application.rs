@@ -86,13 +86,16 @@ entry cli @entry.main { goto @flow.main }
     };
     let [
         FlowOp::Let {
-            expr: target_source, ..
+            expr: target_source,
+            ..
         },
         FlowOp::Let {
             expr: content_source,
             ..
         },
-        FlowOp::Dialogue { target, content, .. },
+        FlowOp::Dialogue {
+            target, content, ..
+        },
     ] = flow.body().ops()
     else {
         panic!("target, content slot, and dialogue retain source order: {flow:?}")
