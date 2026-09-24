@@ -18,19 +18,31 @@ use super::CharacterDialogueRuntimeSchema;
 /// Source identities for one authored opaque role and its producer-owned body.
 /// Both refer to the selected program; neither is an independent type schema.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CharacterDialogueRuntimeRoleType {
-    value: RuntimeSemanticTypeId,
-    payload: RuntimeSemanticTypeId,
+pub struct CharacterDialogueRuntimeRoleType<T = RuntimeSemanticTypeId> {
+    value: T,
+    payload: T,
 }
 
-impl CharacterDialogueRuntimeRoleType {
-    pub const fn new(value: RuntimeSemanticTypeId, payload: RuntimeSemanticTypeId) -> Self {
+impl<T> CharacterDialogueRuntimeRoleType<T> {
+    pub const fn new(value: T, payload: T) -> Self {
         Self { value, payload }
     }
-    pub const fn value(self) -> RuntimeSemanticTypeId {
+
+    pub const fn value_ref(&self) -> &T {
+        &self.value
+    }
+
+    pub const fn payload_ref(&self) -> &T {
+        &self.payload
+    }
+}
+
+impl<T: Copy> CharacterDialogueRuntimeRoleType<T> {
+    pub const fn value(self) -> T {
         self.value
     }
-    pub const fn payload(self) -> RuntimeSemanticTypeId {
+
+    pub const fn payload(self) -> T {
         self.payload
     }
 }
@@ -38,31 +50,50 @@ impl CharacterDialogueRuntimeRoleType {
 /// Complete bindings in `CharacterDialogueRuntimeRole::AUTHORED_BASE` order.
 /// Style has the separately projected ordered choice identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CharacterDialogueRuntimeRoleTypes {
-    authored: [CharacterDialogueRuntimeRoleType; 6],
-    style: RuntimeSemanticTypeId,
+pub struct CharacterDialogueRuntimeRoleTypes<T = RuntimeSemanticTypeId> {
+    authored: [CharacterDialogueRuntimeRoleType<T>; 6],
+    style: T,
 }
 
-impl CharacterDialogueRuntimeRoleTypes {
-    pub const fn new(
-        authored: [CharacterDialogueRuntimeRoleType; 6],
-        style: RuntimeSemanticTypeId,
-    ) -> Self {
+impl<T> CharacterDialogueRuntimeRoleTypes<T> {
+    pub const fn new(authored: [CharacterDialogueRuntimeRoleType<T>; 6], style: T) -> Self {
         Self { authored, style }
     }
 
-    pub fn authored(&self, role: Role) -> Option<CharacterDialogueRuntimeRoleType> {
+    #[must_use]
+    pub const fn authored_refs(&self) -> &[CharacterDialogueRuntimeRoleType<T>; 6] {
+        &self.authored
+    }
+
+    #[must_use]
+    pub const fn style_ref(&self) -> &T {
+        &self.style
+    }
+
+    pub fn visit_type_refs<'a>(&'a self, visit: &mut impl FnMut(&'a T)) {
+        for binding in &self.authored {
+            visit(binding.value_ref());
+            visit(binding.payload_ref());
+        }
+        visit(&self.style);
+    }
+}
+
+impl<T: Copy> CharacterDialogueRuntimeRoleTypes<T> {
+    pub fn authored(&self, role: Role) -> Option<CharacterDialogueRuntimeRoleType<T>> {
         Role::AUTHORED_BASE
             .iter()
             .position(|candidate| *candidate == role)
             .map(|index| self.authored[index])
     }
 
-    pub fn value_type(&self, role: Role) -> RuntimeSemanticTypeId {
+    pub fn value_type(&self, role: Role) -> T {
         self.authored(role)
-            .map_or(self.style, CharacterDialogueRuntimeRoleType::value)
+            .map_or(self.style, |binding| binding.value())
     }
+}
 
+impl CharacterDialogueRuntimeRoleTypes<RuntimeSemanticTypeId> {
     pub(super) fn validate(
         &self,
         program: RuntimeProgramTypes<'_>,

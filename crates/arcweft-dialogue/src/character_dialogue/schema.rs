@@ -22,14 +22,14 @@ use arcweft_core::{
     character_nominal::{RuntimeCharacterLookSourceAuthority, RuntimeCharacterLookSourceError},
     entry::{RuntimeSchemaLimits, RuntimeValueDigest},
     pattern::{
-        RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeOpaqueTypeProducerId,
-        RuntimeSemanticTypeId, RuntimeVariantIdentity,
+        RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeOpaqueTypeOwner,
+        RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId, RuntimeVariantIdentity,
     },
     program_types::RuntimeProgramTypes,
     task::RuntimeProgramOwner,
     value::{
-        RuntimeEntityReference, RuntimeOpaqueValue, RuntimeSeq, RuntimeValue,
-        runtime_sequence_dense_bytes,
+        RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+        RuntimeOpaqueValueClass, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::DeclarationIdentityFamily;
@@ -45,24 +45,27 @@ use std::{
     sync::Arc,
 };
 
+use super::generation::CharacterDialogueTypeReference;
+
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
 const CUSTOM_FIELD_CATALOG_DIGEST_DOMAIN: &[u8] =
     b"arcweft.character-dialogue.custom-field-catalog.v1\0";
 
 /// A field's source type reference and policy in one accepted bundle generation.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CharacterDialogueRuntimeCustomFieldDescriptor {
+pub struct CharacterDialogueRuntimeCustomFieldDescriptor<T = RuntimeSemanticTypeId> {
     id: CharacterDialogueCustomFieldId,
-    semantic_type: RuntimeSemanticTypeId,
+    semantic_type: T,
     clearable: bool,
     accepted_views: BTreeSet<ViewId>,
 }
 
 /// Source catalog digest and its runtime field references. This is not a type table.
 #[derive(Clone, Debug, PartialEq)]
-pub struct CharacterDialogueRuntimeCustomFieldCatalog {
+pub struct CharacterDialogueRuntimeCustomFieldCatalog<T = RuntimeSemanticTypeId> {
     digest: RuntimeValueDigest,
-    fields: BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor>,
+    fields:
+        BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor<T>>,
 }
 
 /// Effective default configuration and its accepted generation digest for one
@@ -166,10 +169,10 @@ pub struct CharacterDialogueValue {
     dialogue: CharacterDialogue,
 }
 
-impl CharacterDialogueRuntimeCustomFieldDescriptor {
+impl<T> CharacterDialogueRuntimeCustomFieldDescriptor<T> {
     pub fn new(
         id: CharacterDialogueCustomFieldId,
-        semantic_type: RuntimeSemanticTypeId,
+        semantic_type: T,
         clearable: bool,
         accepted_views: BTreeSet<ViewId>,
     ) -> Self {
@@ -183,8 +186,8 @@ impl CharacterDialogueRuntimeCustomFieldDescriptor {
     pub const fn id(&self) -> &CharacterDialogueCustomFieldId {
         &self.id
     }
-    pub const fn semantic_type(&self) -> RuntimeSemanticTypeId {
-        self.semantic_type
+    pub const fn semantic_type_ref(&self) -> &T {
+        &self.semantic_type
     }
     pub const fn clearable(&self) -> bool {
         self.clearable
@@ -194,9 +197,15 @@ impl CharacterDialogueRuntimeCustomFieldDescriptor {
     }
 }
 
-impl CharacterDialogueRuntimeCustomFieldCatalog {
+impl<T: Copy> CharacterDialogueRuntimeCustomFieldDescriptor<T> {
+    pub const fn semantic_type(&self) -> T {
+        self.semantic_type
+    }
+}
+
+impl<T: CharacterDialogueTypeReference> CharacterDialogueRuntimeCustomFieldCatalog<T> {
     pub fn try_new(
-        descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor>,
+        descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor<T>>,
     ) -> Result<Self, CharacterDialogueValueError> {
         let mut fields = BTreeMap::new();
         for descriptor in descriptors {
@@ -221,7 +230,7 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
     /// the digest advertised by an enclosing generation or bundle.
     pub fn try_new_with_expected_digest(
         expected: RuntimeValueDigest,
-        descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor>,
+        descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor<T>>,
     ) -> Result<Self, CharacterDialogueValueError> {
         let catalog = Self::try_new(descriptors)?;
         if catalog.digest != expected {
@@ -235,19 +244,25 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
     }
     pub const fn fields(
         &self,
-    ) -> &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor>
+    ) -> &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor<T>>
     {
         &self.fields
     }
     pub fn get(
         &self,
         id: &CharacterDialogueCustomFieldId,
-    ) -> Option<&CharacterDialogueRuntimeCustomFieldDescriptor> {
+    ) -> Option<&CharacterDialogueRuntimeCustomFieldDescriptor<T>> {
         self.fields.get(id)
     }
 
+    pub fn visit_type_refs<'a>(&'a self, visit: &mut impl FnMut(&'a T)) {
+        self.fields
+            .values()
+            .for_each(|descriptor| visit(descriptor.semantic_type_ref()));
+    }
+
     fn validate_descriptor_limits(
-        descriptor: &CharacterDialogueRuntimeCustomFieldDescriptor,
+        descriptor: &CharacterDialogueRuntimeCustomFieldDescriptor<T>,
     ) -> Result<(), CharacterDialogueValueError> {
         let limits = PRODUCTION_CHARACTER_DIALOGUE_LIMITS;
         if descriptor.id.as_str().len() > usize::from(limits.max_custom_field_id_bytes) {
@@ -278,14 +293,17 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
     fn digest_fields(
         fields: &BTreeMap<
             CharacterDialogueCustomFieldId,
-            CharacterDialogueRuntimeCustomFieldDescriptor,
+            CharacterDialogueRuntimeCustomFieldDescriptor<T>,
         >,
     ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
         let mut encoder = CustomFieldCatalogDigestEncoder::new();
         encoder.write_len(fields.len(), "custom_fields")?;
         for descriptor in fields.values() {
             encoder.write_str(descriptor.id.as_str(), "custom_field_id_bytes")?;
-            encoder.write_bytes(descriptor.semantic_type.as_bytes(), "custom_catalog_bytes")?;
+            encoder.write_bytes(
+                descriptor.semantic_type.semantic_identity().as_bytes(),
+                "custom_catalog_bytes",
+            )?;
             encoder.write_u8(u8::from(descriptor.clearable), "custom_catalog_bytes")?;
             encoder.write_len(
                 descriptor.accepted_views.len(),
@@ -297,6 +315,38 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
         }
         Ok(encoder.finish())
     }
+}
+
+/// Computes the same typed default digest used by runtime admission, without
+/// requiring an executable program lease. A caller's expected digest is
+/// verified against this result and never supplies it.
+pub(super) fn effective_default_config_digest<T: CharacterDialogueTypeReference>(
+    config: &CharacterDialogueConfig,
+    roles: &CharacterDialogueRuntimeRoleTypes<T>,
+) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+    config.validate()?;
+    let rich_text_index = Role::AUTHORED_BASE
+        .iter()
+        .position(|role| *role == Role::RichText)
+        .expect("RichText has a fixed authored role slot");
+    let rich_text_identity = roles.authored_refs()[rich_text_index]
+        .value_ref()
+        .semantic_identity();
+    let rich_text_owner = RuntimeOpaqueTypeOwner::exact_with(
+        CharacterDialogueRuntimeSchema::opaque_type_producer(),
+        rich_text_identity,
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
+    );
+    let policies = DialoguePolicyTypes::try_new(
+        rich_text_owner,
+        PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
+    )?;
+    RuntimeValue::Tuple(CharacterDialogueRuntimeSchema::encode_config_fields(
+        config, &policies,
+    ))
+    .try_digest_with_limits(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits())
+    .map_err(CharacterDialogueValueError::from)
 }
 
 struct CustomFieldCatalogDigestEncoder {
@@ -538,7 +588,7 @@ impl CharacterDialogueRuntimeSchema {
         &self,
         config: &CharacterDialogueConfig,
     ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
-        RuntimeValue::Tuple(self.encode_config_fields(config))
+        RuntimeValue::Tuple(Self::encode_config_fields(config, &self.policies))
             .try_digest_with_limits(Self::limits())
             .map_err(CharacterDialogueValueError::from)
     }
@@ -1185,13 +1235,21 @@ impl CharacterDialogueRuntimeSchema {
             Self::digest_value(contract.custom_schema()),
             Self::digest_value(contract.view_contracts()),
         ];
-        fields.extend(self.encode_config_fields(config));
+        fields.extend(Self::encode_config_fields(config, &self.policies));
         RuntimeValue::Tuple(fields)
     }
 
-    fn encode_config_fields(&self, config: &CharacterDialogueConfig) -> Vec<RuntimeValue> {
+    fn encode_config_fields(
+        config: &CharacterDialogueConfig,
+        policies: &DialoguePolicyTypes,
+    ) -> Vec<RuntimeValue> {
         vec![
-            Self::encode_option(config.voice.as_ref().map(|voice| self.encode_voice(voice))),
+            Self::encode_option(
+                config
+                    .voice
+                    .as_ref()
+                    .map(|voice| Self::encode_voice(voice, policies)),
+            ),
             Self::encode_option(
                 config
                     .look
@@ -1241,7 +1299,7 @@ impl CharacterDialogueRuntimeSchema {
             )),
             config.style.typed().value().clone(),
             config.rich_text.typed().value().clone(),
-            self.encode_inline_failure(&config.inline_failure),
+            Self::encode_inline_failure(&config.inline_failure, policies),
             Self::encode_custom(&config.custom),
         ]
     }
@@ -1353,12 +1411,20 @@ impl CharacterDialogueRuntimeSchema {
         CharacterDialogue::try_new(character, contract, config)
     }
 
-    fn encode_voice(&self, voice: &CharacterDialogueVoice) -> RuntimeValue {
+    fn encode_voice(
+        voice: &CharacterDialogueVoice,
+        policies: &DialoguePolicyTypes,
+    ) -> RuntimeValue {
         match voice {
-            CharacterDialogueVoice::Auto => {
-                self.dialogue_variant(DialogueRuntimeVariantOwner::Voice, 0, "Auto", None)
-            }
-            CharacterDialogueVoice::Id(id) => self.dialogue_variant(
+            CharacterDialogueVoice::Auto => Self::dialogue_variant(
+                policies,
+                DialogueRuntimeVariantOwner::Voice,
+                0,
+                "Auto",
+                None,
+            ),
+            CharacterDialogueVoice::Id(id) => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::Voice,
                 1,
                 "Id",
@@ -1466,25 +1532,31 @@ impl CharacterDialogueRuntimeSchema {
         }
         Ok(custom)
     }
-    fn encode_inline_failure(&self, policy: &InlineFailurePolicy) -> RuntimeValue {
+    fn encode_inline_failure(
+        policy: &InlineFailurePolicy,
+        policies: &DialoguePolicyTypes,
+    ) -> RuntimeValue {
         match policy {
-            InlineFailurePolicy::FailLine => self.dialogue_variant(
+            InlineFailurePolicy::FailLine => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFailure,
                 0,
                 "FailLine",
                 None,
             ),
-            InlineFailurePolicy::Discard => self.dialogue_variant(
+            InlineFailurePolicy::Discard => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFailure,
                 1,
                 "Discard",
                 None,
             ),
-            InlineFailurePolicy::Fallback { fallback } => self.dialogue_variant(
+            InlineFailurePolicy::Fallback { fallback } => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFailure,
                 2,
                 "Fallback",
-                Some(self.encode_fallback(fallback)),
+                Some(Self::encode_fallback(fallback, policies)),
             ),
         }
     }
@@ -1517,30 +1589,34 @@ impl CharacterDialogueRuntimeSchema {
         }
     }
 
-    fn encode_fallback(&self, fallback: &InlineFallback) -> RuntimeValue {
+    fn encode_fallback(fallback: &InlineFallback, policies: &DialoguePolicyTypes) -> RuntimeValue {
         match fallback {
-            InlineFallback::Text { text, style } => self.dialogue_variant(
+            InlineFallback::Text { text, style } => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFallback,
                 0,
                 "Text",
                 Some(RuntimeValue::Tuple(vec![
                     RuntimeValue::String(text.clone()),
-                    self.encode_fallback_style(style),
+                    Self::encode_fallback_style(style, policies),
                 ])),
             ),
-            InlineFallback::ExprSource { style } => self.dialogue_variant(
+            InlineFallback::ExprSource { style } => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFallback,
                 1,
                 "ExprSource",
-                Some(self.encode_fallback_style(style)),
+                Some(Self::encode_fallback_style(style, policies)),
             ),
-            InlineFallback::CallSource { style } => self.dialogue_variant(
+            InlineFallback::CallSource { style } => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFallback,
                 2,
                 "CallSource",
-                Some(self.encode_fallback_style(style)),
+                Some(Self::encode_fallback_style(style, policies)),
             ),
-            InlineFallback::ValuePlain => self.dialogue_variant(
+            InlineFallback::ValuePlain => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::InlineFallback,
                 3,
                 "ValuePlain",
@@ -1591,18 +1667,27 @@ impl CharacterDialogueRuntimeSchema {
         }
     }
 
-    fn encode_fallback_style(&self, style: &FallbackStylePolicy) -> RuntimeValue {
+    fn encode_fallback_style(
+        style: &FallbackStylePolicy,
+        policies: &DialoguePolicyTypes,
+    ) -> RuntimeValue {
         match style {
-            FallbackStylePolicy::Plain => {
-                self.dialogue_variant(DialogueRuntimeVariantOwner::FallbackStyle, 0, "Plain", None)
-            }
-            FallbackStylePolicy::InheritSurrounding => self.dialogue_variant(
+            FallbackStylePolicy::Plain => Self::dialogue_variant(
+                policies,
+                DialogueRuntimeVariantOwner::FallbackStyle,
+                0,
+                "Plain",
+                None,
+            ),
+            FallbackStylePolicy::InheritSurrounding => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::FallbackStyle,
                 1,
                 "InheritSurrounding",
                 None,
             ),
-            FallbackStylePolicy::Apply { styles } => self.dialogue_variant(
+            FallbackStylePolicy::Apply { styles } => Self::dialogue_variant(
+                policies,
                 DialogueRuntimeVariantOwner::FallbackStyle,
                 2,
                 "Apply",
@@ -1659,14 +1744,14 @@ impl CharacterDialogueRuntimeSchema {
     }
 
     fn dialogue_variant(
-        &self,
+        policies: &DialoguePolicyTypes,
         owner: DialogueRuntimeVariantOwner,
         ordinal: u32,
         name: &str,
         payload: Option<RuntimeValue>,
     ) -> RuntimeValue {
         RuntimeValue::Variant {
-            owner: self.policies.identity(owner).clone(),
+            owner: policies.identity(owner).clone(),
             ordinal,
             name: name.to_owned(),
             payload: payload.map(Box::new),

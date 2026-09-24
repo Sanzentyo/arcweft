@@ -493,6 +493,7 @@ fn structured_clear_rejects_non_option_some_leaf_atomically() {
     assert_eq!(record.fields(), &[non_option_some]);
 }
 
+mod generation;
 mod runtime_schema;
 
 fn nested_nominal(depth: usize) -> CharacterDialogueTypedValue {

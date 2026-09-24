@@ -1,5 +1,6 @@
 //! First-class immutable Character dialogue runtime value.
 
+mod generation;
 mod identity;
 mod limits;
 mod patch;
@@ -23,6 +24,12 @@ use thiserror::Error;
 
 use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
+pub use generation::{
+    CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationDeclaration,
+    CharacterDialogueGenerationDeclarationError, CharacterDialoguePresentationContract,
+    CharacterDialogueTypeReference, CharacterDialogueTypeReferenceMapError,
+    CharacterDialogueVisualType,
+};
 pub use identity::{
     CharacterDialogueContractIdentity, CharacterDialogueVisualManifestEvidence,
     CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
