@@ -31,7 +31,10 @@ use arcweft_core::plan::{
     FlowEvent, RuntimeDialogueContentApplicationKey, RuntimeDialogueContentSlot,
     RuntimeDialogueValueBinding,
 };
-use arcweft_core::value::RuntimeDialogueContentValue;
+use arcweft_core::value::{
+    RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeOpaqueValue,
+};
+use arcweft_dialogue::CharacterDialogueType;
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
 use arcweft_id::LocaleTag;
 use arcweft_layout::ScalePolicy;
@@ -104,6 +107,7 @@ pub trait DialogueRuntimeContextProvider {
     fn context_for(
         &self,
         content: &DialogueContentSpec,
+        target: &RuntimeOpaqueValue,
         values: &[RuntimeDialogueValueBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError>;
 }
@@ -131,6 +135,7 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
     fn context_for(
         &self,
         content: &DialogueContentSpec,
+        target: &RuntimeOpaqueValue,
         values: &[RuntimeDialogueValueBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError> {
         let generation = self.catalog.generation();
@@ -153,6 +158,15 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
                 });
             }
         };
+        if target.producer() != &RuntimeCharacterDialogueProducerId::get()
+            || target.semantic_identity()
+                != CharacterDialogueType::exact(character.clone()).runtime_semantic_identity()
+        {
+            return Err(DialogueRuntimeContextError::Rejected {
+                line: content.line().clone(),
+                reason: "dialogue target does not match the checked Character".to_owned(),
+            });
+        }
         let resolved = self
             .catalog
             .data()
@@ -305,6 +319,7 @@ pub fn resolve_display_frames(
                 activation,
                 line,
                 template,
+                target,
                 values,
             } = event
                 && let Some(spec) = catalog.find(&RuntimeDialogueContentApplicationKey::new(
@@ -338,7 +353,7 @@ pub fn resolve_display_frames(
                         return resolution;
                     }
                 };
-                let context = match provider.context_for(spec, values) {
+                let context = match provider.context_for(spec, target, values) {
                     Ok(context) => context,
                     Err(error) => {
                         resolution.diagnostics.push(error.to_string());

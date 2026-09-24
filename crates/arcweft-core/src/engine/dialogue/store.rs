@@ -54,6 +54,7 @@ impl DialogueIngressError {
 pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) line: crate::plan::RuntimeLineId,
     pub(in crate::engine) content: crate::runtime_id::RuntimeDialogueContentPlanId,
+    pub(in crate::engine) target: crate::value::RuntimeOpaqueValue,
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(in crate::engine) resume: Option<super::super::FlowCursor>,
     pub(in crate::engine) captures: Box<[RuntimeLocalBinding]>,
@@ -498,6 +499,13 @@ mod tests {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line identity"),
             content: RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            target: RuntimeOpaqueValue::new_exact(
+                &RuntimeOpaqueTypeOwner::exact(
+                    crate::value::RuntimeCharacterDialogueProducerId::get(),
+                    RuntimeSemanticTypeId::from_bytes([0x47; 32]),
+                ),
+                crate::value::RuntimeValue::Unit,
+            ),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("task group"),
             resume: None,
             captures: Box::default(),

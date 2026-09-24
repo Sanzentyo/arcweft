@@ -2135,6 +2135,7 @@ pub enum AwbcTerminator {
         args: Vec<AwbcRegisterId>,
     },
     Dialogue {
+        target: AwbcRegisterId,
         content: AwbcContentUnitId,
         values: Vec<AwbcDialogueValueBinding>,
         effects: Vec<AwbcDialogueContentEffectBinding>,

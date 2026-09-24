@@ -2641,7 +2641,11 @@ impl RuntimePlanBuilder {
             } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                self.require_expression_assignable("flow let-else pattern", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable(
+                    "flow let-else pattern",
+                    pattern.ty(),
+                    expr.ty(),
+                )?;
                 FlowOp::LetElse {
                     pattern,
                     expr,
@@ -2664,7 +2668,24 @@ impl RuntimePlanBuilder {
                 require_same("flow assignment value", field_ty, value.ty())?;
                 FlowOp::AssignNominalField { base, field, value }
             }
-            RuntimeFlowOpSeed::Dialogue { content, result } => {
+            RuntimeFlowOpSeed::Dialogue {
+                target,
+                content,
+                result,
+            } => {
+                let target = self.lower_expression(target)?;
+                let producer = crate::value::RuntimeCharacterDialogueProducerId::get();
+                self.require_projection("dialogue target", target.ty(), |projection| {
+                    matches!(
+                        projection,
+                        RuntimePlanTypeProjection::Opaque {
+                            producer: actual,
+                            value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                            persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                            ..
+                        } if actual == &producer
+                    )
+                })?;
                 let content = content
                     .resolve(&self.issuer)
                     .ok_or(RuntimePlanBuildError::ForeignDialogueContentSeed)?;
@@ -2676,6 +2697,7 @@ impl RuntimePlanBuilder {
                 let pattern = self.lower_pattern_seed(result_pattern)?;
                 require_same("dialogue result target pattern", ty, pattern.ty())?;
                 FlowOp::Dialogue {
+                    target,
                     content,
                     result: RuntimeDialogueResultTarget::new(ty, pattern),
                 }
@@ -2902,7 +2924,11 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                self.require_expression_assignable("scope result binding", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable(
+                    "scope result binding",
+                    pattern.ty(),
+                    expr.ty(),
+                )?;
                 FlowOp::ExitScopeBind { pattern, expr }
             }
             RuntimeFlowOpSeed::Break(value) => FlowOp::Break(
@@ -4343,7 +4369,12 @@ impl RuntimePlanBuilder {
                         operation: "Bind",
                     });
                 }
-                FlowOp::Dialogue { content, result } => {
+                FlowOp::Dialogue {
+                    target,
+                    content,
+                    result,
+                } => {
+                    self.validate_expression_locals(target, scope, used)?;
                     if self.dialogue_content.get(*content).is_none() {
                         return Err(RuntimePlanBuildError::ForeignDialogueContentSeed);
                     }

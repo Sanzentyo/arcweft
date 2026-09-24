@@ -1430,6 +1430,7 @@ dependencies = [
  "arcweft-codec-yaml",
  "arcweft-core",
  "arcweft-data",
+ "arcweft-interaction-model",
  "arcweft-lang-jit-cranelift",
  "bytemuck",
  "futures-channel",

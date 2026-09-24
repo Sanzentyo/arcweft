@@ -1234,6 +1234,7 @@ impl Engine {
                 activation: activation_id.clone(),
                 line: state.line.clone(),
                 template,
+                target: state.target.clone(),
                 values: state.values.clone(),
             }),
             request_cancellation: false,
@@ -1595,6 +1596,13 @@ mod tests {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             content: RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            target: crate::value::RuntimeOpaqueValue::new_exact(
+                &crate::pattern::RuntimeOpaqueTypeOwner::exact(
+                    crate::value::RuntimeCharacterDialogueProducerId::get(),
+                    crate::pattern::RuntimeSemanticTypeId::from_bytes([0x47; 32]),
+                ),
+                RuntimeValue::Unit,
+            ),
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("group"),
             resume: None,
             captures: Box::new([]),

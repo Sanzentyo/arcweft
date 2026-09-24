@@ -468,6 +468,8 @@ pub struct AwbcProductExecutorSaveSnapshot {
 pub struct AwbcProductActiveDialogueSaveSnapshot {
     pub activation: DialogueActivationId,
     pub content: AwbcContentUnitId,
+    pub target: crate::value::AwbcRuntimeValueSnapshot,
+    pub target_type: crate::awbc::schema::AwbcTypeId,
     pub line: crate::plan::RuntimeLineId,
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
@@ -897,6 +899,10 @@ fn snapshot_active_dialogue(
     Ok(AwbcProductActiveDialogueSaveSnapshot {
         activation: active.activation.clone(),
         content: active.content,
+        target: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
+            &crate::value::RuntimeValue::Opaque(active.target.clone()),
+        )?,
+        target_type: active.target_type,
         line: active.line.clone(),
         result: active.result.clone(),
         captures: active
@@ -1041,6 +1047,8 @@ impl AwbcProductExecutorSaveSnapshot {
 pub struct AwbcProductActiveDialogueSnapshot {
     pub activation: DialogueActivationId,
     pub content: AwbcContentUnitId,
+    pub target: crate::value::RuntimeOpaqueValue,
+    pub target_type: crate::awbc::schema::AwbcTypeId,
     pub line: crate::plan::RuntimeLineId,
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<RuntimePayload>,
@@ -1413,6 +1421,15 @@ impl AwbcProductStepExecutor {
                 message: "active dialogue snapshot content has no line-task group".to_owned(),
             });
         }
+        if !crate::awbc::fiber::dialogue_target_matches_program(
+            &self.program,
+            active.target_type,
+            &crate::value::RuntimeValue::Opaque(active.target.clone()),
+        ) {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active dialogue target is not admitted by its AWBC executable".to_owned(),
+            });
+        }
         let restore_line_task = |snapshot| {
             let view = self.line_task_view(active.content).ok_or_else(|| {
                 AwbcProductStepBuildError::RestoreSnapshot {
@@ -1484,6 +1501,8 @@ impl AwbcProductStepExecutor {
         Ok(ActiveDialogue {
             activation: active.activation,
             content: active.content,
+            target: active.target,
+            target_type: active.target_type,
             line: active.line,
             result: active.result,
             captures: active
@@ -1518,6 +1537,24 @@ impl AwbcProductStepExecutor {
                     let active = AwbcProductActiveDialogueSnapshot {
                         activation: active.activation,
                         content: active.content,
+                        target: match active
+                            .target
+                            .into_runtime_value_for_program(&program_owner)
+                            .map_err(|error| {
+                                crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                    message: error.to_string(),
+                                }
+                            })? {
+                            crate::value::RuntimeValue::Opaque(target) => target,
+                            _ => {
+                                return Err(
+                                    crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                        message: "dialogue target snapshot is not opaque".to_owned(),
+                                    },
+                                );
+                            }
+                        },
+                        target_type: active.target_type,
                         line: active.line,
                         result: active.result,
                         captures: active
@@ -1686,6 +1723,8 @@ impl AwbcProductStepExecutor {
             let projection = AwbcProductActiveDialogueSnapshot {
                 activation: active.activation.clone(),
                 content: active.content,
+                target: active.target.clone(),
+                target_type: active.target_type,
                 line: active.line.clone(),
                 result: active.result.clone(),
                 captures: active
@@ -2270,6 +2309,22 @@ mod tests {
         let frame = super::super::ActiveDialogue {
             activation: activation.clone(),
             content: crate::awbc::schema::AwbcContentUnitId(0),
+            target: {
+                let producer =
+                    crate::pattern::RuntimeOpaqueTypeProducerId::try_new("std.character_dialogue")
+                        .expect("producer ID");
+                let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                    producer,
+                    crate::pattern::RuntimeSemanticTypeId::from_bytes([0x24; 32]),
+                    crate::value::RuntimeOpaqueValueClass::Plain,
+                    crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                );
+                crate::value::RuntimeOpaqueValue::new_exact(
+                    &owner,
+                    crate::value::RuntimeValue::Unit,
+                )
+            },
+            target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             captures: Box::new([]),

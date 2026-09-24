@@ -1753,6 +1753,7 @@ fn execute_terminator(
             Ok(VmExit::Running)
         }
         AwbcTerminator::Dialogue {
+            target,
             content,
             values,
             effects,
@@ -1760,6 +1761,33 @@ fn execute_terminator(
             result,
             resume,
         } => {
+            let context = context.ok_or(VmError::MissingExecutionContext)?;
+            let _owner = context.program_owner(program)?;
+            let frame = fiber.active_frame()?;
+            let layout = program
+                .frame_layouts
+                .get(frame.layout.index())
+                .ok_or_else(|| VmError::Runtime("dialogue frame layout is missing".to_owned()))?;
+            let target_type = layout
+                .slots
+                .get(target.index())
+                .ok_or_else(|| VmError::Runtime("dialogue target register is missing".to_owned()))?
+                .ty;
+            let target_value = register(fiber, *target)?.clone();
+            let RuntimeValue::Opaque(target_value) = target_value else {
+                return Err(VmError::Runtime(
+                    "dialogue target register is not an opaque value".to_owned(),
+                ));
+            };
+            if !super::fiber::dialogue_target_matches_program(
+                program,
+                target_type,
+                &RuntimeValue::Opaque(target_value.clone()),
+            ) {
+                return Err(VmError::Runtime(
+                    "dialogue target is not admitted by this AWBC executable".to_owned(),
+                ));
+            }
             let values = values
                 .iter()
                 .map(|binding| {
@@ -1787,6 +1815,8 @@ fn execute_terminator(
                 fiber,
                 *resume,
                 FiberSuspensionReason::Dialogue {
+                    target: target_value,
+                    target_type,
                     content: *content,
                     values,
                     effects: effects.clone().into_boxed_slice(),

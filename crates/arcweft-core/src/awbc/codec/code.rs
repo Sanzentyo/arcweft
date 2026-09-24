@@ -1041,6 +1041,7 @@ impl Wire for AwbcTerminator {
                 args.write_wire(writer)?;
             }
             Self::Dialogue {
+                target,
                 content,
                 values,
                 effects,
@@ -1048,6 +1049,7 @@ impl Wire for AwbcTerminator {
                 result,
                 resume,
             } => {
+                target.write_wire(writer)?;
                 content.write_wire(writer)?;
                 values.write_wire(writer)?;
                 effects.write_wire(writer)?;
@@ -1155,6 +1157,7 @@ impl Wire for AwbcTerminator {
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::Dialogue => Self::Dialogue {
+                target: AwbcRegisterId::read_wire(reader)?,
                 content: AwbcContentUnitId::read_wire(reader)?,
                 values: Vec::<AwbcDialogueValueBinding>::read_wire(reader)?,
                 effects: Vec::<AwbcDialogueContentEffectBinding>::read_wire(reader)?,
@@ -1604,6 +1607,38 @@ mod opcode_class_tests {
 mod character_dialogue_wire_tests {
     use super::*;
     use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn version_one_dialogue_terminator_requires_and_retains_its_target_register() {
+        let dialogue = |target| AwbcTerminator::Dialogue {
+            target: AwbcRegisterId(target),
+            content: AwbcContentUnitId(2),
+            values: Vec::new(),
+            effects: Vec::new(),
+            line_task_captures: Vec::new(),
+            result: AwbcDialogueResultTarget {
+                ty: AwbcTypeId(3),
+                pattern: AwbcPatternId(4),
+                destination: AwbcRegisterId(5),
+            },
+            resume: AwbcResumePointId(6),
+        };
+        let encode = |terminator: &AwbcTerminator| {
+            let mut writer = Writer::with_capacity(32);
+            terminator.write_wire(&mut writer).expect("encode dialogue");
+            writer.into_bytes()
+        };
+        let original = dialogue(7);
+        let bytes = encode(&original);
+        assert_ne!(bytes, encode(&dialogue(8)), "target is part of the v1 wire");
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(AwbcTerminator::read_wire(&mut reader).unwrap(), original);
+        reader.finish().expect("complete dialogue terminator");
+
+        let missing_target = [AwbcOpcode::Dialogue.encoded()];
+        let mut missing = Reader::new(&missing_target, &AwbcDecodeBudget::default());
+        assert!(AwbcTerminator::read_wire(&mut missing).is_err());
+    }
 
     #[test]
     fn version_one_instruction_retains_ordered_set_and_clear_contributions() {

@@ -1057,17 +1057,14 @@ impl super::AwbcProductStepExecutor {
         frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
             progressed: true,
-            presented: Some(crate::plan::FlowEvent::DialogueLine {
-                activation: activation.clone(),
-                line: frame.line.clone(),
-                template: self
-                    .program
-                    .content_units
-                    .get(frame.content.index())
-                    .ok_or(LineRuntimeError::UnknownContentPlan)?
-                    .template,
-                values: frame.values.clone(),
-            }),
+            presented: Some(build_dialogue_line_event(
+                &self.program,
+                activation.clone(),
+                &frame.line,
+                frame.content,
+                &frame.target,
+                &frame.values,
+            )?),
             reducer,
             pure_stats: None,
         })
@@ -1430,4 +1427,101 @@ fn require_pending_command(
         .into());
     }
     Ok(())
+}
+
+fn build_dialogue_line_event(
+    program: &crate::awbc::schema::AwbcProgram,
+    activation: DialogueActivationId,
+    line: &crate::plan::RuntimeLineId,
+    content: crate::awbc::schema::AwbcContentUnitId,
+    target: &crate::value::RuntimeOpaqueValue,
+    values: &[crate::plan::RuntimeDialogueValueBinding],
+) -> Result<crate::plan::FlowEvent, LineRuntimeError> {
+    let template = program
+        .content_units
+        .get(content.index())
+        .ok_or(LineRuntimeError::UnknownContentPlan)?
+        .template;
+    Ok(crate::plan::FlowEvent::DialogueLine {
+        activation,
+        line: line.clone(),
+        template,
+        target: target.clone(),
+        values: values.to_vec().into_boxed_slice(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_dialogue_line_event;
+    use crate::awbc::schema::{AwbcContentUnit, AwbcContentUnitId, AwbcProgram};
+    use crate::entry::RuntimeDialogueContentTemplateDigest;
+    use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
+    use crate::runtime_id::{
+        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeDialogueContentTemplateId,
+        RuntimePersistentFiberId,
+    };
+    use crate::value::{
+        RuntimeCharacterDialogueProducerId, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+        RuntimeOpaqueValueClass, RuntimeValue,
+    };
+    use std::num::NonZeroU32;
+
+    #[test]
+    fn awbc_dialogue_line_event_keeps_the_exact_opaque_target() {
+        let content = AwbcContentUnitId(0);
+        let template = RuntimeDialogueContentTemplateId::from_zero_based(0)
+            .expect("fixture template identity");
+        let program = AwbcProgram {
+            content_templates: vec![crate::awbc::schema::AwbcDialogueContentTemplate {
+                id: template,
+                digest: RuntimeDialogueContentTemplateDigest::ZERO,
+                slots: Vec::new(),
+                effects: Vec::new(),
+            }],
+            content_units: vec![AwbcContentUnit {
+                public_id: crate::awbc::schema::AwbcStringId(0),
+                template,
+                marks: Vec::new(),
+                effect_site_count: 0,
+                line_task_group: None,
+                display: None,
+                source: None,
+                resources: Vec::new(),
+            }],
+            ..AwbcProgram::default()
+        };
+        let activation = DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x61; 32])
+                .expect("fixture artifact"),
+            RuntimePersistentFiberId::from_allocated(7),
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            0,
+        );
+        let line = crate::plan::RuntimeLineId::from_runtime_line_value("line.target")
+            .expect("fixture line identity");
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeCharacterDialogueProducerId::get(),
+            RuntimeSemanticTypeId::from_bytes([0x62; 32]),
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let target =
+            RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::String("alice".to_owned()));
+
+        let event =
+            build_dialogue_line_event(&program, activation.clone(), &line, content, &target, &[])
+                .expect("line event uses accepted content");
+
+        assert_eq!(
+            event,
+            crate::plan::FlowEvent::DialogueLine {
+                activation,
+                line,
+                template,
+                target: target.clone(),
+                values: Box::new([]),
+            }
+        );
+    }
 }

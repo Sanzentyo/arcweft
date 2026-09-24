@@ -1081,6 +1081,7 @@ pub enum FlowOp {
         value: RuntimeExpr,
     },
     Dialogue {
+        target: RuntimeExpr,
         content: crate::runtime_id::RuntimeDialogueContentPlanId,
         result: RuntimeDialogueResultTarget,
     },
@@ -1343,6 +1344,7 @@ pub enum FlowEvent {
         activation: crate::runtime_id::DialogueActivationId,
         line: RuntimeLineId,
         template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        target: crate::value::RuntimeOpaqueValue,
         values: Box<[RuntimeDialogueValueBinding]>,
     },
     LineCancelled {

@@ -334,6 +334,8 @@ impl AwbcProductStepExecutor {
         };
         match &suspension.reason {
             FiberSuspensionReason::Dialogue {
+                target: _,
+                target_type: _,
                 content: _,
                 values: _,
                 effects: _,

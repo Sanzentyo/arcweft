@@ -837,6 +837,20 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                     .map(runtime_expr_work_units)
                     .sum::<usize>()
         }
+        RuntimeExprKind::CharacterDialogue { target, fields, .. } => {
+            8 + runtime_expr_work_units(target)
+                + fields
+                    .iter()
+                    .map(|field| match &field.operation {
+                        arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation::Set(
+                            value,
+                        ) => runtime_expr_work_units(value),
+                        arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation::Clear => {
+                            0
+                        }
+                    })
+                    .sum::<usize>()
+        }
         RuntimeExprKind::AssignNominalField { expr, body, .. } => {
             8 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }

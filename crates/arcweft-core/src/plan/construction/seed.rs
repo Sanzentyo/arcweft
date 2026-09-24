@@ -415,6 +415,7 @@ pub enum RuntimeFlowOpSeed {
         value: RuntimeExprSeed,
     },
     Dialogue {
+        target: RuntimeExprSeed,
         content: RuntimeDialogueContentPlanSeedId,
         result: RuntimeDialogueResultTargetSeed,
     },
@@ -704,7 +705,8 @@ fn collect_binding_or_host_free_locals(
             push_free_local(base, bound, locals);
             value.collect_free_locals(bound, locals);
         }
-        RuntimeFlowOpSeed::Dialogue { result, .. } => {
+        RuntimeFlowOpSeed::Dialogue { target, result, .. } => {
+            target.collect_free_locals(bound, locals);
             result.pattern().collect_binding_locals(bound);
         }
         RuntimeFlowOpSeed::LineOperation { binding, operation } => {

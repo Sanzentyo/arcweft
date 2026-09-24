@@ -145,7 +145,7 @@ fn verify_dialogue_effect_callable_state<'a>(
             at: at.to_owned(),
             message: "dialogue effect callback body signature is absent".to_owned(),
         })?;
-    if signature.result.is_some() || signature.params.as_slice() != capture_types {
+    if signature.result != Some(state.result) || signature.params.as_slice() != capture_types {
         return Err(AwbcVerifyError::InvalidInvariant {
             at: at.to_owned(),
             message: "dialogue effect callback body signature disagrees with its state".to_owned(),
@@ -1692,6 +1692,7 @@ fn apply_terminator(
             }
         }
         AwbcTerminator::Dialogue {
+            target,
             content,
             values,
             effects,
@@ -1699,6 +1700,10 @@ fn apply_terminator(
             result,
             resume,
         } => {
+            let target_type = read_register(verifier, function, block, *target, state)?;
+            if !is_character_dialogue_type(program, target_type) {
+                return invalid_type(&at, "CharacterDialogue opaque target");
+            }
             check_index(program.content_units.len(), content.0, "content_units", &at)?;
             let group = program.content_units[content.index()]
                 .line_task_group

@@ -168,6 +168,8 @@ impl FiberSuspension {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum FiberSuspensionReason {
     Dialogue {
+        target: crate::value::RuntimeOpaqueValue,
+        target_type: AwbcTypeId,
         content: AwbcContentUnitId,
         values: Box<[RuntimeDialogueValueBinding]>,
         effects: Box<[super::schema::AwbcDialogueContentEffectBinding]>,
@@ -352,6 +354,8 @@ pub struct AwbcFiberSuspensionSnapshot {
 #[serde(deny_unknown_fields)]
 pub enum AwbcFiberSuspensionReasonSnapshot {
     Dialogue {
+        target: AwbcRuntimeValueSnapshot,
+        target_type: AwbcTypeId,
         content: AwbcContentUnitId,
         values: Box<[RuntimeDialogueValueBinding]>,
         effects: Box<[super::schema::AwbcDialogueContentEffectBinding]>,
@@ -695,12 +699,18 @@ impl AwbcFiberSuspensionReasonSnapshot {
     fn from_live(reason: &FiberSuspensionReason) -> AwbcSaveResult<Self> {
         Ok(match reason {
             FiberSuspensionReason::Dialogue {
+                target,
+                target_type,
                 content,
                 values,
                 effects,
                 line_task_captures,
                 result,
             } => Self::Dialogue {
+                target: AwbcRuntimeValueSnapshot::from_runtime_value(&RuntimeValue::Opaque(
+                    target.clone(),
+                ))?,
+                target_type: *target_type,
                 content: *content,
                 values: values.clone(),
                 effects: effects.clone(),
@@ -749,22 +759,34 @@ impl AwbcFiberSuspensionReasonSnapshot {
     fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberSuspensionReason> {
         Ok(match self {
             Self::Dialogue {
+                target,
+                target_type,
                 content,
                 values,
                 effects,
                 line_task_captures,
                 result,
-            } => FiberSuspensionReason::Dialogue {
-                content,
-                values,
-                effects,
-                line_task_captures: line_task_captures
-                    .into_iter()
-                    .map(|value| value.into_runtime_value_for_program(owner))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice(),
-                result,
-            },
+            } => {
+                let target = target.into_runtime_value_for_program(owner)?;
+                let RuntimeValue::Opaque(target) = target else {
+                    return Err(crate::value::AwbcRuntimeValueSnapshotError::Message {
+                        message: "dialogue target snapshot is not an opaque value".to_owned(),
+                    });
+                };
+                FiberSuspensionReason::Dialogue {
+                    target,
+                    target_type,
+                    content,
+                    values,
+                    effects,
+                    line_task_captures: line_task_captures
+                        .into_iter()
+                        .map(|value| value.into_runtime_value_for_program(owner))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_boxed_slice(),
+                    result,
+                }
+            }
             Self::Choice {
                 choice,
                 destination,
@@ -2565,12 +2587,21 @@ fn validate_suspension(
     }
     match &suspension.reason {
         FiberSuspensionReason::Dialogue {
+            target,
+            target_type,
             content,
             values,
             effects,
             line_task_captures,
             result,
         } => {
+            if !dialogue_target_matches_program(
+                program,
+                *target_type,
+                &RuntimeValue::Opaque(target.clone()),
+            ) {
+                return Err(FiberStateError::InvalidFrame);
+            }
             let Some(content) = program.content_units.get(content.index()) else {
                 return Err(FiberStateError::InvalidFrame);
             };
@@ -2671,6 +2702,42 @@ fn validate_suspension(
         FiberSuspensionReason::BudgetYield => {}
     }
     Ok(())
+}
+
+pub(crate) fn dialogue_target_matches_program(
+    program: &AwbcProgram,
+    target_type: AwbcTypeId,
+    value: &RuntimeValue,
+) -> bool {
+    let Some(AwbcRuntimeTypeShape::Opaque {
+        arguments,
+        value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+        persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+        ..
+    }) = program
+        .runtime_types
+        .get(target_type.index())
+        .map(|runtime_type| runtime_type.shape())
+    else {
+        return false;
+    };
+    arguments.is_empty()
+        && program
+            .opaque_owner(target_type)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| {
+                owner.producer() == &crate::value::RuntimeCharacterDialogueProducerId::get()
+            })
+        && matches!(value, RuntimeValue::Opaque(target)
+            if target.producer() == &crate::value::RuntimeCharacterDialogueProducerId::get())
+        && program
+            .accepts_value(
+                target_type,
+                value,
+                crate::entry::RuntimeSchemaLimits::engine_default(),
+            )
+            .is_ok()
 }
 
 fn validate_await_suspension(
@@ -3367,6 +3434,115 @@ mod tests {
             scope_depth: 0,
         });
         program
+    }
+
+    fn character_dialogue_target_program() -> (AwbcProgram, crate::value::RuntimeOpaqueValue) {
+        let mut program = zero_parameter_entry_program();
+        program.strings.push("std.character_dialogue".to_owned());
+        let declared_identity = RuntimeSemanticTypeId::from_bytes([0x41; 32]);
+        program.runtime_types.push(AwbcRuntimeType::new(
+            declared_identity,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(1),
+                admission: crate::pattern::RuntimeOpaqueTypeAdmission::ProducerWide,
+                value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: Vec::new(),
+            },
+        ));
+        let producer = crate::value::RuntimeCharacterDialogueProducerId::get();
+        let value_identity = RuntimeSemanticTypeId::from_bytes([0x42; 32]);
+        let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+            producer,
+            value_identity,
+            crate::value::RuntimeOpaqueValueClass::Plain,
+            crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let target = crate::value::RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::Unit);
+        (program, target)
+    }
+
+    #[test]
+    fn dialogue_target_is_admitted_by_its_selected_awbc_type_row() {
+        let (program, target) = character_dialogue_target_program();
+        let target_value = RuntimeValue::Opaque(target.clone());
+        assert!(
+            program
+                .opaque_owner(AwbcTypeId(2))
+                .expect("target type reifies")
+                .is_some()
+        );
+        assert!(
+            program
+                .accepts_value(
+                    AwbcTypeId(2),
+                    &target_value,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .is_ok()
+        );
+        assert!(dialogue_target_matches_program(
+            &program,
+            AwbcTypeId(2),
+            &target_value,
+        ));
+        assert!(!dialogue_target_matches_program(
+            &program,
+            AwbcTypeId(0),
+            &RuntimeValue::Opaque(target),
+        ));
+        let foreign_owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+            crate::pattern::RuntimeOpaqueTypeProducerId::try_new("fixture.foreign")
+                .expect("foreign producer ID"),
+            RuntimeSemanticTypeId::from_bytes([0x43; 32]),
+            crate::value::RuntimeOpaqueValueClass::Plain,
+            crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let foreign =
+            crate::value::RuntimeOpaqueValue::new_exact(&foreign_owner, RuntimeValue::Unit);
+        assert!(!dialogue_target_matches_program(
+            &program,
+            AwbcTypeId(2),
+            &RuntimeValue::Opaque(foreign),
+        ));
+    }
+
+    #[test]
+    fn dialogue_fiber_suspension_snapshot_preserves_exact_target_and_type() {
+        let (program, target) = character_dialogue_target_program();
+        let reason = FiberSuspensionReason::Dialogue {
+            target: target.clone(),
+            target_type: AwbcTypeId(2),
+            content: AwbcContentUnitId(0),
+            values: Box::new([]),
+            effects: Box::new([]),
+            line_task_captures: Box::new([]),
+            result: AwbcDialogueResultTarget {
+                ty: AwbcTypeId(0),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+        };
+        let snapshot = AwbcFiberSuspensionReasonSnapshot::from_live(&reason)
+            .expect("dialogue target snapshots explicitly");
+        let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
+        let decoded = serde_json::from_slice::<AwbcFiberSuspensionReasonSnapshot>(&encoded)
+            .expect("snapshot decodes");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+        let restored = decoded
+            .into_live(&owner)
+            .expect("target restores under selected AWBC owner");
+        assert_eq!(restored, reason);
+        let FiberSuspensionReason::Dialogue {
+            target: restored_target,
+            target_type,
+            ..
+        } = restored
+        else {
+            unreachable!("fixture is a dialogue suspension")
+        };
+        assert_eq!(restored_target, target);
+        assert_eq!(target_type, AwbcTypeId(2));
     }
 
     #[test]

@@ -277,6 +277,8 @@ fn partition_drop_observation(
 struct ActiveDialogue {
     activation: crate::runtime_id::DialogueActivationId,
     content: AwbcContentUnitId,
+    target: crate::value::RuntimeOpaqueValue,
+    target_type: crate::awbc::schema::AwbcTypeId,
     line: crate::plan::RuntimeLineId,
     captures: Box<[RuntimeValue]>,
     values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
@@ -1719,14 +1721,23 @@ impl AwbcProductStepExecutor {
         let declared_resume = suspension.declared_resume();
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
+                target,
+                target_type,
                 content,
                 values,
                 effects,
                 line_task_captures,
                 result,
-            } => {
-                self.present_dialogue(content, values, effects, line_task_captures, result, output)
-            }
+            } => self.present_dialogue(
+                target,
+                target_type,
+                content,
+                values,
+                effects,
+                line_task_captures,
+                result,
+                output,
+            ),
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
@@ -1775,12 +1786,16 @@ impl AwbcProductStepExecutor {
         };
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
+                target,
+                target_type,
                 content,
                 values,
                 effects,
                 line_task_captures,
                 result,
             } => self.resume_dialogue(
+                target,
+                target_type,
                 content,
                 values,
                 effects,
@@ -1932,6 +1947,8 @@ impl AwbcProductStepExecutor {
 
     fn present_dialogue(
         &mut self,
+        target: crate::value::RuntimeOpaqueValue,
+        target_type: crate::awbc::schema::AwbcTypeId,
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
         effects: Box<[crate::awbc::schema::AwbcDialogueContentEffectBinding]>,
@@ -2042,6 +2059,8 @@ impl AwbcProductStepExecutor {
         let active = ActiveDialogue {
             activation,
             content,
+            target,
+            target_type,
             line: line_id,
             captures,
             values,
@@ -2072,6 +2091,8 @@ impl AwbcProductStepExecutor {
 
     fn resume_dialogue(
         &mut self,
+        target: crate::value::RuntimeOpaqueValue,
+        target_type: crate::awbc::schema::AwbcTypeId,
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
         effects: Box<[crate::awbc::schema::AwbcDialogueContentEffectBinding]>,
@@ -2082,7 +2103,16 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         if self.dialogues.active_frame().is_none() {
-            self.present_dialogue(content, values, effects.clone(), captures, result, output);
+            self.present_dialogue(
+                target,
+                target_type,
+                content,
+                values,
+                effects.clone(),
+                captures,
+                result,
+                output,
+            );
         }
         let Ok(mut transaction) = self.dialogues.begin_active_transaction() else {
             return false;

@@ -107,7 +107,40 @@ impl Engine {
                     "line operation escaped its dialogue activation authority".to_owned(),
                 );
             }
-            FlowOp::Dialogue { content, result } => {
+            FlowOp::Dialogue {
+                target,
+                content,
+                result,
+            } => {
+                let target_value = match self.evaluate_expr_with_backend(&target, pure_backend) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                if let Err(error) = self.plan.accepts_value(
+                    target.ty(),
+                    &target_value,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                ) {
+                    self.fail_eval(
+                        crate::value::RuntimeEvalError::CharacterDialogueConstruction(
+                            error.to_string(),
+                        ),
+                        output,
+                    );
+                    return;
+                }
+                let crate::value::RuntimeValue::Opaque(target_value) = target_value else {
+                    self.fail_eval(
+                        crate::value::RuntimeEvalError::CharacterDialogueConstruction(
+                            "dialogue target is not an opaque CharacterDialogue value".to_owned(),
+                        ),
+                        output,
+                    );
+                    return;
+                };
                 let Some(content_plan) = self.plan.dialogue_content().get(content).cloned() else {
                     self.fiber.status =
                         FlowFiberStatus::Failed(format!("missing dialogue content plan {content}"));
@@ -206,6 +239,7 @@ impl Engine {
                 let dialogue = DialogueActivationFrame {
                     line,
                     content,
+                    target: target_value,
                     task_group,
                     resume: self.fiber.cursor,
                     captures,

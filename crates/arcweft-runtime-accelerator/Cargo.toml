@@ -18,6 +18,7 @@ arcweft-codec-toml.workspace = true
 arcweft-codec-yaml.workspace = true
 arcweft-core = { workspace = true }
 arcweft-data.workspace = true
+arcweft-interaction-model.workspace = true
 bytemuck = { workspace = true, optional = true }
 glam = { workspace = true, optional = true }
 ndarray = { workspace = true, optional = true }

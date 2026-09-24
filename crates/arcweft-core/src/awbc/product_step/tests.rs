@@ -30,6 +30,16 @@ use crate::task::{
 use crate::value::{RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
 
+fn fixture_dialogue_target() -> crate::value::RuntimeOpaqueValue {
+    let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+        crate::value::RuntimeCharacterDialogueProducerId::get(),
+        RuntimeSemanticTypeId::from_bytes([0x24; 32]),
+        crate::value::RuntimeOpaqueValueClass::Plain,
+        crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+    );
+    crate::value::RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::Unit)
+}
+
 #[test]
 fn minimal_return_program_finishes_without_diagnostics() {
     let mut executor = AwbcProductStepExecutor::for_entry(
@@ -68,6 +78,8 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
         .begin(ActiveDialogue {
             activation: activation.clone(),
             content: AwbcContentUnitId(0),
+            target: fixture_dialogue_target(),
+            target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("fixture line identity"),
             captures: Box::new([]),
@@ -189,6 +201,8 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         .begin(ActiveDialogue {
             activation: activation.clone(),
             content: AwbcContentUnitId(0),
+            target: fixture_dialogue_target(),
+            target_type: AwbcTypeId(0),
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             captures: Box::new([]),
