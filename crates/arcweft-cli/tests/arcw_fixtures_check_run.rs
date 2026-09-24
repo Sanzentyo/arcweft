@@ -28,6 +28,14 @@ fn run_arcw(args: &[&str], path: &Path) -> std::process::Output {
     cmd.output().expect("arcw command runs")
 }
 
+fn has_successful_terminal_status(output: &std::process::Output) -> bool {
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.split_once("final_status=").map(|(_, status)| status))
+        .and_then(|status| status.split_whitespace().next())
+        .is_some_and(|status| matches!(status, "done" | "return"))
+}
+
 fn run_fixture_from_temp(
     path: &Path,
     configure: impl FnOnce(&mut Command),
@@ -101,11 +109,12 @@ fn current_run_fixtures_pass() {
                 cmd.arg("--entry").arg("entry.main");
             }
         });
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            output.status.success(),
-            "arcw run should pass for {}\nstdout:\n{}\nstderr:\n{}",
+            output.status.success() && has_successful_terminal_status(&output),
+            "arcw run should complete successfully for {}\nstdout:\n{}\nstderr:\n{}",
             path.display(),
-            String::from_utf8_lossy(&output.stdout),
+            stdout,
             String::from_utf8_lossy(&output.stderr),
         );
     }
@@ -158,11 +167,17 @@ fn spec_should_pass_run_fixtures_pass_after_refactor() {
                 cmd.arg("--entry").arg("entry.main");
             }
         });
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let completed_flow = has_successful_terminal_status(&output);
+        let successful_cli_exit = path
+            .file_name()
+            .is_some_and(|name| name == "001_cli_stdout_entry.arcw")
+            && output.stdout == b"hello";
         assert!(
-            output.status.success(),
-            "{} should run\nstdout:\n{}\nstderr:\n{}",
+            output.status.success() && (completed_flow || successful_cli_exit),
+            "{} should finish successfully\nstdout:\n{}\nstderr:\n{}",
             path.display(),
-            String::from_utf8_lossy(&output.stdout),
+            stdout,
             String::from_utf8_lossy(&output.stderr)
         );
     }

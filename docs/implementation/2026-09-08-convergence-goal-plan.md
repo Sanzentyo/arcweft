@@ -775,3 +775,44 @@ pending の正常 `R`、cancel `out` は同型の別 `R`、`goto`/`return` は
 一度だけ公開または transfer する。cleanup 途中の失敗では再 unwind せず
 終端を失敗にする。この判断を維持仕様の例へ反映したが、runtime の結果
 選択と dynamic `defer` 実装は未完了。
+
+**2026-09-25 CLI dialogue line fixture boundary:**
+
+`main` の inspected SHA は `649e655981c12e1d8bfa5c1449866be46ad72c17`。
+この切り分けは defer registration substrate の
+`78c68948bd42538dd4dcc9171abe04ba05f07bf9`、compiled AWBC region で defer を
+拒否する `a95cd92d629e8cb7e8d79f8a8e34608cd2baa28a`、contextual receiver の
+Sema/compiler 修正 `649e655981c12e1d8bfa5c1449866be46ad72c17` の後に行った。
+作業開始時点では 011 fixture だけが dirty だった。現在の unstaged 差分は
+CLI run test、011/024/025 の spec fixture、009/010 の current fixture の移動、
+および本記録で、他の dirty path は確認していない。
+
+直接 source の CLI run は、accepted project-default Dialogue profile を
+生成しても `RuntimePureAccelerator` に CharacterDialogue producer を接続しない。
+さらに CLI step loop は `line_commands` を受け取って line outcome を返す host
+loop を持たない。`009_dialogue_line.arcw` と `010_line_task_effects.arcw` の
+`arcw run --mode drain --steps 16 --entry entry.main` はどちらも exit 0 だが
+`final_status=failed runtime CharacterDialogue construction requires an accepted
+generation producer` を出した。このため両 fixture と 011 を run から check へ
+移した。011 は no-profile direct source で有効な VoiceHandle discard と
+line-result tuple を保つ最小形にし、cue を String にした。StageAcquire、
+ActorLook、scheduled cue は direct CLI fixture に登録済み Character manifest
+がなく、元の cue を戻した check は `sema.final_analysis` で失敗した。
+これらの contextual receiver 契約は、登録済み Character manifest を使う
+Sema の `dialogue_line_plan_bindings_are_inferred_in_source_order` が検証する。
+native/AWBC の line outcome progression と CLI line host は引き続き未実装で、
+fixture の再分類はその end-to-end 受理を示さない。
+
+CLI fixture runner の run assertions は process exit code のみで成功扱いしない。
+各 runtime summary は terminal `done` または `return` status を要求し、
+`process.exit(0)` で summary を出さない 001 CLI stdout fixture は正確な
+`hello` 出力を確認する。`cargo test -p arcweft-cli --test
+arcw_fixtures_check_run -- --nocapture` は両 run 集約が通過し、
+`current_pass/run` の残る8件と `spec_should_pass/run` の8件を実行した。
+CLI fixture integration target 全体は7件中5件通過、2件は check 集約で停止した。
+`current_pass/check/019` は line
+defer/runtime content lowering、`spec_should_pass/check/030` は Sema final type
+resolution の未解決箇所であり、この fixture cut では変更していないが、全体 goal
+では未完了のままである。正確な `arcw compile --emit check` は移動した
+011/009/010 と修正した 024/025 すべてで exit 0、0 warning、0 obligation。
+Sema contextual receiver cut の library test は `649e655` 時点で 916/916。

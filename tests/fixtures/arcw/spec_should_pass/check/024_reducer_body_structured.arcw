@@ -1,3 +1,11 @@
+pub struct GameState {
+    score: i32,
+}
+
+pub enum GameEvent {
+    Start,
+}
+
 pub fn update(state: &GameState, event: GameEvent)
     -> Result<Reduction<GameState>, ReducerError>
 effects {}

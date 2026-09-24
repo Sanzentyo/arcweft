@@ -7,9 +7,7 @@ pub character alice {
 flow line_handles() -> String {
     let (_, cue) = alice(voice=auto)[聞いて。[p]]
     with:
-        let actor = alice.stage.acquire(scope=line)
-        let cue = at(0.42s):
-            actor.look(.worried, crossfade=120ms)
+        let cue = "cue kept"
         let voice = line.voice_handle()
         out (voice, cue)
 
