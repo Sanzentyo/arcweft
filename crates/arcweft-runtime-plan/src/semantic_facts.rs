@@ -81,6 +81,7 @@ use thiserror::Error;
 use crate::assertion_identity::RuntimeAssertionMode;
 
 mod character_dialogue;
+mod character_dialogue_generation;
 mod content;
 pub use character_dialogue::RuntimeCharacterDialogueCall;
 mod dialogue_target;
@@ -4308,6 +4309,8 @@ pub struct RuntimePlanSemanticFactInput {
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+    character_dialogue_generation:
+        Option<character_dialogue_generation::RuntimeCharacterDialogueGenerationFact>,
 }
 
 impl RuntimePlanSemanticFactInput {
@@ -4351,6 +4354,7 @@ impl RuntimePlanSemanticFactInput {
             dialogue_content_fragments: Vec::new(),
             dialogue_lines: None,
             character_presentation_catalog: None,
+            character_dialogue_generation: None,
         }
     }
 
@@ -4663,6 +4667,8 @@ pub struct RuntimePlanSemanticFacts {
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+    character_dialogue_generation:
+        Option<character_dialogue_generation::RuntimeCharacterDialogueGenerationFact>,
 }
 
 /// Sole executable semantic-fact view selected before lowering one body.
@@ -6823,6 +6829,10 @@ impl RuntimePlanSemanticFacts {
         }
         let dialogue_lines = input.dialogue_lines;
         let character_presentation_catalog = input.character_presentation_catalog;
+        let character_dialogue_generation = input.character_dialogue_generation;
+        if let Some(declaration) = &character_dialogue_generation {
+            character_dialogue_generation::validate_declaration(project, &modules, declaration)?;
+        }
         let mut has_instance_dialogue = false;
         for (scope, semantics) in
             instance_semantic_roots(project_function_instances.values(), root_closures.values())
@@ -6884,6 +6894,7 @@ impl RuntimePlanSemanticFacts {
             dialogue_content_fragments,
             dialogue_lines,
             character_presentation_catalog,
+            character_dialogue_generation,
         };
         for owner in facts.expression_types.keys() {
             if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
@@ -6934,7 +6945,11 @@ impl RuntimePlanSemanticFacts {
                 facts.root_closures.values(),
             ) {
                 validate_project_instance_dialogue_applications(
-                    &modules, catalog, lines, semantics,
+                    &modules,
+                    catalog,
+                    lines,
+                    facts.character_dialogue_generation().map(Arc::as_ref),
+                    semantics,
                 )?;
             }
         }
@@ -7003,15 +7018,12 @@ impl RuntimePlanSemanticFacts {
                 expression: owner,
             });
         }
-        if let arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence::Exact(
-            character,
-        ) = application.content().character().target()
-            && catalog.record(character).is_err()
-        {
-            return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
-                expression: owner,
-            });
-        }
+        character_dialogue_generation::validate_application(
+            owner,
+            application,
+            catalog,
+            self.character_dialogue_generation().map(Arc::as_ref),
+        )?;
         for (index, value) in fragment.values().iter().enumerate() {
             let expected = RuntimeDialogueValueSlotId::from_zero_based(index).ok_or(
                 RuntimeSemanticFactsError::TooManyDialogueValueSlots { expression: owner },
@@ -7294,6 +7306,9 @@ impl RuntimePlanSemanticFacts {
 
     fn all_normalized_type_roots(&self) -> Vec<&RuntimeNormalizedType> {
         let mut roots = Vec::new();
+        if let Some(declaration) = self.character_dialogue_generation() {
+            declaration.visit_type_refs(&mut |ty| roots.push(ty));
+        }
         for definition in self.nominal_definitions.values() {
             definition.append_types(&mut roots);
         }
@@ -7747,6 +7762,8 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("CharacterDialogue generation inputs are invalid: {reason}")]
+    InvalidCharacterDialogueGeneration { reason: &'static str },
     #[error("scope expression {expression:?} has no exact accepted lexical identity")]
     InvalidExpressionScope { expression: ExprId },
     #[error("scope statement {statement:?} has no exact accepted lexical identity")]
@@ -8012,6 +8029,7 @@ pub enum RuntimeSemanticFactFamily {
     ClosureInstance,
     ProjectFunctionRoot,
     DialogueApplication,
+    CharacterDialogueGeneration,
 }
 
 fn validate_complete_expression_types(
@@ -10291,6 +10309,9 @@ fn validate_project_instance_dialogue_applications(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     catalog: &CharacterPresentationCatalogData,
     lines: &AcceptedDialogueLineInventory,
+    generation: Option<
+        &arcweft_dialogue::CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>,
+    >,
     semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
 ) -> Result<(), RuntimeSemanticFactsError> {
     for row in semantics.expressions() {
@@ -10326,15 +10347,12 @@ fn validate_project_instance_dialogue_applications(
                         expression: owner,
                     });
                 }
-                if let arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence::Exact(
-                    character,
-                ) = application.content().character().target()
-                    && catalog.record(character).is_err()
-                {
-                    return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
-                        expression: owner,
-                    });
-                }
+                character_dialogue_generation::validate_application(
+                    owner,
+                    application,
+                    catalog,
+                    generation,
+                )?;
                 validate_normalized_type(modules, application.line_result())?;
             }
             RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
@@ -10342,6 +10360,7 @@ fn validate_project_instance_dialogue_applications(
                     modules,
                     catalog,
                     lines,
+                    generation,
                     closure.semantics(),
                 )?;
             }

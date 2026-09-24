@@ -3,6 +3,7 @@ use arcweft_interaction_model::dialogue::CharacterDialogueFieldCoordinate as Fie
 
 mod application;
 mod fixtures;
+mod generation;
 
 fn project_calls(source: &str) -> Vec<(CharacterDialogueOperation, RuntimeResolvedCall)> {
     let compiled = crate::source::compile_source(source)

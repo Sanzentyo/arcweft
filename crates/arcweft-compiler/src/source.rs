@@ -110,9 +110,21 @@ pub fn compile_source_with_env_and_control(
     )?;
     let compiled_project = Arc::new(compiled_project);
     let report = compiled_project.runtime_plan();
+    let character_catalog = crate::lower::project_character_catalog(
+        compiled_project
+            .analysis_lease()
+            .hir_project()
+            .analysis_view()
+            .expect("a compiled source retains its accepted executable HIR"),
+        compiled_project.analysis_lease().registered_world(),
+    )
+    .expect("runtime projection already validated the same immutable Character inputs");
     Ok(CompiledSource {
         plan: report.plan.clone(),
         dialogue_content: report.dialogue_content_catalog.clone(),
+        dialogue_profile: compiled_project.dialogue_profile().clone(),
+        character_catalog,
+        character_dialogue_generation: report.character_dialogue_generation.clone(),
         analysis: Arc::clone(compiled_project.analysis_lease()),
         style: compiled_project.style().clone(),
         fx_definitions: Arc::from(compiled_project.fx_definitions()),

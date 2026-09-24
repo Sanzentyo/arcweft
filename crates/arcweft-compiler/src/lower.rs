@@ -7,6 +7,7 @@
 
 mod callable_values;
 mod character_dialogue;
+pub(crate) use character_dialogue::project_character_catalog;
 mod closure_instances;
 #[cfg(test)]
 #[path = "lower/environment_record_pattern_tests.rs"]
@@ -607,12 +608,18 @@ fn project_runtime_semantic_fact_inventories(
         &mut instance_discovery,
     )?;
     let discovered_instances = instance_discovery.seal()?;
+    let character_dialogue_generation = dialogue_profile
+        .map(|profile| {
+            character_dialogue::project_generation(project, symbols, world, analysis, profile)
+        })
+        .transpose()?;
     let dialogue_projection = project_runtime_dialogue_projection_catalog(
         project,
         symbols,
         world,
         analysis,
         dialogue_profile,
+        character_dialogue_generation.as_deref(),
         character_name_policy,
         runtime_owners,
         &discovered_instances,
@@ -673,6 +680,12 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(view_value_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
+    if let Some(declaration) = character_dialogue_generation {
+        input.attach_character_dialogue_generation(
+            declaration,
+            world.environment().character_inventory().clone(),
+        )?;
+    }
 
     let runtime_locals = runtime_owners
         .locals()
@@ -1615,6 +1628,9 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
     world: &RegisteredSemanticWorld,
     analysis: &'analysis FinalSemanticAnalysis,
     dialogue_profile: Option<&CheckedDialogueProfile>,
+    producer_generation: Option<
+        &arcweft_dialogue::CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>,
+    >,
     policy: Option<&CharacterNameLocalePolicySpec>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     instances: &'analysis DiscoveredProjectInstances,
@@ -1698,6 +1714,12 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
                 "an executable dialogue product requires one compiler-admitted dialogue profile"
                     .to_owned(),
         })?;
+    let producer_generation =
+        producer_generation.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: "an executable dialogue product requires one admitted producer generation"
+                .to_owned(),
+        })?;
     let policy = policy
         .map(character_name_locale_policy)
         .transpose()?
@@ -1723,6 +1745,21 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
     let mut fragments = BTreeMap::new();
     let mut mark_coordinates = BTreeSet::new();
     for projection in projections {
+        let missing_name = match projection.target.character().exact() {
+            Some(character) => character_catalog.record(character).err().map(|_| character),
+            None => producer_generation
+                .characters()
+                .keys()
+                .find(|character| character_catalog.record(character).is_err()),
+        };
+        if let Some(character) = missing_name {
+            return Err(RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(projection.owner),
+                reason: format!(
+                    "Character `{character}` has no accepted display-name declaration for dialogue presentation"
+                ),
+            });
+        }
         let (_, application, projected_fragments) = project_dialogue_application(
             project,
             projection.owner,
@@ -1734,6 +1771,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
             analysis,
             projection.solution,
             generation,
+            producer_generation,
             presentation.clone(),
             &projection.scope,
             &template_ids,
@@ -1931,6 +1969,9 @@ fn project_dialogue_application(
     analysis: &FinalSemanticAnalysis,
     instance: Option<ProjectInstanceTypes<'_>>,
     generation: CharacterPresentationCatalogGeneration,
+    producer_generation: &arcweft_dialogue::CharacterDialogueGenerationDeclaration<
+        RuntimeNormalizedType,
+    >,
     presentation: DialoguePresentationSnapshot,
     scope: &RuntimeDialogueProjectionScope,
     template_ids: &RuntimeDialogueTemplateIdCatalog,
@@ -1943,21 +1984,28 @@ fn project_dialogue_application(
     ),
     RuntimeSemanticProjectionError,
 > {
-    let character = target.character().exact().cloned().ok_or_else(|| {
-        RuntimeSemanticProjectionError::Dialogue {
-            owner: Some(owner),
-            reason: "dynamic CharacterDialogue target requires typed runtime-plan lowering"
-                .to_owned(),
+    let evidence = match target {
+        CheckedCharacterDialogueTarget::Character { character, .. }
+            if character.exact().is_some() =>
+        {
+            CharacterPresentationTargetEvidence::Exact(
+                character.exact().expect("exact Character guard").clone(),
+            )
         }
-    })?;
-    let plan = CheckedCharacterPresentationPlan::try_new(
-        CharacterPresentationTargetEvidence::Exact(character),
-        generation,
-    )
-    .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
-        owner: Some(owner),
-        reason: error.to_string(),
-    })?;
+        CheckedCharacterDialogueTarget::Character { .. }
+        | CheckedCharacterDialogueTarget::Dialogue { .. } => {
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+                generation: producer_generation.digest(),
+            }
+        }
+    };
+    let plan =
+        CheckedCharacterPresentationPlan::try_new(evidence, generation).map_err(|error| {
+            RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            }
+        })?;
     let line = analysis
         .dialogue_lines()
         .for_semantic_expr(owner)

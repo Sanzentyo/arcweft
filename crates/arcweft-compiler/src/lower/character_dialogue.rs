@@ -13,6 +13,9 @@ use super::*;
 
 mod application;
 pub(super) use application::runtime_dialogue_target;
+mod generation;
+pub(crate) use generation::project_character_catalog;
+pub(super) use generation::project_generation;
 
 #[cfg(test)]
 mod tests;

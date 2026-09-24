@@ -10,6 +10,15 @@ use std::sync::Arc;
 pub struct CompiledSource {
     pub plan: arcweft_core::plan::RuntimePlan,
     pub dialogue_content: DialogueContentCatalog,
+    pub dialogue_profile: crate::project::CheckedDialogueProfile,
+    pub character_catalog: Arc<arcweft_character::catalog::CharacterCatalog>,
+    pub character_dialogue_generation: Option<
+        Arc<
+            arcweft_dialogue::CharacterDialogueGenerationDeclaration<
+                arcweft_core::pattern::RuntimeSemanticTypeId,
+            >,
+        >,
+    >,
     pub analysis: Arc<crate::project::ProjectAnalysisLease>,
     pub style: crate::style::CompiledViewStyleArtifact,
     pub fx_definitions: Arc<[FxDefinition]>,
@@ -32,6 +41,12 @@ impl std::fmt::Debug for CompiledSource {
             .debug_struct("CompiledSource")
             .field("plan", &self.plan)
             .field("dialogue_content", &self.dialogue_content)
+            .field("dialogue_profile", &self.dialogue_profile)
+            .field("character_catalog", &self.character_catalog)
+            .field(
+                "character_dialogue_generation",
+                &self.character_dialogue_generation,
+            )
             .field("analysis", &self.analysis)
             .field("style", &self.style)
             .field("fx_definitions", &self.fx_definitions)

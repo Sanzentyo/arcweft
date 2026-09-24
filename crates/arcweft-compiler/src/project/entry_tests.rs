@@ -1114,8 +1114,33 @@ entry agent @entry.agent.controller {
         test_runtime_plan_artifact_key(),
     )
     .expect("entry-bound Agent artifact compiles");
-    let bytes = artifact.bundle.to_json_bytes().expect("bundle encodes");
-    let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+    assert!(matches!(
+        artifact.bundle.to_json_bytes(),
+        Err(
+            arcweft_bundle::BundleCodecError::CharacterDialogueAwfbRequired {
+                format: arcweft_bundle::BundleFormat::Json,
+            }
+        )
+    ));
+    let format = arcweft_bundle::BundleFormat::Awfb;
+    let bytes = artifact
+        .bundle
+        .to_format_bytes(format)
+        .expect("bundle encodes");
+    let decoded = ArcweftBundle::from_format_slice(format, &bytes).expect("bundle decodes");
+    assert_eq!(
+        decoded
+            .character_dialogue_generation
+            .as_ref()
+            .unwrap()
+            .digest(),
+        compiled
+            .runtime_plan()
+            .character_dialogue_generation
+            .as_ref()
+            .unwrap()
+            .digest(),
+    );
     let manifest = decoded.agent.as_ref().expect("final Agent manifest exists");
     assert_eq!(manifest.schema_version, 1);
     assert_eq!(manifest.entry_id.as_str(), "entry.agent.controller");

@@ -149,6 +149,9 @@ pub fn compile_checked_agent_bundle(
     if let Some(catalog) = &compiled.runtime_plan().character_presentation_catalog {
         bundle = bundle.with_character_presentation_catalog(catalog.as_ref().clone());
     }
+    if let Some(generation) = &compiled.runtime_plan().character_dialogue_generation {
+        bundle = bundle.with_character_dialogue_generation(generation.as_ref().clone());
+    }
     let bundle = bundle.with_agent_manifest(manifest.clone());
     Ok(CompiledAgentBundle {
         bundle,

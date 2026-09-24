@@ -263,6 +263,9 @@ pub struct RuntimePlanLowerReport {
     pub stats: RuntimePlanLowerStats,
     pub dialogue_content_catalog: DialogueContentCatalog,
     pub character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+    pub character_dialogue_generation: Option<
+        Arc<arcweft_dialogue::CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>>,
+    >,
     assertion_sites: Box<[RuntimeAssertionSite]>,
 }
 
@@ -1608,6 +1611,15 @@ pub fn lower_runtime_plan_with_stats(
     )
     .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let pure_helper_count = plan.pure_helpers().len();
+    let character_dialogue_generation = facts
+        .character_dialogue_generation()
+        .map(|declaration| {
+            declaration
+                .try_map_type_refs(|ty| Ok::<_, std::convert::Infallible>(ty.identity()))
+                .map(Arc::new)
+                .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])
+        })
+        .transpose()?;
     Ok(RuntimePlanLowerReport {
         plan,
         stats: RuntimePlanLowerStats {
@@ -1618,6 +1630,7 @@ pub fn lower_runtime_plan_with_stats(
         },
         dialogue_content_catalog,
         character_presentation_catalog: facts.character_presentation_catalog().cloned(),
+        character_dialogue_generation,
         assertion_sites: assertion_sites.into_boxed_slice(),
     })
 }
