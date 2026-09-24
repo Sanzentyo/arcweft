@@ -658,3 +658,34 @@ LSP 実装や HIR/Sema authority は変更していない。focused 7/7 と1/1�
 LSP lib 221/221、crate fmt/Clippy は通過（既存 warning あり）。
 `858fff451627f511972e4033a3557b9bd8f09754` で push 済み。
 workspace 全テストはこの後に再実行する。
+
+**2026-09-25 後続の実装・検証 checkpoint:** Tooling の public API 診断、
+CLI の Windows 実行スタック、RuntimePlan `If` の Sema 型、server entry の
+RouteWhole、player-native の Factory fixture をそれぞれ
+`564db18f1639bf4f024b02e656da9883d2c3595c`、
+`68f4590b6377778b37403caeedba8a9ea4eed99c`、
+`264b6430e6954689b0d81bb85db3989cf92dc141`、
+`a7c2840dbb07417c9b1bec9bcfcc5e77ffb57935`、
+`0da05d1e048ff822a8ba0aec39875ef406df8734` として main へ push した。
+この時点の `cargo test --workspace --lib --tests --exclude arcweft-cli
+--quiet --no-fail-fast` は終了コード0。CLI の named integration は6対象中5対象が
+合格し、`arcw_fixtures_check_run` の3集約テストは最初の未実装 fixture で停止する。
+これらは workspace 全 gate の合格を意味しない。
+
+`defer on completed/cancelled/failed` の source outcome、Block 本体、
+欠落 body の回復を Syntax→HIR で型付き保持し、inline colon Dialogue 後の
+`with:` を正しい plan 境界に接続した
+`4b251bb79ea6e4843d1f4a0778d34a7abe4bfc7c` も push 済み。
+HIR lib は長時間の既存 nominal shape limit 1件を除いて906 passed、
+Syntax lib は682 passed、workspace fmt は終了コード0。CLI の
+`current_pass/check` は、直前の新規回帰だった 011 を通過し 023 で停止する。
+023 の `cancel on input(.SkipLine)` は現状の Syntax/HIR に型付き経路がなく、
+式として回復されることを確認した。
+
+実行側の `defer` は未完了。試作した RuntimePlan の静的 cleanup 配列への
+書き込みは、未到達の登録も実行し、activation 中の失敗では cleanup を
+飛ばし、activation local と affine 値を cleanup scope に渡せないため採用せず
+作業ツリーから除いた。必要な契約は scope ごとの実行時登録・逆順解放と
+捕捉値所有、失敗／取消時の子 scope と root activation の unwind、native と
+AWBC 共通の work identity である。023 の `cancel on` と合わせ、工程1の
+runtime acceptance は未完了。
