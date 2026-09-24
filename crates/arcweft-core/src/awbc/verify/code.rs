@@ -3355,7 +3355,13 @@ fn is_exact_dialogue_content_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool
 }
 
 fn is_character_dialogue_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
-    let Some(AwbcRuntimeTypeShape::Opaque { arguments, .. }) = runtime_shape(program, ty) else {
+    let Some(AwbcRuntimeTypeShape::Opaque {
+        arguments,
+        value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+        persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+        ..
+    }) = runtime_shape(program, ty)
+    else {
         return false;
     };
     arguments.is_empty()
