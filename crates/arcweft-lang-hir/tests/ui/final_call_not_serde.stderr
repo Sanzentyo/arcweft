@@ -2,7 +2,7 @@ error[E0277]: the trait bound `HirCallInvocation: serde::Serialize` is not satis
  --> tests/ui/final_call_not_serde.rs:7:26
   |
 7 |     requires_serialize::<HirCallInvocation>();
-  |                          ^^^^^^^^^^^ the trait `Serialize` is not implemented for `HirCallInvocation`
+  |                          ^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `HirCallInvocation`
   |
   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `HirCallInvocation` type
   = note: for types from other crates check whether the crate offers a `serde` feature flag
@@ -26,7 +26,7 @@ error[E0277]: the trait bound `HirCallInvocation: serde::de::DeserializeOwned` i
  --> tests/ui/final_call_not_serde.rs:8:28
   |
 8 |     requires_deserialize::<HirCallInvocation>();
-  |                            ^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `HirCallInvocation`
+  |                            ^^^^^^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `HirCallInvocation`
   |
   = help: the following other types implement trait `Deserialize<'de>`:
             &'a [u8]

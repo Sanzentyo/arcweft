@@ -1,13 +1,25 @@
-error[E0451]: fields `callee`, `explicit_type_application`, `arguments` and `terminator` of struct `HirCallInvocation` are private
-  --> tests/ui/final_call_fields_private.rs:13:9
+error: cannot construct `HirCallInvocation` with struct literal syntax due to private fields
+  --> tests/ui/final_call_fields_private.rs:12:5
    |
 12 |     HirCallInvocation {
-   |     ----------- in this type
+   |     ^^^^^^^^^^^^^^^^^
 13 |         callee,
-   |         ^^^^^^ private field
+   |         ------ private field
 14 |         explicit_type_application,
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^ private field
+   |         ------------------------- private field
 15 |         arguments,
-   |         ^^^^^^^^^ private field
+   |         --------- private field
 16 |         terminator,
-   |         ^^^^^^^^^^ private field
+   |         ---------- private field
+   |
+   = note: ...and other private field `form` that was not provided
+help: you might have meant to use the `bare_value` associated function
+   |
+12 -     HirCallInvocation {
+13 -         callee,
+14 -         explicit_type_application,
+15 -         arguments,
+16 -         terminator,
+17 -     }
+12 +     HirCallInvocation::bare_value(_)
+   |
