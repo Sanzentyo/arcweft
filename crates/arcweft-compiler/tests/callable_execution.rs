@@ -1,10 +1,21 @@
+use arcweft_character::id::CharacterId;
 use arcweft_compiler::source::compile_source;
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::{
+    pattern::RuntimeBuiltinVariantCaseIdentity,
+    task::RuntimeProgramOwner,
+    value::{RuntimeEntityReference, RuntimeValue},
+};
+use arcweft_dialogue::{CharacterDialogueRuntimeSchema, CharacterDialogueType};
+use arcweft_interaction_model::dialogue::CharacterDialogueOperation;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use std::sync::Arc;
 
 #[path = "support/execution.rs"]
 mod execution;
-use execution::{assert_awbc_return, assert_native_return};
+use execution::{
+    assert_awbc_return, assert_native_return, bind_character_dialogue_schema,
+    execute_decoded_awbc_character_dialogue_calls, execute_native_character_dialogue_calls,
+};
 
 #[test]
 fn function_value_calls_do_not_merge_argument_groups() {
@@ -252,21 +263,151 @@ flow main() -> i64 {
     "84"
 );
 
-callable_case!(
-    character_factory_branches_keep_both_selected_calls,
-    r#"
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one native/AWBC fixture checks branch selection, exact payload defaults, and patches together"
+)]
+fn character_factory_branches_preserve_values_through_native_and_decoded_awbc() {
+    const SOURCE: &str = r#"
 pub character alice {}
 pub character bob {}
-fn create_dialogues(condition: bool) -> i64 {
-    let first = if condition { alice() } else { bob() }
-    let second = if !condition { alice() } else { bob() }
-    42i64
+fn select_dialogue(condition: bool) -> CharacterDialogue {
+    if condition { alice() } else { bob() }
 }
-flow main() -> i64 { return create_dialogues(true) }
-"#,
-    RuntimeValue::i64(42),
-    "42"
-);
+flow main() -> Unit {
+    let from_alice = select_dialogue(true)
+    let from_bob = select_dialogue(false)
+    let localized_alice = from_alice(source_locale = "ja-JP")
+    let localized_bob = from_bob(source_locale = "en-US")
+}
+entry cli @entry.main { goto @flow.main }
+"#;
+
+    let compiled = compile_source(SOURCE).expect("both Character branches compile");
+    let native = execute_native_character_dialogue_calls(&compiled);
+    let awbc = execute_decoded_awbc_character_dialogue_calls(&compiled);
+    assert_eq!(native, awbc, "native and decoded AWBC produce equal values");
+
+    let alice = CharacterId::try_new("character.alice").unwrap();
+    let bob = CharacterId::try_new("character.bob").unwrap();
+    let expected = [
+        (CharacterDialogueOperation::Factory, alice.clone(), None),
+        (CharacterDialogueOperation::Factory, bob.clone(), None),
+        (
+            CharacterDialogueOperation::Reconfigure,
+            alice,
+            Some("ja-JP"),
+        ),
+        (CharacterDialogueOperation::Reconfigure, bob, Some("en-US")),
+    ];
+    assert_eq!(
+        native
+            .iter()
+            .map(|(operation, _)| *operation)
+            .collect::<Vec<_>>(),
+        expected
+            .iter()
+            .map(|(operation, _, _)| *operation)
+            .collect::<Vec<_>>(),
+        "both branch factories return to the caller and reach reconfiguration"
+    );
+
+    let owner = RuntimeProgramOwner::Plan(Arc::new(compiled.plan.clone()));
+    let schema = bind_character_dialogue_schema(&compiled, owner);
+    let generation = compiled
+        .character_dialogue_generation
+        .as_ref()
+        .expect("the fixture publishes accepted CharacterDialogue generation");
+    for ((operation, value), (expected_operation, character, locale)) in native.iter().zip(expected)
+    {
+        assert_eq!(*operation, expected_operation);
+        let RuntimeValue::Opaque(opaque) = value else {
+            panic!("CharacterDialogue producer returns its opaque runtime value")
+        };
+        assert_eq!(
+            opaque.producer(),
+            &CharacterDialogueRuntimeSchema::opaque_type_producer()
+        );
+        assert_eq!(
+            opaque.semantic_identity(),
+            CharacterDialogueType::exact(character.clone()).runtime_semantic_identity()
+        );
+        let RuntimeValue::Tuple(payload) = opaque.payload() else {
+            panic!("the opaque CharacterDialogue payload is its closed tuple")
+        };
+        assert_eq!(payload.len(), 18, "the admitted payload retains every slot");
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) =
+            &payload[0]
+        else {
+            panic!("payload slot zero retains the selected Character reference")
+        };
+        assert_eq!(*family, arcweft_id::DeclarationIdentityFamily::Character);
+        assert_eq!(public_id.as_str(), character.as_str());
+        assert_eq!(
+            payload[1].builtin_variant_case().map(|(case, _)| case),
+            Some(RuntimeBuiltinVariantCaseIdentity::OptionNone),
+            "logical Character declarations do not invent a visual manifest"
+        );
+
+        let decoded = schema
+            .try_decode_opaque(opaque)
+            .expect("the exact compiler generation admits its produced opaque value");
+        let dialogue = decoded.dialogue();
+        assert_eq!(dialogue.character(), &character);
+        let config = dialogue.config();
+        let defaults = generation
+            .characters()
+            .get(&character)
+            .expect("selected Character belongs to the accepted generation")
+            .defaults()
+            .config();
+        assert_eq!(config.voice(), defaults.voice());
+        assert_eq!(config.look(), defaults.look());
+        assert_eq!(config.stage(), defaults.stage());
+        assert_eq!(config.portrait(), defaults.portrait());
+        assert_eq!(config.focus(), defaults.focus());
+        assert_eq!(config.cleanup(), defaults.cleanup());
+        assert_eq!(config.view(), defaults.view());
+        assert_eq!(config.hooks(), defaults.hooks());
+        assert_eq!(config.style(), defaults.style());
+        assert_eq!(config.rich_text(), defaults.rich_text());
+        assert_eq!(config.inline_failure(), defaults.inline_failure());
+        assert_eq!(config.custom(), defaults.custom());
+        assert_eq!(
+            config
+                .source_locale()
+                .map(arcweft_dialogue::DialogueLocaleId::as_str),
+            locale,
+            "the caller's explicit reconfigure patch is retained"
+        );
+
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: view_family,
+            public_id: view_id,
+        }) = &payload[11]
+        else {
+            panic!("payload slot eleven retains the accepted View default")
+        };
+        assert_eq!(*view_family, arcweft_id::DeclarationIdentityFamily::View);
+        assert_eq!(view_id.as_str(), defaults.view().as_str());
+        let (locale_case, locale_payload) = payload[12]
+            .builtin_variant_case()
+            .expect("payload slot twelve is the source-locale option");
+        match locale {
+            Some(locale) => {
+                assert_eq!(locale_case, RuntimeBuiltinVariantCaseIdentity::OptionSome);
+                assert!(
+                    matches!(locale_payload, Some(RuntimeValue::String(value)) if value.as_str() == locale)
+                );
+            }
+            None => {
+                assert_eq!(locale_case, RuntimeBuiltinVariantCaseIdentity::OptionNone);
+                assert!(locale_payload.is_none());
+            }
+        }
+    }
+}
 
 callable_case!(
     project_variant_keeps_unselected_payload_types,

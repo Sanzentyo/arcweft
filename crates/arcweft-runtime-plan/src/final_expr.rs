@@ -1304,14 +1304,25 @@ impl<'hir> FinalExprLowerer<'hir> {
             );
         }
         let condition = self.lower(branch.condition())?;
+        let checked_result = if matches!(&continuation, PureTryContinuation::Return) {
+            Some(self.expression_type(owner)?)
+        } else {
+            None
+        };
         let then_expr =
             self.lower_with_try_continuation(branch.then_branch(), continuation.clone())?;
         let else_expr = self.lower_with_try_continuation(branch.else_branch(), continuation)?;
-        if then_expr.ty() != else_expr.ty() {
+        let result_type = if let Some(checked_result) = checked_result {
+            // Sema owns the branch join. Core validates each exact child against
+            // this accepted result without rewriting its runtime identity.
+            checked_result
+        } else if then_expr.ty() == else_expr.ty() {
+            then_expr.ty()
+        } else {
             return Err(format!("If expression {owner:?} Try branches disagree"));
-        }
+        };
         Ok(RuntimeExprSeed::new(
-            then_expr.ty(),
+            result_type,
             RuntimeExprSeedKind::If {
                 condition: Box::new(condition),
                 then_expr: Box::new(then_expr),
