@@ -12,8 +12,9 @@ use arcweft_core::{
             AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag,
             AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram,
             AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType,
-            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeDefinition, AwbcScopeId,
+            AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+            AwbcTrapCode, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{self, VmExit, VmObservation, VmStepOptions},
@@ -21,6 +22,7 @@ use arcweft_core::{
     entry::{EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable},
     pattern::RuntimeSemanticTypeId,
     plan::{EntryRuntimeId, FlowRuntimeId},
+    scope::RuntimeScopeIdentity,
     task::NeedId,
     value::RuntimeValue,
 };
@@ -244,9 +246,11 @@ fn suspended_snapshot_rejects_resume_point_owned_by_the_caller() {
 
 #[test]
 fn cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order() {
-    let program = direct_suspension_program();
+    let program = scoped_nested_suspension_program();
     let mut fiber = suspended_three_frame_fiber(&program);
     install_nested_cleanups(&mut fiber);
+    // The synthetic stack is positioned just after the innermost EnterScope.
+    fiber.cursor.instruction_offset = 1;
     fiber
         .validate_for_program(&program)
         .expect("nested suspended cleanup state validates");
@@ -446,11 +450,7 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
 fn install_nested_cleanups(fiber: &mut FiberState) {
     for (frame_index, frame) in fiber.frames.iter_mut().enumerate() {
         let owner = ["caller", "middle", "inner"][frame_index];
-        install_frame_cleanups(
-            frame,
-            owner,
-            AwbcScopeId(u32::try_from(frame_index).expect("fixture scope index fits u32")),
-        );
+        install_frame_cleanups(frame, owner, AwbcScopeId(0));
     }
 }
 
@@ -465,7 +465,7 @@ fn install_frame_cleanups(
     ];
     frame.scopes.push(FiberScope {
         id: scope,
-        depth: 1,
+        depth: 0,
         cleanups: vec![
             cleanup(format!("{owner}.scope.1")),
             cleanup(format!("{owner}.scope.2")),
@@ -609,6 +609,37 @@ fn direct_suspension_program() -> AwbcProgram {
         entries: vec![direct_suspension_entry()],
         ..AwbcProgram::default()
     }
+}
+
+fn scoped_nested_suspension_program() -> AwbcProgram {
+    let mut program = direct_suspension_program();
+    for layout in &mut program.frame_layouts {
+        layout.scopes.push(AwbcScopeDefinition {
+            parent: None,
+            identity: RuntimeScopeIdentity::Anonymous,
+        });
+    }
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::EnterScope {
+            scope: AwbcScopeId(0),
+        },
+        AwbcInstruction::ExitScope {
+            scope: AwbcScopeId(0),
+        },
+    ];
+    for (block, start) in program.blocks.iter_mut().zip(0..4) {
+        block.instructions = AwbcTableRange::new(start, 1);
+    }
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("nested cleanup fixture has verified lexical scopes");
+    program
 }
 
 fn direct_suspension_flow() -> FlowRuntimeId {
