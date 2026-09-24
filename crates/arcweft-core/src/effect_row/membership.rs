@@ -7,13 +7,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::EffectSet;
 use super::decision::{DecisionControl, DecisionEncoding, DecisionWork, EffectDecision};
-use crate::effects::{EffectId, EffectSet};
+use arcweft_id::EffectId;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) trait MembershipEncoding<V>: DecisionEncoding<V> {
+pub trait MembershipEncoding<V>: DecisionEncoding<V> {
     fn effect(&mut self, effect: &EffectId) -> Result<(), Self::Error>;
 }
 
@@ -25,16 +26,16 @@ struct Membership<V> {
 
 /// A symbolic finite effect set over scoped row references.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(super) struct EffectFormula<V>(Membership<V>);
+pub struct EffectFormula<V>(Membership<V>);
 
 /// A relation that must hold for every effect label under finite row valuations.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EffectPredicate<V = crate::types::GenericEffectReference>(Membership<V>);
+pub struct EffectPredicate<V>(Membership<V>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct EffectCompletion<V> {
-    pub(super) admissibility: EffectPredicate<V>,
-    pub(super) least: Option<BTreeMap<V, EffectFormula<V>>>,
+pub struct EffectCompletion<V> {
+    pub admissibility: EffectPredicate<V>,
+    pub least: Option<BTreeMap<V, EffectFormula<V>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -170,12 +171,12 @@ impl<V: Clone + Ord> Membership<V> {
 }
 
 impl<V: Clone + Ord> EffectFormula<V> {
-    pub(super) fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
+    pub fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         self.0.encode(encoder)
     }
     /// Literal construction from already owned atoms and an optional reference.
     /// Algebraic operations use the controlled decision builder.
-    pub(super) fn literal(effects: EffectSet, reference: Option<V>) -> Self {
+    pub fn literal(effects: EffectSet, reference: Option<V>) -> Self {
         Self(Membership {
             default: reference.map_or_else(
                 || EffectDecision::constant(false),
@@ -188,7 +189,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
         })
     }
 
-    pub(super) fn variables(&self) -> impl Iterator<Item = &V> {
+    pub fn variables(&self) -> impl Iterator<Item = &V> {
         self.0.default.variables().chain(
             self.0
                 .overrides
@@ -197,7 +198,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
         )
     }
 
-    pub(super) fn constant_effects(&self) -> EffectSet {
+    pub fn constant_effects(&self) -> EffectSet {
         self.0
             .overrides
             .iter()
@@ -206,7 +207,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .collect()
     }
 
-    pub(super) fn single_reference(&self) -> Option<&V> {
+    pub fn single_reference(&self) -> Option<&V> {
         self.0
             .overrides
             .values()
@@ -215,21 +216,21 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .flatten()
     }
 
-    pub(super) fn is_closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         self.variables().next().is_none()
     }
-    pub(super) fn map_references<U: Clone + Ord, C: DecisionControl>(
+    pub fn map_references<U: Clone + Ord, C: DecisionControl>(
         &self,
         control: &mut C,
         mapping: &mut impl FnMut(&V, &mut C) -> Result<U, C::Error>,
     ) -> Result<EffectFormula<U>, C::Error> {
         self.0.map_references(control, mapping).map(EffectFormula)
     }
-    pub(super) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self(Membership::constant(false))
     }
 
-    pub(super) fn from_set<C: DecisionControl>(
+    pub fn from_set<C: DecisionControl>(
         effects: &EffectSet,
         control: &mut C,
     ) -> Result<Self, C::Error> {
@@ -240,17 +241,14 @@ impl<V: Clone + Ord> EffectFormula<V> {
         Ok(Self(membership))
     }
 
-    pub(super) fn variable<C: DecisionControl>(
-        variable: V,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
+    pub fn variable<C: DecisionControl>(variable: V, control: &mut C) -> Result<Self, C::Error> {
         Ok(Self(Membership {
             default: EffectDecision::variable(variable, control)?,
             overrides: BTreeMap::new(),
         }))
     }
 
-    pub(super) fn union<C: DecisionControl>(
+    pub fn union<C: DecisionControl>(
         &self,
         other: &Self,
         control: &mut C,
@@ -260,7 +258,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .map(Self)
     }
 
-    pub(super) fn intersection<C: DecisionControl>(
+    pub fn intersection<C: DecisionControl>(
         &self,
         other: &Self,
         control: &mut C,
@@ -270,7 +268,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .map(Self)
     }
 
-    pub(super) fn difference<C: DecisionControl>(
+    pub fn difference<C: DecisionControl>(
         &self,
         other: &Self,
         control: &mut C,
@@ -280,7 +278,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .map(Self)
     }
 
-    pub(super) fn subset<C: DecisionControl>(
+    pub fn subset<C: DecisionControl>(
         &self,
         permitted: &Self,
         control: &mut C,
@@ -290,7 +288,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
             .map(EffectPredicate::normalized)
     }
 
-    pub(super) fn substitute<C: DecisionControl>(
+    pub fn substitute<C: DecisionControl>(
         &self,
         replacements: &BTreeMap<V, Self>,
         control: &mut C,
@@ -298,7 +296,7 @@ impl<V: Clone + Ord> EffectFormula<V> {
         self.0.substitute(replacements, control).map(Self)
     }
 
-    pub(super) fn closed<C: DecisionControl>(
+    pub fn closed<C: DecisionControl>(
         &self,
         control: &mut C,
     ) -> Result<Option<EffectSet>, C::Error> {
@@ -318,7 +316,34 @@ impl<V: Clone + Ord> EffectFormula<V> {
 }
 
 impl<V: Clone + Ord> EffectPredicate<V> {
-    pub(crate) fn equal_with<C: DecisionControl>(
+    /// Simultaneously substitutes each distinct row reference once. A caller
+    /// can reject an unknown source row through its fallible formula conversion.
+    pub fn try_substitute_variables<C: DecisionControl, R>(
+        &self,
+        control: &mut C,
+        mapping: &mut impl FnMut(&V, &mut C) -> Result<R, C::Error>,
+    ) -> Result<Self, C::Error>
+    where
+        R: TryInto<EffectFormula<V>>,
+        C::Error: From<R::Error>,
+    {
+        let mut replacements = BTreeMap::new();
+        for variable in self.variables() {
+            control.charge(DecisionWork::Visit)?;
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                replacements.entry(variable.clone())
+            {
+                entry.insert(
+                    mapping(variable, control)?
+                        .try_into()
+                        .map_err(C::Error::from)?,
+                );
+            }
+        }
+        self.substitute(&replacements, control)
+    }
+
+    pub fn equal_with<C: DecisionControl>(
         &self,
         other: &Self,
         control: &mut C,
@@ -328,11 +353,11 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         Ok(self == other)
     }
 
-    pub(crate) fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
+    pub fn encode<E: MembershipEncoding<V>>(&self, encoder: &mut E) -> Result<(), E::Error> {
         self.0.encode(encoder)
     }
 
-    pub(crate) fn variables(&self) -> impl Iterator<Item = &V> {
+    pub fn variables(&self) -> impl Iterator<Item = &V> {
         self.0.default.variables().chain(
             self.0
                 .overrides
@@ -341,7 +366,7 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         )
     }
 
-    pub(crate) fn map_references<U: Clone + Ord, C: DecisionControl>(
+    pub fn map_references<U: Clone + Ord, C: DecisionControl>(
         &self,
         control: &mut C,
         mapping: &mut impl FnMut(&V, &mut C) -> Result<U, C::Error>,
@@ -361,25 +386,25 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         }
     }
 
-    pub(super) fn unconstrained() -> Self {
+    pub fn unconstrained() -> Self {
         Self(Membership::constant(true))
     }
 
-    pub(super) fn impossible() -> Self {
+    pub fn impossible() -> Self {
         Self(Membership::constant(false))
     }
 
-    pub(crate) fn is_unconstrained(&self) -> bool {
+    pub fn is_unconstrained(&self) -> bool {
         self.0.default.is_constant(true) && self.0.overrides.is_empty()
     }
 
-    pub(super) fn is_impossible(&self) -> bool {
+    pub fn is_impossible(&self) -> bool {
         self.0.default.is_constant(false)
             || self.0.overrides.values().any(|row| row.is_constant(false))
     }
 
     /// Concrete label classes whose projected relation has no witness.
-    pub(super) fn rejected_labels<C: DecisionControl>(
+    pub fn rejected_labels<C: DecisionControl>(
         &self,
         control: &mut C,
     ) -> Result<EffectSet, C::Error> {
@@ -393,7 +418,7 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         Ok(labels)
     }
 
-    pub(super) fn project<C: DecisionControl>(
+    pub fn project<C: DecisionControl>(
         &self,
         quantified: &BTreeSet<V>,
         control: &mut C,
@@ -414,17 +439,13 @@ impl<V: Clone + Ord> EffectPredicate<V> {
         Ok(Self::normalized(membership))
     }
 
-    pub(super) fn and<C: DecisionControl>(
-        &self,
-        other: &Self,
-        control: &mut C,
-    ) -> Result<Self, C::Error> {
+    pub fn and<C: DecisionControl>(&self, other: &Self, control: &mut C) -> Result<Self, C::Error> {
         self.0
             .combine(&other.0, Operation::Intersection, control)
             .map(Self::normalized)
     }
 
-    pub(super) fn substitute<C: DecisionControl>(
+    pub fn substitute<C: DecisionControl>(
         &self,
         replacements: &BTreeMap<V, EffectFormula<V>>,
         control: &mut C,
@@ -434,7 +455,7 @@ impl<V: Clone + Ord> EffectPredicate<V> {
             .map(Self::normalized)
     }
 
-    pub(super) fn complete<C: DecisionControl>(
+    pub fn complete<C: DecisionControl>(
         &self,
         quantified: &BTreeSet<V>,
         control: &mut C,

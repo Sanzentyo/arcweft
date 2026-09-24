@@ -3,6 +3,7 @@ pub mod audio;
 pub mod awbc;
 mod canonical_varint;
 pub mod effect;
+pub mod effect_row;
 pub mod engine;
 pub mod entry;
 pub mod executor;

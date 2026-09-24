@@ -4,13 +4,15 @@ use thiserror::Error;
 
 use crate::{effect_model::CallableId, effects::EffectSet, types::GenericEffectReference};
 
-mod decision;
-mod membership;
+pub(crate) use arcweft_core::effect_row::{
+    DecisionControl, DecisionEncoding, DecisionWork, EffectFormula, MembershipEncoding,
+};
 
-pub(crate) use decision::{DecisionControl, DecisionEncoding, DecisionWork};
-use membership::EffectFormula;
-pub use membership::EffectPredicate;
-pub(crate) use membership::MembershipEncoding;
+/// The canonical shared predicate instantiated with semantic references.
+pub type EffectPredicate<V = GenericEffectReference> = arcweft_core::effect_row::EffectPredicate<V>;
+
+#[cfg(test)]
+mod scope_tests;
 
 /// Equality visits the canonical graph grammar before inspecting its immutable
 /// rows. It consumes the same surrounding decision budget as construction.
@@ -549,18 +551,11 @@ impl EffectRow {
     }
 }
 
-impl EffectPredicate {
-    pub(crate) fn try_substitute_variables<C: DecisionControl>(
-        &self,
-        control: &mut C,
-        mapping: &mut impl FnMut(&GenericEffectReference, &mut C) -> Result<EffectRow, C::Error>,
-    ) -> Result<Self, C::Error>
-    where
-        C::Error: From<EffectRowError>,
-    {
-        let replacements = effect_replacements(self.variables(), control, mapping)?
-            .ok_or_else(|| C::Error::from(EffectRowError::UnknownRow))?;
-        self.substitute(&replacements, control)
+impl TryFrom<EffectRow> for EffectFormula<GenericEffectReference> {
+    type Error = EffectRowError;
+
+    fn try_from(row: EffectRow) -> Result<Self, Self::Error> {
+        row.formula.ok_or(EffectRowError::UnknownRow)
     }
 }
 

@@ -158,12 +158,6 @@ impl ScopedEffectRowView<'_> {
     }
 }
 
-impl ScopedEffectPredicateView<'_> {
-    pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
-        self.value.semantic_identity_digest_in_scope(self.scope)
-    }
-}
-
 impl ScopedEffectReferenceView<'_> {
     pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
         crate::effect_row::EffectRow::open(crate::effects::EffectSet::new(), self.value.clone())

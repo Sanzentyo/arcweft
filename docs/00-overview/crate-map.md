@@ -186,6 +186,11 @@ arcweft-launch
   context-free な変換を所有し、sema と runtime adapter は同じ `From` 実装を使う。
   依存方向は core → data とする。この変換は reflection metadata を保持し、
   nominal identity の発行や未解決の参照を含む graph の admission は行わない。
+- `arcweft-core::effect_row` は有限 effect set、canonical membership DAG、
+  その predicate と制御付き置換・量化の共通代数を所有する。意味解析と実行時型の
+  検証は、各層の型付き参照をこの同じ代数へ渡す。宣言・application scope、
+  推論変数の eligibility、候補制約、未確定の annotation は sema に残し、
+  代数自体は HIR、solver transaction、I/O に依存しない。
 - `arcweft-bundle` は bundle data model と deterministic codec entrypoints を所有する。JSON は `.awfb` 互換の default codec、TOML/YAML/MessagePack/CBOR/Avro は explicit alternate artifact format とする。Avro bundle artifact は stable JSON payload を Avro Object Container envelope に包む。
 - `arcweft-bundle::resource_codec` は product resource section の共通
   compact codec contract を所有する。section magic/schema、decode budgets、

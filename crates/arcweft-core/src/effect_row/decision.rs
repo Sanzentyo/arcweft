@@ -12,12 +12,12 @@ mod tests;
 
 /// Work is charged to the surrounding semantic transaction before graph growth.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DecisionWork {
+pub enum DecisionWork {
     Visit,
     Node,
 }
 
-pub(crate) trait DecisionControl {
+pub trait DecisionControl {
     type Error;
 
     fn charge(&mut self, work: DecisionWork) -> Result<(), Self::Error>;
@@ -25,7 +25,7 @@ pub(crate) trait DecisionControl {
 
 /// Primitive writes for the one canonical decision grammar. The containing
 /// type/call transcript owns byte storage, reference identity and accounting.
-pub(crate) trait DecisionEncoding<V> {
+pub trait DecisionEncoding<V> {
     type Error;
     fn tag(&mut self, value: u8) -> Result<(), Self::Error>;
     fn count(&mut self, value: usize) -> Result<(), Self::Error>;
@@ -282,7 +282,8 @@ impl<V: Clone + Ord> EffectDecision<V> {
         self.conditional(&Self::constant(true), other, control)
     }
 
-    pub(super) fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
+    #[cfg(test)]
+    fn not<C: DecisionControl>(&self, control: &mut C) -> Result<Self, C::Error> {
         self.conditional(&Self::constant(false), &Self::constant(true), control)
     }
 

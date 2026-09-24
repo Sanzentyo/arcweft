@@ -456,16 +456,14 @@ impl EffectRow {
     }
 }
 
-impl crate::effect_row::EffectPredicate {
-    pub(crate) fn semantic_identity_digest_in_scope(
-        &self,
-        scope: &GenericScope,
-    ) -> Result<SemanticTypeDigest, GenericScopeError> {
-        let mut encoder = Encoder::scoped(scope, &mut (), &|()| Ok::<(), GenericScopeError>(()))?;
+impl super::ScopedEffectPredicateView<'_> {
+    pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        let mut encoder =
+            Encoder::scoped(self.scope(), &mut (), &|()| Ok::<(), GenericScopeError>(()))?;
         // This root is a universally interpreted predicate, distinct from a
         // finite effect row and from every runtime type constructor.
         encoder.tag(97);
-        self.encode(&mut EffectRowTypeEncoding {
+        self.value().encode(&mut EffectRowTypeEncoding {
             encoder: &mut encoder,
             control: &mut (),
             node: &|_: &mut (), _: super::TypeProjectionNodeKind, _: u64| {
