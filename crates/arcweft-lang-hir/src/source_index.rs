@@ -713,6 +713,7 @@ pub enum HirTypeSourceRole {
 pub enum HirStmtSourceRole {
     Whole,
     UnsafeAuditInsertion,
+    CancelInputActionSelector,
 }
 
 /// Typed source component of one lexical scope.
@@ -747,6 +748,7 @@ pub enum HirThreadBodySourceRole {
     Whole,
     OpenDelimiter,
     CloseDelimiter,
+    IndentationIntroducer,
     Item {
         ordinal: u32,
         part: HirThreadFlowItemSourcePart,

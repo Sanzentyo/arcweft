@@ -1095,12 +1095,13 @@ impl HirModule {
                     status,
                 ))
             }
-            HirThreadBodySourceRole::OpenDelimiter | HirThreadBodySourceRole::CloseDelimiter => {
-                self.source_components
-                    .requirement(query)
-                    .map(|requirement| HirResolvedSourceRole::component(requirement, status))
-                    .ok_or_else(|| HirSourceQueryError::role_not_applicable(query))
-            }
+            HirThreadBodySourceRole::OpenDelimiter
+            | HirThreadBodySourceRole::CloseDelimiter
+            | HirThreadBodySourceRole::IndentationIntroducer => self
+                .source_components
+                .requirement(query)
+                .map(|requirement| HirResolvedSourceRole::component(requirement, status))
+                .ok_or_else(|| HirSourceQueryError::role_not_applicable(query)),
             HirThreadBodySourceRole::Item { ordinal, part } => {
                 let Some(item) = usize::try_from(ordinal)
                     .ok()
@@ -1814,7 +1815,8 @@ fn recovery_query_applies(
             match role {
                 HirThreadBodySourceRole::Whole
                 | HirThreadBodySourceRole::OpenDelimiter
-                | HirThreadBodySourceRole::CloseDelimiter => true,
+                | HirThreadBodySourceRole::CloseDelimiter
+                | HirThreadBodySourceRole::IndentationIntroducer => true,
                 HirThreadBodySourceRole::Item { ordinal, .. } => usize::try_from(*ordinal)
                     .ok()
                     .is_some_and(|ordinal| ordinal < body.items().len()),
@@ -1935,7 +1937,8 @@ fn resolve_prepared_relational_source_role<'a>(
                     ))
                 }
                 HirThreadBodySourceRole::OpenDelimiter
-                | HirThreadBodySourceRole::CloseDelimiter => source_components
+                | HirThreadBodySourceRole::CloseDelimiter
+                | HirThreadBodySourceRole::IndentationIntroducer => source_components
                     .requirement(query)
                     .map(|requirement| HirResolvedSourceRole::component(requirement, status)),
                 HirThreadBodySourceRole::Item { ordinal, part } => {

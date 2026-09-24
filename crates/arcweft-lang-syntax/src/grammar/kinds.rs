@@ -162,6 +162,7 @@ define_syntax_kinds! {
     ChoiceViewBody,
     ChoicePlanBody,
     DialogueLinePlanBody,
+    DialogueCancelRuleBody,
     PredicateBlock,
     ProofBlock,
     OpenBraceNode,
@@ -194,6 +195,7 @@ define_syntax_kinds! {
     LifetimeSetStatement,
     WaitStatement,
     OnStatement,
+    DialogueCancelRuleStatement,
     UnsafeLifetimeStatement,
     IfStatement,
     LoopExpression,
@@ -584,6 +586,7 @@ impl SyntaxKind {
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
             | Self::DialogueLinePlanBody
+            | Self::DialogueCancelRuleBody
             | Self::PredicateBlock
             | Self::ProofBlock
             | Self::OpenBraceNode
@@ -616,6 +619,7 @@ impl SyntaxKind {
             | Self::LifetimeSetStatement
             | Self::WaitStatement
             | Self::OnStatement
+            | Self::DialogueCancelRuleStatement
             | Self::UnsafeLifetimeStatement
             | Self::IfStatement
             | Self::WhileStatement
@@ -821,6 +825,7 @@ impl SyntaxKind {
             | Self::LifetimeSetStatement
             | Self::WaitStatement
             | Self::OnStatement
+            | Self::DialogueCancelRuleStatement
             | Self::UnsafeLifetimeStatement
             | Self::IfStatement
             | Self::WhileStatement
@@ -1049,6 +1054,7 @@ impl SyntaxKind {
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
             | Self::DialogueLinePlanBody
+            | Self::DialogueCancelRuleBody
             | Self::PredicateBlock
             | Self::ProofBlock => Some(AstTag::Body),
             Self::OpenBraceNode
@@ -1178,6 +1184,7 @@ impl SyntaxKind {
                 | Self::LifetimeSetStatement
                 | Self::WaitStatement
                 | Self::OnStatement
+                | Self::DialogueCancelRuleStatement
                 | Self::UnsafeLifetimeStatement
                 | Self::IfStatement
                 | Self::WhileStatement

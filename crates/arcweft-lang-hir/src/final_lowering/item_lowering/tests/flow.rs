@@ -16,7 +16,9 @@ use crate::source_index::{
     HirSourceRequirement, HirStmtSourceRole, HirThreadBodySourceRole, HirThreadFlowItemSourcePart,
 };
 use crate::stmt::{
-    HirStmtChildRole, HirStmtKind, HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
+    HirCancelTrigger, HirCancelTriggerIssue, HirStmtCancelTriggerEvaluationPlan, HirStmtChildRole,
+    HirStmtEvaluationPlan, HirStmtEvaluationPublicationRole, HirStmtEvaluationStep, HirStmtKind,
+    HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
 };
 
 fn resolve_flow(
@@ -111,6 +113,405 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
             kind => panic!("unexpected line-plan statement kind: {kind:?}"),
         }
     }
+}
+
+#[test]
+fn dialogue_line_cancel_rule_retains_typed_trigger_and_nested_thread_scope() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_edge() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        長い台詞です。[p]\n",
+        "    with:\n",
+        "        defer on completed:\n",
+        "            log.info(\"completed\")\n",
+        "        defer on cancelled:\n",
+        "            log.info(\"cancelled\")\n",
+        "        cancel on input(.SkipLine) { out .Skipped }\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let parsed = parse("arcweft-test://proof/dialogue-line-cancel-rule", source);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let Some(HirThreadFlowItem::DialogueApplication(application)) = flow.body().items().first()
+    else {
+        panic!("Dialogue application must remain a direct Flow body item");
+    };
+    let HirExprKind::AttachedContentApplication(application) = module
+        .resolve_expr(*application)
+        .expect("Dialogue application expression")
+        .kind()
+    else {
+        panic!("Dialogue line must keep its attached content application owner");
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("Dialogue application must own its line plan");
+    };
+    let [
+        HirLinePlanItem::Statement(_),
+        HirLinePlanItem::Statement(_),
+        HirLinePlanItem::CancelRule(cancel),
+    ] = plan.items()
+    else {
+        panic!("two deferred cleanups precede the typed cancellation rule");
+    };
+    let cancel_id = *cancel;
+    let cancel = module
+        .resolve_stmt(cancel_id)
+        .expect("cancel rule statement");
+    assert!(!cancel.is_poisoned());
+    let HirStmtKind::CancelRule {
+        trigger: HirCancelTrigger::InputAction(action),
+        body,
+    } = cancel.kind()
+    else {
+        panic!("line-plan cancel retains its catalog-key trigger and nested body");
+    };
+    assert_eq!(action.as_str(), "SkipLine");
+    assert!(
+        cancel
+            .kind()
+            .child_edges()
+            .iter()
+            .all(|edge| !matches!(edge.child(), crate::stmt::HirStatementChild::Pattern(_)))
+    );
+    let body_scope = module
+        .resolve_scope(body.scope())
+        .expect("nested body scope");
+    assert_eq!(body_scope.parent(), Some(plan.root_scope()));
+    assert_eq!(body_scope.owner(), &HirScopeOwner::Stmt(cancel_id));
+    assert!(body_scope.locals().is_empty());
+    assert_eq!(body.items().len(), 1);
+    let [HirThreadFlowItem::Statement(out)] = body.items() else {
+        panic!("cancel action body retains its one source-ordered Out statement");
+    };
+    let out = module.resolve_stmt(*out).expect("cancel action Out");
+    assert!(!out.is_poisoned());
+    assert!(matches!(out.kind(), HirStmtKind::Out { .. }));
+
+    let body_source = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::ThreadBody {
+                owner: HirThreadBodyOwner::NestedScope(body.scope()),
+                role: HirThreadBodySourceRole::Whole,
+            },
+        )
+        .expect("cancel body's typed source-index owner");
+    assert_eq!(body_source.owner_status(), HirSourceOwnerStatus::Clean);
+    assert!(matches!(
+        body_source.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(_))
+    ));
+    let HirStmtEvaluationPlan::CancelRule {
+        trigger:
+            HirStmtCancelTriggerEvaluationPlan::InputActionKey {
+                action: plan_action,
+            },
+        ..
+    } = cancel.kind().evaluation_plan()
+    else {
+        panic!("cancellation evaluation exposes its input action key");
+    };
+    assert_eq!(plan_action.as_str(), "SkipLine");
+    let mut emitted_pattern = false;
+    cancel
+        .kind()
+        .evaluation_plan()
+        .try_visit_evaluation_steps(|step| {
+            emitted_pattern |= matches!(
+                step,
+                HirStmtEvaluationStep::Pattern { .. }
+                    | HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::TriggerPattern { .. },
+                        ..
+                    }
+            );
+        })
+        .expect("cancellation evaluation steps");
+    assert!(!emitted_pattern);
+
+    let selector_source = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Stmt {
+                owner: cancel_id,
+                role: HirStmtSourceRole::CancelInputActionSelector,
+            },
+        )
+        .expect("input action selector source component");
+    assert_eq!(selector_source.owner_status(), HirSourceOwnerStatus::Clean);
+    let HirSourcePresence::Present(HirSourceSite::Span(selector_span)) = selector_source.presence()
+    else {
+        panic!("input action selector maps to its exact authored name token");
+    };
+    let expected_start = source.find("SkipLine").expect("selector in source");
+    assert_eq!(selector_span.range().start(), expected_start);
+    assert_eq!(
+        selector_span.range().end(),
+        expected_start + "SkipLine".len()
+    );
+}
+
+#[test]
+fn dialogue_line_cancel_rule_colon_body_reaches_the_same_typed_hir_owner() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_edge() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        長い台詞です。[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine):\n",
+        "            out .Skipped\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-cancel-rule-colon",
+        source,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let Some(HirThreadFlowItem::DialogueApplication(application)) = flow.body().items().first()
+    else {
+        panic!("Dialogue application must remain a direct Flow body item");
+    };
+    let HirExprKind::AttachedContentApplication(application) = module
+        .resolve_expr(*application)
+        .expect("Dialogue application expression")
+        .kind()
+    else {
+        panic!("Dialogue line must keep its attached content application owner");
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("Dialogue application must own its line plan");
+    };
+    let [HirLinePlanItem::CancelRule(cancel)] = plan.items() else {
+        panic!("colon syntax must lower to one typed line-plan cancellation rule");
+    };
+    let cancel = module.resolve_stmt(*cancel).expect("cancel rule statement");
+    let HirStmtKind::CancelRule {
+        trigger: HirCancelTrigger::InputAction(action),
+        body,
+    } = cancel.kind()
+    else {
+        panic!("colon and brace syntax share the same typed HIR cancel-rule owner");
+    };
+    assert_eq!(action.as_str(), "SkipLine");
+    let [HirThreadFlowItem::Statement(out)] = body.items() else {
+        panic!("colon cancellation body retains its typed Out action");
+    };
+    assert!(matches!(
+        module
+            .resolve_stmt(*out)
+            .expect("colon cancellation Out")
+            .kind(),
+        HirStmtKind::Out { .. }
+    ));
+    let body_source = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::ThreadBody {
+                owner: HirThreadBodyOwner::NestedScope(body.scope()),
+                role: HirThreadBodySourceRole::IndentationIntroducer,
+            },
+        )
+        .expect("colon introducer source component");
+    assert_eq!(body_source.owner_status(), HirSourceOwnerStatus::Clean);
+    assert!(matches!(
+        body_source.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(_))
+    ));
+}
+
+#[test]
+fn dialogue_cancel_non_action_selector_recovers_without_allocating_pattern_locals() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_edge() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        長い台詞です。[p]\n",
+        "    with:\n",
+        "        cancel on input(action) { out .Skipped }\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-cancel-rule-recovered-selector",
+        source,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let Some(HirThreadFlowItem::DialogueApplication(application)) = flow.body().items().first()
+    else {
+        panic!("Dialogue application must remain a direct Flow body item");
+    };
+    let HirExprKind::AttachedContentApplication(application) = module
+        .resolve_expr(*application)
+        .expect("Dialogue application expression")
+        .kind()
+    else {
+        panic!("Dialogue line keeps its attached application owner");
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("Dialogue application owns its line plan");
+    };
+    let [HirLinePlanItem::Error(cancel_id)] = plan.items() else {
+        panic!("invalid input selector retains a poisoned cancellation item");
+    };
+    let cancel_id = *cancel_id;
+    let cancel = module.resolve_stmt(cancel_id).expect("cancel statement");
+    let HirStmtKind::CancelRule {
+        trigger: HirCancelTrigger::Recovered(HirCancelTriggerIssue::RecoveredPattern),
+        body,
+    } = cancel.kind()
+    else {
+        panic!("non-action input pattern retains typed selector recovery");
+    };
+    assert!(cancel.is_poisoned());
+    assert!(
+        module
+            .resolve_scope(body.scope())
+            .unwrap()
+            .locals()
+            .is_empty()
+    );
+    let selector_source = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Stmt {
+                owner: cancel_id,
+                role: HirStmtSourceRole::CancelInputActionSelector,
+            },
+        )
+        .expect("recovered selector role remains queryable");
+    assert_eq!(
+        selector_source.owner_status(),
+        HirSourceOwnerStatus::Poisoned
+    );
+    assert!(matches!(
+        selector_source.presence(),
+        HirSourcePresence::AbsentOptional
+    ));
+}
+
+#[test]
+fn dialogue_line_cancel_rule_missing_colon_suite_keeps_typed_recovery_owner() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_edge() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        長い台詞です。[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine):\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-cancel-rule-missing",
+        source,
+    );
+    assert!(!parsed.diagnostics().is_empty());
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let Some(HirThreadFlowItem::DialogueApplication(application)) = flow.body().items().first()
+    else {
+        panic!("Dialogue application must remain a direct Flow body item");
+    };
+    let HirExprKind::AttachedContentApplication(application) = module
+        .resolve_expr(*application)
+        .expect("Dialogue application expression")
+        .kind()
+    else {
+        panic!("Dialogue line must keep its attached content application owner");
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("Dialogue application must own its line plan");
+    };
+    let [HirLinePlanItem::Error(cancel)] = plan.items() else {
+        panic!("missing colon suite keeps an error-marked line-plan item");
+    };
+    let cancel_id = *cancel;
+    let cancel = module
+        .resolve_stmt(cancel_id)
+        .expect("recovered cancel rule");
+    assert!(cancel.is_poisoned());
+    let HirStmtKind::CancelRule { body, .. } = cancel.kind() else {
+        panic!("missing suite retains the typed cancellation statement family");
+    };
+    assert!(body.items().is_empty());
+    let body_source = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::ThreadBody {
+                owner: HirThreadBodyOwner::NestedScope(body.scope()),
+                role: HirThreadBodySourceRole::Whole,
+            },
+        )
+        .expect("missing body retains its typed source-index owner");
+    assert_eq!(body_source.owner_status(), HirSourceOwnerStatus::Poisoned);
+    assert!(matches!(
+        body_source.presence(),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+    ));
 }
 
 #[test]

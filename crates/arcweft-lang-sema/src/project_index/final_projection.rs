@@ -453,6 +453,7 @@ fn summarize_flow(
                 | HirStmtKind::Yield { .. }
                 | HirStmtKind::Wait { .. }
                 | HirStmtKind::On { .. }
+                | HirStmtKind::CancelRule { .. }
                 | HirStmtKind::UnsafeLifetime { .. }
                 | HirStmtKind::For(_)
                 | HirStmtKind::Select(_)
@@ -483,7 +484,10 @@ fn summarize_flow(
                         | HirStmtKind::Continue { .. }
                 ) => {}
             CheckedStatementPayload::Trigger(_)
-                if matches!(statement.kind(), HirStmtKind::On { .. }) => {}
+                if matches!(
+                    statement.kind(),
+                    HirStmtKind::On { .. } | HirStmtKind::CancelRule { .. }
+                ) => {}
             CheckedStatementPayload::UnsafeAudit(_)
                 if matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) => {}
             CheckedStatementPayload::SourceLocale(_)

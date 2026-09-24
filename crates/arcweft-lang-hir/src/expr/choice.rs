@@ -930,7 +930,8 @@ impl HirChoicePlanItem {
                             HirExprInvariantError::ForeignChild { expected, actual }
                         }
                         HirStmtInvariantError::Thread(_)
-                        | HirStmtInvariantError::InvalidPoisonState => {
+                        | HirStmtInvariantError::InvalidPoisonState
+                        | HirStmtInvariantError::InvalidCancelTrigger => {
                             unreachable!("trigger validation only checks qualified child modules")
                         }
                     })?;

@@ -2,9 +2,12 @@
 
 use std::collections::BTreeSet;
 
-use arcweft_lang_syntax::attachment::node::{BlockKind, FlowItemKind, MissingBodyKind};
+use arcweft_lang_syntax::attachment::node::{
+    BlockKind, DialogueCancelRuleBodyKind, FlowItemKind, MissingBodyKind,
+};
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
+    AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
     AttachedFlowStatementBody, AttachedNestedThreadFlowBody, AttachedRequiredFlowBody,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
     AttachedThreadExpressionBody, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
@@ -35,6 +38,73 @@ use crate::stmt::{HirStmt, HirStmtKind};
     reason = "source staging preserves the exact typed owner, query, and source-identity failure"
 )]
 impl StagedHirSourceIndex {
+    pub(crate) fn stage_attached_dialogue_cancel_indented_body(
+        &mut self,
+        parsed: &ParsedSource,
+        owner: HirThreadBodyOwner,
+        attached: &AttachedDialogueCancelRuleIndentedBody,
+        body: &HirThreadBody,
+    ) -> Result<(), HirSourceCommitInvariantError> {
+        if !matches!(owner, HirThreadBodyOwner::NestedScope(scope) if scope == body.scope()) {
+            return self.reject(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: HirSourceQuery::ThreadBody {
+                        owner,
+                        role: HirThreadBodySourceRole::Whole,
+                    }
+                    .owner(),
+                },
+            );
+        }
+        let syntax = attached.syntax();
+        if syntax.snapshot_id() != parsed.snapshot_id() {
+            return self.reject(HirSourceCommitInvariantError::WrongSyntaxSnapshot {
+                expected: parsed.snapshot_id().clone(),
+                actual: syntax.snapshot_id().clone(),
+            });
+        }
+        if !thread_body_families_match(owner, body, attached.items()) {
+            return self.reject(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: HirSourceQuery::ThreadBody {
+                        owner,
+                        role: HirThreadBodySourceRole::Whole,
+                    }
+                    .owner(),
+                },
+            );
+        }
+        self.stage_required_thread_body_component(
+            parsed,
+            owner,
+            HirThreadBodySourceRole::IndentationIntroducer,
+            &attached.colon().source_span(),
+        )?;
+        for (ordinal, item) in attached.items().iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return self.reject(
+                    HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
+                        owner: HirSourceQuery::ThreadBody {
+                            owner,
+                            role: HirThreadBodySourceRole::Whole,
+                        }
+                        .owner(),
+                    },
+                );
+            };
+            self.stage_required_thread_body_component(
+                parsed,
+                owner,
+                HirThreadBodySourceRole::Item {
+                    ordinal,
+                    part: HirThreadFlowItemSourcePart::Whole,
+                },
+                &item.syntax().source_span(),
+            )?;
+        }
+        Ok(())
+    }
+
     /// Stages one ordinary Flow body's exact delimiter and item components.
     pub(crate) fn stage_attached_flow_thread_body(
         &mut self,
@@ -513,22 +583,47 @@ impl HirSourceIndex {
             let crate::slot::HirOrigin::Source(source) = metadata.origin() else {
                 return false;
             };
-            let attached = if let Ok(block) = parsed.typed_node::<BlockKind>(source.syntax()) {
-                let Ok(body) = block.thread_flow_body() else {
-                    return false;
-                };
-                AttachedRequiredNestedThreadFlowBody::Present(body)
-            } else if let Ok(missing) = parsed.typed_node::<MissingBodyKind>(source.syntax()) {
-                AttachedRequiredNestedThreadFlowBody::Missing(missing)
-            } else {
-                return false;
-            };
             if !expected.insert(body_owner)
                 || !thread_body_semantic_items_match(slots, statements, expressions, body)
-                || !self.validates_attached_nested_thread_body(
-                    parsed, slots, body_owner, &attached, body,
-                )
             {
+                return false;
+            }
+            let attached_matches =
+                if let Ok(block) = parsed.typed_node::<BlockKind>(source.syntax()) {
+                    let Ok(attached_body) = block.thread_flow_body() else {
+                        return false;
+                    };
+                    self.validates_attached_nested_thread_body(
+                        parsed,
+                        slots,
+                        body_owner,
+                        &AttachedRequiredNestedThreadFlowBody::Present(attached_body),
+                        body,
+                    )
+                } else if let Ok(missing) = parsed.typed_node::<MissingBodyKind>(source.syntax()) {
+                    let attached_body = AttachedRequiredNestedThreadFlowBody::Missing(missing);
+                    self.validates_attached_nested_thread_body(
+                        parsed,
+                        slots,
+                        body_owner,
+                        &attached_body,
+                        body,
+                    )
+                } else if let Ok(cancel_body) =
+                    parsed.typed_node::<DialogueCancelRuleBodyKind>(source.syntax())
+                {
+                    let Ok(AttachedDialogueCancelRuleBody::Indented(attached)) =
+                        cancel_body.semantics()
+                    else {
+                        return false;
+                    };
+                    self.validates_attached_dialogue_cancel_indented_body(
+                        parsed, slots, body_owner, &attached, body,
+                    )
+                } else {
+                    false
+                };
+            if !attached_matches {
                 return false;
             }
         }
@@ -663,6 +758,88 @@ impl HirSourceIndex {
                     )
             }
         }
+    }
+
+    pub(crate) fn validates_attached_dialogue_cancel_indented_body(
+        &self,
+        parsed: &ParsedSource,
+        slots: &SlotSnapshot,
+        owner: HirThreadBodyOwner,
+        attached: &AttachedDialogueCancelRuleIndentedBody,
+        body: &HirThreadBody,
+    ) -> bool {
+        if !matches!(owner, HirThreadBodyOwner::NestedScope(scope) if scope == body.scope())
+            || body.validate_module(owner.module()).is_err()
+            || attached.syntax().snapshot_id() != parsed.snapshot_id()
+            || !thread_body_families_match(owner, body, attached.items())
+        {
+            return false;
+        }
+        let Ok(scope_metadata) = slots.resolve_prepared(body.scope()) else {
+            return false;
+        };
+        let Ok(whole) =
+            HirSourceSite::from_attached_span(parsed.document(), &attached.syntax().source_span())
+        else {
+            return false;
+        };
+        let Ok(introducer) =
+            HirSourceSite::from_attached_span(parsed.document(), &attached.colon().source_span())
+        else {
+            return false;
+        };
+        let owner_scope = owner;
+        if scope_metadata.source_site() != &whole
+            || !self.thread_body_component_matches(
+                owner_scope,
+                HirThreadBodySourceRole::IndentationIntroducer,
+                &introducer,
+            )
+        {
+            return false;
+        }
+
+        let mut child_owners = BTreeSet::new();
+        for (ordinal, (attached_item, semantic)) in
+            attached.items().iter().zip(body.items()).enumerate()
+        {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                return false;
+            };
+            let Ok(expected) = HirSourceSite::from_attached_span(
+                parsed.document(),
+                &attached_item.syntax().source_span(),
+            ) else {
+                return false;
+            };
+            if !child_owners.insert(semantic.owner())
+                || thread_flow_item_source_site(slots, semantic) != Some(&expected)
+                || !self.thread_body_component_matches(
+                    owner_scope,
+                    HirThreadBodySourceRole::Item {
+                        ordinal,
+                        part: HirThreadFlowItemSourcePart::Whole,
+                    },
+                    &expected,
+                )
+            {
+                return false;
+            }
+        }
+        let Some(expected_component_count) = body.items().len().checked_add(1) else {
+            return false;
+        };
+        self.requirements
+            .keys()
+            .filter(|query| matches!(query, HirSourceQuery::ThreadBody { owner: candidate, .. } if *candidate == owner))
+            .count()
+            == expected_component_count
+            && self
+                .components
+                .keys()
+                .filter(|query| matches!(query, HirSourceQuery::ThreadBody { owner: candidate, .. } if *candidate == owner))
+                .count()
+                == expected_component_count
     }
 
     fn missing_thread_body_manifest_matches(

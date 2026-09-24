@@ -10,9 +10,12 @@ use super::{
     DeferStatementKind, GotoStatementKind, OutStatementKind, RequiredStatementExpressionNode,
     SignalStatementKind,
 };
+use crate::attachment::node::DialogueCancelRuleStatementKind;
 use crate::attachment::{
-    AttachedDeferBlockBody, AttachedExpressionNode, GrammarIdentityMap, SyntaxDatabaseId,
-    SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
+    AttachedDeferBlockBody, AttachedDialogueCancelRuleStatement, AttachedExpressionNode,
+    AttachedRequiredNestedThreadFlowBody, AttachedThreadFlowItem, GrammarIdentityMap,
+    SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId,
+    attach_typed_tree,
 };
 use crate::grammar::SyntaxKind;
 use crate::parser::{ParseOptions, parse_document};
@@ -270,6 +273,118 @@ fn line_plan_defer_attaches_outcome_body_and_authored_spans() {
         crate::expressions::ExpressionProjection::Block
     ));
     assert_eq!(body.syntax().source_text(), "cleanup()");
+}
+
+#[test]
+fn dialogue_line_plan_cancel_attaches_typed_trigger_and_thread_body() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_rule() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Long line.[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine) { out .Skipped }\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let snapshot = attach(source);
+    let attached: AttachedDialogueCancelRuleStatement =
+        statement::<DialogueCancelRuleStatementKind>(&snapshot)
+            .semantics()
+            .unwrap();
+
+    assert!(!attached.has_recovery());
+    assert_eq!(
+        attached.trigger().syntax().source_text(),
+        "input(.SkipLine)"
+    );
+    let crate::attachment::AttachedDialogueCancelRuleBody::Nested(
+        AttachedRequiredNestedThreadFlowBody::Present(body),
+    ) = attached.body()
+    else {
+        panic!("braced cancel rule owns a present nested Thread body");
+    };
+    assert_eq!(body.syntax().source_text(), "{ out .Skipped }");
+    assert_eq!(body.items().len(), 1);
+    let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+        panic!("cancel body keeps `out` as a typed statement item");
+    };
+    assert_eq!(statement.kind(), SyntaxKind::OutStatement);
+}
+
+#[test]
+fn dialogue_line_plan_cancel_attaches_indented_thread_body_and_recovers_missing_suite() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_rule() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Long line.[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine):\n",
+        "            out .Skipped\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let snapshot = attach(source);
+    let attached = statement::<DialogueCancelRuleStatementKind>(&snapshot)
+        .semantics()
+        .unwrap();
+    assert!(!attached.has_recovery());
+    let crate::attachment::AttachedDialogueCancelRuleBody::Indented(body) = attached.body() else {
+        panic!("colon cancel body must retain an indentation-owned Thread body");
+    };
+    assert_eq!(body.items().len(), 1);
+    let AttachedThreadFlowItem::Statement(out_statement) = &body.items()[0] else {
+        panic!("indented cancellation body keeps `out` as a Thread statement");
+    };
+    assert_eq!(out_statement.kind(), SyntaxKind::OutStatement);
+    assert_eq!(body.colon().source_text(), ":");
+
+    let malformed = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_rule() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Long line.[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine):\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let snapshot = attach(malformed);
+    let attached = statement::<DialogueCancelRuleStatementKind>(&snapshot)
+        .semantics()
+        .unwrap();
+    assert!(attached.has_recovery());
+    let crate::attachment::AttachedDialogueCancelRuleBody::Nested(
+        AttachedRequiredNestedThreadFlowBody::Missing(missing),
+    ) = attached.body()
+    else {
+        panic!("empty cancel suite retains a missing-body node");
+    };
+    assert!(missing.range().is_empty());
+
+    let result_form = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow cancel_result() -> String {\n",
+        "    alice(voice=auto):\n",
+        "        Long line.[p]\n",
+        "    with:\n",
+        "        cancel on input(.SkipLine) => .Skipped\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcw:/cancel-result-rejection-test").unwrap(),
+            SourceName::path("cancel-result-rejection-test.arcw"),
+            result_form,
+        )
+        .unwrap(),
+    );
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
+    assert!(build.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == "syntax.dialogue.line_plan_cancel_result_requires_content_owner"
+    }));
 }
 
 #[test]

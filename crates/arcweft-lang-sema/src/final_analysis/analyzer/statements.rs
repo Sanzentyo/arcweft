@@ -346,6 +346,7 @@ impl Analyzer<'_, '_, '_> {
             | HirStmtKind::Signal { .. }
             | HirStmtKind::LifetimeSet { .. }
             | HirStmtKind::On { .. }
+            | HirStmtKind::CancelRule { .. }
             | HirStmtKind::UnsafeLifetime { .. }
             | HirStmtKind::Choice { .. }
             | HirStmtKind::If(_)

@@ -649,6 +649,7 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
         HirStmtKind::LifetimeSet { .. } => "lifetime",
         HirStmtKind::Wait { .. } => "wait",
         HirStmtKind::On { .. } => "on",
+        HirStmtKind::CancelRule { .. } => "cancel",
         HirStmtKind::UnsafeLifetime { .. } => "unsafe",
         HirStmtKind::Choice { .. } => "choice",
         HirStmtKind::If(_) | HirStmtKind::IfLet(_) => "if",

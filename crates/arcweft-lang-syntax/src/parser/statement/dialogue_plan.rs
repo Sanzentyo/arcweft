@@ -11,8 +11,10 @@ use super::super::shadow_recovery::{
 };
 use super::indentation::{
     IndentedSuiteInterval, SuiteLineIndentCursor, bump_trivia_before, head_body_introducer,
-    indented_item_end, indented_suite_interval, physical_line_end, trailing_owner_body_token,
+    indented_item_end, indented_suite_interval, physical_line_end, trailing_braced_body_interval,
+    trailing_owner_body_token,
 };
+use super::trigger::emit_trigger_pattern;
 use super::{emit_statement_with_role, top_level_operator};
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
@@ -198,6 +200,14 @@ fn emit_line_plan_item(
     item_kind: SyntaxKind,
     ordinal: u32,
 ) {
+    if parser.at("cancel")
+        && first_significant(parser, parser.cursor().saturating_add(1), end)
+            .and_then(|index| token_text(parser, index))
+            == Some("on")
+    {
+        emit_cancel_rule(parser, end, item_kind, ordinal);
+        return;
+    }
     if parser.at("let")
         && let Some(equals) = top_level_operator(parser, parser.cursor(), end, "=")
     {
@@ -231,6 +241,188 @@ fn emit_line_plan_item(
         item_kind,
         SyntaxRole::DialogueLinePlanItem(ordinal),
     );
+}
+
+fn emit_cancel_rule(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+    ordinal: u32,
+) {
+    let owner_start = parser.cursor();
+    parser.start(
+        SyntaxKind::DialogueCancelRuleStatement,
+        SyntaxRole::DialogueLinePlanItem(ordinal),
+    );
+    parser.bump();
+    bump_trivia_before(parser, end);
+    if parser.at("on") {
+        parser.bump();
+        bump_trivia_before(parser, end);
+    } else {
+        emit_cancel_rule_recovery(
+            parser,
+            end,
+            SyntaxRole::Recovery(0),
+            "syntax.dialogue.line_plan_cancel_missing_on",
+            "Dialogue cancellation requires `on`",
+        );
+    }
+
+    let body = trailing_braced_body_interval(parser, parser.cursor(), end);
+    let head_end = physical_line_end(parser, parser.cursor(), end);
+    let colon =
+        super::indentation::trailing_owner_body_token(parser, parser.cursor(), head_end, true)
+            .filter(|index| token_text(parser, *index) == Some(":"));
+    let result_arrow = top_level_operator(parser, parser.cursor(), end, "=>");
+    let trigger_end = body
+        .map(|(open, _)| open)
+        .or(colon)
+        .or(result_arrow)
+        .unwrap_or(end);
+    emit_trigger_pattern(parser, trigger_end, SyntaxRole::Condition);
+    bump_until(parser, trigger_end);
+    if let Some((_, body_end)) = body {
+        parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
+        let _ = super::emit_braced_thread_flow_block_until(
+            parser,
+            body_end,
+            item_kind,
+            SyntaxKind::Block,
+            SyntaxRole::Element(0),
+            "syntax.dialogue.line_plan_cancel_missing_close",
+        );
+        parser.finish();
+        if first_significant(parser, parser.cursor(), end).is_some() {
+            emit_cancel_rule_recovery(
+                parser,
+                end,
+                SyntaxRole::TrailingRecovery(0),
+                "syntax.dialogue.line_plan_cancel_trailing_tokens",
+                "unexpected tokens after Dialogue cancellation body",
+            );
+            bump_until(parser, end);
+        }
+    } else if let Some(colon) = colon {
+        emit_indented_cancel_rule_body(parser, colon, end, owner_start, item_kind);
+    } else if result_arrow.is_some() {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
+        parser.start(SyntaxKind::MissingBody, SyntaxRole::Recovery(0));
+        parser.finish();
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.dialogue.line_plan_cancel_result_requires_content_owner",
+            SourceRange::new(at, at),
+            "value-returning cancellation with `=>` belongs to a ContentCall result owner; a line-plan cancel rule requires a statement body",
+        )));
+        parser.start(SyntaxKind::ErrorNode, SyntaxRole::TrailingRecovery(0));
+        bump_until(parser, end);
+        parser.finish();
+    } else {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
+        parser.start(SyntaxKind::MissingBody, SyntaxRole::Recovery(0));
+        parser.finish();
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.dialogue.line_plan_cancel_missing_body",
+            SourceRange::new(at, at),
+            "Dialogue cancellation requires a braced or indented statement body",
+        )));
+        bump_until(parser, end);
+    }
+    parser.finish();
+}
+
+fn emit_indented_cancel_rule_body(
+    parser: &mut DocumentParser<'_, '_>,
+    colon: usize,
+    end: usize,
+    owner_start: usize,
+    item_kind: SyntaxKind,
+) {
+    let interval = indented_suite_interval(parser, owner_start, colon, end);
+    parser.start(SyntaxKind::DialogueCancelRuleBody, SyntaxRole::Body);
+    parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+    bump_until(parser, colon);
+    parser.bump();
+    parser.finish();
+    if interval.issue().is_some() {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::MissingBody, SyntaxRole::Recovery(0));
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.dialogue.line_plan_cancel_invalid_indent",
+            SourceRange::new(at, at),
+            "Dialogue cancellation requires an indented statement body after `:`",
+        )));
+        bump_until(parser, interval.end());
+        parser.finish();
+        return;
+    }
+
+    parser.start(SyntaxKind::IndentedSuite, SyntaxRole::Element(0));
+    bump_until(parser, interval.payload_start());
+    bump_until(parser, interval.first_item());
+    let suite_indent = interval
+        .item_indent()
+        .expect("accepted cancel rule body has an item indentation");
+    let mut indent_cursor = SuiteLineIndentCursor::new(interval.first_item(), suite_indent);
+    let mut ordinal = 0_u32;
+    while parser.cursor() < interval.end() {
+        bump_trivia_before(parser, interval.end());
+        if parser.cursor() >= interval.end() {
+            break;
+        }
+        let start = parser.cursor();
+        let item_end = indented_item_end(
+            parser,
+            start,
+            interval.end(),
+            suite_indent,
+            |_, _| true,
+            |_, _| false,
+        );
+        let significant_end = trimmed_end(parser, start, item_end);
+        if indent_cursor.observe(parser, start) == suite_indent {
+            super::emit_thread_flow_item(parser, significant_end, item_kind, ordinal);
+        } else {
+            parser.start(
+                SyntaxKind::ErrorStatement,
+                SyntaxRole::ThreadFlowItem(ordinal),
+            );
+            bump_until(parser, significant_end);
+            parser.finish();
+        }
+        bump_until(parser, item_end);
+        ordinal = ordinal
+            .checked_add(1)
+            .expect("the grammar budget bounds cancellation-body item ordinals");
+    }
+    bump_until(parser, interval.end());
+    parser.finish();
+    parser.finish();
+}
+
+fn emit_cancel_rule_recovery(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+    code: &'static str,
+    message: &'static str,
+) {
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::ErrorNode, role);
+    if matches!(role, SyntaxRole::TrailingRecovery(_)) {
+        bump_until(parser, end);
+    }
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        code,
+        SourceRange::new(start, parser.current_offset()),
+        message,
+    )));
 }
 
 fn emit_callback_let(

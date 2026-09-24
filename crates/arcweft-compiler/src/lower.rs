@@ -1905,6 +1905,9 @@ fn attach_dialogue_and_trigger_semantic_facts(
         };
         match trigger.view() {
             CheckedTriggerView::Input => input.push_input_trigger(owner)?,
+            CheckedTriggerView::InputAction(action) => {
+                input.push_input_action_trigger(owner, action.clone())?
+            }
             CheckedTriggerView::Event => input.push_event_trigger(owner)?,
             CheckedTriggerView::Signal => input.push_signal_trigger(owner)?,
             CheckedTriggerView::Timeout => input.push_timeout_trigger(owner)?,
@@ -7054,6 +7057,9 @@ fn runtime_project_function_instance_semantic_facts(
                 CheckedStatementPayload::Trigger(trigger),
             ) => RuntimeProjectFunctionStatementPayload::Trigger(match trigger.view() {
                 CheckedTriggerView::Input => RuntimeTriggerAdmission::input(),
+                CheckedTriggerView::InputAction(action) => {
+                    RuntimeTriggerAdmission::input_action(action.clone())
+                }
                 CheckedTriggerView::Event => RuntimeTriggerAdmission::event(),
                 CheckedTriggerView::Signal => RuntimeTriggerAdmission::signal(),
                 CheckedTriggerView::Timeout => RuntimeTriggerAdmission::timeout(),

@@ -29,6 +29,7 @@ use thiserror::Error;
 
 use crate::body_edges::HirBodyChildEdge;
 use crate::dialogue_application::HirDialogueMarkId;
+use crate::expr::HirThreadBody;
 use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirIdRefValue, HirName, HirNameInvariantError};
 
@@ -191,6 +192,28 @@ fn state_matches_kind(kind: &HirStmtKind, state: &HirStmtPoisonState) -> bool {
                         role: HirStmtChildRole::Target | HirStmtChildRole::Initializer,
                     })
             );
+        }
+        HirStmtKind::CancelRule { trigger, .. } => {
+            let trigger_requires_recovery = matches!(
+                trigger,
+                HirCancelTrigger::Recovered(_) | HirCancelTrigger::Other(HirTrigger::Recovered(_))
+            );
+            return if trigger_requires_recovery {
+                matches!(
+                    state,
+                    HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::Condition,
+                    })
+                )
+            } else {
+                matches!(
+                    state,
+                    HirStmtPoisonState::Clean
+                        | HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Condition,
+                        })
+                )
+            };
         }
         HirStmtKind::Continue { label } => {
             return matches!(state, HirStmtPoisonState::Clean)
@@ -448,6 +471,10 @@ pub enum HirStmtKind {
         scope: ScopeId,
         body: Box<[StmtId]>,
     },
+    CancelRule {
+        trigger: HirCancelTrigger,
+        body: HirThreadBody,
+    },
     UnsafeLifetime {
         audit: HirUnsafeAudit,
         body: HirUnsafeLifetimeBody,
@@ -515,6 +542,10 @@ pub enum HirStmtEvaluationPlan<'stmt> {
         trigger: HirStmtTriggerEvaluationPlan,
         scope: ScopeId,
         body: &'stmt [StmtId],
+    },
+    CancelRule {
+        trigger: HirStmtCancelTriggerEvaluationPlan<'stmt>,
+        body: &'stmt HirThreadBody,
     },
     UnsafeLifetime {
         audit: &'stmt HirUnsafeAudit,
@@ -762,6 +793,20 @@ impl<'stmt> HirStmtEvaluationPlan<'stmt> {
             Self::EventBody { trigger, body, .. } => {
                 visit_trigger_steps(&mut visitor, trigger);
                 visit_statement_steps(&mut visitor, HirStatementBodyRole::On, body)?;
+            }
+            Self::CancelRule { trigger, body, .. } => {
+                if let HirStmtCancelTriggerEvaluationPlan::Other(trigger) = trigger {
+                    visit_trigger_steps(&mut visitor, trigger);
+                }
+                for edge in body
+                    .try_child_edges()
+                    .map_err(|_| HirStmtEvaluationStepError::OrdinalOverflow)?
+                {
+                    visitor(HirStmtEvaluationStep::ThreadBody {
+                        role: HirStatementBodyRole::CancelRule,
+                        edge,
+                    });
+                }
             }
             Self::UnsafeLifetime { audit, body } => {
                 if let Some(reason) = audit.reason() {
@@ -1200,6 +1245,17 @@ pub enum HirStmtTriggerEvaluationPlan {
     Recovered,
 }
 
+/// Evaluation authority for a Dialogue line-plan cancellation trigger.
+///
+/// Input actions are catalog keys rather than generic input-value Patterns,
+/// and therefore own no Pattern evaluation or local-publication step.
+#[derive(Debug, Eq, PartialEq)]
+pub enum HirStmtCancelTriggerEvaluationPlan<'stmt> {
+    InputActionKey { action: &'stmt HirName },
+    Other(HirStmtTriggerEvaluationPlan),
+    Recovered(HirCancelTriggerIssue),
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirStmtBindingPlanKind {
     Let,
@@ -1337,6 +1393,7 @@ impl HirStmtKind {
             Self::Expression { .. } => 0x071C,
             Self::ProofCall { .. } => 0x071D,
             Self::Error => 0x071E,
+            Self::CancelRule { .. } => 0x071F,
         }
     }
 
@@ -1448,6 +1505,20 @@ impl HirStmtKind {
             } => Plan::EventBody {
                 trigger: trigger_evaluation_plan(trigger),
                 scope: *scope,
+                body,
+            },
+            Self::CancelRule { trigger, body } => Plan::CancelRule {
+                trigger: match trigger {
+                    HirCancelTrigger::InputAction(action) => {
+                        HirStmtCancelTriggerEvaluationPlan::InputActionKey { action }
+                    }
+                    HirCancelTrigger::Other(trigger) => {
+                        HirStmtCancelTriggerEvaluationPlan::Other(trigger_evaluation_plan(trigger))
+                    }
+                    HirCancelTrigger::Recovered(issue) => {
+                        HirStmtCancelTriggerEvaluationPlan::Recovered(*issue)
+                    }
+                },
                 body,
             },
             Self::UnsafeLifetime { audit, body } => Plan::UnsafeLifetime { audit, body },
@@ -1585,6 +1656,7 @@ impl HirStmtKind {
             Self::Select(statement) => statement.thread_body_for_scope(scope),
             Self::SourceLocale(statement) => statement.thread_body_for_scope(scope),
             Self::Scope(statement) => statement.thread_body_for_scope(scope),
+            Self::CancelRule { body, .. } if body.scope() == scope => Some(body),
             _ => None,
         }
     }
@@ -1645,6 +1717,11 @@ impl HirStmtKind {
                 validate_scope(expected, *scope)?;
                 validate_statements(expected, body)
             }
+            Self::CancelRule { trigger, body } => {
+                trigger.validate_module(expected)?;
+                body.validate_module(expected)
+                    .map_err(|actual| HirStmtInvariantError::ForeignChild { expected, actual })
+            }
             Self::UnsafeLifetime { audit, body } => {
                 audit.validate_module(expected)?;
                 body.validate_module(expected)
@@ -1692,6 +1769,35 @@ pub enum HirTriggerIssue {
     Malformed,
     UnknownDialogueMark,
     MarkOutsideDialogueApplication,
+}
+
+/// Cancellation trigger authority. Input cancellation selects one catalog
+/// action name, while all other trigger families retain their existing typed
+/// trigger payload.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirCancelTrigger {
+    InputAction(HirName),
+    Other(HirTrigger),
+    Recovered(HirCancelTriggerIssue),
+}
+
+/// Typed reason that an input cancellation action selector was not admitted.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirCancelTriggerIssue {
+    MissingName,
+    InvalidName,
+    UnsupportedPattern,
+    RecoveredPattern,
+}
+
+impl HirCancelTrigger {
+    fn validate_module(&self, expected: HirModuleId) -> Result<(), HirStmtInvariantError> {
+        match self {
+            Self::InputAction(_) | Self::Recovered(_) => Ok(()),
+            Self::Other(HirTrigger::Input(_)) => Err(HirStmtInvariantError::InvalidCancelTrigger),
+            Self::Other(trigger) => trigger.validate_module(expected),
+        }
+    }
 }
 
 impl HirTrigger {
@@ -1839,6 +1945,8 @@ pub(crate) enum HirStmtInvariantError {
     Thread(#[from] HirThreadStmtInvariantError),
     #[error("statement poison state does not match its payload family")]
     InvalidPoisonState,
+    #[error("cancellation input action cannot contain a generic input Pattern trigger")]
+    InvalidCancelTrigger,
 }
 
 fn validate_exprs(

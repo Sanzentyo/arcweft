@@ -1247,6 +1247,7 @@ fn validate_body_owner_kind(row: &HirSemanticBodyRow) -> Result<(), HirSemanticP
             ),
             HirStatementBodyRole::Then
             | HirStatementBodyRole::Else
+            | HirStatementBodyRole::CancelRule
             | HirStatementBodyRole::While
             | HirStatementBodyRole::WhileLet
             | HirStatementBodyRole::For

@@ -10,14 +10,15 @@ mod required_operand;
 mod thread_control;
 
 use arcweft_lang_syntax::attachment::node::{
-    AssertionStatementKind, BlockKind, ChoiceStatementKind, ExpressionStatementKind,
-    IfStatementKind, IncludeStatementKind, LetElseStatementKind, LetStatementKind, MatchArmKind,
-    MatchStatementKind, OnStatementKind, PredicateBlockKind, ProofBlockKind,
-    ProofCallStatementKind, ScopeStatementKind, SourceLocaleStatementKind,
+    AssertionStatementKind, BlockKind, ChoiceStatementKind, DialogueCancelRuleStatementKind,
+    ExpressionStatementKind, IfStatementKind, IncludeStatementKind, LetElseStatementKind,
+    LetStatementKind, MatchArmKind, MatchStatementKind, OnStatementKind, PredicateBlockKind,
+    ProofBlockKind, ProofCallStatementKind, ScopeStatementKind, SourceLocaleStatementKind,
     UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AstKind, AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredIncludeTarget,
+    AstKind, AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedInputActionSelector,
+    AttachedInputActionSelectorIssue, AttachedRequiredIncludeTarget,
     AttachedRequiredNestedThreadFlowBody, AttachedSourceLocaleValue, AttachedTriggerPattern,
     BlockTailNode, IfStatementElseNode, IfStatementHeadNode, LetInitializerNode,
     MatchStatementArmBodyNode, MatchStatementBodyNode, MatchStatementExpressionNode, StatementNode,
@@ -41,12 +42,13 @@ use crate::proof_return::HirProofReturnSemanticClass;
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::stmt::{
-    HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirIfLetStmt, HirIfStmt,
-    HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
-    HirSourceLocaleValue, HirStatementContext, HirStmt, HirStmtChildRole, HirStmtKind,
-    HirStmtMatchArm, HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
-    HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirTrigger, HirTriggerIssue, HirUnsafeAudit,
-    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
+    HirAssertionMode, HirCancelTrigger, HirCancelTriggerIssue, HirConditionalElseBranch,
+    HirContextualStmtBody, HirIfLetStmt, HirIfStmt, HirIncludeStmt, HirMatchStmt, HirScopeStmt,
+    HirSourceLocaleIssue, HirSourceLocaleStmt, HirSourceLocaleValue, HirStatementContext, HirStmt,
+    HirStmtChildRole, HirStmtKind, HirStmtMatchArm, HirStmtMatchArmBody, HirStmtPoisonState,
+    HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirTrigger,
+    HirTriggerIssue, HirUnsafeAudit, HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue,
+    HirUnsafeLifetimeBody,
 };
 
 use super::{StagedHirModuleTransaction, require_limit};
@@ -61,6 +63,33 @@ pub(super) struct LoweredThreadFlowStatement {
     pub(super) owner: StmtId,
     pub(super) locals: Box<[LocalId]>,
     pub(super) poisoned: bool,
+}
+
+fn lower_cancel_input_action_selector(
+    selector: &AttachedInputActionSelector,
+) -> Result<(HirCancelTrigger, Box<[LocalId]>, bool), HirLowerFailure> {
+    match selector {
+        AttachedInputActionSelector::Resolved { name, .. } => Ok((
+            HirCancelTrigger::InputAction(super::name_projection::name(name)?),
+            Box::new([]),
+            false,
+        )),
+        AttachedInputActionSelector::Recovered { issue, .. } => {
+            let issue = match issue {
+                AttachedInputActionSelectorIssue::MissingName => HirCancelTriggerIssue::MissingName,
+                AttachedInputActionSelectorIssue::InvalidName(_) => {
+                    HirCancelTriggerIssue::InvalidName
+                }
+                AttachedInputActionSelectorIssue::UnsupportedPattern => {
+                    HirCancelTriggerIssue::UnsupportedPattern
+                }
+                AttachedInputActionSelectorIssue::RecoveredPattern => {
+                    HirCancelTriggerIssue::RecoveredPattern
+                }
+            };
+            Ok((HirCancelTrigger::Recovered(issue), Box::new([]), true))
+        }
+    }
 }
 
 struct LoweredStatementBlock {
@@ -811,6 +840,19 @@ impl StagedHirModuleTransaction<'_> {
                     self.lower_attached_on_statement(&statement, owner, scope, mark_catalog)?;
                 (kind, locals, recovery)
             }
+            SyntaxKind::DialogueCancelRuleStatement => {
+                Self::require_thread_statement_context(context)?;
+                let statement = attached
+                    .cast::<DialogueCancelRuleStatementKind>()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let (kind, locals, recovery) = self.lower_attached_dialogue_cancel_rule_statement(
+                    &statement,
+                    owner,
+                    scope,
+                    mark_catalog,
+                )?;
+                (kind, locals, recovery)
+            }
             SyntaxKind::ExpressionStatement => {
                 let statement = attached
                     .cast::<ExpressionStatementKind>()
@@ -979,6 +1021,46 @@ impl StagedHirModuleTransaction<'_> {
                 body: Box::new([lowered_body.owner]),
             },
             Box::new([]),
+            recovery,
+        ))
+    }
+
+    fn lower_attached_dialogue_cancel_rule_statement(
+        &mut self,
+        statement: &AstNode<DialogueCancelRuleStatementKind>,
+        owner: StmtId,
+        outer_scope: ScopeId,
+        mark_catalog: Option<&HirDialogueContent>,
+    ) -> Result<(HirStmtKind, Box<[LocalId]>, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
+        let attached = statement
+            .semantics()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let prepared =
+            self.prepare_attached_dialogue_cancel_rule_body(attached.body(), owner, outer_scope)?;
+        let scope = prepared.scope();
+        let (trigger, trigger_locals, trigger_recovery) = if let Some(selector) = attached
+            .input_action_selector()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+        {
+            lower_cancel_input_action_selector(&selector)?
+        } else {
+            let (trigger, locals, recovered) =
+                self.lower_attached_trigger(attached.trigger(), owner, scope, mark_catalog)?;
+            (HirCancelTrigger::Other(trigger), locals, recovered)
+        };
+        let lowered_body =
+            self.finish_attached_dialogue_cancel_rule_body(prepared, trigger_locals)?;
+        let recovery =
+            (trigger_recovery || lowered_body.recovery.is_some() || attached.has_recovery())
+                .then_some(HirStmtRecoveryIssue::RecoveredChild {
+                    role: HirStmtChildRole::Condition,
+                });
+        Ok((
+            HirStmtKind::CancelRule {
+                trigger,
+                body: lowered_body.body,
+            },
+            Box::<[LocalId]>::from([]),
             recovery,
         ))
     }

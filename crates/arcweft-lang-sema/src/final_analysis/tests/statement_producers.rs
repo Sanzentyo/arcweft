@@ -200,16 +200,22 @@ const MATRIX: &[MatrixRow] = &[
         tag: 0x071E,
         payload: ExpectedPayload::Reject,
     },
+    MatrixRow {
+        name: "CancelRule",
+        tag: 0x071F,
+        payload: ExpectedPayload::Trigger,
+    },
 ];
 
 #[test]
 fn producer_matrix_names_and_tags_are_explicit_for_all_hir_families() {
-    assert_eq!(MATRIX.len(), 31);
+    assert_eq!(MATRIX.len(), 32);
     assert_eq!(
         MATRIX[..30].iter().map(|row| row.tag).collect::<Vec<_>>(),
         (0x0700_u16..=0x071D).collect::<Vec<_>>()
     );
     assert_eq!(MATRIX[30].tag, 0x071E);
+    assert_eq!(MATRIX[31].tag, 0x071F);
     assert_eq!(
         MATRIX.iter().map(|row| row.name).collect::<Vec<_>>(),
         [
@@ -244,6 +250,7 @@ fn producer_matrix_names_and_tags_are_explicit_for_all_hir_families() {
             "Expression",
             "ProofCall",
             "Error",
+            "CancelRule",
         ]
     );
 }
@@ -263,6 +270,7 @@ fn expected_payload_for_kind(kind: &HirStmtKind) -> ExpectedPayload {
         HirStmtKind::LifetimeSet { .. } => ExpectedPayload::Structural,
         HirStmtKind::Wait { .. } => ExpectedPayload::Suspension,
         HirStmtKind::On { .. } => ExpectedPayload::Trigger,
+        HirStmtKind::CancelRule { .. } => ExpectedPayload::Trigger,
         HirStmtKind::UnsafeLifetime { .. } => ExpectedPayload::UnsafeAudit,
         HirStmtKind::Choice { .. } => ExpectedPayload::Structural,
         HirStmtKind::If(_) => ExpectedPayload::Structural,

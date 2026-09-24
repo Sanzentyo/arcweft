@@ -2,11 +2,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use arcweft_interaction_model::input::InputActionId;
 use arcweft_lang_hir::{
     identity::{ExprId, HirModuleId, PatternId, StmtId, TypeId},
     module::HirModule,
     project::{HirAnalysisProjectView, HirProjectEvaluationTopology},
-    stmt::{HirSelectBranchHead, HirSelectStmt, HirStmtKind, HirTrigger},
+    stmt::{HirCancelTrigger, HirSelectBranchHead, HirSelectStmt, HirStmtKind, HirTrigger},
     symbol::CallableDeclarationKey,
 };
 
@@ -689,22 +690,30 @@ pub(super) fn prepare_scrutinee_proofs(
                 .resolve_stmt(*owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             let proof = match statement.kind() {
-                HirStmtKind::On { trigger, .. } => {
-                    Some(PreparedStatementScrutineeProof::Trigger(match trigger {
-                        HirTrigger::Input(_) => PreparedTriggerScrutineeProof::Input,
-                        HirTrigger::Event(_) => PreparedTriggerScrutineeProof::Event,
-                        HirTrigger::Signal { .. } => PreparedTriggerScrutineeProof::Signal,
-                        HirTrigger::Timeout(_) => PreparedTriggerScrutineeProof::Timeout,
-                        HirTrigger::Mark(mark) => PreparedTriggerScrutineeProof::Mark(*mark),
-                        HirTrigger::Select(_) => PreparedTriggerScrutineeProof::Select,
-                        HirTrigger::Task(_) => PreparedTriggerScrutineeProof::Task,
-                        HirTrigger::Scope(_) => PreparedTriggerScrutineeProof::Scope,
-                        HirTrigger::Expression(_) => PreparedTriggerScrutineeProof::Expression,
-                        HirTrigger::Recovered(_) => {
-                            return Err(FinalSemanticAnalysisError::RecoveredOwner);
-                        }
-                    }))
+                HirStmtKind::CancelRule {
+                    trigger: HirCancelTrigger::InputAction(name),
+                    ..
+                } => Some(PreparedStatementScrutineeProof::Trigger(
+                    PreparedTriggerScrutineeProof::InputAction(
+                        InputActionId::new(name.as_str())
+                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                    ),
+                )),
+                HirStmtKind::CancelRule {
+                    trigger: HirCancelTrigger::Other(trigger),
+                    ..
+                } => Some(PreparedStatementScrutineeProof::Trigger(
+                    prepared_trigger_proof(trigger)?,
+                )),
+                HirStmtKind::CancelRule {
+                    trigger: HirCancelTrigger::Recovered(_),
+                    ..
+                } => {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
+                HirStmtKind::On { trigger, .. } => Some(PreparedStatementScrutineeProof::Trigger(
+                    prepared_trigger_proof(trigger)?,
+                )),
                 HirStmtKind::Select(HirSelectStmt::Operand(_)) => Some(
                     PreparedStatementScrutineeProof::Select(PreparedSelectScrutineeProof::Operand),
                 ),
@@ -743,6 +752,23 @@ pub(super) fn prepare_scrutinee_proofs(
         }
     }
     Ok(proofs)
+}
+
+fn prepared_trigger_proof(
+    trigger: &HirTrigger,
+) -> Result<PreparedTriggerScrutineeProof, FinalSemanticAnalysisError> {
+    Ok(match trigger {
+        HirTrigger::Input(_) => PreparedTriggerScrutineeProof::Input,
+        HirTrigger::Event(_) => PreparedTriggerScrutineeProof::Event,
+        HirTrigger::Signal { .. } => PreparedTriggerScrutineeProof::Signal,
+        HirTrigger::Timeout(_) => PreparedTriggerScrutineeProof::Timeout,
+        HirTrigger::Mark(mark) => PreparedTriggerScrutineeProof::Mark(*mark),
+        HirTrigger::Select(_) => PreparedTriggerScrutineeProof::Select,
+        HirTrigger::Task(_) => PreparedTriggerScrutineeProof::Task,
+        HirTrigger::Scope(_) => PreparedTriggerScrutineeProof::Scope,
+        HirTrigger::Expression(_) => PreparedTriggerScrutineeProof::Expression,
+        HirTrigger::Recovered(_) => return Err(FinalSemanticAnalysisError::RecoveredOwner),
+    })
 }
 
 fn seed_registered(

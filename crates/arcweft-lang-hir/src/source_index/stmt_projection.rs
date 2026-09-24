@@ -1,9 +1,15 @@
 //! Direct attached-statement projection for final HIR-owned source roles.
 
-use arcweft_lang_syntax::attachment::node::UnsafeLifetimeStatementKind;
-use arcweft_lang_syntax::attachment::{AstNode, StatementNode, SyntaxAccessError};
+use arcweft_lang_syntax::attachment::node::{
+    DialogueCancelRuleStatementKind, UnsafeLifetimeStatementKind,
+};
+use arcweft_lang_syntax::attachment::{
+    AstNode, AttachedInputActionSelector, AttachedInputActionSelectorIssue, StatementNode,
+    SyntaxAccessError,
+};
 use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
+use arcweft_source::SourceSpan;
 
 use super::{
     HirInsertionPoint, HirSourceCommitInvariantError, HirSourceIndex, HirSourceQuery,
@@ -13,7 +19,9 @@ use super::{
 use crate::arena::ArenaSnapshot;
 use crate::identity::{StmtId, SyntheticOwner};
 use crate::slot::{HirOrigin, SlotSnapshot};
-use crate::stmt::{HirStmt, HirStmtKind, HirStmtPoisonState};
+use crate::stmt::{
+    HirCancelTrigger, HirCancelTriggerIssue, HirStmt, HirStmtKind, HirStmtPoisonState,
+};
 
 impl StagedHirSourceIndex {
     /// Projects the sole statement-owned edit component from exact attached
@@ -39,6 +47,55 @@ impl StagedHirSourceIndex {
 
         let semantic_owner = SyntheticOwner::Stmt(owner);
         if matches!(statement.kind(), HirStmtKind::Error) {
+            return Ok(());
+        }
+        if let HirStmtKind::CancelRule { trigger, .. } = statement.kind() {
+            if attached.kind() != SyntaxKind::DialogueCancelRuleStatement {
+                return self.reject(
+                    HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                        owner: semantic_owner,
+                    },
+                );
+            }
+            let cancel = attached
+                .cast::<DialogueCancelRuleStatementKind>()
+                .map_err(
+                    |error| HirSourceCommitInvariantError::AttachedSyntaxAccess {
+                        owner: semantic_owner,
+                        error: SyntaxAccessError::from(error),
+                    },
+                )?
+                .semantics()
+                .map_err(
+                    |error| HirSourceCommitInvariantError::AttachedSyntaxAccess {
+                        owner: semantic_owner,
+                        error,
+                    },
+                )?;
+            let selector = cancel.input_action_selector().map_err(|error| {
+                HirSourceCommitInvariantError::AttachedSyntaxAccess {
+                    owner: semantic_owner,
+                    error,
+                }
+            })?;
+            let (requirement, source) = cancel_selector_source(trigger, selector.as_ref())
+                .ok_or_else(
+                    || HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
+                        owner: semantic_owner,
+                    },
+                )?;
+            if let Some(requirement) = requirement {
+                let query = HirSourceQuery::Stmt {
+                    owner,
+                    role: HirStmtSourceRole::CancelInputActionSelector,
+                };
+                self.bind_syntax_owner(semantic_owner, attached.id())?;
+                self.require(&query, requirement)?;
+                if let Some(source) = source {
+                    let site = HirSourceSite::from_attached_span(parsed.document(), source)?;
+                    self.stage(&query, site)?;
+                }
+            }
             return Ok(());
         }
         if !matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) {
@@ -138,6 +195,55 @@ impl HirStmtKind {
             HirStmtSourceRole::UnsafeAuditInsertion => {
                 Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role })
             }
+            HirStmtSourceRole::CancelInputActionSelector
+                if matches!(
+                    self,
+                    Self::CancelRule {
+                        trigger: HirCancelTrigger::InputAction(_) | HirCancelTrigger::Recovered(_),
+                        ..
+                    }
+                ) =>
+            {
+                Ok(())
+            }
+            HirStmtSourceRole::CancelInputActionSelector => {
+                Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role })
+            }
+        }
+    }
+}
+
+fn cancel_selector_source<'a>(
+    trigger: &HirCancelTrigger,
+    selector: Option<&'a AttachedInputActionSelector>,
+) -> Option<(Option<HirSourceRequirement>, Option<&'a SourceSpan>)> {
+    match (trigger, selector) {
+        (
+            HirCancelTrigger::InputAction(action),
+            Some(AttachedInputActionSelector::Resolved { name, source }),
+        ) if action.as_str() == name.as_str() => {
+            Some((Some(HirSourceRequirement::Required), Some(source)))
+        }
+        (
+            HirCancelTrigger::Recovered(actual),
+            Some(AttachedInputActionSelector::Recovered { issue, source }),
+        ) if cancel_trigger_issue(issue) == *actual => {
+            Some((Some(HirSourceRequirement::Optional), source.as_ref()))
+        }
+        (HirCancelTrigger::Other(_), None) => Some((None, None)),
+        _ => None,
+    }
+}
+
+fn cancel_trigger_issue(issue: &AttachedInputActionSelectorIssue) -> HirCancelTriggerIssue {
+    match issue {
+        AttachedInputActionSelectorIssue::MissingName => HirCancelTriggerIssue::MissingName,
+        AttachedInputActionSelectorIssue::InvalidName(_) => HirCancelTriggerIssue::InvalidName,
+        AttachedInputActionSelectorIssue::UnsupportedPattern => {
+            HirCancelTriggerIssue::UnsupportedPattern
+        }
+        AttachedInputActionSelectorIssue::RecoveredPattern => {
+            HirCancelTriggerIssue::RecoveredPattern
         }
     }
 }
@@ -151,6 +257,44 @@ fn statement_manifest_matches(
 ) -> bool {
     match statement.kind() {
         HirStmtKind::Error => !source_index_has_stmt_owner(index, owner),
+        HirStmtKind::CancelRule { trigger, .. } => {
+            if attached.kind() != SyntaxKind::DialogueCancelRuleStatement {
+                return false;
+            }
+            let Ok(cancel_node) = attached.cast::<DialogueCancelRuleStatementKind>() else {
+                return false;
+            };
+            let Ok(cancel) = cancel_node.semantics() else {
+                return false;
+            };
+            let Ok(selector) = cancel.input_action_selector() else {
+                return false;
+            };
+            let Some((requirement, source)) = cancel_selector_source(trigger, selector.as_ref())
+            else {
+                return false;
+            };
+            let Some(requirement) = requirement else {
+                return !source_index_has_stmt_owner(index, owner);
+            };
+            let expected = match source {
+                Some(source) => {
+                    let Ok(site) = HirSourceSite::from_attached_span(parsed.document(), source)
+                    else {
+                        return false;
+                    };
+                    Some(site)
+                }
+                None => None,
+            };
+            exact_cancel_selector_manifest(
+                index,
+                owner,
+                attached.id(),
+                requirement,
+                expected.as_ref(),
+            )
+        }
         HirStmtKind::UnsafeLifetime { .. } => {
             if attached.kind() != SyntaxKind::UnsafeLifetimeStatement {
                 return false;
@@ -183,6 +327,38 @@ fn statement_manifest_matches(
                 && !source_index_has_stmt_owner(index, owner)
         }
     }
+}
+
+fn exact_cancel_selector_manifest(
+    index: &HirSourceIndex,
+    owner: StmtId,
+    syntax: arcweft_lang_syntax::attachment::SyntaxNodeId,
+    requirement: HirSourceRequirement,
+    expected: Option<&HirSourceSite>,
+) -> bool {
+    let semantic_owner = SyntheticOwner::Stmt(owner);
+    let query = HirSourceQuery::Stmt {
+        owner,
+        role: HirStmtSourceRole::CancelInputActionSelector,
+    };
+    index.syntax_owners.get(&semantic_owner) == Some(&syntax)
+        && index.requirements.get(&query) == Some(&requirement)
+        && match expected {
+            Some(expected) => index.components.get(&query) == Some(expected),
+            None => !index.components.contains_key(&query),
+        }
+        && index
+            .requirements
+            .keys()
+            .filter(|candidate| candidate.owner() == semantic_owner)
+            .count()
+            == 1
+        && index
+            .components
+            .keys()
+            .filter(|candidate| candidate.owner() == semantic_owner)
+            .count()
+            == usize::from(expected.is_some())
 }
 
 fn complete_unsafe_audit_insertion(

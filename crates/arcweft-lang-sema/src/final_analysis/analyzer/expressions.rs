@@ -42,6 +42,7 @@ use crate::callable::{
 use crate::final_analysis::CheckedCompileTimeCallee;
 use crate::final_analysis::type_rules::integer_suffix_type;
 use crate::registration::RegisteredExternalOwner;
+use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyKind};
 use arcweft_lang_hir::expr::{
     HirChoicePlanItem, HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirPlaceholderKind,
 };
@@ -2199,6 +2200,29 @@ impl Analyzer<'_, '_, '_> {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
                     })?;
                     self.evaluate_statement_bindings(context, owner, statement.kind())?;
+                    for body in statement
+                        .kind()
+                        .body_projections()
+                        .map_err(|_| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::RecoveredOwner,
+                            )
+                        })?
+                        .into_iter()
+                        .rev()
+                    {
+                        if body.kind() != HirBodyKind::Thread {
+                            continue;
+                        }
+                        for edge in body.children().iter().rev() {
+                            pending.push(match edge.child() {
+                                HirBodyChild::Expression(expression) => {
+                                    Work::Expression(expression)
+                                }
+                                HirBodyChild::Statement(statement) => Work::Statement(statement),
+                            });
+                        }
+                    }
                     let edges = statement.kind().try_child_edges().map_err(|_| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::AccountingOverflow,

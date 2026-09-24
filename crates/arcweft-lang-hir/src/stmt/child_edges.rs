@@ -46,8 +46,8 @@ impl From<HirStatementChildEdgeError> for HirStatementBodyProjectionError {
 }
 
 use super::{
-    HirConditionalElseBranch, HirContextualStmtBody, HirSelectBranchHead, HirSelectStmt,
-    HirStmtKind, HirStmtMatchArmBody, HirTrigger, HirUnsafeLifetimeBody,
+    HirCancelTrigger, HirConditionalElseBranch, HirContextualStmtBody, HirSelectBranchHead,
+    HirSelectStmt, HirStmtKind, HirStmtMatchArmBody, HirTrigger, HirUnsafeLifetimeBody,
 };
 
 /// One typed child owned directly by a statement.
@@ -65,6 +65,7 @@ pub enum HirStatementChild {
 pub enum HirStatementBodyRole {
     LetElse,
     On,
+    CancelRule,
     UnsafeLifetime,
     Then,
     Else,
@@ -169,6 +170,10 @@ impl HirStmtKind {
             Self::On { body, .. } => {
                 push_ordinary_body_projection(&mut bodies, HirStatementBodyRole::On, body)?;
             }
+            Self::CancelRule { body, .. } => bodies.push(HirBodyRoleProjection::new(
+                HirStatementBodyRole::CancelRule,
+                body.try_body_projection()?,
+            )),
             Self::UnsafeLifetime { body, .. } => match body {
                 HirUnsafeLifetimeBody::Block { statements, .. } => push_ordinary_body_projection(
                     &mut bodies,
@@ -355,6 +360,11 @@ impl HirStmtKind {
             Self::On { trigger, body, .. } => {
                 push_trigger(&mut edges, trigger);
                 push_statements(&mut edges, HirStatementBodyRole::On, body)?;
+            }
+            Self::CancelRule { trigger, .. } => {
+                if let HirCancelTrigger::Other(trigger) = trigger {
+                    push_trigger(&mut edges, trigger);
+                }
             }
             Self::UnsafeLifetime { audit, body } => {
                 if let Some(reason) = audit.reason() {

@@ -8,6 +8,7 @@ use arcweft_lang_sema::final_analysis::{
 fn consume_trigger(trigger: &CheckedTrigger) {
     match trigger.view() {
         CheckedTriggerView::Input
+        | CheckedTriggerView::InputAction(_)
         | CheckedTriggerView::Event
         | CheckedTriggerView::Signal
         | CheckedTriggerView::Timeout

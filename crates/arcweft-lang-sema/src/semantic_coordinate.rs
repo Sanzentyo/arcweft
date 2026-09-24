@@ -1919,6 +1919,7 @@ fn statement_body_tag(role: HirStatementBodyRole) -> u8 {
         HirStatementBodyRole::SelectBranch { .. } => 9,
         HirStatementBodyRole::SourceLocale => 10,
         HirStatementBodyRole::Scope => 11,
+        HirStatementBodyRole::CancelRule => 12,
     }
 }
 
@@ -1940,6 +1941,7 @@ fn write_statement_body_payload(output: &mut Vec<u8>, role: HirStatementBodyRole
         }
         HirStatementBodyRole::LetElse
         | HirStatementBodyRole::On
+        | HirStatementBodyRole::CancelRule
         | HirStatementBodyRole::UnsafeLifetime
         | HirStatementBodyRole::Then
         | HirStatementBodyRole::Else

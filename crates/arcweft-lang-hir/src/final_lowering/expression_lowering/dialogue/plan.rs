@@ -1,6 +1,7 @@
 //! Typed Dialogue line-plan lowering through the existing HIR arenas.
 
 use arcweft_lang_syntax::attachment::AttachedDialogueLinePlan;
+use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::dialogue_application::{HirDialogueContent, HirLinePlan, HirLinePlanItem};
 use crate::identity::{ExprId, LocalId, ScopeId};
@@ -24,11 +25,14 @@ impl StagedHirModuleTransaction<'_> {
         let mut items = Vec::with_capacity(attached.body().items().len());
         let mut locals = Vec::<LocalId>::new();
         for statement in attached.body().items() {
+            let is_cancel_rule = statement.kind() == SyntaxKind::DialogueCancelRuleStatement;
             let lowered =
                 self.lower_attached_dialogue_line_plan_statement(statement, scope, content)?;
             locals.extend_from_slice(&lowered.locals);
             let item = if lowered.poisoned {
                 HirLinePlanItem::Error(lowered.owner)
+            } else if is_cancel_rule {
+                HirLinePlanItem::CancelRule(lowered.owner)
             } else {
                 HirLinePlanItem::Statement(lowered.owner)
             };

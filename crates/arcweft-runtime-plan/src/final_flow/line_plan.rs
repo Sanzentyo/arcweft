@@ -455,6 +455,7 @@ impl LinePlanLowerer<'_, '_> {
             | HirStmtEvaluationPlan::OrderedPair { .. }
             | HirStmtEvaluationPlan::Value { .. }
             | HirStmtEvaluationPlan::EventBody { .. }
+            | HirStmtEvaluationPlan::CancelRule { .. }
             | HirStmtEvaluationPlan::UnsafeLifetime { .. }
             | HirStmtEvaluationPlan::LetElse { .. }
             | HirStmtEvaluationPlan::If { .. }

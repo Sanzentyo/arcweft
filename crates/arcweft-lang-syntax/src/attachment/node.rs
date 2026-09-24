@@ -147,6 +147,7 @@ define_ast_kinds!(STATEMENT_MARKERS, Statement;
     LifetimeSetStatementKind => LifetimeSetStatement,
     WaitStatementKind => WaitStatement,
     OnStatementKind => OnStatement,
+    DialogueCancelRuleStatementKind => DialogueCancelRuleStatement,
     UnsafeLifetimeStatementKind => UnsafeLifetimeStatement,
     IfStatementKind => IfStatement,
     WhileStatementKind => WhileStatement,
@@ -279,6 +280,7 @@ define_ast_kinds!(BODY_MARKERS, Body;
     ChoiceViewBodyKind => ChoiceViewBody,
     ChoicePlanBodyKind => ChoicePlanBody,
     DialogueLinePlanBodyKind => DialogueLinePlanBody,
+    DialogueCancelRuleBodyKind => DialogueCancelRuleBody,
     PredicateBlockKind => PredicateBlock,
     ProofBlockKind => ProofBlock,
 );

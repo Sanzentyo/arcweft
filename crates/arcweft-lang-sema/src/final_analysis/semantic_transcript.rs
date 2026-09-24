@@ -1685,8 +1685,15 @@ fn write_statement_payload(
         }
         CheckedStatementPayload::Trigger(trigger) => {
             transcript_update!(hasher, &[trigger.semantic_tag()]);
-            if let super::CheckedTriggerView::Mark(coordinate) = trigger.view() {
-                transcript_update!(hasher, &coordinate.canonical_bytes()?);
+            match trigger.view() {
+                super::CheckedTriggerView::Mark(coordinate) => {
+                    transcript_update!(hasher, &coordinate.canonical_bytes()?);
+                }
+                super::CheckedTriggerView::InputAction(action) => {
+                    write_len(hasher, action.as_str().len())?;
+                    transcript_update!(hasher, action.as_str().as_bytes());
+                }
+                _ => {}
             }
         }
         CheckedStatementPayload::UnsafeAudit(audit) => {

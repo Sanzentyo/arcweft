@@ -3,7 +3,8 @@
 
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedExpressionNode, AttachedRequiredFlowBody, AttachedRequiredNestedThreadFlowBody,
+    AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody, AttachedExpressionNode,
+    AttachedRequiredFlowBody, AttachedRequiredNestedThreadFlowBody,
     AttachedRequiredThreadExpressionBody, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
     SyntaxNodeId,
 };
@@ -44,6 +45,25 @@ pub(super) struct PreparedNestedThreadBody<'attached> {
     missing_body: bool,
 }
 
+pub(super) enum PreparedDialogueCancelRuleBody<'attached> {
+    Nested(PreparedNestedThreadBody<'attached>),
+    Indented(PreparedIndentedDialogueCancelRuleBody<'attached>),
+}
+
+impl PreparedDialogueCancelRuleBody<'_> {
+    pub(super) const fn scope(&self) -> ScopeId {
+        match self {
+            Self::Nested(body) => body.scope(),
+            Self::Indented(body) => body.scope,
+        }
+    }
+}
+
+pub(super) struct PreparedIndentedDialogueCancelRuleBody<'attached> {
+    attached: &'attached AttachedDialogueCancelRuleIndentedBody,
+    scope: ScopeId,
+}
+
 impl PreparedNestedThreadBody<'_> {
     pub(super) const fn scope(&self) -> ScopeId {
         self.scope
@@ -57,6 +77,67 @@ struct LoweredThreadFlowItems {
 }
 
 impl StagedHirModuleTransaction<'_> {
+    pub(super) fn prepare_attached_dialogue_cancel_rule_body<'attached>(
+        &mut self,
+        attached: &'attached AttachedDialogueCancelRuleBody,
+        owner: crate::identity::StmtId,
+        parent_scope: ScopeId,
+    ) -> Result<PreparedDialogueCancelRuleBody<'attached>, HirLowerFailure> {
+        match attached {
+            AttachedDialogueCancelRuleBody::Nested(attached) => self
+                .prepare_attached_nested_thread_body(
+                    attached,
+                    HirScopeOwner::Stmt(owner),
+                    parent_scope,
+                )
+                .map(PreparedDialogueCancelRuleBody::Nested),
+            AttachedDialogueCancelRuleBody::Indented(attached) => {
+                let scope = self.allocate_thread_body_scope(
+                    attached.syntax().id(),
+                    &attached.syntax().source_span(),
+                    HirScopeKind::Block,
+                    HirScopeOwner::Stmt(owner),
+                    parent_scope,
+                )?;
+                Ok(PreparedDialogueCancelRuleBody::Indented(
+                    PreparedIndentedDialogueCancelRuleBody { attached, scope },
+                ))
+            }
+        }
+    }
+
+    pub(super) fn finish_attached_dialogue_cancel_rule_body(
+        &mut self,
+        prepared: PreparedDialogueCancelRuleBody<'_>,
+        prefix_locals: Box<[LocalId]>,
+    ) -> Result<LoweredThreadBody, HirLowerFailure> {
+        match prepared {
+            PreparedDialogueCancelRuleBody::Nested(prepared) => {
+                self.finish_attached_nested_thread_body(prepared, prefix_locals)
+            }
+            PreparedDialogueCancelRuleBody::Indented(prepared) => {
+                let lowered = self
+                    .lower_attached_thread_flow_items(prepared.attached.items(), prepared.scope)?;
+                self.close_thread_body_scope(prepared.scope, prefix_locals, &lowered)?;
+                let recovery = lowered.recoveries.first().cloned();
+                let body = HirThreadBody::try_new(
+                    HirThreadBodyOwner::NestedScope(prepared.scope),
+                    prepared.scope,
+                    lowered.items,
+                )
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                self.source_components
+                    .stage_attached_dialogue_cancel_indented_body(
+                        self.request.source(),
+                        HirThreadBodyOwner::NestedScope(prepared.scope),
+                        prepared.attached,
+                        &body,
+                    )?;
+                Ok(LoweredThreadBody { body, recovery })
+            }
+        }
+    }
+
     pub(super) fn lower_attached_flow_body(
         &mut self,
         attached: &AttachedRequiredFlowBody,

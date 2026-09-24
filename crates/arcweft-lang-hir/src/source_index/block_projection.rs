@@ -8,8 +8,8 @@ mod thread_control;
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::{
-    AssertionStatementKind, BlockKind, ExpressionStatementKind, IfStatementKind,
-    LetElseStatementKind, LetStatementKind, MatchStatementKind, OnStatementKind,
+    AssertionStatementKind, BlockKind, DialogueCancelRuleStatementKind, ExpressionStatementKind,
+    IfStatementKind, LetElseStatementKind, LetStatementKind, MatchStatementKind, OnStatementKind,
     PredicateBlockKind, ProofBlockKind, ProofCallStatementKind, UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
@@ -1193,6 +1193,24 @@ pub(super) fn statement_matches(
                 scope,
                 trigger,
                 *trigger_scope,
+                body,
+                generations,
+            )
+        }
+        (SyntaxKind::DialogueCancelRuleStatement, HirStmtKind::CancelRule { trigger, body }) => {
+            let attached = attached
+                .cast::<DialogueCancelRuleStatementKind>()
+                .ok()?
+                .semantics()
+                .ok()?;
+            thread_control::dialogue_cancel_rule_statement_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                &attached,
+                scope,
+                trigger,
                 body,
                 generations,
             )

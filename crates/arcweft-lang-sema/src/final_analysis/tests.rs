@@ -1811,6 +1811,7 @@ fn push_complete_statement_facts(module: &HirModule, input: &mut FinalSemanticAn
             | HirStmtKind::Signal { .. }
             | HirStmtKind::LifetimeSet { .. }
             | HirStmtKind::On { .. }
+            | HirStmtKind::CancelRule { .. }
             | HirStmtKind::UnsafeLifetime { .. }
             | HirStmtKind::Choice { .. }
             | HirStmtKind::If(_)

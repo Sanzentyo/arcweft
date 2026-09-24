@@ -12,9 +12,11 @@ use arcweft_lang_syntax::attachment::node::{
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedPatternNode, AttachedRequiredNestedThreadFlowBody, AttachedSelectBindingName,
-    AttachedSelectBranch, AttachedSelectStatementForm, AttachedThreadFlowItem,
-    AttachedThreadFlowItemFamily, RequiredStatementExpressionNode, StatementNode, SyntaxNodeId,
+    AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
+    AttachedDialogueCancelRuleStatement, AttachedPatternNode, AttachedRequiredNestedThreadFlowBody,
+    AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
+    AttachedThreadFlowItem, AttachedThreadFlowItemFamily, RequiredStatementExpressionNode,
+    StatementNode, SyntaxNodeId,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::SourceSpan;
@@ -142,6 +144,130 @@ pub(super) fn thread_control_statement_evidence(
         ),
         _ => None,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn dialogue_cancel_rule_statement_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    attached: &AttachedDialogueCancelRuleStatement,
+    outer_scope: ScopeId,
+    trigger: &crate::stmt::HirCancelTrigger,
+    body: &HirThreadBody,
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<StatementEvidence> {
+    let selector = attached.input_action_selector().ok()?;
+    let (trigger_locals, trigger_recovery) = match (selector.as_ref(), trigger) {
+        (
+            Some(arcweft_lang_syntax::attachment::AttachedInputActionSelector::Resolved {
+                name,
+                ..
+            }),
+            crate::stmt::HirCancelTrigger::InputAction(action),
+        ) if name.as_str() == action.as_str() => (Box::<[LocalId]>::from([]), false),
+        (
+            Some(arcweft_lang_syntax::attachment::AttachedInputActionSelector::Recovered {
+                issue,
+                ..
+            }),
+            crate::stmt::HirCancelTrigger::Recovered(actual),
+        ) if cancel_trigger_issue(issue) == *actual => (Box::<[LocalId]>::from([]), true),
+        (None, crate::stmt::HirCancelTrigger::Other(trigger)) => super::trigger_evidence(
+            parsed,
+            slots,
+            arenas,
+            owner,
+            attached.trigger(),
+            trigger,
+            body.scope(),
+            generations,
+        )?,
+        _ => return None,
+    };
+    let semantic = HirContextualStmtBody::Thread(body.clone());
+    let body = match attached.body() {
+        AttachedDialogueCancelRuleBody::Nested(attached_body) => nested_body_evidence(
+            parsed,
+            slots,
+            arenas,
+            owner,
+            outer_scope,
+            &semantic,
+            attached_body,
+            &trigger_locals,
+            generations,
+        )?,
+        AttachedDialogueCancelRuleBody::Indented(attached_body) => {
+            dialogue_cancel_indented_body_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                outer_scope,
+                body,
+                attached_body,
+                &trigger_locals,
+                generations,
+            )?
+        }
+    };
+    let recovery = if trigger_recovery || body.recovery.is_some() || attached.has_recovery() {
+        HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+            role: HirStmtChildRole::Condition,
+        })
+    } else {
+        HirStmtPoisonState::Clean
+    };
+    Some(StatementEvidence {
+        locals: Box::new([]),
+        state: recovery,
+    })
+}
+
+fn cancel_trigger_issue(
+    issue: &arcweft_lang_syntax::attachment::AttachedInputActionSelectorIssue,
+) -> crate::stmt::HirCancelTriggerIssue {
+    use crate::stmt::HirCancelTriggerIssue as HirIssue;
+    use arcweft_lang_syntax::attachment::AttachedInputActionSelectorIssue as AttachedIssue;
+
+    match issue {
+        AttachedIssue::MissingName => HirIssue::MissingName,
+        AttachedIssue::InvalidName(_) => HirIssue::InvalidName,
+        AttachedIssue::UnsupportedPattern => HirIssue::UnsupportedPattern,
+        AttachedIssue::RecoveredPattern => HirIssue::RecoveredPattern,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn dialogue_cancel_indented_body_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    parent_scope: ScopeId,
+    body: &HirThreadBody,
+    attached: &AttachedDialogueCancelRuleIndentedBody,
+    prefix_locals: &[LocalId],
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<ThreadBodyGraphEvidence> {
+    thread_body_graph_evidence(
+        parsed,
+        slots,
+        arenas,
+        body,
+        attached.syntax().id(),
+        &attached.syntax().source_span(),
+        attached.items(),
+        false,
+        false,
+        &HirScopeOwner::Stmt(owner),
+        parent_scope,
+        HirScopeKind::Block,
+        prefix_locals,
+        generations,
+    )
 }
 
 fn while_evidence(

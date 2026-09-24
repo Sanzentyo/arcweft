@@ -211,6 +211,37 @@ fn analyze_with_statement_mutation(
 }
 
 #[test]
+fn dialogue_cancel_input_selector_seals_an_action_identity() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice(voice=auto):
+        hello[p]
+    with:
+        cancel on input(.SkipLine) { let local = 1 }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed cancellation HIR"
+    );
+    let module = root_module(&fixture);
+    let owner = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::CancelRule { .. }).then_some(owner)
+        })
+        .expect("line-plan cancel rule");
+    let report = analyze(&fixture).expect("input action selector is checked");
+    let action = arcweft_interaction_model::input::InputActionId::new("SkipLine").unwrap();
+    assert_trigger_view(&report, owner, CheckedTriggerView::InputAction(&action));
+}
+
+#[test]
 fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
     let cases: &[(
         &str,

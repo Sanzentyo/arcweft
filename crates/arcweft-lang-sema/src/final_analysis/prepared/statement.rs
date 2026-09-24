@@ -191,6 +191,7 @@ impl PreparedEventScrutineeProof {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedTriggerScrutineeProof {
     Input,
+    InputAction(arcweft_interaction_model::input::InputActionId),
     Event,
     Signal,
     Timeout,

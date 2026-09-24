@@ -42,6 +42,34 @@ impl InputSequence {
     }
 }
 
+/// Validated semantic input action shared by language selectors and routed
+/// dialogue actions. This identifies the action kind, not an event envelope.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct InputActionId(Identifier);
+
+impl InputActionId {
+    /// Creates a semantic input action key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdentifierError`] when the action name is empty.
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentifierError> {
+        Identifier::new(value).map(Self)
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<Identifier> for InputActionId {
+    fn from(value: Identifier) -> Self {
+        Self(value)
+    }
+}
+
 /// Semantic destination selected by the presentation input router.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]

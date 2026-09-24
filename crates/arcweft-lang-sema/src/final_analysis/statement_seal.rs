@@ -1,4 +1,4 @@
-//! Exhaustive late construction of the 31 final-HIR statement families.
+//! Exhaustive late construction of the final-HIR statement families.
 //!
 //! Specialized early checks retain only private preparation. This module is
 //! the one producer that consumes those rows, the statement ingress proofs,
@@ -11,8 +11,8 @@ use arcweft_lang_hir::{
     module::HirModule,
     project::{HirAnalysisProjectView, HirControlTransferKind},
     stmt::{
-        HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue, HirStmtKind, HirTrigger,
-        HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
+        HirCancelTrigger, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue, HirStmtKind,
+        HirTrigger, HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
     },
 };
 
@@ -253,6 +253,9 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         };
         let checked = match (hir, proof) {
             (HirTrigger::Input(_), PreparedTriggerScrutineeProof::Input) => CheckedTrigger::input(),
+            (HirTrigger::Input(_), PreparedTriggerScrutineeProof::InputAction(action)) => {
+                CheckedTrigger::input_action(action)
+            }
             (HirTrigger::Event(_), PreparedTriggerScrutineeProof::Event) => CheckedTrigger::event(),
             (HirTrigger::Signal { .. }, PreparedTriggerScrutineeProof::Signal) => {
                 CheckedTrigger::signal()
@@ -291,6 +294,37 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             }
         };
         Ok(CheckedStatementPayload::Trigger(checked))
+    }
+
+    fn cancel_trigger(
+        &mut self,
+        owner: StmtId,
+        hir: &HirCancelTrigger,
+    ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
+        match hir {
+            HirCancelTrigger::Other(trigger) => self.trigger(owner, trigger),
+            HirCancelTrigger::Recovered(_) => Err(FinalSemanticAnalysisError::RecoveredOwner),
+            HirCancelTrigger::InputAction(name) => {
+                if !matches!(
+                    self.take_prepared(owner)?,
+                    PreparedStatementPayload::HirOwned
+                ) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let Some(PreparedStatementScrutineeProof::Trigger(
+                    PreparedTriggerScrutineeProof::InputAction(action),
+                )) = self.scrutinees.remove(&owner)
+                else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                if action.as_str() != name.as_str() {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                Ok(CheckedStatementPayload::Trigger(
+                    CheckedTrigger::input_action(action),
+                ))
+            }
+        }
     }
 
     fn select(
@@ -443,7 +477,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
 impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
     #[allow(
         clippy::too_many_lines,
-        reason = "the accepted contract requires one explicit producer arm for all 31 HIR families"
+        reason = "the accepted contract requires one explicit producer arm for every HIR family"
     )]
     fn seal_payload(
         &mut self,
@@ -475,6 +509,7 @@ impl CheckedStatementPayloadSealer for CheckedStatementSeal<'_, '_, '_> {
             HirStmtKind::LifetimeSet { .. } => self.structural(owner),
             HirStmtKind::Wait { .. } => self.suspension(owner),
             HirStmtKind::On { trigger, .. } => self.trigger(owner, trigger),
+            HirStmtKind::CancelRule { trigger, .. } => self.cancel_trigger(owner, trigger),
             HirStmtKind::UnsafeLifetime { audit, body } => {
                 self.unsafe_audit(owner, audit, body, expressions)
             }

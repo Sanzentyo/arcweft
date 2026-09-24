@@ -1,6 +1,7 @@
 //! Final checked statement payloads and their read-only semantic projections.
 
 use arcweft_id::{AcceptedUnsafeAuditSemanticId, LocaleTag, UnsafeAuditId};
+use arcweft_interaction_model::input::InputActionId;
 use arcweft_lang_hir::symbol::{CallableDeclarationDigest, ImplMethodDeclarationId};
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 
@@ -261,6 +262,7 @@ pub struct CheckedTrigger {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CheckedTriggerKind {
     Input,
+    InputAction(InputActionId),
     Event,
     Signal,
     Timeout,
@@ -275,6 +277,7 @@ enum CheckedTriggerKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CheckedTriggerView<'a> {
     Input,
+    InputAction(&'a InputActionId),
     Event,
     Signal,
     Timeout,
@@ -289,6 +292,12 @@ impl CheckedTrigger {
     pub(crate) const fn input() -> Self {
         Self {
             kind: CheckedTriggerKind::Input,
+        }
+    }
+
+    pub(crate) const fn input_action(action: InputActionId) -> Self {
+        Self {
+            kind: CheckedTriggerKind::InputAction(action),
         }
     }
 
@@ -343,6 +352,7 @@ impl CheckedTrigger {
     pub const fn view(&self) -> CheckedTriggerView<'_> {
         match &self.kind {
             CheckedTriggerKind::Input => CheckedTriggerView::Input,
+            CheckedTriggerKind::InputAction(action) => CheckedTriggerView::InputAction(action),
             CheckedTriggerKind::Event => CheckedTriggerView::Event,
             CheckedTriggerKind::Signal => CheckedTriggerView::Signal,
             CheckedTriggerKind::Timeout => CheckedTriggerView::Timeout,
@@ -361,6 +371,7 @@ impl CheckedTrigger {
     pub(crate) const fn semantic_tag(&self) -> u8 {
         match &self.kind {
             CheckedTriggerKind::Input => 0,
+            CheckedTriggerKind::InputAction(_) => 9,
             CheckedTriggerKind::Event => 1,
             CheckedTriggerKind::Signal => 2,
             CheckedTriggerKind::Timeout => 3,

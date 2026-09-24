@@ -1268,6 +1268,7 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::LifetimeSet { .. } => "lifetime-set",
         HirStmtKind::Wait { .. } => "wait",
         HirStmtKind::On { .. } => "on",
+        HirStmtKind::CancelRule { .. } => "cancel-rule",
         HirStmtKind::UnsafeLifetime { .. } => "unsafe-lifetime",
         HirStmtKind::Choice { .. } => "choice",
         HirStmtKind::If(_) => "if",
@@ -1321,6 +1322,7 @@ fn immediate_thread_flow_item_count(kind: &HirStmtKind) -> usize {
             .sum(),
         HirStmtKind::SourceLocale(statement) => contextual_thread_flow_item_count(statement.body()),
         HirStmtKind::Scope(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::CancelRule { body, .. } => body.items().len(),
         _ => 0,
     }
 }

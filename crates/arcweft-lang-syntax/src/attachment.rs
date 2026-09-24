@@ -92,7 +92,11 @@ pub use declaration::{
     AttachedDeclarationIdentity, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
     AttachedRetainedHeader, AttachedRetainedName,
 };
-pub use dialogue_plan::{AttachedDialogueLinePlan, AttachedDialogueLinePlanBody};
+pub use dialogue_plan::{
+    AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
+    AttachedDialogueCancelRuleStatement, AttachedDialogueLinePlan, AttachedDialogueLinePlanBody,
+    AttachedInputActionSelector, AttachedInputActionSelectorIssue,
+};
 pub use entry::{
     AttachedEntryBody, AttachedEntryDeclaration, AttachedEntryHttpMethod, AttachedEntryId,
     AttachedEntryKind, AttachedEntryMember, AttachedEntryName, AttachedEntryPunctuation,

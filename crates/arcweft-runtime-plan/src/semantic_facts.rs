@@ -70,7 +70,7 @@ use arcweft_lang_hir::scope::CaptureAccess;
 use arcweft_lang_hir::source_index::{
     HirCallableSourceOwner, HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
 };
-use arcweft_lang_hir::stmt::{HirStmtKind, HirTrigger};
+use arcweft_lang_hir::stmt::{HirCancelTrigger, HirStmtKind, HirTrigger};
 use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
@@ -3963,6 +3963,7 @@ pub struct RuntimeTriggerAdmission {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum RuntimeTriggerAdmissionKind {
     Input,
+    InputAction(arcweft_interaction_model::input::InputActionId),
     Event,
     Signal,
     Timeout,
@@ -3980,6 +3981,10 @@ impl RuntimeTriggerAdmission {
 
     pub const fn input() -> Self {
         Self::new(RuntimeTriggerAdmissionKind::Input)
+    }
+
+    pub const fn input_action(action: arcweft_interaction_model::input::InputActionId) -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::InputAction(action))
     }
 
     pub const fn event() -> Self {
@@ -4018,6 +4023,7 @@ impl RuntimeTriggerAdmission {
         match &self.kind {
             RuntimeTriggerAdmissionKind::Mark(mark) => Some(mark),
             RuntimeTriggerAdmissionKind::Input
+            | RuntimeTriggerAdmissionKind::InputAction(_)
             | RuntimeTriggerAdmissionKind::Event
             | RuntimeTriggerAdmissionKind::Signal
             | RuntimeTriggerAdmissionKind::Timeout
@@ -4025,6 +4031,15 @@ impl RuntimeTriggerAdmission {
             | RuntimeTriggerAdmissionKind::Task
             | RuntimeTriggerAdmissionKind::Scope
             | RuntimeTriggerAdmissionKind::Expression => None,
+        }
+    }
+
+    pub const fn input_action_id(
+        &self,
+    ) -> Option<&arcweft_interaction_model::input::InputActionId> {
+        match &self.kind {
+            RuntimeTriggerAdmissionKind::InputAction(action) => Some(action),
+            _ => None,
         }
     }
 }
@@ -4519,6 +4534,14 @@ impl RuntimePlanSemanticFactInput {
 
     pub fn push_input_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
         self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Input)
+    }
+
+    pub fn push_input_action_trigger(
+        &mut self,
+        owner: StmtId,
+        action: arcweft_interaction_model::input::InputActionId,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::InputAction(action))
     }
 
     pub fn push_event_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
@@ -6780,7 +6803,7 @@ impl RuntimePlanSemanticFacts {
             .filter(|statement| {
                 matches!(
                     resolve_stmt(&modules, *statement),
-                    Ok(HirStmtKind::On { .. })
+                    Ok(HirStmtKind::On { .. } | HirStmtKind::CancelRule { .. })
                 )
             })
             .collect::<BTreeSet<_>>();
@@ -6793,7 +6816,7 @@ impl RuntimePlanSemanticFacts {
             });
         }
         for statement in triggers.keys() {
-            // HIR participates only in the reachable `On` owner-set check.
+            // HIR participates only in the reachable trigger owner-set check.
             // The checked trigger variant and payload were selected by the
             // compiler's exhaustive projection and are never reclassified
             // from `HirTrigger` here.
@@ -6802,7 +6825,12 @@ impl RuntimePlanSemanticFacts {
                 runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Trigger,
-                |kind| matches!(kind, HirStmtKind::On { .. }),
+                |kind| {
+                    matches!(
+                        kind,
+                        HirStmtKind::On { .. } | HirStmtKind::CancelRule { .. }
+                    )
+                },
             )?;
         }
         if let Some(statement) = expected_triggers
@@ -7002,6 +7030,17 @@ impl RuntimePlanSemanticFacts {
         }
         for (statement, admission) in &triggers {
             let hir = resolve_stmt(&modules, *statement)?;
+            if let HirStmtKind::CancelRule {
+                trigger: HirCancelTrigger::InputAction(action),
+                ..
+            } = hir
+            {
+                if admission.input_action_id().map(|id| id.as_str()) != Some(action.as_str()) {
+                    return Err(RuntimeSemanticFactsError::InvalidTriggerFact {
+                        statement: *statement,
+                    });
+                }
+            }
             match (hir, admission.dialogue_mark()) {
                 (
                     HirStmtKind::On {
@@ -10439,6 +10478,15 @@ fn validate_project_function_semantic_catalog(
             },
             RuntimeProjectFunctionStatementPayload::Trigger(admission) => {
                 let hir = resolve_stmt(modules, row.owner())?;
+                if let HirStmtKind::CancelRule {
+                    trigger: HirCancelTrigger::InputAction(action),
+                    ..
+                } = hir
+                {
+                    if admission.input_action_id().map(|id| id.as_str()) != Some(action.as_str()) {
+                        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                    }
+                }
                 match (hir, admission.dialogue_mark()) {
                     (
                         HirStmtKind::On {
