@@ -93,6 +93,8 @@ mod content;
 pub use character_dialogue::RuntimeCharacterDialogueCall;
 mod dialogue_target;
 pub use dialogue_target::RuntimeDialogueApplicationTarget;
+mod defer;
+pub use defer::RuntimeDeferFact;
 mod evaluated_effect;
 mod flow;
 mod lexical_scope;
@@ -105,9 +107,9 @@ mod type_dependencies;
 
 pub use content::{
     RuntimeContentFragmentFact, RuntimeContentFragmentFactError, RuntimeContentFragmentId,
-    RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectCaptureKey,
-    RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact,
-    RuntimeDialogueMarkKey, RuntimeDialogueValueCaptureKey,
+    RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectProgramFact,
+    RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
+    RuntimeDialogueValueCaptureKey, RuntimeExecutableCaptureFact,
 };
 pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
@@ -4348,6 +4350,7 @@ pub struct RuntimePlanSemanticFactInput {
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
     evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
+    defers: Vec<(StmtId, RuntimeDeferFact)>,
     choices: Vec<(ExprId, RuntimeChoiceFact)>,
     awaits: Vec<(ExprId, RuntimeAwaitFact)>,
     tries: Vec<(ExprId, RuntimeTryFact)>,
@@ -4396,6 +4399,7 @@ impl RuntimePlanSemanticFactInput {
             triggers: BTreeMap::new(),
             assignments: Vec::new(),
             evaluated_effects: Vec::new(),
+            defers: Vec::new(),
             choices: Vec::new(),
             awaits: Vec::new(),
             tries: Vec::new(),
@@ -4610,6 +4614,10 @@ impl RuntimePlanSemanticFactInput {
         self.evaluated_effects.push((owner, effect));
     }
 
+    pub fn push_defer(&mut self, owner: StmtId, defer: RuntimeDeferFact) {
+        self.defers.push((owner, defer));
+    }
+
     pub fn push_await(&mut self, owner: ExprId, fact: RuntimeAwaitFact) {
         self.awaits.push((owner, fact));
     }
@@ -4733,6 +4741,7 @@ pub struct RuntimePlanSemanticFacts {
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
     evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
+    defers: BTreeMap<StmtId, RuntimeDeferFact>,
     choices: BTreeMap<ExprId, RuntimeChoiceFact>,
     awaits: BTreeMap<ExprId, RuntimeAwaitFact>,
     tries: BTreeMap<ExprId, RuntimeTryFact>,
@@ -4909,6 +4918,10 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 
     pub fn evaluated_effect(self, owner: StmtId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
         self.facts.evaluated_effect(owner)
+    }
+
+    pub fn defer(self, owner: StmtId) -> Option<&'facts RuntimeDeferFact> {
+        self.facts.defer(owner)
     }
 
     pub fn iteration(self, owner: StmtId) -> Option<&'facts RuntimeIteratorFact> {
@@ -5204,6 +5217,13 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         match self {
             Self::Global(facts) => facts.evaluated_effect(owner),
             Self::ProjectInstance(facts) => facts.evaluated_effect(owner),
+        }
+    }
+
+    pub fn defer(self, owner: StmtId) -> Option<&'facts RuntimeDeferFact> {
+        match self {
+            Self::Global(facts) => facts.defer(owner),
+            Self::ProjectInstance(facts) => facts.defer(owner),
         }
     }
 
@@ -6871,6 +6891,26 @@ impl RuntimePlanSemanticFacts {
             )?;
         }
 
+        let defers = collect_unique(input.defers, RuntimeSemanticFactFamily::Defer)?;
+        if defers
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::Defer,
+            });
+        }
+        for (statement, defer) in &defers {
+            defer::validate_defer(
+                &modules,
+                runtime_owners,
+                &local_declarations,
+                &expression_types,
+                *statement,
+                defer,
+            )?;
+        }
+
         let assignments = collect_unique(input.assignments, RuntimeSemanticFactFamily::Assignment)?;
         let expected_assignments = modules
             .values()
@@ -7136,6 +7176,7 @@ impl RuntimePlanSemanticFacts {
             triggers,
             assignments,
             evaluated_effects,
+            defers,
             choices,
             awaits,
             tries: try_facts,
@@ -7609,6 +7650,14 @@ impl RuntimePlanSemanticFacts {
                 .effect()
                 .visit_operand_types(&mut |ty| roots.push(ty));
         }
+        for defer in self.defers.values() {
+            roots.extend(
+                defer
+                    .captures()
+                    .iter()
+                    .map(RuntimeExecutableCaptureFact::ty),
+            );
+        }
         for record in self.nominal_records.values() {
             record.append_normalized_types(&mut roots);
         }
@@ -7795,6 +7844,10 @@ impl RuntimePlanSemanticFacts {
 
     pub fn evaluated_effect(&self, statement: StmtId) -> Option<&RuntimeEvaluatedEffectFact> {
         self.evaluated_effects.get(&statement)
+    }
+
+    pub fn defer(&self, statement: StmtId) -> Option<&RuntimeDeferFact> {
+        self.defers.get(&statement)
     }
 
     pub fn awaited(&self, expression: ExprId) -> Option<&RuntimeAwaitFact> {
@@ -8110,6 +8163,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidAssignmentFact { statement: StmtId },
     #[error("evaluated-effect fact for {statement:?} does not match its selected call")]
     InvalidEvaluatedEffectFact { statement: StmtId },
+    #[error("defer fact for {statement:?} does not match its checked body and captures")]
+    InvalidDeferFact { statement: StmtId },
     #[error("Await fact for {expression:?} does not match its checked expression")]
     InvalidAwaitFact { expression: ExprId },
     #[error("Choice fact for {expression:?} does not match its checked expression")]
@@ -8307,6 +8362,7 @@ pub enum RuntimeSemanticFactFamily {
     Trigger,
     Assignment,
     EvaluatedEffect,
+    Defer,
     Choice,
     Await,
     Try,
@@ -10465,6 +10521,15 @@ fn validate_project_function_semantic_catalog(
                     fact,
                 )?;
             }
+            RuntimeProjectFunctionStatementPayload::Defer(fact) => {
+                defer::validate_defer_payload(
+                    modules,
+                    &local_types,
+                    &expression_types,
+                    row.owner(),
+                    fact,
+                )?;
+            }
             RuntimeProjectFunctionStatementPayload::Iteration(fact) => match fact {
                 RuntimeIteratorFact::Builtin(fact) => {
                     for ty in [fact.item(), fact.iterator(), fact.next_value(), fact.step()] {
@@ -10511,7 +10576,6 @@ fn validate_project_function_semantic_catalog(
             }
             RuntimeProjectFunctionStatementPayload::Structural
             | RuntimeProjectFunctionStatementPayload::Assertion(_)
-            | RuntimeProjectFunctionStatementPayload::Defer
             | RuntimeProjectFunctionStatementPayload::ControlTransfer
             | RuntimeProjectFunctionStatementPayload::UnsafeAudit
             | RuntimeProjectFunctionStatementPayload::Select

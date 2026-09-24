@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use super::{
     RuntimeAssertionAdmission, RuntimeAssignmentFact, RuntimeAwaitFact, RuntimeCheckedCapture,
-    RuntimeChoiceFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
+    RuntimeChoiceFact, RuntimeContentFragmentFact, RuntimeDeferFact, RuntimeDialogueApplication,
     RuntimeEvaluatedEffectFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
     RuntimeNormalizedType, RuntimePipeFact, RuntimeProjectCallable, RuntimeProjectItem,
     RuntimeRecordExpressionFact, RuntimeRecordPatternFact, RuntimeResolvedCall,
@@ -1034,7 +1034,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     Structural,
     Assignment(RuntimeAssignmentFact),
     Assertion(RuntimeAssertionAdmission),
-    Defer,
+    Defer(RuntimeDeferFact),
     EvaluatedEffect(RuntimeEvaluatedEffectFact),
     Iteration(RuntimeIteratorFact),
     ControlTransfer,
@@ -1054,7 +1054,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::Structural => CheckedExecutableRuntimeStatementFactFamily::Structural,
             Self::Assignment(_) => CheckedExecutableRuntimeStatementFactFamily::Assignment,
             Self::Assertion(_) => CheckedExecutableRuntimeStatementFactFamily::Assertion,
-            Self::Defer => CheckedExecutableRuntimeStatementFactFamily::Defer,
+            Self::Defer(_) => CheckedExecutableRuntimeStatementFactFamily::Defer,
             Self::EvaluatedEffect(_) => {
                 CheckedExecutableRuntimeStatementFactFamily::EvaluatedEffect
             }
@@ -1823,6 +1823,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn evaluated_effect(&self, owner: StmtId) -> Option<&RuntimeEvaluatedEffectFact> {
         match self.statement(owner)?.payload() {
             RuntimeProjectFunctionStatementPayload::EvaluatedEffect(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub fn defer(&self, owner: StmtId) -> Option<&RuntimeDeferFact> {
+        match self.statement(owner)?.payload() {
+            RuntimeProjectFunctionStatementPayload::Defer(value) => Some(value),
             _ => None,
         }
     }

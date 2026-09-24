@@ -7,7 +7,7 @@
 use super::{
     RuntimeCheckedCapture, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
     RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
-    RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression,
+    RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression, RuntimeExecutableCaptureFact,
     RuntimeIteratorFact, RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture,
     RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
     RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceSemanticFacts,
@@ -207,7 +207,7 @@ impl RuntimeContentFragmentFact {
                 effect
                     .captures()
                     .iter()
-                    .map(RuntimeDialogueEffectCaptureFact::ty),
+                    .map(RuntimeExecutableCaptureFact::ty),
             );
             if let RuntimeDialogueEffectTrigger::Delay {
                 duration_type,
@@ -353,11 +353,16 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::EvaluatedEffect(effect) => effect
                 .effect()
                 .visit_operand_types(&mut |ty| roots.push(ty)),
+            Self::Defer(defer) => roots.extend(
+                defer
+                    .captures()
+                    .iter()
+                    .map(RuntimeExecutableCaptureFact::ty),
+            ),
             Self::Iteration(iteration) => iteration.append_normalized_types(roots),
             Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::Structural
             | Self::Assertion(_)
-            | Self::Defer
             | Self::ControlTransfer
             | Self::Trigger(_)
             | Self::UnsafeAudit

@@ -77,6 +77,7 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalRecordShape, RuntimeNominalTypeId},
+    line_task::RuntimeDeferOutcomeFilter,
     pattern::RuntimeOpaqueTypeProducerId,
     plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
@@ -148,7 +149,7 @@ use arcweft_lang_sema::{
     env::nominal::AcceptedNominalSemantics,
     final_analysis::{
         CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
-        CheckedCompileTimeScalar, CheckedCompileTimeValue, CheckedContentApplication,
+        CheckedCompileTimeScalar, CheckedCompileTimeValue, CheckedContentApplication, CheckedDefer,
         CheckedDialogueEffectSite, CheckedDialogueEffectTrigger, CheckedDropFade,
         CheckedDropInvocation, CheckedEffectField, CheckedEvaluatedEffect,
         CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
@@ -191,12 +192,12 @@ use arcweft_runtime_plan::{
         RuntimeCallableValueSpecialization, RuntimeCheckedCapture,
         RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
         RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
-        RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
-        RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectProgramFact,
-        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
-        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
-        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
-        RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDeferFact,
+        RuntimeDialogueApplication, RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger,
+        RuntimeDialogueMarkFact, RuntimeDialogueMarkKey, RuntimeDialogueValueExpression,
+        RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
+        RuntimeExecutableCaptureFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
         RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
         RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
         RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
@@ -1131,6 +1132,9 @@ fn project_runtime_semantic_fact_inventories(
                     runtime_evaluated_effect(effect, symbols, world, analysis)?,
                 );
             }
+            CheckedStatementPayload::Defer(defer) => {
+                input.push_defer(owner, runtime_defer(defer, None, symbols, world, analysis)?);
+            }
             CheckedStatementPayload::Iteration(iteration) => {
                 input.push_iteration(
                     owner,
@@ -1145,7 +1149,6 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedStatementPayload::Structural
-            | CheckedStatementPayload::Defer(_)
             | CheckedStatementPayload::ControlTransfer(_)
             | CheckedStatementPayload::Trigger(_)
             | CheckedStatementPayload::UnsafeAudit(_)
@@ -4004,7 +4007,7 @@ fn runtime_dialogue_effect(
         .captures()
         .iter()
         .map(|capture| {
-            Ok(RuntimeDialogueEffectCaptureFact::new(
+            Ok(RuntimeExecutableCaptureFact::new(
                 capture.local(),
                 capture.origin().clone(),
                 runtime_type_under(capture.ty(), instance, symbols, world, analysis)?,
@@ -4029,6 +4032,35 @@ fn runtime_dialogue_effect(
         operation,
         captures,
     ))
+}
+
+fn runtime_defer(
+    defer: &CheckedDefer,
+    instance: Option<ProjectInstanceTypes<'_>>,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeDeferFact, RuntimeSemanticProjectionError> {
+    use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
+
+    let outcome = match defer.outcome() {
+        DeferOutcome::Always => RuntimeDeferOutcomeFilter::Always,
+        DeferOutcome::Completed => RuntimeDeferOutcomeFilter::Completed,
+        DeferOutcome::Cancelled => RuntimeDeferOutcomeFilter::Cancelled,
+        DeferOutcome::Failed => RuntimeDeferOutcomeFilter::Failed,
+    };
+    let captures = defer
+        .captures()
+        .iter()
+        .map(|capture| {
+            Ok(RuntimeExecutableCaptureFact::new(
+                capture.local(),
+                capture.origin().clone(),
+                runtime_type_under(capture.ty(), instance, symbols, world, analysis)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+    Ok(RuntimeDeferFact::new(outcome, defer.body(), captures))
 }
 
 fn runtime_type(
@@ -7019,8 +7051,14 @@ fn runtime_project_function_instance_semantic_facts(
             )?),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Defer,
-                CheckedStatementPayload::Defer(_),
-            ) => RuntimeProjectFunctionStatementPayload::Defer,
+                CheckedStatementPayload::Defer(defer),
+            ) => RuntimeProjectFunctionStatementPayload::Defer(runtime_defer(
+                defer,
+                lexical.types(),
+                symbols,
+                world,
+                analysis,
+            )?),
             (
                 CheckedExecutableRuntimeStatementFactFamily::EvaluatedEffect,
                 CheckedStatementPayload::EvaluatedEffect(effect),

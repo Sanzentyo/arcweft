@@ -13,6 +13,7 @@ use arcweft_core::entry::{
     RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
     RuntimeSchemaLimits, RuntimeTypeSchema,
 };
+use arcweft_core::line_task::RuntimeDeferOutcomeFilter;
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
@@ -53,20 +54,20 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use super::{
     RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
     RuntimeCallResultShape, RuntimeCallableAttachedContentAbi, RuntimeCheckedTypeProjectionError,
-    RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
-    RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
-    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
-    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallable,
-    RuntimeRegisteredValueId, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-    RuntimeResolvedCallDispatch, RuntimeResolvedCallError, RuntimeResolvedCallOperand,
-    RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedNominal,
-    RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
-    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
-    RuntimeSemanticFactsError, RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind,
-    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind,
-    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
-    validate_iterator_witness_method_edges,
+    RuntimeDeferFact, RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEvaluatedEffect,
+    RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact,
+    RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase,
+    RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+    RuntimeProjectCallable, RuntimeRegisteredValueId, RuntimeResolvedAttachedContent,
+    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallError,
+    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+    RuntimeResolvedCallOperandSource, RuntimeResolvedNominal, RuntimeResolvedSelect,
+    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
+    RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
+    RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind, RuntimeTypeProjectionStep,
+    RuntimeTypeShape, RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
 };
 
 #[test]
@@ -1441,6 +1442,38 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
             expression: effect,
             family: RuntimeSemanticFactFamily::ExpressionType,
         },
+    );
+}
+
+#[test]
+fn defer_fact_binds_the_exact_source_outcome_and_block_body() {
+    let project = project_fixture("defer-fact", "flow opening {\n    defer { () }\n}\n");
+    let (statement, body) = project
+        .analysis_view()
+        .expect("clean defer fixture")
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(id, statement)| match statement.kind() {
+            HirStmtKind::Defer { expression, .. } => Some((id, *expression)),
+            _ => None,
+        })
+        .expect("defer statement");
+
+    let mut input = complete_type_input(&project);
+    input.push_defer(
+        statement,
+        RuntimeDeferFact::new(RuntimeDeferOutcomeFilter::Always, body, Vec::new()),
+    );
+    assert!(runtime_facts(&project, input).is_ok());
+
+    let mut invalid = complete_type_input(&project);
+    invalid.push_defer(
+        statement,
+        RuntimeDeferFact::new(RuntimeDeferOutcomeFilter::Failed, body, Vec::new()),
+    );
+    assert_eq!(
+        runtime_facts(&project, invalid).expect_err("source outcome mismatch must be rejected"),
+        RuntimeSemanticFactsError::InvalidDeferFact { statement },
     );
 }
 

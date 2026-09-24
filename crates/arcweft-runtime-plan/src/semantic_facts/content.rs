@@ -162,15 +162,15 @@ impl RuntimeDialogueEffectCaptureKey {
     }
 }
 
-/// One exact typed free-local capture of a reveal-time content effect.
+/// One exact typed free-local capture of an executable body.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeDialogueEffectCaptureFact {
+pub struct RuntimeExecutableCaptureFact {
     local: LocalId,
     origin: StableCheckedBindingCoordinate,
     ty: RuntimeNormalizedType,
 }
 
-impl RuntimeDialogueEffectCaptureFact {
+impl RuntimeExecutableCaptureFact {
     pub const fn new(
         local: LocalId,
         origin: StableCheckedBindingCoordinate,
@@ -200,7 +200,7 @@ pub struct RuntimeDialogueEffectProgramFact {
     effects: EffectSet,
     callable_type: RuntimeNormalizedType,
     operation: RuntimeEvaluatedEffectFact,
-    captures: Box<[RuntimeDialogueEffectCaptureFact]>,
+    captures: Box<[RuntimeExecutableCaptureFact]>,
 }
 
 impl RuntimeDialogueEffectProgramFact {
@@ -210,7 +210,7 @@ impl RuntimeDialogueEffectProgramFact {
         effects: EffectSet,
         callable_type: RuntimeNormalizedType,
         operation: RuntimeEvaluatedEffectFact,
-        captures: impl Into<Box<[RuntimeDialogueEffectCaptureFact]>>,
+        captures: impl Into<Box<[RuntimeExecutableCaptureFact]>>,
     ) -> Self {
         Self {
             site,
@@ -242,7 +242,7 @@ impl RuntimeDialogueEffectProgramFact {
         &self.operation
     }
 
-    pub const fn captures(&self) -> &[RuntimeDialogueEffectCaptureFact] {
+    pub const fn captures(&self) -> &[RuntimeExecutableCaptureFact] {
         &self.captures
     }
 }
