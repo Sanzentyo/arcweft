@@ -1,7 +1,11 @@
 //! Compiler-neutral, generation-owned CharacterDialogue declaration.
 
+mod codec;
+
+pub use codec::CharacterDialogueGenerationDeclarationCodecError;
+
 use super::{
-    CharacterDialogueConfig, CharacterDialogueRichTextValue,
+    CharacterDialogueConfig, CharacterDialogueRichTextValue, CharacterDialogueRolePayloadCodec,
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
     CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
     CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
@@ -375,6 +379,8 @@ impl<T: CharacterDialogueTypeReference> CharacterDialogueGenerationDeclaration<T
                 }
             }
             row.defaults.config().validate()?;
+            validate_default_config_role_values(row.defaults.config(), &roles)?;
+            validate_default_config_custom_values(row.defaults.config(), &custom_fields)?;
             let default_digest =
                 super::schema::effective_default_config_digest(row.defaults.config(), &roles)?;
             if row
@@ -660,6 +666,130 @@ fn validate_role_payload_bindings<T: CharacterDialogueTypeReference>(
             return Err(CharacterDialogueValueError::RoleType {
                 role,
                 reason: "role body has no Dialogue-owned payload codec for this role",
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_default_config_role_values<T: CharacterDialogueTypeReference>(
+    config: &CharacterDialogueConfig,
+    roles: &CharacterDialogueRuntimeRoleTypes<T>,
+) -> Result<(), CharacterDialogueValueError> {
+    for (role, value) in [
+        (
+            Role::Stage,
+            config.stage.as_ref().map(|value| value.typed().value()),
+        ),
+        (
+            Role::Portrait,
+            config.portrait.as_ref().map(|value| value.typed().value()),
+        ),
+        (
+            Role::Focus,
+            config.focus.as_ref().map(|value| value.typed().value()),
+        ),
+        (
+            Role::Cleanup,
+            config.cleanup.as_ref().map(|value| value.typed().value()),
+        ),
+    ] {
+        if let Some(value) = value {
+            validate_bound_role_value(role, value, roles)?;
+        }
+    }
+    if !config.hooks.is_empty() {
+        let role = Role::Hook;
+        for hook in &config.hooks {
+            validate_bound_role_value(role, hook.typed().value(), roles)?;
+        }
+    }
+
+    validate_bound_role_value(Role::RichText, config.rich_text.typed().value(), roles)?;
+    match config.style.typed().value() {
+        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Style,
+            ..
+        }) => {}
+        value => validate_bound_role_value(Role::RichText, value, roles)?,
+    }
+    let rich_text_index = Role::AUTHORED_BASE
+        .iter()
+        .position(|role| *role == Role::RichText)
+        .expect("RichText has a fixed authored role slot");
+    let CharacterDialogueRuntimeRoleBody::Bound { codec, .. } =
+        roles.authored_refs()[rich_text_index].body_ref()
+    else {
+        return Err(CharacterDialogueValueError::RoleType {
+            role: Role::RichText,
+            reason: "RichText has no accepted payload codec",
+        });
+    };
+    if *codec != CharacterDialogueRolePayloadCodec::RichTextProperties {
+        return Err(CharacterDialogueValueError::RoleType {
+            role: Role::RichText,
+            reason: "RichText payload codec is unsupported",
+        });
+    }
+    Ok(())
+}
+
+fn validate_bound_role_value<T: CharacterDialogueTypeReference>(
+    role: Role,
+    value: &RuntimeValue,
+    roles: &CharacterDialogueRuntimeRoleTypes<T>,
+) -> Result<(), CharacterDialogueValueError> {
+    let index = Role::AUTHORED_BASE
+        .iter()
+        .position(|candidate| *candidate == role)
+        .expect("authored role has a fixed role slot");
+    let binding = &roles.authored_refs()[index];
+    let CharacterDialogueRuntimeRoleBody::Bound { payload, codec } = binding.body_ref() else {
+        return Err(CharacterDialogueValueError::RoleType {
+            role,
+            reason: "role has no accepted payload codec",
+        });
+    };
+    let RuntimeValue::Opaque(value) = value else {
+        return Err(CharacterDialogueValueError::RoleType {
+            role,
+            reason: "authored role value is not opaque",
+        });
+    };
+    if value.producer() != &CharacterDialogueRuntimeSchema::opaque_type_producer()
+        || value.semantic_identity() != binding.value_ref().semantic_identity()
+        || value.value_class() != RuntimeOpaqueValueClass::Plain
+        || value.persistence() != RuntimeOpaquePersistence::ConstantAndSnapshot
+    {
+        return Err(CharacterDialogueValueError::RoleType {
+            role,
+            reason: "authored role has a different exact opaque contract",
+        });
+    }
+    if payload.semantic_identity() != codec.payload_schema()?.root() {
+        return Err(CharacterDialogueValueError::RoleType {
+            role,
+            reason: "role payload identity differs from its codec root",
+        });
+    }
+    codec.decode_properties(value.payload())?;
+    Ok(())
+}
+
+fn validate_default_config_custom_values<T: CharacterDialogueTypeReference>(
+    config: &CharacterDialogueConfig,
+    custom_fields: &CharacterDialogueRuntimeCustomFieldCatalog<T>,
+) -> Result<(), CharacterDialogueValueError> {
+    for id in config.custom.keys() {
+        let descriptor = custom_fields
+            .get(id)
+            .ok_or_else(|| CharacterDialogueValueError::UnknownCustomField(id.clone()))?;
+        if !descriptor.accepted_views().is_empty()
+            && !descriptor.accepted_views().contains(&config.view)
+        {
+            return Err(CharacterDialogueValueError::CustomFieldView {
+                field: id.clone(),
+                view: config.view.clone(),
             });
         }
     }

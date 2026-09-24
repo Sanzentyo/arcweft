@@ -26,9 +26,9 @@ use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
 pub use generation::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationDeclaration,
-    CharacterDialogueGenerationDeclarationError, CharacterDialoguePresentationContract,
-    CharacterDialogueTypeReference, CharacterDialogueTypeReferenceMapError,
-    CharacterDialogueVisualType,
+    CharacterDialogueGenerationDeclarationCodecError, CharacterDialogueGenerationDeclarationError,
+    CharacterDialoguePresentationContract, CharacterDialogueTypeReference,
+    CharacterDialogueTypeReferenceMapError, CharacterDialogueVisualType,
 };
 pub use identity::{
     CharacterDialogueContractIdentity, CharacterDialogueVisualManifestEvidence,

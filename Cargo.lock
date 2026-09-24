@@ -900,6 +900,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-id",
  "arcweft-interaction-model",
+ "arcweft-presentation",
  "arcweft-ref",
  "arcweft-resource-model",
  "arcweft-rich-text-schema",
