@@ -37,6 +37,13 @@ impl ArcweftBundle {
                 transcript.extend_from_slice(catalog.locale_policy_digest().as_bytes());
             }
         }
+        match self.character_dialogue_generation.as_ref() {
+            None => transcript.push(0),
+            Some(generation) => {
+                transcript.push(1);
+                transcript.extend_from_slice(generation.digest().as_bytes());
+            }
+        }
         Ok(LogicalBundleIdentity(BundleDigest::of(&transcript)))
     }
 }

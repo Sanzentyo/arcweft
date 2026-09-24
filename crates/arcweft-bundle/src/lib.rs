@@ -1,5 +1,6 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+mod character_dialogue_generation;
 pub mod character_package;
 pub mod container;
 pub mod fx_definitions;
@@ -32,8 +33,10 @@ use arcweft_audio_core::graph::AudioGraph;
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
+use arcweft_dialogue::CharacterDialogueGenerationDeclaration;
 use arcweft_layout::stage_placement::StagePlacement;
 use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
 use arcweft_source::SourceDocumentId;
@@ -67,6 +70,11 @@ pub struct ArcweftBundle {
     /// compact AWFB `LocaleCatalog` section.
     #[serde(skip)]
     pub character_presentation: Option<CharacterPresentationCatalogData>,
+    /// Generation-owned Dialogue declaration; its sole persisted wire is the
+    /// bounded AWFB CharacterDialogueGeneration section.
+    #[serde(skip)]
+    pub character_dialogue_generation:
+        Option<CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>>,
     /// Canonical extension manifests retained only for AWFB section 22.
     #[serde(skip)]
     pub resource_type_manifests: Option<PublishedResourceTypeManifestSetV1>,
@@ -443,6 +451,13 @@ pub enum BundleCodecError {
         "bundle character package `{character_id}` references missing virtual file asset:{path}"
     )]
     MissingCharacterPackageFile { character_id: String, path: String },
+    #[error("bundle Character package `{character_id}` is invalid: {message}")]
+    InvalidCharacterPackage {
+        character_id: String,
+        message: String,
+    },
+    #[error("bundle CharacterDialogue generation binding is invalid: {message}")]
+    InvalidCharacterDialogueGeneration { message: String },
     #[error(
         "bundle character package `{character_id}` is missing layer payload `{path}` for `{part}.{variant}`"
     )]
@@ -692,6 +707,7 @@ impl ArcweftBundle {
             product_awbc: BundleAwbcProgram::new(product_awbc),
             dialogue_content,
             character_presentation: None,
+            character_dialogue_generation: None,
             resource_type_manifests: None,
             fx_definitions: FxDefinitions::default(),
             adapter_manifests: Vec::new(),
@@ -714,6 +730,15 @@ impl ArcweftBundle {
         catalog: CharacterPresentationCatalogData,
     ) -> Self {
         self.character_presentation = Some(catalog);
+        self
+    }
+
+    #[must_use]
+    pub fn with_character_dialogue_generation(
+        mut self,
+        generation: CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>,
+    ) -> Self {
+        self.character_dialogue_generation = Some(generation);
         self
     }
 
@@ -1275,6 +1300,7 @@ impl ArcweftBundle {
             }
             package.validate_files(&self.virtual_files)?;
         }
+        character_dialogue_generation::validate_binding(self)?;
 
         let mut image_object_ids = BTreeSet::new();
         for object in &self.image_objects {

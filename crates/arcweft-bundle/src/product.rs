@@ -1,3 +1,7 @@
+use crate::character_dialogue_generation::{
+    RuntimeGeneration, decode_section as decode_character_dialogue_generation_section,
+    encode_section as encode_character_dialogue_generation_section,
+};
 use crate::container::{
     BundleDigest, BundleKind as ContainerBundleKind, BundleSectionKind, BundleView,
     ContentResidency, ExternalSectionPayload, ReadBudget, SectionId, SectionInput, encode_bundle,
@@ -125,6 +129,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .chain(optional_asset_catalog_section(bundle)?)
     .chain(optional_audio_graph_section(bundle)?)
     .chain(optional_locale_catalog_section(bundle)?)
+    .chain(optional_character_dialogue_generation_section(bundle)?)
     .chain(optional_view_program_section(bundle)?)
     .chain(optional_view_style_section(bundle)?)
     .chain(optional_view_text_section(bundle)?)
@@ -199,6 +204,9 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
     let adapters = required_adapter_requirements(&view, external_sections)?;
     let content = required_content_catalog(&view, external_sections)?;
     let character_presentation = optional_locale_catalog(&view, external_sections)?;
+    let (character_dialogue_generation, character_packages) =
+        optional_character_dialogue_generation(&view, external_sections)?
+            .unwrap_or((None, Vec::new()));
     if content.dialogue_content.records().is_empty() != character_presentation.is_none() {
         return Err(BundleCodecError::DecodeAwfb {
             message: "AWFB dialogue content and LocaleCatalog presence disagree".to_owned(),
@@ -240,12 +248,13 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
         product_awbc,
         dialogue_content: content.dialogue_content,
         character_presentation,
+        character_dialogue_generation,
         resource_type_manifests,
         fx_definitions,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
         image_assets: assets.image_assets,
-        character_packages: Vec::new(),
+        character_packages,
         audio,
         image_objects: display.image_objects,
         view_program,
@@ -407,6 +416,40 @@ fn optional_locale_catalog_section(
         .map_err(|error| BundleCodecError::EncodeAwfb {
             message: error.to_string(),
         })
+}
+
+fn optional_character_dialogue_generation_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    if bundle.character_dialogue_generation.is_none() && bundle.character_packages.is_empty() {
+        return Ok(None);
+    }
+    let bytes = encode_character_dialogue_generation_section(
+        bundle.character_dialogue_generation.as_ref(),
+        &bundle.character_packages,
+    )?;
+    Ok(Some(required_section(
+        BundleSectionKind::CharacterDialogueGeneration,
+        bytes,
+    )))
+}
+
+fn optional_character_dialogue_generation(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<
+    Option<(
+        Option<RuntimeGeneration>,
+        Vec<crate::character_package::BundleCharacterPackage>,
+    )>,
+    BundleCodecError,
+> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::CharacterDialogueGeneration,
+        decode_character_dialogue_generation_section,
+    )
 }
 
 fn optional_view_program_section(
@@ -852,6 +895,7 @@ mod tests {
         optional_asset_catalog_section, optional_audio_graph_section, optional_section,
         required_section, section_id, to_awfb_bytes,
     };
+    use crate::character_package::BundleCharacterPackage;
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
         SectionInput, encode_bundle,
@@ -865,6 +909,8 @@ mod tests {
         ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleCodecError, BundleFormat,
         BundleManifest, BundleRuntimeSummary,
     };
+    use arcweft_character::manifest::CharacterManifest;
+    use arcweft_character::package::{CharacterLayerPayload, CharacterPackage};
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
         AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction,
@@ -1288,6 +1334,73 @@ mod tests {
             DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
+    }
+
+    fn character_package_fixture() -> (BundleCharacterPackage, Vec<crate::BundleVirtualFile>) {
+        let manifest = CharacterManifest::decode_runtime_json(include_str!(
+            "../tests/fixtures/zundamon.awchar/character.awchar.json"
+        ))
+        .expect("Character manifest");
+        let payloads = manifest
+            .parts()
+            .iter()
+            .flat_map(|part| {
+                part.variants().iter().map(|variant| {
+                    let bytes: &[u8] = match variant.asset().as_str() {
+                        "layers/body--default.png" => include_bytes!(
+                            "../tests/fixtures/zundamon.awchar/layers/body--default.png"
+                        ),
+                        "layers/eyes--normal.png" => include_bytes!(
+                            "../tests/fixtures/zundamon.awchar/layers/eyes--normal.png"
+                        ),
+                        "layers/eyes--smile.png" => include_bytes!(
+                            "../tests/fixtures/zundamon.awchar/layers/eyes--smile.png"
+                        ),
+                        "layers/mouth--neutral.png" => include_bytes!(
+                            "../tests/fixtures/zundamon.awchar/layers/mouth--neutral.png"
+                        ),
+                        "layers/mouth--smile.png" => include_bytes!(
+                            "../tests/fixtures/zundamon.awchar/layers/mouth--smile.png"
+                        ),
+                        _ => unreachable!("known fixture path"),
+                    };
+                    CharacterLayerPayload::new(variant.asset().clone(), bytes)
+                })
+            })
+            .collect::<Vec<_>>();
+        let package = CharacterPackage::new(manifest, payloads).expect("Character package");
+        BundleCharacterPackage::from_character_package(&package, "characters/zundamon.awchar")
+            .expect("bundle Character package")
+    }
+
+    #[test]
+    fn product_awfb_roundtrips_character_package_and_rejects_changed_png_bytes() {
+        let (package, files) = character_package_fixture();
+        let bundle = empty_bundle()
+            .with_virtual_files(files)
+            .with_character_packages([package.clone()]);
+        let bytes = bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("AWFB encodes");
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB structure");
+        assert!(view.sections().iter().any(|section| {
+            section.known_kind() == Some(BundleSectionKind::CharacterDialogueGeneration)
+                && section.required()
+        }));
+        let decoded = from_awfb_slice(&bytes).expect("package bytes admit");
+        assert_eq!(decoded.character_packages, [package]);
+
+        let mut changed = bundle;
+        changed
+            .virtual_files
+            .iter_mut()
+            .find(|file| file.path.ends_with("mouth--smile.png"))
+            .expect("PNG file")
+            .bytes[0] ^= 0xff;
+        assert!(matches!(
+            changed.to_format_bytes(BundleFormat::Awfb),
+            Err(BundleCodecError::InvalidCharacterPackage { .. })
+        ));
     }
 
     #[test]

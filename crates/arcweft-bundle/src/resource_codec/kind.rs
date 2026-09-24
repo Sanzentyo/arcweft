@@ -170,7 +170,8 @@ impl ProductSectionCodecKind {
             | BundleSectionKind::HotSwapMap
             | BundleSectionKind::PatchPlan
             | BundleSectionKind::FxDefinitions
-            | BundleSectionKind::ResourceTypeManifests => None,
+            | BundleSectionKind::ResourceTypeManifests
+            | BundleSectionKind::CharacterDialogueGeneration => None,
         }
     }
 

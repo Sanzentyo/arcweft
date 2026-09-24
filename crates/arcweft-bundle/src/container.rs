@@ -69,6 +69,7 @@ pub enum BundleSectionKind {
     ViewTheme,
     FxDefinitions,
     ResourceTypeManifests,
+    CharacterDialogueGeneration,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -364,6 +365,7 @@ impl BundleSectionKind {
             Self::ViewTheme => 20,
             Self::FxDefinitions => 21,
             Self::ResourceTypeManifests => 22,
+            Self::CharacterDialogueGeneration => 23,
         }
     }
 
@@ -391,6 +393,7 @@ impl BundleSectionKind {
             20 => Some(Self::ViewTheme),
             21 => Some(Self::FxDefinitions),
             22 => Some(Self::ResourceTypeManifests),
+            23 => Some(Self::CharacterDialogueGeneration),
             _ => None,
         }
     }
@@ -398,7 +401,11 @@ impl BundleSectionKind {
     pub const fn is_executable(self) -> bool {
         matches!(
             self,
-            Self::ProgramBytecode | Self::RuntimeTypes | Self::Entrypoints | Self::FxDefinitions
+            Self::ProgramBytecode
+                | Self::RuntimeTypes
+                | Self::Entrypoints
+                | Self::FxDefinitions
+                | Self::CharacterDialogueGeneration
         )
     }
 
@@ -431,6 +438,7 @@ impl BundleSectionKind {
             | Self::ViewInput
             | Self::ViewTheme
             | Self::FxDefinitions
+            | Self::CharacterDialogueGeneration
             | Self::ResourceTypeManifests => ContentResidency::Startup,
             Self::AssetBlob
             | Self::SourceMap
@@ -450,7 +458,7 @@ impl BundleSectionKind {
             | Self::PatchPlan
             | Self::ViewInput => crate::patch::PatchCompatibility::RestartRequired,
             Self::ProgramBytecode => crate::patch::PatchCompatibility::CodeCompatible,
-            Self::HotSwapMap | Self::FxDefinitions => {
+            Self::HotSwapMap | Self::FxDefinitions | Self::CharacterDialogueGeneration => {
                 crate::patch::PatchCompatibility::CodeGenerational
             }
             Self::ContentCatalog
