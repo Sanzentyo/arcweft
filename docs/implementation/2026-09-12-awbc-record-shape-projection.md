@@ -1169,3 +1169,37 @@ opaque target rather than a fabricated empty configuration. Generic prefix
 predicate and scoped scheme migration is also in progress. The remaining
 `callable_execution` cases, full cross-crate gates, and later convergence phases
 are not yet accepted by this checkpoint.
+
+## Dialogue target transport and scheme opening checkpoint — 2026-09-24
+
+Inspected local `main` and `origin/main` at
+`665eafeb8f3635f97fb0a175eb16f58180fb81fa`: they matched after a
+non-forced push, and the index and working tree were clean at that point.
+
+| Cut | Full Git SHA | Observed evidence |
+| --- | --- | --- |
+| AWBC CharacterDialogue opaque admission | `61c91c7a77b45589a65300c9d787542f9898addb` | Core library 577/577 at the earlier checkpoint. |
+| Function effect predicate retention | `f9b9e7c66c8f178c7f6b38c25216eaed328b18bd` | Sema library 877/877 at this cut. |
+| Compiler/RuntimePlan Character call and Look projection | `f809d6202db3f8e95c9c65ae2de9eb0e99658008` | Compiler Character focused 8/8; RuntimePlan all-feature library 76/76. |
+| Core-owned Character nominal identity and Look admission | `282a890a7f560ff4dc624518b506ff8b3e010aec` | Core all-feature library 578/578; Sema digest focused 10/10, including identity parity. |
+| Generation-owned CharacterDialogue producer schema/defaults/source values | `9c78b7d101f71503dc9763a58b921981ab205925` | Dialogue all-feature library 38/38; Core Look authority replaces caller-supplied Character-to-type maps. |
+| Shared function scheme opening constraint scope | `aa3cf83466ccfd444db8fbdece663e2568578460` | Sema focused 5/5 and full library 883/883; Sema Clippy exited successfully with warnings. |
+| Retained dialogue target call result | `e6a20245839b8f9d3910f554d2dba441ae5710fb` | Sema focused 2/2 and full library 884/884. The obsolete metadata-only dialogue consumer was removed. |
+| Distinct Call/Specialize application identities | `49e5c68bed6c0b92c8dd6cf52babd5fec739d378` | Sema focused 6/6 and full library 885/885; same-ExprId applications and nested predicates retain separate evidence. |
+| Native/AWBC exact dialogue target transport and snapshot admission | `11c11bc6a3f00e11002d8c9d16c72a83cf5dce07` | Core focused target/wire/save tests 4/4 and all-feature library 582/582. |
+| Target-first Compiler/RuntimePlan lowering and typed instance keys | `4f7084443c277511030fa6b3fefc3e631786e700` | Compiler Character focused 14/14; RuntimePlan all-feature library 78/78. |
+| Mandatory target fixture migration and parity assertion | `665eafeb8f3635f97fb0a175eb16f58180fb81fa` | Player/Host/Compiler all-target/all-feature check passed; Player unprojected-dialogue fixture 1/1. The parity assertion is compiled but its producer-dependent execution is not yet accepted. |
+
+The Compiler `evaluated_effects` integration run was 13/17. Three native
+execution cases stopped because no accepted CharacterDialogue generation
+producer is bound; the fourth found an AWBC callback verifier expecting a void
+result where the ordinary callable ABI requires `Some(Unit)`. After correcting
+that verifier, its focused integration test passed 1/1; the entire 17-test
+suite has not been rerun and the three producer cases remain unresolved.
+The next required cut assembles one generation-owned declaration from logical
+Character membership, complete effective defaults, Voice/Look and role payload
+types, canonical custom descriptors, and accepted View/Style resources, then
+binds its producer to the exact Plan/AWBC program and display consumer.
+Function scheme specialization still lacks checked-expression publication and
+pending result-port execution. Match/View/task-plan/nominal/scheduler/restore
+and final workspace gates remain open.
