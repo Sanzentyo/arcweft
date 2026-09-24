@@ -6753,6 +6753,13 @@ flow @flow.root root {
     let call = report
         .call(factory_owner)
         .expect("Character factory is retained as one shared-resolver call fact");
+    assert!(matches!(
+        report.execution_projection().expression(factory_owner).unwrap(),
+        super::CheckedExpressionExecution::Call {
+            callee: super::CheckedCallExecutionCallee::RuntimeValue { expression },
+            ..
+        } if expression == factory.target().expression()
+    ));
     let selected = selected_candidate(call);
     assert_eq!(
         selected.id(),
@@ -7191,6 +7198,22 @@ fn configure(condition: bool) {
             "call {owner:?}: {:?}",
             call.diagnostics()
         );
+    }
+    for (owner, expression) in analysis.expressions() {
+        let target = match expression.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => factory.target(),
+            CheckedExpressionResolution::CharacterDialogueReconfigure(reconfigure) => {
+                reconfigure.target()
+            }
+            _ => continue,
+        };
+        assert!(matches!(
+            analysis.execution_projection().expression(owner).unwrap(),
+            super::CheckedExpressionExecution::Call {
+                callee: super::CheckedCallExecutionCallee::RuntimeValue { expression },
+                ..
+            } if expression == target.expression()
+        ));
     }
     let local_type = |name: &str| {
         analysis.locals().find_map(|(owner, binding)| {

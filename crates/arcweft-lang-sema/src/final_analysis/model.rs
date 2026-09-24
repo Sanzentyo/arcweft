@@ -1995,6 +1995,10 @@ pub enum CheckedStructuralExecutionReason {
 pub enum CheckedExpressionCallCallee {
     Static,
     RuntimeReceiver,
+    /// Evaluates the exact checked callee, including a selected field.
+    RuntimeValue {
+        expression: ExprId,
+    },
 }
 
 /// Sole consumer of one accepted Call application at runtime lowering.

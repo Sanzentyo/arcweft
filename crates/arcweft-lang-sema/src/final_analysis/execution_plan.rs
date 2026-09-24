@@ -230,10 +230,23 @@ fn execution_plan_for_expression(
             if expected_digest.is_some_and(|digest| application.digest() != digest) {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let callee = if matches!(
-                application.core().callee(),
-                crate::callable::CheckedCallCalleeExecution::Value { .. }
-            ) || matches!(
+            let value_callee = match checked.resolution() {
+                CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+                    Some(factory.target().expression())
+                }
+                CheckedExpressionResolution::CharacterDialogueReconfigure(reconfigure) => {
+                    Some(reconfigure.target().expression())
+                }
+                _ => match application.core().callee() {
+                    crate::callable::CheckedCallCalleeExecution::Value { source } => {
+                        Some(source.owner())
+                    }
+                    crate::callable::CheckedCallCalleeExecution::Direct => None,
+                },
+            };
+            let callee = if let Some(expression) = value_callee {
+                CheckedExpressionCallCallee::RuntimeValue { expression }
+            } else if matches!(
                 application.core().execution().receiver(),
                 crate::callable::CheckedCallReceiverProjection::Operand { .. }
             ) {

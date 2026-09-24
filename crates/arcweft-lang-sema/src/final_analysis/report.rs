@@ -113,6 +113,7 @@ pub enum CheckedExpressionExecution {
 pub enum CheckedCallExecutionCallee {
     Static,
     RuntimeReceiver,
+    RuntimeValue { expression: ExprId },
 }
 
 /// Exact checked execution row for one explicit closure producer.
@@ -686,6 +687,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                         CheckedExpressionCallCallee::Static => CheckedCallExecutionCallee::Static,
                         CheckedExpressionCallCallee::RuntimeReceiver => {
                             CheckedCallExecutionCallee::RuntimeReceiver
+                        }
+                        CheckedExpressionCallCallee::RuntimeValue { expression } => {
+                            CheckedCallExecutionCallee::RuntimeValue {
+                                expression: *expression,
+                            }
                         }
                     },
                 }

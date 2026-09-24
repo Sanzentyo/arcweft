@@ -465,6 +465,9 @@ pub enum HirRuntimeCallCalleeDisposition {
     Static,
     /// The accepted call arguments include the call's value receiver.
     RuntimeReceiver,
+    /// The whole checked callee is an evaluated value. A selected field is
+    /// retained together with its receiver rather than treated as a method.
+    RuntimeValue { expression: ExprId },
 }
 
 /// Whether one reached HIR expression publishes a runtime value/type fact.
@@ -1394,21 +1397,38 @@ fn append_selected_invocation_operands(
     let callee_owner = invocation.callee().value_expression().ok_or(
         HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
     )?;
-    let module = modules.get(&callee_owner.module()).copied().ok_or(
-        HirSelectedExpressionInventoryError::UnknownModule {
-            module: callee_owner.module(),
-        },
-    )?;
-    let receiver = module
-        .resolve_call_value_receiver(invocation)
-        .map_err(
-            |_| HirSelectedExpressionInventoryError::UnresolvedExpression {
-                expression: callee_owner,
-            },
-        )?
-        .ok_or(
-            HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
-        )?;
+    let receiver = match callee {
+        HirRuntimeCallCalleeDisposition::Static => unreachable!("static callee returned above"),
+        HirRuntimeCallCalleeDisposition::RuntimeValue { expression } => {
+            if expression != callee_owner {
+                return Err(
+                    HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                        expression: owner,
+                    },
+                );
+            }
+            expression
+        }
+        HirRuntimeCallCalleeDisposition::RuntimeReceiver => {
+            let module = modules.get(&callee_owner.module()).copied().ok_or(
+                HirSelectedExpressionInventoryError::UnknownModule {
+                    module: callee_owner.module(),
+                },
+            )?;
+            module
+                .resolve_call_value_receiver(invocation)
+                .map_err(
+                    |_| HirSelectedExpressionInventoryError::UnresolvedExpression {
+                        expression: callee_owner,
+                    },
+                )?
+                .ok_or(
+                    HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver {
+                        expression: owner,
+                    },
+                )?
+        }
+    };
     if let Some(edge) = topology.expression_edges(owner).iter().find(|edge| {
         matches!(
             edge,

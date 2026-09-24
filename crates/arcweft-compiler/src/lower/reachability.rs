@@ -670,6 +670,9 @@ fn runtime_expression_projection_for_owner(
                 CheckedCallExecutionCallee::RuntimeReceiver => {
                     HirRuntimeCallCalleeDisposition::RuntimeReceiver
                 }
+                CheckedCallExecutionCallee::RuntimeValue { expression } => {
+                    HirRuntimeCallCalleeDisposition::RuntimeValue { expression }
+                }
             };
             Ok(HirRuntimeExpressionProjection::Call {
                 result: value(result),

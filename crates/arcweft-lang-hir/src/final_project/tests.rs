@@ -3597,6 +3597,56 @@ fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
     assert!(retained.contains(&argument));
 }
 
+#[test]
+fn runtime_whole_value_callee_retains_a_selected_field_and_rejects_another_owner() {
+    let (project, _, _, _, call, callee, receiver, argument, topology) =
+        runtime_call_inventory_fixture();
+    let executable = project.analysis_view().unwrap();
+    let reachability = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| {
+            if owner == call {
+                call_projection(
+                    HirRuntimeValueRetention::Retain,
+                    HirRuntimeCallCalleeDisposition::RuntimeValue { expression: callee },
+                )
+            } else {
+                retained_runtime_projection(executable, owner)
+            }
+        },
+    )
+    .expect("whole value callee reachability");
+    assert!(reachability.expression_children(call).contains(&callee));
+    let retained = reachability.selected_expression_type_owners().unwrap();
+    for owner in [call, callee, receiver, argument] {
+        assert!(retained.contains(&owner), "missing {owner:?}");
+    }
+    for invalid in [receiver, argument] {
+        assert!(matches!(
+            runtime_reachability(
+                executable,
+                &topology,
+                |_| None,
+                |owner| {
+                    if owner == call {
+                        call_projection(
+                            HirRuntimeValueRetention::Retain,
+                            HirRuntimeCallCalleeDisposition::RuntimeValue { expression: invalid },
+                        )
+                    } else {
+                        retained_runtime_projection(executable, owner)
+                    }
+                },
+            ),
+            Err(HirRuntimeReachabilityError::SelectedExpressions(
+                HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { expression }
+            )) if expression == call
+        ));
+    }
+}
+
 fn runtime_call_inventory_fixture() -> (
     HirProject,
     ExprId,
