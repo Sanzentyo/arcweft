@@ -12,6 +12,7 @@ arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-rich-text-schema = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }
 blake3.workspace = true

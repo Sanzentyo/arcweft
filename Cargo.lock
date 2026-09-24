@@ -1646,6 +1646,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-presentation",
  "arcweft-resource-model",
+ "arcweft-rich-text-schema",
  "arcweft-source",
  "arcweft-view",
  "blake3",

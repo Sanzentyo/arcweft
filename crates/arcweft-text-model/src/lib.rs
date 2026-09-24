@@ -5,6 +5,7 @@
 //! boundaries.
 
 pub mod catalog;
+pub mod character_dialogue_style;
 pub mod content;
 pub mod frame;
 pub mod playback;
@@ -17,6 +18,9 @@ pub use catalog::{
     DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec,
     DialogueContentSpecError, DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer,
     RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+};
+pub use character_dialogue_style::{
+    CharacterDialogueRichTextProjectionError, project_character_dialogue_rich_text_properties,
 };
 pub use content::{
     DialogueContentFragmentCatalog, DialogueContentFragmentCatalogError,
