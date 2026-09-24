@@ -1203,3 +1203,36 @@ binds its producer to the exact Plan/AWBC program and display consumer.
 Function scheme specialization still lacks checked-expression publication and
 pending result-port execution. Match/View/task-plan/nominal/scheduler/restore
 and final workspace gates remain open.
+
+## Generation declaration and specialization provenance checkpoint — 2026-09-24
+
+Inspected local `main` and `origin/main` at
+`89ec5cb309a856f2d4a65c0b71bd09a13ced3ba2`: they matched after a
+non-forced push. The index was empty; 30 working-tree entries remained in
+active Dialogue role-schema, Compiler/RuntimePlan generation, and Sema
+function-value consumer work. This checkpoint records pushed cuts, not final
+acceptance of those active integrations.
+
+| Cut | Full Git SHA | Observed evidence |
+| --- | --- | --- |
+| Descriptor-derived CharacterDialogue custom catalog digest | `9a28602d9ff8a02b63414b50ebe7849e03bdb1f2` | Dialogue focused 2/2, full 40/40, Clippy exit 0 with warnings. |
+| Accepted dialogue profile product lease through runtime projection | `a833ab24c86023f6025f911ba186853f82aa5d05` | Compiler project 27/27, profile admission 6/6, affected text-proxy 1/1. The then-current full Compiler library run was 101/103; both unrelated fixture failures were subsequently corrected below. |
+| Generation-owned CharacterDialogue declaration and shared default digest | `ed1fce176531438f00c8e411a861e33b09404397` | Dialogue generation focused 5/5, full 45 library + 4 integration + 4 doc tests, all-target Clippy and fmt passed. The declaration is not yet bound to an executable producer. |
+| Checked function specialization result provenance | `17d040cc63925ba09808d1e4dedad53010ab0080` | Sema focused 8/8, full 887/887 plus character-nominal integration 4/4, all-target/all-feature Clippy and fmt passed. Analyzer value-use consumers remain open. |
+| Compiler budget and exact AWBC execution-context fixtures | `a69701bc25424a0d53e0cf160b3c331d9176280e` | Both focused tests and full Compiler library 103/103 passed. The pure generic call has no implicit effect binding; its checked scheme/key spends 23 structural visits. |
+| One accepted View registration owner shared by Bundle and driver | `2068f2e9cb48ee5e7670599173d07beaffd55882` | Bundle/driver all-target/all-feature check and View runtime integration 29/29 passed; fmt passed. |
+| Dynamic CharacterDialogue target uses generation evidence | `89ec5cb309a856f2d4a65c0b71bd09a13ced3ba2` | Dialogue presentation focused 2/2 passed. RuntimePlan digest matching and dynamic display decoding remain open. |
+
+The generation declaration now owns logical Character rows, optional visual
+manifest fingerprints, exact and Any dialogue type references, role/custom
+references, effective defaults, and accepted View/Style fingerprints. The
+next integration must bind real role payload schemas and defaults, project all
+roots through Compiler/RuntimePlan, transport the declaration and character
+package metadata through AWFB, install one producer for Native/AWBC, decode
+the actual target for display, and preserve generation ownership through
+replacement and restore. The three producer-dependent `evaluated_effects`
+cases remain unresolved and have not been claimed as passing. An external
+Character without an authored HIR display-name row also needs explicit
+accepted presentation input before it can produce a dialogue line; its ID
+spelling is not a display-name fallback. Final workspace gates and later goal
+phases are still open.
