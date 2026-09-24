@@ -19,18 +19,18 @@ pub trait MembershipEncoding<V>: DecisionEncoding<V> {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Membership<V> {
-    default: EffectDecision<V>,
-    overrides: BTreeMap<EffectId, EffectDecision<V>>,
+pub(super) struct Membership<V> {
+    pub(super) default: EffectDecision<V>,
+    pub(super) overrides: BTreeMap<EffectId, EffectDecision<V>>,
 }
 
 /// A symbolic finite effect set over scoped row references.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EffectFormula<V>(Membership<V>);
+pub struct EffectFormula<V>(pub(super) Membership<V>);
 
 /// A relation that must hold for every effect label under finite row valuations.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EffectPredicate<V>(Membership<V>);
+pub struct EffectPredicate<V>(pub(super) Membership<V>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EffectCompletion<V> {

@@ -33,25 +33,25 @@ pub trait DecisionEncoding<V> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Root {
+pub(super) enum Root {
     False,
     True,
     Branch(usize),
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Node<V> {
-    variable: V,
-    low: Root,
-    high: Root,
+pub(super) struct Node<V> {
+    pub(super) variable: V,
+    pub(super) low: Root,
+    pub(super) high: Root,
 }
 
 /// A closed, immutable Boolean membership function over typed row references.
 /// Local node indices are never accepted from another graph or from a consumer.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(super) struct EffectDecision<V> {
-    nodes: Box<[Node<V>]>,
-    root: Root,
+    pub(super) nodes: Box<[Node<V>]>,
+    pub(super) root: Root,
 }
 
 /// Exact projection of a relation onto its unquantified references, together

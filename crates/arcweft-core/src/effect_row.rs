@@ -6,10 +6,15 @@
 //! inference variables nor application state.
 
 mod decision;
+mod declaration;
 mod membership;
 mod set;
 
 pub use decision::{DecisionControl, DecisionEncoding, DecisionWork};
+pub use declaration::{
+    EffectDecisionDeclaration, EffectDecisionNodeDeclaration, EffectDecisionTarget,
+    EffectDeclarationError, EffectMembershipDeclaration,
+};
 pub use membership::{EffectCompletion, EffectFormula, EffectPredicate, MembershipEncoding};
 pub use set::{EffectSet, EffectSetParseError};
 
