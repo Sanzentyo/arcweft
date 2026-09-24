@@ -849,8 +849,12 @@ impl Analyzer<'_, '_, '_> {
                 },
             ));
         }
+        let expected_line_result = match expected {
+            Some(TypeKind::DialogueLine(result)) => Some(result.as_ref()),
+            _ => None,
+        };
         let line_result = plan.as_ref().map_or(Ok(TypeKind::Unit), |plan| {
-            self.check_dialogue_line_plan_output(context, owner, plan.items())
+            self.check_dialogue_line_plan_output(context, owner, plan.items(), expected_line_result)
         })?;
         let application_children = module
             .resolve_expr(owner)
@@ -1389,22 +1393,40 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         application: ExprId,
         items: &[HirLinePlanItem],
+        expected_line_result: Option<&TypeKind>,
     ) -> Result<TypeKind, AnalyzerExpressionError> {
         let mut output: Option<TypeKind> = None;
         let mut output_statements = BTreeSet::new();
+        let mut cancel_rules = Vec::new();
         let mut check_statement = |statement: StmtId| {
             let module = self
                 .module(statement.module())
                 .map_err(AnalyzerExpressionError::fatal)?;
-            self.evaluate_block_statement_uses(context, module, &[statement])?;
             let payload = module.resolve_stmt(statement).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
+            let plan = payload.kind().evaluation_plan();
+            let contextual_out = matches!(
+                &plan,
+                arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
+                    kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
+                    expression: Some(_),
+                    ..
+                }
+            )
+            .then(|| output.as_ref().or(expected_line_result))
+            .flatten();
+            self.evaluate_block_statement_uses_with_out_expectation(
+                context,
+                module,
+                &[statement],
+                contextual_out.map(|expected| (application, expected)),
+            )?;
             let arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
                 kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
                 expression: Some(value),
                 ..
-            } = payload.kind().evaluation_plan()
+            } = plan
             else {
                 return Ok(());
             };
@@ -1438,7 +1460,11 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Some(_) => Ok(()),
                 None => {
-                    output = Some(checked_type.clone());
+                    output = Some(
+                        expected_line_result
+                            .cloned()
+                            .unwrap_or_else(|| checked_type.clone()),
+                    );
                     Ok(())
                 }
             }
@@ -1455,15 +1481,34 @@ impl Analyzer<'_, '_, '_> {
                     HirLinePlanItem::Thread(statement)
                     | HirLinePlanItem::On(statement)
                     | HirLinePlanItem::Statement(statement)
-                    | HirLinePlanItem::CancelRule(statement)
                     | HirLinePlanItem::Error(statement) => check_statement(*statement)?,
+                    HirLinePlanItem::CancelRule(statement) => cancel_rules.push(*statement),
                     HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                         pending.push(items)
                     }
                 }
             }
         }
-        Ok(output.unwrap_or(TypeKind::Unit))
+        drop(check_statement);
+        let result = output.unwrap_or(TypeKind::Unit);
+        for statement in cancel_rules {
+            let module = self
+                .module(statement.module())
+                .map_err(AnalyzerExpressionError::fatal)?;
+            for out in self.evaluate_block_statement_uses_with_out_expectation(
+                context,
+                module,
+                &[statement],
+                Some((application, &result)),
+            )? {
+                if !output_statements.insert(out) {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    ));
+                }
+            }
+        }
+        Ok(result)
     }
 
     fn publish_dialogue_coordinates(

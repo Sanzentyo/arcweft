@@ -219,7 +219,8 @@ flow row() -> Unit {
     alice(voice=auto):
         hello[p]
     with:
-        cancel on input(.SkipLine) { let local = 1 }
+        cancel on input(.SkipLine) { out "Skipped" }
+        out "Completed"
     return ()
 }
 "#,
@@ -239,6 +240,54 @@ flow row() -> Unit {
     let report = analyze(&fixture).expect("input action selector is checked");
     let action = arcweft_interaction_model::input::InputActionId::new("SkipLine").unwrap();
     assert_trigger_view(&report, owner, CheckedTriggerView::InputAction(&action));
+}
+
+#[test]
+fn dialogue_cancel_out_must_match_the_normal_line_result_type() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice(voice=auto):
+        hello[p]
+    with:
+        cancel on input(.SkipLine) { out 7 }
+        out "Completed"
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed cancellation HIR"
+    );
+    assert!(
+        analyze(&fixture).is_err(),
+        "cancel Out must match normal Out"
+    );
+}
+
+#[test]
+fn dialogue_cancel_out_cannot_create_a_result_without_normal_out() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice(voice=auto):
+        hello[p]
+    with:
+        cancel on input(.SkipLine) { out "Skipped" }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed cancellation HIR"
+    );
+    assert!(analyze(&fixture).is_err(), "normal path has Unit result");
 }
 
 #[test]

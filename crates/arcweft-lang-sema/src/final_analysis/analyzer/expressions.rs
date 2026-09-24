@@ -2173,6 +2173,17 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         statements: &[super::StmtId],
     ) -> Result<(), AnalyzerExpressionError> {
+        self.evaluate_block_statement_uses_with_out_expectation(context, module, statements, None)
+            .map(|_| ())
+    }
+
+    pub(super) fn evaluate_block_statement_uses_with_out_expectation(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        statements: &[super::StmtId],
+        out_expectation: Option<(ExprId, &TypeKind)>,
+    ) -> Result<Vec<super::StmtId>, AnalyzerExpressionError> {
         enum Work {
             Statement(super::StmtId),
             Expression(ExprId),
@@ -2184,6 +2195,7 @@ impl Analyzer<'_, '_, '_> {
             .map(Work::Statement)
             .collect::<Vec<_>>();
         let mut seen = BTreeSet::new();
+        let mut contextual_outs = Vec::new();
         while let Some(work) = pending.pop() {
             match work {
                 Work::Expression(expression) => {
@@ -2200,6 +2212,35 @@ impl Analyzer<'_, '_, '_> {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
                     })?;
                     self.evaluate_statement_bindings(context, owner, statement.kind())?;
+                    let contextual_value =
+                        if let (Some((application, expected)), HirStmtKind::Out { value, .. }) =
+                            (out_expectation, statement.kind())
+                        {
+                            let transfer =
+                                self.topology.control_transfer_row(owner).map_err(|_| {
+                                    AnalyzerExpressionError::fatal(
+                                        FinalSemanticAnalysisError::InvalidOwner,
+                                    )
+                                })?;
+                            let target = transfer.target().map_err(|error| {
+                                AnalyzerExpressionError::fatal(
+                                    FinalSemanticAnalysisError::ControlTransfer(*error),
+                                )
+                            })?;
+                            if target.output_application() == Some(application) {
+                                let checked =
+                                    self.evaluate_expression(context, *value, Some(expected))?;
+                                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
+                                    return Err(AnalyzerExpressionError::rejected(*value));
+                                }
+                                contextual_outs.push(owner);
+                                Some(*value)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
                     for body in statement
                         .kind()
                         .body_projections()
@@ -2231,7 +2272,9 @@ impl Analyzer<'_, '_, '_> {
                     for edge in edges.into_iter().rev() {
                         match edge.child() {
                             arcweft_lang_hir::stmt::HirStatementChild::Expression(expression) => {
-                                pending.push(Work::Expression(expression));
+                                if contextual_value != Some(expression) {
+                                    pending.push(Work::Expression(expression));
+                                }
                             }
                             arcweft_lang_hir::stmt::HirStatementChild::Statement(statement) => {
                                 pending.push(Work::Statement(statement));
@@ -2244,7 +2287,7 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
         }
-        Ok(())
+        Ok(contextual_outs)
     }
 
     fn try_residuals_for_block(&self, owner: ExprId) -> Vec<&TypeKind> {
