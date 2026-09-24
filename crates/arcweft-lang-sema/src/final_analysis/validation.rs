@@ -1386,7 +1386,7 @@ fn validate_field_selection(
         (
             crate::record_field::CheckedRecordFieldSemanticId::Environment(_),
             None,
-            TypeKind::Named(_),
+            TypeKind::Named(_) | TypeKind::AcceptedNominal(_),
         ) => true,
         _ => false,
     };

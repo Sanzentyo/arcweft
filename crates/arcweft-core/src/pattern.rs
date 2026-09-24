@@ -136,6 +136,7 @@ pub struct RuntimeStandardOpaqueTypeSpec {
     path: &'static [&'static str],
     arity: u16,
     producer: &'static str,
+    persistence: RuntimeOpaquePersistence,
 }
 
 impl RuntimeStandardOpaqueTypeSpec {
@@ -144,6 +145,19 @@ impl RuntimeStandardOpaqueTypeSpec {
             path,
             arity,
             producer,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+        }
+    }
+
+    pub(crate) const fn snapshot_only(
+        path: &'static [&'static str],
+        producer: &'static str,
+    ) -> Self {
+        Self {
+            path,
+            arity: 0,
+            producer,
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
         }
     }
 
@@ -169,7 +183,7 @@ impl RuntimeStandardOpaqueTypeSpec {
 
     #[must_use]
     pub const fn persistence(&self) -> RuntimeOpaquePersistence {
-        RuntimeOpaquePersistence::ConstantAndSnapshot
+        self.persistence
     }
 
     /// Returns the exact owner of a standard opaque type with no arguments.

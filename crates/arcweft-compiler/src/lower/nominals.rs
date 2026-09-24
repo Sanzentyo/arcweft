@@ -45,6 +45,15 @@ pub(super) fn accepted_type(
             runtime_type_at(argument, symbols, world, analysis, &path.pushed(step))
         })
         .collect::<Result<Box<[_]>, _>>()?;
+    if let Some(carrier) = record.runtime_carrier() {
+        return Ok(RuntimeTypeShape::Opaque {
+            producer: carrier.producer().clone(),
+            admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: carrier.value_class(),
+            persistence: carrier.persistence(),
+            arguments,
+        });
+    }
     match record.semantics() {
         AcceptedNominalSemantics::RustAdt => {
             let projection = analysis
@@ -60,13 +69,6 @@ pub(super) fn accepted_type(
                 arguments,
             })
         }
-        AcceptedNominalSemantics::Opaque(carrier) => Ok(RuntimeTypeShape::Opaque {
-            producer: carrier.producer().clone(),
-            admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: carrier.value_class(),
-            persistence: carrier.persistence(),
-            arguments,
-        }),
         _ => Err(RuntimeSemanticProjectionError::Type {
             reason: "accepted nominal has no executable carrier".to_owned(),
         }),

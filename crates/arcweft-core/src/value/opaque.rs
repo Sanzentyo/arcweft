@@ -2,7 +2,10 @@
 
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::entry::{RuntimeDialogueContentTemplateDigest, RuntimeSchemaLimits};
-use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId};
+use crate::pattern::{
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeStandardOpaqueTypeSpec,
+};
 use crate::plan::{RuntimeDialogueValueBinding, RuntimeDialogueValueRole};
 use crate::runtime_id::{RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId};
 use crate::value::{
@@ -1386,17 +1389,42 @@ impl RuntimeContentValueBudget {
 }
 
 impl RuntimeDialogueOpaqueRole {
+    const fn spec(self) -> RuntimeStandardOpaqueTypeSpec {
+        match self {
+            Self::View => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueView"],
+                "std.dialogue.view",
+            ),
+            Self::Character => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueCharacter"],
+                "std.dialogue.character",
+            ),
+            Self::Content => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueContent"],
+                "std.dialogue.content",
+            ),
+            Self::Occurrence => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueOccurrenceId"],
+                "std.dialogue.occurrence",
+            ),
+            Self::Stage => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueOccurrenceStage"],
+                "std.dialogue.stage",
+            ),
+            Self::Reveal => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueReveal"],
+                "std.dialogue.reveal",
+            ),
+            Self::Action => RuntimeStandardOpaqueTypeSpec::snapshot_only(
+                &["DialogueAction"],
+                "std.dialogue.action",
+            ),
+        }
+    }
+
     #[must_use]
     pub const fn standard_type_name(self) -> &'static str {
-        match self {
-            Self::View => "DialogueView",
-            Self::Character => "DialogueCharacter",
-            Self::Content => "DialogueContent",
-            Self::Occurrence => "DialogueOccurrenceId",
-            Self::Stage => "DialogueOccurrenceStage",
-            Self::Reveal => "DialogueReveal",
-            Self::Action => "DialogueAction",
-        }
+        self.spec().path()[0]
     }
 
     #[must_use]
@@ -1405,45 +1433,31 @@ impl RuntimeDialogueOpaqueRole {
     /// Panics only if a fixed standard dialogue producer identity violates the
     /// validated runtime identity grammar.
     pub fn producer(self) -> RuntimeOpaqueTypeProducerId {
-        RuntimeOpaqueTypeProducerId::try_new(match self {
-            Self::View => "std.dialogue.view",
-            Self::Character => "std.dialogue.character",
-            Self::Content => "std.dialogue.content",
-            Self::Occurrence => "std.dialogue.occurrence",
-            Self::Stage => "std.dialogue.stage",
-            Self::Reveal => "std.dialogue.reveal",
-            Self::Action => "std.dialogue.action",
-        })
+        RuntimeOpaqueTypeProducerId::try_new(self.spec().producer())
         .expect("fixed dialogue runtime producer identities are valid")
     }
 
     #[must_use]
     pub const fn value_class(self) -> RuntimeOpaqueValueClass {
-        RuntimeOpaqueValueClass::Plain
+        self.spec().value_class()
     }
 
     #[must_use]
     pub const fn persistence(self) -> RuntimeOpaquePersistence {
-        RuntimeOpaquePersistence::SnapshotOnly
+        self.spec().persistence()
     }
 
     /// Exact semantic identity of the corresponding standard checked nominal.
     #[must_use]
     pub fn semantic_identity(self) -> RuntimeSemanticTypeId {
-        let mut encoder = crate::pattern::RuntimeSemanticTypeIdentityEncoder::new();
-        encoder.write_tag(74);
-        encoder.write_str(self.standard_type_name());
-        encoder.finish()
+        self.exact_owner().semantic_identity()
     }
 
     #[must_use]
     pub fn exact_owner(self) -> RuntimeOpaqueTypeOwner {
-        RuntimeOpaqueTypeOwner::exact_with(
-            self.producer(),
-            self.semantic_identity(),
-            self.value_class(),
-            self.persistence(),
-        )
+        self.spec()
+            .monomorphic_owner()
+            .expect("dialogue roles have no generic arguments")
     }
 
     #[must_use]

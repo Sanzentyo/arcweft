@@ -1263,13 +1263,17 @@ impl TypeCheckEnv {
         role: DialogueRuntimeValueRole,
     ) -> Self {
         let name = name.into();
+        assert_eq!(name, role.standard_type_name());
+        let owner = role.exact_owner();
         let record = standard_runtime_environment_record(
             &name,
-            fields,
+            fields
+                .into_iter()
+                .map(|(field, ty)| (field, self.canonical_accepted_type(ty))),
             AcceptedOpaqueRuntimeCarrier::new(
-                role.producer(),
-                role.value_class(),
-                role.persistence(),
+                owner.producer().clone(),
+                owner.value_class(),
+                owner.persistence(),
             ),
         )
         .expect("standard runtime environment records are valid");
@@ -1876,31 +1880,16 @@ impl TypeCheckEnv {
 
     /// Canonicalizes internal named atoms at the callable/value boundary.
     ///
-    /// Ordinary environment records keep their structural type. The standard
-    /// dialogue Content row is different: its catalog-owned runtime role is
-    /// the exact value and ABI identity, so every nested occurrence joins to
-    /// that accepted nominal here rather than at individual consumers.
+    /// Runtime-carrier records publish their accepted nominal identity through
+    /// the same catalog lookup as ordinary source-visible records.
     pub(crate) fn canonical_accepted_type(&self, ty: TypeKind) -> TypeKind {
-        let standard_dialogue_content = self.standard_dialogue_content_type();
         map_named_type_kind(ty, &|name| {
             self.nominal_catalog
                 .exact_records()
                 .find(|record| {
                     direct_type_name(record.id().canonical_path()) == Some(name.as_str())
                 })
-                .and_then(|record| {
-                    if standard_dialogue_content.as_ref().is_some_and(|content| {
-                        matches!(
-                            content,
-                            TypeKind::AcceptedNominal(content)
-                                if content.declaration() == record.id()
-                        )
-                    }) {
-                        standard_dialogue_content.clone()
-                    } else {
-                        record.try_instantiate([]).ok()
-                    }
-                })
+                .and_then(|record| record.try_instantiate([]).ok())
                 .unwrap_or(TypeKind::Named(name))
         })
     }

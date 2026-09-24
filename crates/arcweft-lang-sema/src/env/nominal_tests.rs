@@ -23,6 +23,7 @@ use super::{
         standard_reduction_record,
     },
 };
+use crate::dialogue_view::DialogueRuntimeValueRole;
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
 use crate::types::{AcceptedNominalType, AgentBuiltinType, CompileTimeScalarKind, TypeKind};
 
@@ -694,23 +695,29 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         .expect("standard structural nominal is exact accepted evidence");
     assert_eq!(dialogue.origin(), AcceptedNominalOrigin::NominalRecord);
     assert!(environment.environment_record("DialogueContent").is_some());
-    assert_eq!(
-        dialogue.try_instantiate([]),
-        Ok(TypeKind::Named("DialogueContent".to_owned())),
-        "the environment-record projection remains structural"
-    );
     let dialogue_content = environment
         .standard_dialogue_content_type()
         .expect("standard runtime Content identity");
+    assert_eq!(
+        dialogue.try_instantiate([]),
+        Ok(dialogue_content.clone()),
+        "the standard runtime Content record publishes its accepted identity"
+    );
     assert_eq!(
         environment.canonical_accepted_type(TypeKind::Named("DialogueContent".to_owned())),
         dialogue_content,
         "callable/value analysis joins standard Content to its exact runtime carrier"
     );
+    let dialogue_view = environment
+        .nominal_catalog()
+        .exact(&path("DialogueView"))
+        .expect("standard runtime View identity");
     assert_eq!(
         environment.canonical_accepted_type(TypeKind::Named("DialogueView".to_owned())),
-        TypeKind::Named("DialogueView".to_owned()),
-        "field-bearing dialogue View records retain their structural semantic type"
+        dialogue_view
+            .try_instantiate([])
+            .expect("standard runtime View"),
+        "standard runtime View values retain their accepted identity"
     );
 
     let transform = environment
@@ -736,6 +743,51 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         transform_fields.field("rotation").map(|field| field.ty()),
         Some(&TypeKind::Named("Angle".to_owned()))
     );
+}
+
+#[test]
+fn standard_dialogue_runtime_roles_have_exact_accepted_nominal_identities() {
+    let environment = TypeCheckEnv::standard();
+    for role in [
+        DialogueRuntimeValueRole::Content,
+        DialogueRuntimeValueRole::Occurrence,
+        DialogueRuntimeValueRole::Stage,
+        DialogueRuntimeValueRole::Reveal,
+        DialogueRuntimeValueRole::Action,
+        DialogueRuntimeValueRole::Character,
+        DialogueRuntimeValueRole::View,
+    ] {
+        let record = environment
+            .nominal_catalog()
+            .exact(&path(role.standard_type_name()))
+            .expect("every standard dialogue runtime role is accepted");
+        assert_eq!(record.id().owner(), &AcceptedNominalOwnerId::Standard);
+        assert!(record.environment_record().is_some());
+        let accepted_type = record
+            .try_instantiate([])
+            .expect("dialogue runtime role is monomorphic");
+        assert!(matches!(
+            &accepted_type,
+            TypeKind::AcceptedNominal(nominal) if nominal.declaration() == record.id()
+        ));
+
+        let carrier = record
+            .runtime_carrier()
+            .expect("each dialogue role has an exact runtime carrier");
+        let owner = role.exact_owner();
+        assert_eq!(
+            arcweft_core::pattern::RuntimeSemanticTypeId::from(
+                accepted_type
+                    .semantic_identity_digest()
+                    .expect("accepted dialogue role has a semantic identity")
+            ),
+            owner.semantic_identity(),
+            "accepted nominal identity matches its runtime role identity"
+        );
+        assert_eq!(carrier.producer(), owner.producer());
+        assert_eq!(carrier.value_class(), owner.value_class());
+        assert_eq!(carrier.persistence(), owner.persistence());
+    }
 }
 
 #[test]

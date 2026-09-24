@@ -1339,9 +1339,10 @@ pub(super) fn standard_runtime_environment_record(
     runtime_carrier: AcceptedOpaqueRuntimeCarrier,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
     let id = standard_nominal_id(name);
+    let ty = TypeKind::AcceptedNominal(crate::types::AcceptedNominalType::new(id.clone(), []));
     AcceptedNominalRecord::try_new_runtime_record(
         id,
-        TypeKind::Named(name.to_owned()),
+        ty,
         fields,
         runtime_carrier,
         AcceptedNominalOrigin::NominalRecord,
@@ -1353,11 +1354,15 @@ fn validate_environment_record(
     id: &AcceptedNominalId,
     record: &AcceptedEnvironmentRecordSemantics,
 ) -> Result<(), AcceptedNominalCatalogError> {
-    let expected_type = direct_type_name(id.canonical_path())
-        .map(|name| {
-            TypeKind::primitive_name(name).unwrap_or_else(|| TypeKind::Named(name.to_owned()))
-        })
-        .unwrap_or_else(|| record.ty().clone());
+    let expected_type = if record.runtime_carrier().is_some() {
+        TypeKind::AcceptedNominal(crate::types::AcceptedNominalType::new(id.clone(), []))
+    } else {
+        direct_type_name(id.canonical_path())
+            .map(|name| {
+                TypeKind::primitive_name(name).unwrap_or_else(|| TypeKind::Named(name.to_owned()))
+            })
+            .unwrap_or_else(|| record.ty().clone())
+    };
     let expected = expected_type.semantic_identity_digest()?;
     let actual = record.ty().semantic_identity_digest()?;
     if expected != actual || record.semantic_type() != actual {

@@ -3119,33 +3119,38 @@ impl Analyzer<'_, '_, '_> {
                     let record = environment
                         .environment_record(type_name.as_str())
                         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let field = record
-                        .field(name.as_str())
+                    checked_environment_field_selection(
+                        environment,
+                        record,
+                        type_name.as_str(),
+                        name,
+                        owner,
+                    )?
+                }
+                TypeKind::AcceptedNominal(nominal) => {
+                    let environment = self.catalogs.world.environment().typecheck_env();
+                    let record = environment
+                        .nominal_catalog()
+                        .exact(nominal.declaration().canonical_path())
+                        .filter(|record| record.id() == nominal.declaration())
+                        .filter(|record| {
+                            matches!(
+                                record.try_instantiate(nominal.arguments().to_vec()),
+                                Ok(ref instantiated) if instantiated == target_type
+                            )
+                        })
+                        .and_then(|record| record.environment_record())
                         .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let ty = field.ty().clone();
-                    let selection = crate::final_analysis::CheckedFieldSelection::try_new(
-                        record.semantic_type(),
-                        crate::record_field::CheckedRecordFieldSemanticId::Environment(
-                            field.semantic_id(),
-                        ),
-                        field.ordinal(),
-                        None,
-                        field.type_digest(),
-                        name.clone(),
-                    )
-                    .expect("accepted environment record fields have canonical semantic rows");
-                    let resolution = if let Some(projection) = environment
-                        .dialogue_view_models()
-                        .projection(type_name.as_str(), name.as_str())
-                    {
-                        super::CheckedSelectResolution::DialogueView {
-                            projection,
-                            field: selection,
-                        }
-                    } else {
-                        super::CheckedSelectResolution::Field(selection)
-                    };
-                    (ty, resolution)
+                    let type_name =
+                        crate::types::direct_type_name(nominal.declaration().canonical_path())
+                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    checked_environment_field_selection(
+                        environment,
+                        record,
+                        type_name,
+                        name,
+                        owner,
+                    )?
                 }
                 _ => return Err(AnalyzerExpressionError::rejected(owner)),
             }
@@ -3962,6 +3967,40 @@ impl Analyzer<'_, '_, '_> {
             }
         }
     }
+}
+
+fn checked_environment_field_selection(
+    environment: &crate::env::TypeCheckEnv,
+    record: &crate::env::nominal::AcceptedEnvironmentRecordSemantics,
+    type_name: &str,
+    name: &arcweft_lang_hir::leaf::HirName,
+    owner: ExprId,
+) -> Result<(TypeKind, super::CheckedSelectResolution), AnalyzerExpressionError> {
+    let field = record
+        .field(name.as_str())
+        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+    let ty = field.ty().clone();
+    let selection = crate::final_analysis::CheckedFieldSelection::try_new(
+        record.semantic_type(),
+        crate::record_field::CheckedRecordFieldSemanticId::Environment(field.semantic_id()),
+        field.ordinal(),
+        None,
+        field.type_digest(),
+        name.clone(),
+    )
+    .expect("accepted environment record fields have canonical semantic rows");
+    let resolution = if let Some(projection) = environment
+        .dialogue_view_models()
+        .projection(type_name, name.as_str())
+    {
+        super::CheckedSelectResolution::DialogueView {
+            projection,
+            field: selection,
+        }
+    } else {
+        super::CheckedSelectResolution::Field(selection)
+    };
+    Ok((ty, resolution))
 }
 
 impl Analyzer<'_, '_, '_> {

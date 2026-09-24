@@ -626,7 +626,14 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .flatten()
             .filter(|parameter| {
                 self.types.get(&parameter.ty()).is_some_and(|ty| {
-                    let TypeKind::Named(name) = ty else {
+                    let name = match ty {
+                        TypeKind::Named(name) => Some(name.as_str()),
+                        TypeKind::AcceptedNominal(nominal) => {
+                            crate::types::direct_type_name(nominal.declaration().canonical_path())
+                        }
+                        _ => None,
+                    };
+                    let Some(name) = name else {
                         return false;
                     };
                     self.catalogs
