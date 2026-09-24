@@ -881,27 +881,46 @@ entry agent @entry.agent.controller {
     )
     .lower()
     .expect("the host result retains its admitted type through verified AWBC");
+    let encoded = awbc.program.encode_canonical().expect("Agent AWBC encodes");
+    let program = Arc::new(awbc.program);
+    let artifact = arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&encoded).as_bytes(),
+    )
+    .expect("Agent AWBC fingerprint");
+    let context =
+        arcweft_core::awbc::vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let mut host = arcweft_core::awbc::vm::RejectingVmHost;
     let mut fiber = arcweft_core::awbc::fiber::FiberState::for_entry(
-        &awbc.program,
+        &program,
         arcweft_core::awbc::schema::AwbcEntryId(0),
         1,
         4096,
     )
     .expect("selected Agent AWBC entry starts");
-    let output = arcweft_core::awbc::vm::step(
-        &awbc.program,
-        &mut fiber,
-        arcweft_core::awbc::vm::VmStepOptions::default(),
-    )
-    .expect("AWBC controller reaches its host boundary");
-    let arcweft_core::awbc::vm::VmExit::Suspended(
-        arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { call, args, .. },
-    ) = output.exit
-    else {
-        panic!("Agent AWBC must suspend for its observe call");
-    };
+    let mut host_call = None;
+    for _ in 0..128 {
+        let output = arcweft_core::awbc::vm::step_with_host_context(
+            &program,
+            &mut fiber,
+            arcweft_core::awbc::vm::VmStepOptions::default(),
+            &context,
+            &mut host,
+        )
+        .expect("AWBC controller reaches its host boundary");
+        match output.exit {
+            arcweft_core::awbc::vm::VmExit::Running => {}
+            arcweft_core::awbc::vm::VmExit::Suspended(
+                arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { call, args, .. },
+            ) => {
+                host_call = Some((call, args));
+                break;
+            }
+            exit => panic!("Agent AWBC must suspend for its observe call: {exit:?}"),
+        }
+    }
+    let (call, args) = host_call.expect("Agent AWBC reaches observe within the step budget");
     assert_eq!(
-        awbc.program.strings[awbc.program.host_calls[call.index()].operation.index()],
+        program.strings[program.host_calls[call.index()].operation.index()],
         "observe"
     );
     assert!(args.is_empty());

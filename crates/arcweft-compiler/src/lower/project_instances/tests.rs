@@ -82,12 +82,12 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
     let origin = ProjectInstantiationOrigin::Call(owner);
     assert_eq!(
         selection.solution().effect_bindings().len(),
-        1,
-        "the checked pure invocation still owns an effect binding"
+        0,
+        "a pure generic invocation has no implicit effect parameter"
     );
-    // Closing the type/effect bindings and function type consumes six visits.
-    // Encoding the type key/value and the effect row identity needs five more.
-    for (limit, attempted) in [(6, 7), (8, 9), (10, 11)] {
+    // The checked scheme and canonical instance key consume 23 structural
+    // visits. Probe early and final abort points under the same budget.
+    for (limit, attempted) in [(6, 7), (12, 13), (22, 23)] {
         let mut session = ProjectInstantiationSession::new(
             ProjectInstantiationControl::default()
                 .with_limits(ProjectInstantiationLimits::new(1, 0, limit, 128, 100)),
@@ -105,7 +105,7 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
     }
     let mut exact = ProjectInstantiationSession::new(
         ProjectInstantiationControl::default()
-            .with_limits(ProjectInstantiationLimits::new(1, 0, 11, 128, 100)),
+            .with_limits(ProjectInstantiationLimits::new(1, 0, 23, 128, 100)),
     );
     let closed = ProjectInstanceProjection::Discover(&mut exact)
         .close_instance(origin, &selection, None)
@@ -116,8 +116,8 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
             .close_instance(None)
             .expect("same closed instance")
     );
-    assert_eq!(exact.work.counters().structural_nodes, 11);
-    assert_eq!(exact.work.counters().work, 15);
+    assert_eq!(exact.work.counters().structural_nodes, 23);
+    assert_eq!(exact.work.counters().work, 25);
 }
 
 #[test]
