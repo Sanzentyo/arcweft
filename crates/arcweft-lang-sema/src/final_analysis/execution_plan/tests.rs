@@ -37,7 +37,7 @@ fn call_execution_requires_result_availability_to_match_selection() {
             .collect::<BTreeMap<_, _>>();
         let owner = *calls.keys().next().expect("one call");
         assert!(matches!(
-            super::execution_plan_for_expression(owner, &forged, &calls),
+            super::execution_plan_for_expression(owner, &forged, &calls, &BTreeMap::new(),),
             Err(FinalSemanticAnalysisError::CallFactMismatch)
         ));
     }

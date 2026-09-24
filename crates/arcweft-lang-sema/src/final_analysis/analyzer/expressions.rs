@@ -3130,6 +3130,25 @@ impl Analyzer<'_, '_, '_> {
                 FinalSemanticAnalysisError::RecoveredOwner,
             ));
         };
+        if name.as_str() == "stage"
+            && matches!(
+                target_type,
+                TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character
+            )
+            && let Some(CheckedExpressionResolution::Value(receiver)) = target.checked_resolution()
+            && let Some(character) = receiver.character()
+        {
+            return Ok(PreparedExpressionFact::from(CheckedExpression::value(
+                TypeKind::StageApi(character.clone()),
+                CheckedTypeSelection::Inferred,
+                target.effects().clone(),
+                CheckedExpressionResolution::Value(CheckedValueResolution::CharacterField {
+                    receiver: Box::new(receiver.clone()),
+                    character,
+                    field: crate::types::CharacterField::Stage,
+                }),
+            )));
+        }
         let (ty, resolution) = if let Some((field, ty)) =
             target_type.agent_field_type(name.as_str())
         {

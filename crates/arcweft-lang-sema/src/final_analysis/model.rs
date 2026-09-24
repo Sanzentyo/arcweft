@@ -2022,6 +2022,7 @@ pub enum CheckedStructuralExecutionReason {
     DialogueApplication,
     ContentValue,
     PostfixBracket,
+    ContextualCapability,
 }
 
 /// Runtime callee mode retained by one checked call execution plan.

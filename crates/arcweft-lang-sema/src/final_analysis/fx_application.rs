@@ -985,7 +985,8 @@ impl CheckedViewFxApplication {
         let receiver = match outer.core().execution().receiver() {
             crate::callable::CheckedCallReceiverProjection::Operand { source, .. } => source,
             crate::callable::CheckedCallReceiverProjection::None
-            | crate::callable::CheckedCallReceiverProjection::SemanticOnly { .. } => {
+            | crate::callable::CheckedCallReceiverProjection::SemanticOnly { .. }
+            | crate::callable::CheckedCallReceiverProjection::Contextual { .. } => {
                 return Err(SealedFxEdgePlanError::InvalidCallee);
             }
         };

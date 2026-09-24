@@ -380,6 +380,8 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error("contextual capability expression {owner:?} is used as a runtime value")]
+    ContextualCapabilityRequiresDirectReceiver { owner: ExprId },
     #[error("statement {statement:?} operand {owner:?} expects {expected:?}, found {actual:?}")]
     StatementOperandTypeMismatch {
         statement: StmtId,

@@ -787,18 +787,17 @@ fn project_runtime_semantic_fact_inventories(
         if let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution() {
             input.push_postfix_candidate(owner, resolution.candidate());
         }
-        if !runtime_expression_type_owners.contains(&owner) {
-            continue;
+        if runtime_expression_type_owners.contains(&owner) {
+            input.push_expression_type(
+                owner,
+                runtime_type(
+                    checked_expression_type(expression, owner)?,
+                    symbols,
+                    world,
+                    analysis,
+                )?,
+            );
         }
-        input.push_expression_type(
-            owner,
-            runtime_type(
-                checked_expression_type(expression, owner)?,
-                symbols,
-                world,
-                analysis,
-            )?,
-        );
         if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {
             input.push_expression_specialization(owner, specialization);
         }
@@ -7677,7 +7676,8 @@ fn runtime_standard_map_call(
             checked_call_parameter_expression(owner, application, 1, 0)?,
             RuntimeStandardMapOperandOrder::MappingThenReceiver,
         ),
-        CheckedCallReceiverProjection::SemanticOnly { .. } => {
+        CheckedCallReceiverProjection::SemanticOnly { .. }
+        | CheckedCallReceiverProjection::Contextual { .. } => {
             return Err(RuntimeSemanticProjectionError::Call {
                 owner,
                 reason: "standard map requires one value receiver operand".to_owned(),
@@ -7917,7 +7917,8 @@ fn runtime_line_callable(
 ) -> Result<Option<RuntimeLineCallable>, RuntimeSemanticProjectionError> {
     let selected = application.core().candidates().selected();
     let receiver = || match application.core().execution().receiver() {
-        CheckedCallReceiverProjection::SemanticOnly { ty, .. }
+        CheckedCallReceiverProjection::Contextual { ty, .. }
+        | CheckedCallReceiverProjection::SemanticOnly { ty, .. }
         | CheckedCallReceiverProjection::Operand { ty, .. } => enclosing
             .map_or_else(|| Ok(ty.clone()), |solution| solution.instantiate_type(ty))
             .map_err(RuntimeSemanticProjectionError::from),

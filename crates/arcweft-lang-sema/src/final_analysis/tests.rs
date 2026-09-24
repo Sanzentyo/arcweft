@@ -1166,11 +1166,63 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         })
         .map(|(_, call)| call)
         .expect("exact stage acquire call");
+    let acquire_application = selected_application(acquire);
     assert_eq!(
-        selected_application(acquire).result().value_type(),
+        acquire_application.result().value_type(),
         Some(&TypeKind::StageActorHandle(StageActorHandleType::Exact(
             character.clone()
         )))
+    );
+    let crate::callable::CheckedCallReceiverProjection::Contextual {
+        kind,
+        source: acquire_receiver,
+        ty: acquire_receiver_type,
+    } = acquire_application.core().execution().receiver()
+    else {
+        panic!("stage acquire retains its contextual Character stage receiver");
+    };
+    assert_eq!(
+        *kind,
+        crate::callable::CheckedCallContextualReceiverKind::CharacterStage
+    );
+    assert_eq!(
+        acquire_receiver_type,
+        &TypeKind::StageApi(character.clone())
+    );
+    let acquire_operands = acquire_application.core().runtime_operands();
+    assert_eq!(
+        acquire_operands
+            .iter()
+            .filter(|operand| matches!(
+                **operand,
+                crate::callable::CheckedCallRuntimeOperand::Receiver { .. }
+            ))
+            .count(),
+        0,
+        "stage acquire has no physical receiver operand",
+    );
+    assert_eq!(
+        acquire_operands.len(),
+        1,
+        "the required scope argument remains a physical call operand",
+    );
+    assert_eq!(acquire_operands[0].abi_position(), 0);
+    let acquire_receiver_expression = report
+        .expression(acquire_receiver.owner())
+        .expect("stage receiver expression fact");
+    assert_eq!(
+        acquire_receiver_expression
+            .execution_plan()
+            .expect("contextual stage expression execution")
+            .value(),
+        super::CheckedRuntimeValueDisposition::Omit
+    );
+    assert_eq!(
+        acquire_receiver_expression
+            .execution_plan()
+            .expect("contextual stage expression execution")
+            .structural_reason(),
+        Some(super::CheckedStructuralExecutionReason::ContextualCapability)
     );
     let look = report
         .calls()
@@ -1186,13 +1238,71 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         selected_application(look).result().value_type(),
         Some(&TypeKind::CueHandle)
     );
-    assert!(report.calls().any(|(_, call)| {
-        call.selected_application().is_some_and(|application| {
-            application.core().candidates().selected().id()
-                == &CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle)
-                && application.result().value_type() == Some(&TypeKind::VoiceHandle)
+    let look_application = selected_application(look);
+    let crate::callable::CheckedCallReceiverProjection::Operand { .. } =
+        look_application.core().execution().receiver()
+    else {
+        panic!("stage look retains its physical actor handle receiver");
+    };
+    assert_eq!(
+        look_application
+            .core()
+            .runtime_operands()
+            .iter()
+            .filter(|operand| matches!(
+                **operand,
+                crate::callable::CheckedCallRuntimeOperand::Receiver { .. }
+            ))
+            .count(),
+        1,
+        "stage look keeps exactly one physical receiver operand",
+    );
+    let voice = report
+        .calls()
+        .find(|(_, call)| {
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle)
+            })
         })
-    }));
+        .map(|(_, call)| call)
+        .expect("contextual line voice handle call");
+    let voice_application = selected_application(voice);
+    assert_eq!(
+        voice_application.result().value_type(),
+        Some(&TypeKind::VoiceHandle)
+    );
+    let crate::callable::CheckedCallReceiverProjection::Contextual {
+        kind,
+        source: voice_receiver,
+        ty: voice_receiver_type,
+    } = voice_application.core().execution().receiver()
+    else {
+        panic!("voice handle retains its contextual line receiver");
+    };
+    assert_eq!(
+        *kind,
+        crate::callable::CheckedCallContextualReceiverKind::LineContext
+    );
+    assert_eq!(voice_receiver_type, &TypeKind::LineContext);
+    assert!(voice_application.core().runtime_operands().is_empty());
+    let voice_receiver_expression = report
+        .expression(voice_receiver.owner())
+        .expect("line receiver expression fact");
+    assert_eq!(
+        voice_receiver_expression
+            .execution_plan()
+            .expect("contextual line expression execution")
+            .value(),
+        super::CheckedRuntimeValueDisposition::Omit
+    );
+    assert_eq!(
+        voice_receiver_expression
+            .execution_plan()
+            .expect("contextual line expression execution")
+            .structural_reason(),
+        Some(super::CheckedStructuralExecutionReason::ContextualCapability)
+    );
     assert_eq!(
         report
             .calls()
@@ -1246,6 +1356,97 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         ]))),
     );
     assert_dialogue_application_edges(&report, module);
+}
+
+#[test]
+fn character_stage_cannot_be_captured_as_a_local_value() {
+    let fixture = character_nominal_fixture(concat!(
+        "pub character akane {}\n",
+        "flow main() -> String {\n",
+        "    let stage_alias = akane.stage\n",
+        "    return \"done\"\n",
+        "}\n",
+    ));
+    let module = fixture
+        .project
+        .analysis_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let expressions = module
+        .expressions()
+        .map(|(owner, expression)| format!("{owner:?}: {:?}", expression.kind()))
+        .collect::<Vec<_>>();
+    let result = analyze(&fixture);
+    assert!(
+        matches!(
+            &result,
+            Err(
+                FinalSemanticAnalysisError::ContextualCapabilityRequiresDirectReceiver { .. }
+                    | FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. }
+            )
+        ),
+        "StageApi alias must fail final semantic admission: {result:?}; HIR: {expressions:?}"
+    );
+}
+
+#[test]
+fn line_context_alias_cannot_call_voice_handle() {
+    let fixture = character_nominal_fixture(concat!(
+        "pub character akane {}\n",
+        "flow line_handles() -> String {\n",
+        "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let line_alias = line\n",
+        "        let voice = line_alias.voice_handle()\n",
+        "        out (voice, cue)\n",
+        "    return \"done\"\n",
+        "}\n",
+    ));
+    fixture
+        .project
+        .analysis_view()
+        .expect("executable HIR")
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .unwrap_or_else(|error| panic!("capability-alias evaluation topology: {error:?}"));
+
+    match analyze(&fixture) {
+        Err(
+            FinalSemanticAnalysisError::ContextualCapabilityRequiresDirectReceiver { .. }
+            | FinalSemanticAnalysisError::CallResolutionFailed { .. }
+            | FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. },
+        ) => {}
+        Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner }) => {
+            let module = fixture
+                .project
+                .analysis_view()
+                .expect("executable HIR")
+                .module(&CanonicalModulePath::crate_root())
+                .expect("root HIR module");
+            assert!(matches!(
+                module
+                    .resolve_expr(owner)
+                    .expect("failed value owner")
+                    .kind(),
+                HirExprKind::Path(_)
+            ));
+        }
+        Err(error) => panic!("unexpected line-context alias failure: {error:?}"),
+        Ok(report) => {
+            assert!(!report.calls().any(|(_, call)| {
+                call.selected_application().is_some_and(|application| {
+                    application.core().candidates().selected().id()
+                        == &CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle)
+                })
+            }));
+            assert!(report.call_diagnostics().any(|diagnostic| {
+                diagnostic.severity() == crate::callable::CallableDiagnosticSeverity::Error
+                    && diagnostic.code() == crate::callable::CallableDiagnosticCode::UnknownMethod
+            }));
+        }
+    }
 }
 
 fn assert_dialogue_application_result_authority(

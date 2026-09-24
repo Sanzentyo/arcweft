@@ -54,10 +54,31 @@ pub(super) fn seal(
         add_rich_text_effect_execution_roles(rich_text, calls, &mut roles)?;
     }
 
+    let contextual_receivers = contextual_receiver_sources(&expressions, calls)?;
+    for (owner, checked) in &expressions {
+        let contextual_kind = match checked.value_type() {
+            Some(crate::types::TypeKind::LineContext) => {
+                Some(crate::callable::CheckedCallContextualReceiverKind::LineContext)
+            }
+            Some(crate::types::TypeKind::StageApi(_)) => {
+                Some(crate::callable::CheckedCallContextualReceiverKind::CharacterStage)
+            }
+            _ => None,
+        };
+        if contextual_kind.is_some_and(|kind| contextual_receivers.get(owner) != Some(&kind)) {
+            return Err(
+                FinalSemanticAnalysisError::ContextualCapabilityRequiresDirectReceiver {
+                    owner: *owner,
+                },
+            );
+        }
+    }
+
     let replacements = expressions
         .into_iter()
         .map(|(owner, checked)| {
-            let plan = execution_plan_for_expression(owner, &checked, calls)?;
+            let plan =
+                execution_plan_for_expression(owner, &checked, calls, &contextual_receivers)?;
             let effect_roles = roles
                 .remove(&owner)
                 .unwrap_or_default()
@@ -181,10 +202,11 @@ fn execution_plan_for_expression(
     owner: ExprId,
     checked: &super::CheckedExpression,
     calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
+    contextual_receivers: &BTreeMap<ExprId, crate::callable::CheckedCallContextualReceiverKind>,
 ) -> Result<Option<super::CheckedExpressionExecutionPlan>, FinalSemanticAnalysisError> {
     use super::{
         CheckedExpressionCallCallee, CheckedExpressionResolution, CheckedRuntimeValueDisposition,
-        CheckedStructuralExecutionReason,
+        CheckedStructuralExecutionReason, CheckedValueResolution,
     };
     if matches!(
         checked.result(),
@@ -315,6 +337,26 @@ fn execution_plan_for_expression(
                 CheckedStructuralExecutionReason::Literal,
             ))
         }
+        CheckedExpressionResolution::Value(CheckedValueResolution::LineContext)
+            if contextual_receivers.get(&owner)
+                == Some(&crate::callable::CheckedCallContextualReceiverKind::LineContext) =>
+        {
+            Ok(super::CheckedExpressionExecutionPlan::structural(
+                CheckedRuntimeValueDisposition::Omit,
+                CheckedStructuralExecutionReason::ContextualCapability,
+            ))
+        }
+        CheckedExpressionResolution::Value(CheckedValueResolution::CharacterField {
+            field: crate::types::CharacterField::Stage,
+            ..
+        }) if contextual_receivers.get(&owner)
+            == Some(&crate::callable::CheckedCallContextualReceiverKind::CharacterStage) =>
+        {
+            Ok(super::CheckedExpressionExecutionPlan::structural(
+                CheckedRuntimeValueDisposition::Omit,
+                CheckedStructuralExecutionReason::ContextualCapability,
+            ))
+        }
         CheckedExpressionResolution::Value(_)
         | CheckedExpressionResolution::Select(_)
         | CheckedExpressionResolution::Nominal(_)
@@ -342,4 +384,66 @@ fn execution_plan_for_expression(
         }
     }?;
     Ok(Some(plan))
+}
+
+fn contextual_receiver_sources(
+    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
+    calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
+) -> Result<
+    BTreeMap<ExprId, crate::callable::CheckedCallContextualReceiverKind>,
+    FinalSemanticAnalysisError,
+> {
+    use crate::callable::{
+        CheckedCallArgumentSlotSource, CheckedCallContextualReceiverKind,
+        CheckedCallReceiverProjection, CheckedCallSite,
+    };
+
+    let mut contextual = BTreeMap::new();
+    for (call_owner, facts) in calls {
+        let Some(application) = facts.selected_application() else {
+            continue;
+        };
+        let CheckedCallReceiverProjection::Contextual { kind, source, ty } =
+            application.core().execution().receiver()
+        else {
+            continue;
+        };
+        if application.core().site() != CheckedCallSite::HirCall(*call_owner)
+            || source.raw() != CheckedCallArgumentSlotSource::Expression(source.owner())
+            || !matches!(
+                source.coordinate(),
+                crate::semantic_coordinate::StableCheckedValueCoordinate::Expression(_)
+            )
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let checked_source = expressions
+            .get(&source.owner())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let source_matches_kind = match (kind, ty, checked_source.resolution()) {
+            (
+                CheckedCallContextualReceiverKind::LineContext,
+                crate::types::TypeKind::LineContext,
+                super::CheckedExpressionResolution::Value(
+                    super::CheckedValueResolution::LineContext,
+                ),
+            ) => checked_source.value_type() == Some(&crate::types::TypeKind::LineContext),
+            (
+                CheckedCallContextualReceiverKind::CharacterStage,
+                crate::types::TypeKind::StageApi(expected_character),
+                super::CheckedExpressionResolution::Value(
+                    super::CheckedValueResolution::CharacterField {
+                        character,
+                        field: crate::types::CharacterField::Stage,
+                        ..
+                    },
+                ),
+            ) => expected_character == character && checked_source.value_type() == Some(ty),
+            _ => false,
+        };
+        if !source_matches_kind || contextual.insert(source.owner(), *kind).is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+    }
+    Ok(contextual)
 }

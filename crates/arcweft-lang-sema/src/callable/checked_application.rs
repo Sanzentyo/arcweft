@@ -1482,6 +1482,14 @@ impl CheckedCallExecutionSource {
     pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
         &self.coordinate
     }
+
+    pub(crate) fn has_expression_coordinate(&self) -> bool {
+        matches!(self.raw, CheckedCallArgumentSlotSource::Expression(_))
+            && matches!(
+                &self.coordinate,
+                StableCheckedValueCoordinate::Expression(_)
+            )
+    }
 }
 
 /// C1-stable source of one supplied attached-content body. The raw HIR ID is
@@ -1568,12 +1576,24 @@ pub enum CheckedCallReceiverProjection {
         mode: CallableReceiverMode,
         ty: TypeKind,
     },
+    Contextual {
+        kind: CheckedCallContextualReceiverKind,
+        source: CheckedCallExecutionSource,
+        ty: TypeKind,
+    },
     Operand {
         mode: CallableReceiverMode,
         ty: TypeKind,
         source: CheckedCallExecutionSource,
         abi_position: u32,
     },
+}
+
+/// Source-backed non-value receiver capability accepted by one checked call.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedCallContextualReceiverKind {
+    LineContext,
+    CharacterStage,
 }
 
 impl CheckedCallReceiverProjection {
@@ -1584,6 +1604,10 @@ impl CheckedCallReceiverProjection {
         let (mode, ty) = match self {
             Self::None => return Ok(()),
             Self::SemanticOnly { mode, ty } | Self::Operand { mode, ty, .. } => (mode, ty),
+            Self::Contextual { ty, .. } => {
+                visitor(crate::types::ScopedTypeView::at_root(ty))?;
+                return Ok(());
+            }
         };
         match mode {
             CallableReceiverMode::None => {}
@@ -2112,7 +2136,8 @@ impl CheckedCallExecutionProjection {
                 abi_position: *abi_position,
             }),
             CheckedCallReceiverProjection::None
-            | CheckedCallReceiverProjection::SemanticOnly { .. } => None,
+            | CheckedCallReceiverProjection::SemanticOnly { .. }
+            | CheckedCallReceiverProjection::Contextual { .. } => None,
         };
         let attached = match (&self.attached_content, parameter) {
             (
@@ -3060,13 +3085,31 @@ fn validate_receiver(
             ResolvedCallableBaseInstantiation::TypeReceiver { receiver },
         ) => mode == ty && receiver.receiver() == ty,
         (
+            CheckedCallReceiverProjection::Contextual { kind, source, ty },
+            ResolvedCallableBaseInstantiation::Receiver { receiver },
+        ) if receiver == ty && source.has_expression_coordinate() => {
+            match (kind, selected.id(), ty) {
+                (
+                    CheckedCallContextualReceiverKind::LineContext,
+                    CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle),
+                    TypeKind::LineContext,
+                ) => true,
+                (
+                    CheckedCallContextualReceiverKind::CharacterStage,
+                    CallableCandidateId::StageMethod(StageMethodId::Acquire),
+                    TypeKind::StageApi(_),
+                ) => true,
+                _ => false,
+            }
+        }
+        (
             CheckedCallReceiverProjection::Operand {
                 mode: CallableReceiverMode::Value { receiver: mode },
                 ty,
                 ..
             },
             ResolvedCallableBaseInstantiation::Receiver { receiver },
-        ) => mode == ty && receiver == ty,
+        ) => mode == ty && receiver == ty && !is_contextual_capability_type(ty),
         (
             CheckedCallReceiverProjection::Operand {
                 mode:
@@ -3083,12 +3126,22 @@ fn validate_receiver(
                 group,
                 parameter,
             },
-        ) => mode == ty && receiver == ty && mode_group == group && mode_parameter == parameter,
+        ) => {
+            mode == ty
+                && receiver == ty
+                && mode_group == group
+                && mode_parameter == parameter
+                && !is_contextual_capability_type(ty)
+        }
         _ => false,
     };
     valid
         .then_some(())
         .ok_or(CallConstraintInvariant::PreparedBaseMismatch)
+}
+
+fn is_contextual_capability_type(ty: &TypeKind) -> bool {
+    matches!(ty, TypeKind::LineContext | TypeKind::StageApi(_))
 }
 
 fn validate_execution_slot(
@@ -3958,6 +4011,20 @@ impl CheckedCallCanonicalEncoder {
             CheckedCallReceiverProjection::SemanticOnly { mode, ty } => {
                 self.tag(1);
                 self.receiver_mode(mode);
+                self.type_kind(&ty)?;
+            }
+            CheckedCallReceiverProjection::Contextual { kind, source, ty } => {
+                self.tag(3);
+                self.tag(match kind {
+                    CheckedCallContextualReceiverKind::LineContext => 0,
+                    CheckedCallContextualReceiverKind::CharacterStage => 1,
+                });
+                self.bytes(
+                    &source
+                        .coordinate()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
                 self.type_kind(&ty)?;
             }
             CheckedCallReceiverProjection::Operand {

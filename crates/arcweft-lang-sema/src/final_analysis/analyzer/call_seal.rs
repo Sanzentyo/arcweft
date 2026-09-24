@@ -13,21 +13,22 @@ use crate::{
     callable::{
         CallConstraintInvariant, CallableParameterAdmission, CallableReceiverMode,
         CheckedCallApplicationSite, CheckedCallArgumentPassing, CheckedCallArgumentSlotSource,
-        CheckedCallCalleeExecution, CheckedCallExecutionArgumentSeal,
-        CheckedCallExecutionProjectionSeal, CheckedCallExecutionSlotSeal,
-        CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-        CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
-        CheckedCallSemanticSelection, CheckedCallSite, CheckedCaptureSignatureSeal,
-        DetachedPreparedCallableApplication, MappedCallArgumentPassing,
-        PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
-        PreparedCallableDefinitionKey, PreparedFunctionValueOriginIdentity,
-        PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDetachArena,
-        PreparedResolvedCallableIdentity, ResolvedCallable, ResolvedCallableBase,
-        ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
+        CheckedCallCalleeExecution, CheckedCallContextualReceiverKind,
+        CheckedCallExecutionArgumentSeal, CheckedCallExecutionProjectionSeal,
+        CheckedCallExecutionSlotSeal, CheckedCallExecutionSource, CheckedCallOperandDestination,
+        CheckedCallReceiverProjection, CheckedCallSemanticOperandSeal,
+        CheckedCallSemanticOperandSource, CheckedCallSemanticSelection, CheckedCallSite,
+        CheckedCaptureSignatureSeal, DetachedPreparedCallableApplication,
+        MappedCallArgumentPassing, PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey,
+        PreparedCallGraphSealPayload, PreparedCallableDefinitionKey,
+        PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionBatch,
+        PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity, ResolvedCallable,
+        ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
         ResolvedCallableStableIdentitySeal, ResolvedCallableState,
     },
     final_analysis::{
-        CheckedExpression, FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
+        CheckedExpression, CheckedExpressionResolution, CheckedValueResolution,
+        FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
         PreparedExpressionFact,
     },
     semantic_coordinate::SemanticCoordinateIndex,
@@ -371,17 +372,67 @@ fn checked_receiver_projection(
                 receiver,
                 expressions,
             )?;
+            let contextual_kind = match (
+                selected.id(),
+                receiver,
+                expressions
+                    .get(source)
+                    .and_then(PreparedExpressionFact::complete)
+                    .map(CheckedExpression::resolution),
+            ) {
+                (
+                    crate::callable::CallableCandidateId::LineContextMethod(
+                        crate::callable::LineContextMethodId::VoiceHandle,
+                    ),
+                    TypeKind::LineContext,
+                    Some(CheckedExpressionResolution::Value(CheckedValueResolution::LineContext)),
+                ) => Some(CheckedCallContextualReceiverKind::LineContext),
+                (
+                    crate::callable::CallableCandidateId::StageMethod(
+                        crate::callable::StageMethodId::Acquire,
+                    ),
+                    TypeKind::StageApi(expected_character),
+                    Some(CheckedExpressionResolution::Value(
+                        CheckedValueResolution::CharacterField {
+                            character,
+                            field: crate::types::CharacterField::Stage,
+                            ..
+                        },
+                    )),
+                ) if expected_character == character => {
+                    Some(CheckedCallContextualReceiverKind::CharacterStage)
+                }
+                _ => None,
+            };
+            let source = checked_execution_source(
+                location,
+                crate::callable::CheckedCallArgumentSlotSource::Expression(*source),
+                coordinates,
+            )?;
+            if let Some(kind) = contextual_kind {
+                return Ok((
+                    CheckedCallReceiverProjection::Contextual {
+                        kind,
+                        source,
+                        ty: receiver.clone(),
+                    },
+                    0,
+                ));
+            }
+            if matches!(receiver, TypeKind::LineContext | TypeKind::StageApi(_)) {
+                return Err(
+                    FinalSemanticAnalysisError::ContextualCapabilityRequiresDirectReceiver {
+                        owner: source.owner(),
+                    },
+                );
+            }
             Ok((
                 CheckedCallReceiverProjection::Operand {
                     mode: CallableReceiverMode::Value {
                         receiver: receiver.clone(),
                     },
                     ty: receiver.clone(),
-                    source: checked_execution_source(
-                        location,
-                        crate::callable::CheckedCallArgumentSlotSource::Expression(*source),
-                        coordinates,
-                    )?,
+                    source,
                     abi_position: 0,
                 },
                 1,
