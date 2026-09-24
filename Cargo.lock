@@ -739,6 +739,7 @@ dependencies = [
  "arcweft-debug-model",
  "arcweft-dialogue",
  "arcweft-id",
+ "arcweft-interaction-model",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",

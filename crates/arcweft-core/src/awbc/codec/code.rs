@@ -21,6 +21,120 @@ use crate::awbc::schema::{
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::value::RuntimeAgentConstructor;
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
+    CharacterDialoguePatchField, CharacterDialoguePatchOperation,
+};
+
+impl Wire for CharacterDialogueOperation {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Factory => 0,
+            Self::Reconfigure => 1,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::Factory),
+            1 => Ok(Self::Reconfigure),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "CharacterDialogue operation",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for CharacterDialogueFieldCoordinate {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        if let Self::Custom(id) = self {
+            id.as_str().to_owned().write_wire(writer)?;
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Ok(match tag {
+            0 => Self::Voice,
+            1 => Self::Look,
+            2 => Self::Stage,
+            3 => Self::Portrait,
+            4 => Self::Focus,
+            5 => Self::Cleanup,
+            6 => Self::View,
+            7 => Self::SourceLocale,
+            8 => Self::Hooks,
+            9 => Self::Style,
+            10 => Self::RichText,
+            11 => Self::InlineFailure,
+            12 => Self::Custom(
+                CharacterDialogueCustomFieldId::try_new(String::read_wire(reader)?).map_err(
+                    |error| AwbcCodecError::InvalidMetadata {
+                        kind: "CharacterDialogue custom field",
+                        message: error.to_string(),
+                        offset,
+                    },
+                )?,
+            ),
+            _ => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "CharacterDialogue field",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
+impl<T: Wire> Wire for CharacterDialoguePatchOperation<T> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Set(value) => {
+                writer.write_u8(0);
+                value.write_wire(writer)?;
+            }
+            Self::Clear => writer.write_u8(1),
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::Set(T::read_wire(reader)?)),
+            1 => Ok(Self::Clear),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "CharacterDialogue patch operation",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl<T: Wire> Wire for CharacterDialoguePatchField<T> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.coordinate.write_wire(writer)?;
+        self.operation.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            coordinate: CharacterDialogueFieldCoordinate::read_wire(reader)?,
+            operation: CharacterDialoguePatchOperation::read_wire(reader)?,
+        })
+    }
+}
 
 impl Wire for AwbcFunction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -356,6 +470,17 @@ impl Wire for AwbcInstruction {
                 values.write_wire(writer)?;
                 effects.write_wire(writer)?;
             }
+            Self::CharacterDialogue {
+                destination,
+                operation,
+                target,
+                fields,
+            } => {
+                destination.write_wire(writer)?;
+                operation.write_wire(writer)?;
+                target.write_wire(writer)?;
+                fields.write_wire(writer)?;
+            }
             Self::EmitEffect { effect, args } => {
                 effect.write_wire(writer)?;
                 args.write_wire(writer)?;
@@ -586,6 +711,12 @@ impl Wire for AwbcInstruction {
                 template: crate::runtime_id::RuntimeDialogueContentTemplateId::read_wire(reader)?,
                 values: Vec::<AwbcDialogueValueBinding>::read_wire(reader)?,
                 effects: Vec::<AwbcDialogueContentEffectBinding>::read_wire(reader)?,
+            },
+            AwbcOpcode::CharacterDialogue => Self::CharacterDialogue {
+                destination: AwbcRegisterId::read_wire(reader)?,
+                operation: CharacterDialogueOperation::read_wire(reader)?,
+                target: AwbcRegisterId::read_wire(reader)?,
+                fields: Vec::<CharacterDialoguePatchField<AwbcRegisterId>>::read_wire(reader)?,
             },
             AwbcOpcode::EmitEffect => Self::EmitEffect {
                 effect: AwbcEffectPlanId::read_wire(reader)?,
@@ -1095,6 +1226,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::CallIntrinsic
             | AwbcOpcode::EnsureContent
             | AwbcOpcode::MakeDialogueContent
+            | AwbcOpcode::CharacterDialogue
             | AwbcOpcode::EmitEffect
             | AwbcOpcode::StartTask
             | AwbcOpcode::SpawnFiber
@@ -1463,6 +1595,71 @@ mod opcode_class_tests {
                 kind: "terminator opcode",
                 tag: 0xff,
                 offset: 0,
+            })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod character_dialogue_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn version_one_instruction_retains_ordered_set_and_clear_contributions() {
+        let instruction = AwbcInstruction::CharacterDialogue {
+            destination: AwbcRegisterId(4),
+            operation: CharacterDialogueOperation::Factory,
+            target: AwbcRegisterId(0),
+            fields: vec![
+                CharacterDialoguePatchField {
+                    coordinate: CharacterDialogueFieldCoordinate::View,
+                    operation: CharacterDialoguePatchOperation::Set(AwbcRegisterId(1)),
+                },
+                CharacterDialoguePatchField {
+                    coordinate: CharacterDialogueFieldCoordinate::View,
+                    operation: CharacterDialoguePatchOperation::Clear,
+                },
+                CharacterDialoguePatchField {
+                    coordinate: CharacterDialogueFieldCoordinate::Custom(
+                        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.mood")
+                            .expect("valid custom field"),
+                    ),
+                    operation: CharacterDialoguePatchOperation::Set(AwbcRegisterId(3)),
+                },
+            ],
+        };
+        let mut writer = Writer::with_capacity(64);
+        instruction
+            .write_wire(&mut writer)
+            .expect("encode instruction");
+        let bytes = writer.into_bytes();
+        assert_eq!(bytes[0], AwbcOpcode::CharacterDialogue.encoded());
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        let decoded = AwbcInstruction::read_wire(&mut reader).expect("decode instruction");
+        reader.finish().expect("complete canonical instruction");
+        assert_eq!(decoded, instruction);
+    }
+
+    #[test]
+    fn character_dialogue_wire_rejects_unknown_operation_and_field_tags() {
+        let budget = AwbcDecodeBudget::default();
+        let mut operation = Reader::new(&[2], &budget);
+        assert!(matches!(
+            CharacterDialogueOperation::read_wire(&mut operation),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "CharacterDialogue operation",
+                tag: 2,
+                ..
+            })
+        ));
+        let mut field = Reader::new(&[0xff], &budget);
+        assert!(matches!(
+            CharacterDialogueFieldCoordinate::read_wire(&mut field),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "CharacterDialogue field",
+                tag: 0xff,
+                ..
             })
         ));
     }

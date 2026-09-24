@@ -1233,6 +1233,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::StartTask, 0x26, CallTask),
         (AwbcOpcode::SpawnFiber, 0x27, CallTask),
         (AwbcOpcode::MakeDialogueContent, 0x28, CallTask),
+        (AwbcOpcode::CharacterDialogue, 0x29, CallTask),
         (AwbcOpcode::StreamYield, 0x32, StreamLine),
         (AwbcOpcode::StreamClose, 0x34, StreamLine),
         (AwbcOpcode::ExecuteLineOperation, 0x35, StreamLine),

@@ -4,6 +4,7 @@
 use super::*;
 use crate::runtime_id::RuntimePlanTypeId;
 use arcweft_id::runtime_program::RuntimePureProgramId;
+use arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation;
 
 #[cfg(test)]
 mod tests;
@@ -57,6 +58,40 @@ pub fn evaluate_pure_program_with_backend(
 }
 
 impl PureEvaluator<'_> {
+    pub(super) fn evaluate_character_dialogue_expr(
+        &mut self,
+        result_type: RuntimePlanTypeId,
+        operation: CharacterDialogueOperation,
+        target: &RuntimeExpr,
+        fields: &[CharacterDialoguePatchField<RuntimeExpr>],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let target = self.evaluate_expr(target)?;
+        let mut evaluated = Vec::with_capacity(fields.len());
+        for field in fields {
+            let operation = match &field.operation {
+                CharacterDialoguePatchOperation::Set(expression) => {
+                    CharacterDialoguePatchOperation::Set(self.evaluate_expr(expression)?)
+                }
+                CharacterDialoguePatchOperation::Clear => CharacterDialoguePatchOperation::Clear,
+            };
+            evaluated.push(CharacterDialoguePatchField {
+                coordinate: field.coordinate.clone(),
+                operation,
+            });
+        }
+        let semantic_type = self
+            .plan
+            .type_table()
+            .get(result_type)
+            .ok_or(RuntimeEvalError::UnknownPlanType(result_type))?
+            .semantic_identity();
+        let owner = RuntimeProgramOwner::Plan(Arc::clone(self.plan));
+        self.external
+            .as_deref_mut()
+            .ok_or(RuntimeEvalError::CharacterDialogueProducerUnavailable)?
+            .produce_character_dialogue(&owner, operation, target, &evaluated, semantic_type)
+    }
+
     pub(super) fn evaluate_external_call_expr(
         &mut self,
         callee: &RuntimeCallTarget,

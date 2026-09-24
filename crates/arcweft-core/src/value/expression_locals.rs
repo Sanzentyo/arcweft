@@ -70,6 +70,17 @@ impl RuntimeExpr {
                     collect_slice_free_locals(plan, &effect.captures, bound, locals)?;
                 }
             }
+            RuntimeExprKind::CharacterDialogue { target, fields, .. } => {
+                target.collect_evaluation_free_locals(plan, bound, locals)?;
+                for field in fields {
+                    if let arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation::Set(
+                        value,
+                    ) = &field.operation
+                    {
+                        value.collect_evaluation_free_locals(plan, bound, locals)?;
+                    }
+                }
+            }
             RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {
                 collect_slice_free_locals(plan, items, bound, locals)?;
             }

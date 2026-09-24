@@ -22,6 +22,9 @@ use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchField,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Defines a closed AWBC-owned one-byte enum together with its sole numeric
@@ -1484,6 +1487,7 @@ pub enum AwbcOpcode {
     ApplyGroup = 0x23,
     EnsureContent = 0x24,
     MakeDialogueContent = 0x28,
+    CharacterDialogue = 0x29,
     EmitEffect = 0x25,
     StartTask = 0x26,
     SpawnFiber = 0x27,
@@ -1550,6 +1554,7 @@ impl AwbcOpcode {
         Self::StartTask,
         Self::SpawnFiber,
         Self::MakeDialogueContent,
+        Self::CharacterDialogue,
         Self::StreamYield,
         Self::StreamClose,
         Self::ExecuteLineOperation,
@@ -1639,6 +1644,7 @@ impl AwbcOpcode {
             | Self::ApplyGroup
             | Self::EnsureContent
             | Self::MakeDialogueContent
+            | Self::CharacterDialogue
             | Self::EmitEffect
             | Self::StartTask
             | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
@@ -1825,6 +1831,14 @@ pub enum AwbcInstruction {
         values: Vec<AwbcDialogueValueBinding>,
         effects: Vec<AwbcDialogueContentEffectBinding>,
     },
+    /// Constructs or reconfigures a producer-owned CharacterDialogue value
+    /// from already materialized source-order registers.
+    CharacterDialogue {
+        destination: AwbcRegisterId,
+        operation: CharacterDialogueOperation,
+        target: AwbcRegisterId,
+        fields: Vec<CharacterDialoguePatchField<AwbcRegisterId>>,
+    },
     EmitEffect {
         effect: AwbcEffectPlanId,
         args: Vec<AwbcRegisterId>,
@@ -1958,6 +1972,7 @@ impl AwbcInstruction {
             Self::CallIntrinsic { .. } => AwbcOpcode::CallIntrinsic,
             Self::EnsureContent { .. } => AwbcOpcode::EnsureContent,
             Self::MakeDialogueContent { .. } => AwbcOpcode::MakeDialogueContent,
+            Self::CharacterDialogue { .. } => AwbcOpcode::CharacterDialogue,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
             Self::StartTask { .. } => AwbcOpcode::StartTask,
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,

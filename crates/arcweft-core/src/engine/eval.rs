@@ -31,6 +31,7 @@ use std::sync::Arc;
 
 mod callable;
 mod calls;
+mod character_dialogue;
 mod sequence;
 
 impl Engine {
@@ -154,6 +155,17 @@ impl Engine {
                 values,
                 effects,
             } => self.evaluate_dialogue_content_expr(*template, values, effects, pure_backend),
+            RuntimeExprKind::CharacterDialogue {
+                operation,
+                target,
+                fields,
+            } => self.evaluate_character_dialogue_expr(
+                expr.ty(),
+                *operation,
+                target,
+                fields,
+                pure_backend,
+            ),
             RuntimeExprKind::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, expr.ty(), pure_backend)
             }

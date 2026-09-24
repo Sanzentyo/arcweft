@@ -19,6 +19,24 @@ pub(super) struct ProductVmHost<'a, B> {
 }
 
 impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
+    fn produce_character_dialogue(
+        &mut self,
+        owner: &RuntimeProgramOwner,
+        operation: arcweft_interaction_model::dialogue::CharacterDialogueOperation,
+        target: RuntimeValue,
+        fields: &[arcweft_interaction_model::dialogue::CharacterDialoguePatchField<RuntimeValue>],
+        result_type: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, VmError> {
+        if !owner.same_program(&self.program_owner) {
+            return Err(VmError::Runtime(
+                "CharacterDialogue producer received a foreign AWBC program".to_owned(),
+            ));
+        }
+        self.backend
+            .produce_character_dialogue(owner, operation, target, fields, result_type)
+            .map_err(|error| VmError::Runtime(error.to_string()))
+    }
+
     fn call_intrinsic(
         &mut self,
         program: &AwbcProgram,

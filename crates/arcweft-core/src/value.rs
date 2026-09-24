@@ -23,6 +23,7 @@ pub(crate) use agent::{
 };
 mod awbc_save;
 mod callable;
+mod character_dialogue;
 mod data_shape;
 mod env;
 mod expression_locals;
@@ -81,6 +82,7 @@ pub(crate) use callable::{
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
 };
 pub use callable::{RuntimeCallableValue, RuntimeCallableValueError};
+pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
@@ -1389,6 +1391,13 @@ pub enum RuntimeExprKind {
         values: Vec<RuntimeExpr>,
         effects: Vec<RuntimeDialogueContentEffectBindingExpr>,
     },
+    /// One checked CharacterDialogue factory or immutable reconfiguration.
+    /// Every authored Set contribution remains an executable child.
+    CharacterDialogue {
+        operation: arcweft_interaction_model::dialogue::CharacterDialogueOperation,
+        target: Box<RuntimeExpr>,
+        fields: Vec<arcweft_interaction_model::dialogue::CharacterDialoguePatchField<RuntimeExpr>>,
+    },
     BracketSeq(Vec<RuntimeExpr>),
     RepeatSeq {
         value: Box<RuntimeExpr>,
@@ -1603,6 +1612,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::EntityRef(_)
             | RuntimeExprKind::Tuple(_)
             | RuntimeExprKind::DialogueContent { .. }
+            | RuntimeExprKind::CharacterDialogue { .. }
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
             | RuntimeExprKind::Range { .. }
@@ -1652,6 +1662,9 @@ impl fmt::Display for RuntimeExpr {
                     effects.len()
                 )
             }
+            RuntimeExprKind::CharacterDialogue {
+                operation, fields, ..
+            } => write!(f, "character_dialogue/{operation:?}/{}", fields.len()),
             RuntimeExprKind::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
             RuntimeExprKind::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
             RuntimeExprKind::Range { inclusive, .. } => f.write_str(if *inclusive {
@@ -1882,6 +1895,10 @@ pub enum RuntimeEvalError {
     DialogueContentConstruction(String),
     #[error("runtime DialogueContent construction requires an artifact-bound plan")]
     DialogueContentUnboundArtifact,
+    #[error("runtime CharacterDialogue construction requires an accepted generation producer")]
+    CharacterDialogueProducerUnavailable,
+    #[error("runtime CharacterDialogue construction failed: {0}")]
+    CharacterDialogueConstruction(String),
     #[error(
         "runtime DialogueContent evaluated binding count {actual} does not match template count {expected}"
     )]

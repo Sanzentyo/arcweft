@@ -21,6 +21,9 @@ use arcweft_core::value::{
     RuntimeFieldProjection, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
     RuntimeUnaryOp,
 };
+use arcweft_interaction_model::dialogue::{
+    CharacterDialoguePatchField, CharacterDialoguePatchOperation,
+};
 use std::collections::BTreeSet;
 
 /// Expression lowerer used by flow/source/stream builders.
@@ -186,6 +189,35 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         values,
                         effects,
                     });
+                destination
+            }
+            RuntimeExprKind::CharacterDialogue {
+                operation,
+                target,
+                fields,
+            } => {
+                let target = self.lower(target);
+                let fields = fields
+                    .iter()
+                    .map(|field| CharacterDialoguePatchField {
+                        coordinate: field.coordinate.clone(),
+                        operation: match &field.operation {
+                            CharacterDialoguePatchOperation::Set(value) => {
+                                CharacterDialoguePatchOperation::Set(self.lower(value))
+                            }
+                            CharacterDialoguePatchOperation::Clear => CharacterDialoguePatchOperation::Clear,
+                        },
+                    })
+                    .collect();
+                let destination = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory.push_instruction(AwbcInstruction::CharacterDialogue {
+                    destination,
+                    operation: *operation,
+                    target,
+                    fields,
+                });
                 destination
             }
             RuntimeExprKind::Tuple(items) => {

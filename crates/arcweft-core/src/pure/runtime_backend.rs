@@ -5,11 +5,16 @@ use super::{
     VmRuntimePureCallBackend,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
+use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger, RuntimeIntrinsic, RuntimeValue,
     runtime_value_label,
+};
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchField,
 };
 
 impl<E: RuntimeExternalCallBackend> RuntimePureCallBackend for VmRuntimePureCallBackend<E> {
@@ -1004,6 +1009,18 @@ impl<E: RuntimeExternalCallBackend> RuntimeExternalCallBackend for VmRuntimePure
         args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
         self.external.call_external(context, callee, args)
+    }
+
+    fn produce_character_dialogue(
+        &mut self,
+        owner: &RuntimeProgramOwner,
+        operation: CharacterDialogueOperation,
+        target: RuntimeValue,
+        fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        result_type: RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        self.external
+            .produce_character_dialogue(owner, operation, target, fields, result_type)
     }
 }
 

@@ -1,5 +1,8 @@
 mod callable;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchField,
+};
 
 #[cfg(test)]
 mod function_application_tests;
@@ -293,6 +296,20 @@ pub trait RuntimeExternalCallBackend {
         callee: &RuntimeCallTarget,
         args: &[RuntimeValue],
     ) -> Option<Result<RuntimeValue, RuntimeEvalError>>;
+
+    /// Executes the closed CharacterDialogue operation against the backend's
+    /// accepted generation. The Core evaluator has already evaluated every
+    /// authored operand exactly once in source order.
+    fn produce_character_dialogue(
+        &mut self,
+        _owner: &RuntimeProgramOwner,
+        _operation: CharacterDialogueOperation,
+        _target: RuntimeValue,
+        _fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        _result_type: RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        Err(RuntimeEvalError::CharacterDialogueProducerUnavailable)
+    }
 }
 
 /// Stable compact-AWBC pure helper identity presented to runtime backends.
@@ -1894,6 +1911,11 @@ impl<'a> PureEvaluator<'a> {
                 values,
                 effects,
             } => self.evaluate_dialogue_content_expr(*template, values, effects),
+            RuntimeExprKind::CharacterDialogue {
+                operation,
+                target,
+                fields,
+            } => self.evaluate_character_dialogue_expr(expr.ty(), *operation, target, fields),
             RuntimeExprKind::Tuple(items) => self.evaluate_items(items, RuntimeValue::Tuple),
             RuntimeExprKind::BracketSeq(items) => {
                 self.evaluate_items(items, runtime_sequence_values)

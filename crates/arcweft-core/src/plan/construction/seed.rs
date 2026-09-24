@@ -1858,6 +1858,16 @@ pub enum RuntimeExprSeedKind {
         values: Box<[RuntimeExprSeed]>,
         effects: Box<[RuntimeDialogueContentEffectBindingSeed]>,
     },
+    /// One checked CharacterDialogue factory or immutable reconfiguration.
+    /// Field contributions remain in authored order, including overwritten
+    /// values that still must be evaluated.
+    CharacterDialogue {
+        operation: arcweft_interaction_model::dialogue::CharacterDialogueOperation,
+        target: Box<RuntimeExprSeed>,
+        fields: Box<
+            [arcweft_interaction_model::dialogue::CharacterDialoguePatchField<RuntimeExprSeed>],
+        >,
+    },
     BracketSeq(Box<[RuntimeExprSeed]>),
     RepeatSeq {
         value: Box<RuntimeExprSeed>,
@@ -2247,6 +2257,17 @@ impl RuntimeExprSeed {
                 collect_expr_free_locals(values, bound, locals);
                 for effect in effects {
                     collect_expr_free_locals(&effect.captures, bound, locals);
+                }
+            }
+            RuntimeExprSeedKind::CharacterDialogue { target, fields, .. } => {
+                target.collect_free_locals(bound, locals);
+                for field in fields {
+                    if let arcweft_interaction_model::dialogue::CharacterDialoguePatchOperation::Set(
+                        value,
+                    ) = &field.operation
+                    {
+                        value.collect_free_locals(bound, locals);
+                    }
                 }
             }
             RuntimeExprSeedKind::RepeatSeq { value, .. }

@@ -12,6 +12,7 @@ arcweft-core = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
+arcweft-interaction-model.workspace = true
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
@@ -20,7 +21,6 @@ arcweft-text-model = { workspace = true }
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-interaction-model = { workspace = true }
 serde.workspace = true
 trybuild.workspace = true
 

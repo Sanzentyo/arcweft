@@ -7,6 +7,10 @@ mod value_tests;
 
 use std::collections::BTreeSet;
 
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchField, CharacterDialoguePatchOperation,
+};
+
 use crate::audio::RuntimeAudioCommand;
 use crate::effect::{
     LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectFieldExpr,
@@ -171,7 +175,7 @@ impl RuntimePlanBuilder {
                 let (binding, binding_ty) = self.resolve_local(&binding)?;
                 let expr = self.lower_expression(*expr)?;
                 let body = self.lower_expression(*body)?;
-                require_same("let binding", binding_ty, expr.ty())?;
+                self.require_expression_assignable("let binding", binding_ty, expr.ty())?;
                 require_same("let body", ty, body.ty())?;
                 RuntimeExprKind::Let {
                     binding,
@@ -202,6 +206,61 @@ impl RuntimePlanBuilder {
                     lowered.push(item);
                 }
                 RuntimeExprKind::Tuple(lowered)
+            }
+            RuntimeExprSeedKind::CharacterDialogue {
+                operation,
+                target,
+                fields,
+            } => {
+                let producer = crate::value::RuntimeCharacterDialogueProducerId::get();
+                self.require_projection("CharacterDialogue result", ty, |projection| {
+                    matches!(
+                        projection,
+                        RuntimePlanTypeProjection::Opaque {
+                            producer: actual,
+                            value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                            persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                            ..
+                        } if actual == &producer
+                    )
+                })?;
+                let target = self.lower_expression(*target)?;
+                match operation {
+                    CharacterDialogueOperation::Factory => {
+                        self.require_projection(
+                            "CharacterDialogue factory target",
+                            target.ty(),
+                            |projection| {
+                                matches!(projection, RuntimePlanTypeProjection::EntityReference)
+                            },
+                        )?;
+                    }
+                    CharacterDialogueOperation::Reconfigure => {
+                        self.require_projection("CharacterDialogue reconfigure target", target.ty(), |projection| {
+                            matches!(projection, RuntimePlanTypeProjection::Opaque { producer: actual, .. } if actual == &producer)
+                        })?;
+                    }
+                }
+                let mut lowered_fields = Vec::with_capacity(fields.len());
+                for field in fields.into_vec() {
+                    let operation = match field.operation {
+                        CharacterDialoguePatchOperation::Set(value) => {
+                            CharacterDialoguePatchOperation::Set(self.lower_expression(value)?)
+                        }
+                        CharacterDialoguePatchOperation::Clear => {
+                            CharacterDialoguePatchOperation::Clear
+                        }
+                    };
+                    lowered_fields.push(CharacterDialoguePatchField {
+                        coordinate: field.coordinate,
+                        operation,
+                    });
+                }
+                RuntimeExprKind::CharacterDialogue {
+                    operation,
+                    target: Box::new(target),
+                    fields: lowered_fields,
+                }
             }
             RuntimeExprSeedKind::DialogueContent {
                 template,
@@ -670,8 +729,8 @@ impl RuntimePlanBuilder {
                 let then_expr = self.lower_expression(*then_expr)?;
                 let else_expr = self.lower_expression(*else_expr)?;
                 self.require_bool("if condition", condition.ty())?;
-                require_same("if then branch", ty, then_expr.ty())?;
-                require_same("if else branch", ty, else_expr.ty())?;
+                self.require_expression_assignable("if then branch", ty, then_expr.ty())?;
+                self.require_expression_assignable("if else branch", ty, else_expr.ty())?;
                 RuntimeExprKind::If {
                     condition: Box::new(condition),
                     then_expr: Box::new(then_expr),
@@ -694,8 +753,8 @@ impl RuntimePlanBuilder {
                 }
                 let then_expr = self.lower_expression(*then_expr)?;
                 let else_expr = self.lower_expression(*else_expr)?;
-                require_same("if-let then branch", ty, then_expr.ty())?;
-                require_same("if-let else branch", ty, else_expr.ty())?;
+                self.require_expression_assignable("if-let then branch", ty, then_expr.ty())?;
+                self.require_expression_assignable("if-let else branch", ty, else_expr.ty())?;
                 RuntimeExprKind::IfLet {
                     pattern,
                     expr: Box::new(expr),
@@ -747,6 +806,46 @@ impl RuntimePlanBuilder {
         seed.map(|seed| self.lower_expression(*seed)).transpose()
     }
 
+    /// An exact producer-owned opaque value may flow into that producer's
+    /// admitted top type. Its runtime value retains the exact identity.
+    fn require_expression_assignable(
+        &self,
+        context: &'static str,
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        if expected == actual {
+            return Ok(());
+        }
+        let accepts = matches!(
+            (self.projection(expected)?, self.projection(actual)?),
+            (
+                RuntimePlanTypeProjection::Opaque {
+                    producer: expected_producer,
+                    admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+                    value_class: expected_class,
+                    persistence: expected_persistence,
+                    arguments: expected_arguments,
+                },
+                RuntimePlanTypeProjection::Opaque {
+                    producer: actual_producer,
+                    admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                    value_class: actual_class,
+                    persistence: actual_persistence,
+                    arguments: actual_arguments,
+                },
+            ) if expected_producer == actual_producer
+                && expected_class == actual_class
+                && expected_persistence == actual_persistence
+                && expected_arguments == actual_arguments
+        );
+        if accepts {
+            Ok(())
+        } else {
+            require_same(context, expected, actual)
+        }
+    }
+
     fn lower_match_arm(
         &self,
         scrutinee_ty: RuntimePlanTypeId,
@@ -763,7 +862,7 @@ impl RuntimePlanBuilder {
             self.require_bool("match arm guard", guard.ty())?;
         }
         let value = self.lower_expression(value)?;
-        require_same("match arm value", result_ty, value.ty())?;
+        self.require_expression_assignable("match arm value", result_ty, value.ty())?;
         Ok(RuntimeExprMatchArm::from_admitted_parts(
             pattern, guard, value,
         ))
@@ -2169,6 +2268,15 @@ impl RuntimePlanBuilder {
                 }
                 Ok(())
             }
+            RuntimeExprKind::CharacterDialogue { target, fields, .. } => {
+                self.validate_expression_locals(target, scope, used)?;
+                for field in fields {
+                    if let CharacterDialoguePatchOperation::Set(value) = &field.operation {
+                        self.validate_expression_locals(value, scope, used)?;
+                    }
+                }
+                Ok(())
+            }
             RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {
                 self.validate_expression_slice_locals(items, scope, used)
             }
@@ -2352,7 +2460,7 @@ impl RuntimePlanBuilder {
             RuntimeStreamOpSeed::Let { pattern, expr } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                require_same("stream let pattern", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable("stream let pattern", pattern.ty(), expr.ty())?;
                 StreamOp::Let { pattern, expr }
             }
             RuntimeStreamOpSeed::ForNext {
@@ -2523,7 +2631,7 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::Let { pattern, expr } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                require_same("flow let pattern", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable("flow let pattern", pattern.ty(), expr.ty())?;
                 FlowOp::Let { pattern, expr }
             }
             RuntimeFlowOpSeed::LetElse {
@@ -2533,7 +2641,7 @@ impl RuntimePlanBuilder {
             } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                require_same("flow let-else pattern", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable("flow let-else pattern", pattern.ty(), expr.ty())?;
                 FlowOp::LetElse {
                     pattern,
                     expr,
@@ -2794,7 +2902,7 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {
                 let pattern = self.lower_pattern_seed(pattern)?;
                 let expr = self.lower_expression(expr)?;
-                require_same("scope result binding", pattern.ty(), expr.ty())?;
+                self.require_expression_assignable("scope result binding", pattern.ty(), expr.ty())?;
                 FlowOp::ExitScopeBind { pattern, expr }
             }
             RuntimeFlowOpSeed::Break(value) => FlowOp::Break(

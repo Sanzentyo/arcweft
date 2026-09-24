@@ -22,6 +22,7 @@ use super::schema::{
     AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
 };
@@ -33,6 +34,9 @@ use crate::value::{
     RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue, evaluate_binary,
     evaluate_unary, runtime_sequence_from_literal_values, runtime_sequence_repeat_value,
     runtime_value_label,
+};
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
 use thiserror::Error;
 
@@ -323,6 +327,19 @@ pub trait VmHost {
         helper: AwbcPureHelperId,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, VmError>;
+
+    fn produce_character_dialogue(
+        &mut self,
+        _owner: &RuntimeProgramOwner,
+        _operation: CharacterDialogueOperation,
+        _target: RuntimeValue,
+        _fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        _result_type: RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, VmError> {
+        Err(VmError::Runtime(
+            "CharacterDialogue producer is not bound to this AWBC generation".to_owned(),
+        ))
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1190,6 +1207,66 @@ fn execute_instruction(
                 )
                 .map_err(|error| VmError::Runtime(error.to_string()))?
                 .into_runtime_value();
+            fiber
+                .active_frame_mut()?
+                .set_register(*destination, value)?;
+        }
+        AwbcInstruction::CharacterDialogue {
+            destination,
+            operation,
+            target,
+            fields,
+        } => {
+            let context = context.ok_or(VmError::MissingExecutionContext)?;
+            let owner = context.program_owner(program)?;
+            let target = register(fiber, *target)?.clone();
+            let mut evaluated = Vec::with_capacity(fields.len());
+            for field in fields {
+                let operation = match &field.operation {
+                    CharacterDialoguePatchOperation::Set(source) => {
+                        CharacterDialoguePatchOperation::Set(register(fiber, *source)?.clone())
+                    }
+                    CharacterDialoguePatchOperation::Clear => {
+                        CharacterDialoguePatchOperation::Clear
+                    }
+                };
+                evaluated.push(CharacterDialoguePatchField {
+                    coordinate: field.coordinate.clone(),
+                    operation,
+                });
+            }
+            let frame = fiber.active_frame()?;
+            let layout =
+                program
+                    .frame_layouts
+                    .get(frame.layout.index())
+                    .ok_or(VmError::Runtime(
+                        "CharacterDialogue frame layout is missing".to_owned(),
+                    ))?;
+            let result_type = layout
+                .slots
+                .get(destination.index())
+                .ok_or(VmError::Runtime(
+                    "CharacterDialogue destination is missing".to_owned(),
+                ))?
+                .ty;
+            let semantic_type = program
+                .runtime_types
+                .get(result_type.index())
+                .ok_or(VmError::MissingType(result_type))?
+                .semantic_identity();
+            let value = host.produce_character_dialogue(
+                &owner,
+                *operation,
+                target,
+                &evaluated,
+                semantic_type,
+            )?;
+            if !runtime_value_matches_type(program, &value, result_type, 0) {
+                return Err(VmError::Runtime(
+                    "CharacterDialogue producer returned an invalid value".to_owned(),
+                ));
+            }
             fiber
                 .active_frame_mut()?
                 .set_register(*destination, value)?;

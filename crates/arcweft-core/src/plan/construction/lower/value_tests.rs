@@ -1,7 +1,95 @@
 use super::*;
 use crate::pattern::RuntimeSemanticTypeId;
+use crate::pattern::{
+    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+};
 use crate::plan::{RuntimePlan, RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed};
-use crate::value::{RuntimeIterator, RuntimeRange};
+use crate::value::{
+    RuntimeIterator, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRange,
+};
+
+#[test]
+fn exact_opaque_branches_keep_their_identities_under_a_producer_wide_result() {
+    let producer = RuntimeOpaqueTypeProducerId::try_new("test.dialogue")
+        .expect("test opaque producer identity");
+    let other =
+        RuntimeOpaqueTypeProducerId::try_new("test.other").expect("other opaque producer identity");
+    let opaque = |producer: RuntimeOpaqueTypeProducerId, admission| Type::Opaque {
+        producer,
+        admission,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+        arguments: Vec::new().into_boxed_slice(),
+    };
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                seed(
+                    1,
+                    opaque(producer.clone(), RuntimeOpaqueTypeAdmission::ProducerWide),
+                ),
+                seed(
+                    2,
+                    opaque(producer.clone(), RuntimeOpaqueTypeAdmission::ExactIdentity),
+                ),
+                seed(
+                    3,
+                    opaque(producer.clone(), RuntimeOpaqueTypeAdmission::ExactIdentity),
+                ),
+                seed(4, Type::Bool),
+                seed(
+                    5,
+                    opaque(other.clone(), RuntimeOpaqueTypeAdmission::ExactIdentity),
+                ),
+            ],
+            [],
+        )
+        .expect("checked opaque type graph");
+    let value = |tag: u8, producer: RuntimeOpaqueTypeProducerId| {
+        RuntimeExprSeed::new(
+            semantic(tag),
+            RuntimeExprSeedKind::Value(
+                RuntimeOpaqueTypeOwner::exact(producer, semantic(tag))
+                    .try_wrap(RuntimeValue::Unit)
+                    .expect("valid exact opaque value"),
+            ),
+        )
+    };
+    let conditional = |right: RuntimeExprSeed| {
+        RuntimeExprSeed::new(
+            semantic(1),
+            RuntimeExprSeedKind::If {
+                condition: Box::new(RuntimeExprSeed::new(
+                    semantic(4),
+                    RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+                )),
+                then_expr: Box::new(value(2, producer.clone())),
+                else_expr: Box::new(right),
+            },
+        )
+    };
+    let accepted = builder
+        .lower_expression(conditional(value(3, producer.clone())))
+        .expect("exact values of one producer widen to its top type");
+    let RuntimeExprKind::If {
+        then_expr,
+        else_expr,
+        ..
+    } = accepted.kind()
+    else {
+        panic!("admitted conditional remains structural");
+    };
+    assert_ne!(then_expr.ty(), accepted.ty());
+    assert_ne!(else_expr.ty(), accepted.ty());
+    assert!(matches!(
+        builder.lower_expression(conditional(value(5, other))),
+        Err(RuntimePlanBuildError::TypeMismatch {
+            context: "if else branch",
+            ..
+        })
+    ));
+}
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])

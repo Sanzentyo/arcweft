@@ -25,8 +25,11 @@ use crate::plan::{
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
-    RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeDialogueOpaqueRole,
-    RuntimeReductionProducer,
+    RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeCharacterDialogueProducerId,
+    RuntimeDialogueOpaqueRole, RuntimeReductionProducer,
+};
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueOperation, CharacterDialoguePatchOperation,
 };
 use std::collections::{BTreeSet, VecDeque};
 
@@ -1106,6 +1109,40 @@ fn apply_instruction(
             let destination_type = register_type(verifier, function, block, *destination)?;
             if !is_exact_dialogue_content_type(program, destination_type) {
                 return invalid_type(&at, "MakeDialogueContent destination");
+            }
+            write_register(verifier, function, block, *destination, state)?;
+        }
+        AwbcInstruction::CharacterDialogue {
+            destination,
+            operation,
+            target,
+            fields,
+        } => {
+            check_args_budget(verifier, fields.len().saturating_add(1))?;
+            let target_type = read_register(verifier, function, block, *target, state)?;
+            match operation {
+                CharacterDialogueOperation::Factory => {
+                    if !matches!(
+                        runtime_shape(program, target_type),
+                        Some(AwbcRuntimeTypeShape::EntityRef)
+                    ) {
+                        return invalid_type(&at, "CharacterDialogue factory target");
+                    }
+                }
+                CharacterDialogueOperation::Reconfigure => {
+                    if !is_character_dialogue_type(program, target_type) {
+                        return invalid_type(&at, "CharacterDialogue reconfigure target");
+                    }
+                }
+            }
+            let destination_type = register_type(verifier, function, block, *destination)?;
+            if !is_character_dialogue_type(program, destination_type) {
+                return invalid_type(&at, "CharacterDialogue destination");
+            }
+            for field in fields {
+                if let CharacterDialoguePatchOperation::Set(value) = &field.operation {
+                    read_register(verifier, function, block, *value, state)?;
+                }
             }
             write_register(verifier, function, block, *destination, state)?;
         }
@@ -3315,6 +3352,18 @@ fn is_exact_dialogue_content_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool
             .ok()
             .flatten()
             .is_some_and(|owner| RuntimeDialogueOpaqueRole::Content.accepts_exact_owner(&owner))
+}
+
+fn is_character_dialogue_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
+    let Some(AwbcRuntimeTypeShape::Opaque { arguments, .. }) = runtime_shape(program, ty) else {
+        return false;
+    };
+    arguments.is_empty()
+        && program
+            .opaque_owner(ty)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| owner.producer() == &RuntimeCharacterDialogueProducerId::get())
 }
 
 fn line_group_for_function<'a>(
