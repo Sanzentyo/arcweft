@@ -44,7 +44,6 @@ use arcweft_lang_sema::{
         CheckedCallReceiverProjection, CheckedCallSite,
     },
     dialogue_view::{DialogueCharacterProjection, DialogueProjectionCoordinate},
-    effect_row::EffectRow,
     final_analysis::{
         CheckedBindingRole, CheckedExpressionResolution, CheckedFxBindingDecision,
         CheckedSelectResolution, CheckedValueResolution, CheckedViewCall, CheckedViewFxApplication,
@@ -1066,9 +1065,26 @@ impl AuthoredViewBodyLowerer<'_> {
         let handler_result_role = modifier
             .handler_result_role()
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
-        let handler_result_type = modifier
-            .handler_result_type()
-            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let [group] = application.core().candidates().selected().schema().groups() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let [parameter] = group.parameters() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let Some(
+            expected_handler @ TypeKind::Function {
+                params,
+                return_type: handler_result_type,
+                effects,
+                ..
+            },
+        ) = parameter.declared_type()
+        else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        if !params.is_empty() || !effects.is_empty() {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
         let arcweft_lang_hir::expr::HirCallCallee::Value { value: callee } = call.callee() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
@@ -1120,12 +1136,7 @@ impl AuthoredViewBodyLowerer<'_> {
         let handler_type = checked_handler
             .value_type()
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
-        let expected_handler = TypeKind::function_with_effects(
-            [],
-            handler_result_type.clone(),
-            EffectRow::closed(arcweft_lang_sema::effects::EffectSet::new()),
-        );
-        if closure.owner() != handler_source || handler_type != &expected_handler {
+        if closure.owner() != handler_source || handler_type != expected_handler {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
         let captures = closure

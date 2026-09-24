@@ -791,6 +791,31 @@ fn standard_dialogue_runtime_roles_have_exact_accepted_nominal_identities() {
 }
 
 #[test]
+fn standard_on_click_handler_returns_the_exact_accepted_dialogue_action() {
+    let environment = TypeCheckEnv::standard();
+    let action = environment
+        .environment_record("DialogueView")
+        .and_then(|record| record.field("primary_action"))
+        .map(|field| field.ty())
+        .expect("standard View publishes its primary action field");
+    let handler = environment
+        .standard_methods()
+        .iter()
+        .find(|method| method.member.as_str() == "on_click")
+        .and_then(|method| method.schema.groups().first())
+        .and_then(|group| group.parameters().first())
+        .and_then(|parameter| parameter.declared_type())
+        .expect("on_click publishes its checked handler type");
+
+    assert!(matches!(
+        handler,
+        TypeKind::Function { params, return_type, .. }
+            if params.is_empty() && return_type.as_ref() == action
+    ));
+    assert!(matches!(action, TypeKind::AcceptedNominal(_)));
+}
+
+#[test]
 fn standard_reduction_lookup_ignores_spoof_rows_and_requires_the_exact_standard_path() {
     let spoof = AcceptedNominalRecord::try_new_opaque(
         AcceptedNominalId::new(

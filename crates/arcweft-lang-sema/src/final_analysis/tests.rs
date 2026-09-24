@@ -9119,7 +9119,7 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
-    let (owner, callee, handler) = module
+    let (owner, callee, handler, handler_type) = module
         .expressions()
         .find_map(|(owner, expression)| {
             let HirExprKind::Call(call) = expression.kind() else {
@@ -9137,7 +9137,18 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
             let [argument] = call.arguments() else {
                 return None;
             };
-            Some((owner, *callee, argument.value()))
+            let [group] = selected.core().candidates().selected().schema().groups() else {
+                return None;
+            };
+            let [parameter] = group.parameters() else {
+                return None;
+            };
+            Some((
+                owner,
+                *callee,
+                argument.value(),
+                parameter.declared_type()?.clone(),
+            ))
         })
         .expect("typed on_click application");
 
@@ -9160,7 +9171,7 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
             .expression(handler)
             .expect("handler closure")
             .value_type(),
-        Some(ViewModifierId::OnActivate.signature().params()[0].ty())
+        Some(&handler_type)
     );
 }
 

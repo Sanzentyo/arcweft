@@ -1633,7 +1633,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 traversal,
             )?;
         }
-        let AcceptedNominalSemantics::Opaque(carrier) = record.semantics() else {
+        let Some(carrier) = record.runtime_carrier() else {
             return Err(RuntimeOwnershipError::rejected(
                 path,
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,

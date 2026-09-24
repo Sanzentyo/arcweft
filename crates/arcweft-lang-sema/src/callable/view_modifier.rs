@@ -90,13 +90,6 @@ impl ViewModifierId {
         }
     }
 
-    pub fn handler_result_type(self) -> Option<TypeKind> {
-        match self {
-            Self::OnActivate => Some(TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned())),
-            Self::Fx => None,
-        }
-    }
-
     /// Issues the stable mount-program identity only for an application whose
     /// exact selected callable row carries this modifier role.
     pub fn handler_program_id(

@@ -1170,78 +1170,80 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_standard_dialogue_view_types(self) -> Self {
-        self.with_standard_runtime_nominal_record(
-            DIALOGUE_CONTENT_TYPE,
-            std::iter::empty::<(String, TypeKind)>(),
-            DialogueRuntimeValueRole::Content,
-        )
-        .with_standard_runtime_nominal_record(
-            DIALOGUE_OCCURRENCE_ID_TYPE,
-            std::iter::empty::<(String, TypeKind)>(),
-            DialogueRuntimeValueRole::Occurrence,
-        )
-        .with_standard_runtime_nominal_record(
-            DIALOGUE_OCCURRENCE_STAGE_TYPE,
-            std::iter::empty::<(String, TypeKind)>(),
-            DialogueRuntimeValueRole::Stage,
-        )
-        .with_standard_runtime_nominal_record(
-            DIALOGUE_REVEAL_TYPE,
-            std::iter::empty::<(String, TypeKind)>(),
-            DialogueRuntimeValueRole::Reveal,
-        )
-        .with_standard_runtime_nominal_record(
-            DIALOGUE_ACTION_TYPE,
-            std::iter::empty::<(String, TypeKind)>(),
-            DialogueRuntimeValueRole::Action,
-        )
-        .with_standard_runtime_nominal_record(
-            DIALOGUE_CHARACTER_TYPE,
-            [
-                (
-                    DialogueCharacterProjection::Id.field().to_owned(),
-                    DialogueCharacterProjection::Id.value_type(),
-                ),
-                (
-                    DialogueCharacterProjection::DisplayName.field().to_owned(),
-                    DialogueCharacterProjection::DisplayName.value_type(),
-                ),
-            ],
-            DialogueRuntimeValueRole::Character,
-        )
-        .with_standard_runtime_nominal_record(
-            STANDARD_DIALOGUE_VIEW_TYPE,
-            [
-                (
-                    "character".to_owned(),
-                    TypeKind::Named(DIALOGUE_CHARACTER_TYPE.to_owned()),
-                ),
-                (
-                    DialogueProjectionCoordinate::Content.field().to_owned(),
-                    TypeKind::Named(DIALOGUE_CONTENT_TYPE.to_owned()),
-                ),
-                (
-                    DialogueProjectionCoordinate::Occurrence.field().to_owned(),
-                    TypeKind::Named(DIALOGUE_OCCURRENCE_ID_TYPE.to_owned()),
-                ),
-                (
-                    DialogueProjectionCoordinate::Stage.field().to_owned(),
-                    TypeKind::Named(DIALOGUE_OCCURRENCE_STAGE_TYPE.to_owned()),
-                ),
-                (
-                    DialogueProjectionCoordinate::Reveal.field().to_owned(),
-                    TypeKind::Named(DIALOGUE_REVEAL_TYPE.to_owned()),
-                ),
-                (
-                    DialogueProjectionCoordinate::PrimaryAction
-                        .field()
-                        .to_owned(),
-                    TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
-                ),
-            ],
-            DialogueRuntimeValueRole::View,
-        )
-        .with_dialogue_view_models(DialogueViewModelRegistry::standard())
+        let environment = self
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_CONTENT_TYPE,
+                std::iter::empty::<(String, TypeKind)>(),
+                DialogueRuntimeValueRole::Content,
+            )
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_OCCURRENCE_ID_TYPE,
+                std::iter::empty::<(String, TypeKind)>(),
+                DialogueRuntimeValueRole::Occurrence,
+            )
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_OCCURRENCE_STAGE_TYPE,
+                std::iter::empty::<(String, TypeKind)>(),
+                DialogueRuntimeValueRole::Stage,
+            )
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_REVEAL_TYPE,
+                std::iter::empty::<(String, TypeKind)>(),
+                DialogueRuntimeValueRole::Reveal,
+            )
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_ACTION_TYPE,
+                std::iter::empty::<(String, TypeKind)>(),
+                DialogueRuntimeValueRole::Action,
+            )
+            .with_standard_runtime_nominal_record(
+                DIALOGUE_CHARACTER_TYPE,
+                [
+                    (
+                        DialogueCharacterProjection::Id.field().to_owned(),
+                        DialogueCharacterProjection::Id.value_type(),
+                    ),
+                    (
+                        DialogueCharacterProjection::DisplayName.field().to_owned(),
+                        DialogueCharacterProjection::DisplayName.value_type(),
+                    ),
+                ],
+                DialogueRuntimeValueRole::Character,
+            )
+            .with_standard_runtime_nominal_record(
+                STANDARD_DIALOGUE_VIEW_TYPE,
+                [
+                    (
+                        "character".to_owned(),
+                        TypeKind::Named(DIALOGUE_CHARACTER_TYPE.to_owned()),
+                    ),
+                    (
+                        DialogueProjectionCoordinate::Content.field().to_owned(),
+                        TypeKind::Named(DIALOGUE_CONTENT_TYPE.to_owned()),
+                    ),
+                    (
+                        DialogueProjectionCoordinate::Occurrence.field().to_owned(),
+                        TypeKind::Named(DIALOGUE_OCCURRENCE_ID_TYPE.to_owned()),
+                    ),
+                    (
+                        DialogueProjectionCoordinate::Stage.field().to_owned(),
+                        TypeKind::Named(DIALOGUE_OCCURRENCE_STAGE_TYPE.to_owned()),
+                    ),
+                    (
+                        DialogueProjectionCoordinate::Reveal.field().to_owned(),
+                        TypeKind::Named(DIALOGUE_REVEAL_TYPE.to_owned()),
+                    ),
+                    (
+                        DialogueProjectionCoordinate::PrimaryAction
+                            .field()
+                            .to_owned(),
+                        TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
+                    ),
+                ],
+                DialogueRuntimeValueRole::View,
+            )
+            .with_dialogue_view_models(DialogueViewModelRegistry::standard());
+        environment.recanonicalize_standard_view_modifier(ViewModifierId::OnActivate)
     }
 
     /// Registers one standard nominal record and its typed fields.
@@ -1769,6 +1771,27 @@ impl TypeCheckEnv {
             modifier.signature(),
             StandardEnvironmentMethodRole::ViewModifier(modifier),
         )
+    }
+
+    fn recanonicalize_standard_view_modifier(mut self, modifier: ViewModifierId) -> Self {
+        let signature = self.canonical_standard_callable_signature(modifier.signature());
+        let schema = signature
+            .callable_schema(
+                EffectRow::closed(crate::effects::EffectSet::new()),
+                StandardEnvironmentMethodRole::ViewModifier(modifier).validator(),
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard View modifier signature remains valid after type canonicalization");
+        let method = self
+            .standard_methods
+            .iter_mut()
+            .find(|method| {
+                method.receiver == modifier.receiver() && method.member == modifier.member()
+            })
+            .expect("standard View modifier is installed before its exact types are completed");
+        method.schema = schema;
+        self
     }
 
     /// Registers a checker capability such as `state.write(flow)`.
