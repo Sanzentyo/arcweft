@@ -1140,3 +1140,32 @@ skips. CharacterDialogue needs the complete typed producer and consumers;
 generic/shared prefix needs scoped scheme transport and specialization across
 Sema, runtime types, callable states, and both backends. The final workspace
 gates and later goal phases remain open.
+
+## Effect and CharacterDialogue integration checkpoint — 2026-09-24
+
+Inspected local `main` and `origin/main` at
+`3e28bf901925f8698ed030e8d81c80807ce1a94c`: they matched, the index was
+empty, and 39 working-tree entries remained in active CharacterDialogue and
+generic-predicate work. The earlier independently pushed cuts were:
+
+| Cut | Full Git SHA | Observed evidence |
+| --- | --- | --- |
+| Shared Core/Sema effect-row algebra | `9778fb4615c4fd32a1ffcce5e1ddcb01236dd126` | Core focused 15/15; Sema effect-row focused 17/17; affected library check and Clippy passed. |
+| Canonical scoped effect declarations | `8b95757ef726701a015d69eb706784b9464c2aa1` | Core focused 4/4, library check and Clippy passed. |
+| Shared CharacterDialogue patch coordinate/operation | `b10946819ee3b7b49c5b6b9e36e18fe5be1e7238` | Shared dialogue model focused 4/4; Sema Character target focused 12/12. |
+| Whole runtime-value callee reachability | `3a2b084ebe029596ff32c3416515eb73e2844199` | HIR focused 1/1; Sema Character target 12/12; compiler Character projection subsequently reached 5/5 after Core binding admission. |
+| Scoped runtime type binder and function effect contract | `6e693d0075675937efe7e5205e5b9d519de34e84` | Core scope focused 4/4. |
+| Exact AWBC program lease shared by session, executor and View | `d31cfc8bce2c85f479e3a5782da21c12c605518f` | Driver library check and exact-lease regression 1/1 passed. |
+| Logical Character membership without a visual manifest | `90cb2d23f734dbfc276291b9dfd2e589f6b5c38a` | Character library suite 49/49. |
+| Typed Core/Native/pure/AWBC CharacterDialogue operation and version-one wire | `3e28bf901925f8698ed030e8d81c80807ce1a94c` | Core all-feature library suite 577/577, including pure program backend and AWBC codec cases; compiler Character projection 5/5 on the integrated dirty tree. The first Core sweep found the opcode inventory missing `0x29`; it was corrected before this passing run and commit. |
+
+Dialogue's generation-owned producer schema previously passed focused 10/10,
+including total defaults coverage, but its new source-type admission and
+compiler/bundle/session assembly remain uncommitted and are being changed.
+CharacterDialogue's AWBC verifier currently checks structural target/result
+types and register reads; the accepted generation producer still needs its
+complete role/custom/source-type inputs, and runtime display needs the actual
+opaque target rather than a fabricated empty configuration. Generic prefix
+predicate and scoped scheme migration is also in progress. The remaining
+`callable_execution` cases, full cross-crate gates, and later convergence phases
+are not yet accepted by this checkpoint.
