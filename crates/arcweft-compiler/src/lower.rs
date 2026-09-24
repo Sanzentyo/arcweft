@@ -2052,6 +2052,9 @@ fn project_dialogue_application(
     Ok((
         owner,
         RuntimeDialogueApplication::new(
+            character_dialogue::runtime_dialogue_target(
+                target, symbols, world, analysis, instance,
+            )?,
             spec,
             runtime_type_under(line_result, instance, symbols, world, analysis)?,
         ),

@@ -29,10 +29,10 @@ use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVa
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
     RuntimeCallablePosition, RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
-    RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeDialogueValueRole,
-    RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFunctionInputBinding, RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan,
-    RuntimeTraitMethodId,
+    RuntimeCallableStateDefinition, RuntimeCallableTransition,
+    RuntimeDialogueContentApplicationKey, RuntimeDialogueValueRole, RuntimeEffectSet,
+    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFunctionInputBinding,
+    RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
     RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId,
@@ -571,7 +571,9 @@ impl AwbcInventory {
                 ));
                 continue;
             };
-            let content = match self.intern_content_unit(&line, spec.template_id(), None) {
+            let application =
+                RuntimeDialogueContentApplicationKey::new(spec.line().clone(), spec.template_id());
+            let content = match self.intern_content_unit(&application, None) {
                 Ok(content) => content,
                 Err(error) => {
                     self.diagnostic(error);
@@ -1606,10 +1608,11 @@ impl AwbcInventory {
 
     pub fn intern_content_unit(
         &mut self,
-        public_id: &str,
-        template: RuntimeDialogueContentTemplateId,
+        application: &RuntimeDialogueContentApplicationKey,
         group: Option<AwbcLineTaskGroupId>,
     ) -> Result<AwbcContentUnitId, AwbcLowerDiagnostic> {
+        let public_id = application.line().public_label().into_string();
+        let template = application.template();
         if !self
             .program
             .content_templates
@@ -1626,19 +1629,12 @@ impl AwbcInventory {
             .content_units
             .iter()
             .enumerate()
-            .find(|(_, unit)| self.string(unit.public_id) == public_id)
+            .find(|(_, unit)| self.string(unit.public_id) == public_id && unit.template == template)
         {
-            let existing = &self.program.content_units[index];
-            if existing.template != template {
-                return Err(AwbcLowerDiagnostic::error(
-                    format!("dialogue.line.{public_id}"),
-                    "content-unit public identity is already joined to a different template",
-                ));
-            }
             return Ok(AwbcContentUnitId(table_index(index)));
         }
         let id = AwbcContentUnitId(table_index(self.program.content_units.len()));
-        let public_id = self.intern_string(public_id);
+        let public_id = self.intern_string(&public_id);
         self.program.content_units.push(AwbcContentUnit {
             public_id,
             template,

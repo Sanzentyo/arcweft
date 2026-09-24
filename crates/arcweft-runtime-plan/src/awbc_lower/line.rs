@@ -44,11 +44,9 @@ impl<'a> AwbcLineLowerer<'a> {
                 "dialogue content references a missing line-task group",
             ));
         }
-        let id = self.inventory.intern_content_unit(
-            line.as_str(),
-            content.template(),
-            line_task_group,
-        )?;
+        let id = self
+            .inventory
+            .intern_content_unit(&content.key(), line_task_group)?;
         let marks = content
             .marks()
             .iter()

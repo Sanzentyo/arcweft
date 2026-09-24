@@ -11,6 +11,22 @@ use super::{
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection, RuntimeTypeShape,
 };
 
+impl RuntimeNormalizedType {
+    pub(super) fn is_character_dialogue_value(&self) -> bool {
+        matches!(
+            self.shape(),
+            RuntimeTypeShape::Opaque {
+                producer,
+                value_class: arcweft_core::value::RuntimeOpaqueValueClass::Plain,
+                persistence: arcweft_core::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments,
+                ..
+            } if producer == &arcweft_core::value::RuntimeCharacterDialogueProducerId::get()
+                && arguments.is_empty()
+        )
+    }
+}
+
 /// Compiler-selected immutable dialogue construction or reconfiguration.
 ///
 /// `target` and every `Set` refer to the sole source-ordered physical operand
@@ -99,19 +115,7 @@ impl RuntimeCharacterDialogueCall {
         let Some(result) = result else {
             return false;
         };
-        let RuntimeTypeShape::Opaque {
-            producer,
-            value_class: arcweft_core::value::RuntimeOpaqueValueClass::Plain,
-            persistence: arcweft_core::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
-            arguments,
-            ..
-        } = result.shape()
-        else {
-            return false;
-        };
-        if !arguments.is_empty()
-            || producer != &arcweft_core::value::RuntimeCharacterDialogueProducerId::get()
-        {
+        if !result.is_character_dialogue_value() {
             return false;
         }
         let Some(target) = operands.first() else {

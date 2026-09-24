@@ -719,22 +719,30 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let previous_effect_set = self.active_effect_set.replace(executable.effects().clone());
         self.lower_ops(&mut frame, &mut body, executable.ops(), path);
         self.active_effect_set = previous_effect_set;
-        let declared_returns_value = !matches!(
+        let result_type = admitted_plan_type(self.inventory, self.plan, result);
+        let unit_result = matches!(
             self.plan.checked_type(result),
             Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Unit))
         );
-        if body.needs_value_fallthrough() {
+        if unit_result && !body.terminated {
+            // Ordinary callable transitions always carry their declared result,
+            // including Unit. Effect-only bodies synthesize that final value.
+            let value = frame.return_value(result_type);
+            let constant = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
+            self.inventory.push_instruction(AwbcInstruction::LoadConst {
+                dst: value,
+                constant,
+            });
+            self.close_active_scopes_for_terminator(&mut frame);
+            body.terminate(
+                self.inventory,
+                AwbcTerminator::Return { value: Some(value) },
+                AwbcSafePointKind::Return,
+            );
+        } else if body.needs_value_fallthrough() {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
         let body = body.finish(self.inventory);
-        if body.returns_value != declared_returns_value {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                path,
-                format!(
-                    "executable function body return shape does not match declared result {result}"
-                ),
-            ));
-        }
         let layout = self
             .inventory
             .intern_frame_layout(format!("{path}:frame"), frame.finish());
@@ -747,13 +755,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .map(|input| self.local_type(input.input_local()))
             .collect();
-        let result_type = admitted_plan_type(self.inventory, self.plan, result);
         let effects = self.inventory.intern_effect_set(executable.effects());
-        let signature = self.inventory.intern_signature(
-            params,
-            declared_returns_value.then_some(result_type),
-            effects,
-        );
+        let signature = self
+            .inventory
+            .intern_signature(params, Some(result_type), effects);
         self.inventory.replace_function(
             owner,
             AwbcFunction {
@@ -961,7 +966,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.inventory
                     .push_instruction(AwbcInstruction::CommitDialogueResult { source });
             }
-            FlowOp::Dialogue { content, result } => {
+            FlowOp::Dialogue {
+                target,
+                content,
+                result,
+            } => {
                 let Some(content_plan) = self.plan.dialogue_content().get(*content) else {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path,
@@ -1026,6 +1035,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     pattern: lower_pattern(self.inventory, self.plan, frame, result.pattern()),
                     destination: frame.root_temp(result_ty),
                 };
+                let target = AwbcExprLowerer::new(
+                    self.inventory,
+                    frame,
+                    format!("{path}.dialogue.target"),
+                    self.plan,
+                )
+                .lower(target);
                 let mut values_by_function = BTreeMap::new();
                 let mut values = Vec::with_capacity(content_plan.values().len());
                 for site in content_plan.values() {
@@ -1082,6 +1098,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
                 body.suspend(self.inventory, AwbcSafePointKind::Dialogue, |resume| {
                     AwbcTerminator::Dialogue {
+                        target,
                         content,
                         values,
                         effects,

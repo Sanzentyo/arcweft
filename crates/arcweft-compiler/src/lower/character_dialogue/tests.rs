@@ -1,6 +1,7 @@
 use super::*;
 use arcweft_interaction_model::dialogue::CharacterDialogueFieldCoordinate as Field;
 
+mod application;
 mod fixtures;
 
 fn project_calls(source: &str) -> Vec<(CharacterDialogueOperation, RuntimeResolvedCall)> {

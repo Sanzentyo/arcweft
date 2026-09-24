@@ -6,10 +6,10 @@
 
 use super::{
     RuntimeCheckedCapture, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-    RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueEffectCaptureFact,
-    RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression, RuntimeIteratorFact,
-    RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture, RuntimeProjectCallable,
-    RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
+    RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
+    RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectTrigger, RuntimeDialogueValueExpression,
+    RuntimeIteratorFact, RuntimeNormalizedType, RuntimeProjectAttachedDefaultCapture,
+    RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionExpressionPayload,
     RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceSemanticFacts,
     RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionStatementPayload,
     RuntimeProjectFunctionTypeProjection, RuntimeRecordExpressionFact, RuntimeRecordPatternFact,
@@ -17,6 +17,19 @@ use super::{
     RuntimeResolvedCallOperand, RuntimeResolvedHostCallOwner, RuntimeResolvedNominalRecordField,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeTryFact,
 };
+
+impl RuntimeDialogueApplication {
+    pub(super) fn append_normalized_types<'a>(
+        &'a self,
+        roots: &mut Vec<&'a RuntimeNormalizedType>,
+    ) {
+        roots.extend([
+            self.target().source_type(),
+            self.target().dialogue_type(),
+            self.line_result(),
+        ]);
+    }
+}
 
 impl RuntimeProjectCallable {
     pub(super) fn append_normalized_types<'a>(
@@ -288,7 +301,7 @@ impl RuntimeProjectFunctionExpressionPayload {
                 application,
                 fragments,
             } => {
-                roots.push(application.line_result());
+                application.append_normalized_types(roots);
                 for fragment in fragments {
                     fragment.append_normalized_types(roots);
                 }

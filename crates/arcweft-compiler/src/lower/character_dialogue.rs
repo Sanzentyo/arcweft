@@ -11,6 +11,9 @@ use arcweft_runtime_plan::semantic_facts::RuntimeCharacterDialogueCall;
 
 use super::*;
 
+mod application;
+pub(super) use application::runtime_dialogue_target;
+
 #[cfg(test)]
 mod tests;
 

@@ -83,6 +83,8 @@ use crate::assertion_identity::RuntimeAssertionMode;
 mod character_dialogue;
 mod content;
 pub use character_dialogue::RuntimeCharacterDialogueCall;
+mod dialogue_target;
+pub use dialogue_target::RuntimeDialogueApplicationTarget;
 mod evaluated_effect;
 mod flow;
 mod lexical_scope;
@@ -4001,16 +4003,26 @@ pub struct RuntimeCheckedCapture {
 /// One executable dialogue application projected from checked semantics.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueApplication {
+    target: RuntimeDialogueApplicationTarget,
     content: DialogueContentSpec,
     line_result: RuntimeNormalizedType,
 }
 
 impl RuntimeDialogueApplication {
-    pub fn new(content: DialogueContentSpec, line_result: RuntimeNormalizedType) -> Self {
+    pub fn new(
+        target: RuntimeDialogueApplicationTarget,
+        content: DialogueContentSpec,
+        line_result: RuntimeNormalizedType,
+    ) -> Self {
         Self {
+            target,
             content,
             line_result,
         }
+    }
+
+    pub const fn target(&self) -> &RuntimeDialogueApplicationTarget {
+        &self.target
     }
 
     pub const fn content(&self) -> &DialogueContentSpec {
@@ -6972,6 +6984,16 @@ impl RuntimePlanSemanticFacts {
         {
             return Err(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner });
         }
+        require_runtime_expression_owner(
+            runtime_owners,
+            application.target().expression(),
+            RuntimeSemanticFactFamily::DialogueApplication,
+        )?;
+        application.validate_target(
+            modules,
+            owner,
+            self.expression_type(application.target().expression()),
+        )?;
         validate_normalized_type(modules, application.line_result())?;
         if application.content().character().semantic_digest() != catalog.semantic_digest()
             || application.content().character().locale_policy_digest()
@@ -7299,11 +7321,9 @@ impl RuntimePlanSemanticFacts {
         for closure in self.root_closures.values() {
             closure.append_normalized_types(&mut roots);
         }
-        roots.extend(
-            self.dialogue_applications
-                .values()
-                .map(RuntimeDialogueApplication::line_result),
-        );
+        for application in self.dialogue_applications.values() {
+            application.append_normalized_types(&mut roots);
+        }
         for fragment in &self.dialogue_content_fragments {
             fragment.append_normalized_types(&mut roots);
         }
@@ -7925,6 +7945,8 @@ pub enum RuntimeSemanticFactsError {
     DialogueCatalogPresenceMismatch,
     #[error("dialogue application {expression:?} does not match its accepted line identity")]
     DialogueLineMismatch { expression: ExprId },
+    #[error("dialogue application {expression:?} has an invalid checked target {target:?}")]
+    DialogueTargetMismatch { expression: ExprId, target: ExprId },
     #[error("dialogue application {expression:?} has no matching runtime content fragment")]
     DialogueTemplateMismatch { expression: ExprId },
     #[error("runtime content fragment source {expression:?} is duplicated")]
@@ -10006,6 +10028,11 @@ fn validate_project_function_semantic_catalog(
                 {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
+                application.validate_target(
+                    modules,
+                    owner,
+                    semantics.expression_type(application.target().expression()),
+                )?;
                 validate_normalized_type(modules, application.line_result())?;
                 validate_project_instance_fragments(modules, semantics, fragments)?;
             }

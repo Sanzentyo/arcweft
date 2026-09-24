@@ -91,12 +91,13 @@ use crate::final_variant::{
 };
 use crate::semantic_facts::{
     RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeClosureInstanceFact,
-    RuntimeClosureInstanceKey, RuntimeDialogueApplication, RuntimeDialogueEffectCaptureKey,
-    RuntimeDialogueEffectProgramKey, RuntimeDialogueValueCaptureKey, RuntimeDropFadeFact,
-    RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-    RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeExecutableSemanticScope,
-    RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType,
-    RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectFunctionExpressionPayload,
+    RuntimeClosureInstanceKey, RuntimeDialogueApplication, RuntimeDialogueApplicationTarget,
+    RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectProgramKey,
+    RuntimeDialogueValueCaptureKey, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+    RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+    RuntimeEvaluatedEffectOperandFact, RuntimeExecutableSemanticScope, RuntimeIteratorFact,
+    RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
+    RuntimeProjectCallable, RuntimeProjectFunctionExpressionPayload,
     RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
     RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterSource,
     RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
@@ -4555,31 +4556,11 @@ impl<'a> FinalFlowLowerer<'a> {
                             "dialogue source application {expression:?} has no accepted line"
                         ))
                     })?;
-                let application = self
-                    .semantic_facts
-                    .dialogue_application(semantic_expression)
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "dialogue application {expression:?} has no checked projection fact"
-                        ))
-                    })?;
-                let content = self
-                    .dialogue_content
-                    .get(&application.content().template_id())
-                    .cloned()
-                    .ok_or_else(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "dialogue application {expression:?} has no builder-issued content handle"
-                    ))
-                    })?;
-                let mut ops = vec![RuntimeFlowOpSeed::Dialogue {
-                    content,
-                    result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
-                        application.line_result().identity(),
-                    ),
-                }];
-                ops.extend(self.lower_flow_tail(tail)?);
-                return Ok(ops);
+                return self.lower_dialogue_value(
+                    semantic_expression,
+                    RuntimeFlowValueContinuation::Ignore(tail),
+                    BTreeMap::new(),
+                );
             }
             HirThreadFlowItem::Statement(statement)
             | HirThreadFlowItem::Choice(statement)
@@ -5139,7 +5120,7 @@ impl<'a> FinalFlowLowerer<'a> {
                         "attached content call {expression:?} cannot lower as a DialogueLine value"
                     )));
                 }
-                self.lower_dialogue_value(expression, continuation)
+                self.lower_dialogue_value(expression, continuation, overrides)
             }
             HirExprKind::Try(operation) => self.lower_flow_value_with_overrides(
                 operation.operand(),
@@ -5474,6 +5455,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let semantic_expression = self.require_semantic_dialogue(expression)?;
         let application = self
@@ -5484,6 +5466,35 @@ impl<'a> FinalFlowLowerer<'a> {
                     "dialogue application {expression:?} has no checked projection fact"
                 ))
             })?;
+        let target_expression = application.target().expression();
+        let Some(target) = overrides.get(&target_expression).cloned() else {
+            // The target can contain an awaited call, branch, or other Flow
+            // value. Complete its continuation before any content is started.
+            return self.lower_flow_value_with_overrides(
+                target_expression,
+                RuntimeFlowValueContinuation::Compose {
+                    owner: semantic_expression,
+                    child: target_expression,
+                    overrides,
+                    outer: Box::new(continuation),
+                },
+                BTreeMap::new(),
+            );
+        };
+        let target = match application.target() {
+            RuntimeDialogueApplicationTarget::CharacterReference { dialogue_type, .. } => {
+                RuntimeExprSeed::new(
+                    dialogue_type.identity(),
+                    arcweft_core::plan::RuntimeExprSeedKind::CharacterDialogue {
+                        operation:
+                            arcweft_interaction_model::dialogue::CharacterDialogueOperation::Factory,
+                        target: Box::new(target),
+                        fields: Box::new([]),
+                    },
+                )
+            }
+            RuntimeDialogueApplicationTarget::CharacterDialogue { .. } => target,
+        };
         let content = self
             .dialogue_content
             .get(&application.content().template_id())
@@ -5529,6 +5540,7 @@ impl<'a> FinalFlowLowerer<'a> {
             )));
         }
         let mut ops = vec![RuntimeFlowOpSeed::Dialogue {
+            target,
             content,
             result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::try_new(
                 application.line_result().identity(),
