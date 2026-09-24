@@ -27,11 +27,11 @@ use crate::{
 };
 
 use super::{
-    ArrayLength, CharacterNominalType, CompileTimeCallableType, CompileTimeEnumType,
-    CompileTimeFxType, CompileTimeScalarType, EntityKind, GenericConstParameterId,
-    GenericConstReference, GenericEffectReference, GenericParameterKind, GenericParameterOwnerId,
-    GenericScope, GenericScopeError, GenericTypeReference, HandleState, IteratorStateKind,
-    LifetimeScopeKind, MapKind, StageActorHandleType, TypeKind, ViewCallableId,
+    ArrayLength, CompileTimeCallableType, CompileTimeEnumType, CompileTimeFxType,
+    CompileTimeScalarType, EntityKind, GenericConstParameterId, GenericConstReference,
+    GenericEffectReference, GenericParameterKind, GenericParameterOwnerId, GenericScope,
+    GenericScopeError, GenericTypeReference, HandleState, IteratorStateKind, LifetimeScopeKind,
+    MapKind, StageActorHandleType, TypeKind, ViewCallableId,
 };
 
 /// Stable semantic identity of one complete checked type.
@@ -854,8 +854,7 @@ impl Encoder {
             }
             TypeKind::FocusPatch => self.tag(72),
             TypeKind::CharacterNominal(nominal) => {
-                self.tag(73);
-                self.character_nominal(nominal);
+                nominal.encode_runtime_semantic_identity(&mut self.bytes);
             }
             TypeKind::Named(name) => {
                 self.tag(74);
@@ -1287,24 +1286,6 @@ impl Encoder {
             depth: traversal::depth_u64(depth),
         })
     }
-    fn character_nominal(&mut self, nominal: &CharacterNominalType) {
-        match nominal {
-            CharacterNominalType::Look { character } => {
-                self.byte(0);
-                self.string(character.as_str());
-            }
-            CharacterNominalType::Part { character } => {
-                self.byte(1);
-                self.string(character.as_str());
-            }
-            CharacterNominalType::Variant { character, part } => {
-                self.byte(2);
-                self.string(character.as_str());
-                self.string(part.as_str());
-            }
-        }
-    }
-
     fn module_root(&mut self, root: ModulePathRoot) {
         match root {
             ModulePathRoot::ImplicitCrate => self.byte(0),

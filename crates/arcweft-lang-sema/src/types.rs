@@ -10,7 +10,6 @@ use core::fmt;
 use crate::registration::StandardStatementIngressTypeId;
 
 mod agent_fields;
-mod character_nominal;
 mod compatibility;
 pub(crate) mod constraints;
 mod digest;
@@ -26,8 +25,8 @@ mod projection_control;
 mod substitution;
 mod variant_payload;
 
+pub use arcweft_core::character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use arcweft_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
-pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub(crate) use compatibility::{
     NoopTypeCompatibilityControl, TypeCompatibilityControl, TypeCompatibilityFailure,
     TypeCompatibilityForbidden, TypeCompatibilityPolicy,

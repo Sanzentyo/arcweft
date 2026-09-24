@@ -1,4 +1,4 @@
-use arcweft_character::id::CharacterId;
+use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder;
 use arcweft_lang_syntax::{
     ast::{
@@ -14,7 +14,7 @@ use crate::{
         nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
     },
     registration::StandardStatementIngressTypeId,
-    types::{AcceptedNominalType, CharacterDialogueType, TypeKind},
+    types::{AcceptedNominalType, CharacterDialogueType, CharacterNominalType, TypeKind},
 };
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
@@ -418,6 +418,55 @@ fn character_dialogue_producer_and_type_kind_share_one_identity_authority() {
             .as_bytes(),
         any.runtime_semantic_identity().as_bytes()
     );
+}
+
+#[test]
+fn character_nominal_type_and_runtime_share_manifest_identity() {
+    let alice = CharacterId::try_new("character.alice").expect("character ID");
+    let bob = CharacterId::try_new("character.bob").expect("character ID");
+    let body = CharacterPartId::try_new("body").expect("part ID");
+    let face = CharacterPartId::try_new("face").expect("part ID");
+    let nominals = [
+        CharacterNominalType::Look {
+            character: alice.clone(),
+        },
+        CharacterNominalType::Part {
+            character: alice.clone(),
+        },
+        CharacterNominalType::Variant {
+            character: alice.clone(),
+            part: body.clone(),
+        },
+        CharacterNominalType::Look {
+            character: bob.clone(),
+        },
+        CharacterNominalType::Part {
+            character: bob.clone(),
+        },
+        CharacterNominalType::Variant {
+            character: bob,
+            part: body,
+        },
+        CharacterNominalType::Variant {
+            character: alice,
+            part: face,
+        },
+    ];
+    let mut identities = std::collections::BTreeSet::new();
+    for nominal in nominals {
+        let runtime = nominal.runtime_semantic_identity();
+        assert_eq!(
+            TypeKind::CharacterNominal(nominal)
+                .semantic_identity_digest()
+                .expect("manifest nominal type")
+                .as_bytes(),
+            runtime.as_bytes()
+        );
+        assert!(
+            identities.insert(runtime),
+            "family, character, and part must remain distinct"
+        );
+    }
 }
 
 #[test]

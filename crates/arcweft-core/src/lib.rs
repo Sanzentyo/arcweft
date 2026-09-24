@@ -2,6 +2,7 @@ pub mod aot;
 pub mod audio;
 pub mod awbc;
 mod canonical_varint;
+pub mod character_nominal;
 pub mod effect;
 pub mod effect_row;
 pub mod engine;
