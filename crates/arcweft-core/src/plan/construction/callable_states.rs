@@ -176,6 +176,9 @@ impl RuntimeCallableStateBuilder {
                         attached => attached,
                     };
                     let transition = match &source.transition {
+                        RuntimeCallableTransition::RequiresSpecialization => {
+                            RuntimeCallableTransition::RequiresSpecialization
+                        }
                         RuntimeCallableTransition::Retain { state, values } => {
                             RuntimeCallableTransition::Retain {
                                 state: *state,

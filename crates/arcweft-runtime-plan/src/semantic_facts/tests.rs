@@ -1748,6 +1748,7 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
         ),
         (
             RuntimeTypeShape::Function {
+                contract: Default::default(),
                 parameters: vec![unit_type()].into_boxed_slice(),
                 result: boxed_unit_type(),
             },
@@ -1989,7 +1990,7 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
         (
             RuntimeTypeShape::Array {
                 item: Box::new(unsupported_range_type()),
-                length: 1,
+                length: 1.into(),
             },
             RuntimeTypeProjectionStep::SequenceItem,
             RuntimeOperationalType::Sequence,
@@ -2093,7 +2094,7 @@ fn normalized_array_projection_retains_its_exact_length() {
         0x95,
         RuntimeTypeShape::Array {
             item: Box::new(unit_type()),
-            length: 2,
+            length: 2.into(),
         },
     );
     let expected = RuntimeCheckedType::Array {
@@ -2103,7 +2104,10 @@ fn normalized_array_projection_retains_its_exact_length() {
     assert_eq!(normalized.checked_type().unwrap(), expected);
     assert!(matches!(
         normalized.runtime_plan_type_seed().unwrap().projection(),
-        RuntimePlanTypeProjection::Array { length: 2, .. }
+        RuntimePlanTypeProjection::Array {
+            length: arcweft_core::plan::RuntimeArrayLength::Constant(2),
+            ..
+        }
     ));
 }
 
@@ -2423,6 +2427,7 @@ fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
     let unsupported_error = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([6; 32]),
         RuntimeTypeShape::Function {
+            contract: Default::default(),
             parameters: Box::new([]),
             result: Box::new(super::RuntimeNormalizedType::new(
                 RuntimeSemanticTypeId::from_bytes([7; 32]),

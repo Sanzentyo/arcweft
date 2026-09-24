@@ -243,12 +243,16 @@ impl AwbcProgram {
                     value: Box::new(value),
                 })
             }
-            AwbcRuntimeTypeShape::Array { item, length } => self
-                .checked_type_at_depth(*item, depth + 1, visiting)
-                .map(|item| RuntimeCheckedType::Array {
-                    item: Box::new(item),
-                    length: *length,
-                }),
+            AwbcRuntimeTypeShape::Array { item, length } => match length.constant() {
+                Some(length) => {
+                    self.checked_type_at_depth(*item, depth + 1, visiting)
+                        .map(|item| RuntimeCheckedType::Array {
+                            item: Box::new(item),
+                            length,
+                        })
+                }
+                None => Err(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 }),
+            },
             AwbcRuntimeTypeShape::Tuple(items) => items
                 .iter()
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
@@ -315,6 +319,7 @@ impl AwbcProgram {
             | AwbcRuntimeTypeShape::Stream { .. }
             | AwbcRuntimeTypeShape::Shared(_)
             | AwbcRuntimeTypeShape::Reference(_)
+            | AwbcRuntimeTypeShape::BoundType(_)
             | AwbcRuntimeTypeShape::Function { .. }
             | AwbcRuntimeTypeShape::Dynamic => {
                 Err(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 })

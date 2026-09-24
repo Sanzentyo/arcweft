@@ -30,8 +30,8 @@ use arcweft_core::{
         RuntimeCallablePosition, RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
         RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeEntryKind,
         RuntimeEntrySpec, RuntimeEntryTarget, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
-        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
-        RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionTypeContract,
+        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     runtime_id::RuntimeCallableStateId,
     task::RuntimeProgramOwner,
@@ -1243,6 +1243,7 @@ fn callable_awbc_program() -> AwbcProgram {
     program.runtime_types.push(AwbcRuntimeType::new(
         RuntimeSemanticTypeId::from_bytes([0x45; 32]),
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: Vec::new(),
             result: AwbcTypeId(0),
         },

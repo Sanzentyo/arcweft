@@ -160,7 +160,9 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 check_index(program.runtime_types.len(), key.0, "runtime_types", &at)?;
                 check_index(program.runtime_types.len(), value.0, "runtime_types", &at)?;
             }
-            AwbcRuntimeTypeShape::Function { parameters, result } => {
+            AwbcRuntimeTypeShape::Function {
+                parameters, result, ..
+            } => {
                 for parameter in parameters {
                     check_index(
                         program.runtime_types.len(),
@@ -277,7 +279,8 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     });
                 }
             }
-            AwbcRuntimeTypeShape::Unit
+            AwbcRuntimeTypeShape::BoundType(_)
+            | AwbcRuntimeTypeShape::Unit
             | AwbcRuntimeTypeShape::Bool
             | AwbcRuntimeTypeShape::Int(_)
             | AwbcRuntimeTypeShape::UInt(_)
@@ -298,6 +301,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Dynamic => {}
         }
     }
+    verify_runtime_type_scopes(program)?;
     program
         .validate_type_graph()
         .map_err(|error| AwbcVerifyError::InvalidInvariant {
@@ -310,6 +314,54 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             at: "runtime type codec uses".to_owned(),
             message: error.to_string(),
         })
+}
+
+fn verify_runtime_type_scopes(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
+    for (index, owner) in program.runtime_types.iter().enumerate() {
+        let at = format!("runtime type {index}");
+        let scope_validation = match owner.shape() {
+            AwbcRuntimeTypeShape::BoundType(reference) => owner.scope().validate_type(*reference),
+            AwbcRuntimeTypeShape::Array { length, .. } => owner.scope().validate_length(*length),
+            AwbcRuntimeTypeShape::Function { contract, .. } => {
+                contract.child_scope(owner.scope()).map(|_| ())
+            }
+            _ => Ok(()),
+        };
+        scope_validation.map_err(|error| AwbcVerifyError::InvalidInvariant {
+            at: at.clone(),
+            message: format!("runtime type has an invalid lexical scope: {error}"),
+        })?;
+        let child_scope = match owner.shape() {
+            AwbcRuntimeTypeShape::Function { contract, .. } => contract
+                .child_scope(owner.scope())
+                .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!("function type has an invalid child scope: {error}"),
+                })?,
+            _ => owner.scope().clone(),
+        };
+        let mut invalid_child = None;
+        owner.shape().visit_structural_type_refs(&mut |child| {
+            if invalid_child.is_some() {
+                return;
+            }
+            if let Some(row) = program.runtime_types.get(child.index())
+                && !row.scope().is_root()
+                && row.scope() != &child_scope
+            {
+                invalid_child = Some(child);
+            }
+        });
+        if let Some(child) = invalid_child {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: format!(
+                    "runtime type child {child:?} is neither closed nor in the owner's child scope"
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
@@ -1491,7 +1543,11 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
             at: at.clone(),
             message: message.to_owned(),
         };
-        let Some(AwbcRuntimeTypeShape::Function { parameters, result }) = program
+        let Some(AwbcRuntimeTypeShape::Function {
+            contract,
+            parameters,
+            result,
+        }) = program
             .runtime_types
             .get(state.function_type.index())
             .map(AwbcRuntimeType::shape)
@@ -1674,6 +1730,13 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
         }
 
         match &state.transition {
+            RuntimeCallableTransition::RequiresSpecialization => {
+                if contract.binder().is_empty() || !state.partials.is_empty() {
+                    return Err(invalid(
+                        "callable specialization state requires a generic function type and no partial rows",
+                    ));
+                }
+            }
             RuntimeCallableTransition::Retain {
                 state: target_id,
                 values,

@@ -14,7 +14,7 @@ use arcweft_core::awbc::vm::cancel_fiber;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     RuntimeCallableAttachedContract, RuntimeCallablePosition, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition,
+    RuntimeCallableTransition, RuntimeFunctionTypeContract,
 };
 use arcweft_core::runtime_id::RuntimeCallableStateId;
 use arcweft_core::task::RuntimeProgramOwner;
@@ -154,6 +154,7 @@ fn callable_project_call_program() -> AwbcProgram {
     program.runtime_types.push(AwbcRuntimeType::new(
         RuntimeSemanticTypeId::from_bytes([0x74; 32]),
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: Vec::new(),
             result: AwbcTypeId(0),
         },

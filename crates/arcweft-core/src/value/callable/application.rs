@@ -111,6 +111,12 @@ impl RuntimeCallableValue {
         semantic: impl Fn(T) -> Result<RuntimeSemanticTypeId, RuntimeCallableValueError>,
         body: impl Fn(F) -> RuntimeCallableBodyReference,
     ) -> Result<RuntimeCallableApplication, RuntimeCallableValueError> {
+        if matches!(
+            state.transition,
+            RuntimeCallableTransition::RequiresSpecialization
+        ) {
+            return Err(RuntimeCallableValueError::RequiresSpecialization { state: self.state });
+        }
         if state.parameters.len() != arguments.len() {
             return Err(RuntimeCallableValueError::ArgumentCount {
                 state: self.state,
@@ -176,6 +182,9 @@ impl RuntimeCallableValue {
             }
         };
         match &state.transition {
+            RuntimeCallableTransition::RequiresSpecialization => {
+                Err(RuntimeCallableValueError::RequiresSpecialization { state: self.state })
+            }
             RuntimeCallableTransition::Retain { state, values } => {
                 let values = self.project_inputs(values, arguments, attached.as_ref())?;
                 Ok(RuntimeCallableApplication::Complete(

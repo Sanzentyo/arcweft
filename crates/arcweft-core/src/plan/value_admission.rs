@@ -30,6 +30,8 @@ use super::{
 /// A value cannot be admitted under a plan-local type and the selected limits.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePlanValueAdmissionError {
+    #[error("scoped runtime type {ty} cannot admit an executable value")]
+    ScopedType { ty: RuntimePlanTypeId },
     #[error("runtime plan has no type {ty}")]
     UnknownType { ty: RuntimePlanTypeId },
     #[error("runtime value does not satisfy plan type {ty}: {source}")]
@@ -184,9 +186,12 @@ impl<'a> PlanValueValidation<'a> {
         ty: RuntimePlanTypeId,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimePlanValueAdmissionError> {
-        authority
+        let declaration = authority
             .get(ty)
             .ok_or(RuntimePlanValueAdmissionError::UnknownType { ty })?;
+        if !declaration.scope().is_root() {
+            return Err(RuntimePlanValueAdmissionError::ScopedType { ty });
+        }
         Ok(Self {
             authority,
             work: ValidationWork::new(limits),
@@ -401,10 +406,11 @@ impl<'a> PlanValueValidation<'a> {
                 }))
             }
             (Type::Array { item, length }, View::Sequence(actual)) => {
-                if u64::try_from(actual.len()) != Ok(*length) {
+                let length = length.constant().ok_or_else(|| Self::mismatch(value))?;
+                if u64::try_from(actual.len()) != Ok(length) {
                     return Err(RuntimeSchemaError::ArrayLength {
                         path: "$".to_owned(),
-                        expected: *length,
+                        expected: length,
                         actual: actual.len(),
                     });
                 }

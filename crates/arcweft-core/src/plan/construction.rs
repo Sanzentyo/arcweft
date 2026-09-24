@@ -678,7 +678,19 @@ impl RuntimePlanBuilder {
         let locals = locals.into_iter().collect::<Box<[_]>>();
         let declared_local_types = locals
             .iter()
-            .map(|local| resolve_semantic_type(&prepared_types, local.ty()))
+            .map(|local| {
+                let ty = resolve_semantic_type(&prepared_types, local.ty())?;
+                if !prepared_types
+                    .get(ty)
+                    .is_some_and(|row| row.scope().is_root())
+                {
+                    return Err(RuntimePlanBuildError::InvalidTypeProjection {
+                        context: "scoped local declaration type",
+                        ty,
+                    });
+                }
+                Ok(ty)
+            })
             .collect::<Result<Box<[_]>, _>>()?;
         let prepared_locals = self
             .locals

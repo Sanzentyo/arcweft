@@ -449,7 +449,7 @@ fn dense_sequences_and_arrays_share_width_and_value_budgets() {
             1,
             Type::Array {
                 item: semantic(2),
-                length: 3,
+                length: 3.into(),
             },
         ),
         seed(2, Type::Signed(RuntimeSignedIntWidth::I16)),

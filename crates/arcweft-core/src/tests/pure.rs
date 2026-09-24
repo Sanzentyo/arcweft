@@ -147,6 +147,7 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                 RuntimePlanTypeSeed::new(
                     function_ty,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([item_ty]),
                         result: item_ty,
                     },
@@ -169,7 +170,7 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                     array_ty,
                     RuntimePlanTypeProjection::Array {
                         item: item_ty,
-                        length: 3,
+                        length: 3.into(),
                     },
                 ),
                 RuntimePlanTypeSeed::new(
@@ -617,6 +618,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 RuntimePlanTypeSeed::new(
                     function_semantic_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([i64_semantic_type()]),
                         result: i64_semantic_type(),
                     },
@@ -741,6 +743,7 @@ fn structured_function_input_tuple_pattern_binds_body_locals() {
                 RuntimePlanTypeSeed::new(
                     function_semantic_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([tuple_semantic_type]),
                         result: i64_semantic_type(),
                     },
@@ -860,6 +863,7 @@ fn structured_function_input_sequence_rest_binds_one_logical_tail() {
                 RuntimePlanTypeSeed::new(
                     function_semantic_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([sequence_semantic_type]),
                         result: i64_semantic_type(),
                     },
@@ -980,6 +984,7 @@ fn structured_function_input_record_pattern_binds_by_declared_field_coordinate()
                 RuntimePlanTypeSeed::new(
                     function_semantic_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([record_semantic_type]),
                         result: i64_semantic_type(),
                     },
@@ -1085,6 +1090,7 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
                 RuntimePlanTypeSeed::new(
                     function_semantic_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([i64_semantic_type(), i64_semantic_type()]),
                         result: i64_semantic_type(),
                     },

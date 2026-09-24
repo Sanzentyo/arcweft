@@ -676,8 +676,9 @@ pub fn lower_runtime_plan_with_stats(
                         callable.role().callable.as_str()
                     ))
                 })?;
-            let RuntimeTypeShape::Function { result, parameters } =
-                instance.function_type().shape()
+            let RuntimeTypeShape::Function {
+                result, parameters, ..
+            } = instance.function_type().shape()
             else {
                 return Err(RuntimePlanLowerError::new(format!(
                     "Entry controller `{}` root instance is not a function",
@@ -3843,10 +3844,11 @@ fn lower_controller_callable(
         .cloned()
         .ok_or_else(|| RuntimePlanLowerError::new("entry controller callable state is absent"))?;
     let result_ty = match instance.function_type().shape() {
-        RuntimeTypeShape::Function { result, parameters }
-            if parameters.is_empty()
-                && instance.callable().attached_content_abi().is_none()
-                && instance.key().group().get() == 0 =>
+        RuntimeTypeShape::Function {
+            result, parameters, ..
+        } if parameters.is_empty()
+            && instance.callable().attached_content_abi().is_none()
+            && instance.key().group().get() == 0 =>
         {
             result.identity()
         }

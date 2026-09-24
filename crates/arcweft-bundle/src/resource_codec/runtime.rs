@@ -13,10 +13,16 @@ use arcweft_core::awbc::schema::{
     AwbcFrameSlotRole, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignature,
     AwbcSignedIntKind, AwbcStringId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
+use arcweft_core::effect_row::{
+    EffectDecisionDeclaration, EffectDecisionTarget, EffectMembershipDeclaration,
+};
 use arcweft_core::entry::{
     RuntimeCodecUse, RuntimeEnumTagStyle, RuntimeFieldCodecUse, RuntimeVariantCodecUse,
 };
 use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::plan::{
+    RuntimeArrayLength, RuntimeBoundEffectReference, RuntimeFunctionTypeContract, RuntimeTypeScope,
+};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -108,6 +114,7 @@ pub enum RuntimeValueKind {
     Reference,
     Function,
     Dynamic,
+    BoundType,
 }
 
 /// Compatibility label emitted by the owning type registry or derived
@@ -965,6 +972,7 @@ impl RuntimeValueKind {
             Self::Reference => 129,
             Self::Function => 130,
             Self::AgentValue => 131,
+            Self::BoundType => 132,
         }
     }
 
@@ -1001,6 +1009,7 @@ impl RuntimeValueKind {
             129 => Some(Self::Reference),
             130 => Some(Self::Function),
             131 => Some(Self::AgentValue),
+            132 => Some(Self::BoundType),
             _ => None,
         }
     }
@@ -1124,7 +1133,13 @@ fn runtime_type_layout_digest(
 ) -> Result<BundleDigest, SectionCodecError> {
     let mut transcript = CanonicalAwbcTranscript::new(b"arcweft.runtime-type-layout.v1\0");
     transcript.write_semantic_type(ty.semantic_identity());
+    transcript.write_type_scope(ty.scope())?;
     match ty.shape() {
+        AwbcRuntimeTypeShape::BoundType(reference) => {
+            transcript.write_tag(38);
+            transcript.write_u32(reference.depth());
+            transcript.write_u16(reference.slot());
+        }
         AwbcRuntimeTypeShape::Unit => transcript.write_tag(0),
         AwbcRuntimeTypeShape::Bool => transcript.write_tag(1),
         AwbcRuntimeTypeShape::Int(kind) => {
@@ -1267,7 +1282,7 @@ fn runtime_type_layout_digest(
         AwbcRuntimeTypeShape::Array { item, length } => {
             transcript.write_tag(28);
             transcript.write_type(program, *item)?;
-            transcript.write_u64(*length);
+            transcript.write_array_length(*length);
         }
         AwbcRuntimeTypeShape::Map { kind, key, value } => {
             transcript.write_tag(29);
@@ -1296,8 +1311,13 @@ fn runtime_type_layout_digest(
             transcript.write_tag(34);
             transcript.write_type(program, *item)?;
         }
-        AwbcRuntimeTypeShape::Function { parameters, result } => {
+        AwbcRuntimeTypeShape::Function {
+            contract,
+            parameters,
+            result,
+        } => {
             transcript.write_tag(35);
+            transcript.write_function_contract(contract)?;
             transcript.write_type_list(program, parameters)?;
             transcript.write_type(program, *result)?;
         }
@@ -1377,12 +1397,95 @@ impl CanonicalAwbcTranscript {
         self.bytes.push(value);
     }
 
+    fn write_u16(&mut self, value: u16) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
     fn write_u32(&mut self, value: u32) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
     fn write_u64(&mut self, value: u64) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_type_scope(&mut self, scope: &RuntimeTypeScope) -> Result<(), SectionCodecError> {
+        self.write_len(scope.binders().len())?;
+        for binder in scope.binders() {
+            self.write_u16(binder.types());
+            self.write_u16(binder.const_lengths());
+            self.write_u32(binder.effects());
+        }
+        Ok(())
+    }
+
+    fn write_array_length(&mut self, length: RuntimeArrayLength) {
+        match length {
+            RuntimeArrayLength::Constant(value) => {
+                self.write_u8(0);
+                self.write_u64(value);
+            }
+            RuntimeArrayLength::Bound(reference) => {
+                self.write_u8(1);
+                self.write_u32(reference.depth());
+                self.write_u16(reference.slot());
+            }
+        }
+    }
+
+    fn write_function_contract(
+        &mut self,
+        contract: &RuntimeFunctionTypeContract,
+    ) -> Result<(), SectionCodecError> {
+        let binder = contract.binder();
+        self.write_u16(binder.types());
+        self.write_u16(binder.const_lengths());
+        self.write_u32(binder.effects());
+        let predicate = EffectMembershipDeclaration::try_from(contract.predicate())
+            .map_err(|_| SectionCodecError::NonCanonicalTable("runtime_type_effect_predicate"))?;
+        self.write_effect_membership(&predicate)?;
+        let invocation = EffectMembershipDeclaration::try_from(contract.invocation())
+            .map_err(|_| SectionCodecError::NonCanonicalTable("runtime_type_effect_formula"))?;
+        self.write_effect_membership(&invocation)
+    }
+
+    fn write_effect_membership(
+        &mut self,
+        membership: &EffectMembershipDeclaration<RuntimeBoundEffectReference>,
+    ) -> Result<(), SectionCodecError> {
+        self.write_effect_decision(&membership.default)?;
+        self.write_len(membership.overrides.len())?;
+        for (effect, decision) in &membership.overrides {
+            self.write_str(effect.as_str())?;
+            self.write_effect_decision(decision)?;
+        }
+        Ok(())
+    }
+
+    fn write_effect_decision(
+        &mut self,
+        decision: &EffectDecisionDeclaration<RuntimeBoundEffectReference>,
+    ) -> Result<(), SectionCodecError> {
+        self.write_len(decision.nodes.len())?;
+        for node in &decision.nodes {
+            self.write_u32(node.variable.depth());
+            self.write_u32(node.variable.slot());
+            self.write_effect_decision_target(node.low);
+            self.write_effect_decision_target(node.high);
+        }
+        self.write_effect_decision_target(decision.root);
+        Ok(())
+    }
+
+    fn write_effect_decision_target(&mut self, target: EffectDecisionTarget) {
+        match target {
+            EffectDecisionTarget::False => self.write_u8(0),
+            EffectDecisionTarget::True => self.write_u8(1),
+            EffectDecisionTarget::Node(index) => {
+                self.write_u8(2);
+                self.write_u32(index);
+            }
+        }
     }
 
     fn write_len(&mut self, value: usize) -> Result<(), SectionCodecError> {
@@ -1683,6 +1786,7 @@ const fn unsigned_int_kind_tag(kind: AwbcUnsignedIntKind) -> u8 {
 
 fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
     match ty.shape() {
+        AwbcRuntimeTypeShape::BoundType(_) => RuntimeValueKind::BoundType,
         AwbcRuntimeTypeShape::Unit => RuntimeValueKind::Unit,
         AwbcRuntimeTypeShape::Bool => RuntimeValueKind::Bool,
         AwbcRuntimeTypeShape::Int(_) => RuntimeValueKind::SignedInteger,
@@ -1913,6 +2017,8 @@ fn enum_symbol_specs() -> impl Iterator<Item = (u32, &'static str)> {
         (128, "shared"),
         (129, "reference"),
         (130, "function"),
+        (131, "agent_value"),
+        (132, "bound_type"),
         (201, "flow"),
         (202, "pure_helper"),
         (203, "trait_method"),
@@ -2959,6 +3065,82 @@ mod opaque_runtime_type_tests {
             assert_eq!(kind.encoded(), encoded);
             assert_eq!(RuntimeValueKind::from_encoded(encoded), Some(kind));
         }
-        assert_eq!(RuntimeValueKind::from_encoded(132), None);
+        assert_eq!(RuntimeValueKind::BoundType.encoded(), 132);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(132),
+            Some(RuntimeValueKind::BoundType)
+        );
+    }
+
+    #[test]
+    fn bound_type_layout_commits_its_scope_and_projects_a_distinct_value_kind() {
+        use arcweft_core::plan::{RuntimeTypeBinder, RuntimeTypeScope};
+
+        let identity = RuntimeSemanticTypeId::from_bytes([91; 32]);
+        let declaration = |arity| {
+            let scope = RuntimeTypeScope::root()
+                .enter(RuntimeTypeBinder::new(arity, 0, 0))
+                .expect("one binder is within the type depth limit");
+            let reference = scope
+                .bound_type(0, 0)
+                .expect("the binder admits its first type parameter");
+            AwbcRuntimeType::new(identity, AwbcRuntimeTypeShape::BoundType(reference))
+                .with_scope(scope)
+        };
+        let first = declaration(1);
+        let second = declaration(2);
+        assert_ne!(
+            runtime_type_layout_digest(&AwbcProgram::default(), &first)
+                .expect("bound type layout is canonical"),
+            runtime_type_layout_digest(&AwbcProgram::default(), &second)
+                .expect("bound type layout is canonical")
+        );
+        assert_eq!(
+            runtime_type_declaration(&AwbcProgram::default(), &first)
+                .expect("bound type declaration projects")
+                .value_kind,
+            RuntimeValueKind::BoundType
+        );
+    }
+
+    #[test]
+    fn function_layout_commits_its_effect_binder_contract() {
+        use arcweft_core::effect_row::{EffectFormula, EffectPredicate, EffectSet};
+        use arcweft_core::plan::{RuntimeTypeBinder, RuntimeTypeScope};
+
+        let binder = RuntimeTypeBinder::new(0, 0, 1);
+        let scope = RuntimeTypeScope::root()
+            .enter(binder)
+            .expect("one binder is within the type depth limit");
+        let effect = scope
+            .bound_effect(0, 0)
+            .expect("the binder admits its first effect parameter");
+        let contract_with_effect = RuntimeFunctionTypeContract::new(
+            binder,
+            EffectPredicate::unconstrained(),
+            EffectFormula::literal(EffectSet::new(), Some(effect)),
+        );
+        let contract_without_effect = RuntimeFunctionTypeContract::new(
+            binder,
+            EffectPredicate::unconstrained(),
+            EffectFormula::empty(),
+        );
+        let layout = |contract| {
+            let mut program = AwbcProgram::default();
+            program.runtime_types.push(AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([92; 32]),
+                AwbcRuntimeTypeShape::Function {
+                    contract,
+                    parameters: Vec::new(),
+                    result: AwbcTypeId(0),
+                },
+            ));
+            runtime_type_layout_digest(&program, &program.runtime_types[2])
+                .expect("function contract is canonical")
+        };
+        assert_ne!(
+            layout(contract_with_effect),
+            layout(contract_without_effect)
+        );
     }
 }

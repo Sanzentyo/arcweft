@@ -332,6 +332,7 @@ flow main() -> i64 {
             let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Function {
                 parameters,
                 result,
+                ..
             } = instance.function_type().shape()
             else {
                 panic!("closed instance function type")

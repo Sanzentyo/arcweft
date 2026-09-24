@@ -1193,6 +1193,7 @@ impl RuntimeClosureInstanceFact {
         let RuntimeTypeShape::Function {
             parameters: function_parameters,
             result,
+            ..
         } = function_type.shape()
         else {
             return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);

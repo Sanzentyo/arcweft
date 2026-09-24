@@ -318,7 +318,7 @@ impl SchemaVisitor<'_> for DefinitionComparison<'_, '_> {
                     length: expected, ..
                 },
                 Type::Array { length: actual, .. },
-            ) => expected == actual,
+            ) => Some(*expected) == actual.constant(),
             (Schema::Tuple(expected), Type::Tuple(actual))
             | (Schema::Choice(expected), Type::Choice(actual)) => expected.len() == actual.len(),
             (Schema::RecordValue { fields }, Type::Record(actual)) => {

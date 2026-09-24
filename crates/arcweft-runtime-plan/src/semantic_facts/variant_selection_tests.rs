@@ -36,6 +36,7 @@ fn variant_selection_preserves_agent_range_and_function_payloads() {
         ty(
             13,
             RuntimeTypeShape::Function {
+                contract: Default::default(),
                 parameters: Box::new([scalar.clone()]),
                 result: Box::new(scalar),
             },

@@ -260,6 +260,14 @@ impl EffectRow {
         self.formula.is_some()
     }
 
+    /// Canonical shared effect grammar. An annotation awaiting inference has
+    /// no formula; runtime projection must reject that unresolved state.
+    pub const fn formula(
+        &self,
+    ) -> Option<&arcweft_core::effect_row::EffectFormula<GenericEffectReference>> {
+        self.formula.as_ref()
+    }
+
     pub fn is_closed(&self) -> bool {
         self.formula.as_ref().is_some_and(EffectFormula::is_closed)
     }

@@ -33,6 +33,8 @@ pub struct RuntimeCallableValue {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeCallableValueError {
+    #[error("callable state {state} requires a checked type specialization before application")]
+    RequiresSpecialization { state: RuntimeCallableStateId },
     #[error("callable state {state} is absent from its program")]
     MissingState { state: RuntimeCallableStateId },
     #[error("callable state {state} refers to an absent type")]

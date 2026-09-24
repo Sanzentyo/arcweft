@@ -15,6 +15,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: string,
                     },

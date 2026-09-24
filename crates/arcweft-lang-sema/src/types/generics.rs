@@ -435,7 +435,9 @@ impl GenericScope {
         })
     }
 
-    pub(crate) fn with_binder(&self, binder: GenericBinder) -> Self {
+    /// Lexical scope of a function's children. Empty binders do not introduce
+    /// a depth; nonempty binders retain their exact three-namespace arity.
+    pub fn with_binder(&self, binder: GenericBinder) -> Self {
         if binder.is_empty() {
             return self.clone();
         }

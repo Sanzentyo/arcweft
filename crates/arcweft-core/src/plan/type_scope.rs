@@ -58,7 +58,7 @@ impl RuntimeTypeBinder {
 /// introduce a lexical level and cannot occur in this canonical inventory.
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
-pub struct RuntimeTypeScope(Box<[RuntimeTypeBinder]>);
+pub struct RuntimeTypeScope(Vec<RuntimeTypeBinder>);
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -68,6 +68,11 @@ pub struct RuntimeBoundTypeReference {
 }
 
 impl RuntimeBoundTypeReference {
+    /// Decodes an inert coordinate. The containing type declaration must
+    /// validate it against its actual lexical scope before publication.
+    pub(crate) const fn from_coordinates(depth: u32, slot: u16) -> Self {
+        Self { depth, slot }
+    }
     #[must_use]
     pub const fn depth(self) -> u32 {
         self.depth
@@ -86,6 +91,10 @@ pub struct RuntimeBoundConstReference {
 }
 
 impl RuntimeBoundConstReference {
+    /// Decodes an inert coordinate, without issuing lexical scope evidence.
+    pub(crate) const fn from_coordinates(depth: u32, slot: u16) -> Self {
+        Self { depth, slot }
+    }
     #[must_use]
     pub const fn depth(self) -> u32 {
         self.depth
@@ -104,6 +113,10 @@ pub struct RuntimeBoundEffectReference {
 }
 
 impl RuntimeBoundEffectReference {
+    /// Decodes an inert coordinate, without issuing lexical scope evidence.
+    pub(crate) const fn from_coordinates(depth: u32, slot: u32) -> Self {
+        Self { depth, slot }
+    }
     #[must_use]
     pub const fn depth(self) -> u32 {
         self.depth
@@ -143,8 +156,8 @@ pub enum RuntimeTypeScopeError {
 
 impl RuntimeTypeScope {
     #[must_use]
-    pub fn root() -> Self {
-        Self::default()
+    pub const fn root() -> Self {
+        Self(Vec::new())
     }
 
     pub fn try_from_binders(
@@ -157,7 +170,7 @@ impl RuntimeTypeScope {
         if binders.iter().any(|binder| binder.is_empty()) {
             return Err(RuntimeTypeScopeError::EmptyBinder);
         }
-        Ok(Self(binders))
+        Ok(Self(binders.into_vec()))
     }
 
     #[must_use]
@@ -187,7 +200,7 @@ impl RuntimeTypeScope {
         }
         let mut binders = self.0.to_vec();
         binders.push(binder);
-        Ok(Self(binders.into_boxed_slice()))
+        Ok(Self(binders))
     }
 
     fn binder(&self, depth: u32) -> Result<RuntimeTypeBinder, RuntimeTypeScopeError> {
@@ -276,6 +289,28 @@ pub struct RuntimeFunctionTypeContract {
     binder: RuntimeTypeBinder,
     predicate: EffectPredicate<RuntimeBoundEffectReference>,
     invocation: EffectFormula<RuntimeBoundEffectReference>,
+}
+
+impl Default for RuntimeFunctionTypeContract {
+    fn default() -> Self {
+        Self::monomorphic(EffectSet::default())
+    }
+}
+
+impl RuntimeArrayLength {
+    #[must_use]
+    pub const fn constant(self) -> Option<u64> {
+        match self {
+            Self::Constant(value) => Some(value),
+            Self::Bound(_) => None,
+        }
+    }
+}
+
+impl From<u64> for RuntimeArrayLength {
+    fn from(value: u64) -> Self {
+        Self::Constant(value)
+    }
 }
 
 impl RuntimeFunctionTypeContract {

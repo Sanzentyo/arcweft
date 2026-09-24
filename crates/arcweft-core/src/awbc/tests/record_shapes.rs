@@ -242,6 +242,7 @@ fn source_layout_and_structural_cycles_are_checked_at_their_own_boundaries() {
     for shape in [
         AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(2)]),
         AwbcRuntimeTypeShape::Function {
+            contract: crate::plan::RuntimeFunctionTypeContract::default(),
             parameters: vec![],
             result: AwbcTypeId(2),
         },

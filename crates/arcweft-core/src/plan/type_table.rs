@@ -24,6 +24,7 @@ pub const MAX_RUNTIME_PLAN_TYPE_DEPTH: usize = 64;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanTypeSeed {
     semantic_identity: RuntimeSemanticTypeId,
+    scope: super::RuntimeTypeScope,
     projection: RuntimePlanTypeProjection<RuntimeSemanticTypeId>,
     data_codec: Option<crate::entry::schema::RuntimeCodecUse>,
 }
@@ -36,6 +37,7 @@ impl RuntimePlanTypeSeed {
     ) -> Self {
         Self {
             semantic_identity,
+            scope: super::RuntimeTypeScope::root(),
             projection,
             data_codec: None,
         }
@@ -44,6 +46,17 @@ impl RuntimePlanTypeSeed {
     #[must_use]
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
         self.semantic_identity
+    }
+
+    #[must_use]
+    pub fn with_scope(mut self, scope: super::RuntimeTypeScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> &super::RuntimeTypeScope {
+        &self.scope
     }
 
     #[must_use]
@@ -64,11 +77,16 @@ impl RuntimePlanTypeSeed {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanTypeDeclaration {
     semantic_identity: RuntimeSemanticTypeId,
+    scope: super::RuntimeTypeScope,
     projection: RuntimePlanTypeProjection<RuntimePlanTypeId>,
     data_codec: Option<crate::entry::schema::RuntimeCodecUse>,
 }
 
 impl RuntimePlanTypeDeclaration {
+    #[must_use]
+    pub const fn scope(&self) -> &super::RuntimeTypeScope {
+        &self.scope
+    }
     #[must_use]
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
         self.semantic_identity
@@ -179,6 +197,7 @@ impl RuntimePlanTypeTable {
             .get(id)
             .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty: id })?;
         let checked = match &declaration.projection {
+            RuntimePlanTypeProjection::BoundType(_) => false,
             RuntimePlanTypeProjection::Never
             | RuntimePlanTypeProjection::Unit
             | RuntimePlanTypeProjection::Bool
@@ -195,9 +214,11 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::Nominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
-            RuntimePlanTypeProjection::Sequence { item, .. }
-            | RuntimePlanTypeProjection::Array { item, .. } => {
+            RuntimePlanTypeProjection::Sequence { item, .. } => {
                 self.is_checked_memoized(*item, memo)?
+            }
+            RuntimePlanTypeProjection::Array { item, length } => {
+                length.constant().is_some() && self.is_checked_memoized(*item, memo)?
             }
             RuntimePlanTypeProjection::Option { item, some_payload } => {
                 self.is_checked_memoized(*item, memo)?
@@ -304,6 +325,16 @@ impl PreparedRuntimePlanTypeBatch {
 /// Failure to admit one atomic semantic type graph batch.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimePlanTypeTableError {
+    #[error("semantic type {semantic_identity:?} has an invalid lexical scope: {source}")]
+    Scope {
+        semantic_identity: RuntimeSemanticTypeId,
+        source: super::RuntimeTypeScopeError,
+    },
+    #[error("semantic type {owner:?} has a child {child:?} from a different lexical scope")]
+    ChildScope {
+        owner: RuntimeSemanticTypeId,
+        child: RuntimeSemanticTypeId,
+    },
     #[error("semantic type {semantic_identity:?} has invalid codec-use metadata: {source}")]
     CodecUse {
         semantic_identity: RuntimeSemanticTypeId,
@@ -397,6 +428,7 @@ impl RuntimePlanTypeTableBuilder {
         for seed in &seeds {
             if let Some(index) = unique_indices.get(&seed.semantic_identity).copied() {
                 if unique[index].projection != seed.projection
+                    || unique[index].scope != seed.scope
                     || unique[index].data_codec != seed.data_codec
                 {
                     return Err(RuntimePlanTypeTableError::ConflictingProjection {
@@ -444,6 +476,7 @@ impl RuntimePlanTypeTableBuilder {
             let projection = rewrite_projection(&seed, &candidate_ids)?;
             let declaration = RuntimePlanTypeDeclaration {
                 semantic_identity: seed.semantic_identity,
+                scope: seed.scope.clone(),
                 projection,
                 data_codec: seed.data_codec.clone(),
             };
@@ -615,6 +648,12 @@ fn validate_candidate_graph(
                 semantic_identity: row.semantic_identity,
             });
         }
+        let child_scope = row.projection.child_scope(&row.scope).map_err(|source| {
+            RuntimePlanTypeTableError::Scope {
+                semantic_identity: row.semantic_identity,
+                source,
+            }
+        })?;
         for child_id in row.projection.children() {
             let child = declaration_index(*child_id).ok_or(
                 RuntimePlanTypeTableError::DanglingReference {
@@ -626,6 +665,13 @@ fn validate_candidate_graph(
                 return Err(RuntimePlanTypeTableError::DanglingReference {
                     owner: row.semantic_identity,
                     referenced: row.semantic_identity,
+                });
+            }
+            let child_row = &rows[child];
+            if !child_row.scope.is_root() && child_row.scope != child_scope {
+                return Err(RuntimePlanTypeTableError::ChildScope {
+                    owner: row.semantic_identity,
+                    child: child_row.semantic_identity,
                 });
             }
             edges[owner].push(child);
@@ -844,6 +890,9 @@ fn plan_type_id_for_index(index: usize) -> Result<RuntimePlanTypeId, RuntimePlan
         .map(RuntimePlanTypeId::from_accepted_ordinal)
         .ok_or(RuntimePlanTypeTableError::IdentityExhausted)
 }
+
+#[cfg(test)]
+mod scope_tests;
 
 #[cfg(test)]
 mod tests {

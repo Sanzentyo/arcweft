@@ -101,6 +101,9 @@ pub enum RuntimeCallableAttachedContract<T, F> {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum RuntimeCallableTransition<F, S = RuntimeCallableStateId> {
+    /// A residual scheme owns no executable body until a checked type use
+    /// chooses an admitted specialization of this same state.
+    RequiresSpecialization,
     Retain {
         state: S,
         values: Box<[RuntimeCallableInputSource]>,
@@ -197,6 +200,9 @@ impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
                 }
             },
             transition: match self.transition {
+                RuntimeCallableTransition::RequiresSpecialization => {
+                    RuntimeCallableTransition::RequiresSpecialization
+                }
                 RuntimeCallableTransition::Retain {
                     state: next,
                     values,
@@ -299,6 +305,9 @@ impl<T: Eq + Clone, F: Eq + Clone, S: Eq + Clone> RuntimeCallableStateDefinition
             attached => attached.clone(),
         };
         let transition = match &self.transition {
+            RuntimeCallableTransition::RequiresSpecialization => {
+                RuntimeCallableTransition::RequiresSpecialization
+            }
             RuntimeCallableTransition::Retain { state, values } => {
                 let Some(values) = project_row(values) else {
                     return false;
@@ -401,7 +410,12 @@ impl RuntimeCallableState {
                 .ok_or(RuntimeCallableStateError::InvalidType { state, role })
         };
         let invalid_layout = || RuntimeCallableStateError::InvalidLayout { state };
-        let Type::Function { parameters, result } = ty(self.function_type, "function")? else {
+        let Type::Function {
+            contract,
+            parameters,
+            result,
+        } = ty(self.function_type, "function")?
+        else {
             return Err(RuntimeCallableStateError::InvalidType {
                 state,
                 role: "function",
@@ -524,6 +538,11 @@ impl RuntimeCallableState {
             return Err(invalid_layout());
         }
         match &self.transition {
+            RuntimeCallableTransition::RequiresSpecialization => {
+                if contract.binder().is_empty() || !self.partials.is_empty() {
+                    return Err(invalid_layout());
+                }
+            }
             RuntimeCallableTransition::Retain {
                 state: target,
                 values,

@@ -33,6 +33,7 @@ fn captured_identity_plan() -> RuntimePlan {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([integer]),
                         result: integer,
                     },
@@ -178,6 +179,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                 RuntimePlanTypeSeed::new(
                     initial_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([integer, boolean]),
                         result: integer,
                     },
@@ -185,6 +187,7 @@ fn checked_partial_application_seals_retained_parameter_coordinates() {
                 RuntimePlanTypeSeed::new(
                     partial_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([boolean]),
                         result: integer,
                     },
@@ -292,6 +295,7 @@ fn rest_partial_plan(
                 RuntimePlanTypeSeed::new(
                     initial_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([unit, boolean]),
                         result: unit,
                     },
@@ -299,6 +303,7 @@ fn rest_partial_plan(
                 RuntimePlanTypeSeed::new(
                     partial_type,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([boolean]),
                         result: unit,
                     },

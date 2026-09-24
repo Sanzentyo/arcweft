@@ -26,12 +26,12 @@ fn fixture() -> RuntimePlanBuilder {
                 Type::Tuple(Box::new([identity(4)])),
                 Type::Array {
                     item: identity(4),
-                    length: 1,
+                    length: 1.into(),
                 },
                 Type::Tuple(Box::new([])),
                 Type::Array {
                     item: identity(4),
-                    length: 0,
+                    length: 0.into(),
                 },
                 Type::Sequence {
                     kind: RuntimePlanSequenceKind::Vec,

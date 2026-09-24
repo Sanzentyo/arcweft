@@ -170,12 +170,12 @@ fn collection_types_match_the_one_level_runtime_expansion() {
         AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)]),
         AwbcRuntimeTypeShape::Array {
             item: AwbcTypeId(0),
-            length: 1,
+            length: 1.into(),
         },
         AwbcRuntimeTypeShape::Tuple(Vec::new()),
         AwbcRuntimeTypeShape::Array {
             item: AwbcTypeId(0),
-            length: 0,
+            length: 0.into(),
         },
         AwbcRuntimeTypeShape::Sequence {
             kind: crate::plan::RuntimePlanSequenceKind::Vec,

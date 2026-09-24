@@ -76,7 +76,10 @@ fn verify_dialogue_effect_callable_state<'a>(
             at: at.to_owned(),
             message: "dialogue effect callback function type is absent".to_owned(),
         })?;
-    let AwbcRuntimeTypeShape::Function { parameters, result } = function_type.shape() else {
+    let AwbcRuntimeTypeShape::Function {
+        parameters, result, ..
+    } = function_type.shape()
+    else {
         return Err(AwbcVerifyError::InvalidInvariant {
             at: at.to_owned(),
             message: "dialogue effect callback state does not have a function type".to_owned(),
@@ -514,8 +517,10 @@ fn apply_instruction(
             let (item_ty, expected_len) = match runtime_shape(program, dst_ty) {
                 Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => (*item_ty, None),
                 Some(AwbcRuntimeTypeShape::Array { item, length }) => {
-                    let expected = usize::try_from(*length)
-                        .map_err(|_| AwbcVerifyError::ResultShapeMismatch { at: at.clone() })?;
+                    let expected = length
+                        .constant()
+                        .and_then(|length| usize::try_from(length).ok())
+                        .ok_or_else(|| AwbcVerifyError::ResultShapeMismatch { at: at.clone() })?;
                     (*item, Some(expected))
                 }
                 _ => return invalid_type(&at, "sequence destination"),
@@ -1503,7 +1508,7 @@ impl RuntimeAgentTypeContext for AwbcProgram {
     fn sequence_type(&self, ty: Self::Type) -> Option<(Self::Type, Option<u64>)> {
         match runtime_shape(self, ty)? {
             AwbcRuntimeTypeShape::Sequence { item, .. } => Some((*item, None)),
-            AwbcRuntimeTypeShape::Array { item, length } => Some((*item, Some(*length))),
+            AwbcRuntimeTypeShape::Array { item, length } => Some((*item, length.constant())),
             _ => None,
         }
     }
@@ -3310,7 +3315,10 @@ fn constant_matches_type(
             })
         }
         (AwbcConstant::Sequence(values), AwbcRuntimeTypeShape::Array { item, length }) => {
-            usize::try_from(*length).ok() == Some(values.len())
+            length
+                .constant()
+                .and_then(|length| usize::try_from(length).ok())
+                == Some(values.len())
                 && values.iter().all(|value| {
                     program.constants.get(value.index()).is_some_and(|value| {
                         constant_matches_type(program, value, *item, depth + 1)
@@ -3497,6 +3505,7 @@ pub(super) fn runtime_type_permits_copy(
                 | AwbcRuntimeTypeShape::Stream { .. }
                 | AwbcRuntimeTypeShape::Shared(_)
                 | AwbcRuntimeTypeShape::Reference(_)
+                | AwbcRuntimeTypeShape::BoundType(_)
                 | AwbcRuntimeTypeShape::Function { .. }
                 | AwbcRuntimeTypeShape::Dynamic,
             )

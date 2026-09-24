@@ -90,7 +90,9 @@ impl RuntimeAgentTypeContext for RuntimePlanBuilder {
     fn sequence_type(&self, ty: Self::Type) -> Option<(Self::Type, Option<u64>)> {
         match self.projection(ty).ok()? {
             RuntimePlanTypeProjection::Sequence { item, .. } => Some((*item, None)),
-            RuntimePlanTypeProjection::Array { item, length } => Some((*item, Some(*length))),
+            RuntimePlanTypeProjection::Array { item, length } => {
+                length.constant().map(|length| (*item, Some(length)))
+            }
             _ => None,
         }
     }
@@ -560,6 +562,7 @@ impl RuntimePlanBuilder {
                     RuntimePlanTypeProjection::Function {
                         parameters: expected,
                         result: expected_result,
+                        ..
                     } if expected.as_ref()
                         == input_sources
                             .iter()
@@ -663,8 +666,9 @@ impl RuntimePlanBuilder {
                 let source = self.lower_expression(*source)?;
                 let (input, output) = self.standard_map_item_projection(family, source.ty(), ty)?;
                 match self.projection(mapping.ty())? {
-                    RuntimePlanTypeProjection::Function { parameters, result }
-                        if parameters.as_ref() == [input] && *result == output => {}
+                    RuntimePlanTypeProjection::Function {
+                        parameters, result, ..
+                    } if parameters.as_ref() == [input] && *result == output => {}
                     _ => return invalid_projection("standard map callback", mapping.ty()),
                 }
                 RuntimeExprKind::StandardMap {
@@ -906,17 +910,24 @@ fn validate_sequence_length(expected: u64, actual: usize) -> Result<(), RuntimeP
 }
 
 impl RuntimePlanBuilder {
+    /// Resolves a physical value or ABI root. Scoped descendants remain in the
+    /// type table for logical callable schemes, but cannot escape their binder
+    /// into executable slots, expressions, patterns, or function results.
     pub(super) fn resolve_seed_type(
         &self,
         context: &'static str,
         semantic_identity: crate::pattern::RuntimeSemanticTypeId,
     ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
-        self.types.id_for_semantic(semantic_identity).ok_or(
+        let ty = self.types.id_for_semantic(semantic_identity).ok_or(
             RuntimePlanBuildError::UnknownSeedType {
                 context,
                 semantic_identity,
             },
-        )
+        )?;
+        if !self.types.get(ty).is_some_and(|row| row.scope().is_root()) {
+            return invalid_projection(context, ty);
+        }
+        Ok(ty)
     }
 
     fn projection(
@@ -965,7 +976,13 @@ impl RuntimePlanBuilder {
     ) -> Result<(RuntimePlanTypeId, Option<u64>), RuntimePlanBuildError> {
         match self.projection(ty)? {
             RuntimePlanTypeProjection::Sequence { item, .. } => Ok((*item, None)),
-            RuntimePlanTypeProjection::Array { item, length } => Ok((*item, Some(*length))),
+            RuntimePlanTypeProjection::Array { item, length } => length
+                .constant()
+                .map(|length| (*item, Some(length)))
+                .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
+                    context: "closed array length",
+                    ty,
+                }),
             _ => invalid_projection(context, ty),
         }
     }
@@ -1247,9 +1264,9 @@ impl RuntimePlanBuilder {
     ) -> Result<(RuntimeExpr, Vec<RuntimeCallArgument>), RuntimePlanBuildError> {
         let callee = self.lower_expression(callee)?;
         let (parameters, result) = match self.projection(callee.ty())? {
-            RuntimePlanTypeProjection::Function { parameters, result } => {
-                (parameters.clone(), *result)
-            }
+            RuntimePlanTypeProjection::Function {
+                parameters, result, ..
+            } => (parameters.clone(), *result),
             _ => return invalid_projection("function application callee", callee.ty()),
         };
         let args = self.lower_call_arguments(args)?;
@@ -1264,6 +1281,7 @@ impl RuntimePlanBuilder {
                 RuntimePlanTypeProjection::Function {
                     parameters: remaining,
                     result: remaining_result,
+                    ..
                 } if remaining.as_ref() == &parameters[actual.len()..]
                     && *remaining_result == result => {}
                 _ => return invalid_projection("partial function application result", result_type),
@@ -1330,12 +1348,14 @@ impl RuntimePlanBuilder {
                                 index,
                                 position: argument.abi_position(),
                             })?,
-                        RuntimePlanTypeProjection::Array { length, .. } => u32::try_from(*length)
-                            .map_err(|_| {
-                            RuntimePlanBuildError::InvalidCallArgumentPosition {
-                                index,
-                                position: argument.abi_position(),
-                            }
+                        RuntimePlanTypeProjection::Array { length, .. } => u32::try_from(
+                            length
+                                .constant()
+                                .expect("admitted executable array length is closed"),
+                        )
+                        .map_err(|_| RuntimePlanBuildError::InvalidCallArgumentPosition {
+                            index,
+                            position: argument.abi_position(),
                         })?,
                         _ => {
                             return Err(RuntimePlanBuildError::IndeterminateSpreadArgument {
@@ -1396,7 +1416,12 @@ impl RuntimePlanBuilder {
                         types.extend(items.iter().copied());
                     }
                     RuntimePlanTypeProjection::Array { item, length } => {
-                        let count = usize::try_from(*length).map_err(|_| {
+                        let count = usize::try_from(
+                            length
+                                .constant()
+                                .expect("admitted executable array length is closed"),
+                        )
+                        .map_err(|_| {
                             RuntimePlanBuildError::IndeterminateSpreadArgument {
                                 ty: argument.value().ty(),
                             }

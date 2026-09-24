@@ -385,9 +385,10 @@ impl RuntimePlan {
             }
             RuntimePlanTypeProjection::Array { item, length } => self
                 .checked_type_inner(*item, memo, visiting)?
-                .map(|item| RuntimeCheckedType::Array {
+                .zip(length.constant())
+                .map(|(item, length)| RuntimeCheckedType::Array {
                     item: Box::new(item),
-                    length: *length,
+                    length,
                 }),
             RuntimePlanTypeProjection::Nominal {
                 nominal,
@@ -462,7 +463,8 @@ impl RuntimePlan {
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)
             | RuntimePlanTypeProjection::Reference(_)
-            | RuntimePlanTypeProjection::Function { .. } => None,
+            | RuntimePlanTypeProjection::Function { .. }
+            | RuntimePlanTypeProjection::BoundType(_) => None,
         };
         visiting.remove(&ty);
         memo.insert(ty, checked.clone());

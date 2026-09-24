@@ -186,6 +186,7 @@ pub enum RuntimeAgentTypeShape {
     reason = "checked type facts preserve a direct exhaustive semantic shape; they are immutable generation-bound inputs rather than a hot runtime value representation"
 )]
 pub enum RuntimeTypeShape {
+    BoundType(arcweft_core::plan::RuntimeBoundTypeReference),
     Unit,
     Never,
     Bool,
@@ -208,7 +209,7 @@ pub enum RuntimeTypeShape {
     },
     Array {
         item: Box<RuntimeNormalizedType>,
-        length: usize,
+        length: arcweft_core::plan::RuntimeArrayLength,
     },
     Map {
         kind: RuntimePlanMapKind,
@@ -242,6 +243,7 @@ pub enum RuntimeTypeShape {
     Shared(Box<RuntimeNormalizedType>),
     Reference(Box<RuntimeNormalizedType>),
     Function {
+        contract: arcweft_core::plan::RuntimeFunctionTypeContract,
         parameters: Box<[RuntimeNormalizedType]>,
         result: Box<RuntimeNormalizedType>,
     },
@@ -351,6 +353,7 @@ impl RuntimeTypeProjectionPath {
 /// Closed diagnostic category for shapes outside the checked value algebra.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeUnsupportedTypeShape {
+    Bound,
     Range,
     Iterator,
     Need,
@@ -395,6 +398,7 @@ pub enum RuntimeCheckedTypeProjectionError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeNormalizedType {
     identity: RuntimeSemanticTypeId,
+    scope: arcweft_core::plan::RuntimeTypeScope,
     shape: RuntimeTypeShape,
 }
 
@@ -488,7 +492,20 @@ pub(crate) enum RuntimeNormalizedVariantSelectionError {
 
 impl RuntimeNormalizedType {
     pub const fn new(identity: RuntimeSemanticTypeId, shape: RuntimeTypeShape) -> Self {
-        Self { identity, shape }
+        Self {
+            identity,
+            scope: arcweft_core::plan::RuntimeTypeScope::root(),
+            shape,
+        }
+    }
+
+    pub fn with_scope(mut self, scope: arcweft_core::plan::RuntimeTypeScope) -> Self {
+        self.scope = scope;
+        self
+    }
+
+    pub const fn scope(&self) -> &arcweft_core::plan::RuntimeTypeScope {
+        &self.scope
     }
 
     pub const fn identity(&self) -> RuntimeSemanticTypeId {
@@ -610,15 +627,18 @@ impl RuntimeNormalizedType {
     pub fn runtime_plan_type_seed(
         &self,
     ) -> Result<RuntimePlanTypeSeed, RuntimeCheckedTypeProjectionError> {
-        Ok(RuntimePlanTypeSeed::new(
-            self.identity,
-            self.runtime_plan_type_projection(),
-        ))
+        Ok(
+            RuntimePlanTypeSeed::new(self.identity, self.runtime_plan_type_projection())
+                .with_scope(self.scope.clone()),
+        )
     }
 
     fn runtime_plan_type_projection(&self) -> RuntimePlanTypeProjection<RuntimeSemanticTypeId> {
         let child = |ty: &RuntimeNormalizedType| ty.identity();
         match self.shape() {
+            RuntimeTypeShape::BoundType(reference) => {
+                RuntimePlanTypeProjection::BoundType(*reference)
+            }
             RuntimeTypeShape::Never => RuntimePlanTypeProjection::Never,
             RuntimeTypeShape::Unit => RuntimePlanTypeProjection::Unit,
             RuntimeTypeShape::Bool => RuntimePlanTypeProjection::Bool,
@@ -641,8 +661,7 @@ impl RuntimeNormalizedType {
             },
             RuntimeTypeShape::Array { item, length } => RuntimePlanTypeProjection::Array {
                 item: child(item),
-                length: u64::try_from(*length)
-                    .expect("usize fits the u64 Arcweft runtime-plan contract"),
+                length: *length,
             },
             RuntimeTypeShape::Map { kind, key, value } => RuntimePlanTypeProjection::Map {
                 kind: *kind,
@@ -688,15 +707,18 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Reference(inner) => {
                 RuntimePlanTypeProjection::Reference(child(inner))
             }
-            RuntimeTypeShape::Function { parameters, result } => {
-                RuntimePlanTypeProjection::Function {
-                    parameters: parameters
-                        .iter()
-                        .map(RuntimeNormalizedType::identity)
-                        .collect(),
-                    result: child(result),
-                }
-            }
+            RuntimeTypeShape::Function {
+                contract,
+                parameters,
+                result,
+            } => RuntimePlanTypeProjection::Function {
+                contract: contract.clone(),
+                parameters: parameters
+                    .iter()
+                    .map(RuntimeNormalizedType::identity)
+                    .collect(),
+                result: child(result),
+            },
             RuntimeTypeShape::Nominal { nominal, arguments } => {
                 RuntimePlanTypeProjection::Nominal {
                     nominal: nominal.runtime_nominal_id(),
@@ -784,7 +806,9 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::BuiltinVariant { cases, .. } => {
                 cases.iter().filter_map(Option::as_ref).collect()
             }
-            RuntimeTypeShape::Function { parameters, result } => parameters
+            RuntimeTypeShape::Function {
+                parameters, result, ..
+            } => parameters
                 .iter()
                 .chain(std::iter::once(result.as_ref()))
                 .collect(),
@@ -795,7 +819,8 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Record(fields) => {
                 fields.iter().map(RuntimeRecordTypeField::ty).collect()
             }
-            RuntimeTypeShape::Never
+            RuntimeTypeShape::BoundType(_)
+            | RuntimeTypeShape::Never
             | RuntimeTypeShape::Unit
             | RuntimeTypeShape::Bool
             | RuntimeTypeShape::Signed(_)
@@ -840,8 +865,9 @@ impl RuntimeNormalizedType {
                 item: Box::new(
                     item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
                 ),
-                length: u64::try_from(*length)
-                    .expect("usize fits the u64 Arcweft runtime-plan contract"),
+                length: length
+                    .constant()
+                    .ok_or_else(|| self.unsupported(path, RuntimeUnsupportedTypeShape::Bound))?,
             },
             RuntimeTypeShape::Nominal { nominal, arguments } => RuntimeCheckedType::Nominal {
                 nominal: nominal.runtime_nominal_id(),
@@ -990,7 +1016,8 @@ impl RuntimeNormalizedType {
                     *persistence,
                 ),
             },
-            RuntimeTypeShape::Never
+            RuntimeTypeShape::BoundType(_)
+            | RuntimeTypeShape::Never
             | RuntimeTypeShape::Unit
             | RuntimeTypeShape::Bool
             | RuntimeTypeShape::Signed(_)
@@ -1062,6 +1089,7 @@ fn projection_index(index: usize) -> u32 {
 
 fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsupportedTypeShape> {
     match shape {
+        RuntimeTypeShape::BoundType(_) => Some(RuntimeUnsupportedTypeShape::Bound),
         RuntimeTypeShape::Range(_) => Some(RuntimeUnsupportedTypeShape::Range),
         RuntimeTypeShape::Iterator(_) => Some(RuntimeUnsupportedTypeShape::Iterator),
         RuntimeTypeShape::Need(_) => Some(RuntimeUnsupportedTypeShape::Need),
@@ -6200,7 +6228,10 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            let RuntimeTypeShape::Function { parameters, result } = expression_type.shape() else {
+            let RuntimeTypeShape::Function {
+                parameters, result, ..
+            } = expression_type.shape()
+            else {
                 return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
                     expression: *expression,
                 });
@@ -7701,7 +7732,9 @@ fn validate_pure_programs(
             .executable_owners(&HirRuntimeExecutableOwner::Closure(fact.closure()))
             .ok_or(RuntimeSemanticFactsError::InvalidPureProgram { program })?
             .capture_plan();
-        let Some(RuntimeTypeShape::Function { parameters, result }) = expression_types
+        let Some(RuntimeTypeShape::Function {
+            parameters, result, ..
+        }) = expression_types
             .get(&fact.closure())
             .map(RuntimeNormalizedType::shape)
         else {
@@ -8633,7 +8666,9 @@ fn validate_normalized_type(
                 .map(|_| ())
                 .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)
         }
-        RuntimeTypeShape::Function { parameters, result } => {
+        RuntimeTypeShape::Function {
+            parameters, result, ..
+        } => {
             for parameter in parameters {
                 validate_normalized_type(modules, parameter)?;
             }
@@ -8666,7 +8701,8 @@ fn validate_normalized_type(
                 .map(|_| ())
                 .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)
         }
-        RuntimeTypeShape::Unit
+        RuntimeTypeShape::BoundType(_)
+        | RuntimeTypeShape::Unit
         | RuntimeTypeShape::Never
         | RuntimeTypeShape::Bool
         | RuntimeTypeShape::Signed(_)
@@ -9113,6 +9149,7 @@ fn runtime_standard_map_matches_operands(
     let RuntimeTypeShape::Function {
         parameters,
         result: mapping_result,
+        ..
     } = mapping.ty().shape()
     else {
         return false;
@@ -9277,7 +9314,7 @@ fn runtime_call_projection_matches_type(operand: &RuntimeResolvedCallOperand) ->
                 (
                     RuntimeResolvedSpreadContainer::Array { len },
                     RuntimeTypeShape::Array { length, .. },
-                ) => len == length,
+                ) => u64::try_from(*len).ok() == length.constant(),
                 (
                     RuntimeResolvedSpreadContainer::MapValue { key, .. },
                     RuntimeTypeShape::Map { key: actual, .. },
@@ -9995,7 +10032,9 @@ fn validate_project_function_semantic_catalog(
                 tried,
                 pipe,
             } => {
-                let Some(RuntimeTypeShape::Function { parameters, result }) = expression_types
+                let Some(RuntimeTypeShape::Function {
+                    parameters, result, ..
+                }) = expression_types
                     .get(&owner)
                     .map(RuntimeNormalizedType::shape)
                 else {

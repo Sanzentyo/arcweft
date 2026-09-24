@@ -287,10 +287,17 @@ impl<'a> AwbcValueValidation<'a> {
                 Ok(Children::Repeated(Expected::Type(*item)))
             }
             (Type::Array { item, length }, View::Sequence(actual)) => {
-                if u64::try_from(actual.len()) != Ok(*length) {
+                let Some(expected) = length.constant() else {
+                    return Err(RuntimeSchemaError::Type {
+                        path: "$".to_owned(),
+                        expected: "array with a concrete length",
+                        actual: "array with a bound length",
+                    });
+                };
+                if u64::try_from(actual.len()) != Ok(expected) {
                     return Err(RuntimeSchemaError::ArrayLength {
                         path: "$".to_owned(),
-                        expected: *length,
+                        expected,
                         actual: actual.len(),
                     });
                 }

@@ -18,7 +18,11 @@ use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
-use crate::plan::{RuntimeAgentOperationalType, RuntimeLineId, RuntimePlanSequenceKind};
+use crate::plan::{
+    RuntimeAgentOperationalType, RuntimeArrayLength, RuntimeBoundConstReference,
+    RuntimeBoundTypeReference, RuntimeFunctionTypeContract, RuntimeLineId, RuntimePlanSequenceKind,
+    RuntimeTypeBinder, RuntimeTypeScope,
+};
 use crate::value::{
     RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
     RuntimeRecordFieldId,
@@ -72,6 +76,101 @@ impl Wire for AwbcDigest {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         <[u8; 32]>::read_wire(reader).map(Self)
+    }
+}
+
+impl Wire for RuntimeTypeBinder {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.types().write_wire(writer)?;
+        self.const_lengths().write_wire(writer)?;
+        self.effects().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self::new(
+            u16::read_wire(reader)?,
+            u16::read_wire(reader)?,
+            u32::read_wire(reader)?,
+        ))
+    }
+}
+
+impl Wire for RuntimeTypeScope {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_table(self.binders())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let count = reader.read_len()?;
+        Reader::check_limit(
+            "runtime_type_scope_depth",
+            count,
+            crate::plan::MAX_RUNTIME_PLAN_TYPE_DEPTH,
+        )?;
+        let binders = reader.read_items(count)?;
+        Self::try_from_binders(binders.into_boxed_slice()).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "runtime type scope",
+                message: error.to_string(),
+                offset: reader.offset(),
+            }
+        })
+    }
+}
+
+pub(super) fn read_bound_type_reference(
+    reader: &mut Reader<'_>,
+) -> Result<RuntimeBoundTypeReference, AwbcCodecError> {
+    let depth = u32::read_wire(reader)?;
+    let slot = u16::read_wire(reader)?;
+    Ok(RuntimeBoundTypeReference::from_coordinates(depth, slot))
+}
+
+pub(super) fn read_bound_const_reference(
+    reader: &mut Reader<'_>,
+) -> Result<RuntimeBoundConstReference, AwbcCodecError> {
+    let depth = u32::read_wire(reader)?;
+    let slot = u16::read_wire(reader)?;
+    Ok(RuntimeBoundConstReference::from_coordinates(depth, slot))
+}
+
+pub(super) fn read_bound_effect_reference(
+    reader: &mut Reader<'_>,
+) -> Result<crate::plan::RuntimeBoundEffectReference, AwbcCodecError> {
+    let depth = u32::read_wire(reader)?;
+    let slot = u32::read_wire(reader)?;
+    Ok(crate::plan::RuntimeBoundEffectReference::from_coordinates(
+        depth, slot,
+    ))
+}
+
+impl Wire for RuntimeArrayLength {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Constant(value) => {
+                writer.write_u8(0);
+                value.write_wire(writer)?;
+            }
+            Self::Bound(reference) => {
+                writer.write_u8(1);
+                reference.depth().write_wire(writer)?;
+                reference.slot().write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Constant(u64::read_wire(reader)?)),
+            1 => Ok(Self::Bound(read_bound_const_reference(reader)?)),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "runtime array length",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -471,6 +570,7 @@ impl Wire for RuntimeOpaquePersistence {
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.semantic_identity().write_wire(writer)?;
+        self.scope().write_wire(writer)?;
         write_runtime_type_shape(self.shape(), writer)?;
         match self.data_codec() {
             Some(codec) => {
@@ -491,8 +591,10 @@ impl Wire for AwbcRuntimeType {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let semantic_identity = crate::pattern::RuntimeSemanticTypeId::read_wire(reader)?;
+        let scope = RuntimeTypeScope::read_wire(reader)?;
         let offset = reader.offset();
         let shape = match reader.read_u8()? {
+            38 => AwbcRuntimeTypeShape::BoundType(read_bound_type_reference(reader)?),
             0 => AwbcRuntimeTypeShape::Unit,
             1 => AwbcRuntimeTypeShape::Bool,
             2 => AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::read_wire(reader)?),
@@ -552,7 +654,7 @@ impl Wire for AwbcRuntimeType {
             30 => AwbcRuntimeTypeShape::Iterator(AwbcTypeId::read_wire(reader)?),
             31 => AwbcRuntimeTypeShape::Array {
                 item: AwbcTypeId::read_wire(reader)?,
-                length: u64::read_wire(reader)?,
+                length: RuntimeArrayLength::read_wire(reader)?,
             },
             32 => AwbcRuntimeTypeShape::Map {
                 kind: RuntimeMapKind::read_wire(reader)?,
@@ -566,6 +668,7 @@ impl Wire for AwbcRuntimeType {
             34 => AwbcRuntimeTypeShape::Shared(AwbcTypeId::read_wire(reader)?),
             35 => AwbcRuntimeTypeShape::Reference(AwbcTypeId::read_wire(reader)?),
             36 => AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::read_wire(reader)?,
                 parameters: Vec::<AwbcTypeId>::read_wire(reader)?,
                 result: AwbcTypeId::read_wire(reader)?,
             },
@@ -580,7 +683,7 @@ impl Wire for AwbcRuntimeType {
         };
         let data_codec = Option::<RuntimeCodecUse>::read_wire(reader)?;
         let data_codec_arguments = Option::<Vec<RuntimeCodecUse>>::read_wire(reader)?;
-        let mut ty = AwbcRuntimeType::new(semantic_identity, shape);
+        let mut ty = AwbcRuntimeType::new(semantic_identity, shape).with_scope(scope);
         if let Some(codec) = data_codec {
             ty = ty.with_data_codec(codec);
         }
@@ -755,12 +858,19 @@ fn write_runtime_type_composite_shape(
         }),
         AwbcRuntimeTypeShape::Shared(value) => write_tagged(writer, 34, value),
         AwbcRuntimeTypeShape::Reference(value) => write_tagged(writer, 35, value),
-        AwbcRuntimeTypeShape::Function { parameters, result } => {
-            write_tagged_fields(writer, 36, |writer| {
-                parameters.write_wire(writer)?;
-                result.write_wire(writer)
-            })
-        }
+        AwbcRuntimeTypeShape::Function {
+            contract,
+            parameters,
+            result,
+        } => write_tagged_fields(writer, 36, |writer| {
+            contract.write_wire(writer)?;
+            parameters.write_wire(writer)?;
+            result.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::BoundType(reference) => write_tagged_fields(writer, 38, |writer| {
+            reference.depth().write_wire(writer)?;
+            reference.slot().write_wire(writer)
+        }),
         AwbcRuntimeTypeShape::Unit
         | AwbcRuntimeTypeShape::Bool
         | AwbcRuntimeTypeShape::Int(_)
@@ -1221,6 +1331,7 @@ mod opaque_wire_tests {
         let mut writer = Writer::default();
         ty.write_wire(&mut writer).expect("encode opaque type");
         let mut expected = vec![9; 32];
+        expected.push(0); // Root runtime type scope.
         expected.extend([23, 7]);
         expected.extend([0, 0, 0, 0]);
         expected.extend([0, 0]);
@@ -1240,6 +1351,7 @@ mod opaque_wire_tests {
     #[test]
     fn opaque_type_decode_rejects_unknown_admission_tag() {
         let mut bytes = vec![0; 32];
+        bytes.push(0); // Root runtime type scope.
         bytes.extend([23, 0]);
         bytes.push(2);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
@@ -1249,7 +1361,7 @@ mod opaque_wire_tests {
             AwbcCodecError::UnknownTag {
                 kind: "opaque type admission",
                 tag: 2,
-                offset: 34,
+                offset: 35,
             }
         );
     }
@@ -1337,6 +1449,7 @@ mod map_kind_wire_tests {
             let bytes = writer.into_bytes();
 
             let mut expected = vec![0x5a; 32];
+            expected.push(0); // Root runtime type scope.
             expected.extend([32, tag, 0, 1]);
             expected.extend([0, 0]);
             assert_eq!(bytes, expected);
@@ -1353,6 +1466,7 @@ mod map_kind_wire_tests {
     #[test]
     fn map_runtime_type_wire_rejects_unknown_ordering_kind() {
         let mut bytes = vec![0x5a; 32];
+        bytes.push(0); // Root runtime type scope.
         bytes.extend([32, 3, 0, 1]);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
 
@@ -1361,7 +1475,7 @@ mod map_kind_wire_tests {
             AwbcCodecError::UnknownTag {
                 kind: "runtime map kind",
                 tag: 3,
-                offset: 33,
+                offset: 34,
             }
         );
     }

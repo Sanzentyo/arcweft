@@ -670,7 +670,10 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                             let index_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::UInt(
                                 AwbcUnsignedIntKind::USize,
                             ));
-                            for index in 0..*length {
+                            for index in 0..length
+                                .constant()
+                                .expect("admitted executable array length is closed")
+                            {
                                 let index_register = self.frame.temp(index_ty);
                                 let constant = self.inventory.constant_runtime_value_typed(
                                     &arcweft_core::value::RuntimeValue::usize(index),
@@ -1465,7 +1468,12 @@ fn lower_standard_array_map(
     else {
         unreachable!("admitted array map source is an Array")
     };
-    let length = usize::try_from(*length).expect("admitted array length fits this platform");
+    let length = usize::try_from(
+        length
+            .constant()
+            .expect("admitted executable array length is closed"),
+    )
+    .expect("admitted array length fits this platform");
     let index_ty = inventory.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
     let mut mapped_items = Vec::with_capacity(length);
     for index in 0..length {

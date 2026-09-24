@@ -2,14 +2,222 @@
 
 use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer};
+use crate::effect_row::{
+    EffectDecisionDeclaration, EffectDecisionNodeDeclaration, EffectDecisionTarget, EffectFormula,
+    EffectMembershipDeclaration, EffectPredicate,
+};
+use crate::plan::RuntimeBoundEffectReference;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
     RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
     RuntimeCallableParameterKind, RuntimeCallablePartialTransition, RuntimeCallablePosition,
     RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition,
+    RuntimeCallableTransition, RuntimeFunctionTypeContract, RuntimeTypeBinder,
 };
 use crate::runtime_id::RuntimeCallableStateId;
+use arcweft_id::EffectId;
+
+struct EffectOverride<V> {
+    effect: EffectId,
+    decision: EffectDecisionDeclaration<V>,
+}
+
+impl<V: Wire> Wire for EffectOverride<V> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_str(self.effect.as_str())?;
+        self.decision.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let label = reader.read_str()?;
+        let effect = EffectId::parse(label).map_err(|error| AwbcCodecError::InvalidMetadata {
+            kind: "effect membership",
+            message: error.to_string(),
+            offset,
+        })?;
+        Ok(Self {
+            effect,
+            decision: EffectDecisionDeclaration::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for EffectDecisionTarget {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::False => writer.write_u8(0),
+            Self::True => writer.write_u8(1),
+            Self::Node(index) => {
+                writer.write_u8(2);
+                index.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::False),
+            1 => Ok(Self::True),
+            2 => Ok(Self::Node(u32::read_wire(reader)?)),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "effect decision target",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl<V: Wire> Wire for EffectDecisionNodeDeclaration<V> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.variable.write_wire(writer)?;
+        self.low.write_wire(writer)?;
+        self.high.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            variable: V::read_wire(reader)?,
+            low: EffectDecisionTarget::read_wire(reader)?,
+            high: EffectDecisionTarget::read_wire(reader)?,
+        })
+    }
+}
+
+impl<V: Wire> Wire for EffectDecisionDeclaration<V> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.nodes.write_wire(writer)?;
+        self.root.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            nodes: Box::<[EffectDecisionNodeDeclaration<V>]>::read_wire(reader)?,
+            root: EffectDecisionTarget::read_wire(reader)?,
+        })
+    }
+}
+
+impl<V: Wire> Wire for EffectMembershipDeclaration<V> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.default.write_wire(writer)?;
+        writer.write_len(self.overrides.len())?;
+        for (effect, decision) in &self.overrides {
+            writer.write_str(effect.as_str())?;
+            decision.write_wire(writer)?;
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let default = EffectDecisionDeclaration::read_wire(reader)?;
+        let overrides = Vec::<EffectOverride<V>>::read_wire(reader)?
+            .into_iter()
+            .map(|row| (row.effect, row.decision))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Ok(Self { default, overrides })
+    }
+}
+
+fn encode_effect_membership<V: Clone + Ord>(
+    declaration: Result<EffectMembershipDeclaration<V>, crate::effect_row::EffectDeclarationError>,
+    writer: &mut Writer,
+    kind: &'static str,
+) -> Result<(), AwbcCodecError>
+where
+    V: Wire,
+{
+    declaration
+        .map_err(|error| AwbcCodecError::InvalidMetadata {
+            kind,
+            message: error.to_string(),
+            offset: writer.len(),
+        })?
+        .write_wire(writer)
+}
+
+fn decode_effect_formula(
+    reader: &mut Reader<'_>,
+) -> Result<EffectFormula<RuntimeBoundEffectReference>, AwbcCodecError> {
+    let offset = reader.offset();
+    let declaration = EffectMembershipDeclaration::read_wire(reader)?;
+    EffectFormula::try_from(declaration).map_err(|error| AwbcCodecError::InvalidMetadata {
+        kind: "function invocation effects",
+        message: error.to_string(),
+        offset,
+    })
+}
+
+fn decode_effect_predicate(
+    reader: &mut Reader<'_>,
+) -> Result<EffectPredicate<RuntimeBoundEffectReference>, AwbcCodecError> {
+    let offset = reader.offset();
+    let declaration = EffectMembershipDeclaration::read_wire(reader)?;
+    EffectPredicate::try_from(declaration).map_err(|error| AwbcCodecError::InvalidMetadata {
+        kind: "function effect predicate",
+        message: error.to_string(),
+        offset,
+    })
+}
+
+impl Wire for EffectFormula<RuntimeBoundEffectReference> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        encode_effect_membership(
+            EffectMembershipDeclaration::try_from(self),
+            writer,
+            "effect formula",
+        )
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        decode_effect_formula(reader)
+    }
+}
+
+impl Wire for EffectPredicate<RuntimeBoundEffectReference> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        encode_effect_membership(
+            EffectMembershipDeclaration::try_from(self),
+            writer,
+            "effect predicate",
+        )
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        decode_effect_predicate(reader)
+    }
+}
+
+impl Wire for RuntimeBoundEffectReference {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.depth().write_wire(writer)?;
+        self.slot().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        super::types::read_bound_effect_reference(reader)
+    }
+}
+
+impl Wire for RuntimeFunctionTypeContract {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.binder().write_wire(writer)?;
+        self.predicate().write_wire(writer)?;
+        self.invocation().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self::new(
+            RuntimeTypeBinder::read_wire(reader)?,
+            EffectPredicate::read_wire(reader)?,
+            EffectFormula::read_wire(reader)?,
+        ))
+    }
+}
 
 impl Wire for RuntimeCallableStateId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -291,6 +499,7 @@ impl<S: Wire> Wire for RuntimeCallablePartialTransition<S> {
 impl<F: Wire, S: Wire> Wire for RuntimeCallableTransition<F, S> {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
+            Self::RequiresSpecialization => writer.write_u8(2),
             Self::Retain { state, values } => {
                 writer.write_u8(0);
                 state.write_wire(writer)?;
@@ -313,6 +522,7 @@ impl<F: Wire, S: Wire> Wire for RuntimeCallableTransition<F, S> {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
         Ok(match reader.read_u8()? {
+            2 => Self::RequiresSpecialization,
             0 => Self::Retain {
                 state: S::read_wire(reader)?,
                 values: Box::<[RuntimeCallableInputSource]>::read_wire(reader)?,

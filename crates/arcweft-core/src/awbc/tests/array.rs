@@ -11,7 +11,7 @@ fn nested_array_lengths_are_checked_after_awbc_reification() {
             2,
             AwbcRuntimeTypeShape::Array {
                 item: AwbcTypeId(0),
-                length: 2,
+                length: 2.into(),
             },
         ),
         runtime_type(
@@ -49,7 +49,7 @@ fn array_length_survives_plan_projection_awbc_codec_and_checked_value_admission(
                         array_identity,
                         RuntimePlanTypeProjection::Array {
                             item: item_identity,
-                            length,
+                            length: length.into(),
                         },
                     ),
                 ],
@@ -76,7 +76,7 @@ fn array_length_survives_plan_projection_awbc_codec_and_checked_value_admission(
                 2,
                 AwbcRuntimeTypeShape::Array {
                     item: AwbcTypeId(0),
-                    length,
+                    length: length.into(),
                 },
             ),
         ];

@@ -141,6 +141,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                 RuntimePlanTypeSeed::new(
                     function_ty,
                     RuntimePlanTypeProjection::Function {
+                        contract: arcweft_core::plan::RuntimeFunctionTypeContract::default(),
                         parameters: Box::new([item_ty]),
                         result: item_ty,
                     },
@@ -163,7 +164,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                     array_ty,
                     RuntimePlanTypeProjection::Array {
                         item: item_ty,
-                        length: 3,
+                        length: 3.into(),
                     },
                 ),
                 RuntimePlanTypeSeed::new(

@@ -20,7 +20,7 @@ use crate::plan::{
     RuntimeCallableDefault, RuntimeCallableInputSource, RuntimeCallableParameterCoordinate,
     RuntimeCallableParameterInput, RuntimeCallableParameterKind, RuntimeCallablePosition,
     RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition, RuntimeFlowTargetError,
+    RuntimeCallableTransition, RuntimeFlowTargetError, RuntimeFunctionTypeContract,
 };
 use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
@@ -207,6 +207,89 @@ fn callable_state_id(index: usize) -> RuntimeCallableStateId {
     RuntimeCallableStateId::from_zero_based(index).expect("test callable-state index is valid")
 }
 
+#[test]
+fn awbc_function_scope_contract_bound_array_and_effect_refs_round_trip_with_scope_admission() {
+    use crate::effect_row::{EffectFormula, EffectPredicate, EffectSet};
+    use crate::plan::{
+        RuntimeArrayLength, RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope,
+    };
+
+    let binder = RuntimeTypeBinder::new(1, 1, 1);
+    let child_scope = RuntimeTypeScope::root()
+        .enter(binder)
+        .expect("one binder is within the type depth limit");
+    let type_reference = child_scope
+        .bound_type(0, 0)
+        .expect("the binder has one type parameter");
+    let const_reference = child_scope
+        .bound_const(0, 0)
+        .expect("the binder has one const parameter");
+    let effect_reference = child_scope
+        .bound_effect(0, 0)
+        .expect("the binder has one effect parameter");
+    let contract = RuntimeFunctionTypeContract::new(
+        binder,
+        EffectPredicate::unconstrained(),
+        EffectFormula::literal(EffectSet::new(), Some(effect_reference)),
+    );
+
+    let mut program = minimal_program();
+    program.runtime_types.extend([
+        runtime_type(3, AwbcRuntimeTypeShape::BoundType(type_reference))
+            .with_scope(child_scope.clone()),
+        runtime_type(
+            4,
+            AwbcRuntimeTypeShape::Array {
+                item: AwbcTypeId(2),
+                length: RuntimeArrayLength::Bound(const_reference),
+            },
+        )
+        .with_scope(child_scope.clone()),
+        runtime_type(
+            5,
+            AwbcRuntimeTypeShape::Function {
+                contract,
+                parameters: vec![AwbcTypeId(2), AwbcTypeId(3)],
+                result: AwbcTypeId(0),
+            },
+        ),
+    ]);
+
+    let bytes = program
+        .encode_canonical()
+        .expect("scoped function types have a canonical codec");
+    let decoded = AwbcProgram::decode_canonical(&bytes, AwbcDecodeBudget::default())
+        .expect("scoped function types decode");
+    assert_eq!(decoded.runtime_types, program.runtime_types);
+    assert_eq!(decoded.encode_canonical().unwrap(), bytes);
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("bound references are admitted against their exact owner scopes");
+
+    let wrong_child_scope = RuntimeTypeScope::root()
+        .enter(RuntimeTypeBinder::new(2, 1, 1))
+        .expect("one binder is within the type depth limit");
+    let mut mismatched = decoded.clone();
+    mismatched.runtime_types[2] = mismatched.runtime_types[2]
+        .clone()
+        .with_scope(wrong_child_scope);
+    assert!(
+        mismatched
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut escaped = decoded;
+    escaped.runtime_types[2] = escaped.runtime_types[2]
+        .clone()
+        .with_scope(RuntimeTypeScope::root());
+    assert!(
+        escaped
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+}
+
 fn step_with_callable_context(
     program: &std::sync::Arc<AwbcProgram>,
     fiber: &mut FiberState,
@@ -233,6 +316,7 @@ fn project_call_invoke_program() -> AwbcProgram {
         runtime_type(
             2,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: Vec::new(),
                 result: AwbcTypeId(0),
             },
@@ -403,6 +487,7 @@ fn project_call_fixed_program() -> AwbcProgram {
     program.runtime_types[1] = runtime_type(
         2,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![AwbcTypeId(0)],
             result: AwbcTypeId(0),
         },
@@ -466,6 +551,7 @@ fn project_call_two_fixed_parameters_program() -> AwbcProgram {
     program.runtime_types[1] = runtime_type(
         2,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![AwbcTypeId(0), AwbcTypeId(0)],
             result: AwbcTypeId(0),
         },
@@ -558,6 +644,7 @@ fn project_call_retained_program() -> AwbcProgram {
         runtime_type(
             2,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: vec![AwbcTypeId(0)],
                 result: AwbcTypeId(2),
             },
@@ -565,6 +652,7 @@ fn project_call_retained_program() -> AwbcProgram {
         runtime_type(
             3,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: vec![AwbcTypeId(0)],
                 result: AwbcTypeId(0),
             },
@@ -838,6 +926,7 @@ fn project_call_default_program() -> AwbcProgram {
         runtime_type(
             4,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: vec![AwbcTypeId(2)],
                 result: AwbcTypeId(0),
             },
@@ -1478,6 +1567,7 @@ fn project_call_verifier_rejects_invalid_callable_state_shapes() {
     dynamic_abi.runtime_types[1] = runtime_type(
         2,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![dynamic_type],
             result: AwbcTypeId(0),
         },
@@ -1514,6 +1604,7 @@ fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
     repeated_source.runtime_types.push(runtime_type(
         5,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![AwbcTypeId(0), AwbcTypeId(2)],
             result: AwbcTypeId(0),
         },
@@ -1722,6 +1813,7 @@ fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
     required_spread.runtime_types[3] = runtime_type(
         4,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![AwbcTypeId(0)],
             result: AwbcTypeId(0),
         },
@@ -1782,6 +1874,7 @@ fn project_call_verifier_rejects_invalid_retained_state_projections() {
     changed_parameters.runtime_types[2] = runtime_type(
         3,
         AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
             parameters: vec![AwbcTypeId(3)],
             result: AwbcTypeId(0),
         },
@@ -3656,6 +3749,7 @@ fn expression_apply_program(
             runtime_type(
                 2,
                 AwbcRuntimeTypeShape::Function {
+                    contract: RuntimeFunctionTypeContract::default(),
                     parameters: Vec::new(),
                     result: AwbcTypeId(0),
                 },
@@ -4850,6 +4944,7 @@ fn callable_instructions_capture_and_apply_program_owned_state() {
             runtime_type(
                 2,
                 AwbcRuntimeTypeShape::Function {
+                    contract: RuntimeFunctionTypeContract::default(),
                     parameters: Vec::new(),
                     result: AwbcTypeId(0),
                 },
@@ -5285,6 +5380,7 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
         runtime_type(
             3,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: vec![AwbcTypeId(0), AwbcTypeId(0)],
                 result: AwbcTypeId(0),
             },
@@ -5292,6 +5388,7 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
         runtime_type(
             4,
             AwbcRuntimeTypeShape::Function {
+                contract: RuntimeFunctionTypeContract::default(),
                 parameters: vec![AwbcTypeId(0)],
                 result: AwbcTypeId(0),
             },

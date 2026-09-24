@@ -1973,6 +1973,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                 RuntimePlanTypeSeed::new(
                     u32_mapping_ty,
                     RuntimePlanTypeProjection::Function {
+                        contract: arcweft_core::plan::RuntimeFunctionTypeContract::default(),
                         parameters: Box::new([u32_ty]),
                         result: u32_ty,
                     },

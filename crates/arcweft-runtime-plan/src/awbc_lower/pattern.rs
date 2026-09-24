@@ -168,7 +168,13 @@ pub(crate) fn preflight_plan_types(
     for (ty, _) in types {
         let result = plan_type_shape(inventory, plan, ty).and_then(|shape| {
             let (codec, arguments) = plan_type_codec_uses(plan, ty)?;
-            inventory.define_plan_type(ty, shape, codec, arguments)
+            let scope = plan
+                .type_table()
+                .get(ty)
+                .expect("reserved plan type")
+                .scope()
+                .clone();
+            inventory.define_plan_type(ty, shape, scope, codec, arguments)
         });
         match result {
             Ok(()) => {}
@@ -242,6 +248,9 @@ fn plan_type_shape(
         AwbcLowerDiagnostic::error(format!("type.{ty}"), "RuntimePlan type is absent")
     })?;
     let shape = match declaration.projection() {
+        RuntimePlanTypeProjection::BoundType(reference) => {
+            AwbcRuntimeTypeShape::BoundType(*reference)
+        }
         RuntimePlanTypeProjection::Never => AwbcRuntimeTypeShape::Never,
         RuntimePlanTypeProjection::Unit => AwbcRuntimeTypeShape::Unit,
         RuntimePlanTypeProjection::Bool => AwbcRuntimeTypeShape::Bool,
@@ -360,15 +369,18 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Reference(value) => {
             AwbcRuntimeTypeShape::Reference(reserved_plan_type(inventory, *value)?)
         }
-        RuntimePlanTypeProjection::Function { parameters, result } => {
-            AwbcRuntimeTypeShape::Function {
-                parameters: parameters
-                    .iter()
-                    .map(|parameter| reserved_plan_type(inventory, *parameter))
-                    .collect::<Result<Vec<_>, _>>()?,
-                result: reserved_plan_type(inventory, *result)?,
-            }
-        }
+        RuntimePlanTypeProjection::Function {
+            contract,
+            parameters,
+            result,
+        } => AwbcRuntimeTypeShape::Function {
+            contract: contract.clone(),
+            parameters: parameters
+                .iter()
+                .map(|parameter| reserved_plan_type(inventory, *parameter))
+                .collect::<Result<Vec<_>, _>>()?,
+            result: reserved_plan_type(inventory, *result)?,
+        },
         RuntimePlanTypeProjection::Nominal {
             nominal,
             layout,
@@ -615,7 +627,7 @@ pub(crate) fn intern_runtime_type(
         },
         RuntimeCheckedType::Array { item, length } => AwbcRuntimeTypeShape::Array {
             item: intern_runtime_type(inventory, item),
-            length: *length,
+            length: (*length).into(),
         },
         RuntimeCheckedType::Tuple(items) => AwbcRuntimeTypeShape::Tuple(
             items

@@ -1,5 +1,6 @@
 //! Canonical runtime-plan type projection graph.
 
+use super::{RuntimeArrayLength, RuntimeBoundTypeReference, RuntimeFunctionTypeContract};
 use crate::entry::{RuntimeMapKind, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
@@ -198,6 +199,7 @@ impl RuntimePlanSequenceKind {
 /// acquiring different shapes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimePlanTypeProjection<R> {
+    BoundType(RuntimeBoundTypeReference),
     Never,
     Unit,
     Bool,
@@ -220,7 +222,7 @@ pub enum RuntimePlanTypeProjection<R> {
     },
     Array {
         item: R,
-        length: u64,
+        length: RuntimeArrayLength,
     },
     Map {
         kind: RuntimeMapKind,
@@ -250,6 +252,7 @@ pub enum RuntimePlanTypeProjection<R> {
     Shared(R),
     Reference(R),
     Function {
+        contract: RuntimeFunctionTypeContract,
         parameters: Box<[R]>,
         result: R,
     },
@@ -340,6 +343,20 @@ pub enum RuntimeAgentTypeProjection<R> {
 }
 
 impl<R> RuntimePlanTypeProjection<R> {
+    /// Validates locally bound references and returns the scope of child edges.
+    pub fn child_scope(
+        &self,
+        incoming: &super::RuntimeTypeScope,
+    ) -> Result<super::RuntimeTypeScope, super::RuntimeTypeScopeError> {
+        match self {
+            Self::BoundType(reference) => incoming.validate_type(*reference)?,
+            Self::Array { length, .. } => incoming.validate_length(*length)?,
+            Self::Function { contract, .. } => return contract.child_scope(incoming),
+            _ => {}
+        }
+        Ok(incoming.clone())
+    }
+
     /// Child references in canonical declaration order.
     pub fn children(&self) -> Box<[&R]> {
         match self {
@@ -366,7 +383,9 @@ impl<R> RuntimePlanTypeProjection<R> {
                 error_payload,
             } => Box::new([key, value, value_payload, error_payload]),
             Self::Option { item, some_payload } => Box::new([item, some_payload]),
-            Self::Function { parameters, result } => parameters
+            Self::Function {
+                parameters, result, ..
+            } => parameters
                 .iter()
                 .chain(std::iter::once(result))
                 .collect::<Vec<_>>()
@@ -380,7 +399,8 @@ impl<R> RuntimePlanTypeProjection<R> {
                 .map(RuntimePlanRecordField::ty)
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
-            Self::Never
+            Self::BoundType(_)
+            | Self::Never
             | Self::Unit
             | Self::Bool
             | Self::Signed(_)
@@ -404,6 +424,7 @@ impl<R> RuntimePlanTypeProjection<R> {
         mut map: impl FnMut(R) -> Result<T, E>,
     ) -> Result<RuntimePlanTypeProjection<T>, E> {
         Ok(match self {
+            Self::BoundType(reference) => RuntimePlanTypeProjection::BoundType(reference),
             Self::Never => RuntimePlanTypeProjection::Never,
             Self::Unit => RuntimePlanTypeProjection::Unit,
             Self::Bool => RuntimePlanTypeProjection::Bool,
@@ -465,7 +486,12 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::ThreadHandle(child) => RuntimePlanTypeProjection::ThreadHandle(map(child)?),
             Self::Shared(child) => RuntimePlanTypeProjection::Shared(map(child)?),
             Self::Reference(child) => RuntimePlanTypeProjection::Reference(map(child)?),
-            Self::Function { parameters, result } => RuntimePlanTypeProjection::Function {
+            Self::Function {
+                contract,
+                parameters,
+                result,
+            } => RuntimePlanTypeProjection::Function {
+                contract,
                 parameters: try_map_boxed(parameters, &mut map)?,
                 result: map(result)?,
             },
@@ -523,7 +549,8 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Reference(_) => Some(RuntimeOperationalType::Reference),
             Self::Function { .. } => Some(RuntimeOperationalType::Function),
             Self::Agent(agent) => Some(RuntimeOperationalType::Agent(agent.operational_type())),
-            Self::Never
+            Self::BoundType(_)
+            | Self::Never
             | Self::Unit
             | Self::Bool
             | Self::Signed(_)

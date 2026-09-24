@@ -352,6 +352,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: unit,
                     },
@@ -359,6 +360,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
                 RuntimePlanTypeSeed::new(
                     outer,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: function,
                     },
@@ -488,6 +490,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([option]),
                         result: unit,
                     },
@@ -602,6 +605,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                     RuntimePlanTypeSeed::new(
                         function,
                         RuntimePlanTypeProjection::Function {
+                            contract: Default::default(),
                             parameters: Box::new([unit]),
                             result: unit,
                         },
@@ -749,6 +753,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([u32_ty]),
                         result: unit,
                     },
@@ -934,6 +939,7 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: string,
                     },
@@ -1019,6 +1025,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: unit,
                     },
@@ -1119,6 +1126,7 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
                 RuntimePlanTypeSeed::new(
                     function,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: unit,
                     },

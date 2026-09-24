@@ -94,6 +94,7 @@ fn nominal_record_wire_retains_shared_shape_explicit_id_and_optional_name() {
         row.write_wire(&mut writer).unwrap();
         let bytes = writer.into_bytes();
         let mut expected = vec![0x11; 32];
+        expected.push(0); // Root runtime type scope.
         expected.extend([24, 0]);
         expected.extend([0x22; 32]);
         expected.push(0); // Existing ordered generic-argument vector.

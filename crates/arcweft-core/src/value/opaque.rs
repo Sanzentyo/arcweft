@@ -1828,6 +1828,7 @@ mod tests {
         program.runtime_types.push(AwbcRuntimeType::new(
             RuntimeSemanticTypeId::from_bytes([0x45; 32]),
             AwbcRuntimeTypeShape::Function {
+                contract: Default::default(),
                 parameters: Vec::new(),
                 result: AwbcTypeId(0),
             },

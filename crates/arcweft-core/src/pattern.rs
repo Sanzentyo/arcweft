@@ -1725,7 +1725,8 @@ fn runtime_record_pattern_domain(
             .map(RuntimeRecordPatternDomain::ProjectNominal)
             .ok_or(RuntimePatternMatchError::MissingRecordDomain { ty }),
         RuntimePlanTypeProjection::Record(fields) => Ok(RuntimeRecordPatternDomain::Record(fields)),
-        RuntimePlanTypeProjection::Never
+        RuntimePlanTypeProjection::BoundType(_)
+        | RuntimePlanTypeProjection::Never
         | RuntimePlanTypeProjection::Unit
         | RuntimePlanTypeProjection::Bool
         | RuntimePlanTypeProjection::Signed(_)
@@ -2124,7 +2125,9 @@ fn runtime_value_matches_type_inner(
             runtime_sequence_matches_type(plan, *item, sequence, None, depth)
         }
         (RuntimePlanTypeProjection::Array { item, length }, RuntimeValue::Seq(sequence)) => {
-            runtime_sequence_matches_type(plan, *item, sequence, Some(*length), depth)
+            length.constant().is_some_and(|length| {
+                runtime_sequence_matches_type(plan, *item, sequence, Some(length), depth)
+            })
         }
         (RuntimePlanTypeProjection::Tuple(types), RuntimeValue::Tuple(values)) => {
             runtime_tuple_matches_type(plan, types, values, depth)

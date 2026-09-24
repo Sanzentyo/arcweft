@@ -8,8 +8,9 @@ use crate::pattern::{
     RuntimeSemanticTypeIdentityEncoder,
 };
 use crate::plan::{
-    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeCallableStateDefinition,
-    RuntimeDialogueContentEffectTrigger, RuntimeFlowTargetError, RuntimePlanSequenceKind,
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeArrayLength, RuntimeBoundTypeReference,
+    RuntimeCallableStateDefinition, RuntimeDialogueContentEffectTrigger, RuntimeFlowTargetError,
+    RuntimeFunctionTypeContract, RuntimePlanSequenceKind, RuntimeTypeScope,
 };
 use crate::runtime_id::{
     RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId,
@@ -544,7 +545,8 @@ fn visit_runtime_type_strings(
             }
         }
         AwbcRuntimeTypeShape::Opaque { producer, .. } => visit_string_id(producer, visitor),
-        AwbcRuntimeTypeShape::Unit
+        AwbcRuntimeTypeShape::BoundType(_)
+        | AwbcRuntimeTypeShape::Unit
         | AwbcRuntimeTypeShape::Bool
         | AwbcRuntimeTypeShape::Int(_)
         | AwbcRuntimeTypeShape::UInt(_)
@@ -696,6 +698,7 @@ impl Default for AwbcHeader {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcRuntimeType {
     semantic_identity: RuntimeSemanticTypeId,
+    scope: RuntimeTypeScope,
     shape: AwbcRuntimeTypeShape,
     data_codec: Option<RuntimeCodecUse>,
     data_codec_arguments: Option<Vec<RuntimeCodecUse>>,
@@ -709,10 +712,18 @@ impl AwbcRuntimeType {
     ) -> Self {
         Self {
             semantic_identity,
+            scope: RuntimeTypeScope::root(),
             shape,
             data_codec: None,
             data_codec_arguments: None,
         }
+    }
+
+    /// Attaches the incoming lexical scope for bound references in this row.
+    #[must_use]
+    pub fn with_scope(mut self, scope: RuntimeTypeScope) -> Self {
+        self.scope = scope;
+        self
     }
 
     /// Attaches source-proved codec policy for this exact type row occurrence.
@@ -749,6 +760,11 @@ impl AwbcRuntimeType {
     #[must_use]
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
         self.semantic_identity
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> &RuntimeTypeScope {
+        &self.scope
     }
 
     #[must_use]
@@ -833,6 +849,7 @@ impl AwbcStructuralRuntimeTypeKind {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcRuntimeTypeShape {
+    BoundType(RuntimeBoundTypeReference),
     Unit,
     Bool,
     Int(AwbcSignedIntKind),
@@ -902,7 +919,7 @@ pub enum AwbcRuntimeTypeShape {
     Iterator(AwbcTypeId),
     Array {
         item: AwbcTypeId,
-        length: u64,
+        length: RuntimeArrayLength,
     },
     Map {
         kind: RuntimeMapKind,
@@ -918,6 +935,7 @@ pub enum AwbcRuntimeTypeShape {
     Shared(AwbcTypeId),
     Reference(AwbcTypeId),
     Function {
+        contract: RuntimeFunctionTypeContract,
         parameters: Vec<AwbcTypeId>,
         result: AwbcTypeId,
     },
@@ -966,11 +984,14 @@ impl AwbcRuntimeTypeShape {
                 visit(*item);
                 visit(*error);
             }
-            Self::Function { parameters, result } => {
+            Self::Function {
+                parameters, result, ..
+            } => {
                 parameters.iter().copied().for_each(&mut *visit);
                 visit(*result);
             }
-            Self::Unit
+            Self::BoundType(_)
+            | Self::Unit
             | Self::Never
             | Self::Bool
             | Self::Int(_)

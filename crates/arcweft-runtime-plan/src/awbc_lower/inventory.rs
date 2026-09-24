@@ -320,6 +320,7 @@ impl AwbcInventory {
         self.intern_semantic_type(
             identity.finish(),
             AwbcRuntimeTypeShape::Function {
+                contract: Default::default(),
                 parameters: Vec::new(),
                 result,
             },
@@ -710,6 +711,7 @@ impl AwbcInventory {
         &mut self,
         plan_type: RuntimePlanTypeId,
         shape: AwbcRuntimeTypeShape,
+        scope: arcweft_core::plan::RuntimeTypeScope,
         data_codec: Option<arcweft_core::entry::RuntimeCodecUse>,
         data_codec_arguments: Option<Vec<arcweft_core::entry::RuntimeCodecUse>>,
     ) -> Result<(), AwbcLowerDiagnostic> {
@@ -720,7 +722,7 @@ impl AwbcInventory {
             )
         })?;
         if let Some(existing) = self.program.runtime_types.get(awbc_type.index()).cloned() {
-            if existing.shape() != &shape {
+            if existing.shape() != &shape || existing.scope() != &scope {
                 return Err(AwbcLowerDiagnostic::error(
                     format!("type.{plan_type}"),
                     "plan semantic identity conflicts with a canonical AWBC type shape",
@@ -765,7 +767,7 @@ impl AwbcInventory {
                     "reserved AWBC runtime type owner is absent",
                 )
             })?;
-        let mut row = AwbcRuntimeType::new(semantic_identity, shape);
+        let mut row = AwbcRuntimeType::new(semantic_identity, shape).with_scope(scope);
         if let Some(codec) = data_codec {
             row = row.with_data_codec(codec);
         }
@@ -877,7 +879,8 @@ impl AwbcInventory {
                     AwbcStructuralRuntimeTypeKind::Record { public_id, fields }.semantic_identity(),
                 );
             }
-            AwbcRuntimeTypeShape::Tuple(_)
+            AwbcRuntimeTypeShape::BoundType(_)
+            | AwbcRuntimeTypeShape::Tuple(_)
             | AwbcRuntimeTypeShape::Sequence { .. }
             | AwbcRuntimeTypeShape::Variant { .. }
             | AwbcRuntimeTypeShape::Choice(_)
@@ -1222,7 +1225,7 @@ impl AwbcInventory {
             (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Array { item, length }) => {
                 assert_eq!(
                     u64::try_from(values.len()).ok(),
-                    Some(*length),
+                    length.constant(),
                     "accepted array constant must match its exact AWBC length"
                 );
                 AwbcConstant::Sequence(

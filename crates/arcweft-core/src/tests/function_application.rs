@@ -30,6 +30,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
                 RuntimePlanTypeSeed::new(
                     inner,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([unit]),
                         result: unit,
                     },
@@ -37,6 +38,7 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
                 RuntimePlanTypeSeed::new(
                     outer,
                     RuntimePlanTypeProjection::Function {
+                        contract: Default::default(),
                         parameters: Box::new([]),
                         result: inner,
                     },

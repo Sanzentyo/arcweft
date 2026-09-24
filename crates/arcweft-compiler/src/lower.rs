@@ -23,6 +23,7 @@ mod reachability;
 mod scopes;
 #[path = "lower/text_proxy.rs"]
 mod text_proxy;
+mod type_scopes;
 #[path = "lower/variants.rs"]
 mod variants;
 
@@ -4068,10 +4069,6 @@ fn runtime_data_map_kind(kind: MapKind) -> arcweft_core::entry::RuntimeMapKind {
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the closed semantic type vocabulary must be projected exhaustively in one boundary"
-)]
 fn runtime_type_at(
     ty: &TypeKind,
     symbols: &ProjectSymbolTable,
@@ -4079,13 +4076,55 @@ fn runtime_type_at(
     analysis: &FinalSemanticAnalysis,
     path: &RuntimeTypeProjectionPath,
 ) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
-    let semantic_identity = ty.semantic_identity_digest()?;
+    runtime_type_scoped_at(
+        ty,
+        symbols,
+        world,
+        analysis,
+        path,
+        &arcweft_lang_sema::types::GenericScope::default(),
+    )
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the closed semantic type vocabulary must be projected exhaustively in one boundary"
+)]
+fn runtime_type_scoped_at(
+    ty: &TypeKind,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+    path: &RuntimeTypeProjectionPath,
+    incoming: &arcweft_lang_sema::types::GenericScope,
+) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
+    // Closed subterms are shared at the root; terms referring to an enclosing
+    // binder retain that exact lexical scope. This is checked weakening, not
+    // an alternate identity for an unresolved inference reference.
+    let root = arcweft_lang_sema::types::GenericScope::default();
+    let (scope, semantic_identity) = match ty.semantic_identity_digest() {
+        Ok(identity) => (&root, identity),
+        Err(_) => (incoming, ty.semantic_identity_digest_in_scope(incoming)?),
+    };
+    let runtime_scope = type_scopes::scope(scope)?;
     let identity = RuntimeSemanticTypeId::from(semantic_identity);
-    let nested = |ty: &TypeKind| runtime_type_at(ty, symbols, world, analysis, path).map(Box::new);
+    let nested = |ty: &TypeKind| {
+        runtime_type_scoped_at(ty, symbols, world, analysis, path, scope).map(Box::new)
+    };
     let nested_at = |ty: &TypeKind, step| {
-        runtime_type_at(ty, symbols, world, analysis, &path.pushed(step)).map(Box::new)
+        runtime_type_scoped_at(ty, symbols, world, analysis, &path.pushed(step), scope)
+            .map(Box::new)
     };
     let shape = match ty {
+        TypeKind::GenericParam(arcweft_lang_sema::types::GenericTypeReference::Bound(
+            reference,
+        )) => RuntimeTypeShape::BoundType(
+            runtime_scope
+                .bound_type(reference.depth(), reference.slot())
+                .map_err(|error| RuntimeSemanticProjectionError::Type {
+                    reason: error.to_string(),
+                })?,
+        ),
         TypeKind::Unit => RuntimeTypeShape::Unit,
         TypeKind::Never => RuntimeTypeShape::Never,
         TypeKind::Bool => RuntimeTypeShape::Bool,
@@ -4185,26 +4224,29 @@ fn runtime_type_at(
         TypeKind::AgentResourceBody => RuntimeTypeShape::BuiltinVariant {
             owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentResourceBody,
             cases: vec![
-                Some(runtime_type_at(
+                Some(runtime_type_scoped_at(
                     &TypeKind::AgentValue,
                     symbols,
                     world,
                     analysis,
                     path,
+                    scope,
                 )?),
-                Some(runtime_type_at(
+                Some(runtime_type_scoped_at(
                     &TypeKind::String,
                     symbols,
                     world,
                     analysis,
                     path,
+                    scope,
                 )?),
-                Some(runtime_type_at(
+                Some(runtime_type_scoped_at(
                     &TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryBody),
                     symbols,
                     world,
                     analysis,
                     path,
+                    scope,
                 )?),
             ]
             .into_boxed_slice(),
@@ -4226,12 +4268,9 @@ fn runtime_type_at(
             kind: RuntimeSequenceKind::Vec,
             item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
         },
-        TypeKind::Array {
-            item,
-            len: ArrayLength::Const(length),
-        } => RuntimeTypeShape::Array {
+        TypeKind::Array { item, len } => RuntimeTypeShape::Array {
             item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
-            length: *length,
+            length: type_scopes::length(len, &runtime_scope)?,
         },
         TypeKind::Slice(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Slice,
@@ -4300,17 +4339,39 @@ fn runtime_type_at(
         TypeKind::ThreadHandle(item) => RuntimeTypeShape::ThreadHandle(nested(item)?),
         TypeKind::Shared(item) => RuntimeTypeShape::Shared(nested(item)?),
         TypeKind::Function {
+            binder,
+            predicate,
             params,
             return_type,
-            ..
-        } => RuntimeTypeShape::Function {
-            parameters: params
-                .iter()
-                .map(|parameter| runtime_type(parameter, symbols, world, analysis))
-                .collect::<Result<Vec<_>, _>>()?
-                .into_boxed_slice(),
-            result: nested(return_type)?,
-        },
+            effects,
+        } => {
+            let child_scope = scope.with_binder(*binder);
+            RuntimeTypeShape::Function {
+                contract: type_scopes::function(*binder, predicate, effects, &runtime_scope)?,
+                parameters: params
+                    .iter()
+                    .map(|parameter| {
+                        runtime_type_scoped_at(
+                            parameter,
+                            symbols,
+                            world,
+                            analysis,
+                            path,
+                            &child_scope,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+                result: Box::new(runtime_type_scoped_at(
+                    return_type,
+                    symbols,
+                    world,
+                    analysis,
+                    path,
+                    &child_scope,
+                )?),
+            }
+        }
         TypeKind::ProjectNominal(nominal) => {
             let semantic_type = semantic_identity;
             let projection = analysis
@@ -4332,7 +4393,9 @@ fn runtime_type_at(
                 arguments: nominal
                     .arguments()
                     .iter()
-                    .map(|argument| runtime_type(argument, symbols, world, analysis))
+                    .map(|argument| {
+                        runtime_type_scoped_at(argument, symbols, world, analysis, path, scope)
+                    })
                     .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice(),
             }
@@ -4380,7 +4443,7 @@ fn runtime_type_at(
                 .iter()
                 .enumerate()
                 .map(|(index, item)| {
-                    runtime_type_at(
+                    runtime_type_scoped_at(
                         item,
                         symbols,
                         world,
@@ -4388,6 +4451,7 @@ fn runtime_type_at(
                         &path.pushed(RuntimeTypeProjectionStep::TupleItem(projection_index(
                             index,
                         ))),
+                        scope,
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -4406,12 +4470,13 @@ fn runtime_type_at(
                                         .to_owned(),
                             }
                         })?;
-                        runtime_type_at(
+                        runtime_type_scoped_at(
                             field,
                             symbols,
                             world,
                             analysis,
                             &path.pushed(RuntimeTypeProjectionStep::TupleItem(ordinal)),
+                            scope,
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?
@@ -4421,12 +4486,13 @@ fn runtime_type_at(
                 fields
                     .iter()
                     .map(|field| {
-                        runtime_type_at(
+                        runtime_type_scoped_at(
                             field.ty(),
                             symbols,
                             world,
                             analysis,
                             &path.pushed(RuntimeTypeProjectionStep::RecordField(field.ordinal())),
+                            scope,
                         )
                         .map(|ty| RuntimeRecordTypeField::new(field.diagnostic_name(), ty))
                     })
@@ -4439,7 +4505,7 @@ fn runtime_type_at(
                 .iter()
                 .enumerate()
                 .map(|(index, item)| {
-                    runtime_type_at(
+                    runtime_type_scoped_at(
                         item,
                         symbols,
                         world,
@@ -4447,6 +4513,7 @@ fn runtime_type_at(
                         &path.pushed(RuntimeTypeProjectionStep::ChoiceAlternative(
                             projection_index(index),
                         )),
+                        scope,
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()?
@@ -4502,8 +4569,7 @@ fn runtime_type_at(
                 arguments: Box::new([]),
             }
         }
-        TypeKind::Array { .. }
-        | TypeKind::TextCluster
+        TypeKind::TextCluster
         | TypeKind::DisplayText
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
@@ -4523,7 +4589,7 @@ fn runtime_type_at(
             });
         }
     };
-    Ok(RuntimeNormalizedType::new(identity, shape))
+    Ok(RuntimeNormalizedType::new(identity, shape).with_scope(runtime_scope))
 }
 
 fn standard_line_handle_producer(kind: RuntimeHandleKind) -> RuntimeOpaqueTypeProducerId {

@@ -3208,7 +3208,10 @@ pub(crate) fn runtime_value_matches_type(
             .iter()
             .all(|value| runtime_value_matches_type(program, value, *item, depth + 1)),
         (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Array { item, length }) => {
-            values.len() == usize::try_from(*length).unwrap_or(usize::MAX)
+            length
+                .constant()
+                .and_then(|length| usize::try_from(length).ok())
+                == Some(values.len())
                 && values
                     .clone()
                     .into_values()
