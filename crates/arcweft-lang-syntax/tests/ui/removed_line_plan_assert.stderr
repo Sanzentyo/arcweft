@@ -2,4 +2,6 @@ error[E0432]: unresolved import `arcweft_lang_syntax::ast::line_plan::LinePlanIt
  --> tests/ui/removed_line_plan_assert.rs:1:5
   |
 1 | use arcweft_lang_syntax::ast::line_plan::LinePlanItem;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `LinePlanItem` in `ast::line_plan`
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------
+  |                                          |
+  |                                          no `LinePlanItem` in `ast::line_plan`

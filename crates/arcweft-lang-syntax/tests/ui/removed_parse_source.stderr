@@ -2,4 +2,6 @@ error[E0432]: unresolved import `arcweft_lang_syntax::parser::parse_source`
  --> tests/ui/removed_parse_source.rs:1:5
   |
 1 | use arcweft_lang_syntax::parser::parse_source;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_source` in `parser`
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------------
+  |                                  |
+  |                                  no `parse_source` in `parser`

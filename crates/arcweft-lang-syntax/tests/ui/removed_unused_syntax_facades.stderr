@@ -28,14 +28,22 @@ error[E0432]: unresolved imports `arcweft_lang_syntax::cst::cst_lines_for_source
   --> tests/ui/removed_unused_syntax_facades.rs:13:5
    |
 13 |     cst::cst_lines_for_source,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ no `cst_lines_for_source` in `cst`
+   |     ^^^^^--------------------
+   |          |
+   |          no `cst_lines_for_source` in `cst`
 14 |     cst::path::cst_path_roots,
    |          ^^^^ could not find `path` in `cst`
 15 |     cst::text::parse_flat_fence,
    |          ^^^^ could not find `text` in `cst`
 16 |     parser::parse_dialogue_content,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_dialogue_content` in `parser`
+   |     ^^^^^^^^----------------------
+   |             |
+   |             no `parse_dialogue_content` in `parser`
 17 |     text::parse_dialogue_tokens,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_dialogue_tokens` in `text`
+   |     ^^^^^^---------------------
+   |           |
+   |           no `parse_dialogue_tokens` in `text`
 18 |     types::parse_where_clause_list,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_where_clause_list` in `types`
+   |     ^^^^^^^-----------------------
+   |            |
+   |            no `parse_where_clause_list` in `types`
