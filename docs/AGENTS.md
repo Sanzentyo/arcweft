@@ -30,9 +30,3 @@ Prefer links over copied authorities and command tables. Use `arcw`, `rust`,
 Validate the changed surface using the documentation section of the
 [test policy](implementation/test-execution-policy.md), not a Rust workspace run.
 Do not turn source/documentation scans into behavioral acceptance gates.
-
-For instruction maintenance, separate product invariants and explicit permission
-limits from adjustable process defaults. Remove obsolete reading, asking,
-stopping, testing, and reporting rituals rather than preserving them merely
-because an older instruction required them. Review the resulting behavior;
-shorter text alone is not evidence of improvement.
