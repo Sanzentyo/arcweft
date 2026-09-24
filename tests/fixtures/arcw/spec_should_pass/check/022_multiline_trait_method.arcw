@@ -1,3 +1,6 @@
+pub struct RenderContext {}
+pub struct RenderNode {}
+
 pub trait Renderable {
     fn render(
         self,
