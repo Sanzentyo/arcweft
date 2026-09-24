@@ -544,3 +544,117 @@ Sema の外部 API compile-fail fixture は、現在非公開の `CheckedMatchRe
 ログは `target/.arcweft-local/2026-09-24-callable-changed-crates-tests-6.log`。
 この gate は6 crate の証拠であり、workspace `test-workspace` および
 goal の他工程の完了を示すものではない。
+
+## Content/attached callable 統合 checkpoint — 2026-09-25
+
+既存 `main` checkout で、工程1の Content 呼び出し・添付 default・generic
+継続に関する統合を進めた。以下は push 済みの完全 SHA。`main` と
+`origin/main` は最後の `cef1e68e85e857389c29d463425e2c0fd30af721`
+で一致した。一方、この時点の working tree は Content 実行接続と回帰修正の
+未コミット差分が残り、clean ではない。
+
+| 契約単位 | Full Git SHA |
+| --- | --- |
+| HIR 外部 API の privacy 診断更新 | `24aa2d67c4ad079a5ccd21a170ca1cf3c59db36e` |
+| HIR 添付 default 内 closure の子 scope 所有 | `cd20e039b7362b8a69e065f6a3c282e5589fc9fe` |
+| generic 相互再帰の native/AWBC 回帰 | `e47cefda918f4ac9e5a77831806ad7e9619e3c3e` |
+| generic 継続 snapshot/restore の型・世代拒否回帰 | `bd58057a7667c471c13409d5f1255c57a557c6af` |
+| Sema 添付 default closure の捕獲と宣言所有 | `274977525074e49e9a8ce8182a2c29745e25d88f` |
+| 通常 callable arrow と添付 Content ABI の分離 | `876ebc5fa1092025380fd4ef8dc2052173bff13d` |
+| 標準 Dialogue runtime role の accepted nominal identity 統一 | `cef1e68e85e857389c29d463425e2c0fd30af721` |
+
+検証済みの範囲: ABI 変更の core check、focused 30件、core all-target
+Clippy 終了コード0（既存 warning あり）、Dialogue role identity、
+compiler の既存 DialogueView profile 回帰、HIR all-feature テストは通過。
+Content の新規 compiler→AWBC lowering 回帰は通過したが、native/AWBC の
+実行結果確認はまだ進行中。Sema all-feature test は **908 passed / 2 failed**。
+失敗は View `on_click` の2件で、accepted nominal 移行後の利用側を修正中。
+この失敗を解消するまで Sema gate は未合格である。
+
+`just test-workspace` は最初 D: の空き容量不足で中断した。提案されていた
+`cargo clean` を1回実行して約268 GiBの旧ビルド成果物を削除したため、
+以前の `target/.arcweft-local/` ログも現存しない。再実行では HIR の
+compile-fail 診断3件の差分で停止し、上記 `24aa2d67...` で更新して focused
+確認済み。修正後の workspace 全テスト、現 HEAD 単体の workspace check、
+最終 Clippy、実行 backend の Content 受理は未完了。過去の局所合格を最終
+受理へ繰り上げない。
+
+**2026-09-25 訂正:** `cef1e68e...` 後の View `on_click` 2件は、
+標準 modifier が DialogueAction の accepted nominal 登録前に旧 `Named` 型で
+公開されていたことと、compiler の View capture が runtime carrier 付き
+Record を snapshot owner として受けていなかったことが原因。選択済み
+handler schema と所有権判定を修正した
+`6d14a110a2ceb45ba2d44d054a766b35ffec26ba` は push 済み。
+Sema all-feature lib は **911/911**、compiler の `on_click` と
+DialogueView profile の focused テストは各1/1で通過した。これは上記
+**908 passed / 2 failed** の現行状態を置き換える。A06 の native/AWBC 実行、
+workspace 全 gate および後続工程は引き続き未完了。
+
+**2026-09-25 Content 実行接続の検証追記:** 添付 Content 呼び出しの
+到達辺を selected HIR から Compiler へ保持し、Dialogue の値スロットを
+target 評価後に caller Flow で一度だけ評価する形へ接続した。native と
+decode 済み AWBC の双方で `i64` / `String` の generic 呼び出し、
+省略した本文の default、スロット値と `log.write` の回数・順序を確認した。
+この A06 fixture は明示的な本文の default 回避を直接証明しないため、
+別の core focused 回帰の証拠と区別する。添付 default の効果は callable
+の公開効果行へ合成し、Sema all-feature lib 911/911 と compiler
+`evaluated_effects` 18/18、core lib 601/601、RuntimePlan lib 79/79 を確認。
+workspace all-target/all-feature check と Clippy は終了コード0（既存 warning
+あり）。構造 gate も blocking violation 0 で通過した。変更 crate 群の
+rustfmt は通過したが、workspace 全体の fmt は未編集の
+`runtime-accelerator/src/compile.rs` の差分で未合格。
+構造監査の `final_flow.rs` SIZE001/TEST001 は既存の閾値超え。今回の
+変更は同じ final Flow lowering owner 内で、スロットの型付き local admission
+と利用を一つの `FinalLoweringContext` に結ぶ。別の state authority や
+I/O 層への依存を追加せず、旧 callback body lowering と capture 走査を除去し、
+ファイル行数も純減したため、この区切りでは owner を維持する。
+
+`just test-workspace` は Compiler lib 112/112、HIR lib 913/913、Sema などを
+通過した後、Syntax の外部 API compile-fail fixture 5/23 の診断差分で停止。
+この5件は import 拒否の診断位置だけの差分で、期待出力を更新して focused
+23/23 の合格を確認し、`2dfa62739053d1f89faa37ffb28d3a7b29d60653` で
+push 済み。workspace 再実行は Launch lib 41/43 で停止した。2件とも
+fallback style fixture の旧 `layout` field が現在の `value` 契約に拒否される。
+Launch fixture を確認・修正してから再実行するため、workspace 全テストは
+引き続き未合格である。
+ログ: `target/.arcweft-local/2026-09-25-content-*`。Content 実行接続は
+`4f1beb729038103b7bdaa3aee6c2a13bf1ab1525` で push 済み。
+Launch fixture、workspace 全テスト、goal の後続工程は未完了。
+
+**2026-09-25 Launch fixture 訂正:** 旧 `{ layout, value }` を使用していた
+2件の fallback style fixture を現行の strict `{ value }` 形へ更新し、
+`d39ae35e4a9e9fdcab9ee172b3b41c24222d18d2` として push した。
+Launch focused 2/2、lib 43/43、crate Clippy、fmt check は通過。
+workspace 再実行と phase 1 の明示本文による default 回避の source→native/AWBC
+証拠は引き続き進行中。
+
+**2026-09-25 fmt 訂正:** Content 側の追加テストの整形漏れと
+runtime-accelerator の対話 work-unit 計算の rustfmt 非安定な表記を修正し、
+`7b22d4695d049e86cb4d9e878e8664533ec94813` で push した。
+`cargo fmt --all -- --check` は終了コード0で通過。上記の workspace fmt
+未合格記録を現行の結果として使わない。
+
+**2026-09-25 workspace 再実行の現状:** Syntax と Launch の fixture 更新を含む
+`just test-workspace` は LSP lib 217/221 で停止した。hover の3件は
+`agent.observe` の選択先効果を fixture が提供できず、Dialogue hover の1件は
+応答が null になった。現行の意味契約に照らした原因修正と再検証が必要で、
+workspace 全テストは依然未合格。ログは
+`target/.arcweft-local/2026-09-25-content-test-workspace-4.log`。
+
+**2026-09-25 明示本文の追加証拠:** Sol Max の source surface 確認を受け、
+Dialogue 内容内で空白なしの `#supplied()[provided]` を A06 に追加した。
+添付 default 側は実行時に区別できる `supplied-default` ログを持つ。
+native と canonical decode 済み AWBC の双方で表示が
+`default / provided / second`、ログが省略呼び出し分の `default-enter` 4件
+のみであることを focused 1/1 で確認した。この結果は上記の「A06 は明示本文
+の回避を直接証明しない」という当時の記録を置き換える。
+`6078fe816f2882c1571ffdf50b81e7177d219543` で push 済み。
+
+**2026-09-25 LSP fixture 訂正:** hover 3件の fixture は選択 profile に
+`native-file` adapter を指定し、提供される `fs.read` 効果を検証する形へ更新。
+子 module Dialogue hover は final analysis に含まれない Test scenario の
+式を問うていたため、通常 Flow 内の canonical `character[content]` に移した。
+LSP 実装や HIR/Sema authority は変更していない。focused 7/7 と1/1、
+LSP lib 221/221、crate fmt/Clippy は通過（既存 warning あり）。
+`858fff451627f511972e4033a3557b9bd8f09754` で push 済み。
+workspace 全テストはこの後に再実行する。
