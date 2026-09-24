@@ -19,7 +19,7 @@ use crate::source_index::block_projection::{
 
 use super::callable::{
     CallableScopeIds, CallableScopeSource, attached_content_matches, contract_scopes_match,
-    contracts_match, direct_children_are_exact, direct_contract_children_are_exact,
+    contracts_match, direct_children_with_default_expressions_are_exact,
     function_parameter_groups_match, item_body_scope_matches, postcondition_result_matches,
 };
 use super::{
@@ -232,6 +232,17 @@ fn function_body_matches(
         .scopes
         .resolve_prepared(slots, function.callable_scope())
         .ok()?;
+    let default_expressions = function
+        .parameter_groups()
+        .iter()
+        .flat_map(|group| group.parameters())
+        .filter_map(|parameter| parameter.default())
+        .chain(
+            function
+                .attached_content()
+                .and_then(|attached| attached.presence().default_value()),
+        )
+        .collect::<Vec<_>>();
     match (attached.body(), function.body()) {
         (
             AttachedFunctionBody::Block { block, .. },
@@ -250,11 +261,12 @@ fn function_body_matches(
                 attached.body().syntax().source_span(),
                 slots,
                 arenas,
-            ) || !direct_children_are_exact(
+            ) || !direct_children_with_default_expressions_are_exact(
                 function.callable_scope(),
                 function.requires_scope(),
                 function.ensures_scope(),
-                *scope,
+                Some(*scope),
+                &default_expressions,
                 callable,
                 slots,
                 arenas,
@@ -287,10 +299,12 @@ fn function_body_matches(
             },
             HirFunctionBody::Error(retained),
         ) => {
-            if !direct_contract_children_are_exact(
+            if !direct_children_with_default_expressions_are_exact(
                 function.callable_scope(),
                 function.requires_scope(),
                 function.ensures_scope(),
+                None,
+                &default_expressions,
                 callable,
                 slots,
                 arenas,

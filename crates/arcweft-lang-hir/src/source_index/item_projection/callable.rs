@@ -11,6 +11,7 @@ use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::SourceSpan;
 
+use crate::expr::HirExpressionChildOwnership;
 use crate::identity::{
     ExprId, ItemId, LocalGeneration, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
     TypeId,
@@ -656,27 +657,6 @@ pub(super) fn postcondition_result_matches(
     }
 }
 
-pub(super) fn direct_contract_children_are_exact(
-    callable_scope: ScopeId,
-    requires_scope: ScopeId,
-    ensures_scope: ScopeId,
-    callable: &HirScope,
-    slots: &SlotSnapshot,
-    arenas: &ItemValidationArenas<'_>,
-) -> bool {
-    if callable.children() != [requires_scope, ensures_scope] {
-        return false;
-    }
-    let expected = callable.children().iter().copied().collect::<BTreeSet<_>>();
-    let Ok(scopes) = arenas.scopes.try_iter_prepared(slots) else {
-        return false;
-    };
-    let actual = scopes
-        .filter_map(|(scope, payload)| (payload.parent() == Some(callable_scope)).then_some(scope))
-        .collect::<BTreeSet<_>>();
-    expected == actual
-}
-
 pub(super) fn direct_children_are_exact(
     callable_scope: ScopeId,
     requires_scope: ScopeId,
@@ -686,7 +666,66 @@ pub(super) fn direct_children_are_exact(
     slots: &SlotSnapshot,
     arenas: &ItemValidationArenas<'_>,
 ) -> bool {
-    if callable.children() != [requires_scope, ensures_scope, item_body_scope] {
+    direct_children_with_default_expressions_are_exact(
+        callable_scope,
+        requires_scope,
+        ensures_scope,
+        Some(item_body_scope),
+        &[],
+        callable,
+        slots,
+        arenas,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "callable child validation compares one fixed scope prefix with typed default roots and the same arena snapshot"
+)]
+pub(super) fn direct_children_with_default_expressions_are_exact(
+    callable_scope: ScopeId,
+    requires_scope: ScopeId,
+    ensures_scope: ScopeId,
+    item_body_scope: Option<ScopeId>,
+    default_roots: &[ExprId],
+    callable: &HirScope,
+    slots: &SlotSnapshot,
+    arenas: &ItemValidationArenas<'_>,
+) -> bool {
+    let fixed = [Some(requires_scope), Some(ensures_scope), item_body_scope];
+    let fixed = fixed.into_iter().flatten().collect::<Vec<_>>();
+    let Some(default_children) = callable.children().get(fixed.len()..) else {
+        return false;
+    };
+    if callable.children().get(..fixed.len()) != Some(fixed.as_slice()) {
+        return false;
+    }
+
+    let mut pending = default_roots.to_vec();
+    let mut default_expressions = BTreeSet::new();
+    while let Some(expression) = pending.pop() {
+        if default_expressions.contains(&expression) {
+            continue;
+        }
+        let Ok(payload) = arenas.expressions.resolve_prepared(slots, expression) else {
+            return false;
+        };
+        if payload.scope() != callable_scope {
+            continue;
+        }
+        default_expressions.insert(expression);
+        let Ok(edges) = payload.kind().try_child_edges() else {
+            return false;
+        };
+        pending.extend(edges.into_iter().filter_map(|edge| {
+            (edge.ownership() == HirExpressionChildOwnership::Owning).then_some(edge.child())
+        }));
+    }
+    if !default_children.iter().copied().all(|child| {
+        arenas.scopes.resolve_prepared(slots, child).is_ok_and(|scope| {
+            matches!(scope.owner(), HirScopeOwner::Expr(owner) if default_expressions.contains(owner))
+        })
+    }) {
         return false;
     }
     let source_ordered_children = callable.children().iter().copied().collect::<BTreeSet<_>>();

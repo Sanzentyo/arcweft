@@ -206,6 +206,101 @@ fn function_attached_content_default_owns_one_expression_in_callable_scope() {
 }
 
 #[test]
+fn function_defaults_publish_their_expression_owned_callable_children() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-default-expression-scopes",
+        "fn content(value: String, suffix: String = { \"x\" })[body: DialogueContent = { let wrap = || value; wrap() }] -> Unit { () }\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let (_, _, function) = function(&module, 0);
+    let parameter_default = function.parameter_groups()[0].parameters()[1]
+        .default()
+        .expect("ordinary parameter block default");
+    let attached_default = function
+        .attached_content()
+        .and_then(|content| content.presence().default_value())
+        .expect("attached content block default");
+    let HirFunctionBody::Block { scope: body, .. } = function.body() else {
+        panic!("function body is a block")
+    };
+    let callable = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), function.callable_scope())
+        .expect("callable scope");
+    assert_eq!(
+        callable.children()[..3],
+        [function.requires_scope(), function.ensures_scope(), *body]
+    );
+    assert_eq!(callable.children().len(), 5);
+    for (child, default) in callable.children()[3..]
+        .iter()
+        .zip([parameter_default, attached_default])
+    {
+        let scope = module
+            .arenas()
+            .scopes()
+            .resolve(module.slots(), *child)
+            .expect("default block scope");
+        assert_eq!(scope.parent(), Some(function.callable_scope()));
+        assert_eq!(scope.owner(), &HirScopeOwner::Expr(default));
+    }
+}
+
+#[test]
+fn attached_default_call_retains_both_sibling_closure_scopes() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-default-closure-arguments",
+        "fn content(value: String)[body: DialogueContent = choose(|| value, || value)] -> Unit { () }\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let (_, _, function) = function(&module, 0);
+    let callable = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), function.callable_scope())
+        .expect("callable scope");
+    assert_eq!(callable.children().len(), 5);
+    for child in &callable.children()[3..] {
+        let scope = module
+            .arenas()
+            .scopes()
+            .resolve(module.slots(), *child)
+            .expect("closure argument scope");
+        assert_eq!(scope.kind(), HirScopeKind::Closure);
+        assert_eq!(scope.parent(), Some(function.callable_scope()));
+        let HirScopeOwner::Expr(expression) = scope.owner() else {
+            panic!("default closure scope has a typed expression owner")
+        };
+        assert!(matches!(
+            module
+                .arenas()
+                .expressions()
+                .resolve(module.slots(), *expression)
+                .expect("closure expression")
+                .kind(),
+            HirExprKind::Closure(_)
+        ));
+    }
+}
+
+#[test]
 fn attached_content_rejects_compile_time_fx_owners() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-function-attached-content-fx",
