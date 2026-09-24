@@ -133,10 +133,11 @@ use arcweft_lang_sema::{
         CheckedCallOperandDestination, CheckedCallReceiverProjection, CheckedCallRuntimeOperand,
         CheckedCallableExecution, CheckedProjectFunctionInstanceSolution,
         CheckedProjectFunctionRuntimeInput, CheckedProjectFunctionRuntimeOutcome,
-        CheckedProjectFunctionRuntimeSelection, DomainMethodId, LineContextMethodId,
-        LineScheduleCallableId, MathCallableId, ProbeComparisonOperator, ReductionConstructorKind,
-        ResolvedCallableOrigin, ResolvedCallableState, StageMethodId, StandardMapFamily,
-        StdFloatOperation, select_project_function_root_runtime, select_project_function_runtime,
+        CheckedProjectFunctionRuntimeSelection, CollectionMethodId, DomainMethodId,
+        LineContextMethodId, LineScheduleCallableId, MathCallableId, ProbeComparisonOperator,
+        ReductionConstructorKind, ResolvedCallableOrigin, ResolvedCallableState, StageMethodId,
+        StandardMapFamily, StdFloatOperation, select_project_function_root_runtime,
+        select_project_function_runtime,
     },
     checked_rich_text::{
         CheckedContentEmission, CheckedContentModifier, CheckedContentParameter,
@@ -8090,6 +8091,12 @@ const fn runtime_agent_probe_comparison(
 fn runtime_intrinsic(
     candidate: &arcweft_lang_sema::callable::CallableCandidateId,
 ) -> Option<RuntimeIntrinsic> {
+    if matches!(
+        candidate,
+        CallableCandidateId::CollectionMethod(CollectionMethodId::Collect { .. })
+    ) {
+        return Some(RuntimeIntrinsic::CoreIterCollect);
+    }
     if let arcweft_lang_sema::callable::CallableCandidateId::CapacityMethod(method) = candidate {
         return match (method.receiver(), method.method().as_str()) {
             (TypeKind::String, "trim") => Some(RuntimeIntrinsic::StringTrim),
