@@ -5,6 +5,7 @@
 //! final-HIR generation and never opens source text, rebuilds a detached HIR,
 //! or consults the removed `TypeCheckReport` sidecar.
 
+mod callable_sources;
 mod callable_values;
 mod character_dialogue;
 pub(crate) use character_dialogue::project_character_catalog;
@@ -187,22 +188,24 @@ use arcweft_runtime_plan::{
         RuntimeAssignmentFact, RuntimeAwaitFact, RuntimeAwaitPendingObserverFact,
         RuntimeBuiltinIteratorFact, RuntimeCallParameterCoordinate, RuntimeCallResultShape,
         RuntimeCallableAttachedContentAbi, RuntimeCallableAttachedContentDefault,
-        RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError, RuntimeChoiceFact,
-        RuntimeChoiceGotoFact, RuntimeClosureCaptureFact, RuntimeClosureInstanceFact,
-        RuntimeClosureInstanceKey, RuntimeClosureParameterFact, RuntimeContentFragmentFact,
-        RuntimeDialogueApplication, RuntimeDialogueEffectCaptureFact,
-        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
-        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
-        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact,
-        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
-        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
-        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
+        RuntimeCallableValueSpecialization, RuntimeCheckedCapture,
+        RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
+        RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
+        RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDialogueApplication,
+        RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectProgramFact,
+        RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
+        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+        RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
+        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
+        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
         RuntimeProjectAttachedDefaultCapture, RuntimeProjectAttachedDefaultFunctionFact,
-        RuntimeProjectCallable, RuntimeProjectContinuationAbi, RuntimeProjectFunctionBody,
-        RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
-        RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionExecution,
+        RuntimeProjectCallable, RuntimeProjectCallableValueTarget, RuntimeProjectContinuationAbi,
+        RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput,
+        RuntimeProjectFunctionCallOutcome, RuntimeProjectFunctionCallPlan,
+        RuntimeProjectFunctionCallSpecialization, RuntimeProjectFunctionExecution,
         RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
         RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
         RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterAbi,
@@ -283,10 +286,6 @@ pub enum RuntimeSemanticProjectionError {
             >,
         >,
     },
-    #[error(
-        "callable value at {owner:?} retains an unclosed scheme and requires checked specialization"
-    )]
-    UnclosedCallableScheme { owner: ExprId },
     #[error("final semantic analysis omits runtime-domain HIR local {local:?}")]
     MissingLocalSemanticFact { local: LocalId },
     #[error("final semantic owner {owner:?} belongs to no executable HIR module")]
@@ -556,6 +555,15 @@ fn project_runtime_semantic_fact_inventories(
         &mut instance_projection,
     )?;
     let mut runtime_calls = BTreeMap::new();
+    for (owner, _) in analysis.expressions() {
+        if (runtime_owners.contains_expression(owner)
+            || view_value_owners.is_some_and(|owners| owners.contains_expression(owner)))
+            && !instance_owned_expression_owners.contains(&owner)
+        {
+            instance_projection
+                .discover_value_specialization(owner, None, symbols, world, analysis)?;
+        }
+    }
     let mut runtime_callable_values = callable_values::discover_roots(
         runtime_owners,
         &instance_owned_expression_owners,
@@ -681,6 +689,7 @@ fn project_runtime_semantic_fact_inventories(
         runtime_expression_type_owners.extend(view_value_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
+    discovered_instances.append_callable_facts(&mut input);
     if let Some(declaration) = character_dialogue_generation {
         input.attach_character_dialogue_generation(
             declaration,
@@ -694,6 +703,11 @@ fn project_runtime_semantic_fact_inventories(
             view_value_owners
                 .into_iter()
                 .flat_map(|owners| owners.locals()),
+        )
+        .chain(
+            pure_programs
+                .iter()
+                .flat_map(|program| program.captures().iter().map(|capture| capture.local())),
         )
         .collect::<BTreeSet<_>>();
     for owner in runtime_locals {
@@ -785,6 +799,9 @@ fn project_runtime_semantic_fact_inventories(
                 analysis,
             )?,
         );
+        if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {
+            input.push_expression_specialization(owner, specialization);
+        }
         match expression.resolution() {
             CheckedExpressionResolution::Scope(identity) => {
                 let module = project
@@ -5782,38 +5799,20 @@ fn runtime_project_function_projection(
     };
     let outcome = match selection.outcome() {
         CheckedProjectFunctionRuntimeOutcome::Continue { abi, next_group } => {
-            let instance = project_function_instances
-                .close_callable_value(
-                    ProjectInstantiationOrigin::Call(owner),
-                    selection,
-                    analysis.checked_callables(),
-                    enclosing.map(ProjectInstanceTypes::solution),
-                )?
-                .map(|closed| {
-                    let solution = closed.solution().clone();
-                    let key = RuntimeProjectFunctionInstanceKey::new(
-                        callable.runtime().clone(),
-                        solution.instantiation(),
-                        closed.group(),
-                    );
-                    ensure_runtime_project_function_instance(
-                        ProjectInstantiationOrigin::Call(owner),
-                        key.clone(),
-                        callable.clone(),
-                        ProjectInstanceSelection::from_root(&closed),
-                        solution,
-                        project_function_instances,
-                    )?;
-                    Ok::<_, RuntimeSemanticProjectionError>(key)
-                })
-                .transpose()?
-                .ok_or(RuntimeSemanticProjectionError::UnclosedCallableScheme { owner })?;
+            let target = project_function_instances.callable_result(
+                owner,
+                selection,
+                enclosing.map(ProjectInstanceTypes::solution),
+                symbols,
+                world,
+                analysis,
+            )?;
             RuntimeProjectFunctionCallOutcome::Continue {
                 abi: runtime_project_continuation_abi(
                     owner, abi, enclosing, symbols, world, analysis,
                 )?,
                 next_group: *next_group,
-                instance,
+                target,
             }
         }
         CheckedProjectFunctionRuntimeOutcome::Invoke { .. } => {
@@ -5841,8 +5840,36 @@ fn runtime_project_function_projection(
     let current_group_materialization = runtime_project_function_materialization(
         owner, &callable, selection, project, symbols, world, analysis, enclosing,
     )?;
+    let application_type = project_function_instances.application_function_type(
+        owner,
+        selection,
+        enclosing.map(ProjectInstanceTypes::solution),
+        analysis,
+    )?;
+    let input_specialization =
+        if matches!(outcome, RuntimeProjectFunctionCallOutcome::Invoke { .. }) {
+            input
+                .callee()
+                .map(|callee| {
+                    project_function_instances.call_input_specialization(
+                        owner,
+                        callee,
+                        selection,
+                        enclosing.map(ProjectInstanceTypes::solution),
+                        symbols,
+                        world,
+                        analysis,
+                    )
+                })
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
     let plan = RuntimeProjectFunctionCallPlan::try_new(
         callable,
+        runtime_type(&application_type, symbols, world, analysis)?,
+        input_specialization,
         selection.group(),
         current_group_materialization,
         input,
@@ -5988,7 +6015,11 @@ fn discover_runtime_project_function_instances(
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     instances: &mut ProjectInstantiationSession,
 ) -> Result<(), RuntimeSemanticProjectionError> {
-    while let Some(work) = instances.next()? {
+    loop {
+        instances.discover_callable_specializations(symbols, world, analysis)?;
+        let Some(work) = instances.next()? else {
+            break;
+        };
         discover_runtime_project_function_instance_dependencies(
             work.node(),
             symbols,
@@ -6051,6 +6082,13 @@ fn discover_runtime_project_executable_dependencies(
             .execution_projection()
             .runtime_fact_partition(runtime_owners, &executable)?;
         for row in partition.expressions() {
+            instances.discover_value_specialization(
+                row.owner(),
+                Some(enclosing),
+                symbols,
+                world,
+                analysis,
+            )?;
             match row.family() {
                 CheckedExecutableRuntimeExpressionFactFamily::Call => {
                     let owner = row.owner();
@@ -6087,33 +6125,25 @@ fn discover_runtime_project_executable_dependencies(
                     else {
                         continue;
                     };
-                    let (solution, instance_selection) = if matches!(
+                    if matches!(
                         selection.outcome(),
-                        CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
+                        CheckedProjectFunctionRuntimeOutcome::Continue { .. }
                     ) {
-                        (
-                            instances.close_instance(
-                                ProjectInstantiationOrigin::Call(owner),
-                                &selection,
-                                Some(enclosing),
-                            )?,
-                            ProjectInstanceSelection::from_call(&selection),
-                        )
-                    } else {
-                        let Some(closed) = instances.close_callable_value(
-                            ProjectInstantiationOrigin::Call(owner),
+                        instances.callable_result(
+                            owner,
                             &selection,
-                            analysis.checked_callables(),
                             Some(enclosing),
-                        )?
-                        else {
-                            continue;
-                        };
-                        (
-                            closed.solution().clone(),
-                            ProjectInstanceSelection::from_root(&closed),
-                        )
-                    };
+                            symbols,
+                            world,
+                            analysis,
+                        )?;
+                        continue;
+                    }
+                    let solution = instances.close_instance(
+                        ProjectInstantiationOrigin::Call(owner),
+                        &selection,
+                        Some(enclosing),
+                    )?;
                     let callable =
                         runtime_project_callable(selection.declaration(), symbols, world, analysis)
                             .map_err(|reason| RuntimeSemanticProjectionError::Call {
@@ -6123,16 +6153,20 @@ fn discover_runtime_project_executable_dependencies(
                     let key = RuntimeProjectFunctionInstanceKey::new(
                         callable.runtime().clone(),
                         solution.instantiation(),
-                        instance_selection.group,
+                        selection.group(),
                     );
                     ensure_runtime_project_function_instance(
                         ProjectInstantiationOrigin::Call(owner),
                         key,
                         callable,
-                        instance_selection,
+                        ProjectInstanceSelection::from_call(&selection),
                         solution,
                         instances,
                     )?;
+                    if let CheckedCallCalleeExecution::Value { source } = application.core().callee()
+                        && let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) = source.raw() {
+                        instances.call_input_specialization(owner, callee, &selection, Some(enclosing), symbols, world, analysis)?;
+                    }
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Closure => {
                     pending.insert(HirRuntimeExecutableOwner::Closure(row.owner()));
@@ -6152,6 +6186,7 @@ fn discover_runtime_project_executable_dependencies(
                             symbols,
                             world,
                             analysis,
+                            Some(enclosing),
                             instances,
                         )?;
                     }
@@ -6367,6 +6402,18 @@ fn build_runtime_project_function_instance(
         ));
     }
     for owner in semantic_owners.types() {
+        if let Some(parameter) = parameters
+            .iter()
+            .find(|parameter| parameter.source_type() == owner)
+        {
+            // The checked parameter ABI owns inferred callback rows. Its
+            // authored type root may still carry an omitted effect clause.
+            type_projection.push(RuntimeProjectFunctionTypeProjection::value(
+                RuntimeProjectFunctionTypeOwner::Type(owner),
+                parameter.abi_ty().clone(),
+            ));
+            continue;
+        }
         let checked = analysis.ty(owner).ok_or_else(|| {
             error(&format!(
                 "project-function type root {owner:?} has no checked semantic fact"
@@ -6605,6 +6652,7 @@ fn runtime_project_function_instance_semantic_facts(
                         symbols,
                         world,
                         analysis,
+                        lexical.types().map(ProjectInstanceTypes::solution),
                         instances,
                     )?
                 } else {
@@ -6869,11 +6917,15 @@ fn runtime_project_function_instance_semantic_facts(
                 ))
             }
         };
-        expressions.push(RuntimeProjectFunctionExpressionSemanticFact::new(
+        let mut fact = RuntimeProjectFunctionExpressionSemanticFact::new(
             owner,
             expected.children().into(),
             payload,
-        ));
+        );
+        if let Some(specialization) = instances.value_specialization(owner)? {
+            fact = fact.with_specialization(specialization);
+        }
+        expressions.push(fact);
     }
 
     let mut patterns = Vec::with_capacity(partition.patterns().len());

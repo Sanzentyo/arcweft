@@ -190,6 +190,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,
         AwbcOpcode::MakeCallable
+        | AwbcOpcode::SpecializeCallable
         | AwbcOpcode::MakeReductionUnchanged
         | AwbcOpcode::AssignRecordField
         | AwbcOpcode::CallTraitMethod

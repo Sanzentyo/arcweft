@@ -464,12 +464,15 @@ impl CheckedProjectFunctionRuntimeSelection {
             CheckedProjectFunctionRuntimeOutcome::Continue { abi, .. } => abi.function_type(),
             CheckedProjectFunctionRuntimeOutcome::Invoke { result } => result,
         };
+        let TypeKind::Function { effects, .. } = &self.function_type else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+        };
         let arrow = TypeKind::function_with_effects(
             self.current_group_materialization
                 .iter()
                 .map(|parameter| parameter.abi_type().clone()),
             result.clone(),
-            crate::effect_row::EffectRow::closed(self.effects.clone()),
+            effects.clone(),
         );
         let empty = ClosedTypeInstantiation::default();
         Ok(enclosing

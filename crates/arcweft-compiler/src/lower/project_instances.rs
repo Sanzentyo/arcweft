@@ -24,6 +24,7 @@ mod work;
 use work::ProjectInstantiationWork;
 mod types;
 pub(super) use types::ProjectInstanceTypes;
+mod callables;
 
 #[cfg(test)]
 mod tests;
@@ -120,6 +121,8 @@ pub enum ProjectInstantiationLimitKind {
 
 #[derive(Clone, Debug, Error)]
 pub enum ProjectInstantiationError {
+    #[error(transparent)]
+    CallableDiscovery(#[from] callables::ProjectCallableDiscoveryError),
     #[error("project-function instantiation was cancelled at {origin:?}")]
     Cancelled {
         origin: Option<ProjectInstantiationOrigin>,
@@ -217,6 +220,7 @@ impl ProjectInstanceSelection {
 }
 
 pub(super) struct ProjectInstantiationSession {
+    callables: callables::ProjectCallableDiscovery,
     work: ProjectInstantiationWork,
     nodes: BTreeMap<RuntimeProjectFunctionInstanceKey, Arc<ProjectInstanceNode>>,
     roots: BTreeSet<(
@@ -248,6 +252,7 @@ impl ProjectInstanceWorkItem {
 impl ProjectInstantiationSession {
     pub(super) fn new(control: ProjectInstantiationControl) -> Self {
         Self {
+            callables: callables::ProjectCallableDiscovery::default(),
             work: ProjectInstantiationWork::new(control),
             nodes: BTreeMap::new(),
             roots: BTreeSet::new(),
@@ -294,16 +299,22 @@ impl ProjectInstantiationSession {
         key: RuntimeProjectFunctionInstanceKey,
         node: ProjectInstanceNode,
     ) -> Result<(), ProjectInstantiationError> {
+        self.request_from(self.active.clone(), key, node)
+    }
+
+    fn request_from(
+        &mut self,
+        caller: Option<RuntimeProjectFunctionInstanceKey>,
+        key: RuntimeProjectFunctionInstanceKey,
+        node: ProjectInstanceNode,
+    ) -> Result<(), ProjectInstantiationError> {
         self.charge(node.origin, 1, false, false)?;
         node.validate_key(&key)?;
         if let Some(existing) = self.nodes.get(&key) {
             existing.validate_same_instance(&key, &node)?;
         }
         let new_instance = !self.nodes.contains_key(&key);
-        let edge = self
-            .active
-            .as_ref()
-            .map(|caller| (caller.clone(), key.clone()));
+        let edge = caller.map(|caller| (caller, key.clone()));
         let new_edge = edge.as_ref().is_some_and(|edge| !self.edges.contains(edge));
         // The visit is charged above. Admission charges the transition into
         // Queued and both distinct-graph budgets before mutating any table.
@@ -371,7 +382,9 @@ impl ProjectInstantiationSession {
         if !self.pending.is_empty() {
             return Err(ProjectInstantiationError::IncompleteDiscovery);
         }
+        self.callables.validate_complete()?;
         Ok(DiscoveredProjectInstances {
+            callables: self.callables,
             work: self.work,
             nodes: self.nodes,
             roots: self.roots,
@@ -417,6 +430,7 @@ impl ProjectInstanceNode {
 }
 
 pub(super) struct DiscoveredProjectInstances {
+    callables: callables::ProjectCallableDiscovery,
     work: ProjectInstantiationWork,
     nodes: BTreeMap<RuntimeProjectFunctionInstanceKey, Arc<ProjectInstanceNode>>,
     roots: BTreeSet<(
@@ -459,28 +473,6 @@ pub(super) enum ProjectInstanceProjection<'session> {
 }
 
 impl ProjectInstanceProjection<'_> {
-    pub(super) fn close_callable_value(
-        &self,
-        origin: ProjectInstantiationOrigin,
-        selection: &CheckedProjectFunctionRuntimeSelection,
-        catalog: &arcweft_lang_sema::callable::CheckedCallableCatalog,
-        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
-    ) -> Result<Option<CheckedProjectFunctionRootRuntimeSelection>, RuntimeSemanticProjectionError>
-    {
-        let work = match self {
-            Self::Discover(session) => &session.work,
-            Self::Materialize { graph, .. } => &graph.work,
-        };
-        selection.close_callable_value_with_control(catalog, enclosing, &mut work.type_control(origin)).map_err(|source| {
-            match source {
-                arcweft_lang_sema::callable::CheckedProjectFunctionInstanceProjectionError::Projection(
-                    arcweft_lang_sema::types::TypeProjectionError::Control(error)
-                ) => RuntimeSemanticProjectionError::ProjectInstantiation(error),
-                source => RuntimeSemanticProjectionError::ProjectFunctionProjection { origin, source: Box::new(source) },
-            }
-        })
-    }
-
     pub(super) fn close_instance(
         &self,
         origin: ProjectInstantiationOrigin,

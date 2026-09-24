@@ -289,7 +289,7 @@ pub enum RuntimeProjectFunctionCallOutcome {
     Continue {
         abi: RuntimeProjectContinuationAbi,
         next_group: CallableGroupIndex,
-        instance: RuntimeProjectFunctionInstanceKey,
+        target: super::RuntimeProjectCallableValueTarget,
     },
     /// The current group closes the call and invokes this exact compiler-
     /// produced function instance.
@@ -299,9 +299,10 @@ pub enum RuntimeProjectFunctionCallOutcome {
 }
 
 impl RuntimeProjectFunctionCallOutcome {
-    pub const fn callable_instance(&self) -> &RuntimeProjectFunctionInstanceKey {
+    pub const fn callable_instance(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
         match self {
-            Self::Continue { instance, .. } | Self::Invoke { instance } => instance,
+            Self::Continue { target, .. } => target.instance(),
+            Self::Invoke { instance } => Some(instance),
         }
     }
     pub const fn lineage(&self) -> Option<RuntimeProjectContinuationLineageId> {
@@ -342,8 +343,36 @@ impl RuntimeProjectFunctionCallOutcome {
 
 /// One call-fact-owned project-function continuation/invocation contract.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeProjectFunctionCallSpecialization {
+    value: super::RuntimeCallableValueSpecialization,
+    source: arcweft_lang_sema::callable::CheckedProjectFunctionCallableSourceDigest,
+}
+impl RuntimeProjectFunctionCallSpecialization {
+    pub const fn new(
+        value: super::RuntimeCallableValueSpecialization,
+        source: arcweft_lang_sema::callable::CheckedProjectFunctionCallableSourceDigest,
+    ) -> Self {
+        Self { value, source }
+    }
+    pub const fn source(&self) -> &RuntimeNormalizedType {
+        self.value.source()
+    }
+    pub const fn key(&self) -> &super::RuntimeCallableSpecializationKey {
+        self.value.key()
+    }
+    pub const fn source_digest(
+        &self,
+    ) -> arcweft_lang_sema::callable::CheckedProjectFunctionCallableSourceDigest {
+        self.source
+    }
+}
+
+/// One call-fact-owned project-function continuation/invocation contract.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectFunctionCallPlan {
     callable: RuntimeProjectCallable,
+    application_type: RuntimeNormalizedType,
+    input_specialization: Option<RuntimeProjectFunctionCallSpecialization>,
     current_group_materialization: Box<[RuntimeProjectFunctionParameterMaterialization]>,
     input: RuntimeProjectFunctionCallInput,
     outcome: RuntimeProjectFunctionCallOutcome,
@@ -352,6 +381,8 @@ pub struct RuntimeProjectFunctionCallPlan {
 impl RuntimeProjectFunctionCallPlan {
     pub fn try_new(
         callable: RuntimeProjectCallable,
+        application_type: RuntimeNormalizedType,
+        input_specialization: Option<RuntimeProjectFunctionCallSpecialization>,
         completed_group: CallableGroupIndex,
         current_group_materialization: Box<[RuntimeProjectFunctionParameterMaterialization]>,
         input: RuntimeProjectFunctionCallInput,
@@ -368,6 +399,14 @@ impl RuntimeProjectFunctionCallPlan {
             || outcome
                 .function_type()
                 .is_some_and(|ty| !matches!(ty.shape(), RuntimeTypeShape::Function { .. }))
+        {
+            return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
+        }
+        if !application_type.scope().is_root()
+            || !matches!(application_type.shape(), RuntimeTypeShape::Function { .. })
+            || input_specialization.as_ref().is_some_and(|row| {
+                row.key().target() != application_type.identity() || input.callee().is_none()
+            })
         {
             return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
         }
@@ -399,10 +438,18 @@ impl RuntimeProjectFunctionCallPlan {
             RuntimeProjectFunctionCallOutcome::Continue {
                 abi,
                 next_group,
-                instance,
+                target,
             } if completed_group.get().checked_add(1) != Some(next_group.get())
-                || instance.callable() != callable.runtime()
-                || instance.group().get() < next_group.get()
+                || target.callable() != callable.runtime()
+                || match target {
+                    super::RuntimeProjectCallableValueTarget::Closed(instance) => {
+                        instance.group().get() < next_group.get()
+                    }
+                    super::RuntimeProjectCallableValueTarget::Source(source) => {
+                        source.group() != *next_group
+                            || source.function_type() != abi.function_type().identity()
+                    }
+                }
                 || abi.prefix_types().len() != output_prefix_len
                 || !abi.prefix_types().starts_with(input_prefix_types)
                 || abi.prefix_types()[input_prefix_types.len()..]
@@ -423,6 +470,8 @@ impl RuntimeProjectFunctionCallPlan {
         }
         Ok(Self {
             callable,
+            application_type,
+            input_specialization,
             current_group_materialization,
             input,
             outcome,
@@ -431,6 +480,12 @@ impl RuntimeProjectFunctionCallPlan {
 
     pub const fn callable(&self) -> &RuntimeProjectCallable {
         &self.callable
+    }
+    pub const fn application_type(&self) -> &RuntimeNormalizedType {
+        &self.application_type
+    }
+    pub const fn input_specialization(&self) -> Option<&RuntimeProjectFunctionCallSpecialization> {
+        self.input_specialization.as_ref()
     }
 
     pub const fn input(&self) -> &RuntimeProjectFunctionCallInput {
@@ -887,6 +942,7 @@ pub struct RuntimeProjectFunctionExpressionSemanticFact {
     owner: ExprId,
     children: Box<[ExprId]>,
     payload: RuntimeProjectFunctionExpressionPayload,
+    specialization: Option<super::RuntimeCallableValueSpecialization>,
 }
 
 impl RuntimeProjectFunctionExpressionSemanticFact {
@@ -899,6 +955,7 @@ impl RuntimeProjectFunctionExpressionSemanticFact {
             owner,
             children,
             payload,
+            specialization: None,
         }
     }
 
@@ -912,6 +969,16 @@ impl RuntimeProjectFunctionExpressionSemanticFact {
 
     pub const fn payload(&self) -> &RuntimeProjectFunctionExpressionPayload {
         &self.payload
+    }
+    pub fn with_specialization(
+        mut self,
+        specialization: super::RuntimeCallableValueSpecialization,
+    ) -> Self {
+        self.specialization = Some(specialization);
+        self
+    }
+    pub const fn specialization(&self) -> Option<&super::RuntimeCallableValueSpecialization> {
+        self.specialization.as_ref()
     }
 }
 
@@ -1528,6 +1595,17 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn expression_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
         self.ty(RuntimeProjectFunctionTypeOwner::Expression(owner))
     }
+    pub fn expression_specialization(
+        &self,
+        owner: ExprId,
+    ) -> Option<&super::RuntimeCallableValueSpecialization> {
+        self.expression(owner)?.specialization()
+    }
+    pub fn expression_source_type(&self, owner: ExprId) -> Option<&RuntimeNormalizedType> {
+        self.expression_specialization(owner)
+            .map(super::RuntimeCallableValueSpecialization::source)
+            .or_else(|| self.expression_type(owner))
+    }
 
     pub fn pattern_type(&self, owner: PatternId) -> Option<&RuntimeNormalizedType> {
         self.ty(RuntimeProjectFunctionTypeOwner::Pattern(owner))
@@ -1970,7 +2048,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     visitor(
                         expression.owner(),
                         value,
-                        self.expression_type(expression.owner()),
+                        self.expression_source_type(expression.owner()),
                     );
                 }
                 RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
@@ -1994,6 +2072,29 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                     closure.semantics().visit_calls(visitor);
                 }
                 _ => {}
+            }
+        }
+    }
+
+    pub fn visit_specializations<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            ExprId,
+            &'facts super::RuntimeCallableValueSpecialization,
+            Option<&'facts RuntimeNormalizedType>,
+        ),
+    ) {
+        for expression in &self.expressions {
+            if let Some(specialization) = expression.specialization() {
+                visitor(
+                    expression.owner(),
+                    specialization,
+                    self.expression_type(expression.owner()),
+                );
+            }
+            if let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload()
+            {
+                closure.semantics().visit_specializations(visitor);
             }
         }
     }

@@ -16,6 +16,7 @@ pub(super) struct ControlLocals {
     pub(super) tries: BTreeMap<ExprId, TryLocalSeeds>,
     pub(super) pipes: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) expression_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
+    pub(super) expression_final_values: BTreeMap<ExprId, RuntimeLocalSeedId>,
     pub(super) scopes: BTreeMap<RuntimeScopeOwner, ScopeLocalSeeds>,
 }
 
@@ -24,6 +25,7 @@ enum ControlLocal {
     Try { residual: bool },
     Pipe,
     ExpressionValue,
+    ExpressionFinalValue,
 }
 
 impl ControlLocals {
@@ -39,8 +41,15 @@ impl ControlLocals {
         let mut seeds = Vec::new();
         let mut error = None;
         facts.visit_runtime_expression_types(&mut |owner, ty| {
+            let expression_value_type = facts.expression_source_type(owner).unwrap_or(ty);
             owners.push((owner, ControlLocal::ExpressionValue));
-            seeds.push(RuntimeLocalDeclarationSeed::new(ty.identity()));
+            seeds.push(RuntimeLocalDeclarationSeed::new(
+                expression_value_type.identity(),
+            ));
+            if expression_value_type.identity() != ty.identity() {
+                owners.push((owner, ControlLocal::ExpressionFinalValue));
+                seeds.push(RuntimeLocalDeclarationSeed::new(ty.identity()));
+            }
             if facts.awaited(owner).is_some() {
                 owners.push((owner, ControlLocal::Await));
                 seeds.push(RuntimeLocalDeclarationSeed::new(ty.identity()));
@@ -113,6 +122,10 @@ impl ControlLocals {
                 ControlLocal::ExpressionValue => {
                     result.expression_values.insert(owner, local).is_some()
                 }
+                ControlLocal::ExpressionFinalValue => result
+                    .expression_final_values
+                    .insert(owner, local)
+                    .is_some(),
             };
             if duplicate {
                 return Err(RuntimePlanLowerError::new(

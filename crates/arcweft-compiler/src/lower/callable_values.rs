@@ -8,37 +8,21 @@ pub(super) fn resolve(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
     instances: &mut ProjectInstanceProjection<'_>,
 ) -> Result<RuntimeResolvedValue, RuntimeSemanticProjectionError> {
     let origin = ProjectInstantiationOrigin::CallableValue(owner);
-    let selection = arcweft_lang_sema::callable::select_project_function_value_runtime(
+    let target = instances.callable_root(
+        owner,
         declaration.declaration(),
-        analysis.checked_callables(),
-    )
-    .map_err(|error| match error {
-        arcweft_lang_sema::callable::CheckedProjectFunctionRuntimeSelectionError::OpenRootInstantiation => RuntimeSemanticProjectionError::UnclosedCallableScheme { owner },
-        error => origin.error(error.to_string()),
-    })?;
+        enclosing,
+        symbols,
+        world,
+        analysis,
+    )?;
     let callable = runtime_project_callable(declaration.declaration(), symbols, world, analysis)
         .map_err(|reason| origin.error(reason))?;
-    let solution = selection.solution().clone();
-    let key = RuntimeProjectFunctionInstanceKey::new(
-        callable.runtime().clone(),
-        solution.instantiation(),
-        selection.group(),
-    );
-    ensure_runtime_project_function_instance(
-        origin,
-        key.clone(),
-        callable.clone(),
-        ProjectInstanceSelection::from_root(&selection),
-        solution,
-        instances,
-    )?;
-    Ok(RuntimeResolvedValue::ProjectCallable {
-        callable,
-        instance: key,
-    })
+    Ok(RuntimeResolvedValue::ProjectCallable { callable, target })
 }
 
 pub(super) fn discover_roots(
@@ -77,7 +61,15 @@ pub(super) fn discover_roots(
             }
             values.insert(
                 owner,
-                resolve(owner, declaration, symbols, world, analysis, instances)?,
+                resolve(
+                    owner,
+                    declaration,
+                    symbols,
+                    world,
+                    analysis,
+                    None,
+                    instances,
+                )?,
             );
         }
     }

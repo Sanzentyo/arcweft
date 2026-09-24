@@ -5,11 +5,12 @@ mod scopes;
 use std::collections::BTreeMap;
 
 use arcweft_core::plan::{
-    RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeDialogueContentEffectBindingSeed,
-    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
-    RuntimeHostCallTargetSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
-    RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
+    RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeCallableSpecializationSeedId,
+    RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeExprMatchArmSeed,
+    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed,
+    RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
+    RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed, RuntimeRecordFieldSeedId,
+    RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
@@ -31,9 +32,10 @@ use crate::final_variant::{
 };
 use crate::flow::{ScopeLocalSeeds, TryLocalSeeds};
 use crate::semantic_facts::{
-    RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeClosureInstanceKey,
-    RuntimeDialogueEffectProgramKey, RuntimeNormalizedType, RuntimePlanSemanticFacts,
-    RuntimePositionedAttachedContent, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
+    RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeCallableSpecializationKey,
+    RuntimeClosureInstanceKey, RuntimeDialogueEffectProgramKey, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
+    RuntimeProjectCallableValueTarget, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
     RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
@@ -72,6 +74,11 @@ pub(crate) struct FinalExprLowerer<'hir> {
             Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
         >,
     >,
+    callable_specializations: Option<
+        &'hir BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationSeedId>,
+    >,
+    callable_sources:
+        Option<&'hir BTreeMap<RuntimeProjectCallableSourceKey, RuntimeCallableStateSeedId>>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
 }
 
@@ -188,6 +195,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             specialized_operand_locals: None,
             closure_sites: None,
             project_callable_states: None,
+            callable_specializations: None,
+            callable_sources: None,
             overrides: BTreeMap::new(),
         }
     }
@@ -255,6 +264,25 @@ impl<'hir> FinalExprLowerer<'hir> {
         >,
     ) -> Self {
         self.project_callable_states = Some(states);
+        self
+    }
+
+    pub(crate) fn with_callable_specializations(
+        mut self,
+        specializations: &'hir BTreeMap<
+            RuntimeCallableSpecializationKey,
+            RuntimeCallableSpecializationSeedId,
+        >,
+    ) -> Self {
+        self.callable_specializations = Some(specializations);
+        self
+    }
+
+    pub(crate) fn with_callable_sources(
+        mut self,
+        sources: &'hir BTreeMap<RuntimeProjectCallableSourceKey, RuntimeCallableStateSeedId>,
+    ) -> Self {
+        self.callable_sources = Some(sources);
         self
     }
 
@@ -378,6 +406,14 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
         if let Some(value) = self.overrides.get(&id) {
+            return self.specialize_result(id, value.clone());
+        }
+        let source = self.lower_source(id)?;
+        self.specialize_result(id, source)
+    }
+
+    pub(crate) fn lower_source(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+        if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
         }
         if self.implicit_callable(id).is_some() {
@@ -385,7 +421,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 .implicit_callable(id)
                 .ok_or_else(|| format!("implicit callable fact is missing for {id:?}"))?;
             return Ok(RuntimeExprSeed::new(
-                self.expression_type(id)?,
+                self.expression_source_type(id)?,
                 RuntimeExprSeedKind::Function {
                     site: self.function_sites.get(&id).cloned().ok_or_else(|| {
                         format!("builder-issued function site seed is missing for {id:?}")
@@ -400,6 +436,46 @@ impl<'hir> FinalExprLowerer<'hir> {
             ));
         }
         self.lower_body(id)
+    }
+
+    pub(crate) fn specialize_result(
+        &self,
+        id: ExprId,
+        value: RuntimeExprSeed,
+    ) -> Result<RuntimeExprSeed, String> {
+        let Some(specialization) = self.semantic_facts.expression_specialization(id) else {
+            return Ok(value);
+        };
+        if value.ty() == specialization.key().target() {
+            return Ok(value);
+        }
+        if value.ty() != specialization.source().identity() {
+            return Err(format!(
+                "source value for callable specialization at {id:?} has type {:?}, expected {:?}",
+                value.ty(),
+                specialization.source().identity()
+            ));
+        }
+        let seed = self
+            .callable_specializations
+            .and_then(|seeds| seeds.get(specialization.key()))
+            .cloned()
+            .ok_or_else(|| {
+                format!("builder-issued callable specialization seed is missing for {id:?}")
+            })?;
+        let result_type = self.expression_type(id)?;
+        if result_type != specialization.key().target() {
+            return Err(format!(
+                "callable specialization target at {id:?} disagrees with its accepted expression type"
+            ));
+        }
+        Ok(RuntimeExprSeed::new(
+            result_type,
+            RuntimeExprSeedKind::SpecializeCallable {
+                value: Box::new(value),
+                specialization: seed,
+            },
+        ))
     }
 
     pub(crate) fn lower_function_site_body(
@@ -421,7 +497,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         } else if lowerer.contains_executable_try(body)? {
             lowerer.lower_with_try_continuation(body, PureTryContinuation::Return)
         } else {
-            lowerer.lower_body(body)
+            lowerer.lower(body)
         }
     }
 
@@ -605,7 +681,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .collect();
                 let body = self.clone_with_overrides(overrides).lower(pipe.right())?;
                 return Ok(RuntimeExprSeed::new(
-                    self.expression_type(id)?,
+                    self.expression_source_type(id)?,
                     RuntimeExprSeedKind::Let {
                         binding,
                         expr: Box::new(self.lower(pipe.left())?),
@@ -651,7 +727,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ));
             }
         };
-        Ok(RuntimeExprSeed::new(self.expression_type(id)?, kind))
+        Ok(RuntimeExprSeed::new(self.expression_source_type(id)?, kind))
     }
 
     fn clone_with_overrides(&self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
@@ -671,6 +747,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             specialized_operand_locals: self.specialized_operand_locals,
             closure_sites: self.closure_sites,
             project_callable_states: self.project_callable_states,
+            callable_specializations: self.callable_specializations,
+            callable_sources: self.callable_sources,
             semantic_facts: self.semantic_facts,
             overrides: merged,
         }
@@ -1416,9 +1494,23 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::ProjectItem(item) => Ok(RuntimeExprSeedKind::EntityRef(
                 project_entity_reference(item),
             )),
-            RuntimeResolvedValue::ProjectCallable { instance, .. } => {
-                let state = self.project_callable_states.and_then(|states| states.get(instance)).and_then(|states| states.first()).cloned()
-                    .ok_or_else(|| format!("project declaration value {id:?} has no admitted initial callable state"))?;
+            RuntimeResolvedValue::ProjectCallable { target, .. } => {
+                let state = match target {
+                    RuntimeProjectCallableValueTarget::Closed(instance) => self
+                        .project_callable_states
+                        .and_then(|states| states.get(instance))
+                        .and_then(|states| states.first())
+                        .cloned(),
+                    RuntimeProjectCallableValueTarget::Source(source) => self
+                        .callable_sources
+                        .and_then(|sources| sources.get(source))
+                        .cloned(),
+                }
+                .ok_or_else(|| {
+                    format!(
+                        "project declaration value {id:?} has no admitted initial callable state"
+                    )
+                })?;
                 Ok(RuntimeExprSeedKind::MakeCallable {
                     state,
                     captures: Box::new([]),
@@ -1791,7 +1883,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ));
             }
         };
-        let result_ty = self.expression_type(id)?;
+        let result_ty = self.expression_source_type(id)?;
         let body = RuntimeExprSeed::new(result_ty, body);
         let body = lowered
             .into_iter()
@@ -2259,7 +2351,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     ) -> Result<RuntimeExprSeed, String> {
         let body = self.lower_function_block(statements, tail, PureTryContinuation::Return)?;
         Ok(RuntimeExprSeed::new(
-            self.expression_type(owner)?,
+            self.expression_source_type(owner)?,
             body.kind().clone(),
         ))
     }
@@ -2524,6 +2616,16 @@ impl<'hir> FinalExprLowerer<'hir> {
             .expression_type(id)
             .map(RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for expression {id:?}"))
+    }
+
+    fn expression_source_type(
+        &self,
+        id: ExprId,
+    ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        self.semantic_facts
+            .expression_source_type(id)
+            .map(RuntimeNormalizedType::identity)
+            .ok_or_else(|| format!("accepted source type is missing for expression {id:?}"))
     }
 
     fn resolve_expression(

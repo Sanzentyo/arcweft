@@ -85,9 +85,9 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
         0,
         "a pure generic invocation has no implicit effect parameter"
     );
-    // The checked scheme and canonical instance key consume 23 structural
+    // The checked scheme and canonical instance key consume 13 structural
     // visits. Probe early and final abort points under the same budget.
-    for (limit, attempted) in [(6, 7), (12, 13), (22, 23)] {
+    for (limit, attempted) in [(6, 7), (12, 13)] {
         let mut session = ProjectInstantiationSession::new(
             ProjectInstantiationControl::default()
                 .with_limits(ProjectInstantiationLimits::new(1, 0, limit, 128, 100)),
@@ -105,7 +105,7 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
     }
     let mut exact = ProjectInstantiationSession::new(
         ProjectInstantiationControl::default()
-            .with_limits(ProjectInstantiationLimits::new(1, 0, 23, 128, 100)),
+            .with_limits(ProjectInstantiationLimits::new(1, 0, 13, 128, 100)),
     );
     let closed = ProjectInstanceProjection::Discover(&mut exact)
         .close_instance(origin, &selection, None)
@@ -116,8 +116,8 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
             .close_instance(None)
             .expect("same closed instance")
     );
-    assert_eq!(exact.work.counters().structural_nodes, 23);
-    assert_eq!(exact.work.counters().work, 25);
+    assert_eq!(exact.work.counters().structural_nodes, 13);
+    assert_eq!(exact.work.counters().work, 15);
 }
 
 #[test]

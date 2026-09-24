@@ -255,6 +255,15 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
         bundle
     };
     let encoded = bundle
+        .with_character_dialogue_generation(
+            compiled
+                .runtime_plan()
+                .character_dialogue_generation
+                .as_ref()
+                .expect("generation for typed DialogueView fixture")
+                .as_ref()
+                .clone(),
+        )
         .to_format_bytes(BundleFormat::Awfb)
         .expect("compiled View product encodes as validated AWFB");
     let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &encoded)
@@ -731,19 +740,13 @@ fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
 }
 
 #[test]
-fn compiler_retains_authored_owner_for_signature_and_default_failures() {
+fn compiler_rejects_unsupported_view_defaults_at_registration_with_authored_source() {
     let cases = [
-        (
-            "view Good() { Text(\"ok\") }\n\nview Broken(value: String = \"x\") { Text(\"x\") }\n",
-            "compiler.view.lower",
-        ),
-        (
-            "fn make_default() -> i32 { 1 }\n\nview Good() { Text(\"ok\") }\n\nview Broken(value: i32 = make_default()) { Text(\"x\") }\n",
-            "compiler.view.value_program",
-        ),
+        "view Good() { Text(\"ok\") }\n\nview Broken(value: String = \"x\") { Text(\"x\") }\n",
+        "fn make_default() -> i32 { 1 }\n\nview Good() { Text(\"ok\") }\n\nview Broken(value: i32 = make_default()) { Text(\"x\") }\n",
     ];
 
-    for (source, _previous_leaf_diagnostic) in cases {
+    for source in cases {
         let fixture = project_view_fixture(
             source,
             "arcweft-test://compiler-view-schema-default-rejection",
@@ -757,16 +760,16 @@ fn compiler_retains_authored_owner_for_signature_and_default_failures() {
             "unexpected diagnostics: {error:?}"
         );
         let diagnostic = &error.diagnostics()[0];
-        assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
+        assert_eq!(diagnostic.stage(), ProjectCompileStage::Registration);
         assert_eq!(
             diagnostic
                 .diagnostic()
                 .code()
                 .map(arcweft_source::DiagnosticCode::as_str),
-            Some("compiler.view.lower")
+            Some("aw.callable.parameter_default.unsupported")
         );
-        assert!(diagnostic.source().is_none());
-        assert!(diagnostic.diagnostic().labels().is_empty());
+        assert!(diagnostic.source().is_some());
+        assert!(!diagnostic.diagnostic().labels().is_empty());
     }
 }
 

@@ -468,6 +468,60 @@ flow main() -> i64 {
     "42"
 );
 
+const GENERIC_PREFIX_ORIGIN_BRANCH_SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+fn left<A, B>(first: A)(second: B) -> i64 { 1i64 }
+fn right<A, B>(first: A)(second: B) -> i64 { 42i64 }
+fn identity<T>(value: T) -> T { value }
+fn apply(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }
+fn selected(pick: bool) -> i64 {
+    let prefix = if pick { left("left") } else { right("right") }
+    return apply(identity(prefix), 9i64)
+}
+flow main() -> bool {
+    let left_result = selected(identity(true))
+    let right_result = selected(identity(false))
+    return left_result == 1i64 && right_result == 42i64
+}
+"#;
+
+mod generic_prefix_origin_branch {
+    use super::*;
+
+    #[test]
+    fn native() {
+        assert_native_return(GENERIC_PREFIX_ORIGIN_BRANCH_SOURCE, "true");
+    }
+
+    #[test]
+    fn awbc() {
+        assert_awbc_return(
+            GENERIC_PREFIX_ORIGIN_BRANCH_SOURCE,
+            RuntimeValue::Bool(true),
+        );
+    }
+}
+
+#[test]
+fn generic_prefix_origin_branch_has_deterministic_canonical_awbc_bytes() {
+    fn lower_twice_source() -> Vec<u8> {
+        let compiled = compile_source(GENERIC_PREFIX_ORIGIN_BRANCH_SOURCE)
+            .expect("generic prefix origin branch source compiles");
+        AwbcLowerer::new(
+            &compiled.plan,
+            &compiled.dialogue_content,
+            "generic_prefix_origin_branch.arcw",
+        )
+        .lower()
+        .expect("generic prefix origin branch lowers to verified AWBC")
+        .program
+        .encode_canonical()
+        .expect("generic prefix origin branch encodes canonically")
+    }
+
+    assert_eq!(lower_twice_source(), lower_twice_source());
+}
+
 callable_case!(
     later_argument_closes_a_project_enum_owner,
     r#"

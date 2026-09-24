@@ -80,7 +80,14 @@ use thiserror::Error;
 
 use crate::assertion_identity::RuntimeAssertionMode;
 
+mod callable_specialization;
 mod character_dialogue;
+pub use callable_specialization::{
+    RuntimeCallableSpecializationFact, RuntimeCallableSpecializationFactError,
+    RuntimeCallableSpecializationKey, RuntimeCallableValueSpecialization,
+    RuntimeProjectCallableSourceFact, RuntimeProjectCallableSourceKey,
+    RuntimeProjectCallableSourceOrigin, RuntimeProjectCallableValueTarget,
+};
 mod character_dialogue_generation;
 mod content;
 pub use character_dialogue::RuntimeCharacterDialogueCall;
@@ -112,16 +119,16 @@ pub use project_function::{
     RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
     RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectContinuationAbi,
     RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
-    RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionExecution,
-    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
-    RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceFact,
-    RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
-    RuntimeProjectFunctionParameterAbi, RuntimeProjectFunctionParameterMaterialization,
-    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionPatternPayload,
-    RuntimeProjectFunctionPatternSemanticFact, RuntimeProjectFunctionRootFact,
-    RuntimeProjectFunctionRootRole, RuntimeProjectFunctionStatementPayload,
-    RuntimeProjectFunctionStatementSemanticFact, RuntimeProjectFunctionTypeOwner,
-    RuntimeProjectFunctionTypeProjection,
+    RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionCallSpecialization,
+    RuntimeProjectFunctionExecution, RuntimeProjectFunctionExpressionPayload,
+    RuntimeProjectFunctionExpressionSemanticFact, RuntimeProjectFunctionFactError,
+    RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterAbi,
+    RuntimeProjectFunctionParameterMaterialization, RuntimeProjectFunctionParameterSource,
+    RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
+    RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
+    RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
+    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -2399,7 +2406,7 @@ pub enum RuntimeResolvedValue {
     Local(LocalId),
     ProjectCallable {
         callable: RuntimeProjectCallable,
-        instance: RuntimeProjectFunctionInstanceKey,
+        target: RuntimeProjectCallableValueTarget,
     },
     ProjectItem(RuntimeProjectItem),
     /// Checked one-way lowering of a durable `say.*` identity into the
@@ -4299,6 +4306,9 @@ impl RuntimePureProgramFact {
 /// validates every owner and nested project identity before publication.
 #[derive(Debug)]
 pub struct RuntimePlanSemanticFactInput {
+    callable_sources: Vec<RuntimeProjectCallableSourceFact>,
+    callable_specializations: Vec<RuntimeCallableSpecializationFact>,
+    expression_specializations: Vec<(ExprId, RuntimeCallableValueSpecialization)>,
     local_declarations: Vec<(LocalId, RuntimeNormalizedType)>,
     flows: Vec<(ItemId, RuntimeFlowFact)>,
     expression_scopes: Vec<(ExprId, crate::semantic_facts::RuntimeScopeFact)>,
@@ -4344,6 +4354,9 @@ pub struct RuntimePlanSemanticFactInput {
 impl RuntimePlanSemanticFactInput {
     pub fn new() -> Self {
         Self {
+            callable_sources: Vec::new(),
+            callable_specializations: Vec::new(),
+            expression_specializations: Vec::new(),
             local_declarations: Vec::new(),
             flows: Vec::new(),
             expression_scopes: Vec::new(),
@@ -4417,6 +4430,20 @@ impl RuntimePlanSemanticFactInput {
     /// final-HIR expression.
     pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
         self.expression_types.push((owner, ty));
+    }
+
+    pub fn push_callable_source(&mut self, fact: RuntimeProjectCallableSourceFact) {
+        self.callable_sources.push(fact);
+    }
+    pub fn push_callable_specialization(&mut self, fact: RuntimeCallableSpecializationFact) {
+        self.callable_specializations.push(fact);
+    }
+    pub fn push_expression_specialization(
+        &mut self,
+        owner: ExprId,
+        fact: RuntimeCallableValueSpecialization,
+    ) {
+        self.expression_specializations.push((owner, fact));
     }
 
     /// Stages the accepted normalized type of one runtime-domain final-HIR
@@ -4648,6 +4675,10 @@ impl Default for RuntimePlanSemanticFactInput {
 /// Immutable semantic fact set bound to one exact executable project generation.
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
+    callable_sources: BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectCallableSourceFact>,
+    callable_specializations:
+        BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationFact>,
+    expression_specializations: BTreeMap<ExprId, RuntimeCallableValueSpecialization>,
     nominal_definitions: BTreeMap<RuntimeSemanticTypeId, RuntimeNominalDefinition>,
     reachability: HirRuntimeReachabilityIdentity,
     view_value_reachability: Option<HirRuntimeReachabilityIdentity>,
@@ -4770,6 +4801,17 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
 
     pub fn expression_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
         self.facts.expression_type(owner)
+    }
+    pub fn expression_specialization(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts RuntimeCallableValueSpecialization> {
+        self.facts.expression_specialization(owner)
+    }
+    pub fn expression_source_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
+        self.expression_specialization(owner)
+            .map(RuntimeCallableValueSpecialization::source)
+            .or_else(|| self.expression_type(owner))
     }
 
     pub fn expression_scope(
@@ -4958,6 +5000,20 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
             Self::Global(facts) => facts.expression_type(owner),
             Self::ProjectInstance(facts) => facts.expression_type(owner),
         }
+    }
+    pub fn expression_specialization(
+        self,
+        owner: ExprId,
+    ) -> Option<&'facts RuntimeCallableValueSpecialization> {
+        match self {
+            Self::Global(facts) => facts.expression_specialization(owner),
+            Self::ProjectInstance(facts) => facts.expression_specialization(owner),
+        }
+    }
+    pub fn expression_source_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
+        self.expression_specialization(owner)
+            .map(RuntimeCallableValueSpecialization::source)
+            .or_else(|| self.expression_type(owner))
     }
 
     pub fn expression_scope(
@@ -5202,6 +5258,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
 struct RuntimeSemanticOwnerSet<'a> {
     runtime: &'a HirRuntimeSemanticReachability<'a>,
     view_values: Option<&'a HirRuntimeSemanticReachability<'a>>,
+    view_capture_locals: Option<&'a BTreeSet<LocalId>>,
 }
 
 /// Borrowed complete executable catalogs. Every consumer keeps the root's
@@ -5241,16 +5298,19 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         Self {
             runtime,
             view_values: None,
+            view_capture_locals: None,
         }
     }
 
     const fn with_view_values(
         runtime: &'a HirRuntimeSemanticReachability<'a>,
         view_values: &'a HirRuntimeSemanticReachability<'a>,
+        view_capture_locals: &'a BTreeSet<LocalId>,
     ) -> Self {
         Self {
             runtime,
             view_values: Some(view_values),
+            view_capture_locals: Some(view_capture_locals),
         }
     }
 
@@ -5287,6 +5347,9 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
             || self
                 .view_values
                 .is_some_and(|owners| owners.contains_local(owner))
+            || self
+                .view_capture_locals
+                .is_some_and(|locals| locals.contains(&owner))
     }
 
     fn contains_capture(self, owner: CaptureId) -> bool {
@@ -5331,6 +5394,11 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
                 self.view_values
                     .into_iter()
                     .flat_map(|owners| owners.locals()),
+            )
+            .chain(
+                self.view_capture_locals
+                    .into_iter()
+                    .flat_map(|locals| locals.iter().copied()),
             )
             .collect()
     }
@@ -5464,9 +5532,18 @@ impl RuntimePlanSemanticFacts {
         {
             return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
         }
+        let view_capture_locals = input
+            .pure_programs
+            .iter()
+            .flat_map(|program| program.captures().iter().map(|capture| capture.local()))
+            .collect::<BTreeSet<_>>();
         Self::try_new_with_owner_set(
             project,
-            RuntimeSemanticOwnerSet::with_view_values(runtime_owners, view_value_owners),
+            RuntimeSemanticOwnerSet::with_view_values(
+                runtime_owners,
+                view_value_owners,
+                &view_capture_locals,
+            ),
             input,
         )
     }
@@ -5607,10 +5684,48 @@ impl RuntimePlanSemanticFacts {
             .filter(|owner| !instance_local_owners.contains(owner))
             .collect::<Vec<_>>();
 
+        let callable_sources = callable_specialization::admit_sources(input.callable_sources)?;
+        let callable_specializations = callable_specialization::admit_specializations(
+            input.callable_specializations,
+            &callable_sources,
+            &project_function_instances,
+        )?;
+        for source in callable_sources.values() {
+            validate_callable(&modules, source.callable())?;
+            let mut types = Vec::new();
+            source.append_normalized_types(&mut types);
+            for ty in types {
+                validate_normalized_type(&modules, ty)?;
+            }
+        }
+        for specialization in callable_specializations.values() {
+            let mut types = Vec::new();
+            specialization.append_normalized_types(&mut types);
+            for ty in types {
+                validate_normalized_type(&modules, ty)?;
+            }
+        }
         let expression_types = collect_unique(
             input.expression_types,
             RuntimeSemanticFactFamily::ExpressionType,
         )?;
+        let mut expression_specializations = BTreeMap::new();
+        for (owner, specialization) in input.expression_specializations {
+            let definition = callable_specializations
+                .get(specialization.key())
+                .ok_or(RuntimeCallableSpecializationFactError::Expression { expression: owner })?;
+            if expression_types.get(&owner) != Some(definition.target())
+                || specialization.source() != definition.source()
+                || expression_specializations
+                    .insert(owner, specialization)
+                    .is_some()
+            {
+                return Err(RuntimeCallableSpecializationFactError::Expression {
+                    expression: owner,
+                }
+                .into());
+            }
+        }
         for (owner, ty) in &expression_types {
             if instance_expression_owners.contains(owner) {
                 return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
@@ -5945,28 +6060,71 @@ impl RuntimePlanSemanticFacts {
             .values()
             .map(|root| root.instance().clone())
             .collect::<BTreeSet<_>>();
+        for specialization in callable_specializations.values() {
+            referenced_project_function_instances
+                .extend(specialization.selections().values().cloned());
+        }
         let mut callable_values = values
             .iter()
-            .map(|(owner, value)| (*owner, value, expression_types.get(owner)))
+            .map(|(owner, value)| {
+                (
+                    *owner,
+                    value,
+                    expression_specializations
+                        .get(owner)
+                        .map(RuntimeCallableValueSpecialization::source)
+                        .or_else(|| expression_types.get(owner)),
+                )
+            })
             .collect::<Vec<_>>();
         for semantics in project_function_instances
             .values()
             .map(RuntimeProjectFunctionInstanceFact::semantics)
             .chain(root_closures.values().map(|closure| closure.semantics()))
         {
+            let mut specializations = Vec::new();
+            semantics.visit_specializations(&mut |owner, spec, ty| {
+                specializations.push((owner, spec, ty))
+            });
+            for (owner, spec, ty) in specializations {
+                if callable_specializations
+                    .get(spec.key())
+                    .is_none_or(|definition| {
+                        definition.source() != spec.source() || Some(definition.target()) != ty
+                    })
+                {
+                    return Err(RuntimeCallableSpecializationFactError::Expression {
+                        expression: owner,
+                    }
+                    .into());
+                }
+            }
             semantics.visit_callable_values(&mut |owner, value, ty| {
                 callable_values.push((owner, value, ty))
             });
         }
         for (expression, value, ty) in callable_values {
-            if let RuntimeResolvedValue::ProjectCallable { callable, instance } = value {
-                let fact = project_function_instances.get(instance).ok_or(
-                    RuntimeSemanticFactsError::MissingProjectFunctionInstance { expression },
-                )?;
-                if fact.callable() != callable || ty != Some(fact.callable_type()) {
+            if let RuntimeResolvedValue::ProjectCallable { callable, target } = value {
+                let (accepted_callable, accepted_type) = match target {
+                    RuntimeProjectCallableValueTarget::Closed(instance) => {
+                        let fact = project_function_instances.get(instance).ok_or(
+                            RuntimeSemanticFactsError::MissingProjectFunctionInstance {
+                                expression,
+                            },
+                        )?;
+                        referenced_project_function_instances.insert(instance.clone());
+                        (fact.callable(), fact.callable_type())
+                    }
+                    RuntimeProjectCallableValueTarget::Source(source) => {
+                        let fact = callable_sources
+                            .get(source)
+                            .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
+                        (fact.callable(), fact.function_type())
+                    }
+                };
+                if accepted_callable != callable || ty != Some(accepted_type) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
-                referenced_project_function_instances.insert(instance.clone());
             }
         }
         for (expression, call) in &calls {
@@ -6003,6 +6161,10 @@ impl RuntimePlanSemanticFacts {
                 &modules,
                 &expression_types,
                 *expression,
+                expression_specializations
+                    .get(expression)
+                    .map(RuntimeCallableValueSpecialization::source)
+                    .or_else(|| expression_types.get(expression)),
                 hir_call,
                 attached_body,
                 call,
@@ -6011,8 +6173,13 @@ impl RuntimePlanSemanticFacts {
             if let Some(instance) = validate_project_function_instance_reference(
                 *expression,
                 call,
-                expression_types.get(expression),
+                expression_specializations
+                    .get(expression)
+                    .map(RuntimeCallableValueSpecialization::source)
+                    .or_else(|| expression_types.get(expression)),
                 &project_function_instances,
+                &callable_sources,
+                &callable_specializations,
             )? {
                 referenced_project_function_instances.insert(instance);
             }
@@ -6053,6 +6220,11 @@ impl RuntimePlanSemanticFacts {
                     expression_types.insert(owner, ty);
                 }
             });
+            instance
+                .semantics()
+                .visit_specializations(&mut |owner, spec, _| {
+                    expression_types.insert(owner, spec.source());
+                });
             let mut closed_calls = Vec::new();
             instance.visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
             for (owner, call) in closed_calls {
@@ -6061,6 +6233,8 @@ impl RuntimePlanSemanticFacts {
                     call,
                     expression_types.get(&owner).copied(),
                     &project_function_instances,
+                    &callable_sources,
+                    &callable_specializations,
                 )? {
                     referenced_project_function_instances.insert(invoked);
                 }
@@ -6081,11 +6255,20 @@ impl RuntimePlanSemanticFacts {
                             expected_type = projection.ty();
                         }
                     });
+                closure
+                    .semantics()
+                    .visit_specializations(&mut |candidate, spec, _| {
+                        if candidate == owner {
+                            expected_type = Some(spec.source());
+                        }
+                    });
                 if let Some(invoked) = validate_project_function_instance_reference(
                     owner,
                     call,
                     expected_type,
                     &project_function_instances,
+                    &callable_sources,
+                    &callable_specializations,
                 )? {
                     referenced_project_function_instances.insert(invoked);
                 }
@@ -6878,6 +7061,9 @@ impl RuntimePlanSemanticFacts {
         }
 
         let facts = Self {
+            callable_sources,
+            callable_specializations,
+            expression_specializations,
             reachability: runtime_owners.runtime.identity().clone(),
             view_value_reachability: runtime_owners
                 .view_values
@@ -7337,6 +7523,12 @@ impl RuntimePlanSemanticFacts {
 
     fn all_normalized_type_roots(&self) -> Vec<&RuntimeNormalizedType> {
         let mut roots = Vec::new();
+        for source in self.callable_sources.values() {
+            source.append_normalized_types(&mut roots);
+        }
+        for specialization in self.callable_specializations.values() {
+            specialization.append_normalized_types(&mut roots);
+        }
         if let Some(declaration) = self.character_dialogue_generation() {
             declaration.visit_type_refs(&mut |ty| roots.push(ty));
         }
@@ -7454,6 +7646,35 @@ impl RuntimePlanSemanticFacts {
 
     pub fn call(&self, expression: ExprId) -> Option<&RuntimeResolvedCall> {
         self.calls.get(&expression)
+    }
+
+    pub fn expression_specialization(
+        &self,
+        owner: ExprId,
+    ) -> Option<&RuntimeCallableValueSpecialization> {
+        self.expression_specializations.get(&owner)
+    }
+    pub fn callable_source(
+        &self,
+        key: &RuntimeProjectCallableSourceKey,
+    ) -> Option<&RuntimeProjectCallableSourceFact> {
+        self.callable_sources.get(key)
+    }
+    pub fn callable_sources(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &RuntimeProjectCallableSourceFact> {
+        self.callable_sources.values()
+    }
+    pub fn callable_specialization(
+        &self,
+        key: &RuntimeCallableSpecializationKey,
+    ) -> Option<&RuntimeCallableSpecializationFact> {
+        self.callable_specializations.get(key)
+    }
+    pub fn callable_specializations(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &RuntimeCallableSpecializationFact> {
+        self.callable_specializations.values()
     }
 
     /// Iterates accepted runtime call facts in canonical expression identity order.
@@ -7732,18 +7953,12 @@ fn validate_pure_programs(
             .executable_owners(&HirRuntimeExecutableOwner::Closure(fact.closure()))
             .ok_or(RuntimeSemanticFactsError::InvalidPureProgram { program })?
             .capture_plan();
-        let Some(RuntimeTypeShape::Function {
-            parameters, result, ..
-        }) = expression_types
-            .get(&fact.closure())
-            .map(RuntimeNormalizedType::shape)
-        else {
-            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
-        };
-        if !parameters.is_empty()
-            || !closure.parameters().is_empty()
+        // The closure expression belongs to the presentation owner. Its
+        // executable body and checked capture contract enter through this
+        // pure-program fact, so no runtime expression type is published for
+        // the presentation-owned closure value itself.
+        if !closure.parameters().is_empty()
             || closure.body() != fact.body()
-            || result.identity() != fact.result()
             || expression_types
                 .get(&fact.body())
                 .is_none_or(|body| body.identity() != fact.result())
@@ -7795,6 +8010,8 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error(transparent)]
+    CallableSpecialization(#[from] RuntimeCallableSpecializationFactError),
     #[error("CharacterDialogue generation inputs are invalid: {reason}")]
     InvalidCharacterDialogueGeneration { reason: &'static str },
     #[error("scope expression {expression:?} has no exact accepted lexical identity")]
@@ -8316,9 +8533,9 @@ fn validate_resolved_value(
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
             require_runtime_local_reference(runtime_owners, *local)
         }
-        RuntimeResolvedValue::ProjectCallable { callable, instance } => {
+        RuntimeResolvedValue::ProjectCallable { callable, target } => {
             validate_callable(modules, callable)?;
-            if instance.callable() != callable.runtime() {
+            if target.callable() != callable.runtime() {
                 return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
             }
             Ok(())
@@ -8753,6 +8970,7 @@ fn validate_call(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     expression: ExprId,
+    expression_source_type: Option<&RuntimeNormalizedType>,
     hir_call: &HirCallInvocation,
     attached_body: Option<arcweft_lang_hir::dialogue_application::HirAttachedContentBodyPresence>,
     call: &RuntimeResolvedCall,
@@ -8803,7 +9021,7 @@ fn validate_call(
         }
         if let Some(function_type) = plan.outcome().function_type() {
             validate_normalized_type(modules, function_type)?;
-            if expression_types.get(&expression) != Some(function_type) {
+            if expression_source_type != Some(function_type) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
                     expression,
                 });
@@ -8841,7 +9059,7 @@ fn validate_call(
             RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
         ) => {
             if !dialogue.accepts_source_row(call.operands(), call.result())
-                || !dialogue.accepts_types(call.operands(), expression_types.get(&expression))
+                || !dialogue.accepts_types(call.operands(), expression_source_type)
             {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
                     expression,
@@ -8858,8 +9076,7 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::Registered(_),
         ) => {}
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(map)) => {
-            if !runtime_standard_map_matches_operands(call, map, expression_types.get(&expression))
-            {
+            if !runtime_standard_map_matches_operands(call, map, expression_source_type) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
                     expression,
                 });
@@ -9627,6 +9844,7 @@ fn validate_project_function_instance(
             modules,
             &instance_expression_types,
             expression,
+            instance.semantics().expression_source_type(expression),
             hir_call,
             attached_body,
             call,
@@ -9955,6 +10173,7 @@ fn validate_project_function_semantic_catalog(
                     modules,
                     &expression_types,
                     owner,
+                    semantics.expression_source_type(owner),
                     hir_call,
                     attached_body,
                     call,
@@ -10580,11 +10799,49 @@ fn validate_project_function_instance_reference(
     call: &RuntimeResolvedCall,
     expression_type: Option<&RuntimeNormalizedType>,
     instances: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceFact>,
+    sources: &BTreeMap<RuntimeProjectCallableSourceKey, RuntimeProjectCallableSourceFact>,
+    specializations: &BTreeMap<RuntimeCallableSpecializationKey, RuntimeCallableSpecializationFact>,
 ) -> Result<Option<RuntimeProjectFunctionInstanceKey>, RuntimeSemanticFactsError> {
     let Some(plan) = call.project_function() else {
         return Ok(None);
     };
-    let instance = plan.outcome().callable_instance();
+    if let Some(spec) = plan.input_specialization()
+        && specializations.get(spec.key()).is_none_or(|definition| {
+            definition.source() != spec.source() || definition.target() != plan.application_type()
+        })
+    {
+        return Err(RuntimeCallableSpecializationFactError::Inventory.into());
+    }
+    let Some(instance) = plan.outcome().callable_instance() else {
+        let RuntimeProjectFunctionCallOutcome::Continue {
+            abi,
+            target: RuntimeProjectCallableValueTarget::Source(key),
+            ..
+        } = plan.outcome()
+        else {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        };
+        let source = sources
+            .get(key)
+            .ok_or(RuntimeCallableSpecializationFactError::Inventory)?;
+        let RuntimeTypeShape::Function { result, .. } = plan.application_type().shape() else {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        };
+        if source.callable() != plan.callable()
+            || source.function_type() != abi.function_type()
+            || result.as_ref() != abi.function_type()
+            || expression_type != Some(result.as_ref())
+            || source.retained().len() != abi.prefix_types().len()
+            || source
+                .retained()
+                .iter()
+                .zip(abi.prefix_types())
+                .any(|(row, ty)| &row.ty != ty)
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        return Ok(None);
+    };
     let Some(fact) = instances.get(instance) else {
         return Err(RuntimeSemanticFactsError::MissingProjectFunctionInstance { expression });
     };
@@ -10596,10 +10853,12 @@ fn validate_project_function_instance_reference(
         function_type = result;
     }
     if fact.callable() != plan.callable()
-        || plan
-            .input()
-            .function_type()
-            .is_some_and(|input_type| input_type != function_type)
+        || function_type != plan.application_type()
+        || (plan.input_specialization().is_none()
+            && plan
+                .input()
+                .function_type()
+                .is_some_and(|input_type| input_type != function_type))
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }

@@ -1198,8 +1198,7 @@ fn apply_instruction(
                     at: at.clone(),
                     message: "callable construction references an absent state".to_owned(),
                 })?;
-            if definition.origin != *state_id
-                || definition.position != RuntimeCallablePosition::Unapplied
+            if definition.position != RuntimeCallablePosition::Unapplied
                 || definition.retained.len() != captures.len()
             {
                 return invalid_type(

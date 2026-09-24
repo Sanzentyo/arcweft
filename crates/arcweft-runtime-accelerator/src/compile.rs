@@ -884,6 +884,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExprKind::MakeCallable { captures, .. } => {
             2 + captures.iter().map(runtime_expr_work_units).sum::<usize>()
         }
+        RuntimeExprKind::SpecializeCallable { value, .. } => 2 + runtime_expr_work_units(value),
         RuntimeExprKind::ApplyGroup { callee, args } => {
             8 + runtime_expr_work_units(callee)
                 + args

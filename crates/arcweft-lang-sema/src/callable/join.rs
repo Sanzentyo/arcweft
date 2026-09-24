@@ -393,7 +393,7 @@ impl CheckedProjectFunctionRuntimeSelection {
         ) {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         }
-        self.close_environment_with_control(&self.function_type, enclosing, control)
+        self.close_environment_with_control(self.group, enclosing, control)
     }
 
     /// Selects the latent body of a closed callable value without fabricating
@@ -423,14 +423,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             .last()
             .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
             .index();
-        let mut terminal_type = &self.function_type;
-        for _ in self.group.get()..terminal.get() {
-            let TypeKind::Function { return_type, .. } = terminal_type else {
-                return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
-            };
-            terminal_type = return_type;
-        }
-        let solution = self.close_environment_with_control(terminal_type, enclosing, control)?;
+        let solution = self.close_environment_with_control(terminal, enclosing, control)?;
         let TypeKind::Function { effects, .. } = solution.function_type() else {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         };
@@ -448,7 +441,7 @@ impl CheckedProjectFunctionRuntimeSelection {
 
     fn close_environment_with_control<C: crate::types::TypeProjectionControl>(
         &self,
-        function_type: &TypeKind,
+        group: CallableGroupIndex,
         enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
         control: &mut C,
     ) -> Result<
@@ -461,8 +454,11 @@ impl CheckedProjectFunctionRuntimeSelection {
         )?;
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.map_or(&empty, |row| row.solution.as_ref());
-        let function_type = caller.instantiate_type_with_control(function_type, control)?;
         let callable_type = caller.instantiate_type_with_control(&self.callable_type, control)?;
+        // Body instances use the arrow in their complete closed declaration
+        // chain. The selected input arrow may still be a residual scheme even
+        // after the same solution has closed the body.
+        let function_type = specialization::group_type(&callable_type, group)?.clone();
         let instantiation = callable_instantiation_digest_from_bindings(
             &self.base_instantiation,
             solution.type_bindings(),

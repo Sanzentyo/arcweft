@@ -71,6 +71,11 @@ impl RuntimeResolvedCall {
         );
         self.dispatch().append_normalized_types(roots);
         if let Some(plan) = self.project_function() {
+            roots.push(plan.application_type());
+            roots.extend(
+                plan.input_specialization()
+                    .map(super::RuntimeProjectFunctionCallSpecialization::source),
+            );
             for parameter in plan.current_group_materialization() {
                 roots.extend([parameter.abi_ty(), parameter.binding_ty()]);
             }
@@ -269,6 +274,11 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         );
         roots.extend(self.captures().iter().map(RuntimeCheckedCapture::ty));
         for expression in self.expressions() {
+            roots.extend(
+                expression
+                    .specialization()
+                    .map(super::RuntimeCallableValueSpecialization::source),
+            );
             expression.payload().append_normalized_types(roots);
         }
         for pattern in self.patterns() {

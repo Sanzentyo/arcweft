@@ -1,5 +1,7 @@
 //! Closed Flow effects survive semantic admission, runtime lowering and execution.
 
+use std::sync::Arc;
+
 use arcweft_compiler::{source::compile_source, types::CompiledSource};
 use arcweft_core::{
     awbc::{
@@ -56,7 +58,7 @@ fn verify_flow_effects(compiled: &CompiledSource, expected: &[(&str, &[&str])]) 
     program
 }
 
-fn assert_returns_42(compiled: CompiledSource, program: &AwbcProgram) {
+fn assert_returns_42(compiled: CompiledSource, program: AwbcProgram) {
     let main = compiled
         .plan
         .flows()
@@ -83,12 +85,26 @@ fn assert_returns_42(compiled: CompiledSource, program: &AwbcProgram) {
         }
     }
     assert!(finished, "native execution exceeded its step limit");
+    let encoded = program.encode_canonical().expect("canonical Flow AWBC");
+    let artifact = arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&encoded).as_bytes(),
+    )
+    .expect("Flow program fingerprint");
+    let program = Arc::new(program);
+    let context = vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let mut host = vm::RejectingVmHost;
     let mut fiber =
-        FiberState::for_entry(program, AwbcEntryId(0), 1, 65_536).expect("AWBC main starts");
+        FiberState::for_entry(&program, AwbcEntryId(0), 1, 65_536).expect("AWBC main starts");
     for _ in 0..256 {
-        match vm::step(program, &mut fiber, VmStepOptions::default())
-            .expect("AWBC step")
-            .exit
+        match vm::step_with_host_context(
+            &program,
+            &mut fiber,
+            VmStepOptions::default(),
+            &context,
+            &mut host,
+        )
+        .expect("AWBC step")
+        .exit
         {
             VmExit::Running => {}
             VmExit::Returned(value) => {
@@ -111,7 +127,7 @@ fn authored_and_inferred_flow_effects_authorize_ordinary_calls() {
         ))
         .expect("Flow effect bound admits the ordinary call");
         let program = verify_flow_effects(&compiled, &[("main", &["fs.read"])]);
-        assert_returns_42(compiled, &program);
+        assert_returns_42(compiled, program);
     }
 }
 
@@ -124,7 +140,7 @@ fn authored_flow_permissions_keep_unused_members_and_scopes() {
     )
     .expect("scoped Flow effect bound covers the unscoped operation");
     let program = verify_flow_effects(&compiled, &[("main", &["fs.read(save)", "fs.write"])]);
-    assert_returns_42(compiled, &program);
+    assert_returns_42(compiled, program);
 }
 
 #[test]
@@ -141,7 +157,7 @@ fn curried_prefix_has_argument_effects_but_keeps_body_effects_latent() {
         ))
         .expect("constructing a prefix does not invoke its body");
         let program = verify_flow_effects(&compiled, &[("main", &effects)]);
-        assert_returns_42(compiled, &program);
+        assert_returns_42(compiled, program);
     }
 }
 
@@ -154,7 +170,7 @@ fn curried_terminal_application_executes_the_body_effects() {
     )
     .expect("terminal application infers the body effect");
     let program = verify_flow_effects(&compiled, &[("main", &["fs.read"])]);
-    assert_returns_42(compiled, &program);
+    assert_returns_42(compiled, program);
 }
 
 #[test]
@@ -172,6 +188,6 @@ fn static_and_dynamic_flow_transfers_change_the_active_effect_scope() {
         .expect("a terminal Flow transfer does not invoke the target in the old scope");
         let program =
             verify_flow_effects(&compiled, &[("main", &[]), ("destination", &["fs.read"])]);
-        assert_returns_42(compiled, &program);
+        assert_returns_42(compiled, program);
     }
 }

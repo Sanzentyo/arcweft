@@ -458,6 +458,10 @@ struct FinalLoweringContext<'project, 'data> {
     facts: &'data RuntimePlanSemanticFacts,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_callable_states: &'data callable_states::ProjectCallableStates,
+    callable_sources: &'data callable_states::ProjectCallableSourceStates,
+    callable_specializations: &'data callable_states::CallableSpecializationSeeds,
+    callable_applications: &'data callable_states::ProjectCallableApplicationStates,
+    callable_specialization_targets: &'data callable_states::CallableSpecializationTargetStates,
     project_function_sites:
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     project_function_locals:
@@ -514,6 +518,8 @@ impl FinalLoweringContext<'_, '_> {
         .with_specialized_operand_locals(self.specialized_operand_locals)
         .with_closure_sites(self.closure_sites)
         .with_project_callable_states(self.project_callable_states)
+        .with_callable_sources(self.callable_sources)
+        .with_callable_specializations(self.callable_specializations)
     }
 
     fn scoped_expr_lowerer<'a>(
@@ -1273,7 +1279,13 @@ pub fn lower_runtime_plan_with_stats(
             &mut builder,
             &mut errors,
         );
-    let project_callable_states = callable_states::materialize(
+    let (
+        project_callable_states,
+        callable_sources,
+        callable_specializations,
+        callable_applications,
+        callable_specialization_targets,
+    ) = callable_states::materialize(
         facts,
         &project_function_sites,
         &project_default_function_sites,
@@ -1298,6 +1310,10 @@ pub fn lower_runtime_plan_with_stats(
         facts,
         locals: &locals,
         project_callable_states: &project_callable_states,
+        callable_sources: &callable_sources,
+        callable_specializations: &callable_specializations,
+        callable_applications: &callable_applications,
+        callable_specialization_targets: &callable_specialization_targets,
         project_function_sites: &project_function_sites,
         project_function_locals: &project_instance_locals,
         closure_sites: &closure_sites,
@@ -4215,6 +4231,10 @@ struct FinalFlowLowerer<'a> {
     function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
+    callable_sources: &'a callable_states::ProjectCallableSourceStates,
+    callable_specializations: &'a callable_states::CallableSpecializationSeeds,
+    callable_applications: &'a callable_states::ProjectCallableApplicationStates,
+    callable_specialization_targets: &'a callable_states::CallableSpecializationTargetStates,
     dialogue_effect_sites: &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     dialogue_content: &'a BTreeMap<
         arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
@@ -4232,6 +4252,10 @@ struct FinalFlowLowerer<'a> {
 
 #[derive(Clone)]
 enum RuntimeFlowValueContinuation {
+    Specialize {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
     Bind {
         pattern: RuntimePatternSeed,
         tail: RuntimeFlowTail,
@@ -4310,6 +4334,10 @@ impl<'a> FinalFlowLowerer<'a> {
             function_sites: context.function_sites,
             closure_sites: context.closure_sites,
             project_callable_states: context.project_callable_states,
+            callable_sources: context.callable_sources,
+            callable_specializations: context.callable_specializations,
+            callable_applications: context.callable_applications,
+            callable_specialization_targets: context.callable_specialization_targets,
             dialogue_effect_sites: context.dialogue_effect_sites,
             dialogue_content: context.dialogue_content,
             control: context.control,
@@ -4380,6 +4408,8 @@ impl<'a> FinalFlowLowerer<'a> {
         )
         .with_closure_sites(self.closure_sites)
         .with_project_callable_states(self.project_callable_states)
+        .with_callable_sources(self.callable_sources)
+        .with_callable_specializations(self.callable_specializations)
         .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals);
         lowerer.with_scoped_semantics(self.semantic_facts)
@@ -4399,6 +4429,18 @@ impl<'a> FinalFlowLowerer<'a> {
             .ok_or_else(|| {
                 RuntimePlanLowerError::new(format!(
                     "accepted type is missing for expression {expression:?}"
+                ))
+            })
+    }
+    fn expression_source_type(
+        &self,
+        expression: ExprId,
+    ) -> Result<&RuntimeNormalizedType, RuntimePlanLowerError> {
+        self.semantic_facts
+            .expression_source_type(expression)
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "accepted source type is missing for expression {expression:?}"
                 ))
             })
     }
@@ -5041,6 +5083,27 @@ impl<'a> FinalFlowLowerer<'a> {
         if let Some(value) = overrides.get(&expression) {
             return self.apply_value_continuation(value.clone(), continuation);
         }
+        let continuation = if self
+            .semantic_facts
+            .expression_specialization(expression)
+            .is_some()
+        {
+            RuntimeFlowValueContinuation::Specialize {
+                owner: expression,
+                outer: Box::new(continuation),
+            }
+        } else {
+            continuation
+        };
+        self.lower_flow_value_source_with_overrides(expression, continuation, overrides)
+    }
+
+    fn lower_flow_value_source_with_overrides(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         if let Some(semantic_dialogue) = self.synthetic_dialogue_from_source(expression) {
             return self.lower_flow_value_with_overrides(
                 semantic_dialogue,
@@ -5100,7 +5163,7 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.implicit_callable(expression).is_some() {
             let value = self
                 .expr_lowerer()
-                .lower(expression)
+                .lower_source(expression)
                 .map_err(RuntimePlanLowerError::new)?;
             return self.apply_value_continuation(value, continuation);
         }
@@ -5247,7 +5310,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 let value = self
                     .expr_lowerer()
                     .with_overrides(overrides)
-                    .lower(expression)
+                    .lower_source(expression)
                     .map_err(RuntimePlanLowerError::new)?;
                 self.apply_value_continuation(value, continuation)
             }
@@ -5261,7 +5324,7 @@ impl<'a> FinalFlowLowerer<'a> {
         continuation: RuntimeFlowValueContinuation,
         overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let result_type = self.expression_type(expression)?.clone();
+        let result_type = self.expression_source_type(expression)?.clone();
         let local = self
             .control
             .expression_values
@@ -5306,38 +5369,60 @@ impl<'a> FinalFlowLowerer<'a> {
             ))
         })?;
         let lowerer = self.expr_lowerer().with_overrides(overrides.clone());
-        let instance = checked.outcome().callable_instance();
-        let state = self
-            .project_callable_states
-            .get(instance)
-            .and_then(|states| states.get(call.completed_group().get()))
-            .cloned()
-            .ok_or_else(|| {
-                RuntimePlanLowerError::new(format!(
-                    "project callable {expression:?} has no admitted group state"
-                ))
-            })?;
-        let callee = match checked.input() {
-            crate::semantic_facts::RuntimeProjectFunctionCallInput::Direct => {
-                let ty = self
-                    .facts
-                    .project_function_instance(instance)
-                    .ok_or_else(|| RuntimePlanLowerError::new("callable instance is absent"))?
-                    .callable_type()
-                    .identity();
-                RuntimeExprSeed::new(
-                    ty,
-                    arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
-                        state: state.clone(),
-                        captures: Box::new([]),
-                    },
-                )
-            }
+        let state = if let Some(specialization) = checked.input_specialization() {
+            self.callable_specialization_targets
+                .get(&(specialization.key().clone(), specialization.source_digest()))
+                .cloned()
+        } else if let Some(instance) = checked.outcome().callable_instance() {
+            self.project_callable_states
+                .get(instance)
+                .and_then(|states| states.get(call.completed_group().get()))
+                .cloned()
+        } else if let crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Continue {
+            target: crate::semantic_facts::RuntimeProjectCallableValueTarget::Source(source),
+            ..
+        } = checked.outcome()
+        {
+            self.callable_applications
+                .get(&(source.clone(), checked.application_type().identity()))
+                .cloned()
+        } else {
+            None
+        }
+        .ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "project callable {expression:?} has no admitted group state"
+            ))
+        })?;
+        let mut callee = match checked.input() {
+            crate::semantic_facts::RuntimeProjectFunctionCallInput::Direct => RuntimeExprSeed::new(
+                checked.application_type().identity(),
+                arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
+                    state: state.clone(),
+                    captures: Box::new([]),
+                },
+            ),
             crate::semantic_facts::RuntimeProjectFunctionCallInput::Value { callee }
             | crate::semantic_facts::RuntimeProjectFunctionCallInput::Continuation {
                 callee, ..
             } => lowerer.lower(*callee).map_err(RuntimePlanLowerError::new)?,
         };
+        if let Some(specialization) = checked.input_specialization() {
+            let seed = self
+                .callable_specializations
+                .get(specialization.key())
+                .cloned()
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("project call input specialization is absent")
+                })?;
+            callee = RuntimeExprSeed::new(
+                checked.application_type().identity(),
+                arcweft_core::plan::RuntimeExprSeedKind::SpecializeCallable {
+                    value: Box::new(callee),
+                    specialization: seed,
+                },
+            );
+        }
         let mut operands = call
             .operands()
             .iter()
@@ -5711,14 +5796,14 @@ impl<'a> FinalFlowLowerer<'a> {
         let (result, tail) = match continuation {
             RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
             RuntimeFlowValueContinuation::Ignore(tail) => {
-                let ty = self.expression_type(owner)?;
+                let ty = self.expression_source_type(owner)?;
                 (
                     RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard),
                     tail,
                 )
             }
             other => {
-                let ty = self.expression_type(owner)?;
+                let ty = self.expression_source_type(owner)?;
                 let local = self
                     .control
                     .expression_values
@@ -5812,7 +5897,7 @@ impl<'a> FinalFlowLowerer<'a> {
             })?;
         let await_op =
             self.lower_await_operation(expression, awaited, &fact, &locals, overrides)?;
-        let payload = self.expression_type(expression)?.clone();
+        let payload = self.expression_source_type(expression)?.clone();
         let mut ops = vec![await_op];
         ops.extend(self.apply_value_continuation(
             local_seed(&payload, locals.payload),
@@ -5862,7 +5947,7 @@ impl<'a> FinalFlowLowerer<'a> {
         let owner = self.assertion_owner.label();
         let task = TaskId(format!("{owner}.await.{ordinal}"));
         let need = NeedId(format!("{owner}.need.{ordinal}"));
-        let payload = self.expression_type(expression)?.clone();
+        let payload = self.expression_source_type(expression)?.clone();
         if awaited.branches().len() != fact.observers().len() {
             return Err(RuntimePlanLowerError::new(format!(
                 "Await expression {expression:?} has {} authored observers but {} checked observers",
@@ -5902,6 +5987,13 @@ impl<'a> FinalFlowLowerer<'a> {
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         Ok(match continuation {
+            RuntimeFlowValueContinuation::Specialize { owner, outer } => {
+                let value = self
+                    .expr_lowerer()
+                    .specialize_result(owner, value)
+                    .map_err(RuntimePlanLowerError::new)?;
+                return self.apply_value_continuation(value, *outer);
+            }
             RuntimeFlowValueContinuation::Bind { pattern, tail } => {
                 let mut ops = vec![RuntimeFlowOpSeed::Let {
                     pattern,
@@ -5915,7 +6007,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 return self.complete_scope_success(owner, value);
             }
             RuntimeFlowValueContinuation::ExitScope { owner, outer } => {
-                let ty = self.expression_type(owner)?;
+                let ty = self.expression_source_type(owner)?;
                 let local = self
                     .control
                     .expression_values
@@ -5957,8 +6049,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 let ty = self.expression_type(child)?;
                 let local = self
                     .control
-                    .expression_values
+                    .expression_final_values
                     .get(&child)
+                    .or_else(|| self.control.expression_values.get(&child))
                     .cloned()
                     .ok_or_else(|| {
                         RuntimePlanLowerError::new(format!(
@@ -5975,7 +6068,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     }]
                 };
                 overrides.insert(child, local_seed(ty, local));
-                ops.extend(self.lower_flow_value_with_overrides(owner, *outer, overrides)?);
+                ops.extend(self.lower_flow_value_source_with_overrides(owner, *outer, overrides)?);
                 return Ok(ops);
             }
             RuntimeFlowValueContinuation::Branch {
