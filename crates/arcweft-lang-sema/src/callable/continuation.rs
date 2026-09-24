@@ -30,6 +30,7 @@ use crate::types::{
 use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
 
 mod effects;
+mod specialization;
 use effects::PreparedEffectDelta;
 pub(crate) use effects::{
     PreparedCallResultRef, PreparedCallableEffectProjectionSite, PreparedCallableEffectRows,
@@ -142,6 +143,8 @@ pub(crate) enum CallConstraintInvariant {
     PreparedEffectInstantiationMismatch,
     #[error("prepared callable function type does not match continuation")]
     PreparedFunctionTypeMismatch,
+    #[error("function scheme specialization has an invalid source schema: {0}")]
+    FunctionSchemeSchema(super::CallableSchemaError),
     #[error("composite local function value cannot be prepared as a continuation")]
     CompositeFunctionValue,
     #[error("function-value origin evidence is missing")]
@@ -2196,24 +2199,57 @@ where
         &PreparedCallContinuationRef,
     ) -> Result<PreparedCallContinuationSeed, CallConstraintInvariant>,
 {
-    let current_group = candidate.call_group();
-    let inventory = candidate.schema().generic_inventory();
-    if candidate.schema().group(current_group).is_none() {
-        return Err(CallConstraintInvariant::MalformedSchemaInventory);
-    }
     let continuation = candidate.prepared_continuation();
     let continuation_seed = if let Some(reference) = continuation {
         Some(resolve_continuation(reference)?)
     } else {
         None
     };
-    let terminal = is_terminal_group(candidate);
-    let implicit_extension_group = match candidate.instantiation() {
-        super::CallableInstantiation::Extension { group, .. } if *group > current_group => {
-            Some(*group)
+    issue_scope_initialization(
+        issuer,
+        ConstraintScopeUse::Call(candidate),
+        enclosing,
+        continuation_seed,
+    )
+}
+
+/// A source scheme use opens its whole arrow without applying a parameter
+/// group. Both forms derive eligibility from the same schema inventory.
+enum ConstraintScopeUse<'a> {
+    Call(&'a super::PreparedResolvedCallable),
+    Specialization(&'a super::CallableSignatureSchema),
+}
+
+fn issue_scope_initialization(
+    issuer: Arc<PreparedCallGraphIssuer>,
+    usage: ConstraintScopeUse<'_>,
+    enclosing: &EnclosingGenericParameterScope,
+    continuation_seed: Option<PreparedCallContinuationSeed>,
+) -> Result<PreparedConstraintInitialization, CallConstraintInvariant> {
+    let (schema, current_group, terminal, implicit_extension_group) = match usage {
+        ConstraintScopeUse::Call(candidate) => {
+            let current_group = candidate.call_group();
+            let implicit_extension_group = match candidate.instantiation() {
+                super::CallableInstantiation::Extension { group, .. } if *group > current_group => {
+                    Some(*group)
+                }
+                _ => None,
+            };
+            (
+                candidate.schema(),
+                current_group,
+                is_terminal_group(candidate),
+                implicit_extension_group,
+            )
         }
-        _ => None,
+        ConstraintScopeUse::Specialization(schema) => {
+            (schema, CallableGroupIndex::ZERO, true, None)
+        }
     };
+    let inventory = schema.generic_inventory();
+    if schema.group(current_group).is_none() {
+        return Err(CallConstraintInvariant::MalformedSchemaInventory);
+    }
     let mut types = BTreeMap::<GenericTypeReference, TypeConstraintParameterEligibility>::new();
     let mut consts = BTreeMap::<GenericConstReference, TypeConstraintConstEligibility>::new();
     let mut free_types = BTreeSet::new();
@@ -2426,7 +2462,7 @@ where
     let effect_scope = TypeConstraintEffectScope::seal_call_scope_with_predicate(
         effect_rows,
         required_effects,
-        candidate.schema().effect_predicate().clone(),
+        schema.effect_predicate().clone(),
     )
     .map_err(CallConstraintInvariant::Lower)?;
     let scope = TypeConstraintParameterScope::seal_call_scope(

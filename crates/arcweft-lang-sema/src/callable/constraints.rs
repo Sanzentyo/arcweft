@@ -26,6 +26,8 @@ use crate::types::constraints::{
 use crate::types::{ConstraintAcceptance, TypeKind};
 use std::sync::Arc;
 
+mod specialization;
+
 /// The callback vocabulary is deliberately owned by callable.  Source facts
 /// cross the boundary only as typed lower results, while checkpoint closure
 /// remains client-owned because it moves analyzer semantic state.
@@ -1160,7 +1162,7 @@ pub(crate) mod tests {
         AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path)
     }
 
-    fn accepted_type(owner: u64, ordinal: u16) -> GenericTypeParameterId {
+    pub(super) fn accepted_type(owner: u64, ordinal: u16) -> GenericTypeParameterId {
         GenericTypeParameterId::new(
             GenericParameterOwnerId::AcceptedNominal(accepted_owner(owner)),
             ordinal,
@@ -1183,7 +1185,7 @@ pub(crate) mod tests {
         initialization_from_graph(&crate::callable::PreparedCallGraph::<()>::new(), scope)
     }
 
-    fn initialization_from_graph(
+    pub(super) fn initialization_from_graph(
         graph: &crate::callable::PreparedCallGraph<()>,
         scope: TypeConstraintParameterScope,
     ) -> PreparedConstraintInitialization {

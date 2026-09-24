@@ -1867,6 +1867,28 @@ impl<A: TypeConstraintAccounting, D: ConstraintDomain> crate::effect_row::Decisi
     }
 }
 
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> crate::types::TypeProjectionControl
+    for TypeConstraintContext<'_, A, D>
+{
+    type Error = TypeConstraintError;
+
+    fn check(&mut self) -> Result<(), Self::Error> {
+        self.check_cancelled()
+    }
+
+    fn visit_node(
+        &mut self,
+        _kind: crate::types::TypeProjectionNodeKind,
+        _depth: u64,
+    ) -> Result<(), Self::Error> {
+        self.enter_node()
+    }
+
+    fn visit_binding(&mut self) -> Result<(), Self::Error> {
+        self.enter_node()
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Counter {
     Nodes,
