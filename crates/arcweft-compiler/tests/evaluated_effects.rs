@@ -1268,6 +1268,42 @@ entry cli @entry.main { goto @flow.main }
     );
 }
 
+#[test]
+fn inline_colon_dialogue_plan_reaches_compiler_hir() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice: hello[mark @.end]
+    with:
+        on mark(@.end) => log.info("end")
+    return ()
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("colon dialogue source compiles");
+    let plans = compiled
+        .analysis_lease()
+        .hir_project()
+        .view()
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .filter_map(|(_, expression)| match expression.kind() {
+            arcweft_lang_hir::expr::HirExprKind::AttachedContentApplication(application) => {
+                match application.family() {
+                    arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine { plan, .. } => {
+                        plan.as_ref().map(|plan| plan.items().len())
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(plans, [1]);
+}
+
 fn collect_mark_triggers(
     group: &LineTaskGroup,
     node_id: RuntimeLineTaskNodeId,
