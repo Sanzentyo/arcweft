@@ -491,7 +491,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                     function,
                     RuntimePlanTypeProjection::Function {
                         contract: Default::default(),
-                        parameters: Box::new([option]),
+                        parameters: Box::new([]),
                         result: unit,
                     },
                 ),
@@ -531,6 +531,25 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         },
         target_site,
     );
+    let arrow_entry = flow_id("flow.arrow_default");
+    builder
+        .push_flow_schema(flow_schema(&arrow_entry))
+        .expect("defaulted arrow-call flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            arrow_entry.clone(),
+            [],
+            crate::plan::RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::ApplyFunction {
+                    callee: callee.clone(),
+                    args: Box::new([]),
+                    result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                },
+                RuntimeFlowOpSeed::Return("defaulted".to_owned()),
+            ],
+        ))
+        .expect("defaulted arrow-call flow admits");
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("defaulted project-call flow schema admits");
@@ -562,17 +581,17 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .expect("defaulted project-call flow admits");
     let plan = builder.finish().expect("defaulted project-call plan seals");
     assert_eq!(plan.project_call_sites().len(), 1);
-    let mut engine = Engine::for_flow(plan, &entry).expect("defaulted project-call flow exists");
-
-    let output = drain(&mut engine);
-
-    assert_eq!(
-        output.flow_events,
-        vec![FlowEvent::Return {
-            value: "defaulted".to_owned(),
-        }]
-    );
-    assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    for entry in [entry, arrow_entry] {
+        let mut engine = Engine::for_flow(plan.clone(), &entry).expect("defaulted flow exists");
+        let output = drain(&mut engine);
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::Return {
+                value: "defaulted".to_owned(),
+            }]
+        );
+        assert!(matches!(engine.fiber().status, FlowFiberStatus::Done(_)));
+    }
 }
 
 #[test]

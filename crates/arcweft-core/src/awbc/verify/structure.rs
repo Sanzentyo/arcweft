@@ -1652,23 +1652,9 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
         }
 
         let attached_input_type = match &state.attached {
-            RuntimeCallableAttachedContract::None => {
-                if parameters.len() != state.parameters.len() {
-                    return Err(invalid(
-                        "callable function arrow has an unexpected attached input",
-                    ));
-                }
-                None
-            }
+            RuntimeCallableAttachedContract::None => None,
             RuntimeCallableAttachedContract::Required { ty } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                if parameters.len() != state.parameters.len().saturating_add(1)
-                    || parameters.last() != Some(ty)
-                {
-                    return Err(invalid(
-                        "required attached input disagrees with callable arrow",
-                    ));
-                }
                 Some(*ty)
             }
             RuntimeCallableAttachedContract::Optional { value, binding } => {
@@ -1678,36 +1664,15 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
                     *binding,
                     crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
                 ) != Some(*value)
-                    || parameters.len() != state.parameters.len().saturating_add(1)
-                    || parameters.last() != Some(binding)
                 {
                     return Err(invalid(
-                        "optional attached input disagrees with callable arrow",
+                        "optional attached binding must be Option of its value type",
                     ));
                 }
                 Some(*binding)
             }
             RuntimeCallableAttachedContract::Defaulted { ty, default } => {
                 check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                if parameters.len() != state.parameters.len().saturating_add(1) {
-                    return Err(invalid(
-                        "defaulted attached input is absent from callable arrow",
-                    ));
-                }
-                let Some(binding) = parameters.last().copied() else {
-                    return Err(invalid(
-                        "defaulted attached input is absent from callable arrow",
-                    ));
-                };
-                if program.builtin_variant_payload_item(
-                    binding,
-                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
-                ) != Some(*ty)
-                {
-                    return Err(invalid(
-                        "defaulted attached ABI must be Option of its value type",
-                    ));
-                }
                 match default {
                     RuntimeCallableDefault::RequiresSpecialization => {
                         if !matches!(
@@ -1739,7 +1704,7 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
                 Some(*ty)
             }
         };
-        if parameters.len() != state.parameters.len() + usize::from(attached_input_type.is_some())
+        if parameters.len() != state.parameters.len()
             || parameters
                 .iter()
                 .take(state.parameters.len())

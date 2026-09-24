@@ -34,10 +34,8 @@ impl Engine {
             self.complete_function_call_result(&result, resume, value, output);
             return Ok(());
         }
-        let (arguments, attached) = callable.materialize_abi_arguments(&args)?;
-        self.start_callable_group(
-            callable, arguments, attached, result, resume, output, backend,
-        )
+        let arguments = callable.materialize_arrow_arguments(&args)?;
+        self.start_callable_group(callable, arguments, None, result, resume, output, backend)
     }
 
     pub(super) fn start_callable_group(

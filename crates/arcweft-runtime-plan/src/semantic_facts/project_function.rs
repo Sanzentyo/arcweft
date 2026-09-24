@@ -2214,18 +2214,18 @@ impl RuntimeProjectFunctionInstanceFact {
                 }
             }
         }
-        let mut expected_parameter_types = parameters
+        // The function arrow contains ordinary parameters. The attached body
+        // has its own terminal ABI and is checked independently below.
+        let expected_parameter_types = parameters
             .iter()
             .filter(|parameter| parameter.group() == key.group())
             .map(RuntimeProjectFunctionParameterAbi::abi_ty)
             .collect::<Vec<_>>();
         if let Some(attached) = callable.attached_content_abi()
             && attached.group() == key.group()
+            && attached.abi_position() != expected_current_position
         {
-            if attached.abi_position() != expected_current_position {
-                return Err(RuntimeProjectFunctionFactError::NonCanonicalParameterAbi);
-            }
-            expected_parameter_types.push(attached.abi_ty());
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalParameterAbi);
         }
         if function_parameters.len() != expected_parameter_types.len()
             || function_parameters

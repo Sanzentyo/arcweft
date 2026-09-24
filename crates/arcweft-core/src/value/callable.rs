@@ -242,27 +242,21 @@ impl RuntimeCallableValue {
         }
     }
 
+    /// Number of ordinary inputs still required by this callable arrow.
+    /// Attached content is supplied through the separate group-application ABI.
     pub fn remaining_arity(&self) -> Result<usize, RuntimeCallableValueError> {
         let absent = || RuntimeCallableValueError::MissingState { state: self.state };
         match &self.owner {
             RuntimeProgramOwner::Plan(plan) => {
                 let state = plan.callable_states().get(self.state).ok_or_else(absent)?;
-                Ok(state.parameters.len()
-                    + usize::from(!matches!(
-                        state.attached,
-                        RuntimeCallableAttachedContract::None
-                    )))
+                Ok(state.parameters.len())
             }
             RuntimeProgramOwner::Awbc(program) => {
                 let state = program
                     .callable_states
                     .get(self.state.index())
                     .ok_or_else(absent)?;
-                Ok(state.parameters.len()
-                    + usize::from(!matches!(
-                        state.attached,
-                        RuntimeCallableAttachedContract::None
-                    )))
+                Ok(state.parameters.len())
             }
         }
     }
@@ -278,80 +272,13 @@ impl RuntimeCallableValue {
 
     /// Materializes one positional callable arrow into the declaration's
     /// logical bindings. A rest arrow input is an element, not an existing pack.
-    pub(crate) fn materialize_abi_arguments(
+    /// Attached content is not an arrow input; ordinary application omits it.
+    pub(crate) fn materialize_arrow_arguments(
         &self,
         values: &[RuntimeValue],
-    ) -> Result<(Vec<RuntimeValue>, Option<RuntimeValue>), RuntimeCallableValueError> {
-        let absent = || RuntimeCallableValueError::MissingState { state: self.state };
-        let missing = || RuntimeCallableValueError::MissingType { state: self.state };
+    ) -> Result<Vec<RuntimeValue>, RuntimeCallableValueError> {
         let inputs = self.ordinary_abi_inputs()?;
-        let attached = match &self.owner {
-            RuntimeProgramOwner::Plan(plan) => {
-                let definition = plan.callable_states().get(self.state).ok_or_else(absent)?;
-                let attached =
-                    if matches!(definition.attached, RuntimeCallableAttachedContract::None) {
-                        None
-                    } else {
-                        let crate::plan::RuntimePlanTypeProjection::Function { parameters, .. } =
-                            plan.type_table()
-                                .get(definition.function_type)
-                                .ok_or_else(missing)?
-                                .projection()
-                        else {
-                            return Err(missing());
-                        };
-                        let ty = plan
-                            .type_table()
-                            .get(*parameters.last().ok_or_else(missing)?)
-                            .ok_or_else(missing)?
-                            .semantic_identity();
-                        Some((
-                            ty,
-                            !matches!(
-                                definition.attached,
-                                RuntimeCallableAttachedContract::Required { .. }
-                            ),
-                        ))
-                    };
-                attached
-            }
-            RuntimeProgramOwner::Awbc(program) => {
-                let definition = program
-                    .callable_states
-                    .get(self.state.index())
-                    .ok_or_else(absent)?;
-                let attached =
-                    if matches!(definition.attached, RuntimeCallableAttachedContract::None) {
-                        None
-                    } else {
-                        let crate::awbc::schema::AwbcRuntimeTypeShape::Function {
-                            parameters, ..
-                        } = program
-                            .runtime_types
-                            .get(definition.function_type.index())
-                            .ok_or_else(missing)?
-                            .shape()
-                        else {
-                            return Err(missing());
-                        };
-                        let ty = program
-                            .runtime_types
-                            .get(parameters.last().ok_or_else(missing)?.index())
-                            .ok_or_else(missing)?
-                            .semantic_identity();
-                        Some((
-                            ty,
-                            !matches!(
-                                definition.attached,
-                                RuntimeCallableAttachedContract::Required { .. }
-                            ),
-                        ))
-                    };
-                attached
-            }
-        };
-        let ordinary_arity = inputs.len();
-        let arity = ordinary_arity + usize::from(attached.is_some());
+        let arity = inputs.len();
         if values.len() != arity {
             return Err(RuntimeCallableValueError::ArgumentCount {
                 state: self.state,
@@ -359,42 +286,7 @@ impl RuntimeCallableValue {
                 actual: values.len(),
             });
         }
-        let validate = |ty, value: &RuntimeValue, position| {
-            self.owner
-                .types()
-                .validate_live_value(ty, value, RuntimeSchemaLimits::engine_default())
-                .map_err(|error| RuntimeCallableValueError::ArgumentType {
-                    state: self.state,
-                    position,
-                    error: Box::new(error),
-                })
-        };
-        let logical = self.materialize_ordinary_inputs(&inputs, &values[..ordinary_arity])?;
-        let attached = if let Some((ty, optional)) = attached {
-            let value = values[ordinary_arity].clone();
-            validate(ty, &value, ordinary_arity)?;
-            if optional {
-                match value.try_into_builtin_variant_case() {
-                    Ok((
-                        crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
-                        Some(value),
-                    )) => Some(value),
-                    Ok((crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => {
-                        None
-                    }
-                    _ => {
-                        return Err(RuntimeCallableValueError::InputProjection {
-                            state: self.state,
-                        });
-                    }
-                }
-            } else {
-                Some(value)
-            }
-        } else {
-            None
-        };
-        Ok((logical, attached))
+        self.materialize_ordinary_inputs(&inputs, values)
     }
 
     fn ordinary_abi_inputs(

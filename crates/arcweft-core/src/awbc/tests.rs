@@ -928,7 +928,7 @@ fn project_call_default_program() -> AwbcProgram {
             4,
             AwbcRuntimeTypeShape::Function {
                 contract: RuntimeFunctionTypeContract::default(),
-                parameters: vec![AwbcTypeId(2)],
+                parameters: Vec::new(),
                 result: AwbcTypeId(0),
             },
         ),
@@ -1494,7 +1494,131 @@ fn project_call_defaulted_omitted_runs_default_once_then_target() {
 }
 
 #[test]
-fn project_call_rejects_flat_option_payload_in_attached_default_abi() {
+fn callable_arrow_omission_runs_default_then_target_without_an_extra_argument() {
+    let mut program = project_call_default_program();
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.insert(
+        1,
+        AwbcInstruction::ApplyGroup {
+            dst: AwbcRegisterId(1),
+            callee: AwbcRegisterId(0),
+            args: Vec::new(),
+        },
+    );
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[0].terminator = AwbcTerminator::Jump {
+        target: AwbcBlockId(1),
+    };
+    program.blocks[2].instructions = AwbcTableRange::new(2, 1);
+    program.blocks[3].instructions = AwbcTableRange::new(3, 1);
+    let program = std::sync::Arc::new(program);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+    for expected in [AwbcFunctionId(1), AwbcFunctionId(2)] {
+        let output = step_with_callable_context(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 2,
+            },
+        )
+        .unwrap();
+        assert_eq!(output.exit, super::vm::VmExit::Running);
+        assert_eq!(fiber.cursor.function, expected);
+        assert_eq!(fiber.frames.len(), 2);
+    }
+    let output = step_with_callable_context(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+    assert_eq!(fiber.frames.len(), 1);
+}
+
+#[test]
+fn project_call_supplied_attached_enters_target_without_running_default() {
+    let mut program = project_call_default_program();
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.instructions.insert(
+        1,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+    );
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[2].instructions = AwbcTableRange::new(2, 1);
+    program.blocks[3].instructions = AwbcTableRange::new(3, 1);
+    let call = project_call_mut(&mut program);
+    call.operands = vec![AwbcProjectCallOperand {
+        value: AwbcRegisterId(1),
+        mode: AwbcProjectCallOperandMode::Value,
+    }];
+    call.attached = Some(AwbcProjectCallAttachedMaterialization {
+        source_index: Some(0),
+        presence: AwbcProjectCallAttachedPresence::DefaultedPresent,
+    });
+    let program = std::sync::Arc::new(program);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+    let output = step_with_callable_context(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(fiber.cursor.function, AwbcFunctionId(2));
+    let output = step_with_callable_context(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .unwrap();
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+}
+
+#[test]
+fn callable_verifier_rejects_attached_content_flattened_into_the_function_arrow() {
+    let mut program = project_call_default_program();
+    program.runtime_types[3] = runtime_type(
+        4,
+        AwbcRuntimeTypeShape::Function {
+            contract: RuntimeFunctionTypeContract::default(),
+            parameters: vec![AwbcTypeId(2)],
+            result: AwbcTypeId(0),
+        },
+    );
+    expect_project_call_rejection(
+        program,
+        "callable function arrow disagrees with its state layout",
+    );
+}
+
+#[test]
+fn project_call_rejects_flat_option_payload_in_type_inventory() {
     let mut program = project_call_default_program();
     let AwbcRuntimeTypeShape::Variant {
         owner,
@@ -1607,7 +1731,7 @@ fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
         5,
         AwbcRuntimeTypeShape::Function {
             contract: RuntimeFunctionTypeContract::default(),
-            parameters: vec![AwbcTypeId(0), AwbcTypeId(2)],
+            parameters: vec![AwbcTypeId(0)],
             result: AwbcTypeId(0),
         },
     ));
@@ -1808,18 +1932,10 @@ fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
     };
     expect_project_call_rejection(
         optional_wrong_type,
-        "optional attached input disagrees with callable arrow",
+        "optional attached binding must be Option of its value type",
     );
 
     let mut required_spread = project_call_default_program();
-    required_spread.runtime_types[3] = runtime_type(
-        4,
-        AwbcRuntimeTypeShape::Function {
-            contract: RuntimeFunctionTypeContract::default(),
-            parameters: vec![AwbcTypeId(0)],
-            result: AwbcTypeId(0),
-        },
-    );
     required_spread.callable_states[0].attached =
         RuntimeCallableAttachedContract::Required { ty: AwbcTypeId(0) };
     let call = project_call_mut(&mut required_spread);

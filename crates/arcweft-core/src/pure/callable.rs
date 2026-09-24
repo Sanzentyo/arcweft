@@ -74,8 +74,8 @@ impl PureEvaluator<'_> {
         if args.len() < callable.remaining_arity()? {
             return Ok(RuntimeValue::Callable(callable.try_bind_prefix(args)?));
         }
-        let (arguments, attached) = callable.materialize_abi_arguments(args)?;
-        let mut application = callable.prepare_group(&arguments, attached)?;
+        let arguments = callable.materialize_arrow_arguments(args)?;
+        let mut application = callable.prepare_group(&arguments, None)?;
         loop {
             match application {
                 RuntimeCallableApplication::Complete(value) => return Ok(value),

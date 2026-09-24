@@ -1502,11 +1502,11 @@ fn apply_runtime_callable(
             actual: args.len(),
         });
     }
-    let (logical_arguments, attached) = callable
-        .materialize_abi_arguments(args)
+    let logical_arguments = callable
+        .materialize_arrow_arguments(args)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     let application = callable
-        .prepare_group(&logical_arguments, attached)
+        .prepare_group(&logical_arguments, None)
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     let caller = fiber.cursor;
     let return_cursor = FiberCursor {

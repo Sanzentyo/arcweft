@@ -440,12 +440,7 @@ impl RuntimeCallableState {
                 role: "function",
             });
         };
-        if parameters.len()
-            != self.parameters.len()
-                + usize::from(!matches!(
-                    self.attached,
-                    RuntimeCallableAttachedContract::None
-                ))
+        if parameters.len() != self.parameters.len()
             || result != &self.result
             || parameters
                 .iter()
@@ -553,19 +548,6 @@ impl RuntimeCallableState {
                 Some(*value)
             }
         };
-        let attached_abi_matches = match &self.attached {
-            RuntimeCallableAttachedContract::None => true,
-            RuntimeCallableAttachedContract::Required { ty } => parameters.last() == Some(ty),
-            RuntimeCallableAttachedContract::Optional { binding, .. } => {
-                parameters.last() == Some(binding)
-            }
-            RuntimeCallableAttachedContract::Defaulted { ty: expected, .. } => {
-                matches!(ty(*parameters.last().ok_or_else(invalid_layout)?, "attached ABI")?, Type::Option { item, .. } if item == expected)
-            }
-        };
-        if !attached_abi_matches {
-            return Err(invalid_layout());
-        }
         match &self.transition {
             RuntimeCallableTransition::RequiresSpecialization => {
                 if contract.binder().is_empty() || !self.partials.is_empty() {

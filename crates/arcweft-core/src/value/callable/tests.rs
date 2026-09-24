@@ -312,12 +312,13 @@ fn rest_partial_plan(
             [
                 RuntimeLocalDeclarationSeed::new(sequence),
                 RuntimeLocalDeclarationSeed::new(boolean),
+                RuntimeLocalDeclarationSeed::new(boolean),
             ],
         )
         .unwrap();
     let site = builder
         .push_function_site_seed(
-            [sequence, boolean]
+            [sequence, boolean, boolean]
                 .into_iter()
                 .enumerate()
                 .map(|(position, ty)| RuntimeFunctionInputBindingSeed {
@@ -336,6 +337,10 @@ fn rest_partial_plan(
         group: 0,
         parameter: 0,
     };
+    let second_coordinate = RuntimeCallableParameterCoordinate {
+        group: 0,
+        parameter: 1,
+    };
     builder
         .define_callable_state_seed(
             &initial,
@@ -344,12 +349,20 @@ fn rest_partial_plan(
                 origin: initial.clone(),
                 position: RuntimeCallablePosition::Unapplied,
                 retained: Box::new([]),
-                parameters: Box::new([RuntimeCallableParameterInput {
-                    coordinate,
-                    kind: RuntimeCallableParameterKind::Rest,
-                    abi_ty: unit,
-                    binding_ty: sequence,
-                }]),
+                parameters: Box::new([
+                    RuntimeCallableParameterInput {
+                        coordinate,
+                        kind: RuntimeCallableParameterKind::Rest,
+                        abi_ty: unit,
+                        binding_ty: sequence,
+                    },
+                    RuntimeCallableParameterInput {
+                        coordinate: second_coordinate,
+                        kind: RuntimeCallableParameterKind::Fixed,
+                        abi_ty: boolean,
+                        binding_ty: boolean,
+                    },
+                ]),
                 result: unit,
                 attached: RuntimeCallableAttachedContract::Required { ty: boolean },
                 transition: RuntimeCallableTransition::Invoke {
@@ -357,6 +370,7 @@ fn rest_partial_plan(
                     captures: Box::new([]),
                     arguments: Box::new([
                         RuntimeCallableInputSource::Argument { position: 0 },
+                        RuntimeCallableInputSource::Argument { position: 1 },
                         RuntimeCallableInputSource::Attached,
                     ]),
                 },
@@ -382,7 +396,12 @@ fn rest_partial_plan(
                     role: RuntimeCallableRetainedRole::Parameter(coordinate),
                     ty: sequence,
                 }]),
-                parameters: Box::new([]),
+                parameters: Box::new([RuntimeCallableParameterInput {
+                    coordinate: second_coordinate,
+                    kind: RuntimeCallableParameterKind::Fixed,
+                    abi_ty: boolean,
+                    binding_ty: boolean,
+                }]),
                 result: unit,
                 attached: RuntimeCallableAttachedContract::Required { ty: boolean },
                 transition: RuntimeCallableTransition::Invoke {
@@ -390,6 +409,7 @@ fn rest_partial_plan(
                     captures: Box::new([]),
                     arguments: Box::new([
                         RuntimeCallableInputSource::Retained { position: 0 },
+                        RuntimeCallableInputSource::Argument { position: 0 },
                         RuntimeCallableInputSource::Attached,
                     ]),
                 },
@@ -419,7 +439,7 @@ fn rest_binding_rejects_other_sequence_families() {
 }
 
 #[test]
-fn partial_rest_binding_retains_a_pack_until_the_attached_argument_arrives() {
+fn partial_rest_binding_retains_a_pack_and_keeps_attached_content_separate() {
     let owner = RuntimeProgramOwner::Plan(Arc::new(
         rest_partial_plan(crate::plan::RuntimePlanSequenceKind::Vec).unwrap(),
     ));
@@ -429,6 +449,7 @@ fn partial_rest_binding_retains_a_pack_until_the_attached_argument_arrives() {
         [],
     )
     .unwrap();
+    assert_eq!(callable.remaining_arity().unwrap(), 2);
     assert!(matches!(
         callable.try_bind_prefix(&[RuntimeValue::Bool(true)]),
         Err(RuntimeCallableValueError::ArgumentType { position: 0, .. })
@@ -437,13 +458,157 @@ fn partial_rest_binding_retains_a_pack_until_the_attached_argument_arrives() {
     let pack = crate::value::runtime_sequence_values(vec![RuntimeValue::Unit]);
     assert_eq!(prefix.retained(), [pack.clone()]);
     assert!(callable.retained().is_empty());
-    let (ordinary, attached) = prefix
-        .materialize_abi_arguments(&[RuntimeValue::Bool(true)])
+    assert_eq!(prefix.remaining_arity().unwrap(), 1);
+    let ordinary = prefix
+        .materialize_arrow_arguments(&[RuntimeValue::Bool(false)])
         .unwrap();
-    let RuntimeCallableApplication::Invoke(invocation) =
-        prefix.prepare_group(&ordinary, attached).unwrap()
+    assert!(matches!(
+        prefix.prepare_group(&ordinary, None),
+        Err(RuntimeCallableValueError::RequiredAttached { .. })
+    ));
+    assert!(matches!(
+        prefix.materialize_arrow_arguments(&[RuntimeValue::Bool(false), RuntimeValue::Bool(true)]),
+        Err(RuntimeCallableValueError::ArgumentCount {
+            expected: 1,
+            actual: 2,
+            ..
+        })
+    ));
+    let RuntimeCallableApplication::Invoke(invocation) = prefix
+        .prepare_group(&ordinary, Some(RuntimeValue::Bool(true)))
+        .unwrap()
     else {
         panic!("the completed attached group must invoke");
     };
-    assert_eq!(invocation.arguments, [pack, RuntimeValue::Bool(true)]);
+    assert_eq!(
+        invocation.arguments,
+        [pack, RuntimeValue::Bool(false), RuntimeValue::Bool(true)]
+    );
+}
+
+fn defaulted_attached_plan_builder(flatten_attached_into_arrow: bool) -> RuntimePlanBuilder {
+    let boolean = RuntimeCheckedType::Bool.semantic_identity_digest();
+    let function = RuntimeSemanticTypeId::from_bytes([0x8e; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(boolean, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        contract: crate::plan::RuntimeFunctionTypeContract::default(),
+                        parameters: if flatten_attached_into_arrow {
+                            Box::new([boolean])
+                        } else {
+                            Box::new([])
+                        },
+                        result: boolean,
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(boolean)],
+        )
+        .unwrap();
+    let input = admission.local_ids()[0].clone();
+    let default = builder
+        .push_function_site_seed(
+            [],
+            RuntimeExprSeed::new(
+                boolean,
+                RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),
+            ),
+        )
+        .unwrap();
+    let target = builder
+        .push_function_site_seed(
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local: input.clone(),
+                pattern: RuntimePatternSeed::new(boolean, RuntimePatternSeedKind::Discard),
+            }],
+            RuntimeExprSeed::new(boolean, RuntimeExprSeedKind::Local(input)),
+        )
+        .unwrap();
+    let state = builder.reserve_callable_state_seed().unwrap();
+    builder
+        .define_callable_state_seed(
+            &state,
+            RuntimeCallableStateDefinition {
+                function_type: function,
+                origin: state.clone(),
+                position: RuntimeCallablePosition::Unapplied,
+                retained: Box::new([]),
+                parameters: Box::new([]),
+                result: boolean,
+                attached: RuntimeCallableAttachedContract::Defaulted {
+                    ty: boolean,
+                    default: crate::plan::RuntimeCallableDefault::Body {
+                        function: default,
+                        captures: Box::new([]),
+                    },
+                },
+                transition: RuntimeCallableTransition::Invoke {
+                    function: target,
+                    captures: Box::new([]),
+                    arguments: Box::new([RuntimeCallableInputSource::Attached]),
+                },
+                partials: Box::new([]),
+            },
+        )
+        .unwrap();
+    builder
+}
+
+#[test]
+fn ordinary_arrow_omission_selects_the_default_and_supplied_attached_bypasses_it() {
+    let owner = RuntimeProgramOwner::Plan(Arc::new(
+        defaulted_attached_plan_builder(false).finish().unwrap(),
+    ));
+    let callable = RuntimeCallableValue::try_new(
+        owner,
+        RuntimeCallableStateId::from_zero_based(0).unwrap(),
+        [],
+    )
+    .unwrap();
+    assert_eq!(callable.remaining_arity().unwrap(), 0);
+    let arguments = callable.materialize_arrow_arguments(&[]).unwrap();
+    assert!(matches!(
+        callable.prepare_group(&arguments, None).unwrap(),
+        RuntimeCallableApplication::AttachedDefault(_)
+    ));
+    let RuntimeCallableApplication::Invoke(defaulted) = callable
+        .complete_group_default(&arguments, RuntimeValue::Bool(true))
+        .unwrap()
+    else {
+        panic!("a completed default must enter the target rather than select another default")
+    };
+    assert_eq!(defaulted.arguments, [RuntimeValue::Bool(true)]);
+    let RuntimeCallableApplication::Invoke(supplied) = callable
+        .prepare_group(&arguments, Some(RuntimeValue::Bool(false)))
+        .unwrap()
+    else {
+        panic!("supplied attached content must bypass the default")
+    };
+    assert_eq!(supplied.arguments, [RuntimeValue::Bool(false)]);
+    assert!(matches!(
+        callable.materialize_arrow_arguments(&[RuntimeValue::Bool(false)]),
+        Err(RuntimeCallableValueError::ArgumentCount {
+            expected: 0,
+            actual: 1,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn callable_state_rejects_attached_content_flattened_into_the_function_arrow() {
+    assert!(matches!(
+        defaulted_attached_plan_builder(true).finish(),
+        Err(crate::plan::RuntimePlanBuildError::Plan(
+            crate::plan::RuntimePlanError::CallableState(
+                crate::plan::RuntimeCallableStateError::InvalidLayout { .. }
+            )
+        ))
+    ));
 }
