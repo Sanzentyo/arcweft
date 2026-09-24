@@ -1,6 +1,6 @@
 //! Atomic execution-plan publication from checked expression and call facts.
 //!
-//! Selected applications, evaluated effects and dialogue consumers are joined
+//! Selected applications, evaluated effects and dialogue targets are joined
 //! here before plans are published. Tooling-only call outcomes own no plan.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,7 +26,6 @@ pub(super) fn seal(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let mut roles = BTreeMap::<ExprId, BTreeSet<super::CheckedEvaluatedEffectRole>>::new();
-    let mut dialogue_consumers = BTreeMap::new();
     for (statement, payload) in statements {
         let super::PreparedStatementPayload::SealedEvaluatedEffect(effect) = payload else {
             continue;
@@ -40,12 +39,15 @@ pub(super) fn seal(
         else {
             continue;
         };
-        let line = dialogue_lines
+        dialogue_lines
             .for_semantic_expr(*owner)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if dialogue_consumers
-            .insert(target.expression(), (*owner, line.id().clone()))
-            .is_some()
+        // The target is evaluated as an ordinary value before line content.
+        // The application owns line execution, not the target's call/result.
+        if expressions
+            .get(&target.expression())
+            .and_then(|target| target.value_type())
+            != Some(&target.ty())
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
@@ -62,20 +64,9 @@ pub(super) fn seal(
                 .into_iter()
                 .collect::<Vec<_>>()
                 .into_boxed_slice();
-            let dialogue_consumer = dialogue_consumers.remove(&owner);
             let plan = match plan {
-                Some(plan) => {
-                    let mut plan = plan.with_evaluated_effect_roles(effect_roles);
-                    if let Some((dialogue_owner, line)) = dialogue_consumer
-                        && plan.call_application().is_some()
-                    {
-                        plan = plan
-                            .with_dialogue_consumer(dialogue_owner, line)
-                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                    }
-                    Some(plan)
-                }
-                None if effect_roles.is_empty() && dialogue_consumer.is_none() => None,
+                Some(plan) => Some(plan.with_evaluated_effect_roles(effect_roles)),
+                None if effect_roles.is_empty() => None,
                 None => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
             };
             Ok((
@@ -84,7 +75,7 @@ pub(super) fn seal(
             ))
         })
         .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
-    if !roles.is_empty() || !dialogue_consumers.is_empty() {
+    if !roles.is_empty() {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
     Ok(replacements)

@@ -2001,13 +2001,6 @@ pub enum CheckedExpressionCallCallee {
     },
 }
 
-/// Sole consumer of one accepted Call application at runtime lowering.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum CheckedCallExecutionConsumer {
-    Runtime,
-    DialogueApplication { owner: ExprId, line: DialogueLineId },
-}
-
 /// Stable role occupied by one evaluated-effect expression in its owner.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedEvaluatedEffectRole {
@@ -2041,7 +2034,6 @@ pub enum CheckedExpressionExecutionPlan {
         application: CheckedCallApplicationDigest,
         result: CheckedRuntimeValueDisposition,
         callee: CheckedExpressionCallCallee,
-        consumer: CheckedCallExecutionConsumer,
         evaluated_effect_roles: Box<[CheckedEvaluatedEffectRole]>,
     },
 }
@@ -2067,7 +2059,6 @@ impl CheckedExpressionExecutionPlan {
             application,
             result,
             callee,
-            consumer: CheckedCallExecutionConsumer::Runtime,
             evaluated_effect_roles: Box::new([]),
         }
     }
@@ -2128,35 +2119,7 @@ impl CheckedExpressionExecutionPlan {
     }
 
     pub fn executes_as_runtime_call(&self) -> bool {
-        matches!(
-            self,
-            Self::Call {
-                consumer: CheckedCallExecutionConsumer::Runtime,
-                ..
-            }
-        ) && self.evaluated_effect_roles().is_empty()
-    }
-
-    pub(crate) fn with_dialogue_consumer(
-        self,
-        owner: ExprId,
-        line: DialogueLineId,
-    ) -> Result<Self, Self> {
-        match self {
-            Self::Call {
-                application,
-                callee,
-                evaluated_effect_roles,
-                ..
-            } => Ok(Self::Call {
-                application,
-                result: CheckedRuntimeValueDisposition::Omit,
-                callee,
-                consumer: CheckedCallExecutionConsumer::DialogueApplication { owner, line },
-                evaluated_effect_roles,
-            }),
-            structural => Err(structural),
-        }
+        matches!(self, Self::Call { .. }) && self.evaluated_effect_roles().is_empty()
     }
 
     pub(crate) fn with_evaluated_effect_roles(
@@ -2178,7 +2141,6 @@ impl CheckedExpressionExecutionPlan {
                 application,
                 result,
                 callee,
-                consumer,
                 ..
             } => Self::Call {
                 application,
@@ -2188,7 +2150,6 @@ impl CheckedExpressionExecutionPlan {
                     CheckedRuntimeValueDisposition::Omit
                 },
                 callee,
-                consumer,
                 evaluated_effect_roles: roles,
             },
         }
