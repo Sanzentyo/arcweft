@@ -36,6 +36,8 @@ pub use project_instances::{
 };
 use variants::{runtime_variant, runtime_variant_under};
 
+use crate::project::CheckedDialogueProfile;
+
 fn runtime_scope_identity(
     identity: &arcweft_lang_sema::final_analysis::CheckedScopeIdentity,
 ) -> arcweft_core::scope::RuntimeScopeIdentity {
@@ -90,7 +92,7 @@ use arcweft_core::{
     },
 };
 use arcweft_dialogue::{
-    DialoguePresentationProfile, DialogueProfileRevision, InlineFailureSelection,
+    InlineFailureSelection,
     character_presentation::{
         CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
     },
@@ -437,6 +439,8 @@ impl From<RuntimeSemanticFactsError> for RuntimeSemanticProjectionError {
 ///
 /// The resulting fact set is validated against the same executable project
 /// lease before it is returned. No partially projected fact set is observable.
+/// Dialogue projection retains the admitted profile's exact View/Style product
+/// through the projection transaction.
 #[expect(
     clippy::too_many_lines,
     reason = "the final semantic fact admission matrix is intentionally exhaustive and atomic"
@@ -451,7 +455,7 @@ pub fn project_runtime_semantic_facts(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    dialogue_profile: Option<&CheckedDialogueProfile>,
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<(RuntimePlanSemanticFacts, Arc<[FxDefinition]>), RuntimeSemanticProjectionError> {
@@ -489,7 +493,7 @@ pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     view_value_owners: &HirRuntimeSemanticReachability<'_>,
     pure_programs: &[crate::view::CheckedViewHandlerProgram],
-    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    dialogue_profile: Option<&CheckedDialogueProfile>,
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
@@ -517,7 +521,7 @@ fn project_runtime_semantic_fact_inventories(
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     pure_programs: &[crate::view::CheckedViewHandlerProgram],
-    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    dialogue_profile: Option<&CheckedDialogueProfile>,
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
@@ -1610,7 +1614,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &'analysis FinalSemanticAnalysis,
-    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    dialogue_profile: Option<&CheckedDialogueProfile>,
     policy: Option<&CharacterNameLocalePolicySpec>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     instances: &'analysis DiscoveredProjectInstances,
@@ -1687,7 +1691,7 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
         });
     }
 
-    let (dialogue_profile, dialogue_profile_revision) =
+    let dialogue_profile =
         dialogue_profile.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason:
@@ -1707,8 +1711,8 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
         character_catalog.locale_policy_digest(),
     );
     let presentation = DialoguePresentationSnapshot::new(
-        dialogue_profile.clone(),
-        dialogue_profile_revision.clone(),
+        dialogue_profile.presentation().clone(),
+        dialogue_profile.revision().clone(),
     );
     let template_ids = RuntimeDialogueTemplateIdCatalog::try_new(
         projections

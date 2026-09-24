@@ -709,6 +709,66 @@ fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
 }
 
 #[test]
+fn runtime_dialogue_projection_keeps_the_admitted_profile_product_lease() {
+    let (project, context) =
+        removed_role_dialogue_project("pub character alice {}\nflow opening { alice[hello]; }\n");
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("dialogue project compiles with its accepted profile");
+    let analysis = Arc::clone(compiled.analysis_lease());
+    let profile = compiled.dialogue_profile().clone();
+    let product = Arc::downgrade(compiled.view_product().product());
+    drop(compiled);
+
+    assert!(Arc::ptr_eq(
+        profile.product(),
+        &product
+            .upgrade()
+            .expect("the retained profile leases the accepted product"),
+    ));
+    let executable = analysis
+        .hir_project()
+        .analysis_view()
+        .expect("retained executable HIR");
+    let runtime_owners = lower::project_runtime_reachability(
+        executable,
+        analysis.project_symbols(),
+        analysis.final_analysis(),
+        analysis.checked_entries(),
+        lower::RuntimeEmissionMode::CheckAll,
+    )
+    .expect("retained runtime reachability");
+    let (facts, _) = lower::project_runtime_semantic_facts(
+        executable,
+        analysis.project_symbols(),
+        analysis.registered_world(),
+        analysis.final_analysis(),
+        &runtime_owners,
+        Some(&profile),
+        None,
+        &lower::ProjectInstantiationControl::default(),
+    )
+    .expect("the retained checked profile is accepted by runtime projection");
+    let applications = facts.dialogue_applications().collect::<Vec<_>>();
+    let [(_, application)] = applications.as_slice() else {
+        panic!("one projected dialogue application")
+    };
+    assert_eq!(application.content().presentation(), profile.presentation());
+    assert_eq!(
+        application.content().presentation_revision(),
+        profile.revision(),
+    );
+    assert_eq!(
+        profile.revision().view_program_revision(),
+        profile
+            .product()
+            .program()
+            .expect("accepted View program")
+            .accepted_revision(),
+    );
+}
+
+#[test]
 fn dialogue_line_reference_reaches_runtime_lowering_from_one_accepted_generation() {
     let (project, context) = removed_role_dialogue_project(
         r"

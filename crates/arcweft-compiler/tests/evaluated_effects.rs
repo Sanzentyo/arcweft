@@ -759,10 +759,7 @@ entry cli @entry.main { goto @flow.main }
         compiled.analysis_lease().registered_world(),
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
-        Some((
-            compiled.dialogue_profile().presentation(),
-            compiled.dialogue_profile().revision(),
-        )),
+        Some(compiled.dialogue_profile()),
         None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )

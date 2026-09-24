@@ -937,7 +937,7 @@ where
                 &runtime_reachability,
                 &view_value_reachability,
                 view_product.handler_programs(),
-                Some((dialogue_profile.presentation(), dialogue_profile.revision())),
+                Some(&dialogue_profile),
                 context.accepted_launch_profile().and_then(|input| {
                     input
                         .resolved_profile()
