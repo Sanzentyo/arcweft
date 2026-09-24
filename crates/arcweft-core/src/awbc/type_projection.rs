@@ -230,7 +230,7 @@ impl AwbcProgram {
             AwbcRuntimeTypeShape::EntityRef => Ok(RuntimeCheckedType::EntityReference),
             AwbcRuntimeTypeShape::AgentValue => Ok(RuntimeCheckedType::AgentValue),
             AwbcRuntimeTypeShape::Bytes => Ok(RuntimeCheckedType::Bytes),
-            AwbcRuntimeTypeShape::Sequence(item) => self
+            AwbcRuntimeTypeShape::Sequence { item, .. } => self
                 .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(Box::new)
                 .map(RuntimeCheckedType::Sequence),

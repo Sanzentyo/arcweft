@@ -10,7 +10,7 @@ use crate::{
         RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
-    runtime_id::RuntimeFunctionSiteId,
+    runtime_id::RuntimeCallableStateId,
     value::{RuntimeExprKind, RuntimeValue},
 };
 
@@ -128,18 +128,18 @@ pub(crate) fn returning_function_plan(body_kind: RuntimeFunctionSiteBodyKind) ->
     builder.finish().expect("application fixture seals")
 }
 
-pub(crate) fn returning_function_site(plan: &RuntimePlan) -> RuntimeFunctionSiteId {
+pub(crate) fn returning_callable_state(plan: &RuntimePlan) -> RuntimeCallableStateId {
     let FlowOp::Let { expr, .. } = &plan.flows()[0].body().ops()[0] else {
         panic!("fixture retains the exact function expression");
     };
-    let RuntimeExprKind::Function { site, .. } = expr.kind() else {
+    let RuntimeExprKind::MakeCallable { state, .. } = expr.kind() else {
         panic!("fixture function expression");
     };
-    *site
+    *state
 }
 
 pub(crate) fn returning_function_result(plan: &RuntimePlan) -> RuntimePattern {
-    let FlowOp::ApplyFunction { result, .. } = &plan.flows()[0].body().ops()[1] else {
+    let FlowOp::ApplyGroup { result, .. } = &plan.flows()[0].body().ops()[1] else {
         panic!("fixture retains the exact result pattern");
     };
     result.clone()

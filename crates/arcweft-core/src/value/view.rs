@@ -76,8 +76,7 @@ impl RuntimeValueView<'_> {
                 RuntimeValue::TensorF64(_) => "f64 tensor",
                 RuntimeValue::Range(_) => "range",
                 RuntimeValue::Iterator(_) => "iterator",
-                RuntimeValue::Function(_) => "function",
-                RuntimeValue::ProjectContinuation(_) => "project continuation",
+                RuntimeValue::Callable(_) => "function",
                 _ => unreachable!("runtime-only views are issued for runtime-only values"),
             },
         }
@@ -169,8 +168,7 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::Range(_)
             | Self::Iterator(_)
-            | Self::Function(_)
-            | Self::ProjectContinuation(_) => View::RuntimeOnly(self),
+            | Self::Callable(_) => View::RuntimeOnly(self),
         }
     }
 }

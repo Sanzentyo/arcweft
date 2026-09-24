@@ -163,7 +163,10 @@ fn collection_types_match_the_one_level_runtime_expansion() {
         AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
             RuntimeAgentOperationalType::Predicate,
         )),
-        AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0)),
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(0),
+        },
         AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)]),
         AwbcRuntimeTypeShape::Array {
             item: AwbcTypeId(0),
@@ -174,8 +177,14 @@ fn collection_types_match_the_one_level_runtime_expansion() {
             item: AwbcTypeId(0),
             length: 0,
         },
-        AwbcRuntimeTypeShape::Sequence(AwbcTypeId(1)),
-        AwbcRuntimeTypeShape::Sequence(AwbcTypeId(8)),
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(1),
+        },
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(8),
+        },
         AwbcRuntimeTypeShape::Dynamic,
     ];
     for constructor in [
@@ -268,7 +277,10 @@ fn an_unsized_empty_collection_rejects_when_its_cardinality_is_known() {
                 AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
                     RuntimeAgentOperationalType::Predicate,
                 )),
-                AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0)),
+                AwbcRuntimeTypeShape::Sequence {
+                    kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                    item: AwbcTypeId(0),
+                },
             ],
             &[1],
             0,

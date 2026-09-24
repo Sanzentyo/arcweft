@@ -15,6 +15,7 @@ use crate::entry::{
 };
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeVariantIdentity};
 use crate::plan::RuntimeAgentTypeProjection;
+use crate::task::RuntimeProgramOwner;
 use crate::value::{
     RuntimeReductionProducer, RuntimeScalarView as Scalar, RuntimeUnsignedIntWidth, RuntimeValue,
     RuntimeValueView as View,
@@ -107,6 +108,7 @@ enum Children<'a> {
     Record(&'a [AwbcRecordField]),
     MapEntry { key: AwbcTypeId, value: AwbcTypeId },
     Reduction(AwbcTypeId),
+    Callable(&'a [crate::plan::RuntimeCallableRetainedInput<AwbcTypeId>]),
 }
 
 struct Alternatives<'a>(std::slice::Iter<'a, AwbcTypeId>);
@@ -281,7 +283,7 @@ impl<'a> AwbcValueValidation<'a> {
                 Ok(Children::Repeated(Expected::Type(ty)))
             }
             (Type::Bytes { .. }, View::Sequence(_)) => Ok(Children::Repeated(Expected::Byte)),
-            (Type::Sequence(item), View::Sequence(_)) => {
+            (Type::Sequence { item, .. }, View::Sequence(_)) => {
                 Ok(Children::Repeated(Expected::Type(*item)))
             }
             (Type::Array { item, length }, View::Sequence(actual)) => {
@@ -352,6 +354,25 @@ impl<'a> AwbcValueValidation<'a> {
                 }
                 Self::arity(fields.len(), actual.fields().len())?;
                 Ok(Children::Record(fields))
+            }
+            (Type::Function { .. }, View::RuntimeOnly(RuntimeValue::Callable(callable))) => {
+                if !matches!(
+                    callable.owner(),
+                    RuntimeProgramOwner::Awbc(owner)
+                        if std::ptr::eq(owner.as_ref(), self.program)
+                ) {
+                    return Err(Self::mismatch(value));
+                }
+                let state = self
+                    .program
+                    .callable_states
+                    .get(callable.state().index())
+                    .ok_or_else(|| Self::mismatch(value))?;
+                if state.function_type != ty {
+                    return Err(Self::mismatch(value));
+                }
+                Self::arity(state.retained.len(), callable.retained().len())?;
+                Ok(Children::Callable(&state.retained))
             }
             (Type::Variant { .. }, _) => self.variant(ty, row, value),
             (Type::Opaque { arguments, .. }, _) => {
@@ -475,6 +496,9 @@ impl<'a> ValueValidation for AwbcValueValidation<'a> {
             Children::MapEntry { key, .. } if index == 0 => Some(Expected::Type(*key)),
             Children::MapEntry { value, .. } if index == 1 => Some(Expected::Type(*value)),
             Children::Reduction(state) if index == 0 => Some(Expected::Type(*state)),
+            Children::Callable(retained) => {
+                retained.get(index).map(|input| Expected::Type(input.ty))
+            }
             Children::Any | Children::Reduction(_) => Some(Expected::Admitted),
             Children::None | Children::Single(_) | Children::MapEntry { .. } => None,
         };

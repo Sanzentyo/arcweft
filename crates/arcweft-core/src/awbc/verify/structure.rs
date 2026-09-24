@@ -18,7 +18,11 @@ use crate::entry::{
     RuntimeCallableRole, RuntimeEntryRoles, RuntimeNominalRecordShape, RuntimeSchemaLimits,
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
-use crate::plan::RuntimeAgentTypeProjection;
+use crate::plan::{
+    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
+    RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableRetainedRole,
+    RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimePlanSequenceKind,
+};
 use crate::program_types::{RuntimeProgramDataShapes, RuntimeProgramTypes};
 use crate::value::RuntimeDialogueOpaqueRole;
 use arcweft_id::EffectId;
@@ -136,7 +140,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;
                 }
             }
-            AwbcRuntimeTypeShape::Sequence(item)
+            AwbcRuntimeTypeShape::Sequence { item, .. }
             | AwbcRuntimeTypeShape::Range(item)
             | AwbcRuntimeTypeShape::Iterator(item)
             | AwbcRuntimeTypeShape::Need(item)
@@ -921,6 +925,7 @@ fn pattern_children(pattern: &AwbcPattern) -> Vec<AwbcPatternId> {
 
 fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
+    verify_callable_states(program)?;
     for (index, intrinsic) in program.intrinsics.iter().enumerate() {
         let at = format!("intrinsic {index}");
         check_index(
@@ -1475,6 +1480,426 @@ fn verify_audio_command_refs(
                 &format!("effect plan {effect_index} audio payload"),
             )?,
         }
+    }
+    Ok(())
+}
+
+fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
+    for (index, state) in program.callable_states.iter().enumerate() {
+        let at = format!("callable state {index}");
+        let invalid = |message: &str| AwbcVerifyError::InvalidInvariant {
+            at: at.clone(),
+            message: message.to_owned(),
+        };
+        let Some(AwbcRuntimeTypeShape::Function { parameters, result }) = program
+            .runtime_types
+            .get(state.function_type.index())
+            .map(AwbcRuntimeType::shape)
+        else {
+            return Err(invalid(
+                "callable state function type is absent or not a function",
+            ));
+        };
+        check_index(
+            program.runtime_types.len(),
+            state.result.0,
+            "runtime_types",
+            &at,
+        )?;
+        let Some(origin) = program.callable_states.get(state.origin.index()) else {
+            return Err(invalid("callable origin state is absent"));
+        };
+        if origin.origin != state.origin || origin.position != RuntimeCallablePosition::Unapplied {
+            return Err(invalid(
+                "callable origin must identify an unapplied origin state",
+            ));
+        }
+
+        let group = match &state.position {
+            RuntimeCallablePosition::Unapplied => 0,
+            RuntimeCallablePosition::WithinGroup { group, bound } => {
+                if bound.is_empty()
+                    || bound.windows(2).any(|pair| pair[0] >= pair[1])
+                    || bound.iter().any(|coordinate| {
+                        coordinate.group != *group
+                            || !state.retained.iter().any(|input| {
+                                input.role == RuntimeCallableRetainedRole::Parameter(*coordinate)
+                            })
+                    })
+                {
+                    return Err(invalid("callable partial position is not canonical"));
+                }
+                *group
+            }
+            RuntimeCallablePosition::AfterGroup { completed } => completed
+                .checked_add(1)
+                .ok_or_else(|| invalid("callable completed group overflows"))?,
+        };
+
+        let mut retained_roles = BTreeSet::new();
+        for input in &state.retained {
+            check_index(
+                program.runtime_types.len(),
+                input.ty.0,
+                "runtime_types",
+                &at,
+            )?;
+            if !retained_roles.insert(input.role) {
+                return Err(invalid("callable retained roles are duplicated"));
+            }
+        }
+        if state
+            .parameters
+            .windows(2)
+            .any(|pair| pair[0].coordinate >= pair[1].coordinate)
+        {
+            return Err(invalid("callable parameters are not coordinate ordered"));
+        }
+        for input in &state.parameters {
+            if input.coordinate.group != group
+                || retained_roles
+                    .contains(&RuntimeCallableRetainedRole::Parameter(input.coordinate))
+            {
+                return Err(invalid(
+                    "callable parameter coordinate disagrees with its position",
+                ));
+            }
+            check_index(
+                program.runtime_types.len(),
+                input.abi_ty.0,
+                "runtime_types",
+                &at,
+            )?;
+            check_index(
+                program.runtime_types.len(),
+                input.binding_ty.0,
+                "runtime_types",
+                &at,
+            )?;
+            match input.kind {
+                RuntimeCallableParameterKind::Fixed if input.abi_ty == input.binding_ty => {}
+                RuntimeCallableParameterKind::Rest
+                    if matches!(
+                        program
+                            .runtime_types
+                            .get(input.binding_ty.index())
+                            .map(AwbcRuntimeType::shape),
+                        Some(AwbcRuntimeTypeShape::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item,
+                        }) if *item == input.abi_ty
+                    ) => {}
+                _ => return Err(invalid("callable parameter ABI/binding shape is invalid")),
+            }
+        }
+
+        let attached_input_type = match &state.attached {
+            RuntimeCallableAttachedContract::None => {
+                if parameters.len() != state.parameters.len() {
+                    return Err(invalid(
+                        "callable function arrow has an unexpected attached input",
+                    ));
+                }
+                None
+            }
+            RuntimeCallableAttachedContract::Required { ty } => {
+                check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
+                if parameters.len() != state.parameters.len().saturating_add(1)
+                    || parameters.last() != Some(ty)
+                {
+                    return Err(invalid(
+                        "required attached input disagrees with callable arrow",
+                    ));
+                }
+                Some(*ty)
+            }
+            RuntimeCallableAttachedContract::Optional { value, binding } => {
+                check_index(program.runtime_types.len(), value.0, "runtime_types", &at)?;
+                check_index(program.runtime_types.len(), binding.0, "runtime_types", &at)?;
+                if program.builtin_variant_payload_item(
+                    *binding,
+                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                ) != Some(*value)
+                    || parameters.len() != state.parameters.len().saturating_add(1)
+                    || parameters.last() != Some(binding)
+                {
+                    return Err(invalid(
+                        "optional attached input disagrees with callable arrow",
+                    ));
+                }
+                Some(*binding)
+            }
+            RuntimeCallableAttachedContract::Defaulted { ty, default } => {
+                check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
+                if parameters.len() != state.parameters.len().saturating_add(1) {
+                    return Err(invalid(
+                        "defaulted attached input is absent from callable arrow",
+                    ));
+                }
+                let Some(binding) = parameters.last().copied() else {
+                    return Err(invalid(
+                        "defaulted attached input is absent from callable arrow",
+                    ));
+                };
+                if program.builtin_variant_payload_item(
+                    binding,
+                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                ) != Some(*ty)
+                {
+                    return Err(invalid(
+                        "defaulted attached ABI must be Option of its value type",
+                    ));
+                }
+                let capture_types = default
+                    .captures
+                    .iter()
+                    .map(|source| callable_state_input_type(state, *source, None))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| invalid("default callable capture source is invalid"))?;
+                verify_callable_body(program, default.function, &capture_types, &[], *ty, &at)?;
+                Some(*ty)
+            }
+        };
+        if parameters.len() != state.parameters.len() + usize::from(attached_input_type.is_some())
+            || parameters
+                .iter()
+                .take(state.parameters.len())
+                .zip(&state.parameters)
+                .any(|(abi, input)| *abi != input.abi_ty)
+            || result != &state.result
+        {
+            return Err(invalid(
+                "callable function arrow disagrees with its state layout",
+            ));
+        }
+
+        match &state.transition {
+            RuntimeCallableTransition::Retain {
+                state: target_id,
+                values,
+            } => {
+                let Some(target) = program.callable_states.get(target_id.index()) else {
+                    return Err(invalid("callable result state is absent"));
+                };
+                if attached_input_type.is_some()
+                    || target.origin != state.origin
+                    || target.function_type != state.result
+                    || target.position != (RuntimeCallablePosition::AfterGroup { completed: group })
+                    || values.len() != target.retained.len()
+                {
+                    return Err(invalid(
+                        "callable retained transition has an incompatible target",
+                    ));
+                }
+                for (source, retained) in values.iter().zip(&target.retained) {
+                    let Some(source_type) = callable_state_input_type(state, *source, None) else {
+                        return Err(invalid("callable retained transition source is invalid"));
+                    };
+                    let role = match *source {
+                        RuntimeCallableInputSource::Retained { position } => state
+                            .retained
+                            .get(position as usize)
+                            .map(|input| input.role),
+                        RuntimeCallableInputSource::Argument { position } => state
+                            .parameters
+                            .get(position as usize)
+                            .map(|input| RuntimeCallableRetainedRole::Parameter(input.coordinate)),
+                        RuntimeCallableInputSource::Attached => None,
+                    };
+                    if source_type != retained.ty || role != Some(retained.role) {
+                        return Err(invalid("callable retained transition changes a typed role"));
+                    }
+                }
+            }
+            RuntimeCallableTransition::Invoke {
+                function,
+                captures,
+                arguments,
+            } => {
+                let capture_types =
+                    callable_state_input_types(state, captures, attached_input_type).ok_or_else(
+                        || invalid("callable invocation capture projection is invalid"),
+                    )?;
+                let argument_types =
+                    callable_state_input_types(state, arguments, attached_input_type).ok_or_else(
+                        || invalid("callable invocation argument projection is invalid"),
+                    )?;
+                verify_callable_body(
+                    program,
+                    *function,
+                    &capture_types,
+                    &argument_types,
+                    state.result,
+                    &at,
+                )?;
+            }
+        }
+
+        let mut partial_parameter_sets = BTreeSet::new();
+        for partial in &state.partials {
+            let Some(target) = program.callable_states.get(partial.state.index()) else {
+                return Err(invalid("callable partial target state is absent"));
+            };
+            let mut bound = match &state.position {
+                RuntimeCallablePosition::WithinGroup { bound, .. } => bound.to_vec(),
+                RuntimeCallablePosition::Unapplied | RuntimeCallablePosition::AfterGroup { .. } => {
+                    Vec::new()
+                }
+            };
+            if partial.parameters.is_empty()
+                || partial.parameters.len() > state.parameters.len()
+                || (partial.parameters.len() == state.parameters.len()
+                    && attached_input_type.is_none())
+                || partial.parameters.windows(2).any(|pair| pair[0] >= pair[1])
+                || !partial_parameter_sets.insert(partial.parameters.to_vec())
+                || partial.parameters.iter().any(|coordinate| {
+                    !state
+                        .parameters
+                        .iter()
+                        .any(|input| input.coordinate == *coordinate)
+                })
+            {
+                return Err(invalid("callable partial coordinates are invalid"));
+            }
+            bound.extend_from_slice(&partial.parameters);
+            bound.sort_unstable();
+            if bound.windows(2).any(|pair| pair[0] == pair[1])
+                || target.origin != state.origin
+                || target.result != state.result
+                || target.position
+                    != (RuntimeCallablePosition::WithinGroup {
+                        group,
+                        bound: bound.into_boxed_slice(),
+                    })
+                || target.parameters.iter().ne(state
+                    .parameters
+                    .iter()
+                    .filter(|input| !partial.parameters.contains(&input.coordinate)))
+                || !state.partial_projects_to(partial, target)
+                || partial.values.len() != target.retained.len()
+            {
+                return Err(invalid(
+                    "callable partial target has an incompatible layout",
+                ));
+            }
+            for (source, retained) in partial.values.iter().zip(&target.retained) {
+                let (role, source_type) = match *source {
+                    RuntimeCallableInputSource::Retained { position } => state
+                        .retained
+                        .get(position as usize)
+                        .map(|input| (input.role, input.ty)),
+                    RuntimeCallableInputSource::Argument { position } => partial
+                        .parameters
+                        .get(position as usize)
+                        .and_then(|coordinate| {
+                            state
+                                .parameters
+                                .iter()
+                                .find(|input| input.coordinate == *coordinate)
+                        })
+                        .map(|input| {
+                            (
+                                RuntimeCallableRetainedRole::Parameter(input.coordinate),
+                                input.binding_ty,
+                            )
+                        }),
+                    RuntimeCallableInputSource::Attached => None,
+                }
+                .ok_or_else(|| invalid("callable partial retained projection is invalid"))?;
+                if role != retained.role || source_type != retained.ty {
+                    return Err(invalid("callable partial projection changes a typed role"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn callable_state_input_type(
+    state: &RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>,
+    source: RuntimeCallableInputSource,
+    attached: Option<AwbcTypeId>,
+) -> Option<AwbcTypeId> {
+    match source {
+        RuntimeCallableInputSource::Retained { position } => {
+            state.retained.get(position as usize).map(|input| input.ty)
+        }
+        RuntimeCallableInputSource::Argument { position } => state
+            .parameters
+            .get(position as usize)
+            .map(|input| input.binding_ty),
+        RuntimeCallableInputSource::Attached => attached,
+    }
+}
+
+fn callable_state_input_types(
+    state: &RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>,
+    sources: &[RuntimeCallableInputSource],
+    attached: Option<AwbcTypeId>,
+) -> Option<Vec<AwbcTypeId>> {
+    sources
+        .iter()
+        .copied()
+        .map(|source| callable_state_input_type(state, source, attached))
+        .collect()
+}
+
+fn verify_callable_body(
+    program: &AwbcProgram,
+    function: crate::awbc::schema::AwbcFunctionId,
+    captures: &[AwbcTypeId],
+    arguments: &[AwbcTypeId],
+    result: AwbcTypeId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    check_index(program.functions.len(), function.0, "functions", at)?;
+    let target = &program.functions[function.index()];
+    if !matches!(
+        target.kind,
+        AwbcFunctionKind::Ordinary | AwbcFunctionKind::Synthetic
+    ) {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "callable transition target must be an executable function".to_owned(),
+        });
+    }
+    let signature = program
+        .signatures
+        .get(target.signature.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "callable transition target signature is absent".to_owned(),
+        })?;
+    let inputs = captures
+        .iter()
+        .chain(arguments)
+        .copied()
+        .collect::<Vec<_>>();
+    if signature.params != inputs || signature.result != Some(result) {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "callable transition target ABI disagrees with typed projections".to_owned(),
+        });
+    }
+    let layout = program
+        .frame_layouts
+        .get(target.frame_layout.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "callable transition target frame layout is absent".to_owned(),
+        })?;
+    let parameters = layout
+        .slots
+        .iter()
+        .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
+        .map(|slot| slot.ty)
+        .collect::<Vec<_>>();
+    if parameters != inputs {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "callable transition target frame parameters disagree with its signature"
+                .to_owned(),
+        });
     }
     Ok(())
 }

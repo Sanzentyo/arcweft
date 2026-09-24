@@ -142,7 +142,10 @@ fn programs() -> (RuntimePlan, AwbcProgram) {
                 key: AwbcTypeId(3),
                 value: AwbcTypeId(2),
             },
-            AwbcType::Sequence(AwbcTypeId(4)),
+            AwbcType::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: AwbcTypeId(4),
+            },
             AwbcType::Tuple(vec![AwbcTypeId(5), AwbcTypeId(5)]),
         ]
         .into_iter()
@@ -402,7 +405,13 @@ fn recursive_codec_fixture() -> (RuntimePlan, AwbcProgram) {
             .with_data_codec(codec)
             .with_data_codec_arguments(vec![Use::from_schema(&argument, limits).unwrap()]),
             AwbcRuntimeType::new(semantic(2), AwbcType::Bytes),
-            AwbcRuntimeType::new(semantic(3), AwbcType::Sequence(AwbcTypeId(1))),
+            AwbcRuntimeType::new(
+                semantic(3),
+                AwbcType::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item: AwbcTypeId(1),
+                },
+            ),
             AwbcRuntimeType::new(
                 semantic(4),
                 AwbcType::Variant {

@@ -7,17 +7,15 @@
 use super::{
     AgentPredicateOperands, DenseSeq, RecordSeq, RuntimeAgentActionTarget,
     RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
-    RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeBinding,
-    RuntimeCommand, RuntimeEntityReference, RuntimeFunctionBody, RuntimeFunctionValue,
-    RuntimeIterator, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload,
-    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeReductionValue, RuntimeSeq,
-    RuntimeValue, TupleSeq,
+    RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue,
+    RuntimeCallableValue, RuntimeCommand, RuntimeEntityReference, RuntimeIterator,
+    RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload, RuntimeReductionValue,
+    RuntimeSeq, RuntimeValue, TupleSeq,
 };
-use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{RuntimeCommandConstructorId, RuntimeCommandTargetId};
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
+use crate::runtime_id::RuntimeCallableStateId;
 use crate::task::RuntimeProgramOwner;
-use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -42,8 +40,8 @@ impl AwbcRuntimeValueSnapshotError {
 
 /// Typed recursive AWBC session-save representation of one live value.
 ///
-/// The function variant is admitted only for AWBC closures.  Structured
-/// closures retain an owning plan and are rejected at projection time.
+/// Callable values snapshot only their program-local state identity and
+/// retained values; restore supplies the exact immutable program lease.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcRuntimeValueSnapshot {
@@ -74,8 +72,7 @@ pub enum AwbcRuntimeValueSnapshot {
     Opaque(AwbcRuntimeOpaqueSnapshot),
     Reduction(AwbcRuntimeReductionSnapshot),
     Agent(AwbcRuntimeAgentSnapshot),
-    Function(AwbcRuntimeFunctionSnapshot),
-    ProjectContinuation(AwbcRuntimeProjectContinuationSnapshot),
+    Callable(AwbcRuntimeCallableSnapshot),
     Variant {
         owner: super::RuntimeVariantIdentity,
         ordinal: u32,
@@ -211,33 +208,12 @@ pub enum AwbcRuntimeAgentPredicateSnapshot {
     },
 }
 
+/// AWBC session-save projection of a program-owned callable state.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AwbcRuntimeFunctionSnapshot {
-    pub function: AwbcFunctionId,
-    pub remaining_params: Vec<String>,
-    pub captures: Vec<AwbcRuntimeBindingSnapshot>,
-}
-
-/// AWBC session-save projection of one typed project continuation.
-///
-/// Continuation ABI identities are stable semantic type identities. They are
-/// intentionally independent of the generation-local AWBC type-table rows;
-/// admission resolves them against the current verified program exactly.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcRuntimeProjectContinuationSnapshot {
-    pub lineage: RuntimeProjectContinuationLineageId,
-    pub function_type: RuntimeSemanticTypeId,
-    pub prefix_types: Vec<RuntimeSemanticTypeId>,
-    pub prefix_values: Vec<AwbcRuntimeValueSnapshot>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcRuntimeBindingSnapshot {
-    pub name: String,
-    pub value: Box<AwbcRuntimeValueSnapshot>,
+pub struct AwbcRuntimeCallableSnapshot {
+    pub state: RuntimeCallableStateId,
+    pub retained: Vec<AwbcRuntimeValueSnapshot>,
 }
 
 impl AwbcRuntimeValueSnapshot {
@@ -288,10 +264,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::Opaque(value) => Self::Opaque(Self::opaque_from_live(value)?),
             RuntimeValue::Reduction(value) => Self::Reduction(Self::reduction_from_live(value)?),
             RuntimeValue::Agent(value) => Self::Agent(Self::agent_from_live(value)?),
-            RuntimeValue::Function(value) => Self::Function(Self::function_from_live(value)?),
-            RuntimeValue::ProjectContinuation(value) => {
-                Self::ProjectContinuation(Self::project_continuation_from_live(value)?)
-            }
+            RuntimeValue::Callable(value) => Self::Callable(Self::callable_from_live(value)?),
             RuntimeValue::Variant {
                 owner,
                 ordinal,
@@ -374,12 +347,9 @@ impl AwbcRuntimeValueSnapshot {
                 RuntimeValue::Reduction(Self::reduction_into_live(value, program_owner)?)
             }
             Self::Agent(value) => RuntimeValue::Agent(Self::agent_into_live(value, program_owner)?),
-            Self::Function(value) => {
-                RuntimeValue::Function(Self::function_into_live(value, program_owner)?)
+            Self::Callable(value) => {
+                RuntimeValue::Callable(Self::callable_into_live(value, program_owner)?)
             }
-            Self::ProjectContinuation(value) => RuntimeValue::ProjectContinuation(
-                Self::project_continuation_into_live(value, program_owner)?,
-            ),
             Self::Variant {
                 owner,
                 ordinal,
@@ -840,84 +810,40 @@ impl AwbcRuntimeValueSnapshot {
         })
     }
 
-    fn project_continuation_from_live(
-        value: &RuntimeProjectContinuation,
-    ) -> Result<AwbcRuntimeProjectContinuationSnapshot, AwbcRuntimeValueSnapshotError> {
-        Ok(AwbcRuntimeProjectContinuationSnapshot {
-            lineage: value.lineage(),
-            function_type: value.function_type(),
-            prefix_types: value.prefix_types().iter().copied().collect(),
-            prefix_values: value
-                .prefix_values()
+    fn callable_from_live(
+        value: &RuntimeCallableValue,
+    ) -> Result<AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshotError> {
+        if !matches!(value.owner(), RuntimeProgramOwner::Awbc(_)) {
+            return Err(AwbcRuntimeValueSnapshotError::new(
+                "plan-owned callable values cannot cross the AWBC session-save boundary",
+            ));
+        }
+        Ok(AwbcRuntimeCallableSnapshot {
+            state: value.state(),
+            retained: value
+                .retained()
                 .iter()
                 .map(Self::from_runtime_value)
                 .collect::<Result<_, _>>()?,
         })
     }
 
-    fn project_continuation_into_live(
-        value: AwbcRuntimeProjectContinuationSnapshot,
+    fn callable_into_live(
+        value: AwbcRuntimeCallableSnapshot,
         program_owner: &RuntimeProgramOwner,
-    ) -> Result<RuntimeProjectContinuation, AwbcRuntimeValueSnapshotError> {
-        let function_type = value.function_type;
-        let prefix_types = value.prefix_types.into_boxed_slice();
-        let prefix_values = value
-            .prefix_values
+    ) -> Result<RuntimeCallableValue, AwbcRuntimeValueSnapshotError> {
+        if !matches!(program_owner, RuntimeProgramOwner::Awbc(_)) {
+            return Err(AwbcRuntimeValueSnapshotError::new(
+                "an AWBC callable snapshot requires an AWBC program lease",
+            ));
+        }
+        let retained = value
+            .retained
             .into_iter()
             .map(|value| value.into_runtime_value_for_program(program_owner))
-            .collect::<Result<Box<[_]>, _>>()?;
-        let abi = RuntimeProjectContinuationAbi::from_snapshot_parts(
-            value.lineage,
-            function_type,
-            prefix_types,
-        )
-        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
-        RuntimeProjectContinuation::from_snapshot_parts(abi, prefix_values)
+            .collect::<Result<Vec<_>, _>>()?;
+        RuntimeCallableValue::try_new(program_owner.clone(), value.state, retained)
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
-    }
-
-    fn function_from_live(
-        value: &RuntimeFunctionValue,
-    ) -> Result<AwbcRuntimeFunctionSnapshot, AwbcRuntimeValueSnapshotError> {
-        let RuntimeFunctionBody::Awbc(value) = value.body() else {
-            return Err(AwbcRuntimeValueSnapshotError::new(
-                "structured runtime functions cannot cross the AWBC session-save boundary",
-            ));
-        };
-        Ok(AwbcRuntimeFunctionSnapshot {
-            function: value.function(),
-            remaining_params: value.remaining_params().to_vec(),
-            captures: value
-                .captures()
-                .iter()
-                .map(|binding| {
-                    Ok(AwbcRuntimeBindingSnapshot {
-                        name: binding.name.clone(),
-                        value: Box::new(Self::from_runtime_value(&binding.value)?),
-                    })
-                })
-                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-        })
-    }
-
-    fn function_into_live(
-        value: AwbcRuntimeFunctionSnapshot,
-        program_owner: &RuntimeProgramOwner,
-    ) -> Result<RuntimeFunctionValue, AwbcRuntimeValueSnapshotError> {
-        Ok(RuntimeFunctionValue::new_awbc(
-            value.remaining_params,
-            value.function,
-            value
-                .captures
-                .into_iter()
-                .map(|binding| {
-                    Ok(RuntimeBinding {
-                        name: binding.name,
-                        value: (*binding.value).into_runtime_value_for_program(program_owner)?,
-                    })
-                })
-                .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-        ))
     }
 }
 

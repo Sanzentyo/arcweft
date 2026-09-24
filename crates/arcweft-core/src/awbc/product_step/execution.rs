@@ -109,7 +109,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         self.fallback_stats.pure_calls = self.fallback_stats.pure_calls.saturating_add(1);
         self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
         self.fallback_stats.fallbacks = self.fallback_stats.fallbacks.saturating_add(1);
-        run_function_with_host(program, record.function, args, self.context, self)
+        run_function_with_host(program, record.function, args, self.context.clone(), self)
     }
 }
 
@@ -124,7 +124,7 @@ pub(super) fn run_function(
     let mut host = ProductVmHost {
         backend,
         fallback_stats,
-        context,
+        context: context.clone(),
         program_owner: RuntimeProgramOwner::Awbc(Arc::clone(program)),
     };
     run_function_with_host(program, function, args, context, &mut host)
@@ -178,7 +178,7 @@ fn run_function_with_host(
     }
 }
 
-fn context_for_program(program: &AwbcProgram) -> Result<VmExecutionContext, VmError> {
+fn context_for_program(program: &Arc<AwbcProgram>) -> Result<VmExecutionContext, VmError> {
     let encoded = program
         .encode_canonical()
         .map_err(|error| VmError::Runtime(error.to_string()))?;
@@ -186,7 +186,10 @@ fn context_for_program(program: &AwbcProgram) -> Result<VmExecutionContext, VmEr
         *blake3::hash(&encoded).as_bytes(),
     )
     .map_err(|error| VmError::Runtime(error.to_string()))?;
-    Ok(VmExecutionContext::new(artifact))
+    Ok(VmExecutionContext::for_program(
+        artifact,
+        Arc::clone(program),
+    ))
 }
 
 fn semantic_type_for_awbc(

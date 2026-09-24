@@ -1006,8 +1006,7 @@ fn validate_replay_safe_value(
             }
             Ok(())
         }
-        RuntimeValue::Function(_)
-        | RuntimeValue::ProjectContinuation(_)
+        RuntimeValue::Callable(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::MatrixF32(_)

@@ -924,7 +924,7 @@ fn snapshot_active_dialogue(
                 Ok(AwbcProductDialogueEffectSaveSnapshot {
                     site: binding.site(),
                     callback: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
-                        &crate::value::RuntimeValue::Function(binding.callback().clone()),
+                        &crate::value::RuntimeValue::Callable(binding.callback().clone()),
                     )?,
                 })
             })
@@ -1563,10 +1563,10 @@ impl AwbcProductStepExecutor {
                                         }
                                     },
                                 )?;
-                                let crate::value::RuntimeValue::Function(callback) = value else {
+                                let crate::value::RuntimeValue::Callable(callback) = value else {
                                     return Err(
                                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
-                                            message: "dialogue effect snapshot is not a function".to_owned(),
+                                            message: "dialogue effect snapshot is not a callable".to_owned(),
                                         },
                                     );
                                 };

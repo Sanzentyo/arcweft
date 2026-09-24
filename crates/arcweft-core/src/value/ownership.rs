@@ -6,11 +6,10 @@
 //! than introduce a side table.
 
 use super::{
-    RuntimeFunctionBody, RuntimeFunctionValue, RuntimeHandleKind, RuntimeIterator,
-    RuntimeOpaqueValueClass, RuntimeSeq, RuntimeValue,
+    RuntimeCallableValue, RuntimeHandleKind, RuntimeIterator, RuntimeOpaqueValueClass, RuntimeSeq,
+    RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroU32;
 use thiserror::Error;
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
@@ -132,13 +131,7 @@ impl RuntimeValue {
                     ownership.join(command.payload().0.ownership())
                 }),
             Self::Agent(value) => value.ownership(),
-            Self::Function(function) => function.ownership(),
-            Self::ProjectContinuation(continuation) => continuation
-                .prefix_values()
-                .iter()
-                .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
-                    ownership.join(value.ownership())
-                }),
+            Self::Callable(callable) => callable.ownership(),
             Self::Variant { payload, .. } => payload
                 .as_deref()
                 .map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership),
@@ -297,11 +290,10 @@ impl RuntimeValue {
                 }
                 Ok(())
             }
-            Self::Function(function) => function.collect_affine_line_handles(path, handles),
-            Self::ProjectContinuation(continuation) => collect_indexed_line_handles(
-                continuation.prefix_values(),
+            Self::Callable(callable) => collect_indexed_line_handles(
+                callable.retained(),
                 path,
-                RuntimeValuePathSegment::ProjectContinuationPrefix,
+                RuntimeValuePathSegment::CallableRetained,
                 handles,
             ),
         }
@@ -336,53 +328,11 @@ fn collect_indexed_line_handles_u64(
     Ok(())
 }
 
-impl RuntimeFunctionValue {
-    /// Computes ownership from the exact captured value set.
+impl RuntimeCallableValue {
+    /// Computes ownership from the exact retained value set.
     #[must_use]
     pub fn ownership(&self) -> RuntimeValueOwnership {
-        match self.body() {
-            RuntimeFunctionBody::Structured(closure) => closure
-                .capture_values()
-                .iter()
-                .chain(closure.bound_args())
-                .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
-                    ownership.join(value.ownership())
-                }),
-            RuntimeFunctionBody::Awbc(closure) => closure
-                .captures()
-                .iter()
-                .fold(RuntimeValueOwnership::Unrestricted, |ownership, capture| {
-                    ownership.join(capture.value.ownership())
-                }),
-        }
-    }
-
-    fn collect_affine_line_handles(
-        &self,
-        path: &RuntimeValuePath,
-        handles: &mut Vec<RuntimeAffineLineHandle>,
-    ) -> Result<(), RuntimeAffineLineHandleError> {
-        let values: Box<dyn Iterator<Item = &RuntimeValue> + '_> = match self.body() {
-            RuntimeFunctionBody::Structured(closure) => {
-                Box::new(closure.capture_values().iter().chain(closure.bound_args()))
-            }
-            RuntimeFunctionBody::Awbc(closure) => {
-                Box::new(closure.captures().iter().map(|capture| &capture.value))
-            }
-        };
-        for (index, value) in values.enumerate() {
-            let ordinal = u32::try_from(index)
-                .ok()
-                .and_then(|index| index.checked_add(1))
-                .and_then(NonZeroU32::new)
-                .map(crate::runtime_id::RuntimeCaptureSlotId::from_accepted_ordinal)
-                .ok_or(RuntimeAffineLineHandleError::StructuralOrdinalOverflow)?;
-            value.collect_affine_line_handles(
-                &path.child(RuntimeValuePathSegment::FunctionCapture(ordinal))?,
-                handles,
-            )?;
-        }
-        Ok(())
+        values_ownership(self.retained())
     }
 }
 
@@ -466,9 +416,8 @@ fn values_ownership(values: &[RuntimeValue]) -> RuntimeValueOwnership {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::awbc::schema::AwbcFunctionId;
     use crate::pattern::RuntimeVariantIdentity;
-    use crate::value::{RuntimeBinding, RuntimeFunctionValue, TupleSeq};
+    use crate::value::TupleSeq;
 
     #[test]
     fn join_is_affine_if_either_side_is_affine() {
@@ -541,24 +490,6 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&RuntimeValueOwnership::Affine).unwrap(),
             "\"affine\""
-        );
-    }
-
-    #[test]
-    fn function_ownership_is_derived_from_exact_captures() {
-        let function = RuntimeFunctionValue::new_awbc(
-            Vec::new(),
-            AwbcFunctionId(0),
-            vec![RuntimeBinding {
-                name: "captured".to_owned(),
-                value: RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]),
-            }],
-        );
-
-        assert_eq!(function.ownership(), RuntimeValueOwnership::Unrestricted);
-        assert_eq!(
-            RuntimeValue::Function(function).ownership(),
-            RuntimeValueOwnership::Unrestricted
         );
     }
 }

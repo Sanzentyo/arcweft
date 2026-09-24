@@ -1,4 +1,3 @@
-use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{
     FlowParameterCoordinate, RuntimeCallableId, RuntimeIdentityError, RuntimeSchemaError,
     RuntimeValueDigest,
@@ -6,16 +5,16 @@ use crate::entry::{
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern, RuntimeVariantIdentity};
 use crate::plan::{
-    RuntimeLineId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
+    RuntimeLineId, RuntimePlanValueTypeError, RuntimePureHelperId, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::scope::RuntimeScopeIdentity;
 use crate::time::LogicalDuration;
 use arcweft_id::{DeclarationIdentityFamily, PublicId, PublicIdFamilyError};
 pub use arcweft_need::Progress;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, ser::Error as _};
-use std::{fmt, sync::Arc};
+use serde::{Deserialize, Serialize};
+use std::fmt;
 use thiserror::Error;
 
 mod agent;
@@ -23,6 +22,7 @@ pub(crate) use agent::{
     RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
 };
 mod awbc_save;
+mod callable;
 mod data_shape;
 mod env;
 mod expression_locals;
@@ -33,7 +33,6 @@ mod nominal_record_expr;
 mod opaque;
 mod option_value;
 pub mod ownership;
-mod project_continuation;
 mod range;
 mod record;
 mod record_id;
@@ -76,8 +75,12 @@ pub use agent::{
     RuntimeAgentValue,
 };
 pub use awbc_save::{
-    AwbcRuntimeProjectContinuationSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
+    AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
 };
+pub(crate) use callable::{
+    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
+};
+pub use callable::{RuntimeCallableValue, RuntimeCallableValueError};
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
@@ -98,10 +101,6 @@ pub use opaque::{
 };
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
-};
-pub use project_continuation::{
-    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeProjectContinuationAbiError,
-    RuntimeProjectContinuationError,
 };
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use record::{RuntimeFieldValue, RuntimeRecordAdmissionError, RuntimeRecordValue};
@@ -148,42 +147,7 @@ pub struct RuntimeLocalBinding {
     pub value: RuntimeValue,
 }
 
-#[derive(Clone)]
-pub(crate) enum RuntimeFunctionBody {
-    Structured(RuntimeStructuredClosure),
-    Awbc(RuntimeAwbcClosure),
-}
-
-#[derive(Clone)]
-pub(crate) struct RuntimeStructuredClosure {
-    plan: Arc<RuntimePlan>,
-    site: RuntimeFunctionSiteId,
-    capture_values: Box<[RuntimeValue]>,
-    bound_args: Box<[RuntimeValue]>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RuntimeAwbcClosure {
-    function: AwbcFunctionId,
-    remaining_params: Vec<String>,
-    captures: Vec<RuntimeBinding>,
-}
-
-/// Captured runtime function value.
-///
-/// Captures are deterministic runtime bindings collected when a function
-/// expression is evaluated. They are rebound before call arguments when the
-/// function is applied.
-#[derive(Clone)]
-pub struct RuntimeFunctionValue {
-    body: RuntimeFunctionBody,
-}
-
-/// Dormant wire evidence for an AWBC-backed function value.
-///
-/// The owning AWBC program is deliberately absent. A decoded value is not
-/// executable authority until the enclosing fiber snapshot is admitted by
-/// `FiberState::validate_for_program` against its generation-pinned program.
+/// Validation failures at a native FunctionSite input boundary.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeFunctionApplyError {
     #[error("structured function site {site} does not belong to its owning plan")]
@@ -225,305 +189,6 @@ pub enum RuntimeFunctionApplyError {
     ValueType(#[from] RuntimePlanValueTypeError),
 }
 
-impl RuntimeFunctionValue {
-    pub(crate) fn capture_site(
-        plan: Arc<RuntimePlan>,
-        site: RuntimeFunctionSiteId,
-        capture_values: impl IntoIterator<Item = RuntimeValue>,
-    ) -> Result<Self, RuntimeFunctionApplyError> {
-        let capture_values = capture_values
-            .into_iter()
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let site_declaration = plan
-            .function_sites()
-            .get(site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
-        let capture_inputs = site_declaration.capture_inputs().collect::<Vec<_>>();
-        if capture_values.len() != capture_inputs.len() {
-            return Err(RuntimeFunctionApplyError::CaptureCountMismatch {
-                site,
-                expected: capture_inputs.len(),
-                actual: capture_values.len(),
-            });
-        }
-        for (index, (input, value)) in capture_inputs.iter().zip(&capture_values).enumerate() {
-            let local = input.input_local();
-            let expected = plan
-                .local_declarations()
-                .get(local)
-                .ok_or(RuntimeFunctionApplyError::UnknownStructuredLocal { site, local })?;
-            if !plan.value_matches_type(expected.ty(), value)? {
-                return Err(RuntimeFunctionApplyError::CaptureTypeMismatch {
-                    site,
-                    index,
-                    local,
-                    expected: expected.ty(),
-                });
-            }
-        }
-        Ok(Self {
-            body: RuntimeFunctionBody::Structured(RuntimeStructuredClosure {
-                plan,
-                site,
-                capture_values,
-                bound_args: Box::new([]),
-            }),
-        })
-    }
-
-    pub fn new_awbc(
-        params: Vec<String>,
-        function: AwbcFunctionId,
-        captures: Vec<RuntimeBinding>,
-    ) -> Self {
-        Self {
-            body: RuntimeFunctionBody::Awbc(RuntimeAwbcClosure {
-                function,
-                remaining_params: params,
-                captures,
-            }),
-        }
-    }
-
-    pub(crate) const fn body(&self) -> &RuntimeFunctionBody {
-        &self.body
-    }
-
-    pub(crate) const fn as_structured(&self) -> Option<&RuntimeStructuredClosure> {
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => Some(closure),
-            RuntimeFunctionBody::Awbc(_) => None,
-        }
-    }
-
-    /// Returns whether this structured function value denotes the executable
-    /// zero-argument callback body required by dialogue reveal.  AWBC-backed
-    /// values are validated against their program at the AWBC activation
-    /// boundary and therefore return `false` here.
-    pub(crate) fn is_structured_executable_callback(&self) -> bool {
-        let Some(closure) = self.as_structured() else {
-            return false;
-        };
-        if !closure.bound_args.is_empty() {
-            return false;
-        }
-        let Some(site) = closure.plan.function_sites().get(closure.site) else {
-            return false;
-        };
-        site.parameter_inputs().next().is_none()
-            && matches!(
-                site.body(),
-                crate::plan::RuntimeFunctionSiteBody::Executable(_)
-            )
-            && matches!(
-                closure.plan.checked_type(site.result()),
-                Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
-            )
-    }
-
-    pub fn remaining_arity(&self) -> Result<usize, RuntimeFunctionApplyError> {
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => closure.remaining_arity(),
-            RuntimeFunctionBody::Awbc(closure) => Ok(closure.remaining_params.len()),
-        }
-    }
-
-    /// Number of values captured by this closure.  Content effect admission
-    /// uses this alongside the template's static capture ABI; the values
-    /// themselves remain owned by the existing closure representation.
-    pub(crate) fn capture_count(&self) -> usize {
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => closure.capture_values.len(),
-            RuntimeFunctionBody::Awbc(closure) => closure.captures.len(),
-        }
-    }
-
-    pub fn try_bind_prefix(
-        &self,
-        args: &[RuntimeValue],
-    ) -> Result<Self, RuntimeFunctionApplyError> {
-        self.validate_bind_prefix(args)?;
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => {
-                let mut bound_args = closure.bound_args.to_vec();
-                bound_args.extend_from_slice(args);
-                Ok(Self {
-                    body: RuntimeFunctionBody::Structured(RuntimeStructuredClosure {
-                        plan: Arc::clone(&closure.plan),
-                        site: closure.site,
-                        capture_values: closure.capture_values.clone(),
-                        bound_args: bound_args.into_boxed_slice(),
-                    }),
-                })
-            }
-            RuntimeFunctionBody::Awbc(closure) => {
-                let mut captures = closure.captures.clone();
-                captures.extend(
-                    closure
-                        .remaining_params
-                        .iter()
-                        .take(args.len())
-                        .zip(args)
-                        .map(|(name, value)| RuntimeBinding {
-                            name: name.clone(),
-                            value: value.clone(),
-                        }),
-                );
-                Ok(Self::new_awbc(
-                    closure.remaining_params[args.len()..].to_vec(),
-                    closure.function,
-                    captures,
-                ))
-            }
-        }
-    }
-
-    pub(crate) fn validate_bind_prefix(
-        &self,
-        args: &[RuntimeValue],
-    ) -> Result<(), RuntimeFunctionApplyError> {
-        let remaining = self.remaining_arity()?;
-        if args.len() > remaining {
-            return Err(RuntimeFunctionApplyError::TooManyArguments {
-                remaining,
-                provided: args.len(),
-            });
-        }
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => {
-                let site = closure.plan.function_sites().get(closure.site).ok_or(
-                    RuntimeFunctionApplyError::UnknownStructuredSite { site: closure.site },
-                )?;
-                let parameter_offset = closure.bound_args.len();
-                let parameter_inputs = site.parameter_inputs().collect::<Vec<_>>();
-                for (relative_index, (argument, input)) in args
-                    .iter()
-                    .zip(&parameter_inputs[parameter_offset..])
-                    .enumerate()
-                {
-                    let local = input.input_local();
-                    let expected = closure.plan.local_declarations().get(local).ok_or(
-                        RuntimeFunctionApplyError::UnknownStructuredLocal {
-                            site: closure.site,
-                            local,
-                        },
-                    )?;
-                    if !closure.plan.value_matches_type(expected.ty(), argument)? {
-                        return Err(RuntimeFunctionApplyError::ArgumentTypeMismatch {
-                            site: closure.site,
-                            index: parameter_offset + relative_index,
-                            local,
-                            expected: expected.ty(),
-                        });
-                    }
-                }
-                Ok(())
-            }
-            RuntimeFunctionBody::Awbc(_) => Ok(()),
-        }
-    }
-}
-
-impl RuntimeStructuredClosure {
-    pub(crate) const fn plan(&self) -> &Arc<RuntimePlan> {
-        &self.plan
-    }
-
-    pub(crate) const fn site(&self) -> RuntimeFunctionSiteId {
-        self.site
-    }
-
-    pub(crate) const fn capture_values(&self) -> &[RuntimeValue] {
-        &self.capture_values
-    }
-
-    pub(crate) const fn bound_args(&self) -> &[RuntimeValue] {
-        &self.bound_args
-    }
-
-    fn remaining_arity(&self) -> Result<usize, RuntimeFunctionApplyError> {
-        let site = self
-            .plan
-            .function_sites()
-            .get(self.site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site: self.site })?;
-        site.parameter_inputs()
-            .count()
-            .checked_sub(self.bound_args.len())
-            .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site: self.site })
-    }
-}
-
-impl RuntimeAwbcClosure {
-    pub(crate) const fn function(&self) -> AwbcFunctionId {
-        self.function
-    }
-
-    pub(crate) fn remaining_params(&self) -> &[String] {
-        &self.remaining_params
-    }
-
-    pub(crate) fn captures(&self) -> &[RuntimeBinding] {
-        &self.captures
-    }
-}
-
-impl PartialEq for RuntimeFunctionValue {
-    fn eq(&self, other: &Self) -> bool {
-        match (&self.body, &other.body) {
-            (RuntimeFunctionBody::Structured(left), RuntimeFunctionBody::Structured(right)) => {
-                Arc::ptr_eq(&left.plan, &right.plan)
-                    && left.site == right.site
-                    && left.capture_values == right.capture_values
-                    && left.bound_args == right.bound_args
-            }
-            (RuntimeFunctionBody::Awbc(left), RuntimeFunctionBody::Awbc(right)) => left == right,
-            (RuntimeFunctionBody::Structured(_), RuntimeFunctionBody::Awbc(_))
-            | (RuntimeFunctionBody::Awbc(_), RuntimeFunctionBody::Structured(_)) => false,
-        }
-    }
-}
-
-impl fmt::Debug for RuntimeFunctionValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.body {
-            RuntimeFunctionBody::Structured(closure) => f
-                .debug_struct("RuntimeFunctionValue::Structured")
-                .field("site", &closure.site)
-                .field("capture_values", &closure.capture_values)
-                .field("bound_args", &closure.bound_args)
-                .finish(),
-            RuntimeFunctionBody::Awbc(closure) => f
-                .debug_tuple("RuntimeFunctionValue::Awbc")
-                .field(closure)
-                .finish(),
-        }
-    }
-}
-
-impl Serialize for RuntimeFunctionValue {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        Err(S::Error::custom(
-            "runtime functions cannot cross a generic persistence boundary; use the AWBC session-save DTO",
-        ))
-    }
-}
-
-impl<'de> Deserialize<'de> for RuntimeFunctionValue {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Err(D::Error::custom(
-            "runtime functions cannot cross a generic persistence boundary; use the AWBC session-save DTO",
-        ))
-    }
-}
-
 /// Structured payload exchanged at the host/runtime boundary.
 ///
 /// Payloads intentionally retain `RuntimeValue` shape instead of collapsing
@@ -562,8 +227,7 @@ pub enum RuntimeValue {
     Opaque(RuntimeOpaqueValue),
     Reduction(RuntimeReductionValue),
     Agent(RuntimeAgentValue),
-    Function(RuntimeFunctionValue),
-    ProjectContinuation(RuntimeProjectContinuation),
+    Callable(RuntimeCallableValue),
     Variant {
         owner: RuntimeVariantIdentity,
         ordinal: u32,
@@ -677,10 +341,9 @@ impl RuntimeValue {
             | Self::Progress(_)
             | Self::Range(_)
             | Self::Iterator(RuntimeIterator::Range(_))
-            | Self::EntityRef(_)
-            | Self::Function(_) => false,
-            Self::ProjectContinuation(continuation) => continuation
-                .prefix_values()
+            | Self::EntityRef(_) => false,
+            Self::Callable(callable) => callable
+                .retained()
                 .iter()
                 .any(Self::contains_nonconstant_opaque),
         }
@@ -693,7 +356,7 @@ impl RuntimeValue {
     #[must_use]
     pub fn contains_function(&self) -> bool {
         match self {
-            Self::Function(_) | Self::ProjectContinuation(_) => true,
+            Self::Callable(_) => true,
             Self::Tuple(values) => values.iter().any(Self::contains_function),
             Self::Record(fields) => fields.iter().any(|field| field.value().contains_function()),
             Self::Seq(sequence) => sequence_contains_function(sequence),
@@ -1767,11 +1430,11 @@ pub enum RuntimeExprKind {
     /// capture expressions supplied by the checked caller.  The function
     /// site's `Capture` input rows describe the callee ABI destination; they
     /// are never looked up in the outer environment by input-local id.
-    Function {
-        site: RuntimeFunctionSiteId,
+    MakeCallable {
+        state: crate::runtime_id::RuntimeCallableStateId,
         captures: Vec<RuntimeExpr>,
     },
-    Apply {
+    ApplyGroup {
         callee: Box<RuntimeExpr>,
         args: Vec<RuntimeCallArgument>,
     },
@@ -1838,7 +1501,7 @@ pub enum RuntimeExprKind {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueContentEffectBindingExpr {
     pub site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    pub function: crate::runtime_id::RuntimeFunctionSiteId,
+    pub state: crate::runtime_id::RuntimeCallableStateId,
     pub captures: Vec<RuntimeExpr>,
 }
 
@@ -1950,8 +1613,8 @@ impl RuntimeExpr {
             | RuntimeExprKind::ProjectRecord { .. }
             | RuntimeExprKind::AssignNominalField { .. }
             | RuntimeExprKind::Call { .. }
-            | RuntimeExprKind::Function { .. }
-            | RuntimeExprKind::Apply { .. }
+            | RuntimeExprKind::MakeCallable { .. }
+            | RuntimeExprKind::ApplyGroup { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
             | RuntimeExprKind::StandardMap { .. }
@@ -2007,10 +1670,10 @@ impl fmt::Display for RuntimeExpr {
                 write!(f, "assign .field#{}", field.zero_based())
             }
             RuntimeExprKind::Call { callee, .. } => write!(f, "{callee}()"),
-            RuntimeExprKind::Function { site, captures } => {
-                write!(f, "fn#{site}/captures{}", captures.len())
+            RuntimeExprKind::MakeCallable { state, captures } => {
+                write!(f, "callable#{state}/retained{}", captures.len())
             }
-            RuntimeExprKind::Apply { .. } => f.write_str("apply"),
+            RuntimeExprKind::ApplyGroup { .. } => f.write_str("apply"),
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
             RuntimeExprKind::StandardMap { family, .. } => write!(f, "map/{family:?}"),
@@ -2265,7 +1928,7 @@ pub enum RuntimeEvalError {
     #[error(transparent)]
     FunctionApply(#[from] RuntimeFunctionApplyError),
     #[error(transparent)]
-    ProjectContinuation(#[from] RuntimeProjectContinuationError),
+    Callable(#[from] RuntimeCallableValueError),
     #[error("structured function site {site} belongs to a different admitted runtime plan")]
     ForeignStructuredFunction { site: RuntimeFunctionSiteId },
     #[error("structured function site {site} exhausted without a typed return")]
@@ -3606,16 +3269,10 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
         RuntimeValue::Reduction(value) => format!("reduction/{}", value.commands().len()),
         RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Function(function) => function.remaining_arity().map_or_else(
+        RuntimeValue::Callable(function) => function.remaining_arity().map_or_else(
             |_| "function/invalid".to_owned(),
             |arity| format!("function/{arity}"),
         ),
-        RuntimeValue::ProjectContinuation(continuation) => {
-            format!(
-                "project-continuation/{}",
-                continuation.prefix_values().len()
-            )
-        }
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

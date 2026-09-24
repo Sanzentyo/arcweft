@@ -12,14 +12,17 @@ use crate::awbc::schema::{
     AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole,
     AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcPattern, AwbcPatternId,
-    AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence, AwbcProjectCallCaptureSource,
-    AwbcProjectCallInput, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcProjectCallOutcome, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
+    AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
     AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
-use crate::plan::RuntimeAgentTypeProjection;
+use crate::plan::{
+    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableParameterKind,
+    RuntimeCallablePosition, RuntimeCallableRetainedRole, RuntimeCallableTransition,
+    RuntimePlanSequenceKind,
+};
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
     RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeDialogueOpaqueRole,
@@ -42,6 +45,110 @@ pub(super) fn verify_code(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyE
         verify_function(verifier, function, None)?;
     }
     Ok(())
+}
+
+fn verify_dialogue_effect_callable_state<'a>(
+    program: &'a AwbcProgram,
+    state_id: crate::runtime_id::RuntimeCallableStateId,
+    capture_types: &[AwbcTypeId],
+    at: &str,
+) -> Result<
+    &'a crate::plan::RuntimeCallableStateDefinition<
+        AwbcTypeId,
+        crate::awbc::schema::AwbcFunctionId,
+    >,
+    AwbcVerifyError,
+> {
+    let state = program
+        .callable_states
+        .get(state_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback state is absent".to_owned(),
+        })?;
+    let function_type = program
+        .runtime_types
+        .get(state.function_type.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback function type is absent".to_owned(),
+        })?;
+    let AwbcRuntimeTypeShape::Function { parameters, result } = function_type.shape() else {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback state does not have a function type".to_owned(),
+        });
+    };
+    if !parameters.is_empty()
+        || !matches!(
+            runtime_shape(program, *result),
+            Some(AwbcRuntimeTypeShape::Unit)
+        )
+        || state.result != *result
+        || !state.parameters.is_empty()
+        || !matches!(state.attached, RuntimeCallableAttachedContract::None)
+        || state.position != RuntimeCallablePosition::Unapplied
+        || state.retained.len() != capture_types.len()
+        || state.retained.iter().zip(capture_types).enumerate().any(
+            |(position, (retained, expected))| {
+                retained.ty != *expected
+                    || retained.role
+                        != (RuntimeCallableRetainedRole::Capture {
+                            position: u32::try_from(position).unwrap_or(u32::MAX),
+                        })
+            },
+        )
+    {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback state does not match its closed capture ABI"
+                .to_owned(),
+        });
+    }
+    let RuntimeCallableTransition::Invoke {
+        function,
+        captures,
+        arguments,
+    } = &state.transition
+    else {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback state does not invoke a body".to_owned(),
+        });
+    };
+    if !arguments.is_empty() || captures.len() != capture_types.len() {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback invocation is not a zero-argument closure"
+                .to_owned(),
+        });
+    }
+    let target = program.functions.get(function.index()).ok_or_else(|| {
+        AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback body is absent".to_owned(),
+        }
+    })?;
+    if target.kind != AwbcFunctionKind::Ordinary {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback body is not ordinary".to_owned(),
+        });
+    }
+    let signature = program
+        .signatures
+        .get(target.signature.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback body signature is absent".to_owned(),
+        })?;
+    if signature.result.is_some() || signature.params.as_slice() != capture_types {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "dialogue effect callback body signature disagrees with its state".to_owned(),
+        });
+    }
+    Ok(state)
 }
 
 fn verify_function(
@@ -402,7 +509,7 @@ fn apply_instruction(
             check_args_budget(verifier, items.len())?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
             let (item_ty, expected_len) = match runtime_shape(program, dst_ty) {
-                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => (*item_ty, None),
+                Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => (*item_ty, None),
                 Some(AwbcRuntimeTypeShape::Array { item, length }) => {
                     let expected = usize::try_from(*length)
                         .map_err(|_| AwbcVerifyError::ResultShapeMismatch { at: at.clone() })?;
@@ -421,7 +528,8 @@ fn apply_instruction(
         }
         AwbcInstruction::RepeatSequence { dst, value, len } => {
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) = runtime_shape(program, dst_ty)
+            let Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) =
+                runtime_shape(program, dst_ty)
             else {
                 return invalid_type(&at, "sequence destination");
             };
@@ -453,7 +561,7 @@ fn apply_instruction(
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             match runtime_shape(program, sequence_ty) {
-                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => {
+                Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => {
                     require_compatible(program, dst_ty, *item_ty, &at)?;
                 }
                 Some(AwbcRuntimeTypeShape::Array { item, .. }) => {
@@ -484,7 +592,7 @@ fn apply_instruction(
         AwbcInstruction::SequencePush { sequence, value } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
             let value_ty = read_register(verifier, function, block, *value, state)?;
-            if let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) =
+            if let Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) =
                 runtime_shape(program, sequence_ty)
             {
                 require_compatible(program, *item_ty, value_ty, &at)?;
@@ -976,67 +1084,12 @@ fn apply_instruction(
                             .to_owned(),
                     });
                 }
-                check_index(
-                    program.functions.len(),
-                    binding.function.0,
-                    "functions",
+                verify_dialogue_effect_callable_state(
+                    program,
+                    binding.state,
+                    &slot.capture_types,
                     &at,
                 )?;
-                let target = &program.functions[binding.function.index()];
-                if target.kind != AwbcFunctionKind::Ordinary {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message:
-                            "MakeDialogueContent effect callback must be an ordinary executable function"
-                                .to_owned(),
-                    });
-                }
-                let signature = program
-                    .signatures
-                    .get(target.signature.index())
-                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "MakeDialogueContent effect callback signature is absent"
-                            .to_owned(),
-                    })?;
-                if signature.params.as_slice() != slot.capture_types.as_slice() {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "MakeDialogueContent effect callback signature does not match its capture ABI"
-                            .to_owned(),
-                    });
-                }
-                if signature.result.is_some() {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "MakeDialogueContent effect callback must return Unit".to_owned(),
-                    });
-                }
-                let target_layout = program
-                    .frame_layouts
-                    .get(target.frame_layout.index())
-                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "MakeDialogueContent effect callback frame layout is absent"
-                            .to_owned(),
-                    })?;
-                let target_parameters = target_layout
-                    .slots
-                    .iter()
-                    .filter(|frame_slot| frame_slot.role == AwbcFrameSlotRole::Parameter)
-                    .collect::<Vec<_>>();
-                if target_parameters.len() != slot.capture_types.len()
-                    || target_parameters
-                        .iter()
-                        .zip(&slot.capture_types)
-                        .any(|(frame_slot, expected)| frame_slot.ty != *expected)
-                {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "MakeDialogueContent effect callback frame parameters do not match its capture ABI"
-                            .to_owned(),
-                    });
-                }
                 if binding.captures.len() != slot.capture_types.len() {
                     return argument_count(&at, slot.capture_types.len(), binding.captures.len());
                 }
@@ -1090,71 +1143,62 @@ fn apply_instruction(
         AwbcInstruction::CancelCleanup { key } => {
             check_string(program, *key, &at)?;
         }
-        AwbcInstruction::MakeFunction {
+        AwbcInstruction::MakeCallable {
             dst,
-            function: target,
-            params,
-            capture_names,
+            state: state_id,
             captures,
         } => {
-            check_args_budget(verifier, params.len().saturating_add(captures.len()))?;
-            check_index(program.functions.len(), target.0, "functions", &at)?;
-            if capture_names.len() != captures.len() {
-                return argument_count(&at, capture_names.len(), captures.len());
-            }
-            for param in params {
-                check_string(program, *param, &at)?;
-            }
-            for capture_name in capture_names {
-                check_string(program, *capture_name, &at)?;
-            }
-            for capture in captures {
-                read_register(verifier, function, block, *capture, state)?;
-            }
-            let signature =
-                &program.signatures[program.functions[target.index()].signature.index()];
-            let expected = params.len().saturating_add(captures.len());
-            if signature.params.len() != expected {
-                return argument_count(&at, signature.params.len(), expected);
-            }
-            let target_layout =
-                &program.frame_layouts[program.functions[target.index()].frame_layout.index()];
-            let target_parameters = target_layout
-                .slots
-                .iter()
-                .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
-                .collect::<Vec<_>>();
-            if target_parameters.len() != expected {
-                return argument_count(&at, target_parameters.len(), expected);
-            }
-            for (position, (name, slot)) in capture_names
-                .iter()
-                .chain(params)
-                .zip(&target_parameters)
-                .enumerate()
+            check_args_budget(verifier, captures.len())?;
+            let definition = program
+                .callable_states
+                .get(state_id.index())
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "callable construction references an absent state".to_owned(),
+                })?;
+            if definition.origin != *state_id
+                || definition.position != RuntimeCallablePosition::Unapplied
+                || definition.retained.len() != captures.len()
             {
-                if slot.name != Some(*name) {
+                return invalid_type(
+                    &at,
+                    "callable construction requires its unapplied state layout",
+                );
+            }
+            for (position, (capture, retained)) in
+                captures.iter().zip(&definition.retained).enumerate()
+            {
+                let Some(expected_position) = u32::try_from(position).ok() else {
+                    return invalid_type(&at, "callable capture count exceeds u32");
+                };
+                if !matches!(
+                    retained.role,
+                    RuntimeCallableRetainedRole::Capture { position } if position == expected_position
+                ) {
                     return invalid_type(
                         &at,
-                        &format!("function parameter {position} name matching its closure binding"),
+                        "callable construction retained layout is not captures",
                     );
                 }
-                if slot.ty != signature.params[position] {
-                    return type_mismatch(&at, signature.params[position], slot.ty);
-                }
+                let actual = read_register(verifier, function, block, *capture, state)?;
+                require_compatible(program, retained.ty, actual, &at).map_err(|_| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: format!("callable capture {position} has an incompatible type"),
+                    }
+                })?;
             }
-            for (position, capture) in captures.iter().enumerate() {
-                let actual = register_type(verifier, function, block, *capture)?;
-                require_compatible(program, signature.params[position], actual, &at)?;
-            }
+            let actual = register_type(verifier, function, block, *dst)?;
+            require_compatible(program, definition.function_type, actual, &at)?;
             write_register(verifier, function, block, *dst, state)?;
         }
-        AwbcInstruction::ApplyFunction { dst, callee, args } => {
+        AwbcInstruction::ApplyGroup { dst, callee, args } => {
             check_args_budget(verifier, args.len())?;
             read_register(verifier, function, block, *callee, state)?;
             for arg in args {
                 read_register(verifier, function, block, *arg, state)?;
             }
+            verify_apply_group(verifier, function, block, *dst, *callee, args, &at)?;
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::StartTask { dst, plan, args } => {
@@ -1421,7 +1465,7 @@ impl RuntimeAgentTypeContext for AwbcProgram {
 
     fn sequence_type(&self, ty: Self::Type) -> Option<(Self::Type, Option<u64>)> {
         match runtime_shape(self, ty)? {
-            AwbcRuntimeTypeShape::Sequence(item) => Some((*item, None)),
+            AwbcRuntimeTypeShape::Sequence { item, .. } => Some((*item, None)),
             AwbcRuntimeTypeShape::Array { item, length } => Some((*item, Some(*length))),
             _ => None,
         }
@@ -1750,34 +1794,18 @@ fn apply_terminator(
                                 .to_owned(),
                     });
                 }
-                let target = program
-                    .functions
-                    .get(binding.function.index())
-                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "dialogue effect callback function is absent".to_owned(),
-                    })?;
-                if target.kind != AwbcFunctionKind::Ordinary {
+                verify_dialogue_effect_callable_state(
+                    program,
+                    binding.state,
+                    &manifest.capture_types,
+                    &at,
+                )?;
+                if binding.captures.len() != manifest.capture_types.len() {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
-                        message: "dialogue effect callback must be an ordinary function".to_owned(),
-                    });
-                }
-                let signature = program
-                    .signatures
-                    .get(target.signature.index())
-                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "dialogue effect callback signature is absent".to_owned(),
-                    })?;
-                if signature.result.is_some()
-                    || signature.params.as_slice() != manifest.capture_types.as_slice()
-                    || binding.captures.len() != manifest.capture_types.len()
-                {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "dialogue effect callback ABI disagrees with its manifest"
-                            .to_owned(),
+                        message:
+                            "dialogue effect callback capture count disagrees with its manifest"
+                                .to_owned(),
                     });
                 }
                 for (capture, expected) in binding.captures.iter().zip(&manifest.capture_types) {
@@ -2010,27 +2038,39 @@ fn verify_project_call(
     let program = verifier.program;
     check_args_budget(verifier, call.operands.len())?;
     check_args_budget(verifier, call.ordinary.len())?;
-    match &call.input {
-        AwbcProjectCallInput::Direct if call.completed_group != 0 => {
-            return invalid_type(at, "direct project-call input requires group zero");
-        }
-        AwbcProjectCallInput::Continuation {
-            callee,
-            expected_abi,
-        } => {
-            if call.completed_group == 0 {
-                return invalid_type(at, "continuation project-call input requires a prior group");
-            }
-            check_args_budget(verifier, expected_abi.prefix_types.len())?;
-            verify_project_continuation_abi(program, expected_abi, at)?;
-            let actual = read_register(verifier, function, block, *callee, state)?;
-            require_project_call_compatible(program, expected_abi.function_type, actual, at)?;
-        }
-        AwbcProjectCallInput::Direct => {}
+    let definition = program
+        .callable_states
+        .get(call.state.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "project-call input state is absent".to_owned(),
+        })?;
+    let expected_group =
+        match &definition.position {
+            RuntimeCallablePosition::Unapplied => 0,
+            RuntimeCallablePosition::WithinGroup { group, .. } => *group,
+            RuntimeCallablePosition::AfterGroup { completed } => completed
+                .checked_add(1)
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.to_owned(),
+                    message: "project-call state group overflows".to_owned(),
+                })?,
+        };
+    if call.completed_group != expected_group {
+        return invalid_type(
+            at,
+            "project-call group disagrees with its checked state position",
+        );
     }
+    if call.ordinary.len() != definition.parameters.len() {
+        return argument_count(at, definition.parameters.len(), call.ordinary.len());
+    }
+    let actual_callee = read_register(verifier, function, block, call.callee, state)?;
+    require_project_call_compatible(program, definition.function_type, actual_callee, at)?;
 
     let mut sources = BTreeSet::new();
     for (ordinary_index, row) in call.ordinary.iter().enumerate() {
+        let input = &definition.parameters[ordinary_index];
         let parameter = match row {
             AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
             | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
@@ -2040,42 +2080,44 @@ fn verify_project_call(
             return invalid_type(at, "project-call logical parameter rows are not dense");
         }
         match row {
-            AwbcProjectCallOrdinaryMaterialization::Fixed {
-                abi_ty,
-                binding_ty,
-                source_index,
-                ..
-            } => {
-                require_project_call_compatible(program, *abi_ty, *binding_ty, at)?;
+            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
+                if input.kind != RuntimeCallableParameterKind::Fixed {
+                    return invalid_type(at, "fixed call materialization targets a rest parameter");
+                }
                 let operand = project_call_operand(call, *source_index, at)?;
                 if operand.mode != AwbcProjectCallOperandMode::Value {
                     return invalid_type(at, "fixed project-call source must be a value operand");
                 }
                 let actual = read_register(verifier, function, block, operand.value, state)?;
-                require_project_call_compatible(program, *abi_ty, actual, at)?;
+                require_project_call_compatible(program, input.abi_ty, actual, at)?;
                 insert_project_call_source(&mut sources, *source_index, call.operands.len(), at)?;
             }
-            AwbcProjectCallOrdinaryMaterialization::Rest {
-                abi_ty,
-                binding_ty,
-                source_indices,
-                ..
-            } => {
-                let Some(AwbcRuntimeTypeShape::Sequence(item)) =
-                    runtime_shape(program, *binding_ty)
+            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
+                if input.kind != RuntimeCallableParameterKind::Rest
+                    || source_indices.windows(2).any(|pair| pair[0] >= pair[1])
+                {
+                    return invalid_type(
+                        at,
+                        "rest call materialization disagrees with its parameter",
+                    );
+                }
+                let Some(AwbcRuntimeTypeShape::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item,
+                }) = runtime_shape(program, input.binding_ty)
                 else {
                     return invalid_type(at, "rest binding type must be a sequence");
                 };
-                require_project_call_compatible(program, *abi_ty, *item, at)?;
+                require_project_call_compatible(program, input.abi_ty, *item, at)?;
                 for source_index in source_indices {
                     let operand = project_call_operand(call, *source_index, at)?;
                     let actual = read_register(verifier, function, block, operand.value, state)?;
                     match operand.mode {
                         AwbcProjectCallOperandMode::Value => {
-                            require_project_call_compatible(program, *abi_ty, actual, at)?;
+                            require_project_call_compatible(program, input.abi_ty, actual, at)?;
                         }
                         AwbcProjectCallOperandMode::Spread => {
-                            if !is_sequence_or_tuple_of(program, actual, *abi_ty) {
+                            if !is_sequence_or_tuple_of(program, actual, input.abi_ty) {
                                 return invalid_type(
                                     at,
                                     "rest spread source has the wrong item type",
@@ -2093,7 +2135,6 @@ fn verify_project_call(
             }
         }
     }
-
     if let Some(attached) = &call.attached {
         verify_project_call_attached(
             verifier,
@@ -2101,15 +2142,15 @@ fn verify_project_call(
             block,
             call,
             attached,
+            &definition.attached,
             &mut sources,
             state,
             at,
         )?;
-    }
-    if matches!(&call.outcome, AwbcProjectCallOutcome::Continue { .. }) && call.attached.is_some() {
+    } else if !matches!(definition.attached, RuntimeCallableAttachedContract::None) {
         return invalid_type(
             at,
-            "project-call continuation cannot carry an attached materialization",
+            "project-call omits its attached materialization evidence",
         );
     }
     for index in 0..call.operands.len() {
@@ -2122,162 +2163,122 @@ fn verify_project_call(
         }
     }
 
-    let prefix = match &call.input {
-        AwbcProjectCallInput::Direct => &[][..],
-        AwbcProjectCallInput::Continuation { expected_abi, .. } => {
-            expected_abi.prefix_types.as_slice()
-        }
-    };
-    match &call.outcome {
-        AwbcProjectCallOutcome::Continue {
-            result_abi,
-            next_group,
-        } => {
-            check_args_budget(verifier, result_abi.prefix_types.len())?;
-            verify_project_continuation_abi(program, result_abi, at)?;
-            let expected_next = call.completed_group.checked_add(1).ok_or_else(|| {
-                AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "project-call next group overflows u32".to_owned(),
-                }
+    if let RuntimeCallableAttachedContract::Defaulted { default, .. } = &definition.attached {
+        let target = program
+            .functions
+            .get(default.function.index())
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.to_owned(),
+                message: "callable default target is absent".to_owned(),
             })?;
-            if *next_group != expected_next {
-                return invalid_type(at, "project-call continuation does not advance one group");
-            }
-            if !result_abi.prefix_types.starts_with(prefix) {
-                return invalid_type(at, "project-call continuation drops its existing prefix");
-            }
-            if let AwbcProjectCallInput::Continuation { expected_abi, .. } = &call.input {
-                let Some(AwbcRuntimeTypeShape::Function { parameters, result }) =
-                    runtime_shape(program, expected_abi.function_type)
-                else {
-                    return invalid_type(at, "project-call input ABI is not a function");
-                };
-                // The checked result is a new prefix with its own lineage.
-                // Its remaining function type is the applied group's result.
-                if *result != result_abi.function_type
-                    || !parameters.iter().copied().eq(call
-                        .ordinary
-                        .iter()
-                        .map(AwbcProjectCallOrdinaryMaterialization::abi_ty))
-                {
-                    return invalid_type(
-                        at,
-                        "project-call continuation application signature disagrees",
-                    );
-                }
-            }
-            require_project_call_compatible(program, result_abi.function_type, call.result_ty, at)?;
-            let expected_len = prefix
-                .len()
-                .checked_add(call.ordinary.len())
-                .and_then(|length| length.checked_add(usize::from(call.attached.is_some())))
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "project-call continuation prefix length overflows".to_owned(),
-                })?;
-            if result_abi.prefix_types.len() != expected_len {
-                return invalid_type(
-                    at,
-                    "project-call continuation prefix length is not canonical",
-                );
-            }
-            let mut expected_types = call
-                .ordinary
-                .iter()
-                .map(|row| match row {
-                    AwbcProjectCallOrdinaryMaterialization::Fixed { binding_ty, .. }
-                    | AwbcProjectCallOrdinaryMaterialization::Rest { binding_ty, .. } => {
-                        *binding_ty
-                    }
-                })
-                .collect::<Vec<_>>();
-            if let Some(attached) = &call.attached {
-                expected_types.push(attached.binding_ty);
-            }
-            if result_abi.prefix_types[prefix.len()..] != expected_types {
-                return invalid_type(at, "project-call continuation binding types disagree");
-            }
-        }
-        AwbcProjectCallOutcome::Invoke { function: target } => {
-            check_index(program.functions.len(), target.0, "functions", at)?;
-            if program.functions[target.index()].kind != AwbcFunctionKind::Ordinary {
-                return invalid_type(at, "project-call target must be an ordinary function");
-            }
-            let signature = program
-                .signatures
-                .get(program.functions[target.index()].signature.index())
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "project-call target signature is absent".to_owned(),
-                })?;
-            let mut expected = prefix.to_vec();
-            expected.extend(call.ordinary.iter().map(|row| match row {
-                AwbcProjectCallOrdinaryMaterialization::Fixed { binding_ty, .. }
-                | AwbcProjectCallOrdinaryMaterialization::Rest { binding_ty, .. } => *binding_ty,
-            }));
-            if let Some(attached) = &call.attached {
-                expected.push(attached.binding_ty);
-            }
-            if signature.params != expected {
-                return argument_count(at, expected.len(), signature.params.len());
-            }
-            require_effects(verifier, function, signature.effects, "project-call target")?;
-            let Some(target_result) = signature.result else {
-                return invalid_type(at, "project-call target must return a value");
-            };
-            require_project_call_compatible(program, call.result_ty, target_result, at)?;
-        }
+        require_effects(
+            verifier,
+            function,
+            program.signatures[target.signature.index()].effects,
+            "callable default",
+        )?;
     }
-    if let Some(attached) = &call.attached
-        && matches!(
-            &attached.presence,
-            AwbcProjectCallAttachedPresence::DefaultedOmitted { .. }
-        )
-        && !matches!(&call.outcome, AwbcProjectCallOutcome::Invoke { .. })
+    if let RuntimeCallableTransition::Invoke {
+        function: target, ..
+    } = &definition.transition
     {
-        return invalid_type(
-            at,
-            "omitted attached default requires an invoking project-call",
-        );
+        let function_row = program.functions.get(target.index()).ok_or_else(|| {
+            AwbcVerifyError::InvalidInvariant {
+                at: at.to_owned(),
+                message: "callable invocation target is absent".to_owned(),
+            }
+        })?;
+        require_effects(
+            verifier,
+            function,
+            program.signatures[function_row.signature.index()].effects,
+            "callable invocation",
+        )?;
     }
     validate_pattern(
         verifier,
         function,
         block,
         call.result_pattern,
-        call.result_ty,
+        definition.result,
         Some(AwbcBindMode::Declare),
         state,
         0,
     )
 }
 
-fn verify_project_continuation_abi(
-    program: &AwbcProgram,
-    abi: &crate::awbc::schema::AwbcProjectContinuationAbi,
+fn verify_apply_group(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    destination: AwbcRegisterId,
+    callee: AwbcRegisterId,
+    arguments: &[AwbcRegisterId],
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
-    check_index(
-        program.runtime_types.len(),
-        abi.function_type.0,
-        "runtime_types",
-        at,
-    )?;
-    if !matches!(
-        runtime_shape(program, abi.function_type),
-        Some(AwbcRuntimeTypeShape::Function { .. })
-    ) {
-        return invalid_type(at, "project-call ABI function type is not a function");
+    let program = verifier.program;
+    let callee_type = register_type(verifier, function, block, callee)?;
+    let Some(AwbcRuntimeTypeShape::Function { parameters, .. }) =
+        runtime_shape(program, callee_type)
+    else {
+        return invalid_type(at, "group application callee must have a function type");
+    };
+    if arguments.len() > parameters.len() {
+        return invalid_type(
+            at,
+            "group application supplies more values than its function arrow",
+        );
     }
-    for ty in &abi.prefix_types {
-        check_index(program.runtime_types.len(), ty.0, "runtime_types", at)?;
-        if matches!(
-            runtime_shape(program, *ty),
-            Some(AwbcRuntimeTypeShape::Dynamic)
-        ) {
-            return invalid_type(at, "project-call ABI prefix cannot use Dynamic types");
+    for (argument, expected) in arguments.iter().zip(parameters) {
+        let actual = register_type(verifier, function, block, *argument)?;
+        require_project_call_compatible(program, *expected, actual, at)?;
+    }
+    let destination_type = register_type(verifier, function, block, destination)?;
+    let mut accepted = false;
+    for definition in program
+        .callable_states
+        .iter()
+        .filter(|definition| definition.function_type == callee_type)
+    {
+        let arrow_arity = parameters.len();
+        let result_type = if arguments.len() < arrow_arity {
+            if arguments.is_empty() {
+                Some(definition.function_type)
+            } else {
+                let coordinates = definition
+                    .parameters
+                    .iter()
+                    .take(arguments.len())
+                    .map(|input| input.coordinate)
+                    .collect::<Vec<_>>();
+                definition
+                    .partials
+                    .iter()
+                    .find(|partial| partial.parameters.as_ref() == coordinates.as_slice())
+                    .and_then(|partial| {
+                        program
+                            .callable_states
+                            .get(partial.state.index())
+                            .map(|target| target.function_type)
+                    })
+            }
+        } else if arguments.len() == arrow_arity {
+            Some(definition.result)
+        } else {
+            None
+        };
+        if result_type.is_some_and(|expected| {
+            project_call_types_compatible(program, expected, destination_type)
+        }) {
+            accepted = true;
+            break;
         }
+    }
+    if !accepted {
+        return invalid_type(
+            at,
+            "group application has no sealed callable state with this result type",
+        );
     }
     Ok(())
 }
@@ -2320,7 +2321,7 @@ fn insert_project_call_source(
 
 fn is_sequence_or_tuple_of(program: &AwbcProgram, ty: AwbcTypeId, item: AwbcTypeId) -> bool {
     match runtime_shape(program, ty) {
-        Some(AwbcRuntimeTypeShape::Sequence(actual)) => {
+        Some(AwbcRuntimeTypeShape::Sequence { item: actual, .. }) => {
             project_call_types_compatible(program, *actual, item)
         }
         Some(AwbcRuntimeTypeShape::Array { item: actual, .. }) => {
@@ -2339,13 +2340,14 @@ fn verify_project_call_attached(
     block: usize,
     call: &crate::awbc::schema::AwbcProjectCall,
     attached: &crate::awbc::schema::AwbcProjectCallAttachedMaterialization,
+    contract: &RuntimeCallableAttachedContract<AwbcTypeId, crate::awbc::schema::AwbcFunctionId>,
     sources: &mut BTreeSet<u32>,
     state: &FlowState,
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     let present = matches!(
-        attached.presence,
+        &attached.presence,
         AwbcProjectCallAttachedPresence::RequiredPresent
             | AwbcProjectCallAttachedPresence::OptionalPresent
             | AwbcProjectCallAttachedPresence::DefaultedPresent
@@ -2353,155 +2355,48 @@ fn verify_project_call_attached(
     if present != attached.source_index.is_some() {
         return invalid_type(at, "project-call attached source parity is invalid");
     }
-    match &attached.presence {
-        AwbcProjectCallAttachedPresence::RequiredPresent => {
-            require_project_call_compatible(program, attached.abi_ty, attached.binding_ty, at)?;
-            let index = attached
-                .source_index
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "required attached source is absent".to_owned(),
-                })?;
-            let operand = project_call_operand(call, index, at)?;
-            if operand.mode != AwbcProjectCallOperandMode::Value {
-                return invalid_type(at, "required attached source must be a value operand");
-            }
-            let actual = read_register(verifier, function, block, operand.value, state)?;
-            require_project_call_compatible(program, attached.binding_ty, actual, at)?;
-            insert_project_call_source(sources, index, call.operands.len(), at)?;
+    let expected_value = match (contract, &attached.presence) {
+        (
+            RuntimeCallableAttachedContract::Required { ty },
+            AwbcProjectCallAttachedPresence::RequiredPresent,
+        )
+        | (
+            RuntimeCallableAttachedContract::Defaulted { ty, .. },
+            AwbcProjectCallAttachedPresence::DefaultedPresent,
+        ) => Some(*ty),
+        (
+            RuntimeCallableAttachedContract::Optional { value, .. },
+            AwbcProjectCallAttachedPresence::OptionalPresent,
+        ) => Some(*value),
+        (
+            RuntimeCallableAttachedContract::Optional { .. },
+            AwbcProjectCallAttachedPresence::OptionalOmitted,
+        )
+        | (
+            RuntimeCallableAttachedContract::Defaulted { .. },
+            AwbcProjectCallAttachedPresence::DefaultedOmitted,
+        ) => None,
+        _ => {
+            return invalid_type(
+                at,
+                "project-call attached evidence disagrees with its state",
+            );
         }
-        AwbcProjectCallAttachedPresence::OptionalPresent
-        | AwbcProjectCallAttachedPresence::OptionalOmitted => {
-            let Some(item) = program.builtin_variant_payload_item(
-                attached.abi_ty,
-                RuntimeBuiltinVariantCaseIdentity::OptionSome,
-            ) else {
-                return invalid_type(at, "optional attached ABI must be the builtin Option type");
-            };
-            require_project_call_compatible(program, attached.abi_ty, attached.binding_ty, at)?;
-            if matches!(
-                attached.presence,
-                AwbcProjectCallAttachedPresence::OptionalPresent
-            ) {
-                let index =
-                    attached
-                        .source_index
-                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                            at: at.to_owned(),
-                            message: "optional attached source is absent".to_owned(),
-                        })?;
-                let operand = project_call_operand(call, index, at)?;
-                if operand.mode != AwbcProjectCallOperandMode::Value {
-                    return invalid_type(at, "optional attached source must be a value operand");
-                }
-                let actual = read_register(verifier, function, block, operand.value, state)?;
-                require_project_call_compatible(program, item, actual, at)?;
-                insert_project_call_source(sources, index, call.operands.len(), at)?;
-            }
+    };
+    if let Some(expected) = expected_value {
+        let index = attached
+            .source_index
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.to_owned(),
+                message: "present attached source is absent".to_owned(),
+            })?;
+        let operand = project_call_operand(call, index, at)?;
+        if operand.mode != AwbcProjectCallOperandMode::Value {
+            return invalid_type(at, "attached source must be a value operand");
         }
-        AwbcProjectCallAttachedPresence::DefaultedPresent => {
-            let Some(item) = program.builtin_variant_payload_item(
-                attached.abi_ty,
-                RuntimeBuiltinVariantCaseIdentity::OptionSome,
-            ) else {
-                return invalid_type(at, "defaulted attached ABI must be the builtin Option type");
-            };
-            require_project_call_compatible(program, item, attached.binding_ty, at)?;
-            let index = attached
-                .source_index
-                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                    at: at.to_owned(),
-                    message: "defaulted attached source is absent".to_owned(),
-                })?;
-            let operand = project_call_operand(call, index, at)?;
-            if operand.mode != AwbcProjectCallOperandMode::Value {
-                return invalid_type(at, "defaulted attached source must be a value operand");
-            }
-            let actual = read_register(verifier, function, block, operand.value, state)?;
-            require_project_call_compatible(program, attached.binding_ty, actual, at)?;
-            insert_project_call_source(sources, index, call.operands.len(), at)?;
-        }
-        AwbcProjectCallAttachedPresence::DefaultedOmitted { default } => {
-            let Some(item) = program.builtin_variant_payload_item(
-                attached.abi_ty,
-                RuntimeBuiltinVariantCaseIdentity::OptionSome,
-            ) else {
-                return invalid_type(at, "defaulted attached ABI must be the builtin Option type");
-            };
-            require_project_call_compatible(program, item, attached.binding_ty, at)?;
-            check_index(program.functions.len(), default.site.0, "functions", at)?;
-            check_args_budget(verifier, default.captures.len())?;
-            if program.functions[default.site.index()].kind != AwbcFunctionKind::Ordinary {
-                return invalid_type(at, "project-call default must be an ordinary function");
-            }
-            let signature =
-                &program.signatures[program.functions[default.site.index()].signature.index()];
-            let mut expected = Vec::with_capacity(default.captures.len());
-            for capture in &default.captures {
-                let ty = match capture {
-                    AwbcProjectCallCaptureSource::ContinuationPrefix { position } => {
-                        let prefix = match &call.input {
-                            AwbcProjectCallInput::Continuation { expected_abi, .. } => {
-                                &expected_abi.prefix_types
-                            }
-                            AwbcProjectCallInput::Direct => {
-                                return invalid_type(
-                                    at,
-                                    "default capture cannot use a direct prefix",
-                                );
-                            }
-                        };
-                        prefix
-                            .get(usize::try_from(*position).map_err(|_| {
-                                AwbcVerifyError::InvalidInvariant {
-                                    at: at.to_owned(),
-                                    message: "default capture position exceeds usize".to_owned(),
-                                }
-                            })?)
-                            .copied()
-                            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                                at: at.to_owned(),
-                                message: "default capture prefix position is out of range"
-                                    .to_owned(),
-                            })?
-                    }
-                    AwbcProjectCallCaptureSource::CurrentLogical { position } => call
-                        .ordinary
-                        .get(usize::try_from(*position).map_err(|_| {
-                            AwbcVerifyError::InvalidInvariant {
-                                at: at.to_owned(),
-                                message: "default capture position exceeds usize".to_owned(),
-                            }
-                        })?)
-                        .map(|row| match row {
-                            AwbcProjectCallOrdinaryMaterialization::Fixed {
-                                binding_ty, ..
-                            }
-                            | AwbcProjectCallOrdinaryMaterialization::Rest { binding_ty, .. } => {
-                                *binding_ty
-                            }
-                        })
-                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                            at: at.to_owned(),
-                            message: "default capture current position is out of range".to_owned(),
-                        })?,
-                };
-                expected.push(ty);
-            }
-            if signature.params != expected {
-                return invalid_type(at, "default function capture ABI disagrees");
-            }
-            require_effects(
-                verifier,
-                function,
-                signature.effects,
-                "project-call default",
-            )?;
-            let Some(result) = signature.result else {
-                return invalid_type(at, "default function must return attached binding");
-            };
-            require_project_call_compatible(program, attached.binding_ty, result, at)?;
-        }
+        let actual = read_register(verifier, function, block, operand.value, state)?;
+        require_project_call_compatible(program, expected, actual, at)?;
+        insert_project_call_source(sources, index, call.operands.len(), at)?;
     }
     Ok(())
 }
@@ -2912,7 +2807,7 @@ fn validate_pattern(
         }
         AwbcPattern::Sequence { items, rest } => {
             let item_ty = match runtime_shape(program, value_ty) {
-                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => Some(*item_ty),
+                Some(AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => Some(*item_ty),
                 Some(AwbcRuntimeTypeShape::Dynamic) => dynamic_type(program),
                 _ => None,
             }
@@ -3364,7 +3259,7 @@ fn constant_matches_type(
                         .is_some_and(|value| constant_matches_type(program, value, *ty, depth + 1))
                 })
         }
-        (AwbcConstant::Sequence(values), AwbcRuntimeTypeShape::Sequence(item_ty)) => {
+        (AwbcConstant::Sequence(values), AwbcRuntimeTypeShape::Sequence { item: item_ty, .. }) => {
             values.iter().all(|value| {
                 program
                     .constants
@@ -3504,7 +3399,7 @@ pub(super) fn runtime_type_permits_copy(
                 .iter()
                 .all(|item| visit(program, *item, depth + 1, active)),
             Some(
-                AwbcRuntimeTypeShape::Sequence(item)
+                AwbcRuntimeTypeShape::Sequence { item, .. }
                 | AwbcRuntimeTypeShape::Range(item)
                 | AwbcRuntimeTypeShape::Iterator(item)
                 | AwbcRuntimeTypeShape::Array { item, .. },
@@ -3596,7 +3491,7 @@ fn agent_field_value_destination_matches(
             ) || is_dynamic(destination)
         }
         RuntimeAgentFieldValue::VecAgent(expected) => match destination {
-            Some(AwbcRuntimeTypeShape::Sequence(item)) => matches!(
+            Some(AwbcRuntimeTypeShape::Sequence { item, .. }) => matches!(
                 runtime_shape(program, *item),
                 Some(AwbcRuntimeTypeShape::Agent(actual))
                     if actual.operational_type() == expected
@@ -3655,7 +3550,7 @@ fn is_sequence_or_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
         Some(
-            AwbcRuntimeTypeShape::Sequence(_)
+            AwbcRuntimeTypeShape::Sequence { .. }
                 | AwbcRuntimeTypeShape::Array { .. }
                 | AwbcRuntimeTypeShape::Dynamic
         )

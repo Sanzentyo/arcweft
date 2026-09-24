@@ -8,18 +8,17 @@ use crate::pattern::{
     RuntimeSemanticTypeIdentityEncoder,
 };
 use crate::plan::{
-    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeDialogueContentEffectTrigger,
-    RuntimeFlowTargetError,
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeCallableStateDefinition,
+    RuntimeDialogueContentEffectTrigger, RuntimeFlowTargetError, RuntimePlanSequenceKind,
 };
 use crate::runtime_id::{
-    RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
-    RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
+    RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId,
+    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind, RuntimeRecordFieldId,
 };
 use arcweft_character::id::CharacterId;
-use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -237,6 +236,7 @@ pub struct AwbcProgram {
     pub source_map: Vec<AwbcSourceMapEntry>,
     pub resources: Vec<AwbcResourceRef>,
     pub callable_executables: Vec<AwbcCallableExecutable>,
+    pub callable_states: Vec<RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>>,
     pub flow_bindings: Vec<AwbcFlowBinding>,
     pub flow_executables: Vec<AwbcFlowExecutable>,
     pub entries: Vec<AwbcEntry>,
@@ -278,6 +278,7 @@ impl Default for AwbcProgram {
             source_map: Vec::new(),
             resources: Vec::new(),
             callable_executables: Vec::new(),
+            callable_states: Vec::new(),
             flow_bindings: Vec::new(),
             flow_executables: Vec::new(),
             entries: Vec::new(),
@@ -555,7 +556,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeTypeShape::EntityRef
         | AwbcRuntimeTypeShape::AgentValue
         | AwbcRuntimeTypeShape::Tuple(_)
-        | AwbcRuntimeTypeShape::Sequence(_)
+        | AwbcRuntimeTypeShape::Sequence { .. }
         | AwbcRuntimeTypeShape::Choice(_)
         | AwbcRuntimeTypeShape::MatrixF32
         | AwbcRuntimeTypeShape::MatrixF64
@@ -611,18 +612,6 @@ fn visit_instruction_strings(
         } => visit_string_id(field, visitor),
         AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
             visit_string_id(key, visitor);
-        }
-        AwbcInstruction::MakeFunction {
-            params,
-            capture_names,
-            ..
-        } => {
-            for param in params {
-                visit_string_id(param, visitor);
-            }
-            for capture_name in capture_names {
-                visit_string_id(capture_name, visitor);
-            }
         }
         AwbcInstruction::MakeVariant { case_name, .. } => visit_string_id(case_name, visitor),
         _ => {}
@@ -853,7 +842,10 @@ pub enum AwbcRuntimeTypeShape {
     Progress,
     EntityRef,
     Tuple(Vec<AwbcTypeId>),
-    Sequence(AwbcTypeId),
+    Sequence {
+        kind: RuntimePlanSequenceKind,
+        item: AwbcTypeId,
+    },
     Record {
         public_id: Option<AwbcStringId>,
         fields: Vec<AwbcRecordField>,
@@ -953,7 +945,7 @@ impl AwbcRuntimeTypeShape {
                 arguments,
                 ..
             } => arguments.iter().copied().for_each(visit),
-            Self::Sequence(item)
+            Self::Sequence { item, .. }
             | Self::Range(item)
             | Self::Iterator(item)
             | Self::Array { item, .. }
@@ -1472,7 +1464,7 @@ pub enum AwbcOpcode {
     RepeatSequence = 0x04,
     MakeRecord = 0x05,
     MakeVariant = 0x06,
-    MakeFunction = 0x07,
+    MakeCallable = 0x07,
     MakeAgent = 0x08,
     MakeReductionUnchanged = 0x09,
     SequenceLen = 0x0a,
@@ -1489,7 +1481,7 @@ pub enum AwbcOpcode {
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
-    ApplyFunction = 0x23,
+    ApplyGroup = 0x23,
     EnsureContent = 0x24,
     MakeDialogueContent = 0x28,
     EmitEffect = 0x25,
@@ -1535,7 +1527,7 @@ impl AwbcOpcode {
         Self::RepeatSequence,
         Self::MakeRecord,
         Self::MakeVariant,
-        Self::MakeFunction,
+        Self::MakeCallable,
         Self::MakeAgent,
         Self::MakeReductionUnchanged,
         Self::SequenceLen,
@@ -1552,7 +1544,7 @@ impl AwbcOpcode {
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
-        Self::ApplyFunction,
+        Self::ApplyGroup,
         Self::EnsureContent,
         Self::EmitEffect,
         Self::StartTask,
@@ -1627,7 +1619,7 @@ impl AwbcOpcode {
             | Self::RepeatSequence
             | Self::MakeRecord
             | Self::MakeVariant
-            | Self::MakeFunction
+            | Self::MakeCallable
             | Self::MakeAgent
             | Self::MakeReductionUnchanged
             | Self::SequenceLen
@@ -1644,7 +1636,7 @@ impl AwbcOpcode {
             Self::CallPureHelper
             | Self::CallIntrinsic
             | Self::CallTraitMethod
-            | Self::ApplyFunction
+            | Self::ApplyGroup
             | Self::EnsureContent
             | Self::MakeDialogueContent
             | Self::EmitEffect
@@ -1886,14 +1878,12 @@ pub enum AwbcInstruction {
     CancelCleanup {
         key: AwbcStringId,
     },
-    MakeFunction {
+    MakeCallable {
         dst: AwbcRegisterId,
-        function: AwbcFunctionId,
-        params: Vec<AwbcStringId>,
-        capture_names: Vec<AwbcStringId>,
+        state: RuntimeCallableStateId,
         captures: Vec<AwbcRegisterId>,
     },
-    ApplyFunction {
+    ApplyGroup {
         dst: AwbcRegisterId,
         callee: AwbcRegisterId,
         args: Vec<AwbcRegisterId>,
@@ -1980,8 +1970,8 @@ impl AwbcInstruction {
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
-            Self::MakeFunction { .. } => AwbcOpcode::MakeFunction,
-            Self::ApplyFunction { .. } => AwbcOpcode::ApplyFunction,
+            Self::MakeCallable { .. } => AwbcOpcode::MakeCallable,
+            Self::ApplyGroup { .. } => AwbcOpcode::ApplyGroup,
             Self::MakeAgent { .. } => AwbcOpcode::MakeAgent,
             Self::MakeReductionUnchanged { .. } => AwbcOpcode::MakeReductionUnchanged,
         }
@@ -2044,38 +2034,12 @@ awbc_u8_enum! {
     }
 }
 
-/// The exact continuation ABI carried by a project-call boundary.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProjectContinuationAbi {
-    pub lineage: RuntimeProjectContinuationLineageId,
-    pub function_type: AwbcTypeId,
-    pub prefix_types: Vec<AwbcTypeId>,
-}
-
 /// One source-ordered physical project-call operand.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProjectCallOperand {
     pub value: AwbcRegisterId,
     pub mode: AwbcProjectCallOperandMode,
-}
-
-/// Source of a default function capture. Values are selected only from
-/// already-materialized continuation/current logical rows.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProjectCallCaptureSource {
-    ContinuationPrefix { position: u32 },
-    CurrentLogical { position: u32 },
-}
-
-/// Exact terminal function and its once-only default captures.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AwbcProjectCallDefaultFunction {
-    pub site: AwbcFunctionId,
-    pub captures: Vec<AwbcProjectCallCaptureSource>,
 }
 
 /// Attached Content presence algebra. Ordinary parameters do not use these
@@ -2087,9 +2051,7 @@ pub enum AwbcProjectCallAttachedPresence {
     OptionalPresent,
     OptionalOmitted,
     DefaultedPresent,
-    DefaultedOmitted {
-        default: AwbcProjectCallDefaultFunction,
-    },
+    DefaultedOmitted,
 }
 
 /// One ordinary logical parameter materialization.
@@ -2098,71 +2060,32 @@ pub enum AwbcProjectCallAttachedPresence {
 pub enum AwbcProjectCallOrdinaryMaterialization {
     Fixed {
         parameter: u32,
-        abi_ty: AwbcTypeId,
-        binding_ty: AwbcTypeId,
         source_index: u32,
     },
     Rest {
         parameter: u32,
-        abi_ty: AwbcTypeId,
-        binding_ty: AwbcTypeId,
         source_indices: Vec<u32>,
     },
-}
-
-impl AwbcProjectCallOrdinaryMaterialization {
-    pub(crate) const fn abi_ty(&self) -> AwbcTypeId {
-        match self {
-            Self::Fixed { abi_ty, .. } | Self::Rest { abi_ty, .. } => *abi_ty,
-        }
-    }
 }
 
 /// The attached logical parameter materialization row.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProjectCallAttachedMaterialization {
-    pub abi_ty: AwbcTypeId,
-    pub binding_ty: AwbcTypeId,
     pub source_index: Option<u32>,
     pub presence: AwbcProjectCallAttachedPresence,
 }
 
-/// Direct or continuation input of one project-call state machine.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProjectCallInput {
-    Direct,
-    Continuation {
-        callee: AwbcRegisterId,
-        expected_abi: AwbcProjectContinuationAbi,
-    },
-}
-
-/// Terminal outcome of one project-call group.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub enum AwbcProjectCallOutcome {
-    Continue {
-        result_abi: AwbcProjectContinuationAbi,
-        next_group: u32,
-    },
-    Invoke {
-        function: AwbcFunctionId,
-    },
-}
-
-/// Single ANF/control-transfer AWBC payload for a project-call site.
+/// Call-site evidence for applying one exact program-owned callable state.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProjectCall {
-    pub input: AwbcProjectCallInput,
+    pub callee: AwbcRegisterId,
+    pub state: RuntimeCallableStateId,
     pub completed_group: u32,
     pub operands: Vec<AwbcProjectCallOperand>,
     pub ordinary: Vec<AwbcProjectCallOrdinaryMaterialization>,
     pub attached: Option<AwbcProjectCallAttachedMaterialization>,
-    pub outcome: AwbcProjectCallOutcome,
-    pub result_ty: AwbcTypeId,
     pub result_pattern: AwbcPatternId,
     pub resume: AwbcResumePointId,
 }
@@ -2782,7 +2705,7 @@ pub struct AwbcDialogueContentEffectSlot {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcDialogueContentEffectBinding {
     pub site: RuntimeDialogueEffectSiteId,
-    pub function: AwbcFunctionId,
+    pub state: RuntimeCallableStateId,
     pub captures: Vec<AwbcRegisterId>,
 }
 

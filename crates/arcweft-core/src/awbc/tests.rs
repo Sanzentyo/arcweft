@@ -5,7 +5,7 @@ mod array;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
-    FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTrap,
+    FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
@@ -15,13 +15,19 @@ use crate::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
-use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
+use crate::plan::{
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeCallableAttachedContract,
+    RuntimeCallableDefault, RuntimeCallableInputSource, RuntimeCallableParameterCoordinate,
+    RuntimeCallableParameterInput, RuntimeCallableParameterKind, RuntimeCallablePosition,
+    RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
+    RuntimeCallableTransition, RuntimeFlowTargetError,
+};
+use crate::runtime_id::RuntimeCallableStateId;
+use crate::task::RuntimeProgramOwner;
 use crate::value::{
-    RuntimeFunctionValue, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
-    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeValue,
+    RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue,
     runtime_sequence_values,
 };
-use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 
 fn runtime_type(marker: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
     AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
@@ -197,16 +203,57 @@ fn add_effect_set(program: &mut AwbcProgram, effects: &[&str]) -> AwbcEffectSetI
     id
 }
 
+fn callable_state_id(index: usize) -> RuntimeCallableStateId {
+    RuntimeCallableStateId::from_zero_based(index).expect("test callable-state index is valid")
+}
+
+fn step_with_callable_context(
+    program: &std::sync::Arc<AwbcProgram>,
+    fiber: &mut FiberState,
+    options: super::vm::VmStepOptions,
+) -> Result<super::vm::VmStepOutput, super::vm::VmError> {
+    let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5a; 32])
+        .expect("test artifact fingerprint is valid");
+    let context =
+        super::vm::VmExecutionContext::for_program(artifact, std::sync::Arc::clone(program));
+    super::vm::step_with_host_context(
+        program,
+        fiber,
+        options,
+        &context,
+        &mut super::vm::RejectingVmHost,
+    )
+}
+
 fn project_call_invoke_program() -> AwbcProgram {
     let mut program = minimal_program();
     program.constants = vec![AwbcConstant::Unit];
-    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
     program.patterns = vec![AwbcPattern::Discard];
     program.signatures.push(AwbcSignature {
         params: Vec::new(),
         result: Some(AwbcTypeId(0)),
         effects: AwbcEffectSetId(0),
     });
+    program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(1),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    };
     program.frame_layouts.push(AwbcFrameLayout {
         scopes: Vec::new(),
         slots: vec![AwbcFrameSlot {
@@ -229,15 +276,12 @@ fn project_call_invoke_program() -> AwbcProgram {
     });
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
+            callee: AwbcRegisterId(0),
+            state: crate::runtime_id::RuntimeCallableStateId::from_zero_based(0).unwrap(),
             completed_group: 0,
             operands: Vec::new(),
             ordinary: Vec::new(),
             attached: None,
-            outcome: AwbcProjectCallOutcome::Invoke {
-                function: AwbcFunctionId(1),
-            },
-            result_ty: AwbcTypeId(0),
             result_pattern: AwbcPatternId(0),
             resume: AwbcResumePointId(0),
         },
@@ -251,17 +295,40 @@ fn project_call_invoke_program() -> AwbcProgram {
     });
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(1),
-        instructions: AwbcTableRange::new(0, 1),
+        instructions: AwbcTableRange::new(1, 1),
         terminator: AwbcTerminator::Return {
             value: Some(AwbcRegisterId(0)),
         },
         safe_point: AwbcSafePointKind::CallableBoundary,
         source_map: None,
     });
+    program.instructions.push(AwbcInstruction::MakeCallable {
+        dst: AwbcRegisterId(0),
+        state: callable_state_id(0),
+        captures: Vec::new(),
+    });
     program.instructions.push(AwbcInstruction::LoadConst {
         dst: AwbcRegisterId(0),
         constant: AwbcConstantId(0),
     });
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program
+        .callable_states
+        .push(RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(1),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: Box::new([]),
+            },
+            partials: Box::new([]),
+        });
     program.resume_points.push(AwbcResumePoint {
         function: AwbcFunctionId(0),
         block: AwbcBlockId(1),
@@ -272,82 +339,43 @@ fn project_call_invoke_program() -> AwbcProgram {
     program
 }
 
-fn project_call_continuation_program() -> (AwbcProgram, RuntimeValue) {
+fn ordinary_returning_call_program() -> AwbcProgram {
     let mut program = minimal_program();
-    program.runtime_types = vec![
-        runtime_type(1, AwbcRuntimeTypeShape::Unit),
-        runtime_type(
-            2,
-            AwbcRuntimeTypeShape::Function {
-                parameters: vec![AwbcTypeId(0)],
-                result: AwbcTypeId(2),
-            },
-        ),
-    ];
-    program.runtime_types.push(runtime_type(
-        3,
-        AwbcRuntimeTypeShape::Function {
-            parameters: vec![AwbcTypeId(0)],
-            result: AwbcTypeId(0),
-        },
-    ));
-    program.patterns = vec![AwbcPattern::Discard];
-    program.frame_layouts[0] = AwbcFrameLayout {
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
         scopes: Vec::new(),
-        slots: vec![
-            AwbcFrameSlot {
-                name: None,
-                ty: AwbcTypeId(1),
-                role: AwbcFrameSlotRole::Local,
-                scope_depth: 0,
-            },
-            AwbcFrameSlot {
-                name: None,
-                ty: AwbcTypeId(0),
-                role: AwbcFrameSlotRole::Local,
-                scope_depth: 0,
-            },
-        ],
+        slots: Vec::new(),
         max_scope_depth: 0,
-    };
+    });
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
-    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
-        call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Continuation {
-                callee: AwbcRegisterId(0),
-                expected_abi: AwbcProjectContinuationAbi {
-                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
-                    function_type: AwbcTypeId(1),
-                    prefix_types: vec![AwbcTypeId(0)],
-                },
-            },
-            completed_group: 1,
-            operands: vec![AwbcProjectCallOperand {
-                value: AwbcRegisterId(1),
-                mode: AwbcProjectCallOperandMode::Value,
-            }],
-            ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
-                parameter: 0,
-                abi_ty: AwbcTypeId(0),
-                binding_ty: AwbcTypeId(0),
-                source_index: 0,
-            }],
-            attached: None,
-            outcome: AwbcProjectCallOutcome::Continue {
-                result_abi: AwbcProjectContinuationAbi {
-                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x43; 32]),
-                    function_type: AwbcTypeId(2),
-                    prefix_types: vec![AwbcTypeId(0), AwbcTypeId(0)],
-                },
-                next_group: 2,
-            },
-            result_ty: AwbcTypeId(2),
-            result_pattern: AwbcPatternId(0),
-            resume: AwbcResumePointId(0),
-        },
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(2, 1),
+        entry_block: AwbcBlockId(2),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks[0].terminator = AwbcTerminator::CallFunction {
+        function: AwbcFunctionId(1),
+        args: Vec::new(),
+        dst: None,
+        resume: AwbcResumePointId(0),
     };
     program.blocks.push(AwbcBlock {
         owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
         instructions: AwbcTableRange::new(0, 0),
         terminator: AwbcTerminator::Return { value: None },
         safe_point: AwbcSafePointKind::CallableBoundary,
@@ -359,92 +387,7 @@ fn project_call_continuation_program() -> (AwbcProgram, RuntimeValue) {
         frame_layout: AwbcFrameLayoutId(0),
         kind: AwbcSafePointKind::CallableBoundary,
     });
-    let abi = RuntimeProjectContinuationAbi::from_admitted_parts(
-        RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
-        program.runtime_types[1].semantic_identity(),
-        vec![program.runtime_types[0].semantic_identity()].into_boxed_slice(),
-    );
-    let continuation = RuntimeProjectContinuation::from_snapshot_parts(
-        abi,
-        vec![RuntimeValue::Unit].into_boxed_slice(),
-    )
-    .expect("continuation fixture has a complete prefix");
-    (program, RuntimeValue::ProjectContinuation(continuation))
-}
-
-fn project_call_continuation_verifier_program() -> AwbcProgram {
-    let (mut program, _) = project_call_continuation_program();
-    let AwbcProjectCallInput::Continuation { expected_abi, .. } =
-        &project_call_mut(&mut program).input
-    else {
-        unreachable!("continuation fixture");
-    };
-    let first_prefix = expected_abi.clone();
-    program.constants = vec![AwbcConstant::Unit];
-    program.instructions = vec![AwbcInstruction::LoadConst {
-        dst: AwbcRegisterId(1),
-        constant: AwbcConstantId(0),
-    }];
-    program.patterns.push(AwbcPattern::Bind {
-        target: AwbcRegisterId(0),
-        mutable: false,
-        expected: None,
-    });
-    // Assemble the first group after the reusable second-group fixture, then
-    // order all three blocks by execution. Both prefixes come from ProjectCall.
-    program.functions[0].blocks = AwbcTableRange::new(0, 3);
-    program.functions[0].entry_block = AwbcBlockId(2);
-    program.blocks[0].safe_point = AwbcSafePointKind::CallableBoundary;
-    program.blocks[0].instructions = AwbcTableRange::new(1, 0);
-    program.blocks[1].instructions = AwbcTableRange::new(1, 0);
-    program.blocks.push(AwbcBlock {
-        owner: AwbcFunctionId(0),
-        instructions: AwbcTableRange::new(0, 1),
-        terminator: AwbcTerminator::ProjectCall {
-            call: AwbcProjectCall {
-                input: AwbcProjectCallInput::Direct,
-                completed_group: 0,
-                operands: vec![AwbcProjectCallOperand {
-                    value: AwbcRegisterId(1),
-                    mode: AwbcProjectCallOperandMode::Value,
-                }],
-                ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
-                    parameter: 0,
-                    abi_ty: AwbcTypeId(0),
-                    binding_ty: AwbcTypeId(0),
-                    source_index: 0,
-                }],
-                attached: None,
-                outcome: AwbcProjectCallOutcome::Continue {
-                    result_abi: first_prefix,
-                    next_group: 1,
-                },
-                result_ty: AwbcTypeId(1),
-                result_pattern: AwbcPatternId(1),
-                resume: AwbcResumePointId(1),
-            },
-        },
-        safe_point: AwbcSafePointKind::FlowEntry,
-        source_map: None,
-    });
-    program.resume_points.push(AwbcResumePoint {
-        function: AwbcFunctionId(0),
-        block: AwbcBlockId(0),
-        frame_layout: AwbcFrameLayoutId(0),
-        kind: AwbcSafePointKind::CallableBoundary,
-    });
-    program.blocks.rotate_right(1);
-    program.functions[0].entry_block = AwbcBlockId(0);
-    program.resume_points[0].block = AwbcBlockId(2);
-    program.resume_points[1].block = AwbcBlockId(1);
     program
-}
-
-fn continuation_project_call_mut(program: &mut AwbcProgram) -> &mut AwbcProjectCall {
-    match &mut program.blocks[1].terminator {
-        AwbcTerminator::ProjectCall { call } => call,
-        terminator => panic!("second fixture group is not a ProjectCall: {terminator:?}"),
-    }
 }
 fn project_call_fixed_program() -> AwbcProgram {
     let mut program = project_call_invoke_program();
@@ -457,35 +400,129 @@ fn project_call_fixed_program() -> AwbcProgram {
     });
     program.signatures[1].params = vec![AwbcTypeId(0)];
     program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
-    program.instructions = vec![AwbcInstruction::LoadConst {
-        dst: AwbcRegisterId(0),
-        constant: AwbcConstantId(0),
-    }];
-    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
-    program.blocks[2].instructions = AwbcTableRange::new(1, 0);
+    program.runtime_types[1] = runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Function {
+            parameters: vec![AwbcTypeId(0)],
+            result: AwbcTypeId(0),
+        },
+    );
+    program.instructions = vec![
+        AwbcInstruction::MakeCallable {
+            dst: AwbcRegisterId(0),
+            state: callable_state_id(0),
+            captures: Vec::new(),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[2].instructions = AwbcTableRange::new(2, 1);
+    program.callable_states[0].function_type = AwbcTypeId(1);
+    program.callable_states[0].parameters = vec![RuntimeCallableParameterInput {
+        coordinate: RuntimeCallableParameterCoordinate {
+            group: 0,
+            parameter: 0,
+        },
+        kind: crate::plan::RuntimeCallableParameterKind::Fixed,
+        abi_ty: AwbcTypeId(0),
+        binding_ty: AwbcTypeId(0),
+    }]
+    .into_boxed_slice();
+    program.callable_states[0].transition = RuntimeCallableTransition::Invoke {
+        function: AwbcFunctionId(1),
+        captures: Box::new([]),
+        arguments: vec![RuntimeCallableInputSource::Argument { position: 0 }].into_boxed_slice(),
+    };
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
+            callee: AwbcRegisterId(0),
+            state: callable_state_id(0),
             completed_group: 0,
             operands: vec![AwbcProjectCallOperand {
-                value: AwbcRegisterId(0),
+                value: AwbcRegisterId(1),
                 mode: AwbcProjectCallOperandMode::Value,
             }],
             ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
                 parameter: 0,
-                abi_ty: AwbcTypeId(0),
-                binding_ty: AwbcTypeId(0),
                 source_index: 0,
             }],
             attached: None,
-            outcome: AwbcProjectCallOutcome::Invoke {
-                function: AwbcFunctionId(1),
-            },
-            result_ty: AwbcTypeId(0),
             result_pattern: AwbcPatternId(0),
             resume: AwbcResumePointId(0),
         },
     };
+    program
+}
+
+fn project_call_two_fixed_parameters_program() -> AwbcProgram {
+    let mut program = project_call_fixed_program();
+    program.runtime_types[1] = runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Function {
+            parameters: vec![AwbcTypeId(0), AwbcTypeId(0)],
+            result: AwbcTypeId(0),
+        },
+    );
+    program.signatures[1].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Parameter,
+        scope_depth: 0,
+    });
+    let second_coordinate = RuntimeCallableParameterCoordinate {
+        group: 0,
+        parameter: 1,
+    };
+    let mut parameters = program.callable_states[0].parameters.to_vec();
+    parameters.push(RuntimeCallableParameterInput {
+        coordinate: second_coordinate,
+        kind: RuntimeCallableParameterKind::Fixed,
+        abi_ty: AwbcTypeId(0),
+        binding_ty: AwbcTypeId(0),
+    });
+    program.callable_states[0].parameters = parameters.into_boxed_slice();
+    program.callable_states[0].transition = RuntimeCallableTransition::Invoke {
+        function: AwbcFunctionId(1),
+        captures: Box::new([]),
+        arguments: vec![
+            RuntimeCallableInputSource::Argument { position: 0 },
+            RuntimeCallableInputSource::Argument { position: 1 },
+        ]
+        .into_boxed_slice(),
+    };
+    program.instructions.insert(
+        2,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    );
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[2].instructions = AwbcTableRange::new(3, 1);
+    let call = project_call_mut(&mut program);
+    call.operands.push(AwbcProjectCallOperand {
+        value: AwbcRegisterId(2),
+        mode: AwbcProjectCallOperandMode::Value,
+    });
+    call.ordinary
+        .push(AwbcProjectCallOrdinaryMaterialization::Fixed {
+            parameter: 1,
+            source_index: 1,
+        });
     program
 }
 
@@ -504,6 +541,270 @@ fn project_call_mut(program: &mut AwbcProgram) -> &mut AwbcProjectCall {
         AwbcTerminator::ProjectCall { call } => call,
         terminator => panic!("test program does not have a ProjectCall terminator: {terminator:?}"),
     }
+}
+
+fn project_call_at_mut(program: &mut AwbcProgram, block: usize) -> &mut AwbcProjectCall {
+    match &mut program.blocks[block].terminator {
+        AwbcTerminator::ProjectCall { call } => call,
+        terminator => panic!("block {block} is not a ProjectCall terminator: {terminator:?}"),
+    }
+}
+
+fn project_call_retained_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    program.constants = vec![AwbcConstant::Unit];
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Function {
+                parameters: vec![AwbcTypeId(0)],
+                result: AwbcTypeId(2),
+            },
+        ),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Function {
+                parameters: vec![AwbcTypeId(0)],
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
+    program.patterns = vec![
+        AwbcPattern::Discard,
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: None,
+        },
+    ];
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(0), AwbcTypeId(0)],
+        result: Some(AwbcTypeId(0)),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    });
+    program.functions[0].blocks = AwbcTableRange::new(0, 4);
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(4, 1),
+        entry_block: AwbcBlockId(4),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            callee: AwbcRegisterId(0),
+            state: callable_state_id(0),
+            completed_group: 0,
+            operands: vec![AwbcProjectCallOperand {
+                value: AwbcRegisterId(2),
+                mode: AwbcProjectCallOperandMode::Value,
+            }],
+            ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+                parameter: 0,
+                source_index: 0,
+            }],
+            attached: None,
+            result_pattern: AwbcPatternId(1),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::BudgetYield {
+            resume: AwbcResumePointId(1),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::ProjectCall {
+            call: AwbcProjectCall {
+                callee: AwbcRegisterId(1),
+                state: callable_state_id(1),
+                completed_group: 1,
+                operands: vec![AwbcProjectCallOperand {
+                    value: AwbcRegisterId(2),
+                    mode: AwbcProjectCallOperandMode::Value,
+                }],
+                ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+                    parameter: 0,
+                    source_index: 0,
+                }],
+                attached: None,
+                result_pattern: AwbcPatternId(0),
+                resume: AwbcResumePointId(2),
+            },
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::None,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(2, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(2)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.instructions = vec![
+        AwbcInstruction::MakeCallable {
+            dst: AwbcRegisterId(0),
+            state: callable_state_id(0),
+            captures: Vec::new(),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    let first_coordinate = RuntimeCallableParameterCoordinate {
+        group: 0,
+        parameter: 0,
+    };
+    let second_coordinate = RuntimeCallableParameterCoordinate {
+        group: 1,
+        parameter: 0,
+    };
+    program.callable_states = vec![
+        RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(1),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: vec![RuntimeCallableParameterInput {
+                coordinate: first_coordinate,
+                kind: RuntimeCallableParameterKind::Fixed,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            result: AwbcTypeId(2),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Retain {
+                state: callable_state_id(1),
+                values: vec![RuntimeCallableInputSource::Argument { position: 0 }]
+                    .into_boxed_slice(),
+            },
+            partials: Box::new([]),
+        },
+        RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(2),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::AfterGroup { completed: 0 },
+            retained: vec![RuntimeCallableRetainedInput {
+                role: RuntimeCallableRetainedRole::Parameter(first_coordinate),
+                ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            parameters: vec![RuntimeCallableParameterInput {
+                coordinate: second_coordinate,
+                kind: RuntimeCallableParameterKind::Fixed,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: vec![
+                    RuntimeCallableInputSource::Retained { position: 0 },
+                    RuntimeCallableInputSource::Argument { position: 0 },
+                ]
+                .into_boxed_slice(),
+            },
+            partials: Box::new([]),
+        },
+    ];
+    program.resume_points = vec![
+        AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::CallableBoundary,
+        },
+        AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(2),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::BudgetYield,
+        },
+        AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(3),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::CallableBoundary,
+        },
+    ];
+    program
 }
 
 fn project_call_default_program() -> AwbcProgram {
@@ -532,6 +833,13 @@ fn project_call_default_program() -> AwbcProgram {
                         payload: None,
                     },
                 ],
+            },
+        ),
+        runtime_type(
+            4,
+            AwbcRuntimeTypeShape::Function {
+                parameters: vec![AwbcTypeId(2)],
+                result: AwbcTypeId(0),
             },
         ),
     ];
@@ -578,6 +886,16 @@ fn project_call_default_program() -> AwbcProgram {
             max_scope_depth: 0,
         },
     ]);
+    program.frame_layouts[0] = AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(3),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    };
     program.functions[0].blocks = AwbcTableRange::new(0, 2);
     program.functions.extend([
         AwbcFunction {
@@ -601,25 +919,15 @@ fn project_call_default_program() -> AwbcProgram {
     ]);
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
+            callee: AwbcRegisterId(0),
+            state: callable_state_id(0),
             completed_group: 0,
             operands: Vec::new(),
             ordinary: Vec::new(),
             attached: Some(AwbcProjectCallAttachedMaterialization {
-                abi_ty: AwbcTypeId(2),
-                binding_ty: AwbcTypeId(0),
                 source_index: None,
-                presence: AwbcProjectCallAttachedPresence::DefaultedOmitted {
-                    default: AwbcProjectCallDefaultFunction {
-                        site: AwbcFunctionId(1),
-                        captures: Vec::new(),
-                    },
-                },
+                presence: AwbcProjectCallAttachedPresence::DefaultedOmitted,
             }),
-            outcome: AwbcProjectCallOutcome::Invoke {
-                function: AwbcFunctionId(2),
-            },
-            result_ty: AwbcTypeId(0),
             result_pattern: AwbcPatternId(0),
             resume: AwbcResumePointId(0),
         },
@@ -652,6 +960,11 @@ fn project_call_default_program() -> AwbcProgram {
         },
     ]);
     program.instructions.extend([
+        AwbcInstruction::MakeCallable {
+            dst: AwbcRegisterId(0),
+            state: callable_state_id(0),
+            captures: Vec::new(),
+        },
         AwbcInstruction::LoadConst {
             dst: AwbcRegisterId(0),
             constant: AwbcConstantId(0),
@@ -661,6 +974,32 @@ fn project_call_default_program() -> AwbcProgram {
             constant: AwbcConstantId(0),
         },
     ]);
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.blocks[2].instructions = AwbcTableRange::new(1, 1);
+    program.blocks[3].instructions = AwbcTableRange::new(2, 1);
+    program
+        .callable_states
+        .push(RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(3),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::Defaulted {
+                ty: AwbcTypeId(0),
+                default: RuntimeCallableDefault {
+                    function: AwbcFunctionId(1),
+                    captures: Box::new([]),
+                },
+            },
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(2),
+                captures: Box::new([]),
+                arguments: vec![RuntimeCallableInputSource::Attached].into_boxed_slice(),
+            },
+            partials: Box::new([]),
+        });
     program.resume_points.push(AwbcResumePoint {
         function: AwbcFunctionId(0),
         block: AwbcBlockId(1),
@@ -781,16 +1120,18 @@ fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
     program.strings.push("goto-target".to_owned());
     program
         .runtime_types
-        .push(runtime_type(2, AwbcRuntimeTypeShape::String));
+        .push(runtime_type(3, AwbcRuntimeTypeShape::String));
     program
         .constants
         .push(AwbcConstant::String(AwbcStringId(1)));
     if dynamic {
-        program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
+        program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
         program.functions[1].flags = AwbcFunctionFlags::empty()
             .with(AwbcFunctionFlag::Deterministic)
             .with(AwbcFunctionFlag::HasDynamicTarget);
-        program.instructions[0] = AwbcInstruction::LoadConst {
+        let target_instruction = usize::try_from(program.blocks[2].instructions.start)
+            .expect("target instruction offset fits usize");
+        program.instructions[target_instruction] = AwbcInstruction::LoadConst {
             dst: AwbcRegisterId(0),
             constant: AwbcConstantId(1),
         };
@@ -869,7 +1210,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::RepeatSequence, 0x04, Value),
         (AwbcOpcode::MakeRecord, 0x05, Value),
         (AwbcOpcode::MakeVariant, 0x06, Value),
-        (AwbcOpcode::MakeFunction, 0x07, Value),
+        (AwbcOpcode::MakeCallable, 0x07, Value),
         (AwbcOpcode::MakeAgent, 0x08, Value),
         (AwbcOpcode::MakeReductionUnchanged, 0x09, Value),
         (AwbcOpcode::SequenceLen, 0x0a, Value),
@@ -886,7 +1227,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),
-        (AwbcOpcode::ApplyFunction, 0x23, CallTask),
+        (AwbcOpcode::ApplyGroup, 0x23, CallTask),
         (AwbcOpcode::EnsureContent, 0x24, CallTask),
         (AwbcOpcode::EmitEffect, 0x25, CallTask),
         (AwbcOpcode::StartTask, 0x26, CallTask),
@@ -951,85 +1292,28 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
 }
 
 #[test]
-fn project_call_direct_continue_reenters_the_verified_resume_block() {
-    let mut program = minimal_program();
-    program.runtime_types = vec![
-        runtime_type(1, AwbcRuntimeTypeShape::Unit),
-        runtime_type(2, AwbcRuntimeTypeShape::Dynamic),
-        runtime_type(
-            3,
-            AwbcRuntimeTypeShape::Function {
-                parameters: Vec::new(),
-                result: AwbcTypeId(0),
-            },
-        ),
-    ];
-    program.patterns = vec![AwbcPattern::Discard];
-    program.functions[0].blocks = AwbcTableRange::new(0, 2);
-    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
-        call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
-            completed_group: 0,
-            operands: Vec::new(),
-            ordinary: Vec::new(),
-            attached: None,
-            outcome: AwbcProjectCallOutcome::Continue {
-                result_abi: AwbcProjectContinuationAbi {
-                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x31; 32]),
-                    function_type: AwbcTypeId(2),
-                    prefix_types: Vec::new(),
-                },
-                next_group: 1,
-            },
-            result_ty: AwbcTypeId(2),
-            result_pattern: AwbcPatternId(0),
-            resume: AwbcResumePointId(0),
-        },
-    };
-    program.blocks.push(AwbcBlock {
-        owner: AwbcFunctionId(0),
-        instructions: AwbcTableRange::new(0, 0),
-        terminator: AwbcTerminator::Return { value: None },
-        safe_point: AwbcSafePointKind::CallableBoundary,
-        source_map: None,
-    });
-    program.resume_points.push(AwbcResumePoint {
-        function: AwbcFunctionId(0),
-        block: AwbcBlockId(1),
-        frame_layout: AwbcFrameLayoutId(0),
-        kind: AwbcSafePointKind::CallableBoundary,
-    });
+fn project_call_callable_state_graph_verifies_and_roundtrips() {
+    let program = project_call_retained_program();
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect("direct ProjectCall program verifies");
+        .expect("two-group callable ProjectCall program verifies");
     let encoded = program
         .encode_canonical()
-        .expect("encode direct ProjectCall program");
+        .expect("encode program-owned callable states");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
-        .expect("decode direct ProjectCall program");
+        .expect("decode program-owned callable states");
     assert_eq!(decoded, program);
-
-    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
-        &program,
-        &mut fiber,
-        super::vm::VmStepOptions {
-            max_instructions: 8,
-        },
-    )
-    .expect("execute direct ProjectCall");
-    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
 }
 
 #[test]
 fn project_call_invoke_rejoins_the_verified_site_after_target_return() {
-    let program = project_call_invoke_program();
+    let program = std::sync::Arc::new(project_call_invoke_program());
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("invoking ProjectCall program verifies");
 
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -1042,41 +1326,70 @@ fn project_call_invoke_rejoins_the_verified_site_after_target_return() {
 }
 
 #[test]
-fn project_call_continuation_input_extends_and_reenters_the_verified_resume_block() {
-    let (program, continuation) = project_call_continuation_program();
+fn project_call_retained_callable_survives_snapshot_and_rejoins_next_group() {
+    let program = std::sync::Arc::new(project_call_retained_program());
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    fiber
-        .active_frame_mut()
-        .expect("caller frame")
-        .set_register(AwbcRegisterId(0), continuation)
-        .expect("continuation register");
-    fiber
-        .active_frame_mut()
-        .expect("caller frame")
-        .set_register(AwbcRegisterId(1), RuntimeValue::Unit)
-        .expect("current value register");
-    fiber
-        .validate_for_program(&program)
-        .expect("continuation input validates against the AWBC type table");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
             max_instructions: 16,
         },
     )
-    .expect("execute continuation ProjectCall");
-    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+    .expect("first group retains its callable state before the yield");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::Suspended(FiberSuspensionReason::BudgetYield)
+    );
+    let RuntimeValue::Callable(retained) = fiber
+        .active_frame()
+        .expect("caller frame")
+        .register(AwbcRegisterId(1))
+        .expect("retained callable register")
+    else {
+        panic!("the first group must return a callable state");
+    };
+    assert_eq!(retained.state(), callable_state_id(1));
+    assert_eq!(retained.retained(), [RuntimeValue::Unit]);
+
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot retained callable");
+    let serialized = serde_json::to_vec(&snapshot).expect("serialize retained callable snapshot");
+    let snapshot: AwbcFiberStateSnapshot =
+        serde_json::from_slice(&serialized).expect("decode retained callable snapshot");
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+    let mut restored = snapshot
+        .into_live_for_program(&owner)
+        .expect("restore retained callable for the same AWBC program");
+    restored
+        .validate_for_program(&program)
+        .expect("restored callable lease and retained layout validate");
+    assert_eq!(restored, fiber);
+
+    restored
+        .resume_at(&program, AwbcResumePointId(1))
+        .expect("resume into the next checked group");
+    assert_eq!(
+        step_with_callable_context(
+            &program,
+            &mut restored,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .expect("complete the retained callable's next group")
+        .exit,
+        super::vm::VmExit::Returned(None)
+    );
 }
 
 #[test]
 fn project_call_defaulted_omitted_runs_default_once_then_target() {
-    let program = project_call_default_program();
+    let program = std::sync::Arc::new(project_call_default_program());
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("defaulted ProjectCall program verifies");
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -1119,48 +1432,26 @@ fn project_call_rejects_flat_option_payload_in_attached_default_abi() {
 }
 
 #[test]
-fn project_call_rejects_a_nonadvancing_continuation_group() {
-    let mut program = project_call_invoke_program();
-    program.runtime_types.push(runtime_type(
-        2,
-        AwbcRuntimeTypeShape::Function {
-            parameters: Vec::new(),
-            result: AwbcTypeId(0),
-        },
-    ));
-    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
-        call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
-            completed_group: 0,
-            operands: Vec::new(),
-            ordinary: Vec::new(),
-            attached: None,
-            outcome: AwbcProjectCallOutcome::Continue {
-                result_abi: AwbcProjectContinuationAbi {
-                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x51; 32]),
-                    function_type: AwbcTypeId(1),
-                    prefix_types: Vec::new(),
-                },
-                next_group: 3,
-            },
-            result_ty: AwbcTypeId(1),
-            result_pattern: AwbcPatternId(0),
-            resume: AwbcResumePointId(0),
-        },
-    };
-    let error = program
-        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect_err("continuation must advance exactly one group");
-    assert!(matches!(
-        error,
-        AwbcVerifyError::InvalidInvariant { message, .. }
-            if message.contains("does not advance one group")
-    ));
+fn project_call_verifier_rejects_a_group_that_disagrees_with_its_callable_state() {
+    let mut initial = project_call_invoke_program();
+    project_call_mut(&mut initial).completed_group = 1;
+    expect_project_call_rejection(
+        initial,
+        "project-call group disagrees with its checked state position",
+    );
+
+    let mut retained = project_call_retained_program();
+    project_call_at_mut(&mut retained, 2).completed_group = 0;
+    expect_project_call_rejection(
+        retained,
+        "project-call group disagrees with its checked state position",
+    );
 }
 
 #[test]
 fn project_call_verifier_applies_the_call_row_budget_before_register_walk() {
-    let (program, _) = project_call_continuation_program();
+    let mut program = project_call_retained_program();
+    project_call_mut(&mut program).operands[0].value = AwbcRegisterId(99);
     let mut budget = AwbcVerifyBudget::default();
     budget.args_per_call = 0;
     assert_eq!(
@@ -1172,48 +1463,34 @@ fn project_call_verifier_applies_the_call_row_budget_before_register_walk() {
 }
 
 #[test]
-fn project_call_verifier_rejects_invalid_input_group_and_abi_shapes() {
-    let mut direct = project_call_invoke_program();
-    project_call_mut(&mut direct).completed_group = 1;
-    expect_project_call_rejection(direct, "direct project-call input requires group zero");
-
-    let mut continuation = project_call_continuation_verifier_program();
-    continuation_project_call_mut(&mut continuation).completed_group = 0;
-    expect_project_call_rejection(
-        continuation,
-        "continuation project-call input requires a prior group",
-    );
-
-    let mut non_function = project_call_continuation_verifier_program();
-    if let AwbcProjectCallInput::Continuation { expected_abi, .. } =
-        &mut continuation_project_call_mut(&mut non_function).input
-    {
-        expected_abi.function_type = AwbcTypeId(0);
-    }
+fn project_call_verifier_rejects_invalid_callable_state_shapes() {
+    let mut non_function = project_call_invoke_program();
+    non_function.callable_states[0].function_type = AwbcTypeId(0);
     expect_project_call_rejection(
         non_function,
-        "project-call ABI function type is not a function",
+        "callable state function type is absent or not a function",
     );
 
-    let mut dynamic_prefix = project_call_continuation_verifier_program();
-    let dynamic_type = AwbcTypeId(u32::try_from(dynamic_prefix.runtime_types.len()).unwrap());
-    dynamic_prefix
-        .runtime_types
-        .push(AwbcRuntimeType::dynamic());
-    if let AwbcProjectCallInput::Continuation { expected_abi, .. } =
-        &mut continuation_project_call_mut(&mut dynamic_prefix).input
-    {
-        expected_abi.prefix_types[0] = dynamic_type;
-    }
-    expect_project_call_rejection(
-        dynamic_prefix,
-        "project-call ABI prefix cannot use Dynamic types",
+    let mut dynamic_abi = project_call_fixed_program();
+    let dynamic_type = AwbcTypeId(u32::try_from(dynamic_abi.runtime_types.len()).unwrap());
+    dynamic_abi.runtime_types.push(AwbcRuntimeType::dynamic());
+    dynamic_abi.runtime_types[1] = runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Function {
+            parameters: vec![dynamic_type],
+            result: AwbcTypeId(0),
+        },
     );
+    dynamic_abi.signatures[1].params = vec![dynamic_type];
+    dynamic_abi.frame_layouts[1].slots[0].ty = dynamic_type;
+    dynamic_abi.callable_states[0].parameters[0].abi_ty = dynamic_type;
+    dynamic_abi.callable_states[0].parameters[0].binding_ty = dynamic_type;
+    expect_project_call_rejection(dynamic_abi, "project-call ABI cannot use Dynamic types");
 }
 
 #[test]
 fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
-    let mut sparse_parameter = project_call_fixed_program();
+    let mut sparse_parameter = project_call_two_fixed_parameters_program();
     if let Some(AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }) =
         project_call_mut(&mut sparse_parameter).ordinary.first_mut()
     {
@@ -1231,19 +1508,81 @@ fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
         "fixed project-call source must be a value operand",
     );
 
-    let mut repeated_source = project_call_fixed_program();
-    let call = project_call_mut(&mut repeated_source);
-    call.operands.push(AwbcProjectCallOperand {
-        value: AwbcRegisterId(0),
-        mode: AwbcProjectCallOperandMode::Value,
+    let mut repeated_source = project_call_default_program();
+    // One physical source cannot bind both an ordinary parameter and the attached value.
+    repeated_source.runtime_types.push(runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Function {
+            parameters: vec![AwbcTypeId(0), AwbcTypeId(2)],
+            result: AwbcTypeId(0),
+        },
+    ));
+    repeated_source.callable_states[0].function_type = AwbcTypeId(4);
+    repeated_source.frame_layouts[0].slots[0].ty = AwbcTypeId(4);
+    repeated_source.callable_states[0].parameters = vec![RuntimeCallableParameterInput {
+        coordinate: RuntimeCallableParameterCoordinate {
+            group: 0,
+            parameter: 0,
+        },
+        kind: RuntimeCallableParameterKind::Fixed,
+        abi_ty: AwbcTypeId(0),
+        binding_ty: AwbcTypeId(0),
+    }]
+    .into_boxed_slice();
+    repeated_source.callable_states[0].transition = RuntimeCallableTransition::Invoke {
+        function: AwbcFunctionId(2),
+        captures: Box::new([]),
+        arguments: vec![
+            RuntimeCallableInputSource::Argument { position: 0 },
+            RuntimeCallableInputSource::Attached,
+        ]
+        .into_boxed_slice(),
+    };
+    repeated_source.signatures[2].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    repeated_source.frame_layouts[2].slots[0].ty = AwbcTypeId(0);
+    repeated_source.frame_layouts[2].slots[1].role = AwbcFrameSlotRole::Parameter;
+    repeated_source.frame_layouts[2].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
     });
-    call.ordinary
-        .push(AwbcProjectCallOrdinaryMaterialization::Fixed {
-            parameter: 1,
-            abi_ty: AwbcTypeId(0),
-            binding_ty: AwbcTypeId(0),
-            source_index: 0,
-        });
+    repeated_source.blocks[3].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+    repeated_source.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    repeated_source.instructions.insert(
+        1,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+    );
+    repeated_source.instructions[3] = AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(2),
+        constant: AwbcConstantId(0),
+    };
+    repeated_source.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    repeated_source.blocks[2].instructions = AwbcTableRange::new(2, 1);
+    repeated_source.blocks[3].instructions = AwbcTableRange::new(3, 1);
+    let call = project_call_mut(&mut repeated_source);
+    call.operands = vec![AwbcProjectCallOperand {
+        value: AwbcRegisterId(1),
+        mode: AwbcProjectCallOperandMode::Value,
+    }];
+    call.ordinary = vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+        parameter: 0,
+        source_index: 0,
+    }];
+    call.attached = Some(AwbcProjectCallAttachedMaterialization {
+        source_index: Some(0),
+        presence: AwbcProjectCallAttachedPresence::DefaultedPresent,
+    });
     expect_project_call_rejection(repeated_source, "project-call source operand is repeated");
 
     let mut unconsumed_source = project_call_fixed_program();
@@ -1262,32 +1601,100 @@ fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
 #[test]
 fn project_call_verifier_rejects_rest_shape_and_spread_type_mismatches() {
     let mut non_sequence_binding = project_call_fixed_program();
-    project_call_mut(&mut non_sequence_binding).ordinary =
-        vec![AwbcProjectCallOrdinaryMaterialization::Rest {
-            parameter: 0,
-            abi_ty: AwbcTypeId(0),
-            binding_ty: AwbcTypeId(0),
-            source_indices: vec![0],
-        }];
-    expect_project_call_rejection(non_sequence_binding, "rest binding type must be a sequence");
+    non_sequence_binding.callable_states[0].parameters[0].kind = RuntimeCallableParameterKind::Rest;
+    expect_project_call_rejection(
+        non_sequence_binding,
+        "callable parameter ABI/binding shape is invalid",
+    );
+
+    for kind in [
+        crate::plan::RuntimePlanSequenceKind::Seq,
+        crate::plan::RuntimePlanSequenceKind::Slice,
+        crate::plan::RuntimePlanSequenceKind::Array,
+    ] {
+        let mut non_vec_binding = project_call_fixed_program();
+        let binding_type = AwbcTypeId(u32::try_from(non_vec_binding.runtime_types.len()).unwrap());
+        non_vec_binding.runtime_types.push(runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Sequence {
+                kind,
+                item: AwbcTypeId(0),
+            },
+        ));
+        non_vec_binding.callable_states[0].parameters[0].kind = RuntimeCallableParameterKind::Rest;
+        non_vec_binding.callable_states[0].parameters[0].binding_ty = binding_type;
+        non_vec_binding.signatures[1].params = vec![binding_type];
+        non_vec_binding.frame_layouts[1].slots[0].ty = binding_type;
+        let error = non_vec_binding
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect_err("rest binding must preserve its Vec family");
+        assert!(
+            error
+                .to_string()
+                .contains("callable parameter ABI/binding shape is invalid"),
+            "{kind:?}: {error:?}"
+        );
+    }
 
     let mut wrong_spread_item = project_call_fixed_program();
     wrong_spread_item.runtime_types.push(runtime_type(
-        2,
-        AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0)),
+        3,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(0),
+        },
     ));
+    wrong_spread_item.callable_states[0].parameters[0].kind = RuntimeCallableParameterKind::Rest;
+    wrong_spread_item.callable_states[0].parameters[0].binding_ty = AwbcTypeId(2);
+    wrong_spread_item.signatures[1].params = vec![AwbcTypeId(2)];
+    wrong_spread_item.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
     let call = project_call_mut(&mut wrong_spread_item);
     call.operands[0].mode = AwbcProjectCallOperandMode::Spread;
     call.ordinary = vec![AwbcProjectCallOrdinaryMaterialization::Rest {
         parameter: 0,
-        abi_ty: AwbcTypeId(0),
-        binding_ty: AwbcTypeId(1),
         source_indices: vec![0],
     }];
     expect_project_call_rejection(
         wrong_spread_item,
         "rest spread source has the wrong item type",
     );
+}
+
+#[test]
+fn awbc_sequence_kinds_roundtrip_as_distinct_runtime_types() {
+    let kinds = [
+        crate::plan::RuntimePlanSequenceKind::Vec,
+        crate::plan::RuntimePlanSequenceKind::Array,
+        crate::plan::RuntimePlanSequenceKind::Slice,
+        crate::plan::RuntimePlanSequenceKind::Seq,
+    ];
+    let mut program = minimal_program();
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Bool)];
+    program
+        .runtime_types
+        .extend(kinds.iter().enumerate().map(|(index, kind)| {
+            runtime_type(
+                u8::try_from(index + 2).unwrap(),
+                AwbcRuntimeTypeShape::Sequence {
+                    kind: *kind,
+                    item: AwbcTypeId(0),
+                },
+            )
+        }));
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode all sequence kinds");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode all sequence kinds");
+    assert_eq!(decoded.runtime_types, program.runtime_types);
+    assert_eq!(decoded.encode_canonical().unwrap(), encoded);
+    for (index, expected) in kinds.iter().enumerate() {
+        assert!(matches!(
+            decoded.runtime_types[index + 1].shape(),
+            AwbcRuntimeTypeShape::Sequence { kind, item: AwbcTypeId(0) } if kind == expected
+        ));
+    }
 }
 
 #[test]
@@ -1301,20 +1708,25 @@ fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
     expect_project_call_rejection(parity, "project-call attached source parity is invalid");
 
     let mut optional_wrong_type = project_call_default_program();
-    let attached = project_call_mut(&mut optional_wrong_type)
-        .attached
-        .as_mut()
-        .expect("default fixture has attached row");
-    attached.presence = AwbcProjectCallAttachedPresence::OptionalPresent;
-    attached.source_index = Some(0);
-    attached.abi_ty = AwbcTypeId(0);
+    optional_wrong_type.callable_states[0].attached = RuntimeCallableAttachedContract::Optional {
+        value: AwbcTypeId(0),
+        binding: AwbcTypeId(0),
+    };
     expect_project_call_rejection(
         optional_wrong_type,
-        "optional attached ABI must be the builtin Option type",
+        "optional attached input disagrees with callable arrow",
     );
 
     let mut required_spread = project_call_default_program();
-    required_spread.runtime_types[2] = runtime_type(3, AwbcRuntimeTypeShape::Unit);
+    required_spread.runtime_types[3] = runtime_type(
+        4,
+        AwbcRuntimeTypeShape::Function {
+            parameters: vec![AwbcTypeId(0)],
+            result: AwbcTypeId(0),
+        },
+    );
+    required_spread.callable_states[0].attached =
+        RuntimeCallableAttachedContract::Required { ty: AwbcTypeId(0) };
     let call = project_call_mut(&mut required_spread);
     call.operands.push(AwbcProjectCallOperand {
         value: AwbcRegisterId(0),
@@ -1324,21 +1736,16 @@ fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
         .attached
         .as_mut()
         .expect("default fixture has attached row");
-    attached.abi_ty = AwbcTypeId(0);
-    attached.binding_ty = AwbcTypeId(0);
     attached.source_index = Some(0);
     attached.presence = AwbcProjectCallAttachedPresence::RequiredPresent;
-    expect_project_call_rejection(
-        required_spread,
-        "required attached source must be a value operand",
-    );
+    expect_project_call_rejection(required_spread, "attached source must be a value operand");
 
     let mut omitted_with_source = project_call_default_program();
     let attached = project_call_mut(&mut omitted_with_source)
         .attached
         .as_mut()
         .expect("default fixture has attached row");
-    attached.presence = AwbcProjectCallAttachedPresence::OptionalOmitted;
+    attached.presence = AwbcProjectCallAttachedPresence::DefaultedOmitted;
     attached.source_index = Some(0);
     expect_project_call_rejection(
         omitted_with_source,
@@ -1347,233 +1754,167 @@ fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
 }
 
 #[test]
-fn project_call_verifier_rejects_continuation_result_abi_mismatches() {
-    let valid = project_call_continuation_verifier_program();
+fn project_call_verifier_rejects_invalid_retained_state_projections() {
+    let valid = project_call_retained_program();
     valid
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect("a checked next prefix changes lineage and removes one function group");
-    let mut dropped_prefix = project_call_continuation_verifier_program();
-    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
-        &mut continuation_project_call_mut(&mut dropped_prefix).outcome
-    {
-        result_abi.prefix_types.clear();
-    }
+        .expect("the next group is sealed by the retained state definition");
+
+    let mut dropped_prefix = project_call_retained_program();
+    dropped_prefix.callable_states[1].retained = Box::new([]);
     expect_project_call_rejection(
         dropped_prefix,
-        "project-call continuation drops its existing prefix",
+        "callable retained transition has an incompatible target",
     );
 
-    let mut unchanged_function = project_call_continuation_verifier_program();
-    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
-        &mut continuation_project_call_mut(&mut unchanged_function).outcome
-    {
-        result_abi.function_type = AwbcTypeId(1);
-    }
+    let mut non_function = project_call_retained_program();
+    non_function.callable_states[1].function_type = AwbcTypeId(0);
     expect_project_call_rejection(
-        unchanged_function,
-        "project-call continuation application signature disagrees",
+        non_function,
+        "callable retained transition has an incompatible target",
     );
 
-    let mut changed_parameters = project_call_continuation_verifier_program();
-    changed_parameters.runtime_types[1] = runtime_type(
-        2,
+    let mut changed_parameters = project_call_retained_program();
+    changed_parameters
+        .runtime_types
+        .push(runtime_type(4, AwbcRuntimeTypeShape::Bool));
+    changed_parameters.runtime_types[2] = runtime_type(
+        3,
         AwbcRuntimeTypeShape::Function {
-            parameters: Vec::new(),
-            result: AwbcTypeId(2),
+            parameters: vec![AwbcTypeId(3)],
+            result: AwbcTypeId(0),
         },
     );
     expect_project_call_rejection(
         changed_parameters,
-        "project-call continuation application signature disagrees",
+        "callable function arrow disagrees with its state layout",
     );
 
-    let mut noncanonical_prefix = project_call_continuation_verifier_program();
-    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
-        &mut continuation_project_call_mut(&mut noncanonical_prefix).outcome
-    {
-        result_abi.prefix_types.push(AwbcTypeId(0));
-    }
+    let mut noncanonical_prefix = project_call_retained_program();
+    noncanonical_prefix.callable_states[1].parameters[0]
+        .coordinate
+        .group = 2;
     expect_project_call_rejection(
         noncanonical_prefix,
-        "project-call continuation prefix length is not canonical",
+        "callable parameter coordinate disagrees with its position",
     );
 
-    let mut changed_binding = project_call_continuation_verifier_program();
-    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
-        &mut continuation_project_call_mut(&mut changed_binding).outcome
-    {
-        result_abi.prefix_types[1] = AwbcTypeId(1);
-    }
+    let mut changed_binding = project_call_retained_program();
+    changed_binding.callable_states[1].retained[0].ty = AwbcTypeId(2);
     expect_project_call_rejection(
         changed_binding,
-        "project-call continuation binding types disagree",
+        "callable retained transition changes a typed role",
     );
 
     let mut attached_continue = project_call_default_program();
-    attached_continue.runtime_types.push(runtime_type(
-        4,
-        AwbcRuntimeTypeShape::Function {
-            parameters: Vec::new(),
-            result: AwbcTypeId(0),
-        },
-    ));
-    project_call_mut(&mut attached_continue).outcome = AwbcProjectCallOutcome::Continue {
-        result_abi: AwbcProjectContinuationAbi {
-            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x88; 32]),
-            function_type: AwbcTypeId(3),
-            prefix_types: vec![AwbcTypeId(0)],
-        },
-        next_group: 1,
+    attached_continue.callable_states[0].transition = RuntimeCallableTransition::Retain {
+        state: callable_state_id(0),
+        values: Box::new([]),
     };
     expect_project_call_rejection(
         attached_continue,
-        "project-call continuation cannot carry an attached materialization",
+        "callable retained transition has an incompatible target",
     );
 }
 
 #[test]
 fn project_call_verifier_rejects_invoke_target_identity_and_result_mismatches() {
     let mut missing_target = project_call_invoke_program();
-    project_call_mut(&mut missing_target).outcome = AwbcProjectCallOutcome::Invoke {
-        function: AwbcFunctionId(99),
+    let RuntimeCallableTransition::Invoke { function, .. } =
+        &mut missing_target.callable_states[0].transition
+    else {
+        unreachable!();
     };
+    *function = AwbcFunctionId(99);
     expect_project_call_rejection(missing_target, "functions` index 99 is out of bounds");
 
     let mut missing_signature = project_call_invoke_program();
     missing_signature.functions[1].signature = AwbcSignatureId(99);
-    expect_project_call_rejection(missing_signature, "signatures` index 99");
+    let error = missing_signature
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("out-of-range invocation signature must reject");
+    assert!(
+        matches!(
+            error,
+            AwbcVerifyError::IndexOutOfBounds {
+                table: "signatures",
+                index: 99,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
 
     let mut result_mismatch = project_call_invoke_program();
-    result_mismatch
-        .runtime_types
-        .push(runtime_type(2, AwbcRuntimeTypeShape::String));
-    project_call_mut(&mut result_mismatch).result_ty = AwbcTypeId(1);
-    expect_project_call_rejection(result_mismatch, "type mismatch");
+    result_mismatch.signatures[1].result = Some(AwbcTypeId(1));
+    expect_project_call_rejection(
+        result_mismatch,
+        "callable transition target ABI disagrees with typed projections",
+    );
 
     let mut target_kind = project_call_invoke_program();
     target_kind.functions[1].kind = AwbcFunctionKind::Flow;
     expect_project_call_rejection(
         target_kind,
-        "project-call target must be an ordinary function",
+        "callable transition target must be an executable function",
     );
 
     let mut default_noninvoke = project_call_default_program();
-    default_noninvoke.runtime_types.push(runtime_type(
-        4,
-        AwbcRuntimeTypeShape::Function {
-            parameters: Vec::new(),
-            result: AwbcTypeId(0),
-        },
-    ));
-    project_call_mut(&mut default_noninvoke).outcome = AwbcProjectCallOutcome::Continue {
-        result_abi: AwbcProjectContinuationAbi {
-            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x77; 32]),
-            function_type: AwbcTypeId(3),
-            prefix_types: Vec::new(),
-        },
-        next_group: 1,
+    default_noninvoke.callable_states[0].transition = RuntimeCallableTransition::Retain {
+        state: callable_state_id(0),
+        values: Box::new([]),
     };
     expect_project_call_rejection(
         default_noninvoke,
-        "project-call continuation cannot carry an attached materialization",
+        "callable retained transition has an incompatible target",
     );
 }
 
 #[test]
 fn project_call_verifier_rejects_default_capture_domain_and_effect_mismatches() {
     let mut direct_prefix = project_call_default_program();
-    if let Some(AwbcProjectCallAttachedMaterialization {
-        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
-        ..
-    }) = project_call_mut(&mut direct_prefix).attached.as_mut()
-    {
-        default.captures = vec![AwbcProjectCallCaptureSource::ContinuationPrefix { position: 0 }];
-    }
-    expect_project_call_rejection(direct_prefix, "default capture cannot use a direct prefix");
+    let RuntimeCallableAttachedContract::Defaulted { default, .. } =
+        &mut direct_prefix.callable_states[0].attached
+    else {
+        unreachable!();
+    };
+    default.captures = vec![RuntimeCallableInputSource::Attached].into_boxed_slice();
+    expect_project_call_rejection(direct_prefix, "default callable capture source is invalid");
 
     let mut out_of_range = project_call_default_program();
-    if let Some(AwbcProjectCallAttachedMaterialization {
-        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
-        ..
-    }) = project_call_mut(&mut out_of_range).attached.as_mut()
-    {
-        default.captures = vec![AwbcProjectCallCaptureSource::CurrentLogical { position: 0 }];
-    }
-    expect_project_call_rejection(
-        out_of_range,
-        "default capture current position is out of range",
-    );
+    let RuntimeCallableAttachedContract::Defaulted { default, .. } =
+        &mut out_of_range.callable_states[0].attached
+    else {
+        unreachable!();
+    };
+    default.captures =
+        vec![RuntimeCallableInputSource::Argument { position: 0 }].into_boxed_slice();
+    expect_project_call_rejection(out_of_range, "default callable capture source is invalid");
 
     let mut default_effects = project_call_default_program();
     default_effects.signatures[1].effects = add_effect_set(&mut default_effects, &["fs.read"]);
     default_effects.canonicalize_string_table();
-    expect_project_call_rejection(default_effects, "project-call default");
+    expect_project_call_rejection(default_effects, "callable default");
 
     let mut target_effects = project_call_invoke_program();
     target_effects.signatures[1].effects = add_effect_set(&mut target_effects, &["fs.read"]);
     target_effects.canonicalize_string_table();
-    expect_project_call_rejection(target_effects, "project-call target");
+    expect_project_call_rejection(target_effects, "callable invocation");
 }
 
 #[test]
 fn project_call_verifier_applies_each_project_call_argument_budget() {
-    let (mut continuation, _) = project_call_continuation_program();
-    continuation.constants = vec![AwbcConstant::Unit];
-    continuation.instructions = vec![
-        AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(0),
-            constant: AwbcConstantId(0),
-        },
-        AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(1),
-            constant: AwbcConstantId(0),
-        },
-    ];
-    continuation.blocks[0].instructions = AwbcTableRange::new(0, 2);
-    let mut prefix_budget = continuation.clone();
-    let call = project_call_mut(&mut prefix_budget);
-    call.operands.clear();
-    call.ordinary.clear();
+    let mut operand_budget = project_call_retained_program();
+    project_call_mut(&mut operand_budget).operands[0].value = AwbcRegisterId(99);
     let mut budget = AwbcVerifyBudget::default();
     budget.args_per_call = 0;
-    prefix_budget
-        .verify(budget, AwbcVerifyContext::default())
-        .expect_err("the continuation prefix budget is enforced before register walk");
+    expect_project_call_rejection_with_budget(operand_budget, budget, "args_per_call");
 
-    let mut result_prefix_budget = project_call_invoke_program();
-    result_prefix_budget.runtime_types.push(runtime_type(
-        2,
-        AwbcRuntimeTypeShape::Function {
-            parameters: Vec::new(),
-            result: AwbcTypeId(0),
-        },
-    ));
-    project_call_mut(&mut result_prefix_budget).outcome = AwbcProjectCallOutcome::Continue {
-        result_abi: AwbcProjectContinuationAbi {
-            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x22; 32]),
-            function_type: AwbcTypeId(1),
-            prefix_types: vec![AwbcTypeId(0)],
-        },
-        next_group: 1,
-    };
-    project_call_mut(&mut result_prefix_budget).result_ty = AwbcTypeId(0);
+    let mut row_budget = project_call_retained_program();
+    project_call_mut(&mut row_budget).operands.clear();
     let mut budget = AwbcVerifyBudget::default();
     budget.args_per_call = 0;
-    expect_project_call_rejection_with_budget(result_prefix_budget, budget, "args_per_call");
-
-    let mut default_capture_budget = project_call_default_program();
-    if let Some(AwbcProjectCallAttachedMaterialization {
-        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
-        ..
-    }) = project_call_mut(&mut default_capture_budget)
-        .attached
-        .as_mut()
-    {
-        default.captures = vec![AwbcProjectCallCaptureSource::CurrentLogical { position: 0 }];
-    }
-    let mut budget = AwbcVerifyBudget::default();
-    budget.args_per_call = 0;
-    expect_project_call_rejection_with_budget(default_capture_budget, budget, "args_per_call");
+    expect_project_call_rejection_with_budget(row_budget, budget, "args_per_call");
 }
 
 fn expect_project_call_rejection_with_budget(
@@ -1592,17 +1933,17 @@ fn expect_project_call_rejection_with_budget(
 
 #[test]
 fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
-    let program = project_call_default_program();
+    let program = std::sync::Arc::new(project_call_default_program());
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("defaulted ProjectCall program verifies");
 
     let mut default_fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut default_fiber,
         super::vm::VmStepOptions {
-            max_instructions: 1,
+            max_instructions: 2,
         },
     )
     .expect("enter default function");
@@ -1613,20 +1954,18 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .expect("default stage validates");
     let default_snapshot = AwbcFiberStateSnapshot::from_live(&default_fiber).expect("snapshot");
     let default_restored = default_snapshot
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
         .expect("restore snapshot");
     default_restored
         .validate_for_program(&program)
         .expect("restored default stage validates");
 
     let mut target_fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut target_fiber,
         super::vm::VmStepOptions {
-            max_instructions: 3,
+            max_instructions: 4,
         },
     )
     .expect("enter target function after default");
@@ -1638,9 +1977,7 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
         .expect("target stage validates");
     let target_snapshot = AwbcFiberStateSnapshot::from_live(&target_fiber).expect("snapshot");
     let mut target_restored = target_snapshot
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
         .expect("restore snapshot");
     target_restored
         .validate_for_program(&program)
@@ -1829,17 +2166,11 @@ fn returning_calls_use_the_canonical_scoped_effect_coverage_rule() {
             ),
             (vec!["fs.read.deep", "fs.reader"], "fs.read", false),
         ] {
-            let mut program = project_call_invoke_program();
-            if !project_call {
-                program.signatures[1].result = None;
-                program.blocks[2].terminator = AwbcTerminator::Return { value: None };
-                program.blocks[0].terminator = AwbcTerminator::CallFunction {
-                    function: AwbcFunctionId(1),
-                    args: Vec::new(),
-                    dst: None,
-                    resume: AwbcResumePointId(0),
-                };
-            }
+            let mut program = if project_call {
+                project_call_invoke_program()
+            } else {
+                ordinary_returning_call_program()
+            };
             program.signatures[0].effects = add_effect_set(&mut program, &permitted);
             program.signatures[1].effects = add_effect_set(&mut program, &[required]);
             program.canonicalize_string_table();
@@ -1872,16 +2203,16 @@ fn verifier_rejects_noncanonical_effect_identities_at_wire_admission() {
 #[test]
 fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames() {
     for dynamic in [false, true] {
-        let program = project_call_target_goto_program(dynamic);
+        let program = std::sync::Arc::new(project_call_target_goto_program(dynamic));
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .expect("ProjectCall target-goto program verifies");
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-        let output = super::vm::step(
+        let output = step_with_callable_context(
             &program,
             &mut fiber,
             super::vm::VmStepOptions {
-                max_instructions: 1,
+                max_instructions: 2,
             },
         )
         .expect("enter ProjectCall target");
@@ -1904,7 +2235,7 @@ fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames(
             effect: AwbcEffectPlanId(0),
             args: Vec::new(),
         });
-        let output = super::vm::step(
+        let output = step_with_callable_context(
             &program,
             &mut fiber,
             super::vm::VmStepOptions {
@@ -1942,16 +2273,16 @@ fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames(
 
 #[test]
 fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frames() {
-    let program = project_call_default_goto_program();
+    let program = std::sync::Arc::new(project_call_default_goto_program());
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("ProjectCall default-goto program verifies");
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
-            max_instructions: 1,
+            max_instructions: 2,
         },
     )
     .expect("enter ProjectCall default");
@@ -1974,7 +2305,7 @@ fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frame
         effect: AwbcEffectPlanId(0),
         args: Vec::new(),
     });
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -2011,16 +2342,16 @@ fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frame
 
 #[test]
 fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
-    let program = project_call_invoke_program();
+    let program = std::sync::Arc::new(project_call_invoke_program());
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("invoking ProjectCall program verifies");
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
-            max_instructions: 1,
+            max_instructions: 2,
         },
     )
     .expect("enter target function");
@@ -2035,9 +2366,7 @@ fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
     let snapshot: AwbcFiberStateSnapshot =
         serde_json::from_slice(&encoded).expect("snapshot decode");
     let mut restored = snapshot
-        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
-            std::sync::Arc::new(program.clone()),
-        ))
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program)))
         .expect("restore snapshot");
     restored
         .validate_for_program(&program)
@@ -2925,7 +3254,13 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     let mut all = minimal_program();
     all.runtime_types = vec![
         runtime_type(1, AwbcRuntimeTypeShape::String),
-        runtime_type(2, AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0))),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Sequence {
+                kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                item: AwbcTypeId(0),
+            },
+        ),
         runtime_type(
             3,
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
@@ -3177,57 +3512,22 @@ fn verifier_rejects_duplicate_nominal_record_descriptor_authority() {
 }
 
 #[test]
-fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
-    let mut program = minimal_program();
-    program
-        .strings
-        .extend(["zz.debug".to_owned(), "zz.message".to_owned()]);
-    program.constants.extend([
-        AwbcConstant::String(AwbcStringId(1)),
-        AwbcConstant::String(AwbcStringId(2)),
-    ]);
-    let dynamic_type = AwbcTypeId(1);
-    program.signatures.push(AwbcSignature {
-        params: vec![dynamic_type],
-        result: None,
-        effects: AwbcEffectSetId(0),
-    });
-    program.effect_plans.push(AwbcEffectPlan {
-        kind: AwbcEffectKind::Log,
-        signature: AwbcSignatureId(1),
-        capability: None,
-        audio: None,
-        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
-        resources: Vec::new(),
-    });
-    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
-        .expect("create snapshot validation fiber");
-    fiber
-        .active_frame_mut()
-        .expect("active frame")
-        .root_cleanups
-        .push(FiberScopeCleanup {
-            key: "cleanup.stale-function".to_owned(),
-            effect: AwbcEffectPlanId(0),
-            args: vec![RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
-                Vec::new(),
-                AwbcFunctionId(u32::MAX),
-                Vec::new(),
-            ))],
-        });
-
-    let error = fiber
-        .validate_for_program(&program)
-        .expect_err("stale cleanup function must reject");
-    assert!(
-        matches!(
-        &error,
-        super::fiber::FiberStateError::InvalidRuntimeValue { path, reason }
-            if path == "frames[0].root_cleanups[0].args[0]"
-                && reason.contains("does not exist")
-        ),
-        "{error:?}"
-    );
+fn verifier_rejects_a_callable_state_with_a_stale_body_reference() {
+    let mut program = project_call_invoke_program();
+    let RuntimeCallableTransition::Invoke { function, .. } =
+        &mut program.callable_states[0].transition
+    else {
+        unreachable!();
+    };
+    *function = AwbcFunctionId(u32::MAX);
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::IndexOutOfBounds {
+            table: "functions",
+            index: u32::MAX,
+            ..
+        })
+    ));
 }
 
 fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
@@ -3252,12 +3552,20 @@ fn expression_apply_frame_layouts() -> Vec<AwbcFrameLayout> {
         },
         AwbcFrameLayout {
             scopes: Vec::new(),
-            slots: vec![AwbcFrameSlot {
-                name: None,
-                ty: AwbcTypeId(0),
-                role: AwbcFrameSlotRole::Temporary,
-                scope_depth: 0,
-            }],
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+            ],
             max_scope_depth: 0,
         },
     ]
@@ -3297,6 +3605,7 @@ fn expression_apply_program(
         u32::try_from(synthetic_blocks.len()).expect("test block count fits in AWBC range");
     let synthetic_instruction_len = u32::try_from(synthetic_entry_instructions.len())
         .expect("test instruction count fits in AWBC range");
+    let synthetic_code_len = synthetic_instruction_len + 1;
     let mut blocks = Vec::with_capacity(synthetic_blocks.len() + 1);
     blocks.push(AwbcBlock {
         owner: AwbcFunctionId(0),
@@ -3310,15 +3619,17 @@ fn expression_apply_program(
     blocks.extend(synthetic_blocks.into_iter().enumerate().map(
         |(index, (terminator, safe_point))| AwbcBlock {
             owner: AwbcFunctionId(1),
-            instructions: AwbcTableRange::new(
-                2,
-                if index == 0 {
-                    synthetic_instruction_len
-                } else {
-                    0
+            instructions: if index == 0 {
+                AwbcTableRange::new(2, synthetic_code_len)
+            } else {
+                AwbcTableRange::new(2 + synthetic_code_len, 0)
+            },
+            terminator: match terminator {
+                AwbcTerminator::Return { value: None } => AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(1)),
                 },
-            ),
-            terminator,
+                terminator => terminator,
+            },
             safe_point,
             source_map: None,
         },
@@ -3335,26 +3646,53 @@ fn expression_apply_program(
             },
             AwbcSignature {
                 params: Vec::new(),
-                result: None,
+                result: Some(AwbcTypeId(0)),
                 effects: AwbcEffectSetId(0),
             },
         ],
+        runtime_types: vec![
+            runtime_type(1, AwbcRuntimeTypeShape::Unit),
+            runtime_type(
+                2,
+                AwbcRuntimeTypeShape::Function {
+                    parameters: Vec::new(),
+                    result: AwbcTypeId(0),
+                },
+            ),
+        ],
+        callable_states: vec![RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(1),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: Box::new([]),
+            },
+            partials: Box::new([]),
+        }],
         frame_layouts: expression_apply_frame_layouts(),
         functions: expression_apply_functions(synthetic_len),
         blocks,
         instructions: {
             let mut instructions = vec![
-                AwbcInstruction::MakeFunction {
+                AwbcInstruction::MakeCallable {
                     dst: AwbcRegisterId(0),
-                    function: AwbcFunctionId(1),
-                    params: Vec::new(),
-                    capture_names: Vec::new(),
+                    state: callable_state_id(0),
                     captures: Vec::new(),
                 },
-                AwbcInstruction::ApplyFunction {
+                AwbcInstruction::ApplyGroup {
                     dst: AwbcRegisterId(1),
                     callee: AwbcRegisterId(0),
                     args: Vec::new(),
+                },
+                AwbcInstruction::LoadConst {
+                    dst: AwbcRegisterId(1),
+                    constant: AwbcConstantId(0),
                 },
             ];
             instructions.extend(synthetic_entry_instructions);
@@ -3440,12 +3778,12 @@ fn dialogue_content_effect_manifest_and_instruction_codec_round_trip() {
             effects: vec![
                 AwbcDialogueContentEffectBinding {
                     site,
-                    function: AwbcFunctionId(0),
+                    state: callable_state_id(0),
                     captures: Vec::new(),
                 },
                 AwbcDialogueContentEffectBinding {
                     site: delayed_site,
-                    function: AwbcFunctionId(0),
+                    state: callable_state_id(0),
                     captures: Vec::new(),
                 },
             ],
@@ -4452,21 +4790,21 @@ fn verifier_reports_uninitialized_register() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "The AWBC closure fixture is intentionally inline so opcode, verifier, codec, and VM expectations stay in one place."
+    reason = "The AWBC callable fixture is intentionally inline so capture, verifier, codec, and VM expectations stay in one place."
 )]
-fn closure_instructions_capture_and_apply_awbc_function_value() {
+fn callable_instructions_capture_and_apply_program_owned_state() {
     let program = AwbcProgram {
         strings: vec!["captured".to_owned(), "main".to_owned(), "x".to_owned()],
         constants: vec![AwbcConstant::String(AwbcStringId(0))],
         signatures: vec![
             AwbcSignature {
                 params: Vec::new(),
-                result: Some(AwbcTypeId(1)),
+                result: Some(AwbcTypeId(0)),
                 effects: AwbcEffectSetId(0),
             },
             AwbcSignature {
-                params: vec![AwbcTypeId(1)],
-                result: Some(AwbcTypeId(1)),
+                params: vec![AwbcTypeId(0)],
+                result: Some(AwbcTypeId(0)),
                 effects: AwbcEffectSetId(0),
             },
         ],
@@ -4476,7 +4814,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 slots: vec![
                     AwbcFrameSlot {
                         name: Some(AwbcStringId(2)),
-                        ty: AwbcTypeId(1),
+                        ty: AwbcTypeId(0),
                         role: AwbcFrameSlotRole::Local,
                         scope_depth: 0,
                     },
@@ -4488,7 +4826,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                     },
                     AwbcFrameSlot {
                         name: None,
-                        ty: AwbcTypeId(1),
+                        ty: AwbcTypeId(0),
                         role: AwbcFrameSlotRole::Temporary,
                         scope_depth: 0,
                     },
@@ -4499,13 +4837,43 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 scopes: Vec::new(),
                 slots: vec![AwbcFrameSlot {
                     name: Some(AwbcStringId(2)),
-                    ty: AwbcTypeId(1),
+                    ty: AwbcTypeId(0),
                     role: AwbcFrameSlotRole::Parameter,
                     scope_depth: 0,
                 }],
                 max_scope_depth: 0,
             },
         ],
+        runtime_types: vec![
+            runtime_type(1, AwbcRuntimeTypeShape::String),
+            runtime_type(
+                2,
+                AwbcRuntimeTypeShape::Function {
+                    parameters: Vec::new(),
+                    result: AwbcTypeId(0),
+                },
+            ),
+        ],
+        callable_states: vec![RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(1),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: vec![RuntimeCallableRetainedInput {
+                role: RuntimeCallableRetainedRole::Capture { position: 0 },
+                ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: vec![RuntimeCallableInputSource::Retained { position: 0 }]
+                    .into_boxed_slice(),
+                arguments: Box::new([]),
+            },
+            partials: Box::new([]),
+        }],
         functions: vec![
             AwbcFunction {
                 public_id: Some(AwbcStringId(1)),
@@ -4551,14 +4919,12 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 dst: AwbcRegisterId(0),
                 constant: AwbcConstantId(0),
             },
-            AwbcInstruction::MakeFunction {
+            AwbcInstruction::MakeCallable {
                 dst: AwbcRegisterId(1),
-                function: AwbcFunctionId(1),
-                params: Vec::new(),
-                capture_names: vec![AwbcStringId(2)],
+                state: callable_state_id(0),
                 captures: vec![AwbcRegisterId(0)],
             },
-            AwbcInstruction::ApplyFunction {
+            AwbcInstruction::ApplyGroup {
                 dst: AwbcRegisterId(2),
                 callee: AwbcRegisterId(1),
                 args: Vec::new(),
@@ -4579,24 +4945,25 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
         }],
         ..AwbcProgram::default()
     };
+    let program = std::sync::Arc::new(program);
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect("closure program verifies");
+        .expect("callable program verifies");
 
-    let encoded = program.encode_canonical().expect("encode closure program");
+    let encoded = program.encode_canonical().expect("encode callable program");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
-        .expect("decode closure program");
-    assert_eq!(decoded, program);
+        .expect("decode callable program");
+    assert_eq!(decoded, program.as_ref().clone());
 
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).expect("create fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
             max_instructions: 16,
         },
     )
-    .expect("step closure program");
+    .expect("step callable program");
     assert_eq!(
         output.exit,
         super::vm::VmExit::Returned(Some(RuntimeValue::String("captured".to_owned())))
@@ -4605,7 +4972,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
 
 #[test]
 fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() {
-    let program = expression_apply_program(
+    let program = std::sync::Arc::new(expression_apply_program(
         Vec::new(),
         vec![
             (
@@ -4625,14 +4992,14 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
             frame_layout: AwbcFrameLayoutId(1),
             kind: AwbcSafePointKind::BudgetYield,
         }],
-    );
+    ));
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("verify expression apply suspension program");
 
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
         .expect("create expression apply fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -4677,7 +5044,7 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     fiber
         .resume_at(&program, AwbcResumePointId(0))
         .expect("resume dynamic callee");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -4729,10 +5096,11 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
         .runtime_types
         .push(runtime_type(67, AwbcRuntimeTypeShape::Task(AwbcTypeId(1))));
     await_program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
+    let await_program = std::sync::Arc::new(await_program);
 
     let mut fiber = FiberState::for_entry(&await_program, AwbcEntryId(0), 0, 64)
         .expect("create await expression apply fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &await_program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -4762,7 +5130,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
         .resume_at(&await_program, AwbcResumePointId(0))
         .expect("resume await dynamic callee");
     assert_eq!(
-        super::vm::step(
+        step_with_callable_context(
             &await_program,
             &mut fiber,
             super::vm::VmStepOptions {
@@ -4801,20 +5169,26 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
             kind: AwbcSafePointKind::HostCall,
         }],
     );
+    host_program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
     host_program.host_calls.push(AwbcHostCall {
         public_id: AwbcStringId(0),
         capability: AwbcStringId(0),
         operation: AwbcStringId(0),
         contract: None,
-        signature: AwbcSignatureId(1),
+        signature: AwbcSignatureId(2),
         mode: AwbcHostCallMode::Suspend,
         deterministic: true,
         arguments: Vec::new(),
     });
+    let host_program = std::sync::Arc::new(host_program);
 
     let mut fiber = FiberState::for_entry(&host_program, AwbcEntryId(0), 0, 64)
         .expect("create host-call expression apply fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &host_program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -4844,7 +5218,7 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
         .resume_at(&host_program, AwbcResumePointId(0))
         .expect("resume host-call dynamic callee");
     assert_eq!(
-        super::vm::step(
+        step_with_callable_context(
             &host_program,
             &mut fiber,
             super::vm::VmStepOptions {
@@ -4866,21 +5240,21 @@ fn expression_apply_uses_the_callers_budget_without_a_hidden_inner_limit() {
         };
         4_097
     ];
-    let program = expression_apply_program(
+    let program = std::sync::Arc::new(expression_apply_program(
         synthetic_instructions,
         vec![(
             AwbcTerminator::Return { value: None },
             AwbcSafePointKind::CallableBoundary,
         )],
         Vec::new(),
-    );
+    ));
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("verify expression apply budget program");
 
     let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 8_192)
         .expect("create expression apply fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -4906,43 +5280,165 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
         )],
         Vec::new(),
     );
-    program.signatures[0].result = Some(AwbcTypeId(1));
-    program.signatures[1].params.push(AwbcTypeId(1));
-    program.frame_layouts[0].slots[1].ty = AwbcTypeId(1);
-    program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
-    program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
-    program.frame_layouts[1].slots[0].name = Some(AwbcStringId(0));
-    let AwbcInstruction::MakeFunction { params, .. } = &mut program.instructions[0] else {
-        panic!("expression apply fixture starts with MakeFunction");
+    program.runtime_types.extend([
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Function {
+                parameters: vec![AwbcTypeId(0), AwbcTypeId(0)],
+                result: AwbcTypeId(0),
+            },
+        ),
+        runtime_type(
+            4,
+            AwbcRuntimeTypeShape::Function {
+                parameters: vec![AwbcTypeId(0)],
+                result: AwbcTypeId(0),
+            },
+        ),
+    ]);
+    let first = RuntimeCallableParameterCoordinate {
+        group: 0,
+        parameter: 0,
     };
-    params.push(AwbcStringId(0));
+    let second = RuntimeCallableParameterCoordinate {
+        group: 0,
+        parameter: 1,
+    };
+    program.callable_states = vec![
+        RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(2),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: vec![
+                RuntimeCallableParameterInput {
+                    coordinate: first,
+                    kind: RuntimeCallableParameterKind::Fixed,
+                    abi_ty: AwbcTypeId(0),
+                    binding_ty: AwbcTypeId(0),
+                },
+                RuntimeCallableParameterInput {
+                    coordinate: second,
+                    kind: RuntimeCallableParameterKind::Fixed,
+                    abi_ty: AwbcTypeId(0),
+                    binding_ty: AwbcTypeId(0),
+                },
+            ]
+            .into_boxed_slice(),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: vec![
+                    RuntimeCallableInputSource::Argument { position: 0 },
+                    RuntimeCallableInputSource::Argument { position: 1 },
+                ]
+                .into_boxed_slice(),
+            },
+            partials: vec![crate::plan::RuntimeCallablePartialTransition {
+                parameters: vec![first].into_boxed_slice(),
+                state: callable_state_id(1),
+                values: vec![RuntimeCallableInputSource::Argument { position: 0 }]
+                    .into_boxed_slice(),
+            }]
+            .into_boxed_slice(),
+        },
+        RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(3),
+            origin: callable_state_id(0),
+            position: RuntimeCallablePosition::WithinGroup {
+                group: 0,
+                bound: vec![first].into_boxed_slice(),
+            },
+            retained: vec![RuntimeCallableRetainedInput {
+                role: RuntimeCallableRetainedRole::Parameter(first),
+                ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            parameters: vec![RuntimeCallableParameterInput {
+                coordinate: second,
+                kind: RuntimeCallableParameterKind::Fixed,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+            }]
+            .into_boxed_slice(),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: vec![
+                    RuntimeCallableInputSource::Retained { position: 0 },
+                    RuntimeCallableInputSource::Argument { position: 0 },
+                ]
+                .into_boxed_slice(),
+            },
+            partials: Box::new([]),
+        },
+    ];
+    program.signatures[0].result = Some(AwbcTypeId(3));
+    program.signatures[1].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    program.frame_layouts[0].slots[0].ty = AwbcTypeId(2);
+    program.frame_layouts[0].slots[1].ty = AwbcTypeId(3);
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.frame_layouts[1].slots = vec![
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        },
+    ];
+    program.instructions.insert(
+        1,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    );
+    let AwbcInstruction::ApplyGroup { args, .. } = &mut program.instructions[2] else {
+        panic!("expression apply fixture uses ApplyGroup");
+    };
+    args.push(AwbcRegisterId(2));
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[1].instructions = AwbcTableRange::new(3, 1);
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect("verify partial expression apply program");
+        .expect("verify callable partial application program");
 
+    let program = std::sync::Arc::new(program);
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 0, 16).expect("create partial fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
             max_instructions: 16,
         },
     )
-    .expect("partially apply function");
-    let super::vm::VmExit::Returned(Some(RuntimeValue::Function(function))) = output.exit else {
-        panic!("partial application must return a function value");
+    .expect("partially apply callable state");
+    let super::vm::VmExit::Returned(Some(RuntimeValue::Callable(callable))) = output.exit else {
+        panic!("partial application must return a callable state");
     };
-    assert_eq!(function.remaining_arity(), Ok(1));
-    let crate::value::RuntimeFunctionBody::Awbc(closure) = function.body() else {
-        panic!("AWBC execution must return an AWBC closure");
-    };
-    assert!(closure.captures().is_empty());
+    assert_eq!(callable.state(), callable_state_id(1));
+    assert_eq!(callable.retained(), [RuntimeValue::Unit]);
     assert_eq!(fiber.frames.len(), 1);
 }
 
 #[test]
-fn verifier_rejects_make_function_binding_name_mismatch() {
+fn verifier_rejects_callable_body_abi_mismatch() {
     let mut program = expression_apply_program(
         Vec::new(),
         vec![(
@@ -4951,25 +5447,18 @@ fn verifier_rejects_make_function_binding_name_mismatch() {
         )],
         Vec::new(),
     );
-    program.signatures[1].params.push(AwbcTypeId(1));
-    program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
+    program.signatures[1].params.push(AwbcTypeId(0));
     program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
-    program.frame_layouts[1].slots[0].name = Some(AwbcStringId(0));
-    let AwbcInstruction::MakeFunction { params, .. } = &mut program.instructions[0] else {
-        panic!("expression apply fixture starts with MakeFunction");
-    };
-    params.push(AwbcStringId(0));
-    program.frame_layouts[1].slots[0].name = None;
 
     assert!(matches!(
         program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
         Err(AwbcVerifyError::InvalidInvariant { message, .. })
-            if message.contains("name matching its closure binding")
+            if message.contains("callable transition target ABI disagrees with typed projections")
     ));
 }
 
 #[test]
-fn expression_apply_rejects_over_application_before_entering_the_callee() {
+fn expression_apply_verifier_rejects_more_arguments_than_the_callable_group() {
     let mut program = expression_apply_program(
         Vec::new(),
         vec![(
@@ -4978,48 +5467,30 @@ fn expression_apply_rejects_over_application_before_entering_the_callee() {
         )],
         Vec::new(),
     );
-    let AwbcInstruction::ApplyFunction { args, .. } = &mut program.instructions[1] else {
-        panic!("expression apply fixture ends with ApplyFunction");
+    let AwbcInstruction::ApplyGroup { args, .. } = &mut program.instructions[1] else {
+        panic!("expression apply fixture ends with ApplyGroup");
     };
     args.push(AwbcRegisterId(0));
-    program
-        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
-        .expect("verify over-application program");
-
-    let mut fiber =
-        FiberState::for_entry(&program, AwbcEntryId(0), 0, 16).expect("create over-apply fiber");
-    let output = super::vm::step(
-        &program,
-        &mut fiber,
-        super::vm::VmStepOptions {
-            max_instructions: 16,
-        },
-    )
-    .expect("over-application becomes a typed trap");
     assert!(matches!(
-        output.exit,
-        super::vm::VmExit::Trapped(FiberTrap {
-            code: AwbcTrapCode::TypeMismatch,
-            message: Some(ref message),
-            ..
-        }) if message == "function application expected 0 arguments, received 1"
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message.contains("group application supplies more values than its function arrow")
     ));
-    assert_eq!(fiber.frames.len(), 1);
 }
 
 #[test]
 fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
-    let program = expression_apply_program(
+    let program = std::sync::Arc::new(expression_apply_program(
         Vec::new(),
         vec![(
             AwbcTerminator::Return { value: None },
             AwbcSafePointKind::CallableBoundary,
         )],
         Vec::new(),
-    );
+    ));
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 0, 2).expect("create budgeted fiber");
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
@@ -5054,14 +5525,35 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
     assert_eq!(fiber.cursor, exact_callee_entry);
     fiber.replenish_budget();
 
-    let output = super::vm::step(
+    let output = step_with_callable_context(
         &program,
         &mut fiber,
         super::vm::VmStepOptions {
             max_instructions: 16,
         },
     )
-    .expect("finish exact-resumed dynamic call");
+    .expect("return from the exact-resumed dynamic callee");
+    let caller_result_load = super::fiber::FiberCursor {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(0),
+        instruction_offset: 2,
+    };
+    assert!(matches!(
+        output.exit,
+        super::vm::VmExit::BudgetYield(point) if point.cursor == caller_result_load
+    ));
+    fiber
+        .resume_budget_yield(&program)
+        .expect("resume at the caller result load");
+    fiber.replenish_budget();
+    let output = step_with_callable_context(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("finish the exact-resumed dynamic call");
     assert_eq!(
         output.exit,
         super::vm::VmExit::Returned(Some(RuntimeValue::Unit))

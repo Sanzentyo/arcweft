@@ -13,13 +13,13 @@ use crate::awbc::schema::{
     AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId,
     AwbcMatchArm, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest,
     AwbcProjectCall, AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallCaptureSource, AwbcProjectCallDefaultFunction, AwbcProjectCallInput,
     AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcProjectCallOutcome, AwbcProjectContinuationAbi, AwbcPureHelperId, AwbcRecordPatternField,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
-    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId,
+    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcTypeId, AwbcUnaryOp,
 };
+use crate::runtime_id::RuntimeCallableStateId;
 use crate::value::RuntimeAgentConstructor;
 
 impl Wire for AwbcFunction {
@@ -111,7 +111,7 @@ impl Wire for AwbcDialogueValueBinding {
 impl Wire for AwbcDialogueContentEffectBinding {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.site.get().get().write_wire(writer)?;
-        self.function.write_wire(writer)?;
+        self.state.write_wire(writer)?;
         self.captures.write_wire(writer)
     }
 
@@ -127,7 +127,7 @@ impl Wire for AwbcDialogueContentEffectBinding {
             })?;
         Ok(Self {
             site,
-            function: AwbcFunctionId::read_wire(reader)?,
+            state: crate::runtime_id::RuntimeCallableStateId::read_wire(reader)?,
             captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
         })
     }
@@ -417,20 +417,16 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
             }
             Self::CancelCleanup { key } => key.write_wire(writer)?,
-            Self::MakeFunction {
+            Self::MakeCallable {
                 dst,
-                function,
-                params,
-                capture_names,
+                state,
                 captures,
             } => {
                 dst.write_wire(writer)?;
-                function.write_wire(writer)?;
-                params.write_wire(writer)?;
-                capture_names.write_wire(writer)?;
+                state.write_wire(writer)?;
                 captures.write_wire(writer)?;
             }
-            Self::ApplyFunction { dst, callee, args } => {
+            Self::ApplyGroup { dst, callee, args } => {
                 dst.write_wire(writer)?;
                 callee.write_wire(writer)?;
                 args.write_wire(writer)?;
@@ -644,14 +640,12 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::CancelCleanup => Self::CancelCleanup {
                 key: AwbcStringId::read_wire(reader)?,
             },
-            AwbcOpcode::MakeFunction => Self::MakeFunction {
+            AwbcOpcode::MakeCallable => Self::MakeCallable {
                 dst: AwbcRegisterId::read_wire(reader)?,
-                function: AwbcFunctionId::read_wire(reader)?,
-                params: Vec::<AwbcStringId>::read_wire(reader)?,
-                capture_names: Vec::<AwbcStringId>::read_wire(reader)?,
+                state: RuntimeCallableStateId::read_wire(reader)?,
                 captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
-            AwbcOpcode::ApplyFunction => Self::ApplyFunction {
+            AwbcOpcode::ApplyGroup => Self::ApplyGroup {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 callee: AwbcRegisterId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
@@ -741,34 +735,6 @@ impl Wire for AwbcProjectCallOperandMode {
     }
 }
 
-impl Wire for arcweft_id::runtime_program::RuntimeProjectContinuationLineageId {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_bytes().write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        <[u8; 32]>::read_wire(reader).map(Self::from_checked_digest)
-    }
-}
-
-impl Wire for AwbcProjectContinuationAbi {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.lineage.write_wire(writer)?;
-        self.function_type.write_wire(writer)?;
-        self.prefix_types.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            lineage: arcweft_id::runtime_program::RuntimeProjectContinuationLineageId::read_wire(
-                reader,
-            )?,
-            function_type: AwbcTypeId::read_wire(reader)?,
-            prefix_types: Vec::<AwbcTypeId>::read_wire(reader)?,
-        })
-    }
-}
-
 impl Wire for AwbcProjectCallOperand {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.value.write_wire(writer)?;
@@ -783,55 +749,6 @@ impl Wire for AwbcProjectCallOperand {
     }
 }
 
-impl Wire for AwbcProjectCallCaptureSource {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::ContinuationPrefix { position } => {
-                writer.write_u8(0);
-                position.write_wire(writer)?;
-            }
-            Self::CurrentLogical { position } => {
-                writer.write_u8(1);
-                position.write_wire(writer)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::ContinuationPrefix {
-                position: u32::read_wire(reader)?,
-            },
-            1 => Self::CurrentLogical {
-                position: u32::read_wire(reader)?,
-            },
-            tag => {
-                return Err(AwbcCodecError::UnknownTag {
-                    kind: "project-call capture source",
-                    tag,
-                    offset,
-                });
-            }
-        })
-    }
-}
-
-impl Wire for AwbcProjectCallDefaultFunction {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.site.write_wire(writer)?;
-        self.captures.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            site: AwbcFunctionId::read_wire(reader)?,
-            captures: Vec::<AwbcProjectCallCaptureSource>::read_wire(reader)?,
-        })
-    }
-}
-
 impl Wire for AwbcProjectCallAttachedPresence {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -839,9 +756,8 @@ impl Wire for AwbcProjectCallAttachedPresence {
             Self::OptionalPresent => writer.write_u8(1),
             Self::OptionalOmitted => writer.write_u8(2),
             Self::DefaultedPresent => writer.write_u8(3),
-            Self::DefaultedOmitted { default } => {
+            Self::DefaultedOmitted => {
                 writer.write_u8(4);
-                default.write_wire(writer)?;
             }
         }
         Ok(())
@@ -854,9 +770,7 @@ impl Wire for AwbcProjectCallAttachedPresence {
             1 => Self::OptionalPresent,
             2 => Self::OptionalOmitted,
             3 => Self::DefaultedPresent,
-            4 => Self::DefaultedOmitted {
-                default: AwbcProjectCallDefaultFunction::read_wire(reader)?,
-            },
+            4 => Self::DefaultedOmitted,
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "project-call attached presence",
@@ -873,26 +787,18 @@ impl Wire for AwbcProjectCallOrdinaryMaterialization {
         match self {
             Self::Fixed {
                 parameter,
-                abi_ty,
-                binding_ty,
                 source_index,
             } => {
                 writer.write_u8(0);
                 parameter.write_wire(writer)?;
-                abi_ty.write_wire(writer)?;
-                binding_ty.write_wire(writer)?;
                 source_index.write_wire(writer)?;
             }
             Self::Rest {
                 parameter,
-                abi_ty,
-                binding_ty,
                 source_indices,
             } => {
                 writer.write_u8(1);
                 parameter.write_wire(writer)?;
-                abi_ty.write_wire(writer)?;
-                binding_ty.write_wire(writer)?;
                 source_indices.write_wire(writer)?;
             }
         }
@@ -904,14 +810,10 @@ impl Wire for AwbcProjectCallOrdinaryMaterialization {
         Ok(match reader.read_u8()? {
             0 => Self::Fixed {
                 parameter: u32::read_wire(reader)?,
-                abi_ty: AwbcTypeId::read_wire(reader)?,
-                binding_ty: AwbcTypeId::read_wire(reader)?,
                 source_index: u32::read_wire(reader)?,
             },
             1 => Self::Rest {
                 parameter: u32::read_wire(reader)?,
-                abi_ty: AwbcTypeId::read_wire(reader)?,
-                binding_ty: AwbcTypeId::read_wire(reader)?,
                 source_indices: Vec::<u32>::read_wire(reader)?,
             },
             tag => {
@@ -927,119 +829,38 @@ impl Wire for AwbcProjectCallOrdinaryMaterialization {
 
 impl Wire for AwbcProjectCallAttachedMaterialization {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.abi_ty.write_wire(writer)?;
-        self.binding_ty.write_wire(writer)?;
         self.source_index.write_wire(writer)?;
         self.presence.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            abi_ty: AwbcTypeId::read_wire(reader)?,
-            binding_ty: AwbcTypeId::read_wire(reader)?,
             source_index: Option::<u32>::read_wire(reader)?,
             presence: AwbcProjectCallAttachedPresence::read_wire(reader)?,
         })
     }
 }
 
-impl Wire for AwbcProjectCallInput {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::Direct => writer.write_u8(0),
-            Self::Continuation {
-                callee,
-                expected_abi,
-            } => {
-                writer.write_u8(1);
-                callee.write_wire(writer)?;
-                expected_abi.write_wire(writer)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::Direct,
-            1 => Self::Continuation {
-                callee: AwbcRegisterId::read_wire(reader)?,
-                expected_abi: AwbcProjectContinuationAbi::read_wire(reader)?,
-            },
-            tag => {
-                return Err(AwbcCodecError::UnknownTag {
-                    kind: "project-call input",
-                    tag,
-                    offset,
-                });
-            }
-        })
-    }
-}
-
-impl Wire for AwbcProjectCallOutcome {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::Continue {
-                result_abi,
-                next_group,
-            } => {
-                writer.write_u8(0);
-                result_abi.write_wire(writer)?;
-                next_group.write_wire(writer)?;
-            }
-            Self::Invoke { function } => {
-                writer.write_u8(1);
-                function.write_wire(writer)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::Continue {
-                result_abi: AwbcProjectContinuationAbi::read_wire(reader)?,
-                next_group: u32::read_wire(reader)?,
-            },
-            1 => Self::Invoke {
-                function: AwbcFunctionId::read_wire(reader)?,
-            },
-            tag => {
-                return Err(AwbcCodecError::UnknownTag {
-                    kind: "project-call outcome",
-                    tag,
-                    offset,
-                });
-            }
-        })
-    }
-}
-
 impl Wire for AwbcProjectCall {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.input.write_wire(writer)?;
+        self.callee.write_wire(writer)?;
+        self.state.write_wire(writer)?;
         self.completed_group.write_wire(writer)?;
         self.operands.write_wire(writer)?;
         self.ordinary.write_wire(writer)?;
         self.attached.write_wire(writer)?;
-        self.outcome.write_wire(writer)?;
-        self.result_ty.write_wire(writer)?;
         self.result_pattern.write_wire(writer)?;
         self.resume.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            input: AwbcProjectCallInput::read_wire(reader)?,
+            callee: AwbcRegisterId::read_wire(reader)?,
+            state: RuntimeCallableStateId::read_wire(reader)?,
             completed_group: u32::read_wire(reader)?,
             operands: Vec::<AwbcProjectCallOperand>::read_wire(reader)?,
             ordinary: Vec::<AwbcProjectCallOrdinaryMaterialization>::read_wire(reader)?,
             attached: Option::<AwbcProjectCallAttachedMaterialization>::read_wire(reader)?,
-            outcome: AwbcProjectCallOutcome::read_wire(reader)?,
-            result_ty: AwbcTypeId::read_wire(reader)?,
             result_pattern: AwbcPatternId::read_wire(reader)?,
             resume: AwbcResumePointId::read_wire(reader)?,
         })
@@ -1286,8 +1107,8 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::CallTraitMethod
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup
-            | AwbcOpcode::MakeFunction
-            | AwbcOpcode::ApplyFunction
+            | AwbcOpcode::MakeCallable
+            | AwbcOpcode::ApplyGroup
             | AwbcOpcode::MakeAgent
             | AwbcOpcode::MakeReductionUnchanged => {
                 unreachable!("instruction opcode rejected above")

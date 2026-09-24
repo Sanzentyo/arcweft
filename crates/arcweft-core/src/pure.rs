@@ -1,3 +1,4 @@
+mod callable;
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 
 #[cfg(test)]
@@ -16,11 +17,11 @@ use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeAgentExpr, RuntimeAgentValue, RuntimeBinaryOp, RuntimeCallArgument,
-    RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
-    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
-    RuntimeFunctionApplyError, RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic,
-    RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue,
-    RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeCallableValue, RuntimeEnv, RuntimeEvalError,
+    RuntimeExactInteger, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
+    RuntimeFunctionApplyError, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator,
+    RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue, RuntimeSeq,
+    RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
     RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary,
     evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
     evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
@@ -1928,10 +1929,10 @@ impl<'a> PureEvaluator<'a> {
                 self.evaluate_external_call_expr(callee, args, expr.ty())
             }
             RuntimeExprKind::Call { callee, args } => self.evaluate_call_expr(callee, args),
-            RuntimeExprKind::Function { site, captures } => {
-                self.evaluate_function_expr(*site, captures)
+            RuntimeExprKind::MakeCallable { state, captures } => {
+                self.evaluate_callable_expr(*state, captures)
             }
-            RuntimeExprKind::Apply { callee, args } => self.evaluate_apply_expr(callee, args),
+            RuntimeExprKind::ApplyGroup { callee, args } => self.evaluate_apply_expr(callee, args),
             RuntimeExprKind::TraitCall { .. } => Self::unsupported_flow_runtime_expr(),
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_nested_pure_call(*helper, args)
@@ -2046,9 +2047,9 @@ impl<'a> PureEvaluator<'a> {
                 .iter()
                 .map(|capture| self.evaluate_expr(capture))
                 .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
-            let callback = RuntimeFunctionValue::capture_site(
-                Arc::clone(self.plan),
-                effect.function,
+            let callback = RuntimeCallableValue::try_new(
+                crate::task::RuntimeProgramOwner::Plan(Arc::clone(self.plan)),
+                effect.state,
                 captures,
             )?;
             if callback.remaining_arity()? != 0 {
@@ -2489,7 +2490,7 @@ impl<'a> PureEvaluator<'a> {
                 (mapping, source)
             }
         };
-        let RuntimeValue::Function(mapping) = mapping else {
+        let RuntimeValue::Callable(mapping) = mapping else {
             return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
                 &mapping,
             )));
@@ -2866,151 +2867,6 @@ impl<'a> PureEvaluator<'a> {
                 field: ordinal.to_string(),
                 value: runtime_value_label(&value),
             }),
-        }
-    }
-
-    fn evaluate_function_expr(
-        &mut self,
-        site: RuntimeFunctionSiteId,
-        captures: &[RuntimeExpr],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let capture_count = self
-            .plan
-            .function_sites()
-            .get(site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?
-            .capture_inputs()
-            .count();
-        if captures.len() != capture_count {
-            return Err(RuntimeEvalError::FunctionApply(
-                RuntimeFunctionApplyError::CaptureCountMismatch {
-                    site,
-                    expected: capture_count,
-                    actual: captures.len(),
-                },
-            ));
-        }
-        let captures = captures
-            .iter()
-            .map(|capture| self.evaluate_expr(capture))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(RuntimeValue::Function(RuntimeFunctionValue::capture_site(
-            Arc::clone(self.plan),
-            site,
-            captures,
-        )?))
-    }
-
-    fn evaluate_apply_expr(
-        &mut self,
-        callee: &RuntimeExpr,
-        args: &[RuntimeCallArgument],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let callee = self.evaluate_expr(callee)?;
-        let args = self.evaluate_call_args(args)?;
-        match callee {
-            RuntimeValue::Function(function) => self.apply_runtime_function(&function, &args),
-            value => Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
-                &value,
-            ))),
-        }
-    }
-
-    fn apply_runtime_function(
-        &mut self,
-        function: &RuntimeFunctionValue,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let Some(closure) = function.as_structured() else {
-            return Err(Self::structured_awbc_function_error());
-        };
-        if !Arc::ptr_eq(self.plan, closure.plan()) {
-            return Err(RuntimeEvalError::ForeignStructuredFunction {
-                site: closure.site(),
-            });
-        }
-        let remaining = function.remaining_arity()?;
-        if args.len() < remaining {
-            return Ok(RuntimeValue::Function(function.try_bind_prefix(args)?));
-        }
-        self.call_runtime_function(function, args)
-    }
-
-    fn call_runtime_function(
-        &mut self,
-        function: &RuntimeFunctionValue,
-        args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let Some(closure) = function.as_structured() else {
-            return Err(Self::structured_awbc_function_error());
-        };
-        if !Arc::ptr_eq(self.plan, closure.plan()) {
-            return Err(RuntimeEvalError::ForeignStructuredFunction {
-                site: closure.site(),
-            });
-        }
-        let remaining = function.remaining_arity()?;
-        if args.len() != remaining {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: remaining,
-                found: args.len(),
-            });
-        }
-        function.validate_bind_prefix(args)?;
-        let site = closure.site();
-        let declaration = self
-            .plan
-            .function_sites()
-            .get(site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
-        let body = match declaration.body() {
-            RuntimeFunctionSiteBody::Expression(body) => body,
-            RuntimeFunctionSiteBody::Executable(_) => {
-                return Err(RuntimeEvalError::UnsupportedPure {
-                    name: "structured.function".to_owned(),
-                    reason: "an executable runtime function requires reveal activation".to_owned(),
-                });
-            }
-        };
-        self.env
-            .push_scope_with_capacity(declaration.inputs().len());
-        let mut parameter_values = closure.bound_args().to_vec();
-        parameter_values.extend_from_slice(args);
-        for input in declaration.inputs() {
-            let value = match input.source() {
-                RuntimeFunctionInputSource::Capture { position } => closure
-                    .capture_values()
-                    .get(usize::try_from(position).map_err(|_| {
-                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
-                    })?)
-                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?,
-                RuntimeFunctionInputSource::Parameter { position } => parameter_values
-                    .get(usize::try_from(position).map_err(|_| {
-                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
-                    })?)
-                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?,
-            };
-            self.env.set_ref(input.input_local(), value);
-            let bindings = match match_runtime_pattern(self.plan, input.pattern(), value)? {
-                Some(bindings) => bindings,
-                None => {
-                    self.env.pop_scope();
-                    return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
-                        value,
-                    )));
-                }
-            };
-            self.env.bind_all(bindings);
-        }
-        let result = self.evaluate_expr(body);
-        self.env.pop_scope();
-        result
-    }
-
-    fn structured_awbc_function_error() -> RuntimeEvalError {
-        RuntimeEvalError::UnsupportedPure {
-            name: "awbc.function".to_owned(),
-            reason: "structured pure evaluation cannot evaluate an AWBC function body".to_owned(),
         }
     }
 

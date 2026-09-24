@@ -180,7 +180,7 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
             | RuntimeValuePathSegment::TupleColumn(index)
             | RuntimeValuePathSegment::ReductionCommandPayload(index)
             | RuntimeValuePathSegment::AgentEmbeddedValue(index)
-            | RuntimeValuePathSegment::ProjectContinuationPrefix(index) => {
+            | RuntimeValuePathSegment::CallableRetained(index) => {
                 bytes.extend_from_slice(&index.to_le_bytes());
             }
             RuntimeValuePathSegment::SequenceElement(index)
@@ -191,9 +191,6 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
             | RuntimeValuePathSegment::RecordColumn(field)
             | RuntimeValuePathSegment::NominalRecordField(field) => {
                 push_u32(&mut bytes, field.get());
-            }
-            RuntimeValuePathSegment::FunctionCapture(capture) => {
-                push_u32(&mut bytes, capture.get());
             }
             RuntimeValuePathSegment::VariantPayload
             | RuntimeValuePathSegment::IteratorWitnessState
@@ -230,9 +227,6 @@ pub(super) fn decode_value_path(
             3 => RuntimeValuePathSegment::RecordField(record_field(reader.nonzero_u32()?)?),
             4 => RuntimeValuePathSegment::RecordColumn(record_field(reader.nonzero_u32()?)?),
             5 => RuntimeValuePathSegment::NominalRecordField(record_field(reader.nonzero_u32()?)?),
-            6 => RuntimeValuePathSegment::FunctionCapture(
-                RuntimeCaptureSlotId::from_accepted_ordinal(reader.nonzero_u32()?),
-            ),
             7 => RuntimeValuePathSegment::VariantPayload,
             8 => RuntimeValuePathSegment::IteratorRemainder(reader.u64()?),
             9 => RuntimeValuePathSegment::IteratorWitnessState,
@@ -240,7 +234,7 @@ pub(super) fn decode_value_path(
             11 => RuntimeValuePathSegment::ReductionState,
             12 => RuntimeValuePathSegment::ReductionCommandPayload(reader.u32()?),
             13 => RuntimeValuePathSegment::AgentEmbeddedValue(reader.u32()?),
-            14 => RuntimeValuePathSegment::ProjectContinuationPrefix(reader.u32()?),
+            15 => RuntimeValuePathSegment::CallableRetained(reader.u32()?),
             tag => return Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag }),
         };
         segments.push(segment);
@@ -384,12 +378,8 @@ mod tests {
                 "03000000030200000001040000000000000007",
             ),
             (
-                r#"[{"kind":"function_capture","capture":3},{"kind":"iterator_remainder","index":"6"}]"#,
-                "020000000603000000080600000000000000",
-            ),
-            (
-                r#"[{"kind":"project_continuation_prefix","index":2}]"#,
-                "010000000e02000000",
+                r#"[{"kind":"callable_retained","index":2},{"kind":"iterator_remainder","index":"6"}]"#,
+                "020000000f02000000080600000000000000",
             ),
             (r#"[{"kind":"iterator_witness_state"}]"#, "0100000009"),
             (r#"[{"kind":"opaque_payload"}]"#, "010000000a"),
@@ -410,8 +400,16 @@ mod tests {
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(
-            decode_value_path(&[1, 0, 0, 0, 15]),
-            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 15 })
+            decode_value_path(&[1, 0, 0, 0, 16]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 16 })
+        ));
+        assert!(matches!(
+            decode_value_path(&[1, 0, 0, 0, 6]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 6 })
+        ));
+        assert!(matches!(
+            decode_value_path(&[1, 0, 0, 0, 14]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 14 })
         ));
         assert!(decode_value_path(&[1, 0, 0, 0, 3, 0, 0, 0, 0]).is_err());
         assert!(decode_value_path(&[2, 0, 0, 0, 7]).is_err());

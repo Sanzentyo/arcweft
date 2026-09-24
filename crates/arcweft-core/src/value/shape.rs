@@ -64,7 +64,7 @@ impl RuntimeValue {
             Self::Opaque(_) => RuntimeValueShape::Opaque,
             Self::Reduction(_) => RuntimeValueShape::Reduction,
             Self::Agent(_) => RuntimeValueShape::Agent,
-            Self::Function(_) | Self::ProjectContinuation(_) => RuntimeValueShape::Function,
+            Self::Callable(_) => RuntimeValueShape::Function,
             Self::Variant { .. } => RuntimeValueShape::Variant,
         }
     }

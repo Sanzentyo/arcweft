@@ -8,7 +8,11 @@ use crate::{
     entry::RuntimeNominalTypeId,
     pattern::RuntimeSemanticTypeId,
     plan::{
-        FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeEffectSet,
+        FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
+        RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
+        RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
+        RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableStateDefinition,
+        RuntimeCallableStateSeedId, RuntimeCallableTransition, RuntimeEffectSet,
         RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
         RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
         RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
@@ -17,11 +21,9 @@ use crate::{
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
         RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-        RuntimePlanTypeSeed, RuntimeProjectCallAbiSeed,
-        RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresenceSeed,
-        RuntimeProjectCallDefaultFunctionSeed, RuntimeProjectCallInputSeed,
-        RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
-        RuntimeProjectCallOutcomeSeed, RuntimeProjectCallPlanSeed,
+        RuntimePlanTypeSeed, RuntimeProjectCallAttachedMaterializationSeed,
+        RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallOperandSeed,
+        RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallPlanSeed,
         RuntimeProjectCallRestMaterializationSeed, RuntimeRecordFieldSeedId,
     },
     step::{RuntimeStepInput, RuntimeStepOptions},
@@ -53,6 +55,81 @@ fn unit_type() -> RuntimeSemanticTypeId {
 
 fn unit_value() -> RuntimeExprSeed {
     RuntimeExprSeed::new(unit_type(), RuntimeExprSeedKind::Value(RuntimeValue::Unit))
+}
+
+fn callable_type(marker: u8) -> RuntimeSemanticTypeId {
+    RuntimeSemanticTypeId::from_bytes([marker; 32])
+}
+
+fn define_invoke_callable(
+    builder: &mut RuntimePlanBuilder,
+    function_type: RuntimeSemanticTypeId,
+    result: RuntimeSemanticTypeId,
+    parameters: &[(
+        RuntimeSemanticTypeId,
+        RuntimeSemanticTypeId,
+        RuntimeCallableParameterKind,
+    )],
+    attached: RuntimeCallableAttachedContract<
+        RuntimeSemanticTypeId,
+        crate::plan::RuntimeFunctionSiteSeedId,
+    >,
+    function: crate::plan::RuntimeFunctionSiteSeedId,
+) -> (RuntimeCallableStateSeedId, RuntimeExprSeed) {
+    let state = builder
+        .reserve_callable_state_seed()
+        .expect("callable state reserves");
+    let arguments = (0..parameters.len())
+        .map(|position| RuntimeCallableInputSource::Argument {
+            position: u32::try_from(position).expect("test parameter ordinal"),
+        })
+        .chain(
+            (!matches!(&attached, RuntimeCallableAttachedContract::None))
+                .then_some(RuntimeCallableInputSource::Attached),
+        )
+        .collect();
+    builder
+        .define_callable_state_seed(
+            &state,
+            RuntimeCallableStateDefinition {
+                function_type,
+                origin: state.clone(),
+                position: RuntimeCallablePosition::Unapplied,
+                retained: Box::new([]),
+                parameters: parameters
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(parameter, (abi_ty, binding_ty, kind))| RuntimeCallableParameterInput {
+                            coordinate: RuntimeCallableParameterCoordinate {
+                                group: 0,
+                                parameter: u32::try_from(parameter).expect("test formal ordinal"),
+                            },
+                            kind: *kind,
+                            abi_ty: *abi_ty,
+                            binding_ty: *binding_ty,
+                        },
+                    )
+                    .collect(),
+                result,
+                attached,
+                transition: RuntimeCallableTransition::Invoke {
+                    function,
+                    captures: Box::new([]),
+                    arguments,
+                },
+                partials: Box::new([]),
+            },
+        )
+        .expect("callable state defines");
+    let callee = RuntimeExprSeed::new(
+        function_type,
+        RuntimeExprSeedKind::MakeCallable {
+            state: state.clone(),
+            captures: Box::new([]),
+        },
+    );
+    (state, callee)
 }
 
 fn flow_id(value: &str) -> crate::plan::FlowRuntimeId {
@@ -264,7 +341,8 @@ fn native_goto_selects_the_targeted_typed_flow() {
 #[test]
 fn native_project_call_direct_continue_publishes_one_catalog_site() {
     let unit = unit_type();
-    let function = RuntimeSemanticTypeId::from_bytes([0x77; 32]);
+    let function = callable_type(0x77);
+    let outer = callable_type(0x76);
     let entry = flow_id("flow.project_call_continue");
     let mut builder = RuntimePlanBuilder::new();
     builder
@@ -278,40 +356,90 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
                         result: unit,
                     },
                 ),
+                RuntimePlanTypeSeed::new(
+                    outer,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([]),
+                        result: function,
+                    },
+                ),
             ],
             [],
         )
         .expect("project-call continuation types admit");
+    let target_site = builder
+        .push_function_site_seed([], unit_value())
+        .expect("continued callable target admits");
+    let initial = builder
+        .reserve_callable_state_seed()
+        .expect("initial state");
+    let continuation = builder
+        .reserve_callable_state_seed()
+        .expect("continuation state");
+    builder
+        .define_callable_state_seed(
+            &initial,
+            RuntimeCallableStateDefinition {
+                function_type: outer,
+                origin: initial.clone(),
+                position: RuntimeCallablePosition::Unapplied,
+                retained: Box::new([]),
+                parameters: Box::new([]),
+                result: function,
+                attached: RuntimeCallableAttachedContract::None,
+                transition: RuntimeCallableTransition::Retain {
+                    state: continuation.clone(),
+                    values: Box::new([]),
+                },
+                partials: Box::new([]),
+            },
+        )
+        .expect("initial state defines");
+    builder
+        .define_callable_state_seed(
+            &continuation,
+            RuntimeCallableStateDefinition {
+                function_type: function,
+                origin: initial.clone(),
+                position: RuntimeCallablePosition::AfterGroup { completed: 0 },
+                retained: Box::new([]),
+                parameters: Box::new([]),
+                result: unit,
+                attached: RuntimeCallableAttachedContract::None,
+                transition: RuntimeCallableTransition::Invoke {
+                    function: target_site,
+                    captures: Box::new([]),
+                    arguments: Box::new([]),
+                },
+                partials: Box::new([]),
+            },
+        )
+        .expect("continuation state defines");
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("project-call flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
-            [], crate::plan::RuntimeEffectSet::empty(),
+            [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
-                        input: RuntimeProjectCallInputSeed::Direct,
+                        callee: RuntimeExprSeed::new(
+                            outer,
+                            RuntimeExprSeedKind::MakeCallable {
+                                state: initial.clone(),
+                                captures: Box::new([]),
+                            },
+                        ),
+                        state: initial,
                         completed_group: 0,
                         operands: Box::new([]),
                         ordinary: Box::new([]),
                         attached: None,
-                        outcome: RuntimeProjectCallOutcomeSeed::Continue {
-                            result_abi: RuntimeProjectCallAbiSeed {
-                                lineage: arcweft_id::runtime_program::RuntimeProjectContinuationLineageId::from_checked_digest(
-                                    [0x78; 32],
-                                ),
-                                function_type: function,
-                                prefix_types: Box::new([]),
-                            },
-                            next_group: 1,
-                        },
                     },
-                    result: RuntimePatternSeed::new(
-                        function,
-                        RuntimePatternSeedKind::Discard,
-                    ),
+                    result: RuntimePatternSeed::new(function, RuntimePatternSeedKind::Discard),
                 },
                 RuntimeFlowOpSeed::Return("continued".to_owned()),
             ],
@@ -335,6 +463,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
 #[test]
 fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
     let unit = unit_type();
+    let function = callable_type(0x79);
     let tuple =
         crate::pattern::RuntimeCheckedType::Tuple(vec![crate::pattern::RuntimeCheckedType::Unit])
             .semantic_identity_digest();
@@ -354,6 +483,13 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                     RuntimePlanTypeProjection::Option {
                         item: unit,
                         some_payload: tuple,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([option]),
+                        result: unit,
                     },
                 ),
             ],
@@ -378,6 +514,20 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
             unit_value(),
         )
         .expect("target function-site admits");
+    let (state, callee) = define_invoke_callable(
+        &mut builder,
+        function,
+        unit,
+        &[],
+        RuntimeCallableAttachedContract::Defaulted {
+            ty: unit,
+            default: RuntimeCallableDefault {
+                function: default_site,
+                captures: Box::new([]),
+            },
+        },
+        target_site,
+    );
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("defaulted project-call flow schema admits");
@@ -389,7 +539,8 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
-                        input: RuntimeProjectCallInputSeed::Direct,
+                        callee,
+                        state,
                         completed_group: 0,
                         operands: Box::new([]),
                         ordinary: Box::new([]),
@@ -397,16 +548,8 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
                             abi_ty: option,
                             binding_ty: unit,
                             source_index: None,
-                            presence: RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted(
-                                RuntimeProjectCallDefaultFunctionSeed {
-                                    site: default_site,
-                                    captures: Box::new([]),
-                                },
-                            ),
+                            presence: RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted,
                         }),
-                        outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                            function_site: target_site,
-                        },
                     },
                     result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
                 },
@@ -432,6 +575,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
 #[test]
 fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_values() {
     let unit = unit_type();
+    let function = callable_type(0x7a);
     let sequence = crate::pattern::RuntimeCheckedType::Sequence(Box::new(
         crate::pattern::RuntimeCheckedType::Unit,
     ))
@@ -455,6 +599,13 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                             item: unit,
                         },
                     ),
+                    RuntimePlanTypeSeed::new(
+                        function,
+                        RuntimePlanTypeProjection::Function {
+                            parameters: Box::new([unit]),
+                            result: unit,
+                        },
+                    ),
                 ],
                 [RuntimeLocalDeclarationSeed::new(sequence)],
             )
@@ -474,6 +625,14 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                 unit_value(),
             )
             .expect("rest target function-site admits");
+        let (callable_state, callee) = define_invoke_callable(
+            &mut builder,
+            function,
+            unit,
+            &[(unit, sequence, RuntimeCallableParameterKind::Rest)],
+            RuntimeCallableAttachedContract::None,
+            target_site,
+        );
         builder
             .push_flow_schema(flow_schema(&entry))
             .expect("rest flow schema admits");
@@ -497,7 +656,8 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                 vec![
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
-                            input: RuntimeProjectCallInputSeed::Direct,
+                            callee,
+                            state: callable_state,
                             completed_group: 0,
                             operands,
                             ordinary: Box::new([
@@ -511,9 +671,6 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
                                 ),
                             ]),
                             attached: None,
-                            outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                                function_site: target_site,
-                            },
                         },
                         result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
                     },
@@ -549,6 +706,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         crate::pattern::RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U32),
     ))
     .semantic_identity_digest();
+    let function = callable_type(0x7b);
     let state_ty = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
     let state_nominal =
         RuntimeNominalTypeId::try_new("test.ProjectCallState").expect("state nominal identity");
@@ -589,6 +747,13 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                     },
                 ),
                 RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([u32_ty]),
+                        result: unit,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
                     state_ty,
                     RuntimePlanTypeProjection::Nominal {
                         nominal: state_nominal,
@@ -626,6 +791,14 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             unit_value(),
         )
         .expect("source-once target function-site admits");
+    let (callable_state, callee) = define_invoke_callable(
+        &mut builder,
+        function,
+        unit,
+        &[(u32_ty, sequence, RuntimeCallableParameterKind::Rest)],
+        RuntimeCallableAttachedContract::None,
+        target_site,
+    );
 
     let local_state = |local| RuntimeExprSeed::new(state_ty, RuntimeExprSeedKind::Local(local));
     let state_value = |local| {
@@ -703,7 +876,8 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                 },
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
-                        input: RuntimeProjectCallInputSeed::Direct,
+                        callee,
+                        state: callable_state,
                         completed_group: 0,
                         operands: Box::new([
                             RuntimeProjectCallOperandSeed {
@@ -726,9 +900,6 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
                             },
                         )]),
                         attached: None,
-                        outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                            function_site: target_site,
-                        },
                     },
                     result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
                 },
@@ -753,14 +924,21 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
 #[test]
 fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() {
     let string = string_type();
+    let function = callable_type(0x7c);
     let entry = flow_id("flow.project_call_explicit_return");
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                string,
-                RuntimePlanTypeProjection::String,
-            )],
+            [
+                RuntimePlanTypeSeed::new(string, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([]),
+                        result: string,
+                    },
+                ),
+            ],
             [],
         )
         .expect("project-call return type admits");
@@ -781,6 +959,14 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
             }),
         )
         .expect("executable target site defines");
+    let (state, callee) = define_invoke_callable(
+        &mut builder,
+        function,
+        string,
+        &[],
+        RuntimeCallableAttachedContract::None,
+        target_site,
+    );
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("explicit-return flow schema admits");
@@ -792,14 +978,12 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
-                        input: RuntimeProjectCallInputSeed::Direct,
+                        callee,
+                        state,
                         completed_group: 0,
                         operands: Box::new([]),
                         ordinary: Box::new([]),
                         attached: None,
-                        outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                            function_site: target_site,
-                        },
                     },
                     result: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
                 },
@@ -824,15 +1008,22 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
 #[test]
 fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
     let unit = unit_type();
+    let function = callable_type(0x7d);
     let entry = flow_id("flow.project_call_goto");
     let target = flow_id("flow.project_call_goto_target");
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                unit,
-                RuntimePlanTypeProjection::Unit,
-            )],
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([]),
+                        result: unit,
+                    },
+                ),
+            ],
             [],
         )
         .expect("goto project-call type admits");
@@ -853,6 +1044,14 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
             }),
         )
         .expect("goto target site defines");
+    let (state, callee) = define_invoke_callable(
+        &mut builder,
+        function,
+        unit,
+        &[],
+        RuntimeCallableAttachedContract::None,
+        target_site,
+    );
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("goto entry schema admits");
@@ -866,14 +1065,12 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
             crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
-                    input: RuntimeProjectCallInputSeed::Direct,
+                    callee,
+                    state,
                     completed_group: 0,
                     operands: Box::new([]),
                     ordinary: Box::new([]),
                     attached: None,
-                    outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                        function_site: target_site,
-                    },
                 },
                 result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
             }],
@@ -912,14 +1109,21 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
 #[test]
 fn native_project_call_executable_target_fallthrough_fails_closed() {
     let unit = unit_type();
+    let function = callable_type(0x7e);
     let entry = flow_id("flow.project_call_fallthrough");
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                unit,
-                RuntimePlanTypeProjection::Unit,
-            )],
+            [
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(
+                    function,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([]),
+                        result: unit,
+                    },
+                ),
+            ],
             [],
         )
         .expect("fallthrough type admits");
@@ -940,6 +1144,14 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
             }),
         )
         .expect("fallthrough target site defines");
+    let (state, callee) = define_invoke_callable(
+        &mut builder,
+        function,
+        unit,
+        &[],
+        RuntimeCallableAttachedContract::None,
+        target_site,
+    );
     builder
         .push_flow_schema(flow_schema(&entry))
         .expect("fallthrough flow schema admits");
@@ -950,14 +1162,12 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
             crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
-                    input: RuntimeProjectCallInputSeed::Direct,
+                    callee,
+                    state,
                     completed_group: 0,
                     operands: Box::new([]),
                     ordinary: Box::new([]),
                     attached: None,
-                    outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                        function_site: target_site,
-                    },
                 },
                 result: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
             }],

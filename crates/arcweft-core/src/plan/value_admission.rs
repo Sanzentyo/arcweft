@@ -156,6 +156,7 @@ enum Children<'a> {
         value: RuntimePlanTypeId,
     },
     Reduction(RuntimePlanTypeId),
+    Callable(&'a [super::RuntimeCallableRetainedInput<RuntimePlanTypeId>]),
 }
 
 struct Alternatives<'a>(std::slice::Iter<'a, RuntimePlanTypeId>);
@@ -456,6 +457,24 @@ impl<'a> PlanValueValidation<'a> {
                 arguments,
                 value,
             ),
+            (Type::Function { .. }, View::RuntimeOnly(RuntimeValue::Callable(callable))) => {
+                let PlanValueAuthority::Sealed(plan) = &self.authority else {
+                    return Err(Self::mismatch(value));
+                };
+                if !matches!(callable.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), *plan))
+                {
+                    return Err(Self::mismatch(value));
+                }
+                let state = plan
+                    .callable_states()
+                    .get(callable.state())
+                    .ok_or_else(|| Self::mismatch(value))?;
+                if state.function_type != ty {
+                    return Err(Self::mismatch(value));
+                }
+                Self::arity(state.retained.len(), callable.retained().len())?;
+                Ok(Children::Callable(&state.retained))
+            }
             (Type::Range(item), View::RuntimeOnly(RuntimeValue::Range(range)))
                 if self.range(*item, range) =>
             {
@@ -564,6 +583,9 @@ impl<'a> ValueValidation for PlanValueValidation<'a> {
             Children::MapEntry { key, .. } if index == 0 => Some(Expected::Type(*key)),
             Children::MapEntry { value, .. } if index == 1 => Some(Expected::Type(*value)),
             Children::Reduction(state) if index == 0 => Some(Expected::Type(*state)),
+            Children::Callable(retained) => {
+                retained.get(index).map(|input| Expected::Type(input.ty))
+            }
             Children::Any | Children::Reduction(_) => Some(Expected::Admitted),
             Children::None | Children::Single(_) | Children::MapEntry { .. } => None,
         };

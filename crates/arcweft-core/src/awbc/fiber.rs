@@ -9,15 +9,18 @@ use super::schema::{
     AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::entry::{FlowParameterCoordinate, RuntimeNominalTypeId};
-use crate::pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity};
+use crate::pattern::RuntimeSemanticTypeId;
+use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::RuntimeDialogueValueBinding;
 use crate::runtime_id::{
     RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeIdCursor, RuntimeIdNamespace,
 };
 use crate::task::{NeedId, RuntimeProgramOwner};
 use crate::value::{
-    AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFlowParameterBinding, RuntimeFunctionBody,
-    RuntimeFunctionValue, RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeValue,
+    AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeCallableApplication,
+    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableValue,
+    RuntimeFlowParameterBinding, RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt,
+    RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -90,11 +93,15 @@ pub enum FiberReturnContinuation {
     Ordinary,
     ProjectCallDefault {
         site: AwbcProjectCallSite,
-        prefix_values: Vec<RuntimeValue>,
         logical_values: Vec<RuntimeValue>,
     },
     ProjectCallTarget {
         site: AwbcProjectCallSite,
+    },
+    ApplyGroupDefault {
+        callable: RuntimeValue,
+        arguments: Vec<RuntimeValue>,
+        destination: AwbcRegisterId,
     },
 }
 
@@ -306,11 +313,15 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     Ordinary,
     ProjectCallDefault {
         site: AwbcProjectCallSite,
-        prefix_values: Vec<AwbcRuntimeValueSnapshot>,
         logical_values: Vec<AwbcRuntimeValueSnapshot>,
     },
     ProjectCallTarget {
         site: AwbcProjectCallSite,
+    },
+    ApplyGroupDefault {
+        callable: AwbcRuntimeValueSnapshot,
+        arguments: Vec<AwbcRuntimeValueSnapshot>,
+        destination: AwbcRegisterId,
     },
 }
 
@@ -556,14 +567,9 @@ impl AwbcFiberReturnContinuationSnapshot {
             FiberReturnContinuation::Ordinary => Self::Ordinary,
             FiberReturnContinuation::ProjectCallDefault {
                 site,
-                prefix_values,
                 logical_values,
             } => Self::ProjectCallDefault {
                 site: *site,
-                prefix_values: prefix_values
-                    .iter()
-                    .map(AwbcRuntimeValueSnapshot::from_runtime_value)
-                    .collect::<Result<_, _>>()?,
                 logical_values: logical_values
                     .iter()
                     .map(AwbcRuntimeValueSnapshot::from_runtime_value)
@@ -572,6 +578,18 @@ impl AwbcFiberReturnContinuationSnapshot {
             FiberReturnContinuation::ProjectCallTarget { site } => {
                 Self::ProjectCallTarget { site: *site }
             }
+            FiberReturnContinuation::ApplyGroupDefault {
+                callable,
+                arguments,
+                destination,
+            } => Self::ApplyGroupDefault {
+                callable: AwbcRuntimeValueSnapshot::from_runtime_value(callable)?,
+                arguments: arguments
+                    .iter()
+                    .map(AwbcRuntimeValueSnapshot::from_runtime_value)
+                    .collect::<Result<_, _>>()?,
+                destination: *destination,
+            },
         })
     }
 
@@ -580,20 +598,27 @@ impl AwbcFiberReturnContinuationSnapshot {
             Self::Ordinary => FiberReturnContinuation::Ordinary,
             Self::ProjectCallDefault {
                 site,
-                prefix_values,
                 logical_values,
             } => FiberReturnContinuation::ProjectCallDefault {
                 site,
-                prefix_values: prefix_values
-                    .into_iter()
-                    .map(|value| value.into_runtime_value_for_program(owner))
-                    .collect::<Result<_, _>>()?,
                 logical_values: logical_values
                     .into_iter()
                     .map(|value| value.into_runtime_value_for_program(owner))
                     .collect::<Result<_, _>>()?,
             },
             Self::ProjectCallTarget { site } => FiberReturnContinuation::ProjectCallTarget { site },
+            Self::ApplyGroupDefault {
+                callable,
+                arguments,
+                destination,
+            } => FiberReturnContinuation::ApplyGroupDefault {
+                callable: callable.into_runtime_value_for_program(owner)?,
+                arguments: arguments
+                    .into_iter()
+                    .map(|value| value.into_runtime_value_for_program(owner))
+                    .collect::<Result<_, _>>()?,
+                destination,
+            },
         })
     }
 }
@@ -944,10 +969,8 @@ pub enum FiberStateError {
     InvalidFrame,
     #[error("fiber call return value does not match its destination")]
     ReturnValueMismatch,
-    #[error("structured expression function bodies are not valid in an AWBC fiber")]
-    StructuredRuntimeFunction,
-    #[error("invalid AWBC runtime function: {reason}")]
-    InvalidRuntimeFunction { reason: String },
+    #[error("invalid AWBC runtime callable: {reason}")]
+    InvalidRuntimeCallable { reason: String },
     #[error("invalid runtime value at {path}: {reason}")]
     InvalidRuntimeValue { path: String, reason: String },
     #[error("{kind} has no admitted AWBC snapshot representation")]
@@ -1113,26 +1136,25 @@ impl FiberState {
         })
     }
 
-    /// Creates an internal callback fiber from a fully bound AWBC runtime
-    /// function value.  Callback activation uses the same runtime-function
-    /// validator and positional frame binder as `ApplyFunction`; it does not
-    /// create a second content-specific execution carrier.
-    pub(crate) fn for_runtime_function_callback(
+    /// Creates an internal callback fiber from a program-owned callable state.
+    /// Activation uses the shared callable application contract and the same
+    /// positional frame binder as ordinary group application.
+    pub(crate) fn for_callable_callback(
         program: &AwbcProgram,
         entry: AwbcEntryId,
-        function: &RuntimeFunctionValue,
+        callable: &RuntimeCallableValue,
         instance: RuntimeFiberInstanceId,
         generation: u64,
         budget_quantum: u64,
     ) -> Result<Self, FiberStateError> {
-        let (function_id, values) = runtime_function_activation(program, function, &[])?;
+        let (function_id, values) = runtime_callable_activation(program, callable)?;
         let function_record = program
             .functions
             .get(function_id.index())
             .ok_or(FiberStateError::UnknownFunction(function_id.0))?;
         if function_record.kind != AwbcFunctionKind::Ordinary {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: "dialogue callback is not an ordinary executable function".to_owned(),
+            return Err(FiberStateError::InvalidRuntimeCallable {
+                reason: "dialogue callback is not an ordinary executable callable body".to_owned(),
             });
         }
         let signature = program
@@ -1140,7 +1162,7 @@ impl FiberState {
             .get(function_record.signature.index())
             .ok_or(FiberStateError::InvalidFrame)?;
         if signature.result.is_some() {
-            return Err(FiberStateError::InvalidRuntimeFunction {
+            return Err(FiberStateError::InvalidRuntimeCallable {
                 reason: "dialogue callback must return Unit".to_owned(),
             });
         }
@@ -2106,7 +2128,7 @@ fn validate_nested_runtime_value(
     depth: usize,
 ) -> Result<(), FiberStateError> {
     if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
-        return Err(FiberStateError::InvalidRuntimeFunction {
+        return Err(FiberStateError::InvalidRuntimeCallable {
             reason: format!(
                 "runtime value nesting exceeds {} levels",
                 crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
@@ -2114,10 +2136,7 @@ fn validate_nested_runtime_value(
         });
     }
     match value {
-        RuntimeValue::Function(function) => validate_runtime_function(program, function, depth),
-        RuntimeValue::ProjectContinuation(continuation) => {
-            validate_project_continuation(program, continuation, depth)
-        }
+        RuntimeValue::Callable(callable) => validate_runtime_callable(program, callable, depth),
         RuntimeValue::Tuple(items) => items
             .iter()
             .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
@@ -2143,7 +2162,7 @@ fn validate_nested_runtime_value(
             if depth.saturating_add(value.structural_nesting_depth())
                 > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
             {
-                return Err(FiberStateError::InvalidRuntimeFunction {
+                return Err(FiberStateError::InvalidRuntimeCallable {
                     reason: format!(
                         "runtime value nesting exceeds {} levels",
                         crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
@@ -2188,73 +2207,48 @@ fn validate_nested_runtime_value(
     }
 }
 
-fn validate_project_continuation(
+fn validate_runtime_callable(
     program: &AwbcProgram,
-    continuation: &crate::value::RuntimeProjectContinuation,
+    callable: &RuntimeCallableValue,
     depth: usize,
 ) -> Result<(), FiberStateError> {
-    let Some(function_type) = awbc_type_id(program, continuation.function_type()) else {
-        return Err(FiberStateError::InvalidRuntimeFunction {
-            reason: "project continuation function type identity is invalid".to_owned(),
-        });
-    };
     if !matches!(
-        program
-            .runtime_types
-            .get(function_type.index())
-            .map(|ty| ty.shape()),
-        Some(AwbcRuntimeTypeShape::Function { .. })
+        callable.owner(),
+        RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program)
     ) {
-        return Err(FiberStateError::InvalidRuntimeFunction {
-            reason: format!(
-                "project continuation function type {} is not a function type",
-                function_type.0
-            ),
+        return Err(FiberStateError::InvalidRuntimeCallable {
+            reason: "callable is leased to a different AWBC program".to_owned(),
         });
     }
-    if continuation.prefix_types().len() != continuation.prefix_values().len() {
-        return Err(FiberStateError::InvalidRuntimeFunction {
-            reason: format!(
-                "project continuation prefix has {} types and {} values",
-                continuation.prefix_types().len(),
-                continuation.prefix_values().len()
-            ),
-        });
-    }
-    for (position, (&expected, value)) in continuation
-        .prefix_types()
+    callable
+        .validate_retained()
+        .map_err(|error| FiberStateError::InvalidRuntimeCallable {
+            reason: error.to_string(),
+        })?;
+    let definition = program
+        .callable_states
+        .get(callable.state().index())
+        .ok_or_else(|| FiberStateError::InvalidRuntimeCallable {
+            reason: format!("callable state {} is absent", callable.state()),
+        })?;
+    for (position, (retained, value)) in definition
+        .retained
         .iter()
-        .zip(continuation.prefix_values())
+        .zip(callable.retained())
         .enumerate()
     {
-        let Some(expected) = awbc_type_id(program, expected) else {
-            return Err(FiberStateError::InvalidRuntimeFunction {
+        if !runtime_value_matches_type(program, value, retained.ty, depth + 1) {
+            return Err(FiberStateError::InvalidRuntimeCallable {
                 reason: format!(
-                    "project continuation prefix type identity at position {position} is invalid"
-                ),
-            });
-        };
-        if !runtime_value_matches_type(program, value, expected, depth + 1) {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "project continuation prefix value at position {position} has type {} instead of {}",
+                    "callable retained value {position} has type {} instead of {}",
                     runtime_value_type_label(value),
-                    runtime_type_label(program, expected)
+                    runtime_type_label(program, retained.ty)
                 ),
             });
         }
         validate_nested_runtime_value(program, value, depth + 1)?;
     }
     Ok(())
-}
-
-fn awbc_type_id(program: &AwbcProgram, semantic: RuntimeSemanticTypeId) -> Option<AwbcTypeId> {
-    program
-        .runtime_types
-        .iter()
-        .position(|ty| ty.semantic_identity() == semantic)
-        .and_then(|index| u32::try_from(index).ok())
-        .map(AwbcTypeId)
 }
 
 fn validate_nested_runtime_sequence(
@@ -2277,136 +2271,39 @@ fn validate_nested_runtime_sequence(
     }
 }
 
-/// Validates and flattens one fully applied AWBC runtime function into the
-/// positional values expected by a new call frame.  Both VM `ApplyFunction`
-/// and reveal-time callback activation use this authority.
-pub(crate) fn runtime_function_activation(
+/// Validates one zero-argument AWBC callable callback and flattens its sealed
+/// invocation projection into the positional values expected by a new frame.
+pub(crate) fn runtime_callable_activation(
     program: &AwbcProgram,
-    function: &RuntimeFunctionValue,
-    args: &[RuntimeValue],
+    callable: &RuntimeCallableValue,
 ) -> Result<(AwbcFunctionId, Vec<RuntimeValue>), FiberStateError> {
-    validate_runtime_function(program, function, 0)?;
-    let RuntimeFunctionBody::Awbc(closure) = function.body() else {
-        return Err(FiberStateError::StructuredRuntimeFunction);
-    };
-    let remaining = closure.remaining_params().len();
-    if args.len() != remaining {
-        return Err(FiberStateError::ArgumentCount {
-            expected: remaining,
-            actual: args.len(),
+    if !matches!(
+        callable.owner(),
+        RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program)
+    ) {
+        return Err(FiberStateError::InvalidRuntimeCallable {
+            reason: "callable is leased to a different AWBC program".to_owned(),
         });
     }
-    let mut values = closure
-        .captures()
-        .iter()
-        .map(|capture| capture.value.clone())
-        .collect::<Vec<_>>();
-    values.extend(args.iter().cloned());
-    Ok((closure.function(), values))
-}
-
-fn validate_runtime_function(
-    program: &AwbcProgram,
-    function: &RuntimeFunctionValue,
-    depth: usize,
-) -> Result<(), FiberStateError> {
-    let RuntimeFunctionBody::Awbc(closure) = function.body() else {
-        return Err(FiberStateError::StructuredRuntimeFunction);
-    };
-    let function_id = closure.function();
-    let function_record = program
-        .functions
-        .get(function_id.index())
-        .ok_or(FiberStateError::UnknownFunction(function_id.0))?;
-    let signature = program
-        .signatures
-        .get(function_record.signature.index())
-        .ok_or_else(|| FiberStateError::InvalidRuntimeFunction {
-            reason: format!("function {} has no signature", function_id.0),
-        })?;
-    let layout = program
-        .frame_layouts
-        .get(function_record.frame_layout.index())
-        .ok_or(FiberStateError::UnknownFrameLayout(
-            function_record.frame_layout.0,
-        ))?;
-    let parameters = layout
-        .slots
-        .iter()
-        .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
-        .collect::<Vec<_>>();
-    let stored_arity = closure
-        .captures()
-        .len()
-        .saturating_add(closure.remaining_params().len());
-    if signature.params.len() != stored_arity || parameters.len() != stored_arity {
-        return Err(FiberStateError::InvalidRuntimeFunction {
-            reason: format!(
-                "function {} expects {} parameters, snapshot stores {} captures/parameters",
-                function_id.0,
-                signature.params.len(),
-                stored_arity
-            ),
+    validate_runtime_callable(program, callable, 0)?;
+    let application = callable.prepare_group(&[], None).map_err(|error| {
+        FiberStateError::InvalidRuntimeCallable {
+            reason: error.to_string(),
+        }
+    })?;
+    let RuntimeCallableApplication::Invoke(RuntimeCallableInvocation {
+        body: RuntimeCallableBodyReference::Awbc(function),
+        captures,
+        arguments,
+    }) = application
+    else {
+        return Err(FiberStateError::InvalidRuntimeCallable {
+            reason: "callback callable must invoke one AWBC function body".to_owned(),
         });
-    }
-
-    let stored_names = closure
-        .captures()
-        .iter()
-        .map(|capture| capture.name.as_str())
-        .chain(closure.remaining_params().iter().map(String::as_str))
-        .collect::<Vec<_>>();
-    let mut unique_names = BTreeSet::new();
-    for (position, (name, slot)) in stored_names.iter().zip(&parameters).enumerate() {
-        if name.is_empty() || !unique_names.insert(*name) {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "function {} has an empty or duplicate binding name at position {position}",
-                    function_id.0
-                ),
-            });
-        }
-        let expected_name = slot
-            .name
-            .and_then(|name| program.strings.get(name.index()))
-            .ok_or_else(|| FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "function {} parameter {position} has no stable name",
-                    function_id.0
-                ),
-            })?;
-        if *name != expected_name {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "function {} binding {position} is `{name}`, expected `{expected_name}`",
-                    function_id.0
-                ),
-            });
-        }
-        if slot.ty != signature.params[position] {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "function {} parameter {position} disagrees with its signature",
-                    function_id.0
-                ),
-            });
-        }
-    }
-    for (position, capture) in closure.captures().iter().enumerate() {
-        if !runtime_value_matches_type(program, &capture.value, signature.params[position], 0) {
-            return Err(FiberStateError::InvalidRuntimeFunction {
-                reason: format!(
-                    "function {} capture `{}` has type {}, expected {}",
-                    function_id.0,
-                    capture.name,
-                    runtime_value_type_label(&capture.value),
-                    runtime_type_label(program, signature.params[position])
-                ),
-            });
-        }
-        validate_nested_runtime_value(program, &capture.value, depth + 1)?;
-    }
-    Ok(())
+    };
+    let mut values = captures;
+    values.extend(arguments);
+    Ok((function, values))
 }
 
 fn validate_cleanup(
@@ -2478,20 +2375,36 @@ fn validate_return_continuation(
         FiberReturnContinuation::Ordinary => return Ok(()),
         FiberReturnContinuation::ProjectCallDefault {
             site,
-            prefix_values,
             logical_values,
         } => {
-            validate_project_call_stage_values(
-                program,
-                caller,
-                return_to,
-                *site,
-                prefix_values,
-                logical_values,
-            )?;
+            validate_project_call_stage_values(program, caller, return_to, *site, logical_values)?;
             (*site, true)
         }
         FiberReturnContinuation::ProjectCallTarget { site } => (*site, false),
+        FiberReturnContinuation::ApplyGroupDefault {
+            callable,
+            arguments,
+            destination,
+        } => {
+            if destination.index() >= caller.registers.len() || return_to.destination.is_some() {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            let RuntimeValue::Callable(callable) = callable else {
+                return Err(FiberStateError::InvalidFrame);
+            };
+            validate_runtime_callable(program, callable, 0)?;
+            let RuntimeCallableApplication::AttachedDefault(invocation) = callable
+                .prepare_group(arguments, None)
+                .map_err(|_| FiberStateError::InvalidFrame)?
+            else {
+                return Err(FiberStateError::InvalidFrame);
+            };
+            if !matches!(invocation.body, RuntimeCallableBodyReference::Awbc(function) if function == returning_function)
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            return Ok(());
+        }
     };
     if site.caller_function != caller.function {
         return Err(FiberStateError::InvalidFrame);
@@ -2518,39 +2431,38 @@ fn validate_return_continuation(
     {
         return Err(FiberStateError::InvalidFrame);
     }
-    if program.runtime_types.get(call.result_ty.index()).is_none()
+    let Some(state) = program.callable_states.get(call.state.index()) else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    let Some(Some(RuntimeValue::Callable(callable))) = caller.registers.get(call.callee.index())
+    else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    if callable.state() != call.state
+        || validate_runtime_callable(program, callable, 0).is_err()
+        || program.runtime_types.get(state.result.index()).is_none()
         || program.patterns.get(call.result_pattern.index()).is_none()
     {
         return Err(FiberStateError::InvalidFrame);
     }
-    match (&return_to.continuation, &call.outcome, default_stage) {
-        (
-            FiberReturnContinuation::ProjectCallDefault { .. },
-            super::schema::AwbcProjectCallOutcome::Invoke { function },
-            true,
-        ) => {
+    match (default_stage, &state.attached, &state.transition) {
+        (true, crate::plan::RuntimeCallableAttachedContract::Defaulted { default, .. }, _) => {
             let Some(attached) = call.attached.as_ref() else {
                 return Err(FiberStateError::InvalidFrame);
             };
-            let super::schema::AwbcProjectCallAttachedPresence::DefaultedOmitted { default } =
-                &attached.presence
-            else {
+            if attached.presence != super::schema::AwbcProjectCallAttachedPresence::DefaultedOmitted
+            {
                 return Err(FiberStateError::InvalidFrame);
-            };
-            if default.site.0 == u32::MAX
-                || returning_function != default.site
-                || program.functions.get(default.site.index()).is_none()
-                || program.functions.get(function.index()).is_none()
+            }
+            if returning_function != default.function
+                || program.functions.get(default.function.index()).is_none()
             {
                 return Err(FiberStateError::InvalidFrame);
             }
         }
-        (
-            FiberReturnContinuation::ProjectCallTarget { .. },
-            super::schema::AwbcProjectCallOutcome::Invoke { function },
-            false,
-        ) if returning_function == *function
-            && program.functions.get(function.index()).is_some() => {}
+        (false, _, crate::plan::RuntimeCallableTransition::Invoke { function, .. })
+            if returning_function == *function
+                && program.functions.get(function.index()).is_some() => {}
         _ => return Err(FiberStateError::InvalidFrame),
     }
     Ok(())
@@ -2561,7 +2473,6 @@ fn validate_project_call_stage_values(
     caller: &FiberFrame,
     return_to: &FiberReturnPoint,
     site: AwbcProjectCallSite,
-    prefix_values: &[RuntimeValue],
     logical_values: &[RuntimeValue],
 ) -> Result<(), FiberStateError> {
     let block = program
@@ -2571,31 +2482,30 @@ fn validate_project_call_stage_values(
     let super::schema::AwbcTerminator::ProjectCall { call } = &block.terminator else {
         return Err(FiberStateError::InvalidFrame);
     };
-    let expected_prefix = match &call.input {
-        super::schema::AwbcProjectCallInput::Direct => &[][..],
-        super::schema::AwbcProjectCallInput::Continuation { expected_abi, .. } => {
-            expected_abi.prefix_types.as_slice()
-        }
-    };
-    if prefix_values.len() != expected_prefix.len()
-        || prefix_values
-            .iter()
-            .zip(expected_prefix)
-            .any(|(value, ty)| !runtime_value_matches_type(program, value, *ty, 0))
+    let state = program
+        .callable_states
+        .get(call.state.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if logical_values.len() != state.parameters.len()
+        || logical_values.len() != call.ordinary.len()
+        || return_to.destination.is_some()
     {
         return Err(FiberStateError::InvalidFrame);
     }
-    if logical_values.len() != call.ordinary.len() {
-        return Err(FiberStateError::InvalidFrame);
-    }
-    for (value, row) in logical_values.iter().zip(&call.ordinary) {
-        let ty = match row {
-            super::schema::AwbcProjectCallOrdinaryMaterialization::Fixed { binding_ty, .. }
-            | super::schema::AwbcProjectCallOrdinaryMaterialization::Rest { binding_ty, .. } => {
-                *binding_ty
+    for (index, (value, (parameter, row))) in logical_values
+        .iter()
+        .zip(state.parameters.iter().zip(&call.ordinary))
+        .enumerate()
+    {
+        let row_parameter = match row {
+            super::schema::AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
+            | super::schema::AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => {
+                *parameter
             }
         };
-        if !runtime_value_matches_type(program, value, ty, 0) {
+        if usize::try_from(row_parameter).ok() != Some(index)
+            || !runtime_value_matches_type(program, value, parameter.binding_ty, 0)
+        {
             return Err(FiberStateError::InvalidFrame);
         }
     }
@@ -2685,7 +2595,7 @@ fn validate_suspension(
                 };
                 if effect.site != expected_site
                     || effect.site != declared.site
-                    || program.functions.get(effect.function.index()).is_none()
+                    || program.callable_states.get(effect.state.index()).is_none()
                     || effect.captures.len() != declared.capture_types.len()
                     || effect
                         .captures
@@ -3193,11 +3103,13 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::MatrixF64(_), AwbcRuntimeTypeShape::MatrixF64)
         | (RuntimeValue::TensorF32(_), AwbcRuntimeTypeShape::TensorF32)
         | (RuntimeValue::TensorF64(_), AwbcRuntimeTypeShape::TensorF64) => true,
-        (RuntimeValue::Function(_), AwbcRuntimeTypeShape::Function { .. }) => true,
-        (
-            RuntimeValue::ProjectContinuation(value),
-            AwbcRuntimeTypeShape::Function { .. },
-        ) => awbc_type_id(program, value.function_type()) == Some(type_id),
+        (RuntimeValue::Callable(value), AwbcRuntimeTypeShape::Function { .. }) => {
+            matches!(
+                value.owner(),
+                RuntimeProgramOwner::Awbc(owner) if std::ptr::eq(owner.as_ref(), program)
+            ) && value.function_type().ok() == Some(ty.semantic_identity())
+                && value.validate_retained().is_ok()
+        }
         (RuntimeValue::Agent(value), AwbcRuntimeTypeShape::Agent(expected)) => {
             value.operational_type() == expected.operational_type()
         }
@@ -3223,7 +3135,7 @@ pub(crate) fn runtime_value_matches_type(
                     .zip(types)
                     .all(|(value, ty)| runtime_value_matches_type(program, value, *ty, depth + 1))
         }
-        (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence(item)) => values
+        (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence { item, .. }) => values
             .clone()
             .into_values()
             .iter()
@@ -3377,8 +3289,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Opaque(_) => "opaque value",
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Agent(value) => value.label(),
-        RuntimeValue::Function(_) => "function",
-        RuntimeValue::ProjectContinuation(_) => "project continuation",
+        RuntimeValue::Callable(_) => "callable",
         RuntimeValue::Variant { .. } => "variant",
     }
     .to_owned()
@@ -3476,7 +3387,7 @@ mod tests {
         );
         assert!(matches!(
             validate_nested_runtime_value(&AwbcProgram::default(), &nested_predicate(65), 0),
-            Err(FiberStateError::InvalidRuntimeFunction { reason })
+            Err(FiberStateError::InvalidRuntimeCallable { reason })
                 if reason.contains("nesting exceeds 64")
         ));
     }

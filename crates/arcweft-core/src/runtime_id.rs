@@ -115,6 +115,28 @@ runtime_u64_identity!(RuntimeCleanupScopeId);
 runtime_u64_identity!(RuntimeLocalSlotId);
 
 runtime_u32_identity!(RuntimeLocalDeclarationId);
+runtime_u32_identity!(RuntimeCallableStateId);
+
+impl RuntimeCallableStateId {
+    /// Converts a bounded table ordinal into a program-local reference. The
+    /// owning program still admits the referenced state before it can execute.
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        Self::for_index(index)
+    }
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.get().get() - 1) as usize
+    }
+
+    pub(crate) fn for_index(index: usize) -> Option<Self> {
+        index
+            .checked_add(1)
+            .and_then(|value| u32::try_from(value).ok())
+            .and_then(NonZeroU32::new)
+            .map(Self::from_accepted_ordinal)
+    }
+}
 runtime_u32_identity!(RuntimeCaptureSlotId);
 runtime_u32_identity!(RuntimeFrameLocalId);
 runtime_u32_identity!(RuntimeMailboxLaneId);

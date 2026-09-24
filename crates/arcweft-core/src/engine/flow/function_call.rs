@@ -11,66 +11,10 @@ use crate::engine::{
     RuntimeStepOutput, match_runtime_pattern, runtime_value_label,
 };
 use crate::pattern::RuntimePattern;
-use crate::plan::{
-    RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimeProjectCallAttachedPresence,
-};
-use crate::value::{RuntimeFunctionApplyError, RuntimeFunctionValue, RuntimeValue};
+use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
+use crate::value::{RuntimeFunctionApplyError, RuntimeValue};
 
 impl Engine {
-    pub(super) fn start_function_value_call(
-        &mut self,
-        callee: RuntimeValue,
-        args: Vec<RuntimeValue>,
-        result: RuntimePattern,
-        resume: Option<FlowCursor>,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<(), RuntimeEvalError> {
-        let RuntimeValue::Function(function) = callee else {
-            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
-                &callee,
-            )));
-        };
-        let Some(closure) = function.as_structured() else {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: "awbc.function".to_owned(),
-                reason: "structured runtime cannot enter an AWBC function body".to_owned(),
-            });
-        };
-        if !Arc::ptr_eq(&self.plan, closure.plan()) {
-            return Err(RuntimeEvalError::ForeignStructuredFunction {
-                site: closure.site(),
-            });
-        }
-        let remaining = function.remaining_arity()?;
-        if args.len() < remaining {
-            let value = RuntimeValue::Function(function.try_bind_prefix(&args)?);
-            self.complete_function_call_result(&result, resume, value, output);
-            return Ok(());
-        }
-        if args.len() != remaining {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: remaining,
-                found: args.len(),
-            });
-        }
-        function.validate_bind_prefix(&args)?;
-        let mut parameter_values = closure.bound_args().to_vec();
-        parameter_values.extend(args);
-        let frame = FunctionCallFrame::new(
-            closure.site(),
-            resume,
-            FunctionReturnContinuation::Bind { result },
-        );
-        self.start_function_site_call(
-            closure.capture_values().to_vec(),
-            parameter_values,
-            frame,
-            output,
-            pure_backend,
-        )
-    }
-
     pub(super) fn start_function_site_call(
         &mut self,
         captures: Vec<RuntimeValue>,
@@ -82,23 +26,11 @@ impl Engine {
         let site = frame.site;
         let declaration = self
             .plan
-            .function_sites()
-            .get(site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
+            .validate_function_site_inputs(site, &captures, &args)?;
         let body = declaration.body().clone();
         let inputs = declaration.inputs().to_vec();
-        let function =
-            RuntimeFunctionValue::capture_site(Arc::clone(&self.plan), site, captures.clone())?;
-        let expected = function.remaining_arity()?;
-        if args.len() != expected {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected,
-                found: args.len(),
-            });
-        }
-        function.validate_bind_prefix(&args)?;
         if let RuntimeFunctionSiteBody::Expression(_) = &body {
-            let value = self.apply_runtime_function(&function, &args, pure_backend)?;
+            let value = self.evaluate_function_site(site, &captures, &args, pure_backend)?;
             frame.caller_pending_ops = std::mem::take(&mut self.fiber.pending_ops);
             self.complete_function_call_return(frame, value, output, pure_backend);
             return Ok(());
@@ -173,54 +105,22 @@ impl Engine {
         }
         self.fiber.pending_ops = frame.caller_pending_ops;
         match frame.continuation {
-            FunctionReturnContinuation::ProjectDefault {
-                site,
-                prefix_values,
-                mut logical_values,
+            FunctionReturnContinuation::CallableDefault {
+                callable,
+                arguments,
+                result,
             } => {
-                let Some(row) = plan_owner.project_call_sites().get(site) else {
-                    self.fiber.status =
-                        FlowFiberStatus::Failed(format!("missing project-call site {site}"));
-                    return;
-                };
-                let Some(attached) = row.plan().attached() else {
-                    self.fail_eval(
-                        RuntimeEvalError::InvalidExpressionType(row.result().ty()),
-                        output,
-                    );
-                    return;
-                };
-                if !matches!(attached.presence(), RuntimeProjectCallAttachedPresence::DefaultedOmitted(default) if default.site() == frame.site)
-                {
-                    self.fail_eval(
-                        RuntimeEvalError::InvalidExpressionType(attached.binding_ty()),
-                        output,
-                    );
-                    return;
-                }
-                match plan_owner.value_matches_type(attached.binding_ty(), &value) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        self.fail_eval(
-                            RuntimeEvalError::InvalidExpressionType(attached.binding_ty()),
-                            output,
-                        );
-                        return;
-                    }
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return;
-                    }
-                }
-                logical_values.push(value);
-                self.finish_project_call_terminal(
-                    site,
-                    prefix_values,
-                    logical_values,
+                if let Err(error) = self.finish_callable_group_default(
+                    callable,
+                    arguments,
+                    value,
+                    result,
                     frame.resume,
                     output,
                     pure_backend,
-                );
+                ) {
+                    self.fail_eval(error, output);
+                }
             }
             FunctionReturnContinuation::Bind { result } => {
                 self.complete_function_call_result(&result, frame.resume, value, output);

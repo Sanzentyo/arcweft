@@ -14,7 +14,13 @@ fn nested_array_lengths_are_checked_after_awbc_reification() {
                 length: 2,
             },
         ),
-        runtime_type(3, AwbcRuntimeTypeShape::Sequence(AwbcTypeId(1))),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Sequence {
+                kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                item: AwbcTypeId(1),
+            },
+        ),
     ];
     let restored = AwbcProgram::decode_canonical(
         &program.encode_canonical().unwrap(),

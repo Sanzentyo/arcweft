@@ -6,7 +6,7 @@ pub(in crate::engine) use store::{
 };
 
 use super::{
-    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeFunctionValue, RuntimeLocalBinding,
+    Engine, RuntimeCallableValue, RuntimeDiagnostic, RuntimeEvalError, RuntimeLocalBinding,
     RuntimeStepOutput, RuntimeValue,
 };
 use crate::effect::{RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr};
@@ -53,7 +53,7 @@ pub(super) struct DialogueLineTaskStart {
     pub(super) captures: Box<[RuntimeLocalBinding]>,
     pub(super) callbacks: Vec<(
         crate::runtime_id::RuntimeDialogueEffectSiteId,
-        RuntimeFunctionValue,
+        RuntimeCallableValue,
     )>,
 }
 

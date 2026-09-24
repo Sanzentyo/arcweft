@@ -8,27 +8,31 @@ use super::fiber::{
     AwbcProjectCallSite, FiberAwaitManyState, FiberAwaitTarget, FiberCursor, FiberResumeTarget,
     FiberReturnContinuation, FiberReturnPoint, FiberSafePoint, FiberScopeCleanup, FiberState,
     FiberStateError, FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTerminalValue,
-    FiberTrap, runtime_function_activation, runtime_value_matches_type, runtime_variant_identity,
+    FiberTrap, runtime_value_matches_type, runtime_variant_identity,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
     AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection, AwbcFunctionId, AwbcInstruction,
     AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperationId, AwbcOpcode, AwbcPattern,
     AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCall, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallInput, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcProjectCallOutcome, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
-    AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId,
-    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode,
-    AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId,
+    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
+    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
-use crate::task::NeedId;
+use crate::plan::{
+    RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
+};
+use crate::task::{NeedId, RuntimeProgramOwner};
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeAgentValue, RuntimeBinding, RuntimeFieldValue, RuntimeFunctionValue,
-    RuntimeNominalRecordValue, RuntimeProjectContinuation, RuntimeRecordValue,
-    RuntimeReductionValue, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+    RuntimeAgentValue, RuntimeCallableApplication, RuntimeCallableBodyReference,
+    RuntimeCallableInvocation, RuntimeCallableValue, RuntimeFieldValue, RuntimeNominalRecordValue,
+    RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue, evaluate_binary,
+    evaluate_unary, runtime_sequence_from_literal_values, runtime_sequence_repeat_value,
+    runtime_value_label,
 };
 use thiserror::Error;
 
@@ -39,21 +43,145 @@ pub struct VmStepOptions {
 
 /// Immutable artifact authority required by runtime instructions that package
 /// producer-owned opaque values.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct VmExecutionContext {
     artifact: RuntimeArtifactFingerprint,
+    program_owner: Option<RuntimeProgramOwner>,
 }
 
 impl VmExecutionContext {
     #[must_use]
     pub const fn new(artifact: RuntimeArtifactFingerprint) -> Self {
-        Self { artifact }
+        Self {
+            artifact,
+            program_owner: None,
+        }
+    }
+
+    /// Binds runtime callable construction and activation to the exact shared
+    /// AWBC program allocation already leased by the product session.
+    #[must_use]
+    pub fn for_program(
+        artifact: RuntimeArtifactFingerprint,
+        program: std::sync::Arc<AwbcProgram>,
+    ) -> Self {
+        Self {
+            artifact,
+            program_owner: Some(RuntimeProgramOwner::Awbc(program)),
+        }
     }
 
     #[must_use]
-    pub const fn artifact(self) -> RuntimeArtifactFingerprint {
+    pub const fn artifact(&self) -> RuntimeArtifactFingerprint {
         self.artifact
     }
+
+    fn program_owner(&self, program: &AwbcProgram) -> Result<RuntimeProgramOwner, VmError> {
+        let owner = self
+            .program_owner
+            .as_ref()
+            .ok_or(VmError::MissingExecutionContext)?;
+        if !matches!(owner, RuntimeProgramOwner::Awbc(leased) if std::ptr::eq(leased.as_ref(), program))
+        {
+            return Err(VmError::Runtime(
+                "VM execution context leases a different AWBC program".to_owned(),
+            ));
+        }
+        Ok(owner.clone())
+    }
+}
+
+/// Constructs one dialogue callback from its state row and the already
+/// evaluated capture registers. The program table remains the sole owner of
+/// callback code and retained-value types.
+pub(crate) fn dialogue_effect_callable(
+    program: &AwbcProgram,
+    owner: RuntimeProgramOwner,
+    state_id: crate::runtime_id::RuntimeCallableStateId,
+    capture_types: &[AwbcTypeId],
+    captures: Vec<RuntimeValue>,
+) -> Result<RuntimeCallableValue, VmError> {
+    if !matches!(
+        &owner,
+        RuntimeProgramOwner::Awbc(leased) if std::ptr::eq(leased.as_ref(), program)
+    ) {
+        return Err(VmError::Runtime(
+            "dialogue callback owner does not lease this AWBC program".to_owned(),
+        ));
+    }
+    let state = program
+        .callable_states
+        .get(state_id.index())
+        .ok_or_else(|| VmError::Runtime("dialogue callback state is absent".to_owned()))?;
+    if !state.parameters.is_empty()
+        || !matches!(state.attached, RuntimeCallableAttachedContract::None)
+        || state.retained.len() != capture_types.len()
+        || captures.len() != capture_types.len()
+        || !matches!(
+            program
+                .runtime_types
+                .get(state.result.index())
+                .map(AwbcRuntimeType::shape),
+            Some(AwbcRuntimeTypeShape::Unit)
+        )
+    {
+        return Err(VmError::Runtime(
+            "dialogue callback state does not have its declared zero-argument Unit ABI".to_owned(),
+        ));
+    }
+    let RuntimeCallableTransition::Invoke {
+        function,
+        captures: capture_projection,
+        arguments,
+    } = &state.transition
+    else {
+        return Err(VmError::Runtime(
+            "dialogue callback state does not invoke an executable body".to_owned(),
+        ));
+    };
+    if !arguments.is_empty()
+        || capture_projection.len() != capture_types.len()
+        || state.retained.iter().zip(capture_types).enumerate().any(
+            |(position, (retained, expected))| {
+                retained.ty != *expected
+                    || retained.role
+                        != (RuntimeCallableRetainedRole::Capture {
+                            position: u32::try_from(position).unwrap_or(u32::MAX),
+                        })
+            },
+        )
+    {
+        return Err(VmError::Runtime(
+            "dialogue callback retained capture layout disagrees with its manifest".to_owned(),
+        ));
+    }
+    let target = program
+        .functions
+        .get(function.index())
+        .ok_or(VmError::MissingFunction(*function))?;
+    if target.kind != super::schema::AwbcFunctionKind::Ordinary {
+        return Err(VmError::Runtime(
+            "dialogue callback body is not an ordinary function".to_owned(),
+        ));
+    }
+    let signature = program
+        .signatures
+        .get(target.signature.index())
+        .ok_or_else(|| VmError::Runtime("dialogue callback signature is absent".to_owned()))?;
+    if signature.result.is_some() || signature.params.as_slice() != capture_types {
+        return Err(VmError::Runtime(
+            "dialogue callback body signature disagrees with its state".to_owned(),
+        ));
+    }
+    for (position, (value, expected)) in captures.iter().zip(capture_types).enumerate() {
+        if !runtime_value_matches_type(program, value, *expected, 0) {
+            return Err(VmError::Runtime(format!(
+                "dialogue callback capture {position} has the wrong runtime type"
+            )));
+        }
+    }
+    RuntimeCallableValue::try_new(owner, state_id, captures)
+        .map_err(|error| VmError::Runtime(error.to_string()))
 }
 
 impl Default for VmStepOptions {
@@ -401,6 +529,7 @@ fn step_with_host_context_optional(
             program,
             fiber,
             host,
+            context,
             &block.terminator,
             source_map,
             &mut observations,
@@ -1002,123 +1131,25 @@ fn execute_instruction(
                                 .to_owned(),
                         ));
                     }
-                    let target = program
-                        .functions
-                        .get(binding.function.index())
-                        .ok_or(VmError::MissingFunction(binding.function))?;
-                    if target.kind != super::schema::AwbcFunctionKind::Ordinary {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect callback is not an ordinary executable function"
-                                .to_owned(),
-                        ));
-                    }
-                    let signature = program
-                        .signatures
-                        .get(target.signature.index())
-                        .ok_or_else(|| {
-                            VmError::Runtime(
-                                "dialogue content effect callback signature is absent"
-                                    .to_owned(),
-                            )
-                        })?;
-                    if signature.params.as_slice() != slot.capture_types.as_slice() {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect callback signature does not match its capture ABI"
-                                .to_owned(),
-                        ));
-                    }
-                    if signature.result.is_some() {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect callback must return Unit".to_owned(),
-                        ));
-                    }
-                    let target_layout = program
-                        .frame_layouts
-                        .get(target.frame_layout.index())
-                        .ok_or_else(|| {
-                            VmError::Runtime(
-                                "dialogue content effect callback frame layout is absent"
-                                    .to_owned(),
-                            )
-                        })?;
-                    let target_parameters = target_layout
-                        .slots
-                        .iter()
-                        .filter(|frame_slot| {
-                            frame_slot.role == super::schema::AwbcFrameSlotRole::Parameter
-                        })
-                        .collect::<Vec<_>>();
-                    if target_parameters.len() != slot.capture_types.len()
-                        || target_parameters
-                            .iter()
-                            .zip(&slot.capture_types)
-                            .any(|(frame_slot, expected)| frame_slot.ty != *expected)
-                    {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect callback frame parameters do not match its capture ABI"
-                                .to_owned(),
-                        ));
-                    }
-                    let capture_names = target_layout
-                        .slots
-                        .iter()
-                        .filter(|frame_slot| {
-                            frame_slot.role == super::schema::AwbcFrameSlotRole::Parameter
-                        })
-                        .map(|frame_slot| {
-                            frame_slot.name.ok_or_else(|| {
-                                VmError::Runtime(
-                                    "dialogue content effect callback parameter has no binding name"
-                                        .to_owned(),
-                                )
-                            })
-                        })
-                        .collect::<Result<Vec<_>, VmError>>()?;
-                    if capture_names.len() != slot.capture_types.len()
-                        || binding.captures.len() != slot.capture_types.len()
-                    {
+                    if binding.captures.len() != slot.capture_types.len() {
                         return Err(VmError::FunctionArgumentCount {
                             expected: slot.capture_types.len(),
                             actual: binding.captures.len(),
                         });
                     }
-                    let captures = capture_names
-                        .into_iter()
-                        .zip(&binding.captures)
-                        .zip(&slot.capture_types)
-                        .map(|((name, register_id), expected)| {
-                            let value = register(fiber, *register_id)?.clone();
-                            if !runtime_value_matches_type(program, &value, *expected, 0) {
-                                return Err(VmError::Runtime(
-                                    "dialogue content effect capture register has the wrong runtime type"
-                                        .to_owned(),
-                                ));
-                            }
-                            Ok(RuntimeBinding {
-                                name: program
-                                    .strings
-                                    .get(name.index())
-                                    .ok_or(VmError::MissingString(name))?
-                                    .clone(),
-                                value,
-                            })
-                        })
+                    let captures = binding
+                        .captures
+                        .iter()
+                        .map(|register_id| register(fiber, *register_id).cloned())
                         .collect::<Result<Vec<_>, VmError>>()?;
-                    let callback = RuntimeFunctionValue::new_awbc(
-                        Vec::new(),
-                        binding.function,
+                    let owner = context.program_owner(program)?;
+                    let callback = dialogue_effect_callable(
+                        program,
+                        owner,
+                        binding.state,
+                        &slot.capture_types,
                         captures,
-                    );
-                    if callback.remaining_arity().map_err(|error| {
-                        VmError::Runtime(format!(
-                            "dialogue content effect callback arity is invalid: {error}"
-                        ))
-                    })? != 0 {
-                        return Err(VmError::Runtime(
-                            "dialogue content effect callback retains ordinary parameters"
-                                .to_owned(),
-                        ));
-                    }
+                    )?;
                     Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
                         binding.site,
                         callback,
@@ -1193,41 +1224,31 @@ fn execute_instruction(
                 scope.cleanups.retain(|cleanup| cleanup.key != key);
             }
         }
-        AwbcInstruction::MakeFunction {
+        AwbcInstruction::MakeCallable {
             dst,
-            function,
-            params,
-            capture_names,
+            state,
             captures,
         } => {
-            let params = params
-                .iter()
-                .map(|param| string(program, *param).map(str::to_owned))
-                .collect::<Result<Vec<_>, _>>()?;
-            let captures = capture_names
-                .iter()
-                .zip(captures)
-                .map(|(name, value)| {
-                    Ok(RuntimeBinding {
-                        name: string(program, *name)?.to_owned(),
-                        value: register(fiber, *value)?.clone(),
-                    })
-                })
-                .collect::<Result<Vec<_>, VmError>>()?;
-            let value =
-                RuntimeValue::Function(RuntimeFunctionValue::new_awbc(params, *function, captures));
-            fiber.active_frame_mut()?.set_register(*dst, value)?;
+            let owner = context
+                .ok_or(VmError::MissingExecutionContext)?
+                .program_owner(program)?;
+            let captures = register_values(fiber, captures)?;
+            let callable = RuntimeCallableValue::try_new(owner, *state, captures)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            fiber
+                .active_frame_mut()?
+                .set_register(*dst, RuntimeValue::Callable(callable))?;
         }
-        AwbcInstruction::ApplyFunction { dst, callee, args } => {
+        AwbcInstruction::ApplyGroup { dst, callee, args } => {
             let callee = register(fiber, *callee)?.clone();
             let args = register_values(fiber, args)?;
-            let RuntimeValue::Function(function) = callee else {
+            let RuntimeValue::Callable(callable) = callee else {
                 return Err(VmError::Runtime(format!(
-                    "function application expected function, found {}",
+                    "callable application expected callable, found {}",
                     runtime_value_label(&callee)
                 )));
             };
-            return apply_runtime_function(program, fiber, &function, &args, *dst);
+            return apply_runtime_callable(program, fiber, context, &callable, &args, *dst);
         }
         AwbcInstruction::StartTask { dst, plan, args } => {
             let args = register_values(fiber, args)?;
@@ -1350,25 +1371,30 @@ fn emit_unwind_cleanup_observations(fiber: &mut FiberState, observations: &mut V
     emit_ordered_cleanup_observations(fiber.take_unwind_cleanups(), observations);
 }
 
-fn apply_runtime_function(
+fn apply_runtime_callable(
     program: &AwbcProgram,
     fiber: &mut FiberState,
-    function: &RuntimeFunctionValue,
+    context: Option<&VmExecutionContext>,
+    callable: &RuntimeCallableValue,
     args: &[RuntimeValue],
     destination: AwbcRegisterId,
 ) -> Result<InstructionControl, VmError> {
-    let arity = function
+    let owner = context
+        .ok_or(VmError::MissingExecutionContext)?
+        .program_owner(program)?;
+    callable
+        .validate_for_owner(&owner)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let arity = callable
         .remaining_arity()
         .map_err(|error| VmError::Runtime(error.to_string()))?;
     if args.len() < arity {
-        fiber.active_frame_mut()?.set_register(
-            destination,
-            RuntimeValue::Function(
-                function
-                    .try_bind_prefix(args)
-                    .map_err(|error| VmError::Runtime(error.to_string()))?,
-            ),
-        )?;
+        let partial = callable
+            .try_bind_prefix(args)
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        fiber
+            .active_frame_mut()?
+            .set_register(destination, RuntimeValue::Callable(partial))?;
         return Ok(InstructionControl::Continue);
     }
     if args.len() > arity {
@@ -1377,18 +1403,61 @@ fn apply_runtime_function(
             actual: args.len(),
         });
     }
-    let (function_id, values) = runtime_function_activation(program, function, args)?;
+    let (logical_arguments, attached) = callable
+        .materialize_abi_arguments(args)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let application = callable
+        .prepare_group(&logical_arguments, attached)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
     let caller = fiber.cursor;
-    let return_to = FiberReturnPoint::ordinary(
-        FiberCursor {
-            function: caller.function,
-            block: caller.block,
-            instruction_offset: caller.instruction_offset.saturating_add(1),
-        },
-        Some(destination),
-    );
-    fiber.push_call_frame_at(program, function_id, return_to, &values)?;
-    Ok(InstructionControl::Transferred)
+    let return_cursor = FiberCursor {
+        function: caller.function,
+        block: caller.block,
+        instruction_offset: caller.instruction_offset.saturating_add(1),
+    };
+    match application {
+        RuntimeCallableApplication::Complete(value) => {
+            fiber.active_frame_mut()?.set_register(destination, value)?;
+            Ok(InstructionControl::Continue)
+        }
+        RuntimeCallableApplication::Invoke(invocation) => {
+            let function = invocation_function(&invocation)?;
+            let values = invocation_values(invocation)?;
+            let return_to = FiberReturnPoint::ordinary(return_cursor, Some(destination));
+            fiber.push_call_frame_at(program, function, return_to, &values)?;
+            Ok(InstructionControl::Transferred)
+        }
+        RuntimeCallableApplication::AttachedDefault(invocation) => {
+            let function = invocation_function(&invocation)?;
+            let values = invocation_values(invocation)?;
+            let return_to = FiberReturnPoint {
+                cursor: return_cursor,
+                destination: None,
+                continuation: FiberReturnContinuation::ApplyGroupDefault {
+                    callable: RuntimeValue::Callable(callable.clone()),
+                    arguments: logical_arguments,
+                    destination,
+                },
+            };
+            fiber.push_call_frame_with_continuation(program, function, return_to, &values)?;
+            Ok(InstructionControl::Transferred)
+        }
+    }
+}
+
+fn invocation_function(invocation: &RuntimeCallableInvocation) -> Result<AwbcFunctionId, VmError> {
+    match invocation.body {
+        RuntimeCallableBodyReference::Awbc(function) => Ok(function),
+        RuntimeCallableBodyReference::Plan(_) => Err(VmError::Runtime(
+            "an AWBC callable selected a structured function body".to_owned(),
+        )),
+    }
+}
+
+fn invocation_values(invocation: RuntimeCallableInvocation) -> Result<Vec<RuntimeValue>, VmError> {
+    let mut values = invocation.captures;
+    values.extend(invocation.arguments);
+    Ok(values)
 }
 
 #[derive(Debug)]
@@ -1518,6 +1587,7 @@ fn execute_terminator(
     program: &AwbcProgram,
     fiber: &mut FiberState,
     _host: &mut impl VmHost,
+    context: Option<&VmExecutionContext>,
     terminator: &AwbcTerminator,
     source_map: Option<AwbcSourceMapId>,
     observations: &mut Vec<VmObservation>,
@@ -1573,7 +1643,7 @@ fn execute_terminator(
             fiber.push_call_frame_with_args(program, *function, *resume, *dst, &args)?;
             Ok(VmExit::Running)
         }
-        AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, call),
+        AwbcTerminator::ProjectCall { call } => execute_project_call(program, fiber, context, call),
         AwbcTerminator::GotoStatic { function, args } => {
             let args = register_values(fiber, args)?;
             emit_unwind_cleanup_observations(fiber, observations);
@@ -1784,37 +1854,35 @@ fn suspend(
     Ok(VmExit::Suspended(reason))
 }
 
-/// Executes the non-host portion of the ProjectCall state machine.
-///
-/// Physical operands are evaluated in their stored source order exactly once;
-/// logical rows then select those materialized values for the checked ABI. A
-/// continuation result is installed directly. Invoke first runs an omitted
-/// attached default, when present, and then resumes the same verified site to
-/// enter its target; both stages use the frame-owned return continuation.
+/// Executes one closed project-call group against its program-owned callable
+/// state. Physical operands are materialized once before the shared callable
+/// application helper selects retention, a default, or a body invocation.
 fn execute_project_call(
     program: &AwbcProgram,
     fiber: &mut FiberState,
+    context: Option<&VmExecutionContext>,
     call: &AwbcProjectCall,
 ) -> Result<VmExit, VmError> {
-    let prefix_values = match &call.input {
-        AwbcProjectCallInput::Direct => Vec::new(),
-        AwbcProjectCallInput::Continuation {
-            callee,
-            expected_abi,
-        } => {
-            let value = register(fiber, *callee)?.clone();
-            let RuntimeValue::ProjectContinuation(continuation) = value else {
-                return Err(VmError::Runtime(
-                    "project-call continuation input is not a project continuation".to_owned(),
-                ));
-            };
-            let expected = runtime_project_continuation_abi(program, expected_abi)?;
-            continuation
-                .validate_expected_abi(&expected)
-                .map_err(|error| VmError::Runtime(error.to_string()))?;
-            continuation.prefix_values().to_vec()
-        }
+    let owner = context
+        .ok_or(VmError::MissingExecutionContext)?
+        .program_owner(program)?;
+    let RuntimeValue::Callable(callable) = register(fiber, call.callee)?.clone() else {
+        return Err(VmError::Runtime(
+            "project-call callee register does not contain a callable".to_owned(),
+        ));
     };
+    callable
+        .validate_for_owner(&owner)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    if callable.state() != call.state {
+        return Err(VmError::Runtime(
+            "project-call callee has a different callable state".to_owned(),
+        ));
+    }
+    let state = program
+        .callable_states
+        .get(call.state.index())
+        .ok_or_else(|| VmError::Runtime("project-call callable state is absent".to_owned()))?;
 
     let operands = call
         .operands
@@ -1835,31 +1903,28 @@ fn execute_project_call(
         })
         .collect::<Result<Vec<_>, VmError>>()?;
 
-    let mut logical_values =
-        Vec::with_capacity(call.ordinary.len() + usize::from(call.attached.is_some()));
-    for row in &call.ordinary {
+    let mut logical_values = Vec::with_capacity(call.ordinary.len());
+    for (parameter_index, row) in call.ordinary.iter().enumerate() {
+        let parameter = state
+            .parameters
+            .get(parameter_index)
+            .ok_or_else(|| VmError::Runtime("project-call parameter row is absent".to_owned()))?;
+        let encoded_parameter = match row {
+            AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }
+            | AwbcProjectCallOrdinaryMaterialization::Rest { parameter, .. } => *parameter,
+        };
+        if usize::try_from(encoded_parameter).ok() != Some(parameter_index) {
+            return Err(VmError::Runtime(
+                "project-call parameter coordinates are not canonical".to_owned(),
+            ));
+        }
         match row {
-            AwbcProjectCallOrdinaryMaterialization::Fixed {
-                abi_ty,
-                binding_ty,
-                source_index,
-                ..
-            } => {
+            AwbcProjectCallOrdinaryMaterialization::Fixed { source_index, .. } => {
                 let value = project_call_source_value(&operands, *source_index)?;
-                require_runtime_type(program, *binding_ty, &value)?;
-                if *abi_ty != *binding_ty {
-                    return Err(VmError::Runtime(
-                        "fixed project-call ABI and binding types disagree".to_owned(),
-                    ));
-                }
+                require_runtime_type(program, parameter.binding_ty, &value)?;
                 logical_values.push(value);
             }
-            AwbcProjectCallOrdinaryMaterialization::Rest {
-                abi_ty,
-                binding_ty,
-                source_indices,
-                ..
-            } => {
+            AwbcProjectCallOrdinaryMaterialization::Rest { source_indices, .. } => {
                 let mut values = Vec::new();
                 for source_index in source_indices {
                     let source = operands
@@ -1870,44 +1935,34 @@ fn execute_project_call(
                             VmError::Runtime("project-call source is absent".to_owned())
                         })?;
                     for value in source {
-                        require_runtime_type(program, *abi_ty, value)?;
+                        require_runtime_type(program, parameter.abi_ty, value)?;
                         values.push(value.clone());
                     }
                 }
                 let packed = RuntimeValue::Seq(RuntimeSeq::Values(values));
-                require_runtime_type(program, *binding_ty, &packed)?;
+                require_runtime_type(program, parameter.binding_ty, &packed)?;
                 logical_values.push(packed);
             }
         }
     }
-    if let Some(attached) = &call.attached {
-        match &attached.presence {
+    let attached = match &call.attached {
+        None => None,
+        Some(attached) => match &attached.presence {
             AwbcProjectCallAttachedPresence::RequiredPresent
+            | AwbcProjectCallAttachedPresence::OptionalPresent
             | AwbcProjectCallAttachedPresence::DefaultedPresent => {
                 let source_index = attached.source_index.ok_or_else(|| {
                     VmError::Runtime("present attached project-call source is absent".to_owned())
                 })?;
-                let value = project_call_source_value(&operands, source_index)?;
-                require_runtime_type(program, attached.binding_ty, &value)?;
-                logical_values.push(value);
+                Some(project_call_source_value(&operands, source_index)?)
             }
-            AwbcProjectCallAttachedPresence::OptionalPresent => {
-                let source_index = attached.source_index.ok_or_else(|| {
-                    VmError::Runtime("optional attached project-call source is absent".to_owned())
-                })?;
-                let value =
-                    RuntimeValue::option_some(project_call_source_value(&operands, source_index)?);
-                require_runtime_type(program, attached.binding_ty, &value)?;
-                logical_values.push(value);
-            }
-            AwbcProjectCallAttachedPresence::OptionalOmitted => {
-                let value = RuntimeValue::option_none();
-                require_runtime_type(program, attached.binding_ty, &value)?;
-                logical_values.push(value);
-            }
-            AwbcProjectCallAttachedPresence::DefaultedOmitted { .. } => {}
-        }
-    }
+            AwbcProjectCallAttachedPresence::OptionalOmitted
+            | AwbcProjectCallAttachedPresence::DefaultedOmitted => None,
+        },
+    };
+    let application = callable
+        .prepare_group(&logical_values, attached)
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
 
     let resume = program
         .resume_points
@@ -1920,103 +1975,41 @@ fn execute_project_call(
             "project-call resume point belongs to another function".to_owned(),
         ));
     }
-    match &call.outcome {
-        AwbcProjectCallOutcome::Continue { result_abi, .. } => {
-            let abi = runtime_project_continuation_abi(program, result_abi)?;
-            let mut values = prefix_values;
-            values.extend(logical_values);
-            if result_abi.prefix_types.len() != values.len()
-                || result_abi
-                    .prefix_types
-                    .iter()
-                    .zip(&values)
-                    .any(|(ty, value)| !runtime_value_matches_type(program, value, *ty, 0))
-            {
-                return Err(VmError::Runtime(
-                    "project-call continuation result ABI does not match values".to_owned(),
-                ));
-            }
-            let continuation =
-                RuntimeProjectContinuation::from_snapshot_parts(abi, values.into_boxed_slice())
-                    .map_err(|error| VmError::Runtime(error.to_string()))?;
-            let value = RuntimeValue::ProjectContinuation(continuation);
+    let site = AwbcProjectCallSite {
+        caller_function: fiber.cursor.function,
+        block: fiber.cursor.block,
+    };
+    match application {
+        RuntimeCallableApplication::Complete(value) => {
+            require_runtime_type(program, state.result, &value)?;
             bind_pattern(program, fiber, call.result_pattern, &value)?;
             jump(fiber, resume.block);
-            Ok(VmExit::Running)
         }
-        AwbcProjectCallOutcome::Invoke { function } => {
-            let site = AwbcProjectCallSite {
-                caller_function: fiber.cursor.function,
-                block: fiber.cursor.block,
+        RuntimeCallableApplication::Invoke(invocation) => {
+            let function = invocation_function(&invocation)?;
+            let args = invocation_values(invocation)?;
+            let point = project_call_return_point(program, fiber, call.resume, site)?;
+            let return_to = FiberReturnPoint {
+                continuation: FiberReturnContinuation::ProjectCallTarget { site },
+                ..point
             };
-            if let Some(attached) = &call.attached
-                && let AwbcProjectCallAttachedPresence::DefaultedOmitted { default } =
-                    &attached.presence
-            {
-                let captures = default
-                    .captures
-                    .iter()
-                    .map(|source| match source {
-                        super::schema::AwbcProjectCallCaptureSource::ContinuationPrefix {
-                            position,
-                        } => prefix_values
-                            .get(usize::try_from(*position).map_err(|_| {
-                                VmError::Runtime(
-                                    "project-call default capture position exceeds usize"
-                                        .to_owned(),
-                                )
-                            })?)
-                            .cloned()
-                            .ok_or_else(|| {
-                                VmError::Runtime(
-                                    "project-call default prefix capture is absent".to_owned(),
-                                )
-                            }),
-                        super::schema::AwbcProjectCallCaptureSource::CurrentLogical {
-                            position,
-                        } => logical_values
-                            .get(usize::try_from(*position).map_err(|_| {
-                                VmError::Runtime(
-                                    "project-call default logical capture position exceeds usize"
-                                        .to_owned(),
-                                )
-                            })?)
-                            .cloned()
-                            .ok_or_else(|| {
-                                VmError::Runtime(
-                                    "project-call default logical capture is absent".to_owned(),
-                                )
-                            }),
-                    })
-                    .collect::<Result<Vec<_>, VmError>>()?;
-                let point = project_call_return_point(program, fiber, call.resume, site)?;
-                let return_to = FiberReturnPoint {
-                    continuation: FiberReturnContinuation::ProjectCallDefault {
-                        site,
-                        prefix_values,
-                        logical_values,
-                    },
-                    ..point
-                };
-                fiber.push_call_frame_with_continuation(
-                    program,
-                    default.site,
-                    return_to,
-                    &captures,
-                )?;
-            } else {
-                let mut args = prefix_values;
-                args.extend(logical_values);
-                let point = project_call_return_point(program, fiber, call.resume, site)?;
-                let return_to = FiberReturnPoint {
-                    continuation: FiberReturnContinuation::ProjectCallTarget { site },
-                    ..point
-                };
-                fiber.push_call_frame_with_continuation(program, *function, return_to, &args)?;
-            }
-            Ok(VmExit::Running)
+            fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+        }
+        RuntimeCallableApplication::AttachedDefault(invocation) => {
+            let function = invocation_function(&invocation)?;
+            let args = invocation_values(invocation)?;
+            let point = project_call_return_point(program, fiber, call.resume, site)?;
+            let return_to = FiberReturnPoint {
+                continuation: FiberReturnContinuation::ProjectCallDefault {
+                    site,
+                    logical_values,
+                },
+                ..point
+            };
+            fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
         }
     }
+    Ok(VmExit::Running)
 }
 
 fn project_call_return_point(
@@ -2076,9 +2069,47 @@ fn complete_project_call_return(
     continuation: FiberReturnContinuation,
     value: Option<RuntimeValue>,
 ) -> Result<(), VmError> {
+    let continuation = match continuation {
+        FiberReturnContinuation::ApplyGroupDefault {
+            callable,
+            arguments,
+            destination,
+        } => {
+            let RuntimeValue::Callable(callable) = callable else {
+                return Err(VmError::Runtime(
+                    "callable default continuation lost its callable".to_owned(),
+                ));
+            };
+            let default_value = value.ok_or_else(|| {
+                VmError::Runtime("callable default returned no attached value".to_owned())
+            })?;
+            let application = callable
+                .complete_group_default(&arguments, default_value)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            match application {
+                RuntimeCallableApplication::Complete(value) => {
+                    fiber.active_frame_mut()?.set_register(destination, value)?;
+                }
+                RuntimeCallableApplication::Invoke(invocation) => {
+                    let function = invocation_function(&invocation)?;
+                    let args = invocation_values(invocation)?;
+                    let return_to = FiberReturnPoint::ordinary(return_to.cursor, Some(destination));
+                    fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                }
+                RuntimeCallableApplication::AttachedDefault(_) => {
+                    return Err(VmError::Runtime(
+                        "callable default selected another default stage".to_owned(),
+                    ));
+                }
+            }
+            return Ok(());
+        }
+        other => other,
+    };
     let site = match &continuation {
         FiberReturnContinuation::ProjectCallDefault { site, .. }
         | FiberReturnContinuation::ProjectCallTarget { site } => *site,
+        FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(),
         FiberReturnContinuation::Ordinary => return Ok(()),
     };
     let call = project_call_at_site(program, site)?;
@@ -2100,53 +2131,75 @@ fn complete_project_call_return(
         ));
     }
     match continuation {
-        FiberReturnContinuation::ProjectCallDefault {
-            prefix_values,
-            mut logical_values,
-            ..
-        } => {
-            let AwbcProjectCallOutcome::Invoke { function: target } = &call.outcome else {
+        FiberReturnContinuation::ProjectCallDefault { logical_values, .. } => {
+            let default_value = value.ok_or_else(|| {
+                VmError::Runtime("project-call default returned no attached value".to_owned())
+            })?;
+            let RuntimeValue::Callable(callable) = register(fiber, call.callee)?.clone() else {
                 return Err(VmError::Runtime(
-                    "project-call default returned into a non-invoking site".to_owned(),
+                    "project-call default lost its callable".to_owned(),
                 ));
             };
-            let Some(attached) = &call.attached else {
+            if callable.state() != call.state {
                 return Err(VmError::Runtime(
-                    "project-call default stage has no attached row".to_owned(),
+                    "project-call default resumed with a different callable state".to_owned(),
                 ));
-            };
-            let AwbcProjectCallAttachedPresence::DefaultedOmitted { default } = &attached.presence
+            }
+            let state = program
+                .callable_states
+                .get(call.state.index())
+                .ok_or_else(|| VmError::Runtime("callable state is absent".to_owned()))?;
+            let crate::plan::RuntimeCallableAttachedContract::Defaulted { default, .. } =
+                &state.attached
             else {
                 return Err(VmError::Runtime(
-                    "project-call default stage has no omitted default".to_owned(),
+                    "project-call default returned into a state without a default".to_owned(),
                 ));
             };
-            if returning_function != default.site {
+            if returning_function != default.function {
                 return Err(VmError::Runtime(
                     "project-call returned from an unexpected default function".to_owned(),
                 ));
             }
-            let value = value.ok_or_else(|| {
-                VmError::Runtime("project-call default returned no attached value".to_owned())
-            })?;
-            require_runtime_type(program, attached.binding_ty, &value)?;
-            logical_values.push(value);
-            let mut args = prefix_values;
-            args.extend(logical_values);
-            let point = project_call_return_point(program, fiber, call.resume, site)?;
-            let return_to = FiberReturnPoint {
-                continuation: FiberReturnContinuation::ProjectCallTarget { site },
-                ..point
-            };
-            fiber.push_call_frame_with_continuation(program, *target, return_to, &args)?;
+            let application = callable
+                .complete_group_default(&logical_values, default_value)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            match application {
+                RuntimeCallableApplication::Complete(result) => {
+                    require_runtime_type(program, state.result, &result)?;
+                    bind_pattern(program, fiber, call.result_pattern, &result)?;
+                    jump(fiber, resume.block);
+                }
+                RuntimeCallableApplication::Invoke(invocation) => {
+                    let function = invocation_function(&invocation)?;
+                    let args = invocation_values(invocation)?;
+                    let point = project_call_return_point(program, fiber, call.resume, site)?;
+                    let return_to = FiberReturnPoint {
+                        continuation: FiberReturnContinuation::ProjectCallTarget { site },
+                        ..point
+                    };
+                    fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                }
+                RuntimeCallableApplication::AttachedDefault(_) => {
+                    return Err(VmError::Runtime(
+                        "project-call default selected another default stage".to_owned(),
+                    ));
+                }
+            }
         }
         FiberReturnContinuation::ProjectCallTarget { .. } => {
-            let AwbcProjectCallOutcome::Invoke { function: target } = &call.outcome else {
+            let Some(state) = program.callable_states.get(call.state.index()) else {
                 return Err(VmError::Runtime(
-                    "project-call target returned into a non-invoking site".to_owned(),
+                    "project-call target state is absent".to_owned(),
                 ));
             };
-            if returning_function != *target {
+            let crate::plan::RuntimeCallableTransition::Invoke { function, .. } = &state.transition
+            else {
+                return Err(VmError::Runtime(
+                    "project-call target state does not invoke".to_owned(),
+                ));
+            };
+            if returning_function != *function {
                 return Err(VmError::Runtime(
                     "project-call returned from an unexpected target function".to_owned(),
                 ));
@@ -2154,43 +2207,16 @@ fn complete_project_call_return(
             let value = value.ok_or_else(|| {
                 VmError::Runtime("project-call target returned no result".to_owned())
             })?;
-            require_runtime_type(program, call.result_ty, &value)?;
+            require_runtime_type(program, state.result, &value)?;
             bind_pattern(program, fiber, call.result_pattern, &value)?;
             jump(fiber, resume.block);
         }
+        FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(
+            "apply-group default return is handled before looking up a project-call site"
+        ),
         FiberReturnContinuation::Ordinary => {}
     }
     Ok(())
-}
-
-fn runtime_project_continuation_abi(
-    program: &AwbcProgram,
-    abi: &crate::awbc::schema::AwbcProjectContinuationAbi,
-) -> Result<crate::value::RuntimeProjectContinuationAbi, VmError> {
-    let function_type = program
-        .runtime_types
-        .get(abi.function_type.index())
-        .map(|ty| ty.semantic_identity())
-        .ok_or(VmError::MissingType(abi.function_type))?;
-    let prefix_types = abi
-        .prefix_types
-        .iter()
-        .copied()
-        .map(|ty| {
-            program
-                .runtime_types
-                .get(ty.index())
-                .map(|ty| ty.semantic_identity())
-                .ok_or(VmError::MissingType(ty))
-        })
-        .collect::<Result<Box<[_]>, _>>()?;
-    Ok(
-        crate::value::RuntimeProjectContinuationAbi::from_admitted_parts(
-            abi.lineage,
-            function_type,
-            prefix_types,
-        ),
-    )
 }
 
 fn project_call_source_value(

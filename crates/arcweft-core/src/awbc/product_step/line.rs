@@ -340,10 +340,16 @@ impl super::AwbcProductStepExecutor {
         let mut host = super::ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint),
+            context: crate::awbc::vm::VmExecutionContext::for_program(
+                self.artifact_fingerprint,
+                Arc::clone(&self.program),
+            ),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
-        let context = crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint);
+        let context = crate::awbc::vm::VmExecutionContext::for_program(
+            self.artifact_fingerprint,
+            Arc::clone(&self.program),
+        );
         let step = crate::awbc::vm::step_with_host_context(
             &self.program,
             &mut candidate,

@@ -2088,12 +2088,28 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))
         | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
         | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
-        | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_))
-        | (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Function(_)) => true,
-        (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::ProjectContinuation(value)) => {
-            plan.type_table()
-                .get(ty)
-                .is_some_and(|declaration| value.function_type() == declaration.semantic_identity())
+        | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_)) => true,
+        (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Callable(value)) => {
+            matches!(value.owner(), crate::task::RuntimeProgramOwner::Plan(owner) if std::ptr::eq(owner.as_ref(), plan))
+                && plan
+                    .callable_states()
+                    .get(value.state())
+                    .is_some_and(|state| {
+                        state.function_type == ty
+                            && state.retained.len() == value.retained().len()
+                            && state
+                                .retained
+                                .iter()
+                                .zip(value.retained())
+                                .all(|(input, value)| {
+                                    runtime_value_matches_type_inner(
+                                        plan,
+                                        input.ty,
+                                        value,
+                                        depth + 1,
+                                    )
+                                })
+                    })
         }
         (RuntimePlanTypeProjection::Signed(expected), RuntimeValue::Int(actual)) => {
             *expected == actual.width()

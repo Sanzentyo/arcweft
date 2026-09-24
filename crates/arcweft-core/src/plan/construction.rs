@@ -7,10 +7,12 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
+mod callable_states;
 mod lower;
 mod nominal_schema;
 mod seed;
 
+pub use callable_states::{RuntimeCallableStateSeed, RuntimeCallableStateSeedId};
 pub use nominal_schema::{RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent};
 
 #[cfg(test)]
@@ -142,6 +144,20 @@ pub enum RuntimePlanBuildError {
     VariantDomain(#[from] RuntimeVariantDomainError),
     #[error(transparent)]
     FunctionSite(#[from] RuntimeFunctionSiteError),
+    #[error(transparent)]
+    CallableState(#[from] super::RuntimeCallableStateError),
+    #[error("a callable-state handle belongs to another runtime-plan builder")]
+    ForeignCallableStateSeed,
+    #[error("callable-state reservation {state} does not exist")]
+    UnknownCallableState {
+        state: crate::runtime_id::RuntimeCallableStateId,
+    },
+    #[error("callable state {state} has already been defined")]
+    DuplicateCallableState {
+        state: crate::runtime_id::RuntimeCallableStateId,
+    },
+    #[error("{count} callable-state reservations remain undefined")]
+    IncompleteCallableStates { count: usize },
     #[error(transparent)]
     DialogueContent(#[from] super::RuntimeDialogueContentPlanTableError),
     #[error(transparent)]
@@ -597,6 +613,7 @@ pub struct RuntimePlanBuilder {
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
+    callable_states: RefCell<callable_states::RuntimeCallableStateBuilder>,
     project_call_sites: RefCell<RuntimeProjectCallSiteTableBuilder>,
     dialogue_content: RuntimeDialogueContentPlanTableBuilder,
     entries: Vec<RuntimeEntrySpec>,
@@ -624,6 +641,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
+            callable_states: RefCell::new(callable_states::RuntimeCallableStateBuilder::default()),
             project_call_sites: RefCell::new(RuntimeProjectCallSiteTableBuilder::default()),
             dialogue_content: RuntimeDialogueContentPlanTableBuilder::new(),
             entries: Vec::new(),
@@ -1244,7 +1262,13 @@ impl RuntimePlanBuilder {
                 .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
             effect_sites.push(RuntimeDialogueEffectSite::new(
                 effect.site,
-                function,
+                self.intern_function_callable(
+                    self.resolve_seed_type("content effect type", effect.callable_type)?,
+                    function,
+                    input_sources,
+                    input_types,
+                    result,
+                )?,
                 captures.into_boxed_slice(),
             ));
         }
@@ -2098,6 +2122,7 @@ impl RuntimePlanBuilder {
     }
 
     pub fn finish(self) -> Result<RuntimePlan, RuntimePlanBuildError> {
+        self.callable_states.borrow_mut().seal()?;
         self.validate_finish_preconditions()?;
         let mut function_site_builder = RuntimeFunctionSiteTableBuilder::new();
         for site in self.function_sites {
@@ -2161,6 +2186,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: self.nominal_record_domains.finish(),
             variant_domains: self.variant_domains.finish(),
             function_sites: function_site_builder.finish(),
+            callable_states: self.callable_states.into_inner().finish(),
             project_call_sites,
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,
@@ -2181,6 +2207,18 @@ impl RuntimePlanBuilder {
     fn validate_finish_preconditions(&self) -> Result<(), RuntimePlanBuildError> {
         if self.poisoned {
             return Err(RuntimePlanBuildError::Poisoned);
+        }
+        let incomplete_callable_states = self
+            .callable_states
+            .borrow()
+            .states
+            .iter()
+            .filter(|state| state.is_none())
+            .count();
+        if incomplete_callable_states != 0 {
+            return Err(RuntimePlanBuildError::IncompleteCallableStates {
+                count: incomplete_callable_states,
+            });
         }
         let incomplete_function_sites = self
             .function_sites

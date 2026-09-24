@@ -1,5 +1,6 @@
 //! Canonical, allocation-budgeted AWBC binary codec.
 
+mod callable;
 mod code;
 mod metadata;
 mod runtime;
@@ -49,6 +50,7 @@ pub struct AwbcDecodeBudget {
     pub source_map: usize,
     pub resources: usize,
     pub callable_executables: usize,
+    pub callable_states: usize,
     pub flow_bindings: usize,
     pub flow_executables: usize,
     pub entries: usize,
@@ -94,6 +96,7 @@ impl Default for AwbcDecodeBudget {
             source_map: 8_000_000,
             resources: 1_000_000,
             callable_executables: 262_144,
+            callable_states: 262_144,
             flow_bindings: 262_144,
             flow_executables: 262_144,
             entries: 262_144,

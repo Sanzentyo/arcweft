@@ -116,19 +116,19 @@ pub struct RuntimeDialogueValueSite {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueEffectSite {
     site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    function: RuntimeFunctionSiteId,
+    state: crate::runtime_id::RuntimeCallableStateId,
     captures: Box<[crate::value::RuntimeExpr]>,
 }
 
 impl RuntimeDialogueEffectSite {
     pub(crate) const fn new(
         site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-        function: RuntimeFunctionSiteId,
+        state: crate::runtime_id::RuntimeCallableStateId,
         captures: Box<[crate::value::RuntimeExpr]>,
     ) -> Self {
         Self {
             site,
-            function,
+            state,
             captures,
         }
     }
@@ -139,8 +139,8 @@ impl RuntimeDialogueEffectSite {
     }
 
     #[must_use]
-    pub const fn function(&self) -> RuntimeFunctionSiteId {
-        self.function
+    pub const fn state(&self) -> crate::runtime_id::RuntimeCallableStateId {
+        self.state
     }
 
     #[must_use]

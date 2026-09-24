@@ -6,7 +6,7 @@ use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, Runtim
 use crate::plan::{RuntimeDialogueValueBinding, RuntimeDialogueValueRole};
 use crate::runtime_id::{RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId};
 use crate::value::{
-    DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFunctionValue, RuntimeSeq, RuntimeUInt,
+    DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeCallableValue, RuntimeSeq, RuntimeUInt,
     RuntimeValue,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -328,20 +328,18 @@ pub enum RuntimeDialogueContentBinding {
 
 /// Runtime callback captured by one content-local effect site.
 ///
-/// The callback is deliberately the existing runtime function authority.  It
-/// carries no effect-expression bytecode or copied capture side table; the
-/// function value owns its structured/AWBC closure representation.
+/// The callback leases a program-owned callable state and its retained values.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueContentEffectBinding {
     site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    callback: RuntimeFunctionValue,
+    callback: RuntimeCallableValue,
 }
 
 impl RuntimeDialogueContentEffectBinding {
     #[must_use]
     pub const fn new(
         site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-        callback: RuntimeFunctionValue,
+        callback: RuntimeCallableValue,
     ) -> Self {
         Self { site, callback }
     }
@@ -352,7 +350,7 @@ impl RuntimeDialogueContentEffectBinding {
     }
 
     #[must_use]
-    pub const fn callback(&self) -> &RuntimeFunctionValue {
+    pub const fn callback(&self) -> &RuntimeCallableValue {
         &self.callback
     }
 }
@@ -650,7 +648,9 @@ impl RuntimeDialogueContentValue {
                     message: error.to_string(),
                 }
             })?;
-            if callback.as_structured().is_some() && !callback.is_structured_executable_callback() {
+            if matches!(callback.owner(), crate::task::RuntimeProgramOwner::Plan(_))
+                && !callback.is_structured_executable_callback()
+            {
                 return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
                     index,
                     message: "structured callback site is not an executable Unit body".to_owned(),
@@ -769,8 +769,10 @@ impl RuntimeDialogueContentValue {
                     message: error.to_string(),
                 }
             })?;
-            if effect.callback().as_structured().is_some()
-                && !effect.callback().is_structured_executable_callback()
+            if matches!(
+                effect.callback().owner(),
+                crate::task::RuntimeProgramOwner::Plan(_)
+            ) && !effect.callback().is_structured_executable_callback()
             {
                 return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
                     index,
@@ -1089,8 +1091,10 @@ impl RuntimeDialogueContentValue {
                     message: error.to_string(),
                 }
             })?;
-            if effect.callback().as_structured().is_some()
-                && !effect.callback().is_structured_executable_callback()
+            if matches!(
+                effect.callback().owner(),
+                crate::task::RuntimeProgramOwner::Plan(_)
+            ) && !effect.callback().is_structured_executable_callback()
             {
                 return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
                     index,
@@ -1139,7 +1143,7 @@ fn encode_content_binding(binding: RuntimeDialogueContentBinding) -> RuntimeValu
 fn encode_content_effect_binding(binding: RuntimeDialogueContentEffectBinding) -> RuntimeValue {
     RuntimeValue::Tuple(vec![
         RuntimeValue::u32(binding.site().get().get()),
-        RuntimeValue::Function(binding.callback),
+        RuntimeValue::Callable(binding.callback),
     ])
 }
 
@@ -1160,7 +1164,7 @@ fn decode_content_effect_binding(
     else {
         return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
     };
-    let RuntimeValue::Function(callback) = callback else {
+    let RuntimeValue::Callable(callback) = callback else {
         return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
     };
     let remaining = callback.remaining_arity().map_err(|error| {
@@ -1344,8 +1348,7 @@ impl RuntimeContentValueBudget {
                     self.visit(payload)?;
                 }
             }
-            RuntimeValue::Function(_)
-            | RuntimeValue::ProjectContinuation(_)
+            RuntimeValue::Callable(_)
             | RuntimeValue::Unit
             | RuntimeValue::Bool(_)
             | RuntimeValue::Int(_)
@@ -1798,13 +1801,75 @@ pub enum RuntimeOpaqueValueError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::awbc::schema::AwbcFunctionId;
+    use crate::awbc::schema::{
+        AwbcFunctionId, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId,
+        AwbcUnsignedIntKind,
+    };
     use crate::entry::RuntimeSchemaError;
     use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
-    use crate::value::{
-        AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFunctionValue, RuntimeSeq,
-        RuntimeValueNestingError,
+    use crate::plan::{
+        RuntimeCallableAttachedContract, RuntimeCallableInputSource, RuntimeCallablePosition,
+        RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
+        RuntimeCallableTransition,
     };
+    use crate::runtime_id::RuntimeCallableStateId;
+    use crate::task::RuntimeProgramOwner;
+    use crate::value::{AwbcRuntimeValueSnapshot, RuntimeSeq, RuntimeValueNestingError};
+
+    fn awbc_test_callable(
+        retained: Vec<RuntimeValue>,
+    ) -> (RuntimeCallableValue, RuntimeProgramOwner) {
+        let mut program = AwbcProgram::default();
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeCheckedType::Unsigned(crate::value::RuntimeUnsignedIntWidth::U32)
+                .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32),
+        ));
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x45; 32]),
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result: AwbcTypeId(0),
+            },
+        ));
+        let state = RuntimeCallableStateId::for_index(0).expect("first callable state");
+        program
+            .callable_states
+            .push(RuntimeCallableStateDefinition {
+                function_type: AwbcTypeId(3),
+                origin: state,
+                position: RuntimeCallablePosition::Unapplied,
+                retained: retained
+                    .iter()
+                    .enumerate()
+                    .map(|(position, _)| RuntimeCallableRetainedInput {
+                        role: RuntimeCallableRetainedRole::Capture {
+                            position: u32::try_from(position).expect("test capture ordinal"),
+                        },
+                        ty: AwbcTypeId(2),
+                    })
+                    .collect(),
+                parameters: Box::new([]),
+                result: AwbcTypeId(0),
+                attached: RuntimeCallableAttachedContract::None,
+                transition: RuntimeCallableTransition::Invoke {
+                    function: AwbcFunctionId(7),
+                    captures: retained
+                        .iter()
+                        .enumerate()
+                        .map(|(position, _)| RuntimeCallableInputSource::Retained {
+                            position: u32::try_from(position).expect("test capture ordinal"),
+                        })
+                        .collect(),
+                    arguments: Box::new([]),
+                },
+                partials: Box::new([]),
+            });
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(program));
+        let callable = RuntimeCallableValue::try_new(owner.clone(), state, retained)
+            .expect("test callable retains typed values");
+        (callable, owner)
+    }
 
     fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
         RuntimeOpaqueTypeProducerId::try_new(value).expect("valid producer")
@@ -2045,9 +2110,9 @@ mod tests {
 
     #[test]
     fn opaque_wrapper_does_not_encode_runtime_only_payloads() {
-        let function = RuntimeFunctionValue::new_awbc(Vec::new(), AwbcFunctionId(0), Vec::new());
+        let (function, _) = awbc_test_callable(Vec::new());
         let value = exact("std.runtime_only", 4)
-            .try_wrap(RuntimeValue::Function(function))
+            .try_wrap(RuntimeValue::Callable(function))
             .expect("exact owner wraps after producer validation");
 
         assert_eq!(
@@ -2305,14 +2370,7 @@ mod tests {
 
     #[test]
     fn content_envelope_round_trips_site_keyed_effect_callbacks_through_awbc_save() {
-        let callback = RuntimeFunctionValue::new_awbc(
-            Vec::new(),
-            AwbcFunctionId(7),
-            vec![RuntimeBinding {
-                name: "captured".to_owned(),
-                value: RuntimeValue::u32(9),
-            }],
-        );
+        let (callback, program_owner) = awbc_test_callable(vec![RuntimeValue::u32(9)]);
         let site = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0)
             .expect("effect site");
         let value = RuntimeDialogueContentValue::try_new_with_effects(
@@ -2331,9 +2389,6 @@ mod tests {
         assert!(serde_json::to_string(&value).is_err());
         let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&runtime)
             .expect("AWBC snapshot preserves callback authority");
-        let program_owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::new(
-            crate::awbc::schema::AwbcProgram::default(),
-        ));
         assert_eq!(
             snapshot
                 .into_runtime_value_for_program(&program_owner)

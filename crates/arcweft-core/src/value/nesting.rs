@@ -1,6 +1,6 @@
 //! Shared runtime-value nesting validation.
 
-use super::{RuntimeFunctionBody, RuntimeIterator, RuntimeSeq, RuntimeValue};
+use super::{RuntimeIterator, RuntimeSeq, RuntimeValue};
 use thiserror::Error;
 
 /// Maximum nesting accepted by the runtime value, AWBC, and persistence
@@ -55,19 +55,8 @@ fn validate_value(
                     validate_value(value, depth.saturating_add(offset), maximum)
                 })
         }
-        RuntimeValue::Function(function) => match function.body() {
-            RuntimeFunctionBody::Structured(closure) => closure
-                .capture_values()
-                .iter()
-                .chain(closure.bound_args())
-                .try_for_each(|value| validate_value(value, depth + 1, maximum)),
-            RuntimeFunctionBody::Awbc(closure) => closure
-                .captures()
-                .iter()
-                .try_for_each(|capture| validate_value(&capture.value, depth + 1, maximum)),
-        },
-        RuntimeValue::ProjectContinuation(continuation) => continuation
-            .prefix_values()
+        RuntimeValue::Callable(callable) => callable
+            .retained()
             .iter()
             .try_for_each(|value| validate_value(value, depth + 1, maximum)),
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => {

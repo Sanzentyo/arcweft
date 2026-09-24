@@ -29,8 +29,8 @@ use crate::task::{
     TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_task_events,
 };
 use crate::value::{
-    RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFlowParameterBinding, RuntimeFunctionValue, RuntimeIterator,
+    RuntimeCallableValue, RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError,
+    RuntimeExpr, RuntimeExprMatchArm, RuntimeFlowParameterBinding, RuntimeIterator,
     RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
     runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
@@ -273,10 +273,10 @@ impl FunctionCallFrame {
 /// resumes its materialization plan without reevaluating source operands.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FunctionReturnContinuation {
-    ProjectDefault {
-        site: crate::runtime_id::RuntimeProjectCallSiteId,
-        prefix_values: Vec<RuntimeValue>,
-        logical_values: Vec<RuntimeValue>,
+    CallableDefault {
+        callable: RuntimeCallableValue,
+        arguments: Vec<RuntimeValue>,
+        result: RuntimePattern,
     },
     Bind {
         result: RuntimePattern,
@@ -1330,80 +1330,62 @@ impl Engine {
 
     fn prepare_dialogue_effect_callback(
         &self,
-        callback: &RuntimeFunctionValue,
+        callback: &RuntimeCallableValue,
         id: FlowFiberId,
         persistent_id: RuntimePersistentFiberId,
         execution: crate::runtime_id::ExecutionInstanceId,
     ) -> Result<FlowFiber, RuntimeEvalError> {
-        let Some(closure) = callback.as_structured() else {
+        callback.validate_for_owner(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(
+            &self.plan,
+        )))?;
+        if !callback.is_structured_executable_callback() {
             return Err(RuntimeEvalError::UnsupportedPure {
-                name: "awbc.function".to_owned(),
-                reason: "native reveal requires a structured runtime function".to_owned(),
+                name: "callable".to_owned(),
+                reason: "dialogue reveal requires an executable zero-argument Unit callback"
+                    .to_owned(),
             });
+        }
+        let crate::value::RuntimeCallableApplication::Invoke(invocation) =
+            callback.prepare_group(&[], None)?
+        else {
+            return Err(crate::value::RuntimeCallableValueError::InputProjection {
+                state: callback.state(),
+            }
+            .into());
         };
-        if !Arc::ptr_eq(&self.plan, closure.plan()) {
-            return Err(RuntimeEvalError::ForeignStructuredFunction {
-                site: closure.site(),
-            });
-        }
-        let remaining = callback.remaining_arity()?;
-        if remaining != 0 {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: 0,
-                found: remaining,
-            });
-        }
-        let site = self.plan.function_sites().get(closure.site()).ok_or(
-            crate::value::RuntimeFunctionApplyError::UnknownStructuredSite {
-                site: closure.site(),
-            },
+        let crate::value::RuntimeCallableBodyReference::Plan(site_id) = invocation.body else {
+            return Err(crate::value::RuntimeCallableValueError::ForeignProgram.into());
+        };
+        let site = self.plan.validate_function_site_inputs(
+            site_id,
+            &invocation.captures,
+            &invocation.arguments,
         )?;
-        let parameter_count = site.parameter_inputs().count();
-        if parameter_count != 0 {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: 0,
-                found: parameter_count,
-            });
-        }
         let RuntimeFunctionSiteBody::Executable(executable) = site.body() else {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: "structured.function".to_owned(),
-                reason: "dialogue reveal requires an executable function site body".to_owned(),
-            });
+            return Err(
+                crate::value::RuntimeCallableValueError::RequiresControlTransfer {
+                    state: callback.state(),
+                }
+                .into(),
+            );
         };
-        if !matches!(
-            self.plan.checked_type(site.result()),
-            Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
-        ) {
-            return Err(RuntimeEvalError::UnsupportedPure {
-                name: "structured.function".to_owned(),
-                reason: "dialogue reveal callback must return Unit".to_owned(),
-            });
-        }
-        let capture_inputs = site.capture_inputs().collect::<Vec<_>>();
-        if closure.capture_values().len() != capture_inputs.len() {
-            return Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: capture_inputs.len(),
-                found: closure.capture_values().len(),
-            });
-        }
         let mut env = RuntimeEnv::default();
         for input in site.inputs() {
             let RuntimeFunctionInputSource::Capture { position } = input.source() else {
                 continue;
             };
-            let value = closure
-                .capture_values()
+            let value = invocation
+                .captures
                 .get(usize::try_from(position).map_err(|_| {
                     RuntimeEvalError::FunctionApply(
                         crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
-                            site: closure.site(),
+                            site: site_id,
                         },
                     )
                 })?)
                 .ok_or(RuntimeEvalError::FunctionApply(
                     crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
-                        site: closure.site(),
+                        site: site_id,
                     },
                 ))?;
             env.set_ref(input.input_local(), value);
@@ -1444,7 +1426,7 @@ impl Engine {
     fn dialogue_effect_callback(
         callbacks: &[RuntimeDialogueContentEffectBinding],
         site: crate::runtime_id::RuntimeDialogueEffectSiteId,
-    ) -> Option<RuntimeFunctionValue> {
+    ) -> Option<RuntimeCallableValue> {
         callbacks
             .iter()
             .find(|callback| callback.site() == site)
@@ -1457,7 +1439,7 @@ impl Engine {
         activation: &DialogueActivationId,
         callbacks: &[(
             crate::runtime_id::RuntimeDialogueEffectSiteId,
-            RuntimeFunctionValue,
+            RuntimeCallableValue,
         )],
     ) -> Result<(), RuntimeEvalError> {
         for (site, callback) in callbacks {

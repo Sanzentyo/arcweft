@@ -12,6 +12,10 @@ use thiserror::Error;
 pub enum RuntimeExprFreeLocalError {
     #[error("runtime expression references unknown function site {site}")]
     UnknownFunctionSite { site: RuntimeFunctionSiteId },
+    #[error("runtime expression references unknown callable state {state}")]
+    UnknownCallableState {
+        state: crate::runtime_id::RuntimeCallableStateId,
+    },
 }
 
 impl RuntimeExpr {
@@ -105,13 +109,13 @@ impl RuntimeExpr {
             RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
                 collect_argument_free_locals(plan, args, bound, locals)?;
             }
-            RuntimeExprKind::Function { site, captures } => {
-                plan.function_sites()
-                    .get(*site)
-                    .ok_or(RuntimeExprFreeLocalError::UnknownFunctionSite { site: *site })?;
+            RuntimeExprKind::MakeCallable { state, captures } => {
+                plan.callable_states()
+                    .get(*state)
+                    .ok_or(RuntimeExprFreeLocalError::UnknownCallableState { state: *state })?;
                 collect_slice_free_locals(plan, captures, bound, locals)?;
             }
-            RuntimeExprKind::Apply { callee, args } => {
+            RuntimeExprKind::ApplyGroup { callee, args } => {
                 callee.collect_evaluation_free_locals(plan, bound, locals)?;
                 collect_argument_free_locals(plan, args, bound, locals)?;
             }

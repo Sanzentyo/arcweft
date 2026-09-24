@@ -107,7 +107,10 @@ fn borrowed_dense_bytes_and_maps_preserve_value_predicates() {
     let program = program([
         Type::Bytes,
         Type::UInt(AwbcUnsignedIntKind::U8),
-        Type::Sequence(AwbcTypeId(1)),
+        Type::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(1),
+        },
         Type::String,
         Type::Int(AwbcSignedIntKind::I16),
         Type::Map {
@@ -268,7 +271,10 @@ fn bounds_and_dangling_references_fail_without_a_digest() {
     let program = program([
         Type::String,
         Type::Tuple(vec![AwbcTypeId(99)]),
-        Type::Sequence(AwbcTypeId(0)),
+        Type::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Vec,
+            item: AwbcTypeId(0),
+        },
     ]);
     assert!(admits(&program, 1, &RuntimeValue::Tuple(vec![RuntimeValue::Unit])).is_err());
     let value = RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::String(

@@ -8,12 +8,10 @@
 
 use std::collections::BTreeSet;
 
-use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
-
-use super::RuntimeFunctionSiteSeedId;
+use super::RuntimeCallableStateSeedId;
 use crate::pattern::RuntimePattern;
-use crate::runtime_id::{RuntimeFunctionSiteId, RuntimePlanTypeId, RuntimeProjectCallSiteId};
-use crate::value::{RuntimeCallArgumentMode, RuntimeExpr, RuntimeProjectContinuationAbi};
+use crate::runtime_id::{RuntimeCallableStateId, RuntimePlanTypeId, RuntimeProjectCallSiteId};
+use crate::value::{RuntimeCallArgumentMode, RuntimeExpr};
 use thiserror::Error;
 
 /// Source-order physical operand of one checked project call.
@@ -50,49 +48,6 @@ pub struct RuntimeProjectCallOperandSeed {
     pub abi_position: u32,
 }
 
-/// Source of one capture when an omitted attached default constructs its
-/// terminal FunctionSite.  Captures are selected from already materialized
-/// logical values and are never reevaluated.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RuntimeProjectCallDefaultCaptureSource {
-    ContinuationPrefix { position: u32 },
-    CurrentLogical { position: u32 },
-}
-
-/// Exact terminal FunctionSite and once-only logical captures for an omitted
-/// attached default.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeProjectCallDefaultFunction {
-    site: RuntimeFunctionSiteId,
-    captures: Box<[RuntimeProjectCallDefaultCaptureSource]>,
-}
-
-impl RuntimeProjectCallDefaultFunction {
-    pub(crate) fn from_admitted_parts(
-        site: RuntimeFunctionSiteId,
-        captures: Box<[RuntimeProjectCallDefaultCaptureSource]>,
-    ) -> Self {
-        Self { site, captures }
-    }
-
-    #[must_use]
-    pub const fn site(&self) -> RuntimeFunctionSiteId {
-        self.site
-    }
-
-    #[must_use]
-    pub const fn captures(&self) -> &[RuntimeProjectCallDefaultCaptureSource] {
-        &self.captures
-    }
-}
-
-/// Construction-only terminal default FunctionSite description.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeProjectCallDefaultFunctionSeed {
-    pub site: RuntimeFunctionSiteSeedId,
-    pub captures: Box<[RuntimeProjectCallDefaultCaptureSource]>,
-}
-
 /// Five-way checked presence classification for the optional attached Content
 /// ABI member. Ordinary parameters do not use this state machine.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,7 +56,7 @@ pub enum RuntimeProjectCallAttachedPresence {
     OptionalPresent,
     OptionalOmitted,
     DefaultedPresent,
-    DefaultedOmitted(RuntimeProjectCallDefaultFunction),
+    DefaultedOmitted,
 }
 
 /// Construction-only presence classification.
@@ -111,7 +66,7 @@ pub enum RuntimeProjectCallAttachedPresenceSeed {
     OptionalPresent,
     OptionalOmitted,
     DefaultedPresent,
-    DefaultedOmitted(RuntimeProjectCallDefaultFunctionSeed),
+    DefaultedOmitted,
 }
 
 /// One ordinary fixed parameter and its single physical source row.
@@ -328,91 +283,26 @@ pub struct RuntimeProjectCallAttachedMaterializationSeed {
     pub presence: RuntimeProjectCallAttachedPresenceSeed,
 }
 
-/// Direct or continuation input of one typed project call.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeProjectCallInput {
-    Direct,
-    Continuation {
-        callee: RuntimeExpr,
-        expected_abi: RuntimeProjectContinuationAbi,
-    },
-}
-
-impl RuntimeProjectCallInput {
-    #[must_use]
-    pub const fn expected_abi(&self) -> Option<&RuntimeProjectContinuationAbi> {
-        match self {
-            Self::Direct => None,
-            Self::Continuation { expected_abi, .. } => Some(expected_abi),
-        }
-    }
-}
-
-/// Construction-only direct/continuation input.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeProjectCallInputSeed {
-    Direct,
-    Continuation {
-        callee: super::RuntimeExprSeed,
-        expected_abi: RuntimeProjectCallAbiSeed,
-    },
-}
-
-/// Construction-time ABI identity. Semantic identities are rewritten to
-/// plan-local IDs by the aggregate builder before a final call plan exists.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeProjectCallAbiSeed {
-    pub lineage: RuntimeProjectContinuationLineageId,
-    pub function_type: crate::pattern::RuntimeSemanticTypeId,
-    pub prefix_types: Box<[crate::pattern::RuntimeSemanticTypeId]>,
-}
-
-/// Checked result of one project-call group.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeProjectCallOutcome {
-    Continue {
-        result_abi: RuntimeProjectContinuationAbi,
-        next_group: u32,
-    },
-    Invoke {
-        function_site: RuntimeFunctionSiteId,
-    },
-}
-
-/// Construction-only project-call outcome.
-#[derive(Clone, Debug, PartialEq)]
-pub enum RuntimeProjectCallOutcomeSeed {
-    Continue {
-        result_abi: RuntimeProjectCallAbiSeed,
-        next_group: u32,
-    },
-    Invoke {
-        function_site: RuntimeFunctionSiteSeedId,
-    },
-}
-
-/// Fully typed HIR-free project-call plan.  The result pattern intentionally
-/// lives on [`super::FlowOp`], because it is a caller-owned destination rather
-/// than part of the reusable callable ABI descriptor.
+/// Caller-owned evaluation and logical argument materialization. Reusable
+/// transition/default code belongs exclusively to the referenced callable state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallPlan {
-    input: RuntimeProjectCallInput,
+    callee: RuntimeExpr,
+    state: RuntimeCallableStateId,
     completed_group: u32,
     operands: Box<[RuntimeProjectCallOperand]>,
     ordinary: Box<[RuntimeProjectCallOrdinaryMaterialization]>,
     attached: Option<RuntimeProjectCallAttachedMaterialization>,
-    outcome: RuntimeProjectCallOutcome,
 }
 
-/// Construction-only project-call plan.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeProjectCallPlanSeed {
-    pub input: RuntimeProjectCallInputSeed,
+    pub callee: super::RuntimeExprSeed,
+    pub state: RuntimeCallableStateSeedId,
     pub completed_group: u32,
     pub operands: Box<[RuntimeProjectCallOperandSeed]>,
     pub ordinary: Box<[RuntimeProjectCallOrdinaryMaterializationSeed]>,
     pub attached: Option<RuntimeProjectCallAttachedMaterializationSeed>,
-    pub outcome: RuntimeProjectCallOutcomeSeed,
 }
 
 impl RuntimeProjectCallPlanSeed {
@@ -421,15 +311,12 @@ impl RuntimeProjectCallPlanSeed {
         bound: &[super::RuntimeLocalSeedId],
         locals: &mut Vec<super::RuntimeLocalSeedId>,
     ) {
-        if let RuntimeProjectCallInputSeed::Continuation { callee, .. } = &self.input {
-            callee.collect_free_locals_for_flow(bound, locals);
-        }
+        self.callee.collect_free_locals_for_flow(bound, locals);
         for operand in &self.operands {
             operand.value.collect_free_locals_for_flow(bound, locals);
         }
     }
 }
-
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeProjectCallPlanError {
     #[error("project-call logical parameter rows are not dense at {parameter}")]
@@ -452,56 +339,17 @@ pub enum RuntimeProjectCallPlanError {
     AttachedSourceMissing,
     #[error("attached project-call Content source is present for an omitted row")]
     AttachedSourceUnexpected,
-    #[error("attached default capture references logical parameter {position} out of range")]
-    DefaultCaptureOutOfRange { position: u32 },
-    #[error("project-call continuation result ABI does not retain its input prefix")]
-    ResultAbiPrefixMismatch,
-    #[error("project-call continuation result ABI has the wrong logical prefix length")]
-    ResultAbiLengthMismatch,
-    #[error("project-call continuation advances to group {actual}; expected {expected}")]
-    NextGroupMismatch { expected: u32, actual: u32 },
-    #[error("direct project-call input is only valid for group 0, found {actual}")]
-    DirectGroupMismatch { actual: u32 },
-    #[error("continuation project-call input is invalid for group 0")]
-    ContinuationGroupMismatch,
-    #[error("project-call continuation cannot carry an attached materialization")]
-    ContinueAttachedMismatch,
-    #[error("an omitted attached default is only valid for an invoking project-call")]
-    DefaultedOmittedOutcomeMismatch,
 }
 
 impl RuntimeProjectCallPlan {
     pub(crate) fn try_from_admitted_parts(
-        input: RuntimeProjectCallInput,
+        callee: RuntimeExpr,
+        state: RuntimeCallableStateId,
         completed_group: u32,
         operands: Box<[RuntimeProjectCallOperand]>,
         ordinary: Box<[RuntimeProjectCallOrdinaryMaterialization]>,
         attached: Option<RuntimeProjectCallAttachedMaterialization>,
-        outcome: RuntimeProjectCallOutcome,
     ) -> Result<Self, RuntimeProjectCallPlanError> {
-        match &input {
-            RuntimeProjectCallInput::Direct if completed_group != 0 => {
-                return Err(RuntimeProjectCallPlanError::DirectGroupMismatch {
-                    actual: completed_group,
-                });
-            }
-            RuntimeProjectCallInput::Continuation { .. } if completed_group == 0 => {
-                return Err(RuntimeProjectCallPlanError::ContinuationGroupMismatch);
-            }
-            RuntimeProjectCallInput::Direct | RuntimeProjectCallInput::Continuation { .. } => {}
-        }
-        if matches!(outcome, RuntimeProjectCallOutcome::Continue { .. }) && attached.is_some() {
-            return Err(RuntimeProjectCallPlanError::ContinueAttachedMismatch);
-        }
-        if attached.as_ref().is_some_and(|row| {
-            matches!(
-                row.presence(),
-                RuntimeProjectCallAttachedPresence::DefaultedOmitted(_)
-            )
-        }) && !matches!(outcome, RuntimeProjectCallOutcome::Invoke { .. })
-        {
-            return Err(RuntimeProjectCallPlanError::DefaultedOmittedOutcomeMismatch);
-        }
         let mut sources = BTreeSet::new();
         for (expected, row) in ordinary.iter().enumerate() {
             if u32::try_from(expected).ok() != Some(row.parameter()) {
@@ -563,24 +411,6 @@ impl RuntimeProjectCallPlan {
                     RuntimeProjectCallPlanError::AttachedSourceUnexpected
                 });
             }
-            if let RuntimeProjectCallAttachedPresence::DefaultedOmitted(default) =
-                attached.presence()
-            {
-                for capture in default.captures() {
-                    if let RuntimeProjectCallDefaultCaptureSource::CurrentLogical { position } =
-                        capture
-                    {
-                        if usize::try_from(*position)
-                            .ok()
-                            .is_none_or(|position| position >= ordinary.len())
-                        {
-                            return Err(RuntimeProjectCallPlanError::DefaultCaptureOutOfRange {
-                                position: *position,
-                            });
-                        }
-                    }
-                }
-            }
         }
         for index in 0..operands.len() {
             let index = u32::try_from(index)
@@ -589,84 +419,41 @@ impl RuntimeProjectCallPlan {
                 return Err(RuntimeProjectCallPlanError::UnreferencedSource { index });
             }
         }
-        if let RuntimeProjectCallOutcome::Continue {
-            result_abi,
-            next_group,
-        } = &outcome
-        {
-            let expected_next_group = completed_group.checked_add(1).ok_or(
-                RuntimeProjectCallPlanError::NextGroupMismatch {
-                    expected: u32::MAX,
-                    actual: *next_group,
-                },
-            )?;
-            if *next_group != expected_next_group {
-                return Err(RuntimeProjectCallPlanError::NextGroupMismatch {
-                    expected: expected_next_group,
-                    actual: *next_group,
-                });
-            }
-            let input_prefix = input
-                .expected_abi()
-                .map_or(&[][..], RuntimeProjectContinuationAbi::prefix_types);
-            if !result_abi.prefix_types().starts_with(input_prefix) {
-                return Err(RuntimeProjectCallPlanError::ResultAbiPrefixMismatch);
-            }
-            let expected_len = input_prefix
-                .len()
-                .checked_add(ordinary.len())
-                .and_then(|length| length.checked_add(usize::from(attached.is_some())))
-                .ok_or(RuntimeProjectCallPlanError::ResultAbiLengthMismatch)?;
-            if result_abi.prefix_types().len() != expected_len {
-                return Err(RuntimeProjectCallPlanError::ResultAbiLengthMismatch);
-            }
-            // The continuation ABI deliberately stores stable semantic type
-            // identities while materialization rows are plan-local IDs.  The
-            // enclosing plan lowerer performs this cross-domain comparison;
-            // this context-free constructor only enforces prefix shape and
-            // cardinality.
-        }
         Ok(Self {
-            input,
+            callee,
+            state,
             completed_group,
             operands,
             ordinary,
             attached,
-            outcome,
         })
     }
 
     #[must_use]
-    pub const fn input(&self) -> &RuntimeProjectCallInput {
-        &self.input
+    pub const fn callee(&self) -> &RuntimeExpr {
+        &self.callee
     }
-
+    #[must_use]
+    pub const fn state(&self) -> RuntimeCallableStateId {
+        self.state
+    }
     #[must_use]
     pub const fn completed_group(&self) -> u32 {
         self.completed_group
     }
-
     #[must_use]
     pub const fn operands(&self) -> &[RuntimeProjectCallOperand] {
         &self.operands
     }
-
     #[must_use]
     pub const fn ordinary(&self) -> &[RuntimeProjectCallOrdinaryMaterialization] {
         &self.ordinary
     }
-
     #[must_use]
     pub const fn attached(&self) -> Option<&RuntimeProjectCallAttachedMaterialization> {
         self.attached.as_ref()
     }
-
-    #[must_use]
-    pub const fn outcome(&self) -> &RuntimeProjectCallOutcome {
-        &self.outcome
-    }
 }
-
 /// Immutable plan-owned catalog of every lowered ProjectCall descriptor.
 /// Flow operations carry only [`RuntimeProjectCallSiteId`]; all ABI and
 /// materialization authority is recovered from this table.

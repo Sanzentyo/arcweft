@@ -447,7 +447,9 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                     AwbcType::Tuple(items) | AwbcType::Choice(items) => {
                         items.iter().map(|item| item.index()).collect()
                     }
-                    AwbcType::Sequence(item) | AwbcType::Array { item, .. } => vec![item.index()],
+                    AwbcType::Sequence { item, .. } | AwbcType::Array { item, .. } => {
+                        vec![item.index()]
+                    }
                     AwbcType::Map { key, value, .. } => vec![key.index(), value.index()],
                     AwbcType::Record { fields, .. } | AwbcType::NominalRecord { fields, .. } => {
                         fields.iter().map(|field| field.ty.index()).collect()
@@ -719,7 +721,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                         Use::Plain,
                     )
                     | (AwbcType::Bytes, Use::Bytes { .. })
-                    | (AwbcType::Sequence(_) | AwbcType::Array { .. }, Use::Unary { .. })
+                    | (AwbcType::Sequence { .. } | AwbcType::Array { .. }, Use::Unary { .. })
                     | (AwbcType::Tuple(_), Use::Tuple { .. })
                     | (AwbcType::Map { .. }, Use::Map { .. })
                     | (AwbcType::Record { .. }, Use::Record { .. } | Use::RecordFields { .. })
@@ -937,7 +939,7 @@ impl<'a> RuntimeProgramDataShapes<'a> {
                     },
                     _ => return Err(missing("Bytes use-site")),
                 },
-                AwbcType::Sequence(_) | AwbcType::Array { .. } => TypeShape::seq(child(0)?),
+                AwbcType::Sequence { .. } | AwbcType::Array { .. } => TypeShape::seq(child(0)?),
                 AwbcType::Tuple(_) => {
                     TypeShape::tuple(children.iter().copied().map(TypeShape::Ref))
                 }

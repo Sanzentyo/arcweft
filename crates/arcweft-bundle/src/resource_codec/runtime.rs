@@ -1146,8 +1146,9 @@ fn runtime_type_layout_digest(
             transcript.write_tag(11);
             transcript.write_type_list(program, items)?;
         }
-        AwbcRuntimeTypeShape::Sequence(item) => {
+        AwbcRuntimeTypeShape::Sequence { kind, item } => {
             transcript.write_tag(12);
+            transcript.write_u8(kind.semantic_tag());
             transcript.write_type(program, *item)?;
         }
         AwbcRuntimeTypeShape::Record { public_id, fields } => {
@@ -1692,7 +1693,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeTypeShape::Progress => RuntimeValueKind::Progress,
         AwbcRuntimeTypeShape::EntityRef => RuntimeValueKind::EntityRef,
         AwbcRuntimeTypeShape::Tuple(_) => RuntimeValueKind::Tuple,
-        AwbcRuntimeTypeShape::Sequence(_) | AwbcRuntimeTypeShape::Bytes => {
+        AwbcRuntimeTypeShape::Sequence { .. } | AwbcRuntimeTypeShape::Bytes => {
             RuntimeValueKind::Sequence
         }
         AwbcRuntimeTypeShape::Record { .. } => RuntimeValueKind::Record,
@@ -2785,6 +2786,36 @@ mod opaque_runtime_type_tests {
         assert_ne!(digests[0], digests[1]);
         assert_ne!(digests[0], digests[2]);
         assert_ne!(digests[1], digests[2]);
+    }
+
+    #[test]
+    fn runtime_type_layout_digest_commits_sequence_storage_kind() {
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes([0x5a; 32]);
+        let program = AwbcProgram::default();
+        let digests = [
+            arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+            arcweft_core::plan::RuntimePlanSequenceKind::Array,
+            arcweft_core::plan::RuntimePlanSequenceKind::Slice,
+            arcweft_core::plan::RuntimePlanSequenceKind::Seq,
+        ]
+        .map(|kind| {
+            runtime_type_layout_digest(
+                &program,
+                &AwbcRuntimeType::new(
+                    semantic_identity,
+                    AwbcRuntimeTypeShape::Sequence {
+                        kind,
+                        item: AwbcTypeId(0),
+                    },
+                ),
+            )
+            .expect("sequence layout digest resolves its item type")
+        });
+        for left in 0..digests.len() {
+            for right in left + 1..digests.len() {
+                assert_ne!(digests[left], digests[right]);
+            }
+        }
     }
 
     #[test]

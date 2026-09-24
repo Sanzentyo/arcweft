@@ -18,7 +18,7 @@ use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
-use crate::plan::{RuntimeAgentOperationalType, RuntimeLineId};
+use crate::plan::{RuntimeAgentOperationalType, RuntimeLineId, RuntimePlanSequenceKind};
 use crate::value::{
     RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
     RuntimeRecordFieldId,
@@ -408,6 +408,23 @@ impl Wire for RuntimeHandleKind {
     }
 }
 
+impl Wire for RuntimePlanSequenceKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "runtime sequence kind",
+            tag,
+            offset,
+        })
+    }
+}
+
 impl Wire for RuntimeOpaqueValueClass {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -487,7 +504,10 @@ impl Wire for AwbcRuntimeType {
             8 => AwbcRuntimeTypeShape::Duration,
             9 => AwbcRuntimeTypeShape::EntityRef,
             10 => AwbcRuntimeTypeShape::Tuple(Vec::<AwbcTypeId>::read_wire(reader)?),
-            11 => AwbcRuntimeTypeShape::Sequence(AwbcTypeId::read_wire(reader)?),
+            11 => AwbcRuntimeTypeShape::Sequence {
+                kind: RuntimePlanSequenceKind::read_wire(reader)?,
+                item: AwbcTypeId::read_wire(reader)?,
+            },
             12 => AwbcRuntimeTypeShape::Record {
                 public_id: Option::<AwbcStringId>::read_wire(reader)?,
                 fields: Vec::<AwbcRecordField>::read_wire(reader)?,
@@ -656,7 +676,12 @@ fn write_runtime_type_composite_shape(
 ) -> Result<(), AwbcCodecError> {
     match shape {
         AwbcRuntimeTypeShape::Tuple(items) => write_tagged(writer, 10, items),
-        AwbcRuntimeTypeShape::Sequence(item) => write_tagged(writer, 11, item),
+        AwbcRuntimeTypeShape::Sequence { kind, item } => {
+            write_tagged_fields(writer, 11, |writer| {
+                kind.write_wire(writer)?;
+                item.write_wire(writer)
+            })
+        }
         AwbcRuntimeTypeShape::Record { public_id, fields } => {
             write_tagged_fields(writer, 12, |writer| {
                 public_id.write_wire(writer)?;

@@ -1274,8 +1274,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Opaque(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Reduction(_)
-        | RuntimeValue::Function(_)
-        | RuntimeValue::ProjectContinuation(_)
+        | RuntimeValue::Callable(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }
 }

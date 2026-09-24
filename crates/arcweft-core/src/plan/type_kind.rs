@@ -158,12 +158,36 @@ pub enum RuntimePlanTypeClass {
 }
 
 /// Accepted source sequence family.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimePlanSequenceKind {
     Vec,
     Array,
     Slice,
     Seq,
+}
+
+impl RuntimePlanSequenceKind {
+    /// Canonical family tag shared by executable codecs and type transcripts.
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Vec => 0,
+            Self::Array => 1,
+            Self::Slice => 2,
+            Self::Seq => 3,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Vec),
+            1 => Some(Self::Array),
+            2 => Some(Self::Slice),
+            3 => Some(Self::Seq),
+            _ => None,
+        }
+    }
 }
 
 /// The single runtime-plan type algebra, parameterized by its child-reference

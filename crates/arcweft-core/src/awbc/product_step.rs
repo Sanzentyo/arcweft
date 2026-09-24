@@ -79,8 +79,8 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeFlowParameterBinding,
-    RuntimeFunctionValue, RuntimeLocalBinding, RuntimePayload, RuntimeValue,
+    RuntimeCallableValue, RuntimeDialogueContentEffectBinding, RuntimeEnv,
+    RuntimeFlowParameterBinding, RuntimeLocalBinding, RuntimePayload, RuntimeValue,
     runtime_sequence_values, runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
@@ -988,13 +988,13 @@ impl AwbcProductStepExecutor {
 
     fn prepare_dialogue_effect_callback(
         &self,
-        callback: &RuntimeFunctionValue,
+        callback: &RuntimeCallableValue,
         next_fiber_instance: &mut crate::runtime_id::RuntimeIdCursor,
     ) -> Result<ProductChildFiber, ProductStepError> {
         let instance = next_fiber_instance
             .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
             .map(crate::runtime_id::RuntimeFiberInstanceId::from_allocated)?;
-        let fiber = FiberState::for_runtime_function_callback(
+        let fiber = FiberState::for_callable_callback(
             &self.program,
             self.fiber.entry,
             callback,
@@ -1014,7 +1014,7 @@ impl AwbcProductStepExecutor {
         activation: &crate::runtime_id::DialogueActivationId,
         callbacks: &[(
             crate::runtime_id::RuntimeDialogueEffectSiteId,
-            RuntimeFunctionValue,
+            RuntimeCallableValue,
         )],
     ) -> Result<(), ProductStepError> {
         for (site, callback) in callbacks {
@@ -1293,10 +1293,14 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: VmExecutionContext::new(self.artifact_fingerprint),
+            context: VmExecutionContext::for_program(
+                self.artifact_fingerprint,
+                Arc::clone(&self.program),
+            ),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
-        let context = VmExecutionContext::new(self.artifact_fingerprint);
+        let context =
+            VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
         match step_with_host_context(
             &self.program,
             &mut candidate,
@@ -1407,12 +1411,18 @@ impl AwbcProductStepExecutor {
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
-                    context: VmExecutionContext::new(self.artifact_fingerprint),
+                    context: VmExecutionContext::for_program(
+                        self.artifact_fingerprint,
+                        Arc::clone(&self.program),
+                    ),
                     program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
                         &self.program,
                     )),
                 };
-                let context = VmExecutionContext::new(self.artifact_fingerprint);
+                let context = VmExecutionContext::for_program(
+                    self.artifact_fingerprint,
+                    Arc::clone(&self.program),
+                );
                 step_with_host_context(
                     &self.program,
                     &mut fiber,
@@ -1508,10 +1518,14 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: VmExecutionContext::new(self.artifact_fingerprint),
+            context: VmExecutionContext::for_program(
+                self.artifact_fingerprint,
+                Arc::clone(&self.program),
+            ),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
-        let context = VmExecutionContext::new(self.artifact_fingerprint);
+        let context =
+            VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
         let vm_output = match step_with_host_context(
             &self.program,
             &mut child.fiber,
@@ -1833,58 +1847,43 @@ impl AwbcProductStepExecutor {
                         "dialogue effect callback site is not canonical".to_owned(),
                     ));
                 }
-                let function = self.program.functions.get(binding.function.index()).ok_or(
-                    ProductStepError::Internal(
-                        "dialogue effect callback function is absent".to_owned(),
-                    ),
-                )?;
-                if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary {
-                    return Err(ProductStepError::Input(
-                        "dialogue effect callback is not an ordinary function".to_owned(),
-                    ));
-                }
-                let signature = self
+                let state = self
                     .program
-                    .signatures
-                    .get(function.signature.index())
+                    .callable_states
+                    .get(binding.state.index())
                     .ok_or(ProductStepError::Internal(
-                        "dialogue effect callback signature is absent".to_owned(),
+                        "dialogue effect callback state is absent".to_owned(),
                     ))?;
-                if signature.result.is_some()
-                    || signature.params.as_slice() != declared.capture_types.as_slice()
+                if state.parameters.len() != 0
+                    || !matches!(
+                        state.attached,
+                        crate::plan::RuntimeCallableAttachedContract::None
+                    )
+                    || state.retained.len() != declared.capture_types.len()
                     || binding.captures.len() != declared.capture_types.len()
+                    || state
+                        .retained
+                        .iter()
+                        .zip(&declared.capture_types)
+                        .enumerate()
+                        .any(|(position, (retained, expected))| {
+                            retained.ty != *expected
+                                || retained.role
+                                    != (crate::plan::RuntimeCallableRetainedRole::Capture {
+                                        position: u32::try_from(position).unwrap_or(u32::MAX),
+                                    })
+                        })
                 {
                     return Err(ProductStepError::Input(
                         "dialogue effect callback ABI disagrees with its manifest".to_owned(),
                     ));
                 }
-                let layout = self
-                    .program
-                    .frame_layouts
-                    .get(function.frame_layout.index())
-                    .ok_or(ProductStepError::Internal(
-                        "dialogue effect callback frame layout is absent".to_owned(),
-                    ))?;
-                let parameters = layout
-                    .slots
-                    .iter()
-                    .filter(|slot| slot.role == crate::awbc::schema::AwbcFrameSlotRole::Parameter)
-                    .collect::<Vec<_>>();
-                if parameters.len() != binding.captures.len()
-                    || parameters
-                        .iter()
-                        .zip(&declared.capture_types)
-                        .any(|(parameter, expected)| parameter.ty != *expected)
-                {
-                    return Err(ProductStepError::Input(
-                        "dialogue effect callback frame ABI disagrees with its manifest".to_owned(),
-                    ));
-                }
-                let captures = parameters
+                let captures = state
+                    .retained
                     .iter()
                     .zip(&binding.captures)
                     .zip(&declared.capture_types)
-                    .map(|((parameter, register), expected)| {
+                    .map(|((_, register), expected)| {
                         let value = frame
                             .register(*register)
                             .map_err(|error| ProductStepError::Internal(error.to_string()))?
@@ -1895,18 +1894,17 @@ impl AwbcProductStepExecutor {
                                     .to_owned(),
                             ));
                         }
-                        let name = parameter
-                            .name
-                            .and_then(|name| self.program.strings.get(name.index()))
-                            .ok_or(ProductStepError::Internal(
-                                "dialogue effect callback parameter has no binding name".to_owned(),
-                            ))?
-                            .clone();
-                        Ok(crate::value::RuntimeBinding { name, value })
+                        Ok(value)
                     })
                     .collect::<Result<Vec<_>, ProductStepError>>()?;
-                let callback =
-                    RuntimeFunctionValue::new_awbc(Vec::new(), binding.function, captures);
+                let callback = RuntimeCallableValue::try_new(
+                    crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
+                    binding.state,
+                    captures,
+                )
+                .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+                crate::awbc::fiber::runtime_callable_activation(&self.program, &callback)
+                    .map_err(|error| ProductStepError::Internal(error.to_string()))?;
                 Ok(RuntimeDialogueContentEffectBinding::new(
                     binding.site,
                     callback,

@@ -4,18 +4,18 @@ use crate::engine::Engine;
 use crate::plan::RuntimeFunctionSiteBodyKind;
 use crate::step::RuntimeStepOutput;
 use crate::tests::function_application::{
-    returning_function_plan, returning_function_result, returning_function_site,
+    returning_callable_state, returning_function_plan, returning_function_result,
 };
-use crate::value::{RuntimeEvalError, RuntimeFunctionValue, RuntimeValue};
+use crate::value::{RuntimeCallableValue, RuntimeEvalError, RuntimeValue};
 
 #[test]
 fn surplus_arguments_reject_before_creating_an_executable_frame() {
     let mut engine = Engine::new(returning_function_plan(
         RuntimeFunctionSiteBodyKind::Executable,
     ));
-    let function = RuntimeFunctionValue::capture_site(
-        Arc::clone(&engine.plan),
-        returning_function_site(&engine.plan),
+    let function = RuntimeCallableValue::try_new(
+        crate::task::RuntimeProgramOwner::Plan(Arc::clone(&engine.plan)),
+        returning_callable_state(&engine.plan),
         [],
     )
     .unwrap();
@@ -25,17 +25,20 @@ fn surplus_arguments_reject_before_creating_an_executable_frame() {
     let mut output = RuntimeStepOutput::default();
     assert!(matches!(
         engine.start_function_value_call(
-            RuntimeValue::Function(function),
+            RuntimeValue::Callable(function),
             vec![RuntimeValue::Unit],
             result,
             None,
             &mut output,
             &mut backend,
         ),
-        Err(RuntimeEvalError::FunctionArgumentCount {
-            expected: 0,
-            found: 1
-        })
+        Err(RuntimeEvalError::Callable(
+            crate::value::RuntimeCallableValueError::ArgumentCount {
+                expected: 0,
+                actual: 1,
+                ..
+            }
+        ))
     ));
     assert_eq!(engine.fiber(), &before);
     assert_eq!(output, RuntimeStepOutput::default());

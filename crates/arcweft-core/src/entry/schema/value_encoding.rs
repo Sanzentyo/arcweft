@@ -717,6 +717,19 @@ fn value_prefix<'a, S: CanonicalSink + ?Sized, V: ValueValidation>(
                 ));
             }
         }
+        RuntimeValueView::RuntimeOnly(RuntimeValue::Callable(callable))
+            if matches!(encoding, ValueEncoding::Live | ValueEncoding::Snapshot) =>
+        {
+            if let Some(budget) = budget {
+                budget.collection(callable.retained().len())?;
+            }
+            work.push(Work::Values(
+                callable.retained().iter(),
+                0,
+                depth + 1,
+                children,
+            ));
+        }
         RuntimeValueView::RuntimeOnly(value)
             if matches!(encoding, ValueEncoding::Literal | ValueEncoding::Live) =>
         {

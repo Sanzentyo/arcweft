@@ -9,7 +9,7 @@ use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{RuntimePlanTypeProjection, RuntimeReceiverMode, RuntimeTraitMethodId};
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeFunctionValue, RuntimeIterator,
+    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableValue, RuntimeIterator,
     RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
 };
 use crate::{
@@ -42,7 +42,7 @@ impl Engine {
                 (mapping, source)
             }
         };
-        let RuntimeValue::Function(mapping) = mapping else {
+        let RuntimeValue::Callable(mapping) = mapping else {
             return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
                 &mapping,
             )));
@@ -87,7 +87,7 @@ impl Engine {
 
     fn evaluate_standard_sequence_map(
         &mut self,
-        mapping: &RuntimeFunctionValue,
+        mapping: &RuntimeCallableValue,
         source: RuntimeValue,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {

@@ -130,6 +130,7 @@ pub struct RuntimeDialogueValueSiteSeed {
 pub struct RuntimeDialogueEffectSiteSeed {
     pub site: RuntimeDialogueEffectSiteId,
     pub function: RuntimeFunctionSiteSeedId,
+    pub callable_type: RuntimeSemanticTypeId,
     pub captures: Box<[RuntimeExprSeed]>,
 }
 
@@ -1902,6 +1903,10 @@ pub enum RuntimeExprSeedKind {
         site: RuntimeFunctionSiteSeedId,
         captures: Box<[RuntimeExprSeed]>,
     },
+    MakeCallable {
+        state: super::RuntimeCallableStateSeedId,
+        captures: Box<[RuntimeExprSeed]>,
+    },
     Apply {
         callee: Box<RuntimeExprSeed>,
         args: Box<[RuntimeCallArgumentSeed]>,
@@ -1964,6 +1969,7 @@ pub enum RuntimeExprSeedKind {
 pub struct RuntimeDialogueContentEffectBindingSeed {
     pub site: RuntimeDialogueEffectSiteId,
     pub function: RuntimeFunctionSiteSeedId,
+    pub callable_type: RuntimeSemanticTypeId,
     pub captures: Box<[RuntimeExprSeed]>,
 }
 
@@ -2216,7 +2222,8 @@ impl RuntimeExprSeed {
     ) {
         match self.kind() {
             RuntimeExprSeedKind::Value(_) | RuntimeExprSeedKind::EntityRef(_) => {}
-            RuntimeExprSeedKind::Function { captures, .. } => {
+            RuntimeExprSeedKind::Function { captures, .. }
+            | RuntimeExprSeedKind::MakeCallable { captures, .. } => {
                 collect_expr_free_locals(captures, bound, locals);
             }
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),

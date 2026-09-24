@@ -29,8 +29,8 @@ use crate::value::{
 };
 use std::sync::Arc;
 
+mod callable;
 mod calls;
-mod function;
 mod sequence;
 
 impl Engine {
@@ -157,10 +157,10 @@ impl Engine {
             RuntimeExprKind::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, expr.ty(), pure_backend)
             }
-            RuntimeExprKind::Function { site, captures } => {
-                self.evaluate_function_expr(*site, captures, pure_backend)
+            RuntimeExprKind::MakeCallable { state, captures } => {
+                self.evaluate_callable_expr(*state, captures, pure_backend)
             }
-            RuntimeExprKind::Apply { callee, args } => {
+            RuntimeExprKind::ApplyGroup { callee, args } => {
                 self.evaluate_apply_expr(callee, args, pure_backend)
             }
             RuntimeExprKind::TraitCall {
@@ -365,9 +365,9 @@ impl Engine {
                 .iter()
                 .map(|capture| self.evaluate_expr_with_backend(capture, pure_backend))
                 .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
-            let callback = crate::value::RuntimeFunctionValue::capture_site(
-                Arc::clone(&self.plan),
-                effect.function,
+            let callback = crate::value::RuntimeCallableValue::try_new(
+                crate::task::RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                effect.state,
                 captures,
             )?;
             let remaining = callback.remaining_arity()?;

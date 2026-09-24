@@ -1,8 +1,10 @@
+mod callable_states;
 mod construction;
 mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
+mod function_inputs;
 mod function_sites;
 pub mod generation_contract;
 mod local_declarations;
@@ -16,15 +18,23 @@ mod value_admission;
 mod variant_case;
 mod variant_domains;
 
+pub use callable_states::{
+    RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
+    RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
+    RuntimeCallableParameterKind, RuntimeCallablePartialTransition, RuntimeCallablePosition,
+    RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableState,
+    RuntimeCallableStateDefinition, RuntimeCallableStateError, RuntimeCallableStateTable,
+    RuntimeCallableTransition,
+};
 pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
-    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
-    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
-    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
-    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeCallableStateSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
+    RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
+    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
+    RuntimeDialogueContentSlotSeed, RuntimeDialogueContentTemplateManifestSeed,
+    RuntimeDialogueEffectSiteSeed, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
@@ -74,18 +84,14 @@ pub use nominal_record_domains::{
     RuntimeNominalRecordDomainTable,
 };
 pub use project_call::{
-    RuntimeProjectCallAbiSeed, RuntimeProjectCallAttachedMaterialization,
-    RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresence,
-    RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallDefaultCaptureSource,
-    RuntimeProjectCallDefaultFunction, RuntimeProjectCallDefaultFunctionSeed,
+    RuntimeProjectCallAttachedMaterialization, RuntimeProjectCallAttachedMaterializationSeed,
+    RuntimeProjectCallAttachedPresence, RuntimeProjectCallAttachedPresenceSeed,
     RuntimeProjectCallFixedMaterialization, RuntimeProjectCallFixedMaterializationSeed,
-    RuntimeProjectCallInput, RuntimeProjectCallInputSeed, RuntimeProjectCallOperand,
-    RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterialization,
-    RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallOutcome,
-    RuntimeProjectCallOutcomeSeed, RuntimeProjectCallPlan, RuntimeProjectCallPlanError,
-    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterialization,
-    RuntimeProjectCallRestMaterializationSeed, RuntimeProjectCallSite, RuntimeProjectCallSiteTable,
-    RuntimeProjectCallSiteTableError,
+    RuntimeProjectCallOperand, RuntimeProjectCallOperandSeed,
+    RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOrdinaryMaterializationSeed,
+    RuntimeProjectCallPlan, RuntimeProjectCallPlanError, RuntimeProjectCallPlanSeed,
+    RuntimeProjectCallRestMaterialization, RuntimeProjectCallRestMaterializationSeed,
+    RuntimeProjectCallSite, RuntimeProjectCallSiteTable, RuntimeProjectCallSiteTableError,
 };
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
@@ -156,6 +162,7 @@ pub struct RuntimePlan {
     pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
     pub(crate) variant_domains: RuntimeVariantDomainTable,
     pub(crate) function_sites: RuntimeFunctionSiteTable,
+    pub(crate) callable_states: RuntimeCallableStateTable,
     pub(crate) project_call_sites: RuntimeProjectCallSiteTable,
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
@@ -180,6 +187,11 @@ pub enum RuntimePlanValueTypeError {
 }
 
 impl RuntimePlan {
+    #[must_use]
+    pub const fn callable_states(&self) -> &RuntimeCallableStateTable {
+        &self.callable_states
+    }
+
     /// Binds the in-memory plan to the exact accepted persisted artifact.
     /// Rebinding to a different generation is rejected rather than silently
     /// changing every dialogue-handle identity.
@@ -1092,7 +1104,7 @@ pub enum FlowOp {
     },
     /// Applies a function value in the current fiber, retaining its return
     /// binding while an executable body is running or suspended.
-    ApplyFunction {
+    ApplyGroup {
         callee: RuntimeExpr,
         args: Vec<crate::value::RuntimeCallArgument>,
         result: RuntimePattern,

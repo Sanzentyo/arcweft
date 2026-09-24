@@ -1,18 +1,18 @@
+mod callable;
 mod function_call;
 
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
     AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
-    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, FunctionCallFrame,
-    FunctionReturnContinuation, HostCallState, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeIterator, RuntimePattern, RuntimeStepOutput, RuntimeValue, runtime_value_label,
+    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+    RuntimeValue, runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
 use crate::pattern::pattern_binding_capacity;
 use crate::plan::{
-    RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeProjectCallAttachedPresence,
-    RuntimeProjectCallDefaultCaptureSource, RuntimeProjectCallInput,
-    RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOutcome, RuntimeReceiverMode,
+    RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable,
+    RuntimeProjectCallOrdinaryMaterialization, RuntimeReceiverMode,
 };
 use crate::pure::RuntimeCallBackend;
 use crate::scope::RuntimeScopeIdentity;
@@ -22,9 +22,7 @@ use crate::task::{
     TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::time::LogicalDuration;
-use crate::value::{
-    RuntimeEnv, RuntimeLocalBinding, RuntimeProjectContinuation, RuntimeProjectContinuationError,
-};
+use crate::value::{RuntimeEnv, RuntimeLocalBinding};
 use std::sync::Arc;
 
 impl Engine {
@@ -131,12 +129,12 @@ impl Engine {
                 }
                 let mut effect_callbacks = Vec::with_capacity(content_plan.effect_sites().len());
                 for site in content_plan.effect_sites() {
-                    let callback = match self.evaluate_function_expr(
-                        site.function(),
+                    let callback = match self.evaluate_callable_expr(
+                        site.state(),
                         site.captures(),
                         pure_backend,
                     ) {
-                        Ok(RuntimeValue::Function(callback)) => callback,
+                        Ok(RuntimeValue::Callable(callback)) => callback,
                         Err(error) => {
                             self.fail_eval(error, output);
                             return;
@@ -328,7 +326,7 @@ impl Engine {
             FlowOp::ProjectCall { site } => {
                 self.start_project_call(site, next_op_index, output, pure_backend);
             }
-            FlowOp::ApplyFunction {
+            FlowOp::ApplyGroup {
                 callee,
                 args,
                 result,
@@ -701,140 +699,54 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let plan_owner = Arc::clone(&self.plan);
-        let Some(site_row) = plan_owner.project_call_sites().get(site) else {
+        let owner = Arc::clone(&self.plan);
+        let Some(row) = owner.project_call_sites().get(site) else {
             self.fiber.status =
                 FlowFiberStatus::Failed(format!("missing project-call site {site}"));
             return;
         };
-        let plan = site_row.plan();
-        let resume = self.resume_cursor(next_op_index);
-        let prefix_values = match plan.input() {
-            RuntimeProjectCallInput::Direct => Vec::new(),
-            RuntimeProjectCallInput::Continuation {
-                callee,
-                expected_abi,
-            } => {
-                let value = match self.evaluate_expr_with_backend(callee, pure_backend) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        self.fail_eval(error, output);
-                        return;
-                    }
-                };
-                let RuntimeValue::ProjectContinuation(continuation) = value else {
-                    self.fail_eval(
-                        RuntimeEvalError::ExpectedFunction(runtime_value_label(&value)),
-                        output,
-                    );
-                    return;
-                };
-                if let Err(error) = continuation.validate_expected_abi(expected_abi) {
-                    self.fail_eval(RuntimeEvalError::ProjectContinuation(error), output);
-                    return;
+        let plan = row.plan();
+        let prepared = (|| {
+            let value = self.evaluate_expr_with_backend(plan.callee(), pure_backend)?;
+            let RuntimeValue::Callable(callable) = value else {
+                return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                    &value,
+                )));
+            };
+            callable
+                .validate_for_owner(&crate::task::RuntimeProgramOwner::Plan(Arc::clone(&owner)))?;
+            if callable.state() != plan.state() {
+                return Err(crate::value::RuntimeCallableValueError::UnexpectedState {
+                    expected: plan.state(),
+                    actual: callable.state(),
                 }
-                continuation.prefix_values().to_vec()
+                .into());
             }
-        };
-        let operands = match self.evaluate_project_call_operands(&plan, pure_backend) {
-            Ok(operands) => operands,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        };
-        let logical_values = match self.materialize_project_call_ordinary(&plan, &operands) {
+            let operands = self.evaluate_project_call_operands(plan, pure_backend)?;
+            let arguments = self.materialize_project_call_ordinary(plan, &operands)?;
+            let attached = self.materialize_project_call_attached(plan, &operands)?;
+            Ok::<_, RuntimeEvalError>((callable, arguments, attached))
+        })();
+        let (callable, arguments, attached) = match prepared {
             Ok(values) => values,
             Err(error) => {
                 self.fail_eval(error, output);
                 return;
             }
         };
-        self.advance_if_needed(next_op_index);
-
-        let default_call = plan.attached().and_then(|attached| {
-            if let RuntimeProjectCallAttachedPresence::DefaultedOmitted(default) =
-                attached.presence()
-            {
-                Some((default.site(), default.captures().to_vec()))
-            } else {
-                None
-            }
-        });
-        if let Some((default_site, default_captures)) = default_call {
-            let captures = match default_captures
-                .iter()
-                .map(|source| match source {
-                    RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix { position } => {
-                        usize::try_from(*position)
-                            .ok()
-                            .and_then(|position| prefix_values.get(position))
-                            .cloned()
-                            .ok_or(RuntimeEvalError::ProjectContinuation(
-                                RuntimeProjectContinuationError::PrefixArity {
-                                    expected: prefix_values.len(),
-                                    actual: usize::try_from(*position).unwrap_or(usize::MAX) + 1,
-                                },
-                            ))
-                    }
-                    RuntimeProjectCallDefaultCaptureSource::CurrentLogical { position } => {
-                        usize::try_from(*position)
-                            .ok()
-                            .and_then(|position| logical_values.get(position))
-                            .cloned()
-                            .ok_or(RuntimeEvalError::FunctionArgumentCount {
-                                expected: logical_values.len(),
-                                found: usize::try_from(*position).unwrap_or(usize::MAX) + 1,
-                            })
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(captures) => captures,
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return;
-                }
-            };
-            let frame = FunctionCallFrame::new(
-                default_site,
-                resume,
-                FunctionReturnContinuation::ProjectDefault {
-                    site,
-                    prefix_values,
-                    logical_values,
-                },
-            );
-            if let Err(error) =
-                self.start_function_site_call(captures, Vec::new(), frame, output, pure_backend)
-            {
-                self.fail_eval(error, output);
-            }
-            return;
-        }
-
-        let logical_values = match self.materialize_project_call_attached(&plan, &operands) {
-            Ok(Some(value)) => {
-                let mut values = logical_values;
-                values.push(value);
-                values
-            }
-            Ok(None) => logical_values,
-            Err(error) => {
-                self.fail_eval(error, output);
-                return;
-            }
-        };
-        self.finish_project_call_terminal(
-            site,
-            prefix_values,
-            logical_values,
+        let resume = self.resume_cursor(next_op_index);
+        if let Err(error) = self.start_callable_group(
+            callable,
+            arguments,
+            attached,
+            row.result().clone(),
             resume,
             output,
             pure_backend,
-        );
+        ) {
+            self.fail_eval(error, output);
+        }
     }
-
     fn evaluate_project_call_operands(
         &mut self,
         plan: &crate::plan::RuntimeProjectCallPlan,
@@ -896,40 +808,11 @@ impl Engine {
         plan: &crate::plan::RuntimeProjectCallPlan,
         operands: &[Vec<RuntimeValue>],
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
-        let Some(row) = plan.attached() else {
-            return Ok(None);
-        };
-        let value = match row.presence() {
-            RuntimeProjectCallAttachedPresence::RequiredPresent
-            | RuntimeProjectCallAttachedPresence::DefaultedPresent => {
-                let value = self.project_call_source_value(
-                    operands,
-                    row.source_index()
-                        .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?,
-                )?;
-                self.require_project_call_value(row.binding_ty(), &value)?;
-                value
-            }
-            RuntimeProjectCallAttachedPresence::OptionalPresent => {
-                let value = self.project_call_source_value(
-                    operands,
-                    row.source_index()
-                        .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?,
-                )?;
-                let value = RuntimeValue::option_some(value);
-                self.require_project_call_value(row.binding_ty(), &value)?;
-                value
-            }
-            RuntimeProjectCallAttachedPresence::OptionalOmitted => {
-                let value = RuntimeValue::option_none();
-                self.require_project_call_value(row.binding_ty(), &value)?;
-                value
-            }
-            RuntimeProjectCallAttachedPresence::DefaultedOmitted(_) => return Ok(None),
-        };
-        Ok(Some(value))
+        plan.attached()
+            .and_then(|row| row.source_index())
+            .map(|index| self.project_call_source_value(operands, index))
+            .transpose()
     }
-
     fn project_call_source_value(
         &self,
         operands: &[Vec<RuntimeValue>],
@@ -961,61 +844,6 @@ impl Engine {
             Ok(())
         } else {
             Err(RuntimeEvalError::InvalidExpressionType(expected))
-        }
-    }
-
-    fn finish_project_call_terminal(
-        &mut self,
-        site: crate::runtime_id::RuntimeProjectCallSiteId,
-        prefix_values: Vec<RuntimeValue>,
-        logical_values: Vec<RuntimeValue>,
-        resume: Option<FlowCursor>,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) {
-        let plan_owner = Arc::clone(&self.plan);
-        let Some(site_row) = plan_owner.project_call_sites().get(site) else {
-            self.fiber.status =
-                FlowFiberStatus::Failed(format!("missing project-call site {site}"));
-            return;
-        };
-        let plan = site_row.plan();
-        let result = site_row.result();
-        match plan.outcome() {
-            RuntimeProjectCallOutcome::Continue { result_abi, .. } => {
-                let mut values = prefix_values;
-                values.extend(logical_values);
-                let continuation = match RuntimeProjectContinuation::try_new(
-                    &self.plan,
-                    result_abi.clone(),
-                    values,
-                ) {
-                    Ok(value) => RuntimeValue::ProjectContinuation(value),
-                    Err(error) => {
-                        self.fail_eval(RuntimeEvalError::ProjectContinuation(error), output);
-                        return;
-                    }
-                };
-                self.complete_function_call_result(result, resume, continuation, output);
-            }
-            RuntimeProjectCallOutcome::Invoke { function_site } => {
-                let frame = FunctionCallFrame::new(
-                    *function_site,
-                    resume,
-                    FunctionReturnContinuation::Bind {
-                        result: result.clone(),
-                    },
-                );
-                if let Err(error) = self.start_function_site_call(
-                    prefix_values,
-                    logical_values,
-                    frame,
-                    output,
-                    pure_backend,
-                ) {
-                    self.fail_eval(error, output);
-                }
-            }
         }
     }
 

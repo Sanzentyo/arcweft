@@ -1,4 +1,4 @@
-use crate::{runtime_id::RuntimeCaptureSlotId, value::RuntimeRecordFieldId};
+use crate::value::RuntimeRecordFieldId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 use thiserror::Error;
@@ -19,7 +19,6 @@ pub enum RuntimeValuePathSegment {
     RecordField(RuntimeRecordFieldId),
     RecordColumn(RuntimeRecordFieldId),
     NominalRecordField(RuntimeRecordFieldId),
-    FunctionCapture(RuntimeCaptureSlotId),
     VariantPayload,
     IteratorRemainder(u64),
     IteratorWitnessState,
@@ -27,7 +26,7 @@ pub enum RuntimeValuePathSegment {
     ReductionState,
     ReductionCommandPayload(u32),
     AgentEmbeddedValue(u32),
-    ProjectContinuationPrefix(u32),
+    CallableRetained(u32),
 }
 
 /// Failure to construct or resolve a canonical runtime-value path.
@@ -97,7 +96,6 @@ impl RuntimeValuePathSegment {
             Self::RecordField(_) => 3,
             Self::RecordColumn(_) => 4,
             Self::NominalRecordField(_) => 5,
-            Self::FunctionCapture(_) => 6,
             Self::VariantPayload => 7,
             Self::IteratorRemainder(_) => 8,
             Self::IteratorWitnessState => 9,
@@ -105,7 +103,8 @@ impl RuntimeValuePathSegment {
             Self::ReductionState => 11,
             Self::ReductionCommandPayload(_) => 12,
             Self::AgentEmbeddedValue(_) => 13,
-            Self::ProjectContinuationPrefix(_) => 14,
+            // Tags 6 and 14 belonged to the retired split callable paths.
+            Self::CallableRetained(_) => 15,
         }
     }
 }
@@ -120,12 +119,12 @@ impl Ord for RuntimeValuePathSegment {
                     | Self::TupleColumn(left)
                     | Self::ReductionCommandPayload(left)
                     | Self::AgentEmbeddedValue(left)
-                    | Self::ProjectContinuationPrefix(left),
+                    | Self::CallableRetained(left),
                     Self::TupleElement(right)
                     | Self::TupleColumn(right)
                     | Self::ReductionCommandPayload(right)
                     | Self::AgentEmbeddedValue(right)
-                    | Self::ProjectContinuationPrefix(right),
+                    | Self::CallableRetained(right),
                 ) => left.cmp(right),
                 (Self::SequenceElement(left), Self::SequenceElement(right))
                 | (Self::IteratorRemainder(left), Self::IteratorRemainder(right)) => {
@@ -136,7 +135,6 @@ impl Ord for RuntimeValuePathSegment {
                 | (Self::NominalRecordField(left), Self::NominalRecordField(right)) => {
                     left.cmp(right)
                 }
-                (Self::FunctionCapture(left), Self::FunctionCapture(right)) => left.cmp(right),
                 _ => Ordering::Equal,
             })
     }
@@ -169,7 +167,6 @@ enum HumanPathSegmentRef {
     RecordField { field: RuntimeRecordFieldId },
     RecordColumn { field: RuntimeRecordFieldId },
     NominalRecordField { field: RuntimeRecordFieldId },
-    FunctionCapture { capture: RuntimeCaptureSlotId },
     VariantPayload,
     IteratorRemainder { index: String },
     IteratorWitnessState,
@@ -177,7 +174,7 @@ enum HumanPathSegmentRef {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
-    ProjectContinuationPrefix { index: u32 },
+    CallableRetained { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -189,7 +186,6 @@ enum HumanPathSegment {
     RecordField { field: RuntimeRecordFieldId },
     RecordColumn { field: RuntimeRecordFieldId },
     NominalRecordField { field: RuntimeRecordFieldId },
-    FunctionCapture { capture: RuntimeCaptureSlotId },
     VariantPayload,
     IteratorRemainder { index: String },
     IteratorWitnessState,
@@ -197,7 +193,7 @@ enum HumanPathSegment {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
-    ProjectContinuationPrefix { index: u32 },
+    CallableRetained { index: u32 },
 }
 
 #[derive(Serialize)]
@@ -209,7 +205,6 @@ enum NonHumanPathSegmentRef {
     RecordField { field: RuntimeRecordFieldId },
     RecordColumn { field: RuntimeRecordFieldId },
     NominalRecordField { field: RuntimeRecordFieldId },
-    FunctionCapture { capture: RuntimeCaptureSlotId },
     VariantPayload,
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
@@ -217,7 +212,7 @@ enum NonHumanPathSegmentRef {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
-    ProjectContinuationPrefix { index: u32 },
+    CallableRetained { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -229,7 +224,6 @@ enum NonHumanPathSegment {
     RecordField { field: RuntimeRecordFieldId },
     RecordColumn { field: RuntimeRecordFieldId },
     NominalRecordField { field: RuntimeRecordFieldId },
-    FunctionCapture { capture: RuntimeCaptureSlotId },
     VariantPayload,
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
@@ -237,7 +231,7 @@ enum NonHumanPathSegment {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
-    ProjectContinuationPrefix { index: u32 },
+    CallableRetained { index: u32 },
 }
 
 fn parse_canonical_u64<E: serde::de::Error>(value: &str) -> Result<u64, E> {
@@ -265,9 +259,7 @@ impl Serialize for RuntimeValuePathSegment {
                 Self::NominalRecordField(field) => {
                     NonHumanPathSegmentRef::NominalRecordField { field }
                 }
-                Self::FunctionCapture(capture) => {
-                    NonHumanPathSegmentRef::FunctionCapture { capture }
-                }
+                Self::CallableRetained(index) => NonHumanPathSegmentRef::CallableRetained { index },
                 Self::VariantPayload => NonHumanPathSegmentRef::VariantPayload,
                 Self::IteratorRemainder(index) => {
                     NonHumanPathSegmentRef::IteratorRemainder { index }
@@ -281,9 +273,6 @@ impl Serialize for RuntimeValuePathSegment {
                 Self::AgentEmbeddedValue(index) => {
                     NonHumanPathSegmentRef::AgentEmbeddedValue { index }
                 }
-                Self::ProjectContinuationPrefix(index) => {
-                    NonHumanPathSegmentRef::ProjectContinuationPrefix { index }
-                }
             };
             return segment.serialize(serializer);
         }
@@ -296,7 +285,7 @@ impl Serialize for RuntimeValuePathSegment {
             Self::RecordField(field) => HumanPathSegmentRef::RecordField { field },
             Self::RecordColumn(field) => HumanPathSegmentRef::RecordColumn { field },
             Self::NominalRecordField(field) => HumanPathSegmentRef::NominalRecordField { field },
-            Self::FunctionCapture(capture) => HumanPathSegmentRef::FunctionCapture { capture },
+            Self::CallableRetained(index) => HumanPathSegmentRef::CallableRetained { index },
             Self::VariantPayload => HumanPathSegmentRef::VariantPayload,
             Self::IteratorRemainder(index) => HumanPathSegmentRef::IteratorRemainder {
                 index: index.to_string(),
@@ -308,9 +297,6 @@ impl Serialize for RuntimeValuePathSegment {
                 HumanPathSegmentRef::ReductionCommandPayload { index }
             }
             Self::AgentEmbeddedValue(index) => HumanPathSegmentRef::AgentEmbeddedValue { index },
-            Self::ProjectContinuationPrefix(index) => {
-                HumanPathSegmentRef::ProjectContinuationPrefix { index }
-            }
         };
         human.serialize(serializer)
     }
@@ -331,7 +317,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 NonHumanPathSegment::NominalRecordField { field } => {
                     Self::NominalRecordField(field)
                 }
-                NonHumanPathSegment::FunctionCapture { capture } => Self::FunctionCapture(capture),
+                NonHumanPathSegment::CallableRetained { index } => Self::CallableRetained(index),
                 NonHumanPathSegment::VariantPayload => Self::VariantPayload,
                 NonHumanPathSegment::IteratorRemainder { index } => Self::IteratorRemainder(index),
                 NonHumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
@@ -342,9 +328,6 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 }
                 NonHumanPathSegment::AgentEmbeddedValue { index } => {
                     Self::AgentEmbeddedValue(index)
-                }
-                NonHumanPathSegment::ProjectContinuationPrefix { index } => {
-                    Self::ProjectContinuationPrefix(index)
                 }
             });
         }
@@ -357,7 +340,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
             HumanPathSegment::RecordField { field } => Self::RecordField(field),
             HumanPathSegment::RecordColumn { field } => Self::RecordColumn(field),
             HumanPathSegment::NominalRecordField { field } => Self::NominalRecordField(field),
-            HumanPathSegment::FunctionCapture { capture } => Self::FunctionCapture(capture),
+            HumanPathSegment::CallableRetained { index } => Self::CallableRetained(index),
             HumanPathSegment::VariantPayload => Self::VariantPayload,
             HumanPathSegment::IteratorRemainder { index } => {
                 Self::IteratorRemainder(parse_canonical_u64(&index)?)
@@ -369,9 +352,6 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 Self::ReductionCommandPayload(index)
             }
             HumanPathSegment::AgentEmbeddedValue { index } => Self::AgentEmbeddedValue(index),
-            HumanPathSegment::ProjectContinuationPrefix { index } => {
-                Self::ProjectContinuationPrefix(index)
-            }
         })
     }
 }
@@ -457,6 +437,18 @@ mod tests {
             serde_json::from_str::<RuntimeValuePath>(&json).unwrap(),
             path
         );
+        let retained =
+            RuntimeValuePath::try_from_segments([RuntimeValuePathSegment::CallableRetained(0)])
+                .unwrap();
+        assert_eq!(
+            serde_json::to_string(&retained).unwrap(),
+            r#"[{"kind":"callable_retained","index":0}]"#
+        );
+        assert_eq!(
+            serde_json::from_str::<RuntimeValuePath>(r#"[{"kind":"callable_retained","index":0}]"#)
+                .unwrap(),
+            retained
+        );
         assert!(
             serde_json::from_str::<RuntimeValuePath>(r#"[{"kind":"sequence_element","index":4}]"#)
                 .is_err()
@@ -472,6 +464,8 @@ mod tests {
             r#"[{"kind":"sequence_element","index":"4","extra":true}]"#,
             r#"[{"kind":"variant_payload","kind":"variant_payload"}]"#,
             r#"[{"kind":"opaque_payload","extra":true}]"#,
+            r#"[{"kind":"function_capture","capture":1}]"#,
+            r#"[{"kind":"project_continuation_prefix","index":0}]"#,
             r#"[{"kind":"unknown"}]"#,
         ] {
             assert!(serde_json::from_str::<RuntimeValuePath>(invalid).is_err());

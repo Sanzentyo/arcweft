@@ -568,6 +568,8 @@ impl FlowRuntimeId {
 /// Failure to validate one complete executable runtime-plan inventory.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimePlanError {
+    #[error(transparent)]
+    CallableState(#[from] super::RuntimeCallableStateError),
     #[error("invalid data codec-use policy: {0}")]
     DataCodecUse(Box<crate::program_types::RuntimeProgramDataShapeError>),
     #[error("duplicate runtime flow `{0}`")]
@@ -686,6 +688,7 @@ pub enum RuntimePlanError {
 impl RuntimePlan {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
+        self.callable_states.validate_for_plan(self)?;
         let flow_ids = self.verify_flow_schemas()?;
         self.verify_project_call_sites()?;
         let mut helper_ids = BTreeSet::new();
@@ -867,7 +870,7 @@ impl RuntimePlan {
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }
                 | FlowOp::HostCall { .. }
-                | FlowOp::ApplyFunction { .. }
+                | FlowOp::ApplyGroup { .. }
                 | FlowOp::Break(_)
                 | FlowOp::Continue
                 | FlowOp::Goto(_)

@@ -123,7 +123,7 @@ impl AotLinearOp {
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
-            | FlowOp::ApplyFunction { .. }
+            | FlowOp::ApplyGroup { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
@@ -256,7 +256,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::AwaitMany { .. }
         | FlowOp::HostCall { .. }
         | FlowOp::ProjectCall { .. }
-        | FlowOp::ApplyFunction { .. }
+        | FlowOp::ApplyGroup { .. }
         | FlowOp::If { .. }
         | FlowOp::IfLet { .. }
         | FlowOp::Match { .. }
@@ -331,7 +331,7 @@ impl AotOpClass {
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
-            | FlowOp::ApplyFunction { .. } => Self::Await,
+            | FlowOp::ApplyGroup { .. } => Self::Await,
             FlowOp::Choice { .. } => Self::Choice,
             FlowOp::Dialogue { .. } => Self::Dialogue,
             FlowOp::Break(_) | FlowOp::Continue | FlowOp::Goto(_) | FlowOp::GotoExpr(_) => {
@@ -387,7 +387,7 @@ impl AotProgramStats {
                 | FlowOp::AwaitMany { .. }
                 | FlowOp::HostCall { .. }
                 | FlowOp::ProjectCall { .. }
-                | FlowOp::ApplyFunction { .. }
+                | FlowOp::ApplyGroup { .. }
                 | FlowOp::Break(_)
                 | FlowOp::Continue
                 | FlowOp::Goto(_)
