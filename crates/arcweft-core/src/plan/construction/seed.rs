@@ -11,12 +11,13 @@ use thiserror::Error;
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::entry::RuntimeDialogueContentTemplateDigest;
 use crate::entry::{CallableContractHash, RuntimeCallableId, RuntimeCommandTargetId};
+use crate::line_task::RuntimeDeferOutcomeFilter;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteCount,
-    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
-    RuntimeFunctionSiteId, RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
-    RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDeferSiteId, RuntimeDialogueContentPlanId, RuntimeDialogueContentTemplateId,
+    RuntimeDialogueEffectSiteCount, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
+    RuntimeDialogueValueSlotId, RuntimeFunctionSiteId, RuntimeLineHandleSiteId,
+    RuntimeLineTaskGroupId, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimeHostCallMode;
@@ -32,9 +33,10 @@ use arcweft_id::runtime_program::RuntimePureProgramId;
 use super::super::function_sites::{RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind};
 
 use super::super::{
-    FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeEffectSet,
-    RuntimeLineId, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
+    FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDeferOwner, RuntimeDialogueValueRole,
+    RuntimeEffectSet, RuntimeLineId, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
+    RuntimeTraitMethodIdentity,
 };
 
 #[derive(Debug)]
@@ -512,6 +514,12 @@ pub enum RuntimeFlowOpSeed {
     ReturnExpr(RuntimeExprSeed),
     Effect(RuntimeLineEffectSeed),
     EvaluatedEffect(RuntimeEvaluatedEffectSeed),
+    RegisterDefer {
+        site: RuntimeDeferSiteId,
+        outcome: RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeExprSeed>,
+        owner: RuntimeDeferOwner,
+    },
     RegisterCleanup {
         key: String,
         effect: RuntimeLineEffectSeed,
@@ -893,6 +901,11 @@ fn collect_terminal_or_effect_free_locals(
         }
         RuntimeFlowOpSeed::Effect(effect) | RuntimeFlowOpSeed::RegisterCleanup { effect, .. } => {
             effect.collect_free_locals(bound, locals);
+        }
+        RuntimeFlowOpSeed::RegisterDefer { captures, .. } => {
+            for capture in captures {
+                capture.collect_free_locals(bound, locals);
+            }
         }
         RuntimeFlowOpSeed::EvaluatedEffect(effect) => {
             effect.collect_free_locals(bound, locals);

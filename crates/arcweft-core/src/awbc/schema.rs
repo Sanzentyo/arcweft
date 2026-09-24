@@ -217,6 +217,8 @@ pub struct AwbcProgram {
     pub signatures: Vec<AwbcSignature>,
     pub frame_layouts: Vec<AwbcFrameLayout>,
     pub functions: Vec<AwbcFunction>,
+    /// Dense source defer-site table pointing at executable function bodies.
+    pub defer_sites: Vec<AwbcFunctionId>,
     pub blocks: Vec<AwbcBlock>,
     pub instructions: Vec<AwbcInstruction>,
     pub resume_points: Vec<AwbcResumePoint>,
@@ -262,6 +264,7 @@ impl Default for AwbcProgram {
             signatures: Vec::new(),
             frame_layouts: Vec::new(),
             functions: Vec::new(),
+            defer_sites: Vec::new(),
             blocks: Vec::new(),
             instructions: Vec::new(),
             resume_points: Vec::new(),
@@ -1532,6 +1535,7 @@ pub enum AwbcOpcode {
     BindPattern = 0x46,
     RegisterCleanup = 0x47,
     CancelCleanup = 0x48,
+    RegisterDefer = 0x49,
     Jump = 0x80,
     Branch = 0x81,
     Match = 0x82,
@@ -1597,6 +1601,7 @@ impl AwbcOpcode {
         Self::BindPattern,
         Self::RegisterCleanup,
         Self::CancelCleanup,
+        Self::RegisterDefer,
         Self::Jump,
         Self::Branch,
         Self::Match,
@@ -1690,7 +1695,8 @@ impl AwbcOpcode {
             | Self::ExitScope
             | Self::BindPattern
             | Self::RegisterCleanup
-            | Self::CancelCleanup => AwbcOpcodeFamily::Ownership,
+            | Self::CancelCleanup
+            | Self::RegisterDefer => AwbcOpcodeFamily::Ownership,
             Self::Jump
             | Self::Branch
             | Self::Match
@@ -1922,6 +1928,12 @@ pub enum AwbcInstruction {
     CancelCleanup {
         key: AwbcStringId,
     },
+    RegisterDefer {
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        owner: AwbcDeferOwner,
+        captures: Vec<AwbcRegisterId>,
+    },
     MakeCallable {
         dst: AwbcRegisterId,
         state: RuntimeCallableStateId,
@@ -2020,6 +2032,7 @@ impl AwbcInstruction {
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
+            Self::RegisterDefer { .. } => AwbcOpcode::RegisterDefer,
             Self::MakeCallable { .. } => AwbcOpcode::MakeCallable,
             Self::SpecializeCallable { .. } => AwbcOpcode::SpecializeCallable,
             Self::ApplyGroup { .. } => AwbcOpcode::ApplyGroup,
@@ -2027,6 +2040,14 @@ impl AwbcInstruction {
             Self::MakeReductionUnchanged { .. } => AwbcOpcode::MakeReductionUnchanged,
         }
     }
+}
+
+/// Storage boundary used by an executable deferred registration.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AwbcDeferOwner {
+    CurrentScope,
+    LineRoot,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

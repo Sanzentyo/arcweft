@@ -979,6 +979,7 @@ fn pattern_children(pattern: &AwbcPattern) -> Vec<AwbcPatternId> {
 fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     verify_callable_states(program)?;
+    verify_defer_sites(program)?;
     super::callable_specialization::verify(program, verifier.budget)?;
     for (index, intrinsic) in program.intrinsics.iter().enumerate() {
         let at = format!("intrinsic {index}");
@@ -1209,6 +1210,41 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             });
         }
         verify_trait_method_receiver(program, index, method)?;
+    }
+    Ok(())
+}
+
+fn verify_defer_sites(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
+    for (index, function_id) in program.defer_sites.iter().enumerate() {
+        let at = format!("defer site {index}");
+        check_index(program.functions.len(), function_id.0, "functions", &at)?;
+        let function = &program.functions[function_id.index()];
+        if function.kind != AwbcFunctionKind::Ordinary {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "defer site target must be an executable ordinary function".to_owned(),
+            });
+        }
+        let Some(signature) = program.signatures.get(function.signature.index()) else {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "defer site target signature is absent".to_owned(),
+            });
+        };
+        if !signature.result.is_some_and(|result| {
+            matches!(
+                program
+                    .runtime_types
+                    .get(result.index())
+                    .map(AwbcRuntimeType::shape),
+                Some(AwbcRuntimeTypeShape::Unit)
+            )
+        }) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "defer site target must return Unit".to_owned(),
+            });
+        }
     }
     Ok(())
 }

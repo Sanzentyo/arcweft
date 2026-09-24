@@ -43,6 +43,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.signatures)?;
         writer.write_table(&self.frame_layouts)?;
         writer.write_table(&self.functions)?;
+        writer.write_table(&self.defer_sites)?;
         writer.write_table(&self.blocks)?;
         writer.write_table(&self.instructions)?;
         writer.write_table(&self.resume_points)?;
@@ -86,6 +87,7 @@ impl Wire for AwbcProgram {
             signatures: reader.read_table("signatures", budget.signatures)?,
             frame_layouts: reader.read_table("frame_layouts", budget.frame_layouts)?,
             functions: reader.read_table("functions", budget.functions)?,
+            defer_sites: reader.read_table("defer_sites", budget.defer_sites)?,
             blocks: reader.read_table("blocks", budget.blocks)?,
             instructions: reader.read_table("instructions", budget.instructions)?,
             resume_points: reader.read_table("resume_points", budget.resume_points)?,

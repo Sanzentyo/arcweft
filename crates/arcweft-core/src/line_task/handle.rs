@@ -1,10 +1,11 @@
+use super::defer::{AwbcRuntimeDeferredRegistrationSnapshot, RuntimeLineDeferredRegistration};
 use super::{LineTaskLiveSnapshot, LineTaskScheduledCompletion, LineTaskWorkTag, ScopeExit};
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
 use crate::presentation::{RuntimeCommandQueue, RuntimeStageRejectCode, RuntimeVoiceSessionId};
 use crate::runtime_id::{
-    DialogueActivationId, RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
-    RuntimeLocalDeclarationId,
+    DialogueActivationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId, RuntimeLineHandleToken,
+    RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
 };
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -317,6 +318,7 @@ pub struct RuntimeDialogueActivationState<T> {
     >,
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     scheduled: Vec<RuntimeScheduledLineTask>,
+    deferred: Vec<RuntimeLineDeferredRegistration>,
     result: RuntimeDialogueResultState<T>,
     frame_released: bool,
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
@@ -351,6 +353,8 @@ pub(crate) struct AwbcRuntimeDialogueActivationSnapshot<T> {
     >,
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     scheduled: Vec<AwbcRuntimeScheduledLineTaskSnapshot>,
+    #[serde(default)]
+    deferred: Vec<AwbcRuntimeDeferredRegistrationSnapshot>,
     result: AwbcRuntimeDialogueResultSnapshot<T>,
     frame_released: bool,
 }
@@ -468,16 +472,71 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             superseded_commands: BTreeMap::new(),
             resolved_commands: std::collections::BTreeSet::new(),
             scheduled: Vec::new(),
+            deferred: Vec::new(),
             result: RuntimeDialogueResultState::Uncommitted,
             frame_released: false,
             prepared_commands: Vec::new(),
         }
     }
 
+    /// Checks the sole lifecycle condition before moving captured affine values.
+    pub(crate) fn can_register_deferred(&self) -> Result<(), LineRuntimeError> {
+        if self.frame_released {
+            return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        Ok(())
+    }
+
+    /// Pushes one dynamic registration onto this activation's line-root stack.
+    /// Repeated registrations of the same site are retained independently.
+    pub fn register_deferred(
+        &mut self,
+        registration: RuntimeLineDeferredRegistration,
+    ) -> Result<(), LineRuntimeError> {
+        self.can_register_deferred()?;
+        self.deferred.push(registration);
+        Ok(())
+    }
+
+    /// Pops the next registration in LIFO order. The unwinder must inspect
+    /// its outcome filter and release captured affine values even when the
+    /// body does not run.
+    pub fn pop_deferred(&mut self) -> Option<RuntimeLineDeferredRegistration> {
+        self.deferred.pop()
+    }
+
+    /// Returns the currently pending line-root registrations in stack order.
+    #[must_use]
+    pub fn deferred_registrations(&self) -> &[RuntimeLineDeferredRegistration] {
+        &self.deferred
+    }
+
+    /// Validates saved defer sites against the executable table that owns them.
+    /// The registry remains backend-neutral; each executable owner supplies
+    /// the site-membership rule for its own table.
+    pub fn validate_deferred_sites(
+        &self,
+        mut contains_site: impl FnMut(RuntimeDeferSiteId) -> bool,
+    ) -> Result<(), LineRuntimeError> {
+        if let Some(registration) = self
+            .deferred
+            .iter()
+            .find(|registration| !contains_site(registration.site()))
+        {
+            return Err(LineRuntimeError::UnknownDeferredSite {
+                site: registration.site(),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn restore_admit(
         &self,
         activation: &DialogueActivationId,
     ) -> Result<(), LineRuntimeError> {
+        if self.frame_released && !self.deferred.is_empty() {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
         validate_restored_ledger(activation, &self.ledger)?;
         validate_restored_command_journal(
             activation,
@@ -617,6 +676,30 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     .any(|scheduled| scheduled.token() == token && scheduled.work() == work)
             {
                 return Err(LineRuntimeError::InvalidRestoredScheduledState);
+            }
+        }
+        for registration in &self.deferred {
+            for capture in registration.captures() {
+                for handle in capture
+                    .affine_line_handles()
+                    .map_err(|_| LineRuntimeError::InvalidRestoredDeferredState)?
+                {
+                    if handle.token().activation() != activation
+                        || !scheduled_capture_tokens.insert(handle.token().clone())
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                    }
+                    let capture_lease = self
+                        .ledger
+                        .lease(handle.token())
+                        .ok_or(LineRuntimeError::InvalidRestoredDeferredState)?;
+                    if capture_lease.resource().kind() != handle.kind()
+                        || capture_lease.owner() != &RuntimeHandleOwnerSlot::LineScope
+                        || capture_lease.state() == RuntimeHandleLeaseState::Released
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredDeferredState);
+                    }
+                }
             }
         }
         let mut result_tokens = std::collections::BTreeSet::new();
@@ -1492,6 +1575,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         activation: &DialogueActivationId,
         preserve_result: bool,
     ) -> Result<(), LineRuntimeError> {
+        if !self.deferred.is_empty() {
+            return Err(LineRuntimeError::DeferredRegistrationsRemain);
+        }
         let mut candidate = self.clone();
         let unstarted = candidate
             .scheduled
@@ -1549,13 +1635,17 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.frame_released {
             return Err(LineRuntimeError::DuplicateFrameRelease);
         }
+        if !self.deferred.is_empty() {
+            return Err(LineRuntimeError::DeferredRegistrationsRemain);
+        }
         self.frame_released = true;
         Ok(())
     }
 
     #[must_use]
     pub(crate) fn failure_close_ready(&self) -> bool {
-        self.issued_commands.is_empty()
+        self.deferred.is_empty()
+            && self.issued_commands.is_empty()
             && self.superseded_commands.is_empty()
             && self.scheduled.iter().all(|scheduled| {
                 matches!(
@@ -1574,7 +1664,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     #[must_use]
     pub(crate) fn successful_close_ready(&self) -> bool {
-        self.issued_commands.is_empty()
+        self.deferred.is_empty()
+            && self.issued_commands.is_empty()
             && self.superseded_commands.is_empty()
             && self.scheduled.iter().all(|scheduled| {
                 matches!(
@@ -1596,12 +1687,12 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     #[must_use]
     pub(crate) fn is_terminal(&self) -> bool {
-        self.terminal_kind().is_some() && self.failure_close_ready()
+        self.deferred.is_empty() && self.terminal_kind().is_some() && self.failure_close_ready()
     }
 
     #[must_use]
     pub(crate) fn terminal_kind(&self) -> Option<RuntimeDialogueTerminalKind> {
-        if !self.frame_released {
+        if !self.frame_released || !self.deferred.is_empty() {
             return None;
         }
         match self.result {
@@ -1617,6 +1708,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         self,
     ) -> Result<RuntimePublishedDialogueHandles, LineRuntimeError> {
         if self.terminal_kind() != Some(RuntimeDialogueTerminalKind::Published)
+            || !self.deferred.is_empty()
             || !self.issued_commands.is_empty()
             || !self.superseded_commands.is_empty()
             || !self.prepared_commands.is_empty()
@@ -1659,6 +1751,11 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .iter()
                 .map(AwbcRuntimeScheduledLineTaskSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
+            deferred: state
+                .deferred
+                .iter()
+                .map(AwbcRuntimeDeferredRegistrationSnapshot::from_live)
+                .collect::<Result<_, _>>()?,
             result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result)?,
             frame_released: state.frame_released,
         })
@@ -1679,6 +1776,11 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .scheduled
                 .into_iter()
                 .map(|scheduled| scheduled.into_live(owner))
+                .collect::<Result<_, _>>()?,
+            deferred: self
+                .deferred
+                .into_iter()
+                .map(|registration| registration.into_live(owner))
                 .collect::<Result<_, _>>()?,
             result: self.result.into_live(owner)?,
             frame_released: self.frame_released,
@@ -2641,6 +2743,9 @@ fn owner_transition_is_legal(
                 | RuntimeHandleOwnerSlot::ChildScope(_)
                 | RuntimeHandleOwnerSlot::DialogueResult(_)
         ) | (
+            RuntimeHandleOwnerSlot::ActivationLocal(_),
+            RuntimeHandleOwnerSlot::LineScope
+        ) | (
             RuntimeHandleOwnerSlot::ChildScope(_),
             RuntimeHandleOwnerSlot::LineScope
         ) | (
@@ -3126,6 +3231,10 @@ pub enum LineRuntimeError {
     InvalidDropPolicy,
     #[error("scheduled line callback limit exceeded")]
     ScheduledCallbackLimitExceeded,
+    #[error("line-root frame cannot be released while deferred registrations remain")]
+    DeferredRegistrationsRemain,
+    #[error("deferred registration site is absent from the executable table: {site}")]
+    UnknownDeferredSite { site: RuntimeDeferSiteId },
     #[error("scheduled callback does not have one exact child-scope capture owner")]
     InvalidScheduledCaptureOwner,
     #[error("scheduled callback work has no exact runtime packet")]
@@ -3243,6 +3352,8 @@ pub enum LineRuntimeError {
     InvalidRestoredScheduledState,
     #[error("restored dialogue result is inconsistent with its ledger/frame phase")]
     InvalidRestoredResultState,
+    #[error("restored line-root deferred registrations violate stack or capture ownership")]
+    InvalidRestoredDeferredState,
     #[error("dialogue activation transaction was superseded by a newer commit")]
     StaleActivationTransaction,
     #[error("dialogue activation transaction revision overflowed")]
@@ -3263,16 +3374,16 @@ mod tests {
         AwbcRuntimeDialogueActivationSnapshot, LineRuntimeError, RuntimeCueLease, RuntimeCueOrigin,
         RuntimeDialogueActivationState, RuntimeDialogueResultState, RuntimeHandleLease,
         RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
-        RuntimeScheduledLineTask,
+        RuntimeLineDeferredRegistration, RuntimeScheduledLineTask, ScopeExit,
     };
     use crate::awbc::schema::{
         AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId,
     };
-    use crate::line_task::{LineTaskWorkTag, RuntimeScheduledState};
+    use crate::line_task::{LineTaskWorkTag, RuntimeDeferOutcomeFilter, RuntimeScheduledState};
     use crate::runtime_id::{
-        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineHandleSiteId,
-        RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
-        RuntimePersistentFiberId, RuntimePlanTypeId,
+        DialogueActivationId, RuntimeDeferSiteId, RuntimeDialogueContentPlanId,
+        RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
+        RuntimeLocalDeclarationId, RuntimePersistentFiberId, RuntimePlanTypeId,
     };
     use crate::time::LogicalDuration;
     use crate::value::{RuntimeAgentValue, RuntimeDataShape, RuntimeLocalBinding, RuntimeValue};
@@ -3318,6 +3429,170 @@ mod tests {
             RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
             9,
         )
+    }
+
+    fn defer_site(index: usize) -> RuntimeDeferSiteId {
+        RuntimeDeferSiteId::from_zero_based(index).expect("defer site")
+    }
+
+    fn deferred(
+        site: RuntimeDeferSiteId,
+        outcome_filter: RuntimeDeferOutcomeFilter,
+        capture: &str,
+    ) -> RuntimeLineDeferredRegistration {
+        RuntimeLineDeferredRegistration::new(
+            site,
+            outcome_filter,
+            vec![RuntimeValue::String(capture.to_owned())],
+        )
+    }
+
+    #[test]
+    fn line_root_defers_are_dynamic_lifo_entries_filtered_by_exit() {
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        let repeated_site = defer_site(0);
+        state
+            .register_deferred(deferred(
+                repeated_site,
+                RuntimeDeferOutcomeFilter::Always,
+                "oldest",
+            ))
+            .expect("register first occurrence");
+        state
+            .register_deferred(deferred(
+                defer_site(1),
+                RuntimeDeferOutcomeFilter::Completed,
+                "skip on failure",
+            ))
+            .expect("register completion-only callback");
+        state
+            .register_deferred(deferred(
+                repeated_site,
+                RuntimeDeferOutcomeFilter::Failed,
+                "newest",
+            ))
+            .expect("register repeated site");
+
+        assert_eq!(
+            state
+                .deferred_registrations()
+                .iter()
+                .map(RuntimeLineDeferredRegistration::site)
+                .collect::<Vec<_>>(),
+            [repeated_site, defer_site(1), repeated_site]
+        );
+        assert_eq!(
+            state.release_frame(),
+            Err(LineRuntimeError::DeferredRegistrationsRemain)
+        );
+        assert_eq!(
+            state
+                .pop_deferred()
+                .expect("newest failure callback")
+                .captures(),
+            [RuntimeValue::String("newest".to_owned())]
+        );
+        let skipped = state.pop_deferred().expect("completion-only callback");
+        assert!(!skipped.outcome_filter().matches(ScopeExit::Failed));
+        assert_eq!(
+            state
+                .pop_deferred()
+                .expect("older always callback")
+                .captures(),
+            [RuntimeValue::String("oldest".to_owned())]
+        );
+        assert!(state.pop_deferred().is_none());
+        state.abandon().expect("close uncommitted activation");
+        state.release_frame().expect("all registrations consumed");
+        assert!(state.is_terminal());
+    }
+
+    #[test]
+    fn line_root_defer_stack_round_trips_in_activation_snapshot_order() {
+        let activation = scheduled_activation();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        state
+            .register_deferred(deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Always,
+                "first capture",
+            ))
+            .expect("register first callback");
+        state
+            .register_deferred(RuntimeLineDeferredRegistration::new(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Cancelled,
+                vec![RuntimeValue::Tuple(vec![
+                    RuntimeValue::Bool(true),
+                    RuntimeValue::String("nested".to_owned()),
+                ])],
+            ))
+            .expect("register same site with a distinct capture");
+        state
+            .restore_admit(&activation)
+            .expect("admit pending defer stack");
+
+        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("snapshot deferred captures");
+        let encoded = serde_json::to_vec(&snapshot).expect("serialize activation snapshot");
+        let decoded: AwbcRuntimeDialogueActivationSnapshot<AwbcTypeId> =
+            serde_json::from_slice(&encoded).expect("deserialize activation snapshot");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let mut restored = decoded
+            .into_live(&owner)
+            .expect("restore captured runtime values for selected program");
+        restored
+            .restore_admit(&activation)
+            .expect("admit restored defer stack");
+
+        assert_eq!(restored.deferred, state.deferred);
+        assert_eq!(
+            restored
+                .pop_deferred()
+                .expect("top cancellation callback")
+                .captures(),
+            [RuntimeValue::Tuple(vec![
+                RuntimeValue::Bool(true),
+                RuntimeValue::String("nested".to_owned()),
+            ])]
+        );
+        assert_eq!(
+            restored
+                .pop_deferred()
+                .expect("older always callback")
+                .captures(),
+            [RuntimeValue::String("first capture".to_owned())]
+        );
+        assert!(restored.pop_deferred().is_none());
+    }
+
+    #[test]
+    fn restored_defer_stack_rejects_released_frames_and_unknown_sites() {
+        let activation = scheduled_activation();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        state
+            .register_deferred(deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Always,
+                "capture",
+            ))
+            .expect("register callback");
+        assert_eq!(
+            state.validate_deferred_sites(|_| false),
+            Err(LineRuntimeError::UnknownDeferredSite {
+                site: defer_site(0)
+            })
+        );
+
+        let mut snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("snapshot pending callback");
+        snapshot.frame_released = true;
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let restored = snapshot.into_live(&owner).expect("restore snapshot values");
+        assert_eq!(
+            restored.restore_admit(&activation),
+            Err(LineRuntimeError::InvalidRestoredDeferredState)
+        );
     }
 
     fn scheduled_state() -> (

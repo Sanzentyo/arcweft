@@ -673,6 +673,9 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                 }
             }
+            FlowOp::RegisterDefer { site, .. } => {
+                self.fail_eval(RuntimeEvalError::UnknownDeferredSite { site }, output);
+            }
             FlowOp::RegisterCleanup { key, effect } => {
                 self.register_scope_cleanup(key, effect);
                 self.advance_if_needed(next_op_index);

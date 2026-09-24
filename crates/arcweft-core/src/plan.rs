@@ -175,6 +175,9 @@ pub struct RuntimePlan {
     pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
     pub(crate) variant_domains: RuntimeVariantDomainTable,
     pub(crate) function_sites: RuntimeFunctionSiteTable,
+    /// Dense registration-site order; each row names one executable function
+    /// body with a capture-only, Unit-returning ABI.
+    pub(crate) defer_sites: Box<[crate::runtime_id::RuntimeFunctionSiteId]>,
     pub(crate) callable_states: RuntimeCallableStateTable,
     pub(crate) callable_specializations: Box<
         [RuntimeCallableSpecializationDefinition<
@@ -268,6 +271,19 @@ impl RuntimePlan {
     #[must_use]
     pub const fn function_sites(&self) -> &RuntimeFunctionSiteTable {
         &self.function_sites
+    }
+
+    #[must_use]
+    pub fn defer_function_site(
+        &self,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    ) -> Option<crate::runtime_id::RuntimeFunctionSiteId> {
+        self.defer_sites.get(site.index()).copied()
+    }
+
+    #[must_use]
+    pub fn defer_sites(&self) -> &[crate::runtime_id::RuntimeFunctionSiteId] {
+        &self.defer_sites
     }
 
     #[must_use]
@@ -1079,7 +1095,14 @@ impl RuntimeIteratorEvidence {
     }
 }
 
-/// Runtime identifier for a lowered stream transform.
+/// The runtime scope that owns a reached deferred registration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeDeferOwner {
+    /// Unwinds with the current lexical fiber scope.
+    CurrentScope,
+    /// Survives activation and unwinds after the line's joined children.
+    LineRoot,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowOp {
@@ -1218,6 +1241,14 @@ pub enum FlowOp {
     ReturnExpr(RuntimeExpr),
     Effect(LineEffectRequest),
     EvaluatedEffect(RuntimeEffectExpr),
+    /// Registers a reached deferred body and its evaluated captures with the
+    /// owning runtime scope. Repeated executions of one site remain distinct.
+    RegisterDefer {
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeExpr>,
+        owner: RuntimeDeferOwner,
+    },
     RegisterCleanup {
         key: String,
         effect: LineEffectRequest,

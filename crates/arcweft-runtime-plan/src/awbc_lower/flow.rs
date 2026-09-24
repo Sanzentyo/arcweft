@@ -30,10 +30,10 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDialogueValueRole,
-    RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutableBody, RuntimeFlow,
-    RuntimeFunctionInputBinding, RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable,
-    RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDeferOwner,
+    RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeExecutableBody, RuntimeFlow, RuntimeFunctionInputBinding, RuntimeIteratorEvidence,
+    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
     RuntimeProjectCallAttachedPresence as RuntimeProjectCallAttachedPresenceCore,
     RuntimeProjectCallOrdinaryMaterialization as RuntimeProjectCallOrdinaryMaterializationCore,
     RuntimeProjectCallPlan, RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
@@ -328,6 +328,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         {
             self.inventory.reserve_flow_function_slot(&flow.id);
         }
+        self.lower_defer_sites();
         for flow in self
             .plan
             .flows()
@@ -363,6 +364,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             }
         }
         self.inventory.lower_selected_entries(self.plan, entries);
+    }
+
+    fn lower_defer_sites(&mut self) {
+        let sites = self.plan.defer_sites().to_vec();
+        let mut functions = Vec::with_capacity(sites.len());
+        for (index, site) in sites.into_iter().enumerate() {
+            let path = format!("defer.{index}");
+            let Some(function) = self.prepare_function_site(site, &path) else {
+                continue;
+            };
+            functions.push(function);
+        }
+        self.inventory.program.defer_sites = functions;
     }
 
     fn lower_pure_helper(&mut self, helper: &RuntimePureHelper) {
@@ -1529,6 +1543,33 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 let (effect, args) = self.lower_effect_plan(frame, path, effect);
                 self.inventory
                     .push_instruction(AwbcInstruction::RegisterCleanup { key, effect, args });
+            }
+            FlowOp::RegisterDefer {
+                site,
+                outcome,
+                captures,
+                owner,
+            } => {
+                let captures = captures
+                    .iter()
+                    .map(|capture| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(capture)
+                    })
+                    .collect();
+                self.inventory
+                    .push_instruction(AwbcInstruction::RegisterDefer {
+                        site: *site,
+                        outcome: *outcome,
+                        owner: match owner {
+                            RuntimeDeferOwner::CurrentScope => {
+                                arcweft_core::awbc::schema::AwbcDeferOwner::CurrentScope
+                            }
+                            RuntimeDeferOwner::LineRoot => {
+                                arcweft_core::awbc::schema::AwbcDeferOwner::LineRoot
+                            }
+                        },
+                        captures,
+                    });
             }
             FlowOp::CancelCleanup { key } => {
                 let key = self.inventory.intern_string(key);
@@ -3199,6 +3240,7 @@ fn collect_flow_dependencies(
             | FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::RegisterCleanup { .. }
+            | FlowOp::RegisterDefer { .. }
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }
             | FlowOp::ExitScope

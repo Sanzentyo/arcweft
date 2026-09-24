@@ -62,8 +62,9 @@ use crate::line_task::{
 };
 use crate::pattern::{RuntimePatternBindingPathError, RuntimeSemanticTypeId};
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount, RuntimeDialogueMarkId,
-    RuntimeLineTaskGroupId, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDeferSiteId, RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount,
+    RuntimeDialogueMarkId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
+    RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::stream::StreamPlan;
 use crate::value::{RuntimeAgentConstructor, RuntimeDialogueOpaqueRole, RuntimeRecordFieldIdError};
@@ -212,6 +213,12 @@ pub enum RuntimePlanBuildError {
     ForeignLocalSeed,
     #[error("a construction-only function-site handle belongs to another runtime-plan builder")]
     ForeignFunctionSiteSeed,
+    #[error("runtime defer site has no executable capture-only Unit function body")]
+    InvalidDeferFunctionSite,
+    #[error("runtime function site is registered as a defer more than once")]
+    DuplicateDeferFunctionSite,
+    #[error("runtime defer-site identity space is exhausted")]
+    DeferSiteIdentityExhausted,
     #[error(
         "runtime function site {site} body family is {actual:?}, expected reserved family {expected:?}"
     )]
@@ -621,6 +628,7 @@ pub struct RuntimePlanBuilder {
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
+    defer_sites: Vec<crate::runtime_id::RuntimeFunctionSiteId>,
     callable_states: RefCell<callable_states::RuntimeCallableStateBuilder>,
     callable_specializations: Vec<
         super::RuntimeCallableSpecializationDefinition<
@@ -655,6 +663,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
+            defer_sites: Vec::new(),
             callable_states: RefCell::new(callable_states::RuntimeCallableStateBuilder::default()),
             callable_specializations: Vec::new(),
             project_call_sites: RefCell::new(RuntimeProjectCallSiteTableBuilder::default()),
@@ -872,6 +881,50 @@ impl RuntimePlanBuilder {
             body_kind,
             effects,
         ))
+    }
+
+    /// Reserves one source defer site against a checked executable function.
+    /// The function body may be defined later, but its ABI is fixed here.
+    pub fn reserve_defer_site_seed(
+        &mut self,
+        function: &RuntimeFunctionSiteSeedId,
+    ) -> Result<RuntimeDeferSiteId, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = self.try_reserve_defer_site_seed(function);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
+    fn try_reserve_defer_site_seed(
+        &mut self,
+        function: &RuntimeFunctionSiteSeedId,
+    ) -> Result<RuntimeDeferSiteId, RuntimePlanBuildError> {
+        let (function_id, sources, _, result, body_kind, _) = function
+            .resolve(&self.issuer)
+            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+        let valid_result = self.types.get(result).is_some_and(|declaration| {
+            matches!(
+                declaration.projection(),
+                super::RuntimePlanTypeProjection::Unit
+            )
+        });
+        if body_kind != RuntimeFunctionSiteBodyKind::Executable
+            || !valid_result
+            || sources
+                .iter()
+                .any(|source| matches!(source, RuntimeFunctionInputSource::Parameter { .. }))
+        {
+            return Err(RuntimePlanBuildError::InvalidDeferFunctionSite);
+        }
+        if self.defer_sites.contains(&function_id) {
+            return Err(RuntimePlanBuildError::DuplicateDeferFunctionSite);
+        }
+        let site = RuntimeDeferSiteId::from_zero_based(self.defer_sites.len())
+            .ok_or(RuntimePlanBuildError::DeferSiteIdentityExhausted)?;
+        self.defer_sites.push(function_id);
+        Ok(site)
     }
 
     pub fn define_function_site_seed(
@@ -2194,6 +2247,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: self.nominal_record_domains.finish(),
             variant_domains: self.variant_domains.finish(),
             function_sites: function_site_builder.finish(),
+            defer_sites: self.defer_sites.into_boxed_slice(),
             callable_states: self.callable_states.into_inner().finish(),
             callable_specializations: self.callable_specializations.into_boxed_slice(),
             project_call_sites,

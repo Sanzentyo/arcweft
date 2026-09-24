@@ -163,6 +163,7 @@ runtime_u32_identity!(RuntimeCleanupSlotId);
 runtime_u32_identity!(RuntimeDialogueValueSlotId);
 runtime_u32_identity!(RuntimeDialogueContentTemplateId);
 runtime_u32_identity!(RuntimeDialogueEffectSiteId);
+runtime_u32_identity!(RuntimeDeferSiteId);
 runtime_u32_identity!(RuntimeLineTaskGroupId);
 runtime_u32_identity!(RuntimeLineTaskNodeId);
 runtime_u32_identity!(RuntimeDialogueMarkId);
@@ -455,6 +456,21 @@ impl RuntimeDialogueEffectSiteId {
     #[must_use]
     pub const fn index(self) -> usize {
         (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeDeferSiteId {
+    /// Creates the canonical one-based identity for a defer registration site.
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    /// Returns the zero-based ordinal of this defer registration site.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.get().get() - 1) as usize
     }
 }
 

@@ -4,8 +4,8 @@ use super::schema::{
     AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcDialogueResultTarget, AwbcEffectPlanId,
     AwbcEntryId, AwbcEntryTarget, AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId,
     AwbcFunctionKind, AwbcHostCallId, AwbcPatternId, AwbcProgram, AwbcRegisterId,
-    AwbcResumePointId, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
+    AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignatureId,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
     AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::entry::{FlowParameterCoordinate, RuntimeNominalTypeId};
@@ -61,6 +61,7 @@ pub struct FiberFrame {
     pub return_to: Option<FiberReturnPoint>,
     pub registers: Vec<Option<RuntimeValue>>,
     pub root_cleanups: Vec<FiberScopeCleanup>,
+    pub root_defers: Vec<FiberDeferredRegistration>,
     pub scopes: Vec<FiberScope>,
 }
 
@@ -121,6 +122,16 @@ pub struct FiberScope {
     pub id: AwbcScopeId,
     pub depth: u32,
     pub cleanups: Vec<FiberScopeCleanup>,
+    pub defers: Vec<FiberDeferredRegistration>,
+}
+
+/// Captured values retained at one reached executable defer statement.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct FiberDeferredRegistration {
+    pub site: crate::runtime_id::RuntimeDeferSiteId,
+    pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+    pub capture_registers: Vec<AwbcRegisterId>,
+    pub captures: Vec<RuntimeValue>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -298,6 +309,7 @@ pub struct AwbcFiberFrameSnapshot {
     pub return_to: Option<AwbcFiberReturnPointSnapshot>,
     pub registers: Vec<Option<AwbcRuntimeValueSnapshot>>,
     pub root_cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
+    pub root_defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
     pub scopes: Vec<AwbcFiberScopeSnapshot>,
 }
 
@@ -333,6 +345,16 @@ pub struct AwbcFiberScopeSnapshot {
     pub id: AwbcScopeId,
     pub depth: u32,
     pub cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
+    pub defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcFiberDeferredRegistrationSnapshot {
+    pub site: crate::runtime_id::RuntimeDeferSiteId,
+    pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+    pub capture_registers: Vec<AwbcRegisterId>,
+    pub captures: Vec<AwbcRuntimeValueSnapshot>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -507,6 +529,11 @@ impl AwbcFiberFrameSnapshot {
                 .iter()
                 .map(AwbcFiberScopeCleanupSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
+            root_defers: frame
+                .root_defers
+                .iter()
+                .map(AwbcFiberDeferredRegistrationSnapshot::from_live)
+                .collect::<Result<_, _>>()?,
             scopes: frame
                 .scopes
                 .iter()
@@ -535,6 +562,11 @@ impl AwbcFiberFrameSnapshot {
                 .collect::<Result<_, _>>()?,
             root_cleanups: self
                 .root_cleanups
+                .into_iter()
+                .map(|value| value.into_live(owner))
+                .collect::<Result<_, _>>()?,
+            root_defers: self
+                .root_defers
                 .into_iter()
                 .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
@@ -637,6 +669,11 @@ impl AwbcFiberScopeSnapshot {
                 .iter()
                 .map(AwbcFiberScopeCleanupSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
+            defers: scope
+                .defers
+                .iter()
+                .map(AwbcFiberDeferredRegistrationSnapshot::from_live)
+                .collect::<Result<_, _>>()?,
         })
     }
 
@@ -646,6 +683,11 @@ impl AwbcFiberScopeSnapshot {
             depth: self.depth,
             cleanups: self
                 .cleanups
+                .into_iter()
+                .map(|value| value.into_live(owner))
+                .collect::<Result<_, _>>()?,
+            defers: self
+                .defers
                 .into_iter()
                 .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
@@ -672,6 +714,34 @@ impl AwbcFiberScopeCleanupSnapshot {
             effect: self.effect,
             args: self
                 .args
+                .into_iter()
+                .map(|value| value.into_runtime_value_for_program(owner))
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+impl AwbcFiberDeferredRegistrationSnapshot {
+    fn from_live(registration: &FiberDeferredRegistration) -> AwbcSaveResult<Self> {
+        Ok(Self {
+            site: registration.site,
+            outcome: registration.outcome,
+            capture_registers: registration.capture_registers.clone(),
+            captures: registration
+                .captures
+                .iter()
+                .map(AwbcRuntimeValueSnapshot::from_runtime_value)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberDeferredRegistration> {
+        Ok(FiberDeferredRegistration {
+            site: self.site,
+            outcome: self.outcome,
+            capture_registers: self.capture_registers,
+            captures: self
+                .captures
                 .into_iter()
                 .map(|value| value.into_runtime_value_for_program(owner))
                 .collect::<Result<_, _>>()?,
@@ -2093,6 +2163,14 @@ fn validate_frame(
     for (index, cleanup) in frame.root_cleanups.iter().enumerate() {
         validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
     }
+    for (index, deferred) in frame.root_defers.iter().enumerate() {
+        validate_deferred(
+            program,
+            deferred,
+            layout.slots.len(),
+            &format!("{path}.root_defers[{index}]"),
+        )?;
+    }
     for (scope_index, scope) in frame.scopes.iter().enumerate() {
         let definition = layout
             .scopes
@@ -2114,6 +2192,68 @@ fn validate_frame(
                 &format!("{path}.scopes[{scope_index}].cleanups[{cleanup_index}]"),
             )?;
         }
+        for (defer_index, deferred) in scope.defers.iter().enumerate() {
+            validate_deferred(
+                program,
+                deferred,
+                layout.slots.len(),
+                &format!("{path}.scopes[{scope_index}].defers[{defer_index}]"),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_deferred(
+    program: &AwbcProgram,
+    deferred: &FiberDeferredRegistration,
+    register_count: usize,
+    path: &str,
+) -> Result<(), FiberStateError> {
+    let function_id = program
+        .defer_sites
+        .get(deferred.site.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let function = program
+        .functions
+        .get(function_id.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if deferred.capture_registers.len() != deferred.captures.len()
+        || signature.params.len() != deferred.captures.len()
+        || !signature.result.is_some_and(|result| {
+            matches!(
+                program
+                    .runtime_types
+                    .get(result.index())
+                    .map(AwbcRuntimeType::shape),
+                Some(AwbcRuntimeTypeShape::Unit)
+            )
+        })
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let mut seen_registers = std::collections::BTreeSet::new();
+    for (index, (register, capture)) in deferred
+        .capture_registers
+        .iter()
+        .zip(&deferred.captures)
+        .enumerate()
+    {
+        if register.index() >= register_count
+            || !seen_registers.insert(*register) && !capture.ownership().permits_copy()
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        validate_runtime_value_at(
+            program,
+            capture,
+            Some(signature.params[index]),
+            format!("{path}.captures[{index}]"),
+        )?;
     }
     Ok(())
 }
@@ -2935,6 +3075,7 @@ impl FiberFrame {
             return_to,
             registers: vec![None; layout.slots.len()],
             root_cleanups: Vec::new(),
+            root_defers: Vec::new(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
         })
     }

@@ -9,7 +9,7 @@ use super::structure::{
     types_compatible,
 };
 use crate::awbc::schema::{
-    AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant,
+    AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDeferOwner,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole,
     AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcPattern, AwbcPatternId,
     AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
@@ -1184,6 +1184,58 @@ fn apply_instruction(
         }
         AwbcInstruction::CancelCleanup { key } => {
             check_string(program, *key, &at)?;
+        }
+        AwbcInstruction::RegisterDefer {
+            site,
+            owner,
+            captures,
+            ..
+        } => {
+            if *owner == AwbcDeferOwner::LineRoot
+                && program.functions[function].kind != AwbcFunctionKind::LineActivation
+            {
+                return invalid_type(&at, "line-root defer inside a LineActivation function");
+            }
+            check_args_budget(verifier, captures.len())?;
+            let function_id = program
+                .defer_sites
+                .get(site.index())
+                .copied()
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: format!("defer site {site} is absent"),
+                })?;
+            let defer_function = program.functions.get(function_id.index()).ok_or_else(|| {
+                AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "defer site target function is absent".to_owned(),
+                }
+            })?;
+            let signature = program
+                .signatures
+                .get(defer_function.signature.index())
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "defer site target signature is absent".to_owned(),
+                })?;
+            if signature.params.len() != captures.len()
+                || !signature.result.is_some_and(|result| {
+                    matches!(
+                        runtime_shape(program, result),
+                        Some(AwbcRuntimeTypeShape::Unit)
+                    )
+                })
+            {
+                return invalid_type(&at, "defer target capture ABI with Unit result");
+            }
+            let mut seen = BTreeSet::new();
+            for (capture, expected) in captures.iter().zip(&signature.params) {
+                let actual = read_register(verifier, function, block, *capture, state)?;
+                if !seen.insert(*capture) && !runtime_type_permits_copy(program, actual, 0) {
+                    return invalid_type(&at, "defer capture registers unique for affine values");
+                }
+                require_compatible(program, *expected, actual, &at)?;
+            }
         }
         AwbcInstruction::MakeCallable {
             dst,

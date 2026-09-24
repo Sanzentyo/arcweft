@@ -14,17 +14,17 @@ use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, LineTaskReadyEvents, MAX_LINE_SCHEDULED_CALLBACKS,
     RuntimeCueLease, RuntimeCueOrigin, RuntimeDialogueActivationState, RuntimeDialogueResultState,
     RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
-    RuntimeLineHandleSiteKind, RuntimeScheduledLineTask, RuntimeStageActorLease, RuntimeVoiceLease,
-    progress_live_line_task_group,
+    RuntimeLineDeferredRegistration, RuntimeLineHandleSiteKind, RuntimeScheduledLineTask,
+    RuntimeStageActorLease, RuntimeVoiceLease, progress_live_line_task_group,
 };
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
-use crate::plan::{FlowEvent, FlowOp, RuntimeLineOperation};
+use crate::plan::{FlowEvent, FlowOp, RuntimeDeferOwner, RuntimeLineOperation};
 use crate::presentation::{
     RuntimeCommandQueue, RuntimeDialogueVoiceState, RuntimeLineHostOutcome,
     RuntimeStageCommandOutcome, RuntimeVoiceCommandOutcome,
 };
 use crate::pure::RuntimeCallBackend;
-use crate::runtime_id::{RuntimeLineHandleToken, RuntimePlanTypeId};
+use crate::runtime_id::{RuntimeDeferSiteId, RuntimeLineHandleToken, RuntimePlanTypeId};
 use crate::value::RuntimeExprKind;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use thiserror::Error;
@@ -635,12 +635,125 @@ impl Engine {
                     pure_backend,
                 )?;
             }
+            FlowOp::RegisterDefer {
+                site,
+                outcome,
+                captures,
+                owner: RuntimeDeferOwner::LineRoot,
+            } => {
+                self.register_line_root_defer(frame, activation, site, outcome, &captures)?;
+            }
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         }
         if frame.pending_line_operation.is_none() {
             advance_activation_pc(frame)?;
         }
         Ok(line_task_start)
+    }
+
+    /// Captures the exact reached defer site without executing its body.
+    /// Affine locals move only after the complete capture/ledger preflight.
+    fn register_line_root_defer(
+        &mut self,
+        frame: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+        site: RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: &[crate::value::RuntimeExpr],
+    ) -> Result<(), DialogueExecutionError> {
+        activation.can_register_deferred()?;
+        let function_id = self
+            .plan
+            .defer_function_site(site)
+            .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
+        let function = self
+            .plan
+            .function_sites()
+            .get(function_id)
+            .ok_or(RuntimeEvalError::UnknownDeferredSite { site })?;
+        if captures.len() != function.capture_inputs().count() {
+            return Err(LineRuntimeError::InvalidActivationOperation.into());
+        }
+
+        let mut ledger = activation.ledger().clone();
+        let mut moved_locals = std::collections::BTreeSet::new();
+        let mut captured_handles = std::collections::BTreeSet::new();
+        for (capture, input) in captures.iter().zip(function.capture_inputs()) {
+            let RuntimeExprKind::Local(local) = capture.kind() else {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            };
+            if capture.ty() != input.pattern().ty() {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            let value = frame
+                .locals
+                .get(*local)
+                .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
+            if !self
+                .plan
+                .value_matches_type(capture.ty(), value)
+                .map_err(RuntimeEvalError::from)?
+            {
+                return Err(RuntimeEvalError::InvalidExpressionType(capture.ty()).into());
+            }
+            if value.ownership().permits_copy() {
+                continue;
+            }
+            if !moved_locals.insert(*local) {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            for handle in unique_affine_line_handles(value)? {
+                if !captured_handles.insert(handle.token().clone()) {
+                    return Err(LineRuntimeError::InvalidActivationOperation.into());
+                }
+                let lease = ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.resource().kind() != handle.kind() {
+                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
+                }
+                match lease.owner() {
+                    RuntimeHandleOwnerSlot::LineScope => {}
+                    owner @ RuntimeHandleOwnerSlot::ActivationLocal(_) => {
+                        let owner = owner.clone();
+                        ledger.transfer(
+                            handle.token(),
+                            &owner,
+                            RuntimeHandleOwnerSlot::LineScope,
+                        )?;
+                    }
+                    _ => return Err(LineRuntimeError::WrongOwner.into()),
+                }
+            }
+        }
+
+        let values = captures
+            .iter()
+            .map(|capture| {
+                let RuntimeExprKind::Local(local) = capture.kind() else {
+                    unreachable!("defer capture was checked as a local")
+                };
+                let value = frame
+                    .locals
+                    .get(*local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
+                if value.ownership().permits_copy() {
+                    Ok(value.clone())
+                } else {
+                    frame
+                        .locals
+                        .take(*local)
+                        .ok_or(RuntimeEvalError::UnknownLocal(*local))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        // The preflight above established a live frame; no intervening code can
+        // release it before this registration is committed.
+        activation
+            .register_deferred(RuntimeLineDeferredRegistration::new(site, outcome, values))
+            .expect("line-root defer registration was admitted before moving captures");
+        activation.commit_ledger(ledger);
+        Ok(())
     }
 
     fn evaluate_dialogue_expr(

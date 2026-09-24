@@ -1956,6 +1956,10 @@ pub enum RuntimeEvalError {
     Callable(#[from] RuntimeCallableValueError),
     #[error("structured function site {site} belongs to a different admitted runtime plan")]
     ForeignStructuredFunction { site: RuntimeFunctionSiteId },
+    #[error("runtime defer site {site} has no executable body in this plan")]
+    UnknownDeferredSite {
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
     #[error("structured function site {site} exhausted without a typed return")]
     FunctionFallthrough { site: RuntimeFunctionSiteId },
     #[error("structured function site {site} capture local {local} is not bound")]

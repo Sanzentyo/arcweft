@@ -201,6 +201,9 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         VmObservation::DialogueResult { .. } => ParityEvent::Effect {
             id: "dialogue-result".to_owned(),
         },
+        VmObservation::LineDeferRegistration { site, .. } => ParityEvent::Effect {
+            id: format!("line-defer#{}", site.get().get()),
+        },
         VmObservation::Drop { policy } => ParityEvent::Effect {
             id: match policy {
                 crate::effect::RuntimeDropPolicy::Stop { fade } => {

@@ -20,7 +20,7 @@ use crate::entry::{
 };
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
-    RuntimeFunctionSiteId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
+    RuntimeDeferSiteId, RuntimeFunctionSiteId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
     RuntimeProjectCallSiteId, RuntimePublicLabel,
 };
 use crate::value::RuntimeFlowParameterBinding;
@@ -685,6 +685,14 @@ pub enum RuntimePlanError {
     ParameterizedDirectEntryTarget { entry: String, flow: String },
     #[error("runtime plan references missing project-call site {site}")]
     MissingProjectCallSite { site: RuntimeProjectCallSiteId },
+    #[error("runtime plan references missing defer site {site}")]
+    MissingDeferSite { site: RuntimeDeferSiteId },
+    #[error("runtime defer site {site} capture ABI does not match its executable body")]
+    InvalidDeferCaptureAbi { site: RuntimeDeferSiteId },
+    #[error("runtime defer site {site} does not identify a capture-only Unit executable body")]
+    InvalidDeferFunctionSite { site: RuntimeDeferSiteId },
+    #[error("runtime defer-site table exceeds its identity space")]
+    DeferSiteIdentityExhausted,
 }
 
 impl RuntimePlan {
@@ -698,7 +706,7 @@ impl RuntimePlan {
             )?;
         }
         let flow_ids = self.verify_flow_schemas()?;
-        self.verify_project_call_sites()?;
+        self.verify_executable_sites()?;
         let mut helper_ids = BTreeSet::new();
         for helper in &self.pure_helpers {
             if !helper_ids.insert(helper.id) {
@@ -791,8 +799,28 @@ impl RuntimePlan {
         Ok(())
     }
 
-    fn verify_project_call_sites(&self) -> Result<(), RuntimePlanError> {
-        let check_ops = |ops: &[FlowOp]| self.verify_project_call_ops(ops);
+    fn verify_executable_sites(&self) -> Result<(), RuntimePlanError> {
+        for (index, function_id) in self.defer_sites().iter().enumerate() {
+            let site = RuntimeDeferSiteId::from_zero_based(index)
+                .ok_or(RuntimePlanError::DeferSiteIdentityExhausted)?;
+            let function = self
+                .function_sites()
+                .get(*function_id)
+                .ok_or(RuntimePlanError::InvalidDeferFunctionSite { site })?;
+            if !matches!(
+                function.body(),
+                super::RuntimeFunctionSiteBody::Executable(_)
+            ) || !matches!(
+                self.type_table()
+                    .get(function.result())
+                    .map(|ty| ty.projection()),
+                Some(super::RuntimePlanTypeProjection::Unit)
+            ) || function.parameter_inputs().next().is_some()
+            {
+                return Err(RuntimePlanError::InvalidDeferFunctionSite { site });
+            }
+        }
+        let check_ops = |ops: &[FlowOp]| self.verify_executable_site_ops(ops);
         for flow in &self.flows {
             check_ops(flow.body().ops())?;
         }
@@ -826,12 +854,31 @@ impl RuntimePlan {
         Ok(())
     }
 
-    fn verify_project_call_ops(&self, ops: &[FlowOp]) -> Result<(), RuntimePlanError> {
+    fn verify_executable_site_ops(&self, ops: &[FlowOp]) -> Result<(), RuntimePlanError> {
         for op in ops {
             match op {
                 FlowOp::ProjectCall { site } => {
                     if self.project_call_sites().get(*site).is_none() {
                         return Err(RuntimePlanError::MissingProjectCallSite { site: *site });
+                    }
+                }
+                FlowOp::RegisterDefer { site, captures, .. } => {
+                    let function_id = self
+                        .defer_function_site(*site)
+                        .ok_or(RuntimePlanError::MissingDeferSite { site: *site })?;
+                    let function = self
+                        .function_sites()
+                        .get(function_id)
+                        .ok_or(RuntimePlanError::MissingDeferSite { site: *site })?;
+                    if captures.iter().any(|capture| {
+                        !matches!(capture.kind(), crate::value::RuntimeExprKind::Local(_))
+                    }) || captures.len() != function.capture_inputs().count()
+                        || !captures
+                            .iter()
+                            .zip(function.capture_inputs())
+                            .all(|(capture, input)| capture.ty() == input.pattern().ty())
+                    {
+                        return Err(RuntimePlanError::InvalidDeferCaptureAbi { site: *site });
                     }
                 }
                 FlowOp::LetElse { else_ops, .. }
@@ -840,7 +887,7 @@ impl RuntimePlan {
                 | FlowOp::Loop { body: else_ops, .. }
                 | FlowOp::While { body: else_ops, .. }
                 | FlowOp::WhileLet { body: else_ops, .. } => {
-                    self.verify_project_call_ops(else_ops)?;
+                    self.verify_executable_site_ops(else_ops)?;
                 }
                 FlowOp::If {
                     then_ops, else_ops, ..
@@ -848,25 +895,25 @@ impl RuntimePlan {
                 | FlowOp::IfLet {
                     then_ops, else_ops, ..
                 } => {
-                    self.verify_project_call_ops(then_ops)?;
-                    self.verify_project_call_ops(else_ops)?;
+                    self.verify_executable_site_ops(then_ops)?;
+                    self.verify_executable_site_ops(else_ops)?;
                 }
                 FlowOp::Match { arms, .. } => {
                     for arm in arms {
-                        self.verify_project_call_ops(&arm.ops)?;
+                        self.verify_executable_site_ops(&arm.ops)?;
                     }
                 }
                 FlowOp::LoopNext { body }
                 | FlowOp::WhileNext { body, .. }
                 | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::ForNext { body, .. } => {
-                    self.verify_project_call_ops(body)?;
+                    self.verify_executable_site_ops(body)?;
                 }
-                FlowOp::For { body, .. } => self.verify_project_call_ops(body)?,
-                FlowOp::LetScope { ops, .. } => self.verify_project_call_ops(ops)?,
+                FlowOp::For { body, .. } => self.verify_executable_site_ops(body)?,
+                FlowOp::LetScope { ops, .. } => self.verify_executable_site_ops(ops)?,
                 FlowOp::Await { observers, .. } => {
                     for observer in observers {
-                        self.verify_project_call_ops(&observer.ops)?;
+                        self.verify_executable_site_ops(&observer.ops)?;
                     }
                 }
                 FlowOp::Bind(_)

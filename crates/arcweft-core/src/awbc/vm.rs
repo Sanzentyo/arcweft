@@ -252,6 +252,15 @@ pub enum VmObservation {
         source_register: AwbcRegisterId,
         source: RuntimeValue,
     },
+    /// A line-root defer registration awaiting the dialogue activation owner.
+    /// Captures remain in their source registers until that owner transfers
+    /// affine values into the activation registry and commits this cursor.
+    LineDeferRegistration {
+        cursor: FiberCursor,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: Vec<(AwbcRegisterId, RuntimeValue)>,
+    },
     /// Internal affine graph transaction evidence. This never becomes a
     /// host-facing effect; the owning executor reconciles the before/after
     /// register graph with its dialogue handle registry exactly once.
@@ -675,12 +684,23 @@ fn execute_instruction(
                     id: *scope,
                     depth,
                     cleanups: Vec::new(),
+                    defers: Vec::new(),
                 });
         }
         AwbcInstruction::ExitScope { scope } => {
             if fiber.active_frame()?.scopes.last().map(|active| active.id) != Some(*scope) {
                 return Err(VmError::Runtime(
                     "scope exit does not match the active scope".to_owned(),
+                ));
+            }
+            if fiber
+                .active_frame()?
+                .scopes
+                .last()
+                .is_some_and(|active| !active.defers.is_empty())
+            {
+                return Err(VmError::Runtime(
+                    "scope exit requires an executable defer unwinder".to_owned(),
                 ));
             }
             let layout_id = fiber.active_frame()?.layout;
@@ -1291,6 +1311,46 @@ fn execute_instruction(
                 scope.cleanups.push(cleanup);
             } else {
                 frame.root_cleanups.push(cleanup);
+            }
+        }
+        AwbcInstruction::RegisterDefer {
+            site,
+            outcome,
+            owner,
+            captures,
+        } => {
+            let captured = captures
+                .iter()
+                .map(|capture| Ok((*capture, register(fiber, *capture)?.clone())))
+                .collect::<Result<Vec<_>, VmError>>()?;
+            if *owner == super::schema::AwbcDeferOwner::LineRoot {
+                observations.push(VmObservation::LineDeferRegistration {
+                    cursor: fiber.cursor,
+                    site: *site,
+                    outcome: *outcome,
+                    captures: captured,
+                });
+                return Ok(InstructionControl::Yield);
+            }
+            if captured
+                .iter()
+                .any(|(_, value)| !value.ownership().permits_copy())
+            {
+                return Err(VmError::Runtime(
+                    "CurrentScope defer cannot yet retain affine captures".to_owned(),
+                ));
+            }
+            let deferred = super::fiber::FiberDeferredRegistration {
+                site: *site,
+                outcome: *outcome,
+                capture_registers: captures.clone(),
+                captures: captured.into_iter().map(|(_, value)| value).collect(),
+            };
+            let frame = fiber.active_frame_mut()?;
+            if let Some(scope) = frame.scopes.last_mut() {
+                scope.defers.push(deferred);
+            } else {
+                frame.root_defers.push(deferred);
             }
         }
         AwbcInstruction::CancelCleanup { key } => {

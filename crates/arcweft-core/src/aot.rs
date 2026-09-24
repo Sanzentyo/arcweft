@@ -117,6 +117,7 @@ impl AotLinearOp {
             FlowOp::LetElse { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
+            | FlowOp::RegisterDefer { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
@@ -250,6 +251,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         FlowOp::LetElse { .. }
         | FlowOp::LineOperation { .. }
         | FlowOp::CommitDialogueResult { .. }
+        | FlowOp::RegisterDefer { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
@@ -325,6 +327,7 @@ impl AotOpClass {
             | FlowOp::Scope { .. } => Self::Branch,
             FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
+            | FlowOp::RegisterDefer { .. }
             | FlowOp::CommitDialogueResult { .. } => Self::Effect,
             FlowOp::LineOperation { .. } => Self::Await,
             FlowOp::Await { .. }
@@ -396,6 +399,7 @@ impl AotProgramStats {
                 | FlowOp::ReturnExpr(_)
                 | FlowOp::Effect(_)
                 | FlowOp::EvaluatedEffect(_)
+                | FlowOp::RegisterDefer { .. }
                 | FlowOp::RegisterCleanup { .. }
                 | FlowOp::CancelCleanup { .. }
                 | FlowOp::EnterScope { .. }

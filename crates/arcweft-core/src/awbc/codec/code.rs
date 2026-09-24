@@ -7,17 +7,17 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
-    AwbcConstantId, AwbcContentUnitId, AwbcDialogueContentEffectBinding, AwbcDialogueResultTarget,
-    AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId,
-    AwbcFieldProjection, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId,
-    AwbcMatchArm, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest,
-    AwbcProjectCall, AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
-    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
-    AwbcTypeId, AwbcUnaryOp,
+    AwbcConstantId, AwbcContentUnitId, AwbcDeferOwner, AwbcDialogueContentEffectBinding,
+    AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
+    AwbcEffectPlanId, AwbcFieldProjection, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId,
+    AwbcLineOperationId, AwbcMatchArm, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId,
+    AwbcPatternRest, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRecordPatternField,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
+    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
 use crate::value::RuntimeAgentConstructor;
@@ -25,6 +25,76 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
+
+impl Wire for crate::runtime_id::RuntimeDeferSiteId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.get().get().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let ordinal = u32::read_wire(reader)?;
+        std::num::NonZeroU32::new(ordinal)
+            .map(Self::from_accepted_ordinal)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "defer site",
+                message: "defer-site identity must be nonzero".to_owned(),
+                offset,
+            })
+    }
+}
+
+impl Wire for crate::line_task::RuntimeDeferOutcomeFilter {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Always => 0,
+            Self::Completed => 1,
+            Self::Cancelled => 2,
+            Self::Failed => 3,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::Always),
+            1 => Ok(Self::Completed),
+            2 => Ok(Self::Cancelled),
+            3 => Ok(Self::Failed),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "defer outcome filter",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for AwbcDeferOwner {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::CurrentScope => 0,
+            Self::LineRoot => 1,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        match tag {
+            0 => Ok(Self::CurrentScope),
+            1 => Ok(Self::LineRoot),
+            _ => Err(AwbcCodecError::UnknownTag {
+                kind: "defer owner",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
 
 impl Wire for CharacterDialogueOperation {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -542,6 +612,17 @@ impl Wire for AwbcInstruction {
                 args.write_wire(writer)?;
             }
             Self::CancelCleanup { key } => key.write_wire(writer)?,
+            Self::RegisterDefer {
+                site,
+                outcome,
+                owner,
+                captures,
+            } => {
+                site.write_wire(writer)?;
+                outcome.write_wire(writer)?;
+                owner.write_wire(writer)?;
+                captures.write_wire(writer)?;
+            }
             Self::MakeCallable {
                 dst,
                 state,
@@ -779,6 +860,12 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::CancelCleanup => Self::CancelCleanup {
                 key: AwbcStringId::read_wire(reader)?,
+            },
+            AwbcOpcode::RegisterDefer => Self::RegisterDefer {
+                site: crate::runtime_id::RuntimeDeferSiteId::read_wire(reader)?,
+                outcome: crate::line_task::RuntimeDeferOutcomeFilter::read_wire(reader)?,
+                owner: AwbcDeferOwner::read_wire(reader)?,
+                captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::MakeCallable => Self::MakeCallable {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1256,6 +1343,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::CallTraitMethod
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup
+            | AwbcOpcode::RegisterDefer
             | AwbcOpcode::MakeCallable
             | AwbcOpcode::SpecializeCallable
             | AwbcOpcode::ApplyGroup

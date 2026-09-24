@@ -362,6 +362,7 @@ impl super::AwbcProductStepExecutor {
         .map_err(|error| ProductStepError::Internal(error.to_string()))?;
 
         let mut owned_observation = None;
+        let mut line_defer_observation = None;
         let mut drop_policy = None;
         for observation in step.observations {
             match observation {
@@ -376,6 +377,11 @@ impl super::AwbcProductStepExecutor {
                         return Err(LineRuntimeError::InvalidActivationOperation.into());
                     }
                 }
+                VmObservation::LineDeferRegistration { .. } => {
+                    if line_defer_observation.replace(observation).is_some() {
+                        return Err(LineRuntimeError::InvalidActivationOperation.into());
+                    }
+                }
                 VmObservation::Trap(trap) => {
                     return Err(ProductStepError::Internal(format!(
                         "line activation trapped: {trap:?}"
@@ -385,12 +391,31 @@ impl super::AwbcProductStepExecutor {
             }
         }
 
+        let deferred_tokens = match line_defer_observation {
+            Some(VmObservation::LineDeferRegistration {
+                cursor,
+                site,
+                outcome,
+                captures,
+            }) => self.register_line_root_defer(
+                &activation,
+                line,
+                &mut candidate,
+                cursor,
+                site,
+                outcome,
+                captures,
+            )?,
+            Some(_) => return Err(LineRuntimeError::InvalidActivationOperation.into()),
+            None => BTreeSet::new(),
+        };
         self.reconcile_activation_fiber_ownership(
             &activation,
             line,
             &before,
             &candidate,
             drop_policy,
+            &deferred_tokens,
         )?;
         match owned_observation {
             Some(VmObservation::LineOperation {
@@ -742,6 +767,106 @@ impl super::AwbcProductStepExecutor {
         }
     }
 
+    fn register_line_root_defer(
+        &self,
+        activation: &DialogueActivationId,
+        line: &mut RuntimeDialogueActivationState<AwbcTypeId>,
+        fiber: &mut FiberState,
+        cursor: FiberCursor,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: Vec<(crate::awbc::schema::AwbcRegisterId, RuntimeValue)>,
+    ) -> Result<BTreeSet<crate::runtime_id::RuntimeLineHandleToken>, ProductStepError> {
+        line.can_register_deferred()?;
+        let target_id = self
+            .program
+            .defer_sites
+            .get(site.index())
+            .copied()
+            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
+        let target = self
+            .program
+            .functions
+            .get(target_id.index())
+            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
+        let signature = self
+            .program
+            .signatures
+            .get(target.signature.index())
+            .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
+        if signature.params.len() != captures.len()
+            || !signature.result.is_some_and(|result| {
+                matches!(
+                    self.program
+                        .runtime_types
+                        .get(result.index())
+                        .map(crate::awbc::schema::AwbcRuntimeType::shape),
+                    Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
+                )
+            })
+        {
+            return Err(LineRuntimeError::InvalidActivationOperation.into());
+        }
+        let frame = fiber.active_frame()?;
+        let mut registers = frame.registers.clone();
+        let mut capture_registers = BTreeSet::new();
+        let mut captured_values = Vec::with_capacity(captures.len());
+        let mut deferred_tokens = BTreeSet::new();
+        for ((register, value), expected) in captures.iter().zip(&signature.params) {
+            let first_register_use = capture_registers.insert(*register);
+            if !first_register_use && !value.ownership().permits_copy()
+                || !crate::awbc::fiber::runtime_value_matches_type(
+                    &self.program,
+                    value,
+                    *expected,
+                    0,
+                )
+            {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            if frame
+                .registers
+                .get(register.index())
+                .and_then(Option::as_ref)
+                != Some(value)
+            {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            if first_register_use && !value.ownership().permits_copy() {
+                let slot = registers
+                    .get_mut(register.index())
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+                slot.take()
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            }
+            for handle in unique_line_handles(value)? {
+                if handle.token().activation() != activation
+                    || !deferred_tokens.insert(handle.token().clone())
+                {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+                let owner =
+                    activation_register_owner(self.facade_fiber.execution, fiber, *register)?;
+                let lease = line
+                    .ledger()
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.owner() != &RuntimeHandleOwnerSlot::ActivationLocal(owner) {
+                    return Err(LineRuntimeError::WrongOwner.into());
+                }
+            }
+            captured_values.push(value.clone());
+        }
+        line.register_deferred(crate::line_task::RuntimeLineDeferredRegistration::new(
+            site,
+            outcome,
+            captured_values,
+        ))?;
+        fiber.active_frame_mut()?.registers = registers;
+        fiber.commit_yielded_instruction(cursor)?;
+        Ok(deferred_tokens)
+    }
+
     pub(super) fn resume_pending_line_operation(
         &self,
         transaction: &mut ProductDialogueTransaction,
@@ -1077,6 +1202,7 @@ impl super::AwbcProductStepExecutor {
         before: &FiberState,
         after: &FiberState,
         drop_policy: Option<crate::effect::RuntimeDropPolicy>,
+        deferred_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
     ) -> Result<(), ProductStepError> {
         let before =
             activation_fiber_handle_owners(self.facade_fiber.execution, activation, before)?;
@@ -1099,6 +1225,14 @@ impl super::AwbcProductStepExecutor {
                     )?;
                 }
                 (Some(source), None) => {
+                    if deferred_tokens.contains(&token) {
+                        ledger.transfer(
+                            &token,
+                            &RuntimeHandleOwnerSlot::ActivationLocal(*source),
+                            RuntimeHandleOwnerSlot::LineScope,
+                        )?;
+                        continue;
+                    }
                     let policy = drop_policy.ok_or(LineRuntimeError::UnjournaledHandleDrop)?;
                     let before_sequence = commands.next_sequence();
                     ledger.drop_owned_with_policy(

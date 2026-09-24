@@ -2987,6 +2987,20 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::EvaluatedEffect(effect) => {
                 FlowOp::EvaluatedEffect(self.lower_evaluated_effect(effect)?)
             }
+            RuntimeFlowOpSeed::RegisterDefer {
+                site,
+                outcome,
+                captures,
+                owner,
+            } => FlowOp::RegisterDefer {
+                site,
+                outcome,
+                captures: captures
+                    .into_iter()
+                    .map(|capture| self.lower_expression(capture))
+                    .collect::<Result<_, _>>()?,
+                owner,
+            },
             RuntimeFlowOpSeed::RegisterCleanup { key, effect } => FlowOp::RegisterCleanup {
                 key,
                 effect: self.lower_line_effect(effect)?,
@@ -4378,6 +4392,11 @@ impl RuntimePlanBuilder {
                 FlowOp::EvaluatedEffect(effect) => {
                     for expression in effect.argument_exprs() {
                         self.validate_expression_locals(expression, scope, used)?;
+                    }
+                }
+                FlowOp::RegisterDefer { captures, .. } => {
+                    for capture in captures {
+                        self.validate_expression_locals(capture, scope, used)?;
                     }
                 }
                 FlowOp::Continue

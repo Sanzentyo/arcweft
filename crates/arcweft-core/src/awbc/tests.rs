@@ -1338,6 +1338,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::BindPattern, 0x46, Ownership),
         (AwbcOpcode::RegisterCleanup, 0x47, Ownership),
         (AwbcOpcode::CancelCleanup, 0x48, Ownership),
+        (AwbcOpcode::RegisterDefer, 0x49, Ownership),
         (AwbcOpcode::Jump, 0x80, Terminator),
         (AwbcOpcode::Branch, 0x81, Terminator),
         (AwbcOpcode::Match, 0x82, Terminator),
@@ -3119,6 +3120,32 @@ fn line_cancel_input_action_roundtrips_in_schema_one_codec() {
 
     assert_eq!(AWBC_CODEC_VERSION, 1);
     assert_eq!(decoded.line_task_groups, [group]);
+}
+
+#[test]
+fn dynamic_defer_registration_roundtrips_in_the_schema_one_codec() {
+    let instruction = AwbcInstruction::RegisterDefer {
+        site: crate::runtime_id::RuntimeDeferSiteId::from_zero_based(0)
+            .expect("first defer-site identity"),
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter::Cancelled,
+        owner: super::schema::AwbcDeferOwner::LineRoot,
+        captures: vec![AwbcRegisterId(1), AwbcRegisterId(2)],
+    };
+    let program = AwbcProgram {
+        defer_sites: vec![AwbcFunctionId(3)],
+        instructions: vec![instruction.clone()],
+        ..AwbcProgram::default()
+    };
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode defer registration");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode defer registration");
+
+    assert_eq!(AWBC_CODEC_VERSION, 1);
+    assert_eq!(decoded.defer_sites, [AwbcFunctionId(3)]);
+    assert_eq!(decoded.instructions, [instruction]);
 }
 
 #[test]

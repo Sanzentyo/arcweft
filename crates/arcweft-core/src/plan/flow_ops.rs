@@ -97,6 +97,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::ReturnExpr(_)
             | FlowOp::Effect(_)
             | FlowOp::EvaluatedEffect(_)
+            | FlowOp::RegisterDefer { .. }
             | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope { .. }

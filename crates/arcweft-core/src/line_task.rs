@@ -11,7 +11,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 mod activation;
+mod defer;
 mod handle;
+
+pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
 
 pub(crate) use activation::{
     RuntimeDialogueActivationRegistry, RuntimeDialogueActivationTransaction,
