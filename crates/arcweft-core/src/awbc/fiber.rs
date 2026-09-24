@@ -2476,8 +2476,10 @@ fn validate_return_continuation(
             {
                 return Err(FiberStateError::InvalidFrame);
             }
-            if returning_function != default.function
-                || program.functions.get(default.function.index()).is_none()
+            let crate::plan::RuntimeCallableDefault::Body { function, .. } = default else {
+                return Err(FiberStateError::InvalidFrame);
+            };
+            if returning_function != *function || program.functions.get(function.index()).is_none()
             {
                 return Err(FiberStateError::InvalidFrame);
             }

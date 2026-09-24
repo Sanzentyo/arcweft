@@ -1234,6 +1234,28 @@ fn apply_instruction(
             require_compatible(program, definition.function_type, actual, &at)?;
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::SpecializeCallable {
+            dst,
+            src,
+            specialization,
+        } => {
+            let source_type = read_register(verifier, function, block, *src, state)?;
+            let definition = program
+                .callable_specializations
+                .get(specialization.index())
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "callable specialization references an absent table row".to_owned(),
+                })?;
+            let target_type = register_type(verifier, function, block, *dst)?;
+            if source_type != definition.source_type || target_type != definition.target_type {
+                return invalid_type(
+                    &at,
+                    "callable specialization instruction types do not match its admitted relation",
+                );
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::ApplyGroup { dst, callee, args } => {
             check_args_budget(verifier, args.len())?;
             read_register(verifier, function, block, *callee, state)?;
@@ -2211,9 +2233,16 @@ fn verify_project_call(
     }
 
     if let RuntimeCallableAttachedContract::Defaulted { default, .. } = &definition.attached {
+        let crate::plan::RuntimeCallableDefault::Body {
+            function: default_function,
+            ..
+        } = default
+        else {
+            return invalid_type(at, "project-call cannot execute an unbound generic default");
+        };
         let target = program
             .functions
-            .get(default.function.index())
+            .get(default_function.index())
             .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
                 at: at.to_owned(),
                 message: "callable default target is absent".to_owned(),

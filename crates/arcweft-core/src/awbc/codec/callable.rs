@@ -11,10 +11,12 @@ use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
     RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
     RuntimeCallableParameterKind, RuntimeCallablePartialTransition, RuntimeCallablePosition,
-    RuntimeCallableRetainedInput, RuntimeCallableRetainedRole, RuntimeCallableStateDefinition,
-    RuntimeCallableTransition, RuntimeFunctionTypeContract, RuntimeTypeBinder,
+    RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
+    RuntimeCallableSpecializationDefinition, RuntimeCallableSpecializationState,
+    RuntimeCallableStateDefinition, RuntimeCallableTransition,
+    RuntimeFunctionSpecializationArguments, RuntimeFunctionTypeContract, RuntimeTypeBinder,
 };
-use crate::runtime_id::RuntimeCallableStateId;
+use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
 use arcweft_id::EffectId;
 
 struct EffectOverride<V> {
@@ -240,6 +242,26 @@ impl Wire for RuntimeCallableStateId {
     }
 }
 
+impl Wire for RuntimeCallableSpecializationId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.get().get().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let encoded = u32::read_wire(reader)?;
+        encoded
+            .checked_sub(1)
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(RuntimeCallableSpecializationId::from_zero_based)
+            .ok_or(AwbcCodecError::InvalidMetadata {
+                kind: "callable specialization",
+                message: "ordinal is zero or outside the identity domain".to_owned(),
+                offset,
+            })
+    }
+}
+
 impl Wire for RuntimeCallableParameterCoordinate {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.group.write_wire(writer)?;
@@ -420,14 +442,80 @@ impl<T: Wire> Wire for RuntimeCallableParameterInput<T> {
 
 impl<F: Wire> Wire for RuntimeCallableDefault<F> {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.function.write_wire(writer)?;
-        self.captures.write_wire(writer)
+        match self {
+            Self::RequiresSpecialization => writer.write_u8(0),
+            Self::Body { function, captures } => {
+                writer.write_u8(1);
+                function.write_wire(writer)?;
+                captures.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::RequiresSpecialization),
+            1 => Ok(Self::Body {
+                function: F::read_wire(reader)?,
+                captures: Box::<[RuntimeCallableInputSource]>::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "callable default",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl<T: Wire> Wire for RuntimeFunctionSpecializationArguments<T> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.types.write_wire(writer)?;
+        self.const_lengths.write_wire(writer)?;
+        self.effects.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            function: F::read_wire(reader)?,
-            captures: Box::<[RuntimeCallableInputSource]>::read_wire(reader)?,
+            types: Box::<[T]>::read_wire(reader)?,
+            const_lengths: Box::<[crate::plan::RuntimeArrayLength]>::read_wire(reader)?,
+            effects: Box::<[EffectFormula<RuntimeBoundEffectReference>]>::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for RuntimeCallableSpecializationState<RuntimeCallableStateId> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.source.write_wire(writer)?;
+        self.target.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            source: RuntimeCallableStateId::read_wire(reader)?,
+            target: RuntimeCallableStateId::read_wire(reader)?,
+        })
+    }
+}
+
+impl<T: Wire> Wire for RuntimeCallableSpecializationDefinition<T, RuntimeCallableStateId> {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.source_type.write_wire(writer)?;
+        self.target_type.write_wire(writer)?;
+        self.arguments.write_wire(writer)?;
+        self.states.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            source_type: T::read_wire(reader)?,
+            target_type: T::read_wire(reader)?,
+            arguments: RuntimeFunctionSpecializationArguments::read_wire(reader)?,
+            states: Box::<[RuntimeCallableSpecializationState<RuntimeCallableStateId>]>::read_wire(
+                reader,
+            )?,
         })
     }
 }
@@ -580,5 +668,50 @@ impl<T: Wire> Wire for Box<[T]> {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Vec::<T>::read_wire(reader).map(Vec::into_boxed_slice)
+    }
+}
+
+#[cfg(test)]
+mod callable_default_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::awbc::schema::AwbcFunctionId;
+
+    #[test]
+    fn version_one_callable_defaults_round_trip_both_registration_states() {
+        let defaults = [
+            RuntimeCallableDefault::<AwbcFunctionId>::RequiresSpecialization,
+            RuntimeCallableDefault::Body {
+                function: AwbcFunctionId(7),
+                captures: Box::new([
+                    RuntimeCallableInputSource::Retained { position: 1 },
+                    RuntimeCallableInputSource::Argument { position: 0 },
+                ]),
+            },
+        ];
+        for default in defaults {
+            let mut writer = Writer::with_capacity(16);
+            default.write_wire(&mut writer).unwrap();
+            let bytes = writer.into_bytes();
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                RuntimeCallableDefault::<AwbcFunctionId>::read_wire(&mut reader).unwrap(),
+                default
+            );
+            reader.finish().unwrap();
+        }
+    }
+
+    #[test]
+    fn callable_default_decoder_rejects_unknown_tags() {
+        let mut reader = Reader::new(&[2], &AwbcDecodeBudget::default());
+        assert_eq!(
+            RuntimeCallableDefault::<AwbcFunctionId>::read_wire(&mut reader).unwrap_err(),
+            AwbcCodecError::UnknownTag {
+                kind: "callable default",
+                tag: 2,
+                offset: 0,
+            }
+        );
     }
 }

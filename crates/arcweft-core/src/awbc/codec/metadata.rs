@@ -69,6 +69,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.resources)?;
         writer.write_table(&self.callable_executables)?;
         writer.write_table(&self.callable_states)?;
+        writer.write_table(&self.callable_specializations)?;
         writer.write_table(&self.flow_bindings)?;
         writer.write_table(&self.flow_executables)?;
         writer.write_table(&self.entries)
@@ -112,6 +113,8 @@ impl Wire for AwbcProgram {
             callable_executables: reader
                 .read_table("callable_executables", budget.callable_executables)?,
             callable_states: reader.read_table("callable_states", budget.callable_states)?,
+            callable_specializations: reader
+                .read_table("callable_specializations", budget.callable_specializations)?,
             flow_bindings: reader.read_table("flow_bindings", budget.flow_bindings)?,
             flow_executables: reader.read_table("flow_executables", budget.flow_executables)?,
             entries: reader.read_table("entries", budget.entries)?,

@@ -440,6 +440,16 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 });
                 dst
             }
+            RuntimeExprKind::SpecializeCallable { value, specialization } => {
+                let src = self.lower(value);
+                let dst = self.frame.temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory.push_instruction(AwbcInstruction::SpecializeCallable {
+                    dst,
+                    src,
+                    specialization: *specialization,
+                });
+                dst
+            }
             RuntimeExprKind::ApplyGroup { callee, args } => {
                 self.lower_function_application(callee, args, expr.ty())
             }
@@ -852,8 +862,12 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
         if let RuntimeCallableTransition::Invoke { function, .. } = &state.transition {
             callable_sites.insert(*function);
         }
-        if let RuntimeCallableAttachedContract::Defaulted { default, .. } = &state.attached {
-            callable_sites.insert(default.function);
+        if let RuntimeCallableAttachedContract::Defaulted {
+            default: arcweft_core::plan::RuntimeCallableDefault::Body { function, .. },
+            ..
+        } = &state.attached
+        {
+            callable_sites.insert(*function);
         }
     }
     for site in callable_sites {

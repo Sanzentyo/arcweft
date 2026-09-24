@@ -19,9 +19,10 @@ use crate::entry::{
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::{
-    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
-    RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableRetainedRole,
-    RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimePlanSequenceKind,
+    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableDefault,
+    RuntimeCallableInputSource, RuntimeCallableParameterKind, RuntimeCallablePosition,
+    RuntimeCallableRetainedRole, RuntimeCallableStateDefinition, RuntimeCallableTransition,
+    RuntimePlanSequenceKind,
 };
 use crate::program_types::{RuntimeProgramDataShapes, RuntimeProgramTypes};
 use crate::value::RuntimeDialogueOpaqueRole;
@@ -978,6 +979,7 @@ fn pattern_children(pattern: &AwbcPattern) -> Vec<AwbcPatternId> {
 fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     verify_callable_states(program)?;
+    super::callable_specialization::verify(program, verifier.budget)?;
     for (index, intrinsic) in program.intrinsics.iter().enumerate() {
         let at = format!("intrinsic {index}");
         check_index(
@@ -1706,13 +1708,34 @@ fn verify_callable_states(program: &AwbcProgram) -> Result<(), AwbcVerifyError> 
                         "defaulted attached ABI must be Option of its value type",
                     ));
                 }
-                let capture_types = default
-                    .captures
-                    .iter()
-                    .map(|source| callable_state_input_type(state, *source, None))
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| invalid("default callable capture source is invalid"))?;
-                verify_callable_body(program, default.function, &capture_types, &[], *ty, &at)?;
+                match default {
+                    RuntimeCallableDefault::RequiresSpecialization => {
+                        if !matches!(
+                            state.transition,
+                            RuntimeCallableTransition::RequiresSpecialization
+                        ) {
+                            return Err(invalid(
+                                "unbound callable default requires its generic specialization state",
+                            ));
+                        }
+                    }
+                    RuntimeCallableDefault::Body { function, captures } => {
+                        if matches!(
+                            state.transition,
+                            RuntimeCallableTransition::RequiresSpecialization
+                        ) {
+                            return Err(invalid(
+                                "a generic callable state cannot own a closed default body",
+                            ));
+                        }
+                        let capture_types = captures
+                            .iter()
+                            .map(|source| callable_state_input_type(state, *source, None))
+                            .collect::<Option<Vec<_>>>()
+                            .ok_or_else(|| invalid("default callable capture source is invalid"))?;
+                        verify_callable_body(program, *function, &capture_types, &[], *ty, &at)?;
+                    }
+                }
                 Some(*ty)
             }
         };

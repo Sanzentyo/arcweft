@@ -296,6 +296,22 @@ impl AwbcInventory {
             states.push(state);
         }
         self.program.callable_states = states;
+        for (index, definition) in plan.callable_specializations().iter().enumerate() {
+            let mapped = definition.clone().try_map(
+                |ty| {
+                    self.plan_type(ty)
+                        .ok_or_else(|| format!("specialization type {ty} was not reserved in AWBC"))
+                },
+                Ok::<_, String>,
+            );
+            match mapped {
+                Ok(definition) => self.program.callable_specializations.push(definition),
+                Err(message) => self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("callable_specialization.{index}"),
+                    message,
+                )),
+            }
+        }
     }
 
     pub(crate) fn intern_control_callable_type(

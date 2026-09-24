@@ -126,6 +126,9 @@ impl RuntimeExpr {
                     .ok_or(RuntimeExprFreeLocalError::UnknownCallableState { state: *state })?;
                 collect_slice_free_locals(plan, captures, bound, locals)?;
             }
+            RuntimeExprKind::SpecializeCallable { value, .. } => {
+                value.collect_evaluation_free_locals(plan, bound, locals)?;
+            }
             RuntimeExprKind::ApplyGroup { callee, args } => {
                 callee.collect_evaluation_free_locals(plan, bound, locals)?;
                 collect_argument_free_locals(plan, args, bound, locals)?;

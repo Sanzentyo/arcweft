@@ -14,6 +14,26 @@ use crate::value::{
 use super::{PureEvaluator, match_runtime_pattern};
 
 impl PureEvaluator<'_> {
+    pub(super) fn evaluate_specialize_callable_expr(
+        &mut self,
+        value: &RuntimeExpr,
+        specialization: crate::runtime_id::RuntimeCallableSpecializationId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr(value)?;
+        let RuntimeValue::Callable(callable) = value else {
+            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                &value,
+            )));
+        };
+        callable
+            .specialize(
+                &RuntimeProgramOwner::Plan(Arc::clone(self.plan)),
+                specialization,
+            )
+            .map(RuntimeValue::Callable)
+            .map_err(Into::into)
+    }
+
     pub(super) fn evaluate_callable_expr(
         &mut self,
         state: RuntimeCallableStateId,

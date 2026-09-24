@@ -1443,6 +1443,10 @@ pub enum RuntimeExprKind {
         state: crate::runtime_id::RuntimeCallableStateId,
         captures: Vec<RuntimeExpr>,
     },
+    SpecializeCallable {
+        value: Box<RuntimeExpr>,
+        specialization: crate::runtime_id::RuntimeCallableSpecializationId,
+    },
     ApplyGroup {
         callee: Box<RuntimeExpr>,
         args: Vec<RuntimeCallArgument>,
@@ -1624,6 +1628,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::AssignNominalField { .. }
             | RuntimeExprKind::Call { .. }
             | RuntimeExprKind::MakeCallable { .. }
+            | RuntimeExprKind::SpecializeCallable { .. }
             | RuntimeExprKind::ApplyGroup { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
@@ -1685,6 +1690,9 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Call { callee, .. } => write!(f, "{callee}()"),
             RuntimeExprKind::MakeCallable { state, captures } => {
                 write!(f, "callable#{state}/retained{}", captures.len())
+            }
+            RuntimeExprKind::SpecializeCallable { specialization, .. } => {
+                write!(f, "specialize#{specialization}")
             }
             RuntimeExprKind::ApplyGroup { .. } => f.write_str("apply"),
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),

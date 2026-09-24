@@ -1954,6 +1954,10 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::MakeCallable { state, captures } => {
                 self.evaluate_callable_expr(*state, captures)
             }
+            RuntimeExprKind::SpecializeCallable {
+                value,
+                specialization,
+            } => self.evaluate_specialize_callable_expr(value, *specialization),
             RuntimeExprKind::ApplyGroup { callee, args } => self.evaluate_apply_expr(callee, args),
             RuntimeExprKind::TraitCall { .. } => Self::unsupported_flow_runtime_expr(),
             RuntimeExprKind::PureCall { helper, args } => {

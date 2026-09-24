@@ -570,6 +570,8 @@ impl FlowRuntimeId {
 pub enum RuntimePlanError {
     #[error(transparent)]
     CallableState(#[from] super::RuntimeCallableStateError),
+    #[error(transparent)]
+    CallableSpecialization(#[from] super::RuntimeCallableSpecializationError),
     #[error("invalid data codec-use policy: {0}")]
     DataCodecUse(Box<crate::program_types::RuntimeProgramDataShapeError>),
     #[error("duplicate runtime flow `{0}`")]
@@ -689,6 +691,12 @@ impl RuntimePlan {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
         self.callable_states.validate_for_plan(self)?;
+        for definition in self.callable_specializations() {
+            definition.validate(
+                self,
+                crate::entry::RuntimeSchemaLimits::engine_default().max_validation_work,
+            )?;
+        }
         let flow_ids = self.verify_flow_schemas()?;
         self.verify_project_call_sites()?;
         let mut helper_ids = BTreeSet::new();

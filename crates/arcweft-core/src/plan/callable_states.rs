@@ -75,9 +75,12 @@ pub enum RuntimeCallableInputSource {
 /// Default execution is attached to its terminal callable, never its producer.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct RuntimeCallableDefault<F> {
-    pub function: F,
-    pub captures: Box<[RuntimeCallableInputSource]>,
+pub enum RuntimeCallableDefault<F> {
+    RequiresSpecialization,
+    Body {
+        function: F,
+        captures: Box<[RuntimeCallableInputSource]>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -192,9 +195,17 @@ impl<T, F, S> RuntimeCallableStateDefinition<T, F, S> {
                 RuntimeCallableAttachedContract::Defaulted { ty: value, default } => {
                     RuntimeCallableAttachedContract::Defaulted {
                         ty: ty(value)?,
-                        default: RuntimeCallableDefault {
-                            function: function(default.function)?,
-                            captures: default.captures,
+                        default: match default {
+                            RuntimeCallableDefault::RequiresSpecialization => {
+                                RuntimeCallableDefault::RequiresSpecialization
+                            }
+                            RuntimeCallableDefault::Body {
+                                function: target,
+                                captures,
+                            } => RuntimeCallableDefault::Body {
+                                function: function(target)?,
+                                captures,
+                            },
                         },
                     }
                 }
@@ -291,15 +302,23 @@ impl<T: Eq + Clone, F: Eq + Clone, S: Eq + Clone> RuntimeCallableStateDefinition
         };
         let attached = match &self.attached {
             RuntimeCallableAttachedContract::Defaulted { ty, default } => {
-                let Some(captures) = project_row(&default.captures) else {
-                    return false;
+                let default = match default {
+                    RuntimeCallableDefault::RequiresSpecialization => {
+                        RuntimeCallableDefault::RequiresSpecialization
+                    }
+                    RuntimeCallableDefault::Body { function, captures } => {
+                        let Some(captures) = project_row(captures) else {
+                            return false;
+                        };
+                        RuntimeCallableDefault::Body {
+                            function: function.clone(),
+                            captures,
+                        }
+                    }
                 };
                 RuntimeCallableAttachedContract::Defaulted {
                     ty: ty.clone(),
-                    default: RuntimeCallableDefault {
-                        function: default.function.clone(),
-                        captures,
-                    },
+                    default,
                 }
             }
             attached => attached.clone(),
@@ -512,15 +531,25 @@ impl RuntimeCallableState {
             }
             RuntimeCallableAttachedContract::Defaulted { ty: value, default } => {
                 ty(*value, "attached default result")?;
-                self.validate_body_inputs(
-                    state,
-                    plan,
-                    default.function,
-                    &default.captures,
-                    &[],
-                    None,
-                    *value,
-                )?;
+                match default {
+                    RuntimeCallableDefault::RequiresSpecialization
+                        if matches!(
+                            self.transition,
+                            RuntimeCallableTransition::RequiresSpecialization
+                        ) && !contract.binder().is_empty() => {}
+                    RuntimeCallableDefault::RequiresSpecialization => return Err(invalid_layout()),
+                    RuntimeCallableDefault::Body { function, captures } => {
+                        self.validate_body_inputs(
+                            state,
+                            plan,
+                            *function,
+                            captures,
+                            &[],
+                            None,
+                            *value,
+                        )?;
+                    }
+                }
                 Some(*value)
             }
         };

@@ -17,6 +17,7 @@ use crate::task::RuntimeProgramOwner;
 use super::RuntimeValue;
 
 mod application;
+mod specialization;
 #[cfg(test)]
 mod tests;
 pub(crate) use application::{
@@ -41,6 +42,15 @@ pub enum RuntimeCallableValueError {
     MissingType { state: RuntimeCallableStateId },
     #[error("callable value belongs to another executable program")]
     ForeignProgram,
+    #[error("callable specialization {specialization} is absent from its program")]
+    MissingSpecialization {
+        specialization: crate::runtime_id::RuntimeCallableSpecializationId,
+    },
+    #[error("callable state {state} is not a source of specialization {specialization}")]
+    SpecializationSource {
+        specialization: crate::runtime_id::RuntimeCallableSpecializationId,
+        state: RuntimeCallableStateId,
+    },
     #[error("callable state {actual} does not match checked input state {expected}")]
     UnexpectedState {
         expected: RuntimeCallableStateId,

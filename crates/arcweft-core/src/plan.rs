@@ -1,3 +1,4 @@
+mod callable_specialization;
 mod callable_states;
 mod construction;
 mod dialogue_content;
@@ -19,6 +20,11 @@ mod value_admission;
 mod variant_case;
 mod variant_domains;
 
+pub use callable_specialization::{
+    RuntimeCallableSpecializationContext, RuntimeCallableSpecializationDefinition,
+    RuntimeCallableSpecializationError, RuntimeCallableSpecializationState,
+    RuntimeFunctionSpecializationArguments,
+};
 pub use callable_states::{
     RuntimeCallableAttachedContract, RuntimeCallableDefault, RuntimeCallableInputSource,
     RuntimeCallableParameterCoordinate, RuntimeCallableParameterInput,
@@ -31,6 +37,7 @@ pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
+    RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
     RuntimeCallableStateSeed, RuntimeCallableStateSeedId, RuntimeChoiceOptionSeed,
     RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueContentEffectSlotSeed,
     RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
@@ -169,6 +176,12 @@ pub struct RuntimePlan {
     pub(crate) variant_domains: RuntimeVariantDomainTable,
     pub(crate) function_sites: RuntimeFunctionSiteTable,
     pub(crate) callable_states: RuntimeCallableStateTable,
+    pub(crate) callable_specializations: Box<
+        [RuntimeCallableSpecializationDefinition<
+            RuntimePlanTypeId,
+            crate::runtime_id::RuntimeCallableStateId,
+        >],
+    >,
     pub(crate) project_call_sites: RuntimeProjectCallSiteTable,
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
@@ -196,6 +209,16 @@ impl RuntimePlan {
     #[must_use]
     pub const fn callable_states(&self) -> &RuntimeCallableStateTable {
         &self.callable_states
+    }
+
+    #[must_use]
+    pub const fn callable_specializations(
+        &self,
+    ) -> &[RuntimeCallableSpecializationDefinition<
+        RuntimePlanTypeId,
+        crate::runtime_id::RuntimeCallableStateId,
+    >] {
+        &self.callable_specializations
     }
 
     /// Binds the in-memory plan to the exact accepted persisted artifact.

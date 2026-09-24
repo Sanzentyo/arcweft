@@ -1919,6 +1919,10 @@ pub enum RuntimeExprSeedKind {
         state: super::RuntimeCallableStateSeedId,
         captures: Box<[RuntimeExprSeed]>,
     },
+    SpecializeCallable {
+        value: Box<RuntimeExprSeed>,
+        specialization: super::RuntimeCallableSpecializationSeedId,
+    },
     Apply {
         callee: Box<RuntimeExprSeed>,
         args: Box<[RuntimeCallArgumentSeed]>,
@@ -2273,6 +2277,7 @@ impl RuntimeExprSeed {
                 }
             }
             RuntimeExprSeedKind::RepeatSeq { value, .. }
+            | RuntimeExprSeedKind::SpecializeCallable { value, .. }
             | RuntimeExprSeedKind::Sum { source: value }
             | RuntimeExprSeedKind::Unary { expr: value, .. }
             | RuntimeExprSeedKind::ReductionUnchanged { state: value } => {

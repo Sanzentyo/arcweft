@@ -13,8 +13,9 @@ use crate::plan::{
     RuntimeFunctionTypeContract, RuntimePlanSequenceKind, RuntimeTypeScope,
 };
 use crate::runtime_id::{
-    RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId,
-    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
+    RuntimeCallableSpecializationId, RuntimeCallableStateId, RuntimeDialogueContentTemplateId,
+    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
+    RuntimeLocalDeclarationId,
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind, RuntimeRecordFieldId,
@@ -241,6 +242,9 @@ pub struct AwbcProgram {
     pub resources: Vec<AwbcResourceRef>,
     pub callable_executables: Vec<AwbcCallableExecutable>,
     pub callable_states: Vec<RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>>,
+    pub callable_specializations: Vec<
+        crate::plan::RuntimeCallableSpecializationDefinition<AwbcTypeId, RuntimeCallableStateId>,
+    >,
     pub flow_bindings: Vec<AwbcFlowBinding>,
     pub flow_executables: Vec<AwbcFlowExecutable>,
     pub entries: Vec<AwbcEntry>,
@@ -283,6 +287,7 @@ impl Default for AwbcProgram {
             resources: Vec::new(),
             callable_executables: Vec::new(),
             callable_states: Vec::new(),
+            callable_specializations: Vec::new(),
             flow_bindings: Vec::new(),
             flow_executables: Vec::new(),
             entries: Vec::new(),
@@ -1502,6 +1507,7 @@ pub enum AwbcOpcode {
     TestPattern = 0x12,
     Unary = 0x13,
     Binary = 0x14,
+    SpecializeCallable = 0x15,
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
@@ -1566,6 +1572,7 @@ impl AwbcOpcode {
         Self::TestPattern,
         Self::Unary,
         Self::Binary,
+        Self::SpecializeCallable,
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
@@ -1658,7 +1665,8 @@ impl AwbcOpcode {
             | Self::AssignRecordField
             | Self::TestPattern
             | Self::Unary
-            | Self::Binary => AwbcOpcodeFamily::Value,
+            | Self::Binary
+            | Self::SpecializeCallable => AwbcOpcodeFamily::Value,
             Self::CallPureHelper
             | Self::CallIntrinsic
             | Self::CallTraitMethod
@@ -1918,6 +1926,11 @@ pub enum AwbcInstruction {
         state: RuntimeCallableStateId,
         captures: Vec<AwbcRegisterId>,
     },
+    SpecializeCallable {
+        dst: AwbcRegisterId,
+        src: AwbcRegisterId,
+        specialization: RuntimeCallableSpecializationId,
+    },
     ApplyGroup {
         dst: AwbcRegisterId,
         callee: AwbcRegisterId,
@@ -2007,6 +2020,7 @@ impl AwbcInstruction {
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
             Self::MakeCallable { .. } => AwbcOpcode::MakeCallable,
+            Self::SpecializeCallable { .. } => AwbcOpcode::SpecializeCallable,
             Self::ApplyGroup { .. } => AwbcOpcode::ApplyGroup,
             Self::MakeAgent { .. } => AwbcOpcode::MakeAgent,
             Self::MakeReductionUnchanged { .. } => AwbcOpcode::MakeReductionUnchanged,

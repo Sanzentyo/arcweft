@@ -1316,6 +1316,28 @@ fn execute_instruction(
                 .active_frame_mut()?
                 .set_register(*dst, RuntimeValue::Callable(callable))?;
         }
+        AwbcInstruction::SpecializeCallable {
+            dst,
+            src,
+            specialization,
+        } => {
+            let owner = context
+                .ok_or(VmError::MissingExecutionContext)?
+                .program_owner(program)?;
+            let source = register(fiber, *src)?.clone();
+            let RuntimeValue::Callable(callable) = source else {
+                return Err(VmError::Runtime(format!(
+                    "callable specialization expected callable, found {}",
+                    runtime_value_label(&source)
+                )));
+            };
+            let callable = callable
+                .specialize(&owner, *specialization)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            fiber
+                .active_frame_mut()?
+                .set_register(*dst, RuntimeValue::Callable(callable))?;
+        }
         AwbcInstruction::ApplyGroup { dst, callee, args } => {
             let callee = register(fiber, *callee)?.clone();
             let args = register_values(fiber, args)?;
@@ -2263,7 +2285,12 @@ fn complete_project_call_return(
                     "project-call default returned into a state without a default".to_owned(),
                 ));
             };
-            if returning_function != default.function {
+            let crate::plan::RuntimeCallableDefault::Body { function, .. } = default else {
+                return Err(VmError::Runtime(
+                    "project-call returned from an unbound generic default".to_owned(),
+                ));
+            };
+            if returning_function != *function {
                 return Err(VmError::Runtime(
                     "project-call returned from an unexpected default function".to_owned(),
                 ));

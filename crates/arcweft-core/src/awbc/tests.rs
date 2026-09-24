@@ -2,6 +2,7 @@ use super::codec::{AwbcCodecError, AwbcDecodeBudget};
 mod agent_constructors;
 mod agent_projection;
 mod array;
+mod callable_specialization;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
@@ -1077,7 +1078,7 @@ fn project_call_default_program() -> AwbcProgram {
             result: AwbcTypeId(0),
             attached: RuntimeCallableAttachedContract::Defaulted {
                 ty: AwbcTypeId(0),
-                default: RuntimeCallableDefault {
+                default: RuntimeCallableDefault::Body {
                     function: AwbcFunctionId(1),
                     captures: Box::new([]),
                 },
@@ -1313,6 +1314,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::TestPattern, 0x12, Value),
         (AwbcOpcode::Unary, 0x13, Value),
         (AwbcOpcode::Binary, 0x14, Value),
+        (AwbcOpcode::SpecializeCallable, 0x15, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),
@@ -1972,7 +1974,10 @@ fn project_call_verifier_rejects_default_capture_domain_and_effect_mismatches() 
     else {
         unreachable!();
     };
-    default.captures = vec![RuntimeCallableInputSource::Attached].into_boxed_slice();
+    let RuntimeCallableDefault::Body { captures, .. } = default else {
+        unreachable!();
+    };
+    *captures = vec![RuntimeCallableInputSource::Attached].into_boxed_slice();
     expect_project_call_rejection(direct_prefix, "default callable capture source is invalid");
 
     let mut out_of_range = project_call_default_program();
@@ -1981,8 +1986,10 @@ fn project_call_verifier_rejects_default_capture_domain_and_effect_mismatches() 
     else {
         unreachable!();
     };
-    default.captures =
-        vec![RuntimeCallableInputSource::Argument { position: 0 }].into_boxed_slice();
+    let RuntimeCallableDefault::Body { captures, .. } = default else {
+        unreachable!();
+    };
+    *captures = vec![RuntimeCallableInputSource::Argument { position: 0 }].into_boxed_slice();
     expect_project_call_rejection(out_of_range, "default callable capture source is invalid");
 
     let mut default_effects = project_call_default_program();

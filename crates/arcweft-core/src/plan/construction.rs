@@ -7,11 +7,15 @@ use std::sync::Arc;
 
 use thiserror::Error;
 
+mod callable_specialization;
 mod callable_states;
 mod lower;
 mod nominal_schema;
 mod seed;
 
+pub use callable_specialization::{
+    RuntimeCallableSpecializationSeed, RuntimeCallableSpecializationSeedId,
+};
 pub use callable_states::{RuntimeCallableStateSeed, RuntimeCallableStateSeedId};
 pub use nominal_schema::{RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent};
 
@@ -148,6 +152,10 @@ pub enum RuntimePlanBuildError {
     CallableState(#[from] super::RuntimeCallableStateError),
     #[error("a callable-state handle belongs to another runtime-plan builder")]
     ForeignCallableStateSeed,
+    #[error("a callable-specialization handle belongs to another runtime-plan builder")]
+    ForeignCallableSpecializationSeed,
+    #[error("callable-specialization table exhausted its identity space")]
+    CallableSpecializationIdentityExhausted,
     #[error("callable-state reservation {state} does not exist")]
     UnknownCallableState {
         state: crate::runtime_id::RuntimeCallableStateId,
@@ -614,6 +622,12 @@ pub struct RuntimePlanBuilder {
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
     callable_states: RefCell<callable_states::RuntimeCallableStateBuilder>,
+    callable_specializations: Vec<
+        super::RuntimeCallableSpecializationDefinition<
+            RuntimePlanTypeId,
+            crate::runtime_id::RuntimeCallableStateId,
+        >,
+    >,
     project_call_sites: RefCell<RuntimeProjectCallSiteTableBuilder>,
     dialogue_content: RuntimeDialogueContentPlanTableBuilder,
     entries: Vec<RuntimeEntrySpec>,
@@ -642,6 +656,7 @@ impl RuntimePlanBuilder {
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
             callable_states: RefCell::new(callable_states::RuntimeCallableStateBuilder::default()),
+            callable_specializations: Vec::new(),
             project_call_sites: RefCell::new(RuntimeProjectCallSiteTableBuilder::default()),
             dialogue_content: RuntimeDialogueContentPlanTableBuilder::new(),
             entries: Vec::new(),
@@ -2199,6 +2214,7 @@ impl RuntimePlanBuilder {
             variant_domains: self.variant_domains.finish(),
             function_sites: function_site_builder.finish(),
             callable_states: self.callable_states.into_inner().finish(),
+            callable_specializations: self.callable_specializations.into_boxed_slice(),
             project_call_sites,
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,

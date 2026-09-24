@@ -20,6 +20,27 @@ use super::{
 };
 
 impl Engine {
+    pub(super) fn evaluate_specialize_callable_expr(
+        &mut self,
+        value: &RuntimeExpr,
+        specialization: crate::runtime_id::RuntimeCallableSpecializationId,
+        backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr_with_backend(value, backend)?;
+        let RuntimeValue::Callable(callable) = value else {
+            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                &value,
+            )));
+        };
+        callable
+            .specialize(
+                &RuntimeProgramOwner::Plan(Arc::clone(&self.plan)),
+                specialization,
+            )
+            .map(RuntimeValue::Callable)
+            .map_err(Into::into)
+    }
+
     pub(in crate::engine) fn evaluate_dialogue_site(
         &mut self,
         site: &crate::plan::RuntimeDialogueValueSite,

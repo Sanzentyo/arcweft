@@ -171,10 +171,16 @@ impl RuntimeCallableValue {
                 Some(value)
             }
             (RuntimeCallableAttachedContract::Defaulted { default, .. }, None) => {
-                let captures = self.project_inputs(&default.captures, arguments, None)?;
+                let crate::plan::RuntimeCallableDefault::Body { function, captures } = default
+                else {
+                    return Err(RuntimeCallableValueError::RequiresSpecialization {
+                        state: self.state,
+                    });
+                };
+                let captures = self.project_inputs(captures, arguments, None)?;
                 return Ok(RuntimeCallableApplication::AttachedDefault(
                     RuntimeCallableInvocation {
-                        body: body(default.function),
+                        body: body(*function),
                         captures,
                         arguments: Vec::new(),
                     },

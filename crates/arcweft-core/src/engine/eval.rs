@@ -172,6 +172,10 @@ impl Engine {
             RuntimeExprKind::MakeCallable { state, captures } => {
                 self.evaluate_callable_expr(*state, captures, pure_backend)
             }
+            RuntimeExprKind::SpecializeCallable {
+                value,
+                specialization,
+            } => self.evaluate_specialize_callable_expr(value, *specialization, pure_backend),
             RuntimeExprKind::ApplyGroup { callee, args } => {
                 self.evaluate_apply_expr(callee, args, pure_backend)
             }

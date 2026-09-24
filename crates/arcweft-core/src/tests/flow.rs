@@ -524,7 +524,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         &[],
         RuntimeCallableAttachedContract::Defaulted {
             ty: unit,
-            default: RuntimeCallableDefault {
+            default: RuntimeCallableDefault::Body {
                 function: default_site,
                 captures: Box::new([]),
             },

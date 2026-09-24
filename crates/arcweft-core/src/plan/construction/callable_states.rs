@@ -170,7 +170,11 @@ impl RuntimeCallableStateBuilder {
                     }));
                     let attached = match source.attached.clone() {
                         RuntimeCallableAttachedContract::Defaulted { ty, mut default } => {
-                            default.captures = map_sources(&default.captures);
+                            if let crate::plan::RuntimeCallableDefault::Body { captures, .. } =
+                                &mut default
+                            {
+                                *captures = map_sources(captures);
+                            }
                             RuntimeCallableAttachedContract::Defaulted { ty, default }
                         }
                         attached => attached,

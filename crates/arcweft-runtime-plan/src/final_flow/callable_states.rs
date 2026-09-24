@@ -135,7 +135,7 @@ fn materialize_instance(
                             .collect();
                         RuntimeCallableAttachedContract::Defaulted {
                             ty: attached.binding_ty().identity(),
-                            default: RuntimeCallableDefault { function, captures },
+                            default: RuntimeCallableDefault::Body { function, captures },
                         }
                     }
                 },

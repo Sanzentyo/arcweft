@@ -605,6 +605,20 @@ impl RuntimePlanBuilder {
                     .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
                 RuntimeExprKind::MakeCallable { state, captures }
             }
+            RuntimeExprSeedKind::SpecializeCallable {
+                value,
+                specialization,
+            } => {
+                let value = self.lower_expression(*value)?;
+                let (specialization, definition) =
+                    self.resolve_callable_specialization_seed(&specialization)?;
+                require_same("specialization source", definition.source_type, value.ty())?;
+                require_same("specialization target", definition.target_type, ty)?;
+                RuntimeExprKind::SpecializeCallable {
+                    value: Box::new(value),
+                    specialization,
+                }
+            }
             RuntimeExprSeedKind::Apply { callee, args } => {
                 let (callee, args) = self.lower_function_application(*callee, args, ty)?;
                 RuntimeExprKind::ApplyGroup {
@@ -2306,6 +2320,7 @@ impl RuntimePlanBuilder {
                 self.validate_expression_slice_locals(items, scope, used)
             }
             RuntimeExprKind::RepeatSeq { value, .. }
+            | RuntimeExprKind::SpecializeCallable { value, .. }
             | RuntimeExprKind::Field { target: value, .. }
             | RuntimeExprKind::ProjectTuple { target: value, .. }
             | RuntimeExprKind::ProjectRecord { target: value, .. }

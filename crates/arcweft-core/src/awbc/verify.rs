@@ -1,5 +1,6 @@
 //! Semantic verifier for canonical AWBC programs.
 
+mod callable_specialization;
 mod code;
 mod structure;
 
@@ -18,6 +19,8 @@ pub struct AwbcVerifyBudget {
     pub params_per_signature: usize,
     pub args_per_call: usize,
     pub cfg_edges: usize,
+    pub callable_specializations: usize,
+    pub specialization_validation_work: u64,
     pub pattern_depth: usize,
     pub dataflow_steps: usize,
     pub source_span_bytes: u32,
@@ -31,6 +34,8 @@ impl Default for AwbcVerifyBudget {
             params_per_signature: 4_096,
             args_per_call: 4_096,
             cfg_edges: 16_000_000,
+            callable_specializations: 262_144,
+            specialization_validation_work: 16_000_000,
             pattern_depth: 64,
             dataflow_steps: 32_000_000,
             source_span_bytes: 64 * 1024 * 1024,

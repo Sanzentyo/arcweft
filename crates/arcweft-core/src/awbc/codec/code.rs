@@ -19,7 +19,7 @@ use crate::awbc::schema::{
     AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
     AwbcTypeId, AwbcUnaryOp,
 };
-use crate::runtime_id::RuntimeCallableStateId;
+use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
 use crate::value::RuntimeAgentConstructor;
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
@@ -551,6 +551,15 @@ impl Wire for AwbcInstruction {
                 state.write_wire(writer)?;
                 captures.write_wire(writer)?;
             }
+            Self::SpecializeCallable {
+                dst,
+                src,
+                specialization,
+            } => {
+                dst.write_wire(writer)?;
+                src.write_wire(writer)?;
+                specialization.write_wire(writer)?;
+            }
             Self::ApplyGroup { dst, callee, args } => {
                 dst.write_wire(writer)?;
                 callee.write_wire(writer)?;
@@ -775,6 +784,11 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 state: RuntimeCallableStateId::read_wire(reader)?,
                 captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::SpecializeCallable => Self::SpecializeCallable {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                src: AwbcRegisterId::read_wire(reader)?,
+                specialization: RuntimeCallableSpecializationId::read_wire(reader)?,
             },
             AwbcOpcode::ApplyGroup => Self::ApplyGroup {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1243,6 +1257,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup
             | AwbcOpcode::MakeCallable
+            | AwbcOpcode::SpecializeCallable
             | AwbcOpcode::ApplyGroup
             | AwbcOpcode::MakeAgent
             | AwbcOpcode::MakeReductionUnchanged => {
@@ -1697,5 +1712,32 @@ mod character_dialogue_wire_tests {
                 ..
             })
         ));
+    }
+}
+
+#[cfg(test)]
+mod callable_specialization_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::runtime_id::RuntimeCallableSpecializationId;
+
+    #[test]
+    fn version_one_callable_specialization_instruction_round_trips() {
+        let instruction = AwbcInstruction::SpecializeCallable {
+            dst: AwbcRegisterId(4),
+            src: AwbcRegisterId(2),
+            specialization: RuntimeCallableSpecializationId::from_zero_based(9).unwrap(),
+        };
+        let mut writer = Writer::with_capacity(16);
+        instruction.write_wire(&mut writer).unwrap();
+        let bytes = writer.into_bytes();
+        assert_eq!(bytes[0], AwbcOpcode::SpecializeCallable.encoded());
+
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcInstruction::read_wire(&mut reader).unwrap(),
+            instruction
+        );
+        reader.finish().unwrap();
     }
 }
