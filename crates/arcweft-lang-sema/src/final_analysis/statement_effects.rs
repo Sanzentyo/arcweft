@@ -507,7 +507,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                             .selected
                             .contains_body_owner(HirBodyChild::Expression(owner))
                     {
-                        self.seal_expression(owner)?;
+                        row.union_with(&self.seal_expression(owner)?, self.control)?;
                     }
                 }
                 HirDeclarationEvaluationPhase::AttachedContent(root) => {
@@ -516,7 +516,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                             .selected
                             .contains_body_owner(HirBodyChild::Expression(owner))
                     {
-                        self.seal_expression(owner)?;
+                        row.union_with(&self.seal_expression(owner)?, self.control)?;
                     }
                 }
                 HirDeclarationEvaluationPhase::Contract(root) => {
@@ -992,8 +992,25 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                         continue;
                     }
                     let mut effects = EffectSet::new();
-                    for root in declaration.roots() {
-                        effects.union_with(&self.fold_body(root.projection())?);
+                    for phase in declaration.phases() {
+                        match phase {
+                            HirDeclarationEvaluationPhase::Parameter(root) => {
+                                if let HirDeclarationParameterRootChild::Expression(owner) =
+                                    root.child()
+                                {
+                                    effects.union_with(&self.seal_expression(owner)?);
+                                }
+                            }
+                            HirDeclarationEvaluationPhase::AttachedContent(root) => {
+                                if let Some(owner) = root.default_value() {
+                                    effects.union_with(&self.seal_expression(owner)?);
+                                }
+                            }
+                            HirDeclarationEvaluationPhase::Body(root) => {
+                                effects.union_with(&self.fold_body(root.projection())?);
+                            }
+                            HirDeclarationEvaluationPhase::Contract(_) => {}
+                        }
                     }
                     if self
                         .declaration_effects

@@ -334,7 +334,14 @@ fn checked_call_edge(
     facts: &arcweft_lang_sema::callable::CallTargetFacts,
     symbols: &ProjectSymbolTable,
 ) -> Result<Option<HirRuntimeReachabilityEdge>, RuntimeReachabilityProjectionError> {
-    if facts.outcome().site() != CheckedCallSite::HirCall(call) {
+    if !matches!(
+        facts.outcome().site(),
+        CheckedCallSite::HirCall(expression)
+            | CheckedCallSite::AttachedContentApplication {
+                expression,
+                family: arcweft_lang_sema::callable::CheckedAttachedContentApplicationFamily::ContentCall,
+            } if expression == call
+    ) {
         return Ok(None);
     }
     let Some(application) = facts.selected_application() else {

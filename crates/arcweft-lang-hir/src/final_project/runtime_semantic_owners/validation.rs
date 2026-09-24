@@ -57,8 +57,15 @@ fn edge_source_family_matches(
     match (&edge.source, &edge.kind) {
         (
             HirRuntimeReachabilitySite::Expression(owner),
-            HirRuntimeReachabilityEdgeKind::CheckedProjectCall { .. }
-            | HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. },
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCall { .. },
+        ) => resolve_expression_kind(project, *owner)
+            .is_some_and(|kind| {
+                matches!(kind, HirExprKind::Call(_))
+                    || matches!(kind, HirExprKind::AttachedContentApplication(application) if application.is_content_call())
+            }),
+        (
+            HirRuntimeReachabilitySite::Expression(owner),
+            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. },
         ) => resolve_expression_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirExprKind::Call(_))),
         (

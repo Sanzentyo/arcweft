@@ -1484,7 +1484,11 @@ fn append_selected_attached_content_operands(
         | (
             HirContentCallSemanticEvidence::None,
             crate::expr::HirCallInvocationForm::Parenthesized,
-        ) => {
+        ) if projection
+            == (HirRuntimeExpressionProjection::Structural {
+                value: HirRuntimeValueRetention::Omit,
+            }) =>
+        {
             if invocation.form() != crate::expr::HirCallInvocationForm::Parenthesized
                 || projection
                     != (HirRuntimeExpressionProjection::Structural {
@@ -1500,6 +1504,9 @@ fn append_selected_attached_content_operands(
             enqueue_attached_content_body_edges(topology, owner, pending, followed);
             Ok(HirRuntimeValueRetention::Omit)
         }
+        (HirContentCallSemanticEvidence::TextProxyObject { .. }, _) => Err(
+            HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention { expression: owner },
+        ),
         (HirContentCallSemanticEvidence::None, _) => match (invocation.form(), projection) {
             (
                 crate::expr::HirCallInvocationForm::Value,

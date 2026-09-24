@@ -501,6 +501,60 @@ fn opening() {
 }
 
 #[test]
+fn attached_default_effect_is_exposed_by_the_callable_contract() {
+    let fixture = fixture(
+        r#"
+fn logged(seed: DialogueContent)[body: DialogueContent = {
+    log.info("default");
+    seed
+}] -> DialogueContent { body }
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("effectful attached default analysis");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root HIR module");
+    let item_id = module
+        .items()
+        .find_map(|(id, item)| match item.kind() {
+            arcweft_lang_hir::item::HirItemKind::Function(function)
+                if function.name().resolved().map(|name| name.as_str()) == Some("logged") =>
+            {
+                Some(id)
+            }
+            _ => None,
+        })
+        .expect("logged function item");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_item() == item_id)
+        .map(|symbol| symbol.declaration().clone())
+        .expect("logged callable declaration");
+    let facts = report
+        .checked_callables()
+        .project_callable(&declaration)
+        .expect("checked logged callable");
+    let default = facts
+        .attached_content()
+        .and_then(|attached| attached.default())
+        .expect("checked attached default");
+    let log_write = crate::effects::EffectId::parse("log.write").expect("log effect identity");
+    assert!(
+        default
+            .effects()
+            .closed_value()
+            .is_some_and(|row| row.contains(&log_write))
+    );
+    assert!(
+        facts
+            .exposed_row()
+            .closed_value()
+            .is_some_and(|row| row.contains(&log_write))
+    );
+}
+
+#[test]
 fn attached_default_captures_the_exact_logical_parameter_binding_row() {
     let fixture = fixture(
         r#"

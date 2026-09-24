@@ -10,15 +10,16 @@ use arcweft_compiler::{
     source::compile_source,
 };
 use arcweft_core::{
-    effect::{RuntimeDropPolicyExpr, RuntimeDropPolicyKind, RuntimeEffectExpr},
+    effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeDropPolicyKind, RuntimeEffectExpr},
     line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger},
     plan::{
         FlowOp, RuntimeDialogueContentEffectTrigger, RuntimeDialogueContentPlan,
-        RuntimeFunctionSiteBody, RuntimePlan,
+        RuntimeDialogueValueBinding, RuntimeDialogueValueRole, RuntimeFunctionSiteBody,
+        RuntimePlan,
     },
     runtime_id::{RuntimeDialogueMarkId, RuntimeLineTaskNodeId},
     time::LogicalDuration,
-    value::{RuntimeExprKind, RuntimeValue},
+    value::{RuntimeDialogueContentValue, RuntimeExprKind, RuntimeValue},
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{
@@ -39,8 +40,8 @@ use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceSetRevision, identity::SourceSnapshotId,
 };
 use arcweft_text_model::{
-    RichTextNode, RichTextObjectProxy, RichTextStyle, RichTextTextProxyFieldKind,
-    RichTextTextProxyScalar,
+    DialogueContentMaterializer, RichTextNode, RichTextObjectProxy, RichTextStyle,
+    RichTextTextProxyFieldKind, RichTextTextProxyScalar,
 };
 
 fn object_proxy(compiled: &CompiledProject) -> &RichTextObjectProxy {
@@ -146,6 +147,114 @@ fn assert_single_dialogue_execution(
         }
     }
     panic!("execution exceeded its deterministic step bound");
+}
+
+fn execute_single_dialogue_with_content(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+    expected_template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
+) -> (
+    arcweft_core::value::RuntimeOpaqueValue,
+    Box<[RuntimeDialogueValueBinding]>,
+    Vec<LineEffectRequest>,
+) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let mut advances = Vec::new();
+    let mut selected_target = None;
+    let mut selected_values = None;
+    let mut line_effects = Vec::new();
+    let mut seen = 0;
+    for tick in 0..256 {
+        let result = step(
+            RuntimeStepInput {
+                tick: TickId(tick),
+                dialogue_advances: std::mem::take(&mut advances),
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+        );
+        let arcweft_core::step::RuntimeStepResult {
+            output,
+            fiber_status: status,
+            ..
+        } = result;
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        line_effects.extend(output.effects.line);
+        for event in output.flow_events {
+            if let FlowEvent::DialogueLine {
+                activation,
+                template,
+                target,
+                values,
+                ..
+            } = event
+            {
+                assert_eq!(template, expected_template);
+                assert!(selected_target.replace(target).is_none());
+                assert!(selected_values.replace(values).is_none());
+                seen += 1;
+                advances.push(activation);
+            }
+        }
+        match &status {
+            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(*exit, FlowExit::Done);
+                assert_eq!(seen, 1, "the selected line executes once");
+                return (
+                    selected_target.expect("dialogue line retains its exact target"),
+                    selected_values.expect("dialogue line retains its evaluated content slots"),
+                    line_effects,
+                );
+            }
+            status => panic!("execution stopped unexpectedly: {status:?}"),
+        }
+    }
+    panic!("execution exceeded its deterministic step bound");
+}
+
+fn rendered_content_slot_texts(
+    catalog: &arcweft_text_model::DialogueContentCatalog,
+    artifact: arcweft_core::effect::RuntimeArtifactFingerprint,
+    values: &[RuntimeDialogueValueBinding],
+) -> Vec<String> {
+    let fragment_catalog = catalog
+        .fragment_catalog(artifact)
+        .expect("compiled dialogue templates form a fragment catalog for this artifact");
+    let materializer = DialogueContentMaterializer::new(&fragment_catalog);
+    values
+        .iter()
+        .map(|binding| {
+            assert_eq!(binding.role, RuntimeDialogueValueRole::Content);
+            assert!(matches!(&binding.value, RuntimeValue::Opaque(_)));
+            let content = RuntimeDialogueContentValue::try_from_runtime_value(&binding.value)
+                .expect("dialogue Content slot retains its exact Content envelope");
+            materializer
+                .materialize(&content)
+                .expect("dialogue Content value materializes through its template catalog")
+                .document()
+                .resolved_text()
+                .to_owned()
+        })
+        .collect()
+}
+
+fn log_messages(effects: &[LineEffectRequest]) -> Vec<String> {
+    effects
+        .iter()
+        .filter_map(|effect| match effect {
+            LineEffectRequest::Log(log) => Some(log.message.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn bind_test_character_dialogue_schema(
@@ -648,6 +757,132 @@ entry cli @entry.main { goto @flow.main }
     )
     .lower()
     .expect("dialogue content and delay effects lower to verified product AWBC");
+}
+
+#[test]
+fn recursive_generic_closure_in_attached_default_reaches_verified_awbc() {
+    let source = r#"
+pub character alice { display = "Alice" }
+
+fn fallback<T>(value: T, seed: DialogueContent, depth: i64)[body: DialogueContent = {
+    log.info("default-enter");
+    if depth == 0i64 {
+        seed
+    } else {
+        let recur = || fallback(value, seed, depth - 1i64);
+        recur()
+    }
+}] -> DialogueContent { body }
+
+fn omitted<T>(value: T)[seed: DialogueContent] -> DialogueContent {
+    fallback(value, seed, 1i64)
+}
+
+flow main() -> Unit {
+    alice[#omitted(1i64)[default] #omitted("text")[second]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_attached_dialogue_project(source).expect(
+        "recursive generic default closure retains its lexical capture and content partition",
+    );
+    let runtime = compiled.runtime_plan();
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "recursive_generic_default.arcw",
+    )
+    .lower()
+    .expect("recursive generic default lowers to verified AWBC");
+    let bytes = report.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, report.program);
+    let [flow] = runtime.plan.flows() else {
+        panic!("one flow")
+    };
+    let template = flow
+        .body()
+        .ops()
+        .iter()
+        .find_map(|operation| match operation {
+            FlowOp::Dialogue { content, .. } => runtime
+                .plan
+                .dialogue_content()
+                .get(*content)
+                .map(RuntimeDialogueContentPlan::template),
+            _ => None,
+        })
+        .expect("the main flow dialogue owns its exact content template");
+    let artifact = arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&bytes).as_bytes(),
+    )
+    .unwrap();
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(artifact.clone()).unwrap();
+
+    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    let native_schema = bind_test_character_dialogue_schema(
+        &compiled,
+        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+    );
+    let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+        );
+    let (native_target, native_values, native_effects) = execute_single_dialogue_with_content(
+        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+        template,
+    );
+
+    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .unwrap();
+    let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+        .with_external_calls(
+            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+        );
+    let (awbc_target, awbc_values, awbc_effects) = execute_single_dialogue_with_content(
+        |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+        template,
+    );
+
+    let native_rendered = rendered_content_slot_texts(
+        &runtime.dialogue_content_catalog,
+        artifact.clone(),
+        &native_values,
+    );
+    let awbc_rendered =
+        rendered_content_slot_texts(&runtime.dialogue_content_catalog, artifact, &awbc_values);
+    assert_eq!(native_rendered, ["default", "second"]);
+    assert_eq!(awbc_rendered, native_rendered);
+    let native_logs = log_messages(&native_effects);
+    let awbc_logs = log_messages(&awbc_effects);
+    // Each ContentCall omits the body, so its depth-1 default and depth-0
+    // recursive default each run exactly once, in source order.
+    assert_eq!(
+        native_logs,
+        [
+            "default-enter",
+            "default-enter",
+            "default-enter",
+            "default-enter"
+        ]
+    );
+    assert_eq!(awbc_logs, native_logs);
+    assert_eq!(native_target, awbc_target);
+    let character = arcweft_character::id::CharacterId::try_new("character.alice").unwrap();
+    assert_eq!(
+        native_target.semantic_identity(),
+        arcweft_dialogue::CharacterDialogueType::exact(character).runtime_semantic_identity()
+    );
 }
 
 #[test]

@@ -72,7 +72,7 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
-fn awbc_application_produces_target_before_evaluating_content_values() {
+fn application_evaluates_target_before_content_slots_and_lowers_to_awbc() {
     let compiled = crate::source::compile_source(
         r#"
 pub character alice { display = "Alice" }
@@ -81,6 +81,45 @@ entry cli @entry.main { goto @flow.main }
 "#,
     )
     .expect("dialogue content with an evaluated string slot");
+    let [flow] = compiled.plan.flows() else {
+        panic!("one main Flow")
+    };
+    let [
+        FlowOp::Let {
+            expr: target_source, ..
+        },
+        FlowOp::Let {
+            expr: content_source,
+            ..
+        },
+        FlowOp::Dialogue { target, content, .. },
+    ] = flow.body().ops()
+    else {
+        panic!("target, content slot, and dialogue retain source order: {flow:?}")
+    };
+    assert!(matches!(
+        target_source.kind(),
+        RuntimeExprKind::EntityRef(_)
+    ));
+    assert!(matches!(
+        content_source.kind(),
+        RuntimeExprKind::Value(RuntimeValue::String(value)) if value == "content"
+    ));
+    assert!(matches!(
+        target.kind(),
+        RuntimeExprKind::CharacterDialogue { target, .. }
+            if matches!(target.kind(), RuntimeExprKind::Local(_))
+    ));
+    assert_eq!(
+        compiled
+            .plan
+            .dialogue_content()
+            .get(*content)
+            .expect("dialogue content plan")
+            .values()
+            .len(),
+        1
+    );
     let report = AwbcLowerer::new(
         &compiled.plan,
         &compiled.dialogue_content,
@@ -88,37 +127,18 @@ entry cli @entry.main { goto @flow.main }
     )
     .lower()
     .expect("the target register is admitted by the AWBC verifier");
-    let (target, values) = report
+    let values = report
         .program
         .blocks
         .iter()
         .find_map(|block| match &block.terminator {
-            AwbcTerminator::Dialogue { target, values, .. } => Some((*target, values)),
+            AwbcTerminator::Dialogue { values, .. } => Some(values),
             _ => None,
         })
         .expect("one dialogue terminator");
-    let [content] = values.as_slice() else {
+    let [_content] = values.as_slice() else {
         panic!("one content value register")
     };
-    let target_position = report
-        .program
-        .instructions
-        .iter()
-        .position(|instruction| {
-            matches!(instruction,
-            AwbcInstruction::CharacterDialogue { destination, .. } if *destination == target)
-        })
-        .expect("target has a producer instruction");
-    let content_position = report
-        .program
-        .instructions
-        .iter()
-        .position(|instruction| {
-            matches!(instruction,
-            AwbcInstruction::LoadConst { dst, .. } if *dst == content.value)
-        })
-        .expect("content string is evaluated into its slot register");
-    assert!(target_position < content_position);
 }
 
 #[test]

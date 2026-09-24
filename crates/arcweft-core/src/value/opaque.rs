@@ -1391,10 +1391,9 @@ impl RuntimeContentValueBudget {
 impl RuntimeDialogueOpaqueRole {
     const fn spec(self) -> RuntimeStandardOpaqueTypeSpec {
         match self {
-            Self::View => RuntimeStandardOpaqueTypeSpec::snapshot_only(
-                &["DialogueView"],
-                "std.dialogue.view",
-            ),
+            Self::View => {
+                RuntimeStandardOpaqueTypeSpec::snapshot_only(&["DialogueView"], "std.dialogue.view")
+            }
             Self::Character => RuntimeStandardOpaqueTypeSpec::snapshot_only(
                 &["DialogueCharacter"],
                 "std.dialogue.character",
@@ -1434,7 +1433,7 @@ impl RuntimeDialogueOpaqueRole {
     /// validated runtime identity grammar.
     pub fn producer(self) -> RuntimeOpaqueTypeProducerId {
         RuntimeOpaqueTypeProducerId::try_new(self.spec().producer())
-        .expect("fixed dialogue runtime producer identities are valid")
+            .expect("fixed dialogue runtime producer identities are valid")
     }
 
     #[must_use]

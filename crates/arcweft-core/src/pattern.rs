@@ -2178,10 +2178,19 @@ fn runtime_value_matches_type_inner(
             RuntimePlanTypeProjection::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 ..
             },
             RuntimeValue::Opaque(value),
-        ) => runtime_opaque_matches_type(declaration, producer, *admission, value),
+        ) => runtime_opaque_matches_type(
+            declaration,
+            producer,
+            *admission,
+            *value_class,
+            *persistence,
+            value,
+        ),
         (
             RuntimePlanTypeProjection::Shared(inner) | RuntimePlanTypeProjection::Reference(inner),
             value,
@@ -2324,15 +2333,23 @@ fn runtime_opaque_matches_type(
     declaration: &RuntimePlanTypeDeclaration,
     producer: &RuntimeOpaqueTypeProducerId,
     admission: RuntimeOpaqueTypeAdmission,
+    value_class: RuntimeOpaqueValueClass,
+    persistence: RuntimeOpaquePersistence,
     value: &RuntimeOpaqueValue,
 ) -> bool {
     let owner = match admission {
-        RuntimeOpaqueTypeAdmission::ExactIdentity => {
-            RuntimeOpaqueTypeOwner::exact(producer.clone(), declaration.semantic_identity())
-        }
-        RuntimeOpaqueTypeAdmission::ProducerWide => {
-            RuntimeOpaqueTypeOwner::producer_wide(producer.clone(), declaration.semantic_identity())
-        }
+        RuntimeOpaqueTypeAdmission::ExactIdentity => RuntimeOpaqueTypeOwner::exact_with(
+            producer.clone(),
+            declaration.semantic_identity(),
+            value_class,
+            persistence,
+        ),
+        RuntimeOpaqueTypeAdmission::ProducerWide => RuntimeOpaqueTypeOwner::producer_wide_with(
+            producer.clone(),
+            declaration.semantic_identity(),
+            value_class,
+            persistence,
+        ),
     };
     owner.accepts_opaque_value(value)
 }

@@ -474,6 +474,8 @@ struct FinalLoweringContext<'project, 'data> {
         &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     dialogue_value_capture_input_locals:
         &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
+    dialogue_value_result_locals:
+        &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_effect_capture_input_locals:
         &'data BTreeMap<RuntimeDialogueEffectCaptureKey, RuntimeLocalSeedId>,
     dialogue_content: &'data BTreeMap<
@@ -1298,6 +1300,7 @@ pub fn lower_runtime_plan_with_stats(
         reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
     let empty_dialogue_effect_sites = BTreeMap::new();
     let empty_dialogue_value_capture_input_locals = BTreeMap::new();
+    let empty_dialogue_value_result_locals = BTreeMap::new();
     let empty_dialogue_effect_capture_input_locals = BTreeMap::new();
     let empty_dialogue_content = BTreeMap::new();
     let control_locals = ControlLocals::admit(
@@ -1322,6 +1325,7 @@ pub fn lower_runtime_plan_with_stats(
         function_sites: &function_sites,
         dialogue_effect_sites: &empty_dialogue_effect_sites,
         dialogue_value_capture_input_locals: &empty_dialogue_value_capture_input_locals,
+        dialogue_value_result_locals: &empty_dialogue_value_result_locals,
         dialogue_effect_capture_input_locals: &empty_dialogue_effect_capture_input_locals,
         dialogue_content: &empty_dialogue_content,
         control: &control_locals,
@@ -1378,10 +1382,9 @@ pub fn lower_runtime_plan_with_stats(
         ..context
     };
     define_dialogue_effect_sites(&context, effect_definitions, &mut builder, &mut errors);
-    // Value callback bodies can contain nested Content applications. Their
-    // exact body lowering therefore runs only after the effect-site table is
-    // available; otherwise a valid nested body would be mistaken for a
-    // missing callback and silently admitted with the wrong capture ABI.
+    // Dialogue value sites capture caller-computed slot results. Admit a typed
+    // callback input and caller result local per slot before reserving their
+    // identity callbacks.
     let dialogue_value_capture_specs = match collect_dialogue_value_capture_specs(&context) {
         Ok(specs) => specs,
         Err(mut capture_errors) => {
@@ -1392,32 +1395,39 @@ pub fn lower_runtime_plan_with_stats(
     let value_admission = builder
         .admit_type_batch(
             [],
-            dialogue_value_capture_specs
-                .iter()
-                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+            dialogue_value_capture_specs.iter().flat_map(|(_, ty)| {
+                [
+                    RuntimeLocalDeclarationSeed::new(*ty),
+                    RuntimeLocalDeclarationSeed::new(*ty),
+                ]
+            }),
         )
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut value_local_ids = value_admission.local_ids().iter().cloned();
-    let dialogue_value_capture_input_locals = dialogue_value_capture_specs
-        .iter()
-        .map(|(key, _)| {
-            value_local_ids
-                .next()
-                .map(|local| (*key, local))
-                .ok_or_else(|| {
-                    vec![RuntimePlanLowerError::new(
-                        "admitted dialogue value capture local is missing",
-                    )]
-                })
-        })
-        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let mut dialogue_value_capture_input_locals = BTreeMap::new();
+    let mut dialogue_value_result_locals = BTreeMap::new();
+    for (key, _) in &dialogue_value_capture_specs {
+        let input_local = value_local_ids.next().ok_or_else(|| {
+            vec![RuntimePlanLowerError::new(
+                "admitted dialogue value capture input local is missing",
+            )]
+        })?;
+        let result_local = value_local_ids.next().ok_or_else(|| {
+            vec![RuntimePlanLowerError::new(
+                "admitted dialogue value caller result local is missing",
+            )]
+        })?;
+        dialogue_value_capture_input_locals.insert(*key, input_local);
+        dialogue_value_result_locals.insert(*key, result_local);
+    }
     if value_local_ids.next().is_some() {
         return Err(vec![RuntimePlanLowerError::new(
-            "admitted dialogue value capture locals contain an unexpected row",
+            "admitted dialogue value locals contain an unexpected row",
         )]);
     }
     let context = FinalLoweringContext {
         dialogue_value_capture_input_locals: &dialogue_value_capture_input_locals,
+        dialogue_value_result_locals: &dialogue_value_result_locals,
         ..context
     };
     let (dialogue_content, dialogue_assertion_sites) =
@@ -3009,77 +3019,23 @@ fn collect_dialogue_value_capture_specs(
     context
         .facts
         .visit_dialogue_applications(&mut |scope, owner, application| {
-            let Some(module) = module_by_id(context.project, owner.module()) else {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue application {owner:?} module is absent during capture admission"
-                )));
-                return;
-            };
             let Some(fragment) = scope.dialogue_content_fragment_for_source(owner) else {
                 errors.push(RuntimePlanLowerError::new(format!(
                 "dialogue application {owner:?} content template is absent during capture admission"
             )));
                 return;
             };
-            let locals = match context.dialogue_locals(scope.scope()) {
-                Ok(locals) => locals,
-                Err(error) => {
-                    errors.push(error);
-                    return;
-                }
-            };
-            let lowerer = match context.scoped_expr_lowerer(module, scope) {
-                Ok(lowerer) => lowerer,
-                Err(error) => {
-                    errors.push(error);
-                    return;
-                }
-            };
             for value in fragment.values() {
-                let Ok(body) = lowerer.lower(value.expression()) else {
-                    // The final lowering pass reports the authoritative body
-                    // error.  Capture admission must not invent a replacement
-                    // body or downgrade that failure to an empty capture list.
-                    continue;
-                };
-                for (position, capture) in body.free_locals().iter().enumerate() {
-                    let position = match u32::try_from(position) {
-                        Ok(position) => position,
-                        Err(_) => {
-                            errors.push(RuntimePlanLowerError::new(format!(
-                                "dialogue value {:?} capture position exceeds checked limits",
-                                value.expression()
-                            )));
-                            continue;
-                        }
-                    };
-                    let Some((local, ty)) = locals.iter().find_map(|(local, candidate)| {
-                        (candidate == capture).then(|| (*local, scope.local_type(*local)))
-                    }) else {
-                        errors.push(RuntimePlanLowerError::new(format!(
-                            "dialogue value {:?} capture has no accepted local authority",
-                            value.expression()
-                        )));
-                        continue;
-                    };
-                    let Some(ty) = ty else {
-                        errors.push(RuntimePlanLowerError::new(format!(
-                            "dialogue value {:?} capture {local:?} has no accepted type",
-                            value.expression()
-                        )));
-                        continue;
-                    };
-                    let key = RuntimeDialogueValueCaptureKey::new(
-                        application.content().template_id(),
-                        value.slot(),
-                        position,
-                    );
-                    if value_specs.insert(key, ty.identity()).is_some() {
-                        errors.push(RuntimePlanLowerError::new(format!(
-                            "dialogue value {:?} repeats a capture input position",
-                            value.expression()
-                        )));
-                    }
+                let key = RuntimeDialogueValueCaptureKey::new(
+                    application.content().template_id(),
+                    value.slot(),
+                    0,
+                );
+                if value_specs.insert(key, value.ty().identity()).is_some() {
+                    errors.push(RuntimePlanLowerError::new(format!(
+                        "dialogue value {:?} repeats its slot result capture",
+                        value.expression()
+                    )));
                 }
             }
         });
@@ -3499,10 +3455,6 @@ fn lower_dialogue_application<'facts>(
     PendingDialogueContentDefinition<'facts>,
     Vec<PendingDialogueValueDefinition>,
 )> {
-    let Some(module) = module_by_id(context.project, owner.module()) else {
-        errors.push(RuntimePlanLowerError::new("dialogue module is absent"));
-        return None;
-    };
     let Some(fragment) = scope.dialogue_content_fragment_for_source(owner) else {
         errors.push(RuntimePlanLowerError::new(format!(
             "dialogue content template {} is absent from the compiler text catalog",
@@ -3525,103 +3477,101 @@ fn lower_dialogue_application<'facts>(
             return None;
         }
     };
-    let lowerer = match context.scoped_expr_lowerer(module, scope) {
-        Ok(lowerer) => lowerer,
-        Err(error) => {
-            errors.push(error);
-            return None;
-        }
-    };
     let mut invalid = false;
     let mut values = Vec::new();
     let mut value_definitions = Vec::new();
+    // The Dialogue runtime still consumes typed value sites. Each site is an
+    // identity callback over the caller's ANF result local; source expressions
+    // are lowered once in the owning Flow body.
     for value in fragment.values() {
-        let body = match lowerer.lower(value.expression()) {
-            Ok(body) => body,
-            Err(error) => {
-                errors.push(RuntimePlanLowerError::new(error));
+        let expression_type = match scope.expression_type(value.expression()) {
+            Some(ty) if ty.identity() == value.ty().identity() => ty.identity(),
+            Some(_) => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "dialogue value {:?} result type disagrees with its accepted slot type",
+                    value.expression()
+                )));
                 invalid = true;
                 continue;
             }
-        };
-        let captures = body.free_locals();
-        let mut capture_values = Vec::with_capacity(captures.len());
-        let capture_inputs = captures
-            .iter()
-            .enumerate()
-            .map(|(position, input_local)| {
-                let position = u32::try_from(position).map_err(|_| {
-                    "dialogue value capture position exceeds checked limits".to_owned()
-                })?;
-                let (local, ty) = locals
-                    .iter()
-                    .find_map(|(local, candidate)| {
-                        (candidate == input_local).then(|| (*local, scope.local_type(*local)))
-                    })
-                    .ok_or_else(|| {
-                        format!(
-                            "dialogue value {:?} capture has no accepted local authority",
-                            value.expression()
-                        )
-                    })?;
-                let ty = ty.ok_or_else(|| {
-                    format!(
-                        "dialogue value {:?} capture {local:?} has no accepted type",
-                        value.expression()
-                    )
-                })?;
-                let input_local_seed = context
-                    .dialogue_value_capture_input_locals
-                    .get(&RuntimeDialogueValueCaptureKey::new(
-                        application.content().template_id(),
-                        value.slot(),
-                        position,
-                    ))
-                    .cloned()
-                    .ok_or_else(|| {
-                        format!(
-                            "dialogue value {:?} capture {position} has no admitted synthetic input local",
-                            value.expression()
-                        )
-                    })?;
-                capture_values.push(RuntimeExprSeed::new(
-                    ty.identity(),
-                    arcweft_core::plan::RuntimeExprSeedKind::Local(input_local.clone()),
-                ));
-                Ok(RuntimeFunctionInputBindingSeed {
-                    source: RuntimeFunctionInputSource::Capture { position },
-                    input_local: input_local_seed,
-                    pattern: RuntimePatternSeed::new(
-                        ty.identity(),
-                        RuntimePatternSeedKind::Bind {
-                            mutable: false,
-                            local: input_local.clone(),
-                        },
-                    ),
-                })
-            })
-            .collect::<Result<Vec<_>, String>>();
-        let declaration = capture_inputs.map(|captures| RuntimeFunctionSiteDeclarationSeed {
-            inputs: captures.into_boxed_slice(),
-            result: body.ty(),
-            body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeEffectSet::empty(),
-        });
-        let declaration = match declaration {
-            Ok(declaration) => declaration,
-            Err(error) => {
+            None => {
                 errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue value {:?} capture projection failed: {error}",
+                    "dialogue value {:?} has no accepted result type",
                     value.expression()
                 )));
                 invalid = true;
                 continue;
             }
         };
+        let input_local = match context
+            .dialogue_value_capture_input_locals
+            .get(&RuntimeDialogueValueCaptureKey::new(
+                application.content().template_id(),
+                value.slot(),
+                0,
+            ))
+            .cloned()
+        {
+            Some(local) => local,
+            None => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "dialogue value {:?} has no admitted result input local",
+                    value.expression()
+                )));
+                invalid = true;
+                continue;
+            }
+        };
+        let Some(result_local) = context
+            .dialogue_value_result_locals
+            .get(&RuntimeDialogueValueCaptureKey::new(
+                application.content().template_id(),
+                value.slot(),
+                0,
+            ))
+            .cloned()
+        else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "dialogue value {:?} has no admitted caller result local",
+                value.expression()
+            )));
+            invalid = true;
+            continue;
+        };
+        let capture_inputs = [RuntimeFunctionInputBindingSeed {
+            source: RuntimeFunctionInputSource::Capture { position: 0 },
+            input_local: input_local.clone(),
+            pattern: RuntimePatternSeed::new(
+                expression_type,
+                RuntimePatternSeedKind::Bind {
+                    mutable: false,
+                    local: result_local.clone(),
+                },
+            ),
+        }];
+        let declaration = RuntimeFunctionSiteDeclarationSeed {
+            inputs: capture_inputs.into(),
+            result: expression_type,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeEffectSet::empty(),
+        };
+        let body = RuntimeExprSeed::new(
+            expression_type,
+            arcweft_core::plan::RuntimeExprSeedKind::Local(result_local.clone()),
+        );
+        let capture_values = vec![RuntimeExprSeed::new(
+            expression_type,
+            arcweft_core::plan::RuntimeExprSeedKind::Local(result_local),
+        )]
+        .into_boxed_slice();
         match builder.reserve_function_site_seed(declaration) {
             Ok(site) => {
-                let captures = capture_values.into_boxed_slice();
-                values.push((value.slot(), value.role(), site.clone(), captures.clone()));
+                values.push((
+                    value.slot(),
+                    value.role(),
+                    site.clone(),
+                    capture_values.clone(),
+                ));
                 value_definitions.push(PendingDialogueValueDefinition {
                     expression: value.expression(),
                     site,
@@ -4236,6 +4186,7 @@ struct FinalFlowLowerer<'a> {
     callable_applications: &'a callable_states::ProjectCallableApplicationStates,
     callable_specialization_targets: &'a callable_states::CallableSpecializationTargetStates,
     dialogue_effect_sites: &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
+    dialogue_value_result_locals: &'a BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_content: &'a BTreeMap<
         arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
         RuntimeDialogueContentPlanSeedId,
@@ -4339,6 +4290,7 @@ impl<'a> FinalFlowLowerer<'a> {
             callable_applications: context.callable_applications,
             callable_specialization_targets: context.callable_specialization_targets,
             dialogue_effect_sites: context.dialogue_effect_sites,
+            dialogue_value_result_locals: context.dialogue_value_result_locals,
             dialogue_content: context.dialogue_content,
             control: context.control,
             specialized_operand_locals: context.specialized_operand_locals,
@@ -5566,6 +5518,19 @@ impl<'a> FinalFlowLowerer<'a> {
                     "dialogue application {expression:?} has no checked projection fact"
                 ))
             })?;
+        let fragment = self
+            .semantic_facts
+            .dialogue_content_fragment_for_source(semantic_expression)
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "dialogue application {expression:?} has no checked content fragment"
+                ))
+            })?;
+        if fragment.template().id() != application.content().template_id() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "dialogue application {expression:?} content fragment disagrees with its accepted template"
+            )));
+        }
         let target_expression = application.target().expression();
         let Some(target) = overrides.get(&target_expression).cloned() else {
             // The target can contain an awaited call, branch, or other Flow
@@ -5639,7 +5604,41 @@ impl<'a> FinalFlowLowerer<'a> {
                 "dialogue application {expression:?} result pattern has the wrong accepted type"
             )));
         }
-        let mut ops = vec![RuntimeFlowOpSeed::Dialogue {
+        // Slot expressions execute eagerly in canonical template order after
+        // the target has completed. Dialogue value sites below read these
+        // result locals and never lower the source expressions again.
+        let mut ops = Vec::new();
+        for value in fragment.values() {
+            let value_type = self.expression_type(value.expression())?;
+            if value_type.identity() != value.ty().identity() {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "dialogue value {:?} result type disagrees with its accepted slot type",
+                    value.expression()
+                )));
+            }
+            let local = self
+                .dialogue_value_result_locals
+                .get(&RuntimeDialogueValueCaptureKey::new(
+                    application.content().template_id(),
+                    value.slot(),
+                    0,
+                ))
+                .cloned()
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "dialogue value {:?} has no admitted caller result local",
+                        value.expression()
+                    ))
+                })?;
+            ops.extend(self.lower_flow_value(
+                value.expression(),
+                RuntimeFlowValueContinuation::Bind {
+                    pattern: bind_seed(value_type, local),
+                    tail: RuntimeFlowTail::None,
+                },
+            )?);
+        }
+        ops.push(RuntimeFlowOpSeed::Dialogue {
             target,
             content,
             result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::try_new(
@@ -5651,7 +5650,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     "dialogue application {expression:?} result target rejected: {error}"
                 ))
             })?,
-        }];
+        });
         ops.extend(self.lower_flow_tail(tail)?);
         Ok(ops)
     }
