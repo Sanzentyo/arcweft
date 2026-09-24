@@ -8,7 +8,7 @@ use std::{
 
 use super::*;
 use crate::{
-    callable::{PRODUCTION_CALLABLE_LIMITS, limits::ResolverWork},
+    callable::{CallableConstraintApplication, PRODUCTION_CALLABLE_LIMITS, limits::ResolverWork},
     effect_row::{DecisionControl, DecisionWork, EffectFormula, EffectPredicate, EffectRow},
     effects::EffectSet,
     types::constraints::{
@@ -17,18 +17,13 @@ use crate::{
     },
     types::{ArrayLength, GenericBinder, TypeKind},
 };
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum Application {
-    Call(u8),
-    Specialization(u8),
-}
+use arcweft_lang_hir::identity::ExprId;
 
 #[derive(Debug)]
 struct Domain;
 
 impl ConstraintDomain for Domain {
-    type Application = Application;
+    type Application = CallableConstraintApplication;
     type Source = u8;
     type AlternativeIndex = u8;
     type EvidenceRule = ();
@@ -62,8 +57,9 @@ enum Source {
 
 struct Client<'a> {
     graph: &'a PreparedCallGraph<()>,
+    application_owners: Vec<ExprId>,
     sources: &'a [Source],
-    observations: Arc<Mutex<Vec<(u8, TypeKind, Option<Application>)>>>,
+    observations: Arc<Mutex<Vec<(u8, TypeKind, Option<CallableConstraintApplication>)>>>,
     cancellation: &'a AtomicBool,
     cancel_during_probe: bool,
     check_foreign_graph: bool,
@@ -99,7 +95,9 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                     assert!(matches!(
                         probe.specialize_function_value(
                             &foreign,
-                            Application::Specialization(source),
+                            CallableConstraintApplication::Specialize(
+                                self.application_owners[usize::from(source)]
+                            ),
                             scheme,
                             &enclosing(),
                             &PRODUCTION_CALLABLE_LIMITS,
@@ -116,7 +114,9 @@ impl TypeConstraintClient<Domain> for Client<'_> {
                 let pending = probe
                     .specialize_function_value(
                         self.graph,
-                        Application::Specialization(source),
+                        CallableConstraintApplication::Specialize(
+                            self.application_owners[usize::from(source)],
+                        ),
                         scheme,
                         &enclosing(),
                         &PRODUCTION_CALLABLE_LIMITS,
@@ -250,37 +250,52 @@ fn concrete(item: TypeKind, length: usize, effects: &[&str]) -> TypeKind {
 
 fn drive(
     graph: &PreparedCallGraph<()>,
-    client: Client<'_>,
+    mut client: Client<'_>,
     scope: TypeConstraintParameterScope,
     expected: &[TypeKind],
     limits: CallableLimits,
 ) -> Result<SolvedCandidate<Domain>, TypeConstraintFailure<Domain>> {
+    let fixture = crate::final_analysis::tests::fixture(
+        "fn identity<T>(value: T) -> T { value }\nfn caller() { identity(1i64); identity(2i64); }\n",
+        None,
+    );
+    client.application_owners = fixture
+        .project
+        .analysis_view()
+        .unwrap()
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .filter_map(|(owner, expression)| {
+            matches!(
+                expression.kind(),
+                arcweft_lang_hir::expr::HirExprKind::Call(_)
+            )
+            .then_some(owner)
+        })
+        .collect();
+    assert!(client.application_owners.len() >= client.sources.len());
+    let application = CallableConstraintApplication::Call(client.application_owners[0]);
     let mut work = ResolverWork::new(1_048_576);
     let session = work
         .begin_candidate_constraint_session(limits, client.cancellation)
         .unwrap();
     let initialization = super::super::tests::initialization_from_graph(graph, scope);
     session
-        .with_driver::<Domain, _, _>(
-            Application::Call(0),
-            initialization,
-            client,
-            |mut driver| {
-                for (index, expected) in expected.iter().enumerate() {
-                    driver.probe_prepared_source(
-                        PreparedSourceConstraint::checked(
-                            u8::try_from(index).unwrap(),
-                            PreparedConstraintSourceProjection::Scalar,
-                            [],
-                            PreparedSourceAlternative::new(0, (), expected.clone()),
-                        )
-                        .unwrap(),
-                        ConstraintAcceptance::PatternAcceptsActual,
-                    )?;
-                }
-                driver.finish()
-            },
-        )
+        .with_driver::<Domain, _, _>(application, initialization, client, |mut driver| {
+            for (index, expected) in expected.iter().enumerate() {
+                driver.probe_prepared_source(
+                    PreparedSourceConstraint::checked(
+                        u8::try_from(index).unwrap(),
+                        PreparedConstraintSourceProjection::Scalar,
+                        [],
+                        PreparedSourceAlternative::new(0, (), expected.clone()),
+                    )
+                    .unwrap(),
+                    ConstraintAcceptance::PatternAcceptsActual,
+                )?;
+            }
+            driver.finish()
+        })
         .unwrap()
 }
 
@@ -303,6 +318,7 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
         &graph,
         Client {
             graph: &graph,
+            application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
             cancellation: &cancellation,
@@ -315,12 +331,27 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
     )
     .unwrap();
     assert_eq!(solved.component.applications().len(), 3);
+    let call_owner = solved
+        .component
+        .applications()
+        .find_map(|(application, _)| application.require_call().ok())
+        .unwrap();
+    let observations = observations.lock().unwrap();
     assert_eq!(
-        *observations.lock().unwrap(),
-        [
-            (0, expected[0].clone(), Some(Application::Specialization(0))),
-            (1, expected[1].clone(), Some(Application::Specialization(1))),
-        ]
+        observations[0],
+        (
+            0,
+            expected[0].clone(),
+            Some(CallableConstraintApplication::Specialize(call_owner))
+        )
+    );
+    assert_eq!(observations[1].0, 1);
+    assert_eq!(observations[1].1, expected[1]);
+    assert_ne!(observations[1].2.unwrap().expression(), call_owner);
+    assert!(
+        observations
+            .iter()
+            .all(|(_, _, application)| application.unwrap().require_call().is_err())
     );
     assert_eq!(source.semantic_identity_digest().unwrap(), original);
     assert!(
@@ -328,6 +359,8 @@ fn source_scheme_uses_open_types_lengths_and_effects_independently_in_one_compon
         "ordinary compatibility remains rigid"
     );
 }
+
+mod nested;
 
 #[test]
 fn source_predicate_rejects_forbidden_specialization_before_materialization() {
@@ -340,6 +373,7 @@ fn source_predicate_rejects_forbidden_specialization_before_materialization() {
         &graph,
         Client {
             graph: &graph,
+            application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
             cancellation: &cancellation,
@@ -393,6 +427,7 @@ fn specialization_waits_for_later_parent_operands_to_close_its_result() {
         &graph,
         Client {
             graph: &graph,
+            application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
             cancellation: &cancellation,
@@ -426,6 +461,7 @@ fn specialization_cannot_open_a_known_expected_scheme() {
         &graph,
         Client {
             graph: &graph,
+            application_owners: Vec::new(),
             sources: &sources,
             observations: Arc::clone(&observations),
             cancellation: &cancellation,
@@ -463,6 +499,7 @@ fn specialization_uses_parent_cancellation_and_structural_budget() {
             &graph,
             Client {
                 graph: &graph,
+                application_owners: Vec::new(),
                 sources: &sources,
                 observations: Arc::clone(&observations),
                 cancellation: &cancellation,

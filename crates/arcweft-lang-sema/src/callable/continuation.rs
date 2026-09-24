@@ -29,6 +29,8 @@ use crate::types::{
 
 use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
 
+mod application_owner;
+pub(crate) use application_owner::CallableConstraintApplication;
 mod effects;
 mod specialization;
 use effects::PreparedEffectDelta;

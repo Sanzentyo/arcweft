@@ -98,13 +98,13 @@ pub(crate) use constraints::{
     SourceCheckpointFailure, TypeConstraintClient,
 };
 pub(crate) use continuation::{
-    CallConstraintInvariant, EnclosingGenericParameterScope, PreparedCallContinuationAuthority,
-    PreparedCallContinuationRef, PreparedCallGraph, PreparedCallGraphCheckpoint,
-    PreparedCallGraphDelta, PreparedCallGraphIngress, PreparedCallGraphReplayMismatch,
-    PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
-    PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
-    PreparedCallPrefixReplayMismatch, PreparedCallResultRef, PreparedCallSiteContinuation,
-    PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
+    CallConstraintInvariant, CallableConstraintApplication, EnclosingGenericParameterScope,
+    PreparedCallContinuationAuthority, PreparedCallContinuationRef, PreparedCallGraph,
+    PreparedCallGraphCheckpoint, PreparedCallGraphDelta, PreparedCallGraphIngress,
+    PreparedCallGraphReplayMismatch, PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey,
+    PreparedCallGraphSealPayload, PreparedCallGraphSelectedNode, PreparedCallGraphSiteState,
+    PreparedCallPrefixPayload, PreparedCallPrefixReplayMismatch, PreparedCallResultRef,
+    PreparedCallSiteContinuation, PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
     PreparedChildConstraintInitialization, PreparedConstraintInitialization,
 };
 pub use continuation::{

@@ -19,10 +19,11 @@ use arcweft_lang_hir::{
 use crate::{
     callable::{
         CallConstraintInvariant, CallableArgumentSemanticAction, CallableArgumentSlotIndex,
-        CallableCandidateId, CallableGroupIndex, CallableInstantiation, CallableParameterAdmission,
-        CallableParameterConsumer, CallableParameterCoordinate, CallableRestContainerPolicy,
-        CallableResultSchema, CallableSchemaGenericRole, CallableSemanticValueGuard,
-        CallableValidator, CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
+        CallableCandidateId, CallableConstraintApplication, CallableGroupIndex,
+        CallableInstantiation, CallableParameterAdmission, CallableParameterConsumer,
+        CallableParameterCoordinate, CallableRestContainerPolicy, CallableResultSchema,
+        CallableSchemaGenericRole, CallableSemanticValueGuard, CallableValidator,
+        CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
         CheckedCallResolverAuthority, CheckedCallSite, CheckedSemanticValueEvidence,
         DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
         ObservedSemanticValueEvidence, ParameterExpectedTypeProjection,
@@ -780,7 +781,7 @@ impl AnalyzerCallClientInvariant {
 }
 
 impl ConstraintDomain for AnalyzerCallConstraintDomain {
-    type Application = ExprId;
+    type Application = CallableConstraintApplication;
     type Source = AnalyzerCallConstraintSource;
     type AlternativeIndex = u32;
     type EvidenceRule = AnalyzerCallEvidenceRule;
@@ -2160,7 +2161,19 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         let mut requests_by_application = BTreeMap::<ExprId, Vec<usize>>::new();
         for (index, request) in requests.iter().enumerate() {
             requests_by_application
-                .entry(request.application_id())
+                .entry(
+                    request
+                        .application_id()
+                        .require_call()
+                        .map_err(|invariant| {
+                            crate::callable::SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::constraint(
+                                    request.source().local(),
+                                    invariant,
+                                ),
+                            )
+                        })?,
+                )
                 .or_default()
                 .push(index);
         }
@@ -2195,7 +2208,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         for request in requests {
             let source_id = *request.source();
             let source = source_id.local();
-            let application = request.application_id();
+            let application = request
+                .application_id()
+                .require_call()
+                .map_err(|invariant| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(source, invariant),
+                    )
+                })?;
             let application_context = if self.application == Some(application) {
                 None
             } else {
@@ -2253,7 +2273,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 }),
                         },
                     );
-            if self.application == Some(request.application_id()) {
+            if self.application == Some(application) {
                 let candidate = self.candidate.clone();
                 let attempt = self.attempt.clone();
                 self.record_physical_source_for(
@@ -2876,7 +2896,10 @@ impl CompletedCallApplicationEvidence {
         >,
         application: ExprId,
     ) -> Result<Self, CallConstraintInvariant> {
-        if component.application(application).is_none() {
+        if component
+            .application(CallableConstraintApplication::Call(application))
+            .is_none()
+        {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
         }
         Ok(Self {
@@ -2924,7 +2947,7 @@ impl<'a> CompletedCallApplicationSources<'a> {
         Item = &'a crate::types::constraints::ClosedConstraintProbe<AnalyzerCallConstraintDomain>,
     > + 'a {
         self.component
-            .sources_for(self.application)
+            .sources_for(CallableConstraintApplication::Call(self.application))
             .expect("application evidence is admitted by its completed component")
     }
 }
@@ -3010,7 +3033,7 @@ impl RanCandidateTransaction {
             CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
         let solution = component
             .component()
-            .application(application_owner)
+            .application(CallableConstraintApplication::Call(application_owner))
             .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
             .solution();
         let terminal_effects = checked_authority
@@ -3049,7 +3072,7 @@ impl PreparedCallApplicationTransaction {
         let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)?;
         let solution = evidence
             .component()
-            .application(recipe.owner)
+            .application(CallableConstraintApplication::Call(recipe.owner))
             .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
             .solution();
         let terminal_effects = checked_authority
@@ -3929,7 +3952,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
     let initialization = match parent_source {
         Some(parent_source) => PreparedCallConstraintInitialization::Child(
             parent_source
-                .issue_child_initialization(graph, result_source, site, &candidate, enclosing)
+                .issue_child_initialization(
+                    graph,
+                    CallableConstraintApplication::Call(result_source),
+                    site,
+                    &candidate,
+                    enclosing,
+                )
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
                 })?,
@@ -5067,7 +5096,7 @@ pub(crate) fn run_prepared_candidate(
         .map(|constraint| constraint.actual.clone());
     let alternatives = session
         .with_driver(
-            application,
+            CallableConstraintApplication::Call(application),
             initialization,
             AnalyzerCallConstraintClient::new(operations),
             |mut driver| {
@@ -5372,7 +5401,7 @@ fn collect_completed_nested_calls<'h>(
             )
         })?;
         let source = request.source().local();
-        if request.application_id() != application {
+        if request.application_id() != CallableConstraintApplication::Call(application) {
             return Err(crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::constraint(
                     source,
@@ -5407,7 +5436,15 @@ fn collect_completed_nested_calls<'h>(
                         ),
                     )
                 })?;
-                let child_application = result.application_id();
+                let child_application =
+                    result
+                        .application_id()
+                        .require_call()
+                        .map_err(|invariant| {
+                            crate::callable::SourceCallbackFailure::invariant(
+                                AnalyzerCallClientInvariant::constraint(source, invariant),
+                            )
+                        })?;
                 if recipe.parent_application != Some(application)
                     || child_application == application
                     || child_application != recipe.owner
@@ -5845,7 +5882,7 @@ pub(crate) fn run_prepared_child_candidate(
     let pending = parent_source
         .with_child_driver(
             initialization,
-            application,
+            CallableConstraintApplication::Call(application),
             site,
             &candidate,
             AnalyzerCallConstraintClient::new(operations),
@@ -5955,9 +5992,13 @@ mod tests {
                 &cancellation,
             )
             .into_parts();
-            let mut transaction =
-                TypeConstraintTransaction::initialize(&mut context, owner, parameters, None)
-                    .expect("prepared application");
+            let mut transaction = TypeConstraintTransaction::initialize(
+                &mut context,
+                CallableConstraintApplication::Call(owner),
+                parameters,
+                None,
+            )
+            .expect("prepared application");
             transaction
                 .begin_prepared_probe(
                     &mut context,
@@ -6018,7 +6059,12 @@ mod tests {
             prepared_children: Vec::new(),
         };
         assert_eq!(request.expected(), Some(&TypeKind::I32));
-        assert!(request.component().application(owner).is_some());
+        assert!(
+            request
+                .component()
+                .application(CallableConstraintApplication::Call(owner))
+                .is_some()
+        );
         assert_eq!(
             validate_materialized_source_request(&request, &checked),
             Ok(())
