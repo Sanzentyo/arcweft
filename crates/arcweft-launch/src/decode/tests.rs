@@ -1327,10 +1327,8 @@ fn assert_inline_failure_key_spans(
 
 #[test]
 fn applied_inline_fallback_styles_publish_every_nested_source_span() {
-    let zero_layout = std::iter::repeat_n("0", 32).collect::<Vec<_>>().join(", ");
-    let one_layout = std::iter::repeat_n("1", 32).collect::<Vec<_>>().join(", ");
-    let first_style = format!("{{ layout = [{zero_layout}], value = {{ Record = [] }} }}");
-    let second_style = format!("{{ layout = [{one_layout}], value = {{ Record = [] }} }}");
+    let first_style = "{ value = { Record = [] } }";
+    let second_style = "{ value = { Bool = true } }";
     let source = minimal(&format!(
         "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n[profiles.dev.dialogue]\ninline-failure = {{ kind = \"fallback\", fallback = {{ kind = \"call_source\", style = {{ kind = \"apply\", styles = [{first_style}, {second_style}] }} }} }}\n"
     ));
@@ -1367,7 +1365,7 @@ fn applied_inline_fallback_styles_publish_every_nested_source_span() {
         &decoded.source_map,
         &source,
         &profile_id,
-        &[(0, first_style.as_str()), (1, second_style.as_str())],
+        &[(0, first_style), (1, second_style)],
     );
 
     assert_inline_failure_scalar_spans(&decoded.source_map, &source, &profile_id);

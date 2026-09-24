@@ -554,8 +554,7 @@ fallbacks = ["en", "fr"]
     #[test]
     #[allow(clippy::too_many_lines)]
     fn dialogue_token_paths_publish_the_exact_accepted_document_spans() {
-        let layout = std::iter::repeat_n("0", 32).collect::<Vec<_>>().join(", ");
-        let style_element = format!("{{ layout = [{layout}], value = {{ Record = [] }} }}");
+        let style_element = "{ value = { Record = [] } }";
         let styles_value = format!("[{style_element}]");
         let source = format!(
             r#"schema = 1
@@ -703,7 +702,7 @@ styles = {styles_value}
                     ordinal: 0,
                 },
                 ManifestTokenSlot::Value,
-                range(&style_element, 0),
+                range(style_element, 0),
             ),
         ];
 
