@@ -1462,14 +1462,24 @@ fn defer_fact_binds_the_exact_source_outcome_and_block_body() {
     let mut input = complete_type_input(&project);
     input.push_defer(
         statement,
-        RuntimeDeferFact::new(RuntimeDeferOutcomeFilter::Always, body, Vec::new()),
+        RuntimeDeferFact::new(
+            RuntimeDeferOutcomeFilter::Always,
+            body,
+            arcweft_lang_sema::effects::EffectSet::new(),
+            Vec::new(),
+        ),
     );
     assert!(runtime_facts(&project, input).is_ok());
 
     let mut invalid = complete_type_input(&project);
     invalid.push_defer(
         statement,
-        RuntimeDeferFact::new(RuntimeDeferOutcomeFilter::Failed, body, Vec::new()),
+        RuntimeDeferFact::new(
+            RuntimeDeferOutcomeFilter::Failed,
+            body,
+            arcweft_lang_sema::effects::EffectSet::new(),
+            Vec::new(),
+        ),
     );
     assert_eq!(
         runtime_facts(&project, invalid).expect_err("source outcome mismatch must be rejected"),

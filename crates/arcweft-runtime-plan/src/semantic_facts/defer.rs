@@ -7,6 +7,7 @@ use arcweft_lang_hir::expr::HirExprKind;
 use arcweft_lang_hir::identity::{ExprId, HirModuleId, LocalId, StmtId};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
+use arcweft_lang_sema::effects::EffectSet;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 
 use super::{
@@ -19,6 +20,7 @@ use super::{
 pub struct RuntimeDeferFact {
     outcome: RuntimeDeferOutcomeFilter,
     body: ExprId,
+    effects: EffectSet,
     captures: Box<[RuntimeExecutableCaptureFact]>,
 }
 
@@ -26,11 +28,13 @@ impl RuntimeDeferFact {
     pub fn new(
         outcome: RuntimeDeferOutcomeFilter,
         body: ExprId,
+        effects: EffectSet,
         captures: impl Into<Box<[RuntimeExecutableCaptureFact]>>,
     ) -> Self {
         Self {
             outcome,
             body,
+            effects,
             captures: captures.into(),
         }
     }
@@ -40,6 +44,9 @@ impl RuntimeDeferFact {
     }
     pub const fn body(&self) -> ExprId {
         self.body
+    }
+    pub const fn effects(&self) -> &EffectSet {
+        &self.effects
     }
     pub const fn captures(&self) -> &[RuntimeExecutableCaptureFact] {
         &self.captures

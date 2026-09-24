@@ -1134,7 +1134,10 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedStatementPayload::Defer(defer) => {
-                input.push_defer(owner, runtime_defer(defer, None, symbols, world, analysis)?);
+                input.push_defer(
+                    owner,
+                    runtime_defer(defer, statement.effects(), None, symbols, world, analysis)?,
+                );
             }
             CheckedStatementPayload::Iteration(iteration) => {
                 input.push_iteration(
@@ -4037,6 +4040,7 @@ fn runtime_dialogue_effect(
 
 fn runtime_defer(
     defer: &CheckedDefer,
+    effects: &arcweft_lang_sema::effects::EffectSet,
     instance: Option<ProjectInstanceTypes<'_>>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
@@ -4061,7 +4065,12 @@ fn runtime_defer(
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    Ok(RuntimeDeferFact::new(outcome, defer.body(), captures))
+    Ok(RuntimeDeferFact::new(
+        outcome,
+        defer.body(),
+        effects.clone(),
+        captures,
+    ))
 }
 
 fn runtime_type(
@@ -7055,6 +7064,7 @@ fn runtime_project_function_instance_semantic_facts(
                 CheckedStatementPayload::Defer(defer),
             ) => RuntimeProjectFunctionStatementPayload::Defer(runtime_defer(
                 defer,
+                checked.effects(),
                 lexical.types(),
                 symbols,
                 world,
