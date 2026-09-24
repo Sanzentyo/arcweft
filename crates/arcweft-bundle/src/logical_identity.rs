@@ -22,7 +22,11 @@ impl ArcweftBundle {
     /// and presentation resources that have a dedicated compact AWFB wire.
     pub fn logical_identity(&self) -> Result<LogicalBundleIdentity, BundleCodecError> {
         const DOMAIN: &[u8] = b"arcweft.logical-bundle.v1\0";
-        let bytes = self.to_json_bytes()?;
+        // This JSON projection feeds only the typed in-memory identity. The
+        // published JSON codec rejects generations because their sole durable
+        // representation is the bounded AWFB section below.
+        self.validate_kind()?;
+        let bytes = serde_json::to_vec_pretty(self).map_err(BundleCodecError::Encode)?;
         let mut transcript = Vec::with_capacity(DOMAIN.len() + bytes.len() + 73);
         transcript.extend_from_slice(DOMAIN);
         let byte_len = u64::try_from(bytes.len())

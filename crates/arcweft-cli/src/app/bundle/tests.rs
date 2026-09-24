@@ -275,6 +275,163 @@ source = "demo.arcw"
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "profile-to-AWFB regression constructs real Character package bytes and verifies the complete persisted handoff"
+)]
+fn profile_bundle_carries_external_character_package_and_generation() {
+    let unique = format!(
+        "arcweft-bundle-character-generation-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock follows epoch")
+            .as_nanos()
+    );
+    let root = std::env::temp_dir().join(unique);
+    fs::create_dir_all(root.join("src")).expect("source directory");
+    let manifest_path = root.join("arcw.toml");
+    fs::write(
+        &manifest_path,
+        r#"schema = 1
+default-profile = "dev"
+
+[package]
+id = "org.arcweft.test.character-bundle"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.zundamon"]
+visibility = "package"
+demand = "required"
+
+[profiles.dev]
+kind = "cli"
+entry = "@entry.main"
+source = "src/main.arcw"
+
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
+"#,
+    )
+    .expect("profile manifest");
+    fs::write(
+        root.join("src/main.arcw"),
+        "entry cli @entry.main { goto @flow.main }\nflow main { return () }",
+    )
+    .expect("profile source");
+    let package_root = root.join("assets/zundamon.awchar");
+    fs::create_dir_all(&package_root).expect("Character package root");
+    fs::write(
+        package_root.join("character.awchar.json"),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
+        )),
+    )
+    .expect("Character manifest");
+    for (path, bytes) in [
+        (
+            "layers/body--default.png",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../arcweft-character/tests/fixtures/zundamon.awchar/layers/body--default.png"
+            ))
+            .as_slice(),
+        ),
+        (
+            "layers/eyes--normal.png",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--normal.png"
+            ))
+            .as_slice(),
+        ),
+        (
+            "layers/eyes--smile.png",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../arcweft-character/tests/fixtures/zundamon.awchar/layers/eyes--smile.png"
+            ))
+            .as_slice(),
+        ),
+        (
+            "layers/mouth--neutral.png",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--neutral.png"
+            ))
+            .as_slice(),
+        ),
+        (
+            "layers/mouth--smile.png",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../arcweft-character/tests/fixtures/zundamon.awchar/layers/mouth--smile.png"
+            ))
+            .as_slice(),
+        ),
+    ] {
+        let file = package_root.join(path);
+        fs::create_dir_all(file.parent().expect("layer parent")).expect("layer directory");
+        fs::write(file, bytes).expect("Character PNG");
+    }
+
+    let selection = resolve_source_selection(
+        None,
+        &ProfileOptions {
+            profile: Some("dev".to_owned()),
+            manifest: manifest_path,
+        },
+    )
+    .expect("profile resolves");
+    let artifact = compile_bundle_for_selection(
+        &selection,
+        vec![BundleVirtualFileSpace::Asset],
+        &mut Vec::new(),
+    )
+    .expect("profile bundle compiles");
+    assert_eq!(artifact.bundle.character_packages.len(), 1);
+    assert_eq!(
+        artifact.bundle.character_packages[0].character,
+        "character.zundamon"
+    );
+    let generation = artifact
+        .bundle
+        .character_dialogue_generation
+        .as_ref()
+        .expect("checked profile retains generation declaration");
+    assert!(
+        generation
+            .characters()
+            .keys()
+            .any(|character| character.as_str() == "character.zundamon")
+    );
+    let bytes = artifact
+        .bundle
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("profile AWFB encodes");
+    let restored =
+        ArcweftBundle::from_awfb_slice_with_resource_types(&bytes, &ResourceTypeRegistry::empty())
+            .expect("profile AWFB decodes");
+    assert_eq!(
+        restored.character_packages,
+        artifact.bundle.character_packages
+    );
+    assert_eq!(
+        restored
+            .character_dialogue_generation
+            .as_ref()
+            .map(|value| value.digest()),
+        Some(generation.digest())
+    );
+
+    fs::remove_dir_all(root).expect("fixture root removes");
+}
+
+#[test]
 fn view_scroll_rejects_both_axis_authoring() {
     let document = Arc::new(
         SourceDocument::try_new(
@@ -501,10 +658,13 @@ flow main() -> String { return "done" }
 
 #[test]
 fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
-    let assets = collect_bundle_image_assets(&[
-        sample_image_virtual_file("bg/poster.webp"),
-        sample_image_virtual_file("bg/loop.webp"),
-    ])
+    let assets = collect_bundle_image_assets(
+        &[
+            sample_image_virtual_file("bg/poster.webp"),
+            sample_image_virtual_file("bg/loop.webp"),
+        ],
+        &[],
+    )
     .expect("sample image assets decode");
 
     let poster = assets
@@ -528,7 +688,7 @@ fn collect_bundle_image_assets_decodes_static_and_animated_webp_metadata() {
 fn collect_bundle_image_assets_rejects_invalid_stable_identity_components() {
     let mut file = sample_image_virtual_file("bg/poster.webp");
     file.path = "bg/main menu.webp".to_owned();
-    assert!(collect_bundle_image_assets(&[file]).is_err());
+    assert!(collect_bundle_image_assets(&[file], &[]).is_err());
 }
 
 #[test]
@@ -537,11 +697,11 @@ fn collect_bundle_image_assets_rejects_normalized_identity_collisions() {
     dashed.path = "ui/main-menu.webp".to_owned();
     let mut underscored = sample_image_virtual_file("bg/room.png");
     underscored.path = "ui/main_menu.png".to_owned();
-    assert!(collect_bundle_image_assets(&[dashed, underscored]).is_err());
+    assert!(collect_bundle_image_assets(&[dashed, underscored], &[]).is_err());
 
     let mut uppercase = sample_image_virtual_file("bg/poster.webp");
     uppercase.path = "images/Hero.webp".to_owned();
     let mut lowercase = sample_image_virtual_file("bg/room.png");
     lowercase.path = "images/hero.png".to_owned();
-    assert!(collect_bundle_image_assets(&[uppercase, lowercase]).is_err());
+    assert!(collect_bundle_image_assets(&[uppercase, lowercase], &[]).is_err());
 }

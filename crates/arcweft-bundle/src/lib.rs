@@ -403,6 +403,8 @@ pub enum BundleCodecError {
         format: BundleFormat,
         message: String,
     },
+    #[error("CharacterDialogue generation requires AWFB output; `{format}` would omit it")]
+    CharacterDialogueAwfbRequired { format: BundleFormat },
     #[error("unsupported Arcweft bundle format `{format}`")]
     UnsupportedFormat { format: String },
     #[error("Arcweft product bundle path must use `.awfb`: {path}")]
@@ -935,6 +937,11 @@ impl ArcweftBundle {
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
         self.validate_kind()?;
+        if self.character_dialogue_generation.is_some() {
+            return Err(BundleCodecError::CharacterDialogueAwfbRequired {
+                format: BundleFormat::Json,
+            });
+        }
         serde_json::to_vec_pretty(self).map_err(BundleCodecError::Encode)
     }
 
@@ -946,6 +953,9 @@ impl ArcweftBundle {
 
     pub fn to_format_bytes(&self, format: BundleFormat) -> Result<Vec<u8>, BundleCodecError> {
         self.validate_kind()?;
+        if format != BundleFormat::Awfb && self.character_dialogue_generation.is_some() {
+            return Err(BundleCodecError::CharacterDialogueAwfbRequired { format });
+        }
         match format {
             BundleFormat::Awfb => product::to_awfb_bytes(self),
             BundleFormat::Json => self.to_json_bytes(),
