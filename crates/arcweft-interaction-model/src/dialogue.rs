@@ -12,6 +12,77 @@ pub const MAX_CHARACTER_DIALOGUE_CUSTOM_FIELD_ID_BYTES: usize = 128;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CharacterDialogueCustomFieldId(PublicId);
 
+/// Closed immutable configuration operation selected by dialogue semantics.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CharacterDialogueOperation {
+    Factory,
+    Reconfigure,
+}
+
+/// Typed field coordinate shared by semantic checking and runtime production.
+/// Authored spellings are resolved before this coordinate is published.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+pub enum CharacterDialogueFieldCoordinate {
+    Voice,
+    Look,
+    Stage,
+    Portrait,
+    Focus,
+    Cleanup,
+    View,
+    SourceLocale,
+    Hooks,
+    Style,
+    RichText,
+    InlineFailure,
+    Custom(CharacterDialogueCustomFieldId),
+}
+
+impl CharacterDialogueFieldCoordinate {
+    /// Stable version-one tag; custom fields additionally retain their identity.
+    #[must_use]
+    pub const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Voice => 0,
+            Self::Look => 1,
+            Self::Stage => 2,
+            Self::Portrait => 3,
+            Self::Focus => 4,
+            Self::Cleanup => 5,
+            Self::View => 6,
+            Self::SourceLocale => 7,
+            Self::Hooks => 8,
+            Self::Style => 9,
+            Self::RichText => 10,
+            Self::InlineFailure => 11,
+            Self::Custom(_) => 12,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_custom(&self) -> bool {
+        matches!(self, Self::Custom(_))
+    }
+}
+
+/// One authored contribution, before or after operand evaluation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum CharacterDialoguePatchOperation<T> {
+    Set(T),
+    Clear,
+}
+
+/// A field contribution in authored order. It is not an effective field map.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CharacterDialoguePatchField<T> {
+    pub coordinate: CharacterDialogueFieldCoordinate,
+    pub operation: CharacterDialoguePatchOperation<T>,
+}
+
 /// Failure to construct a [`CharacterDialogueCustomFieldId`].
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CharacterDialogueCustomFieldIdError {
@@ -136,6 +207,37 @@ impl CharacterDialogueRuntimeRole {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordered_patch_coordinates_and_clear_actions_round_trip() {
+        let fields = vec![
+            CharacterDialoguePatchField {
+                coordinate: CharacterDialogueFieldCoordinate::Custom(
+                    CharacterDialogueCustomFieldId::try_new("character_dialogue_field.mood")
+                        .unwrap(),
+                ),
+                operation: CharacterDialoguePatchOperation::Set("calm".to_owned()),
+            },
+            CharacterDialoguePatchField {
+                coordinate: CharacterDialogueFieldCoordinate::SourceLocale,
+                operation: CharacterDialoguePatchOperation::Clear,
+            },
+        ];
+        let encoded = serde_json::to_vec(&fields).unwrap();
+        let decoded: Vec<CharacterDialoguePatchField<String>> =
+            serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded, fields);
+        assert_eq!(decoded[0].coordinate.semantic_tag(), 12);
+        assert_eq!(decoded[1].coordinate.semantic_tag(), 7);
+        assert!(decoded[0].coordinate.is_custom());
+        assert!(!decoded[1].coordinate.is_custom());
+        assert!(
+            serde_json::from_str::<CharacterDialogueFieldCoordinate>(
+                r#"{"kind":"custom","id":"view.mood"}"#,
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn custom_field_id_preserves_the_accepted_family_and_serde_spelling() {

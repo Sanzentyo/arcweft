@@ -407,21 +407,7 @@ impl CanonicalEncoder {
         coordinate: &crate::character_dialogue::CharacterDialogueFieldCoordinate,
     ) {
         use crate::character_dialogue::CharacterDialogueFieldCoordinate;
-        self.tag(match coordinate {
-            CharacterDialogueFieldCoordinate::Voice => 0,
-            CharacterDialogueFieldCoordinate::Look => 1,
-            CharacterDialogueFieldCoordinate::Stage => 2,
-            CharacterDialogueFieldCoordinate::Portrait => 3,
-            CharacterDialogueFieldCoordinate::Focus => 4,
-            CharacterDialogueFieldCoordinate::Cleanup => 5,
-            CharacterDialogueFieldCoordinate::View => 6,
-            CharacterDialogueFieldCoordinate::SourceLocale => 7,
-            CharacterDialogueFieldCoordinate::Hooks => 8,
-            CharacterDialogueFieldCoordinate::Style => 9,
-            CharacterDialogueFieldCoordinate::RichText => 10,
-            CharacterDialogueFieldCoordinate::InlineFailure => 11,
-            CharacterDialogueFieldCoordinate::Custom(_) => 12,
-        });
+        self.tag(u16::from(coordinate.semantic_tag()));
         if let CharacterDialogueFieldCoordinate::Custom(id) = coordinate {
             self.string(id.as_str());
         }

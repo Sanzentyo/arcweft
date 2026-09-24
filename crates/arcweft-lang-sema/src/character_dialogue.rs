@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
+pub use arcweft_interaction_model::dialogue::CharacterDialogueFieldCoordinate;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::SourceSpan;
 use arcweft_view::ViewId;
@@ -21,54 +22,6 @@ use crate::{
     registration::AcceptedNominalWorldStamp,
     types::{GenericScopeError, TypeKind},
 };
-
-/// Typed coordinate of a field admitted by the CharacterDialogue schema.
-///
-/// The coordinate is shared by schema construction and final patch rows. It
-/// is deliberately not reconstructed from an authored parameter name after
-/// call checking.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CharacterDialogueFieldCoordinate {
-    Voice,
-    Look,
-    Stage,
-    Portrait,
-    Focus,
-    Cleanup,
-    View,
-    SourceLocale,
-    Hooks,
-    Style,
-    RichText,
-    InlineFailure,
-    Custom(CharacterDialogueCustomFieldId),
-}
-
-impl CharacterDialogueFieldCoordinate {
-    /// Stable semantic tag for the closed CharacterDialogue field algebra.
-    /// Custom fields retain their owner-issued public identity separately.
-    pub const fn semantic_tag(&self) -> u8 {
-        match self {
-            Self::Voice => 0,
-            Self::Look => 1,
-            Self::Stage => 2,
-            Self::Portrait => 3,
-            Self::Focus => 4,
-            Self::Cleanup => 5,
-            Self::View => 6,
-            Self::SourceLocale => 7,
-            Self::Hooks => 8,
-            Self::Style => 9,
-            Self::RichText => 10,
-            Self::InlineFailure => 11,
-            Self::Custom(_) => 12,
-        }
-    }
-
-    pub const fn is_custom(&self) -> bool {
-        matches!(self, Self::Custom(_))
-    }
-}
 
 /// One source binding that selects a stable custom-field identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
