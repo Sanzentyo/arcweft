@@ -475,3 +475,20 @@ Style/Clear focused 1/1、driver all-feature library 78件と integration
 旧参照移行、旧世代を含む保存復元の完全な世代表現、callable 全 matrix、
 Match/View/task-plan/nominal/scheduler の各受入条件と最終 workspace gate
 である。局所 gate の成功を収束 goal 全体の完了とは扱わない。
+
+## Callable matrix と workspace HEAD の再測定 — 2026-09-24
+
+上記の動的表示の直接回帰テストは、実 schema、2つの Character、受理済み
+View/Style、RGBA RichText を用い、古い世代と Character 不一致の拒否も
+確認して `c0bf0f374df376ffcd9d1e94e131af316cc0b3e7` として push した。
+focused 1/1 と runtime-driver all-target/all-feature Clippy 終了コード0を確認した。
+
+その HEAD 単体で `cargo check --workspace --all-targets --all-features` は
+終了コード0（既存 warning あり）で通過した。ログは
+`target/.arcweft-local/2026-09-24-workspace-all-target-check.log` にある。
+`cargo test -p arcweft-compiler --all-features --test callable_execution` は
+**81 passed / 6 failed**。失敗は Character factory の Native producer 未注入と
+AWBC instruction 14 型不一致、generic prefix callback の両 backend、同じ
+prefix の異なる後段型の両 backend の3 familyである。ログは
+`target/.arcweft-local/2026-09-24-callable-execution-matrix.log`。これは既存の
+24件という歴史的 checkpoint の更新であり、matrix の合格ではない。
