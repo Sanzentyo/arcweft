@@ -492,3 +492,33 @@ AWBC instruction 14 型不一致、generic prefix callback の両 backend、同�
 prefix の異なる後段型の両 backend の3 familyである。ログは
 `target/.arcweft-local/2026-09-24-callable-execution-matrix.log`。これは既存の
 24件という歴史的 checkpoint の更新であり、matrix の合格ではない。
+
+## Callable source/specialization 統合 checkpoint — 2026-09-24
+
+既存 `main` checkout で公開済み多相 callable の source、選択済み body、
+特殊化後の継続 state を一つの実行契約に接続した。次の各 commit は push 済みで、
+`4d58570285f3f2b2e7f06bb3fdb54a99b7af3784` の直後に working tree は clean と確認した。
+
+| 契約単位 | Full Git SHA |
+| --- | --- |
+| Scoped callable 型を RuntimePlan/AWBC へ保持 | `f26cac6cd53843d6409afaaf57b51c17e7c54953` |
+| Sema の callable 特殊化と body instance 証拠 | `a9336628d1e6e12208152457b5f2e75f6dbef3c8` |
+| Native/AWBC の検証済み特殊化実行 | `38bc6a4335b6ccb0fa39ddceb9dc4d0d189adb3f` |
+| Sema の generic source と alias 特殊化 | `0b32f15c8b31c78ba83c1d5c4a283caead3512e2` |
+| Compiler/RuntimePlan の source demand、状態列、View capture ingress と全利用側接続 | `4d58570285f3f2b2e7f06bb3fdb54a99b7af3784` |
+
+最新の観測: `callable_execution` は 90/90、Compiler lib は 112/112、
+`flow_effects` は 5/5、`view_product` は 11/11、Core lib は 596/596、
+Sema lib は 907/907、RuntimePlan lib は 79/79、runtime-accelerator lib は
+91/91、runtime-codegen lib は 12/12。workspace all-target/all-feature
+check と Clippy は終了コード0（既存 warning あり）、構造 gate は blocking 0、
+cached diff check は通過した。ログは `target/.arcweft-local/2026-09-24-callable-*`、
+`target/.arcweft-local/2026-09-24-flow-effects-focused.log`、
+`target/.arcweft-local/2026-09-24-view-product-full.log` に保持した。
+
+変更 crate 群の全テストは **未合格**。Core integration
+`direct_suspension::cancellation_unwinds_nested_frames_and_scopes_once_in_lifo_order` が
+`InvalidFrame` で 1 件失敗した（`2026-09-24-callable-changed-crates-tests-4.log`）。
+取消し・保存復元境界の修正と再検証は scheduler/restore 工程の残件である。
+workspace `test-workspace`、最終 doctest、codec/golden、該当 Tier 2 と
+goal の他工程も未完了であり、この checkpoint は全体完了の証拠ではない。
