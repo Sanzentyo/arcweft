@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use arcweft_character::{id::CharacterId, manifest::CharacterManifest};
+use arcweft_character::{
+    id::CharacterId,
+    manifest::{CharacterManifest, CharacterManifestFingerprint},
+};
 use arcweft_lang_hir::symbol::{
     ExternalDeclarationId, ProjectSymbolTable, ProjectSymbolTargetId, ResolvedProjectSymbol,
 };
@@ -65,6 +68,20 @@ pub(crate) fn descriptor_digest(
     CharacterInventoryDigest(*encoder.finish().as_bytes())
 }
 
+impl CharacterInventoryDescriptorV1 {
+    pub fn characters(&self) -> &[(CharacterId, CharacterManifestFingerprint)] {
+        &self.characters
+    }
+
+    pub fn external_characters(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (ExternalDeclarationId, &CharacterId)> {
+        self.externals
+            .iter()
+            .map(|(declaration, _, character)| (*declaration, character))
+    }
+}
+
 fn encode_descriptor(encoder: &mut DescriptorEncoder, descriptor: &CharacterInventoryDescriptorV1) {
     encoder.list_len(descriptor.characters.len());
     for (owner, fingerprint) in &descriptor.characters {
@@ -125,6 +142,12 @@ impl AcceptedNominalWorld {
 }
 
 impl RegisteredTypeCheckEnv {
+    /// Reads the sealed inventory. Consumers joining it to HIR first verify
+    /// the matching symbol world with `Self::verify_character_inventory`.
+    pub const fn character_inventory(&self) -> &CharacterInventoryDescriptorV1 {
+        &self.character_descriptor
+    }
+
     #[allow(
         clippy::result_large_err,
         reason = "owner lookup errors retain both complete typed world identities and revisions"
