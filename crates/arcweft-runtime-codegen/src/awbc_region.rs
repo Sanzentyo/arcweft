@@ -189,11 +189,11 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::SpawnFiber
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,
-        AwbcOpcode::MakeFunction
+        AwbcOpcode::MakeCallable
         | AwbcOpcode::MakeReductionUnchanged
         | AwbcOpcode::AssignRecordField
         | AwbcOpcode::CallTraitMethod
-        | AwbcOpcode::ApplyFunction
+        | AwbcOpcode::ApplyGroup
         | AwbcOpcode::ExecuteLineOperation
         | AwbcOpcode::CommitDialogueResult
         | AwbcOpcode::CopyValue
@@ -265,7 +265,7 @@ impl CompiledRegion for BaselineAwbcRegion {
             Ok(bytes) => match arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
                 *blake3::hash(&bytes).as_bytes(),
             ) {
-                Ok(artifact) => VmExecutionContext::new(artifact),
+                Ok(artifact) => VmExecutionContext::for_program(artifact, input.program.clone()),
                 Err(_) => {
                     let at = input
                         .fiber

@@ -736,8 +736,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Opaque(_) => "Opaque",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "Reduction",
-        RuntimeValue::Function(_) => "Function",
-        RuntimeValue::ProjectContinuation(_) => "ProjectContinuation",
+        RuntimeValue::Callable(_) => "Function",
         RuntimeValue::Variant { .. } => "Variant",
         RuntimeValue::Iterator(_) => "Iterator",
     }

@@ -60,8 +60,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Opaque(_) => "opaque",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "reduction",
-        RuntimeValue::Function(_) => "function",
-        RuntimeValue::ProjectContinuation(_) => "project_continuation",
+        RuntimeValue::Callable(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",
     }
@@ -868,8 +867,10 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 .map(|arg| runtime_expr_work_units(arg.value()))
                 .sum::<usize>()
         }
-        RuntimeExprKind::Function { .. } => 2,
-        RuntimeExprKind::Apply { callee, args } => {
+        RuntimeExprKind::MakeCallable { captures, .. } => {
+            2 + captures.iter().map(runtime_expr_work_units).sum::<usize>()
+        }
+        RuntimeExprKind::ApplyGroup { callee, args } => {
             8 + runtime_expr_work_units(callee)
                 + args
                     .iter()

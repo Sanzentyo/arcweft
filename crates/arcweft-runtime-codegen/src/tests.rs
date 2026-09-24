@@ -11,6 +11,15 @@ use crate::region::{
 use arcweft_core::awbc::fiber::{FiberCursor, FiberSafePoint, FiberState};
 use arcweft_core::awbc::schema::*;
 use arcweft_core::awbc::vm::cancel_fiber;
+use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::plan::{
+    RuntimeCallableAttachedContract, RuntimeCallablePosition, RuntimeCallableStateDefinition,
+    RuntimeCallableTransition,
+};
+use arcweft_core::runtime_id::RuntimeCallableStateId;
+use arcweft_core::task::RuntimeProgramOwner;
+use arcweft_core::value::{RuntimeCallableValue, RuntimeValue};
+use std::sync::Arc;
 
 const PROGRAM_DIGEST: AwbcDigest = AwbcDigest([7; 32]);
 
@@ -138,6 +147,100 @@ fn program() -> AwbcProgram {
     }
 }
 
+fn callable_project_call_program() -> AwbcProgram {
+    let mut program = program();
+    let callable_state =
+        RuntimeCallableStateId::from_zero_based(0).expect("first callable state identity");
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([0x74; 32]),
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(2),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: Some(AwbcTypeId(0)),
+        effects: AwbcEffectSetId(0),
+    });
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(2, 1),
+        entry_block: AwbcBlockId(2),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program
+        .callable_states
+        .push(RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(2),
+            origin: callable_state,
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([]),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([]),
+                arguments: Box::new([]),
+            },
+            partials: Box::new([]),
+        });
+    program.constants.push(AwbcConstant::Unit);
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(0),
+    });
+    program.patterns.push(AwbcPattern::Discard);
+    program.resume_points.push(AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    });
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            callee: AwbcRegisterId(0),
+            state: callable_state,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: None,
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program
+}
+
 fn metadata(program: &AwbcProgram) -> CompiledRegionMetadata {
     metadata_at(program, AwbcFunctionId(0), AwbcBlockId(0))
 }
@@ -170,7 +273,7 @@ fn identity() -> CompiledExecutionIdentity {
 
 #[test]
 fn compiled_continue_uses_dispatcher_budget_accounting() {
-    let program = program();
+    let program = Arc::new(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Continue,
@@ -188,7 +291,7 @@ fn compiled_continue_uses_dispatcher_budget_accounting() {
 
 #[test]
 fn compiled_fallback_restores_the_entry_checkpoint() {
-    let program = program();
+    let program = Arc::new(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Fallback { consumed: 0 },
@@ -206,7 +309,7 @@ fn compiled_fallback_restores_the_entry_checkpoint() {
 
 #[test]
 fn compiled_fallback_must_not_consume_instruction_budget() {
-    let program = program();
+    let program = Arc::new(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Fallback { consumed: 1 },
@@ -226,7 +329,7 @@ fn compiled_fallback_must_not_consume_instruction_budget() {
 
 #[test]
 fn compiled_region_rejects_a_cancelled_entry_without_reclassifying_it() {
-    let program = program();
+    let program = Arc::new(program());
     let region = TestRegion {
         metadata: metadata(&program),
         behavior: RegionBehavior::Continue,
@@ -322,6 +425,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         frame_layout: AwbcFrameLayoutId(0),
         kind: AwbcSafePointKind::CallableBoundary,
     });
+    let program = Arc::new(program);
 
     let region = TestRegion {
         metadata: metadata_at(&program, AwbcFunctionId(1), AwbcBlockId(2)),
@@ -377,15 +481,13 @@ fn awbc_region_lowering_accepts_project_call_as_internal_terminator() {
     let mut program = program();
     program.blocks[0].terminator = AwbcTerminator::ProjectCall {
         call: AwbcProjectCall {
-            input: AwbcProjectCallInput::Direct,
+            callee: AwbcRegisterId(0),
+            state: arcweft_core::runtime_id::RuntimeCallableStateId::from_zero_based(0)
+                .expect("first callable state ID"),
             completed_group: 0,
             operands: Vec::new(),
             ordinary: Vec::new(),
             attached: None,
-            outcome: AwbcProjectCallOutcome::Invoke {
-                function: AwbcFunctionId(0),
-            },
-            result_ty: AwbcTypeId(0),
             result_pattern: AwbcPatternId(0),
             resume: AwbcResumePointId(0),
         },
@@ -432,7 +534,7 @@ fn awbc_region_lowering_rejects_host_boundary_without_opt_in() {
 
 #[test]
 fn awbc_region_baseline_executes_through_compact_vm() {
-    let program = program();
+    let program = Arc::new(program());
     let report = lower_awbc_regions(
         &program,
         &AwbcRegionLowerOptions {
@@ -446,6 +548,54 @@ fn awbc_region_baseline_executes_through_compact_vm() {
 
     let transition = execute_compiled_region(region.as_ref(), identity(), &program, &mut fiber, 10)
         .expect("baseline AWBC region executes");
+
+    assert_eq!(transition, CompiledTransition::Returned(None));
+    assert_eq!(
+        fiber.status,
+        arcweft_core::awbc::fiber::FiberStatus::Returned
+    );
+}
+
+#[test]
+fn awbc_region_project_call_uses_the_exact_program_lease() {
+    let program = Arc::new(callable_project_call_program());
+    let callable_state =
+        RuntimeCallableStateId::from_zero_based(0).expect("first callable state identity");
+    let callable = RuntimeCallableValue::try_new(
+        RuntimeProgramOwner::Awbc(program.clone()),
+        callable_state,
+        Vec::<RuntimeValue>::new(),
+    )
+    .expect("callable retains the exact session program lease");
+    let report = lower_awbc_regions(
+        program.as_ref(),
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            ..AwbcRegionLowerOptions::default()
+        },
+    );
+    let region =
+        report
+            .regions
+            .iter()
+            .find(|region| {
+                region.metadata().entries.iter().any(|entry| {
+                    entry.function == AwbcFunctionId(0) && entry.block == AwbcBlockId(0)
+                })
+            })
+            .expect("ProjectCall block is eligible for the baseline region")
+            .clone();
+    let mut fiber = FiberState::for_entry(program.as_ref(), AwbcEntryId(0), 1, 10)
+        .expect("callable program fiber");
+    fiber
+        .active_frame_mut()
+        .expect("caller frame")
+        .set_register(AwbcRegisterId(0), RuntimeValue::Callable(callable))
+        .expect("install leased callable callee");
+
+    let transition = execute_compiled_region(region.as_ref(), identity(), &program, &mut fiber, 10)
+        .expect("compiled ProjectCall executes with its exact program owner");
 
     assert_eq!(transition, CompiledTransition::Returned(None));
     assert_eq!(

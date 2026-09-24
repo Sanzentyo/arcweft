@@ -26,11 +26,16 @@ use arcweft_core::{
         RuntimeSemanticTypeId,
     },
     plan::{
-        EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-        RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-        RuntimeFlowSeed, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        EntryRuntimeId, FlowRuntimeId, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
+        RuntimeCallablePosition, RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
+        RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeEntryKind,
+        RuntimeEntrySpec, RuntimeEntryTarget, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
+        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
+        RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
-    value::{RuntimeBinding, RuntimeFunctionValue, RuntimeValue},
+    runtime_id::RuntimeCallableStateId,
+    task::RuntimeProgramOwner,
+    value::{RuntimeCallableValue, RuntimeValue},
 };
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
@@ -611,9 +616,10 @@ fn awbc_save_load_preserves_cleanup_stacks() {
 }
 
 #[test]
-fn session_save_round_trips_awbc_function_values() {
-    let bytes = product_awfb_bytes("entry.main");
+fn session_save_round_trips_program_owned_awbc_callable_values() {
+    let bytes = callable_product_awfb_bytes();
     let mut session = product_session_from_bytes(&bytes);
+    let callable = captured_awbc_runtime_callable_value(session.program_owner());
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     snapshot
         .executor
@@ -623,29 +629,50 @@ fn session_save_round_trips_awbc_function_values() {
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.function".to_owned(),
+            key: "handle.callable".to_owned(),
             effect: AwbcEffectPlanId(0),
-            args: vec![captured_awbc_runtime_function_value()],
+            args: vec![callable],
         });
 
     session
         .restore_session_snapshot(snapshot.clone())
-        .expect("AWBC-backed function state restores");
+        .expect("AWBC-backed callable state restores");
     let encoded = session
         .export_session_save_bytes()
-        .expect("AWBC-backed function state encodes");
+        .expect("AWBC-backed callable state encodes");
     let mut restored = product_session_from_bytes(&bytes);
     restored
         .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
-        .expect("AWBC-backed function state imports");
+        .expect("AWBC-backed callable state imports");
 
-    assert_eq!(
-        restored
-            .snapshot_session()
-            .expect("restored snapshot exports")
-            .executor,
-        snapshot.executor
-    );
+    let restored_snapshot = restored
+        .snapshot_session()
+        .expect("restored snapshot exports");
+    let original_value = &snapshot
+        .executor
+        .state
+        .fiber
+        .active_frame()
+        .expect("original active frame")
+        .root_cleanups[0]
+        .args[0];
+    let restored_value = &restored_snapshot
+        .executor
+        .state
+        .fiber
+        .active_frame()
+        .expect("restored active frame")
+        .root_cleanups[0]
+        .args[0];
+    let (RuntimeValue::Callable(original), RuntimeValue::Callable(rebound)) =
+        (original_value, restored_value)
+    else {
+        panic!("both snapshots retain callable values");
+    };
+    assert_eq!(rebound.state(), original.state());
+    assert_eq!(rebound.retained(), original.retained());
+    assert!(!rebound.owner().same_program(original.owner()));
+    assert!(rebound.owner().same_program(&restored.program_owner()));
 }
 
 #[test]
@@ -714,9 +741,12 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
 }
 
 #[test]
-fn session_save_rejects_stale_awbc_function_ids() {
-    let bytes = product_awfb_bytes("entry.main");
+fn session_restore_rejects_foreign_awbc_callable_owner() {
+    let bytes = callable_product_awfb_bytes();
     let mut session = product_session_from_bytes(&bytes);
+    let foreign = captured_awbc_runtime_callable_value(RuntimeProgramOwner::Awbc(
+        std::sync::Arc::new(callable_awbc_program()),
+    ));
     let mut snapshot = session.snapshot_session().expect("snapshot exports");
     snapshot
         .executor
@@ -726,20 +756,23 @@ fn session_save_rejects_stale_awbc_function_ids() {
         .expect("active frame")
         .root_cleanups
         .push(FiberScopeCleanup {
-            key: "handle.function".to_owned(),
+            key: "handle.callable".to_owned(),
             effect: AwbcEffectPlanId(0),
-            args: vec![awbc_runtime_function_value(AwbcFunctionId(u32::MAX))],
+            args: vec![foreign],
         });
 
     let error = session
         .restore_session_snapshot(snapshot)
-        .expect_err("stale function table ids reject");
-    assert!(matches!(
-        error,
-        BundleSessionSaveError::InvalidRuntimeValue { path, message }
-            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
-                && message.contains("does not exist")
-    ));
+        .expect_err("foreign callable program lease rejects");
+    assert!(
+        matches!(
+            &error,
+            BundleSessionSaveError::InvalidRuntimeValue { path, message }
+                if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
+                && message.contains("callable is leased to a different AWBC program")
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -1192,23 +1225,56 @@ fn cleanup(key: &str, value: &str) -> FiberScopeCleanup {
     }
 }
 
-fn awbc_runtime_function_value(function: AwbcFunctionId) -> RuntimeValue {
-    RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
-        Vec::new(),
-        function,
-        Vec::new(),
-    ))
+fn captured_awbc_runtime_callable_value(owner: RuntimeProgramOwner) -> RuntimeValue {
+    RuntimeValue::Callable(
+        RuntimeCallableValue::try_new(
+            owner,
+            RuntimeCallableStateId::from_zero_based(0).expect("callable state"),
+            [RuntimeValue::String("saved value".to_owned())],
+        )
+        .expect("admitted callable capture"),
+    )
 }
 
-fn captured_awbc_runtime_function_value() -> RuntimeValue {
-    RuntimeValue::Function(RuntimeFunctionValue::new_awbc(
-        Vec::new(),
-        AwbcFunctionId(1),
-        vec![RuntimeBinding {
-            name: "captured".to_owned(),
-            value: RuntimeValue::String("saved value".to_owned()),
-        }],
-    ))
+fn callable_awbc_program() -> AwbcProgram {
+    let entry = "entry.main";
+    let mut program = minimal_awbc_program(entry);
+    program.functions[1].kind = AwbcFunctionKind::Ordinary;
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([0x45; 32]),
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    let state = RuntimeCallableStateId::from_zero_based(0).expect("callable state");
+    program
+        .callable_states
+        .push(RuntimeCallableStateDefinition {
+            function_type: AwbcTypeId(2),
+            origin: state,
+            position: RuntimeCallablePosition::Unapplied,
+            retained: Box::new([RuntimeCallableRetainedInput {
+                role: RuntimeCallableRetainedRole::Capture { position: 0 },
+                ty: AwbcTypeId(0),
+            }]),
+            parameters: Box::new([]),
+            result: AwbcTypeId(0),
+            attached: RuntimeCallableAttachedContract::None,
+            transition: RuntimeCallableTransition::Invoke {
+                function: AwbcFunctionId(1),
+                captures: Box::new([RuntimeCallableInputSource::Retained { position: 0 }]),
+                arguments: Box::new([]),
+            },
+            partials: Box::new([]),
+        });
+    program
+}
+
+fn callable_product_awfb_bytes() -> Vec<u8> {
+    product_bundle_with_program("entry.main", "awbc-session.arcw", callable_awbc_program())
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("callable AWBC bundle encodes")
 }
 
 fn opaque_runtime_value() -> RuntimeValue {

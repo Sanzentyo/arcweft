@@ -246,6 +246,9 @@ propagation is not an ever-growing recursive capture-history key. Same-key
 inputs must agree. Root/edge membership and all discovered dispatch targets
 are sealed before materialization, which cannot add a target. Preserve the
 current inclusive instance/edge/node/depth/work limits and cancellation owner.
+Creating a named callable value contributes a checked dependency on its latent
+body even when no source call names that declaration. Reachability retains this
+as a callable-value edge, distinct from an invocation edge.
 
 ## 5. Scoped types, bytes and restore
 
@@ -260,6 +263,12 @@ Nominal logical transformation keeps the owner type and payload field types
 together. Stable case/field identities are issued after owner closure. Runtime
 projection uses the existing nominal catalog and scoped fold; neither digest
 reconstruction nor a second nominal registry is allowed.
+
+Native and AWBC type rows retain the exact sequence family (Vec, Array, Slice,
+or Seq), including in canonical program bytes and dependency transcripts. A
+rest parameter binds Vec of its ABI element type; another sequence family is
+not an equivalent binding. Complete and partial applications materialize the
+same pack before invoking or retaining that formal parameter.
 
 Version-1 semantic encoding includes binder arities, canonical effect DAGs and
 predicates, scoped type edges, callable state layouts and transition evidence.

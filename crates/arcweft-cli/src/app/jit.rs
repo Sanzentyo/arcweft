@@ -320,16 +320,10 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             format!("reduction/{}", value.owner().producer().as_str())
         }
         RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Function(function) => format!(
+        RuntimeValue::Callable(callable) => format!(
             "function/{}",
-            function.remaining_arity().unwrap_or_default()
+            callable.remaining_arity().unwrap_or_default()
         ),
-        RuntimeValue::ProjectContinuation(continuation) => {
-            format!(
-                "project-continuation/{}",
-                continuation.prefix_values().len()
-            )
-        }
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

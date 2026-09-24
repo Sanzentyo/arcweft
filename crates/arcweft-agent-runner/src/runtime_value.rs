@@ -97,7 +97,7 @@ fn runtime_value_to_json_at(
             "kind": "runtime_internal",
             "value": "reduction",
         })),
-        RuntimeValue::Function(function) => function
+        RuntimeValue::Callable(callable) => callable
             .remaining_arity()
             .map(|arity| {
                 serde_json::json!({
@@ -112,11 +112,6 @@ fn runtime_value_to_json_at(
                     detail: error.to_string(),
                 },
             ),
-        RuntimeValue::ProjectContinuation(continuation) => Ok(serde_json::json!({
-            "kind": "runtime_internal",
-            "value": "project_continuation",
-            "prefix_count": continuation.prefix_values().len(),
-        })),
         RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::MatrixF32(_)
@@ -230,13 +225,15 @@ fn ensure_finite_runtime_value(
             payload: Some(payload),
             ..
         } => ensure_finite_runtime_value(payload, &format!("{path}.payload")),
-        RuntimeValue::ProjectContinuation(continuation) => continuation
-            .prefix_values()
-            .iter()
-            .enumerate()
-            .try_for_each(|(index, value)| {
-                ensure_finite_runtime_value(value, &format!("{path}.prefix_values[{index}]"))
-            }),
+        RuntimeValue::Callable(callable) => {
+            callable
+                .retained()
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, value)| {
+                    ensure_finite_runtime_value(value, &format!("{path}.retained[{index}]"))
+                })
+        }
         RuntimeValue::MatrixF32(value) => ensure_finite_numbers(value.values(), path),
         RuntimeValue::MatrixF64(value) => ensure_finite_numbers(value.values(), path),
         RuntimeValue::TensorF32(value) => ensure_finite_numbers(value.values(), path),
@@ -251,7 +248,6 @@ fn ensure_finite_runtime_value(
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Reduction(_)
-        | RuntimeValue::Function(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::Agent(_)

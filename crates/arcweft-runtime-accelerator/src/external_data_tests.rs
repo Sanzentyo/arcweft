@@ -308,7 +308,10 @@ impl DataProgramFixture {
             ),
             runtime_type(
                 PATH_SEGMENT_SEQUENCE,
-                AwbcRuntimeTypeShape::Sequence(type_id(PATH_SEGMENT)),
+                AwbcRuntimeTypeShape::Sequence {
+                    kind: arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+                    item: type_id(PATH_SEGMENT),
+                },
                 None,
             ),
             runtime_type(
