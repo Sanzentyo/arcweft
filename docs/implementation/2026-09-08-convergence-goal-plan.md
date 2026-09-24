@@ -403,3 +403,38 @@ selected-call authority intact. Add dynamic-target display and generation
 admission coverage with the relevant consumers. The focused
 `cargo test -p arcweft-compiler --all-features --test callable_execution` has
 not been rerun; this design note is not implementation or validation evidence.
+
+## CharacterDialogue generation and bundle bridge checkpoint — 2026-09-24
+
+Inspected `main` at `48cc58f52e10f7ace58036d40a9647fa39e5cc5c` with a clean
+working tree. The following coherent cuts were committed and pushed:
+
+| Contract cut | Full Git SHA |
+| --- | --- |
+| Contextual function-value specialization and typed result-port evidence in Sema | `98254aea5870ad23c7dbc9ab41f84fc2a67102c9` |
+| Read-only sealed Character inventory access for Compiler | `07142c973384b4081ff7165ad87b6b0a4bf4c0f2` |
+| Bounded canonical v1 CharacterDialogue generation codec | `8a7c5d8683d9e1ca9807c40f220874fd9ac53a2b` |
+| AWFB generation/package section and manifest/PNG/fingerprint admission | `9b36049ec276c82b228426535d1e1bc5fc19c458` |
+| Dialogue-owned Core runtime-call backend adapter | `4a6191143d6990522197147d6067ddd2d37fc46c` |
+| Compiler/RuntimePlan generation declaration from checked profile and complete logical Character inventory | `6e4c57ce2a86e8abbff2bedd1ee845ebee64abf2` |
+| Profile/Agent AWFB handoff, typed package resource collection, and explicit rejection of lossy non-AWFB output | `48cc58f52e10f7ace58036d40a9647fa39e5cc5c` |
+
+Observed passing validation at this checkpoint: Sema focused 8/8 and library
+895/895; Dialogue codec focused 3/3, adapter focused 1/1, and library 52/52;
+RuntimePlan library 79/79; Compiler Character focused 23/23 and library 112/112;
+Bundle all-feature tests including its AWFB/PNG regression; CLI profile-to-AWFB
+focused 1/1 and library 170/170. Changed-crate all-target/all-feature Clippy
+completed with exit 0 for Sema, RuntimePlan, Compiler, Bundle, CLI, and
+runtime-codegen; Dialogue all-target Clippy also exited 0. Existing warning
+output remains and is not a strict-warning pass. The earlier Compiler Agent
+JSON roundtrip was migrated to AWFB and verifies the generation digest.
+
+This is a bridge checkpoint, not the factory/reconfigure acceptance: runtime
+generation binding, actual Native/AWBC producer execution, dynamic target
+display and Style admission, old-generation task pins, save/restore, StageLook,
+and the broader callable/Match/View/task-plan/nominal/scheduler goal remain.
+The focused `callable_execution` suite and workspace-wide final gates have not
+been rerun for this checkpoint. The next cut is a Dialogue-owned binding from
+the immutable declaration plus actual View/Style/Character resources and the
+executable owner into one runtime schema; driver execution must select it by
+the calling program generation.
