@@ -778,8 +778,13 @@ fn omitted<T>(value: T)[seed: DialogueContent] -> DialogueContent {
     fallback(value, seed, 1i64)
 }
 
+fn supplied()[body: DialogueContent = {
+    log.info("supplied-default");
+    supplied()
+}] -> DialogueContent { body }
+
 flow main() -> Unit {
-    alice[#omitted(1i64)[default] #omitted("text")[second]]
+    alice[#omitted(1i64)[default] #supplied()[provided] #omitted("text")[second]]
 }
 
 entry cli @entry.main { goto @flow.main }
@@ -861,12 +866,12 @@ entry cli @entry.main { goto @flow.main }
     );
     let awbc_rendered =
         rendered_content_slot_texts(&runtime.dialogue_content_catalog, artifact, &awbc_values);
-    assert_eq!(native_rendered, ["default", "second"]);
+    assert_eq!(native_rendered, ["default", "provided", "second"]);
     assert_eq!(awbc_rendered, native_rendered);
     let native_logs = log_messages(&native_effects);
     let awbc_logs = log_messages(&awbc_effects);
-    // Each ContentCall omits the body, so its depth-1 default and depth-0
-    // recursive default each run exactly once, in source order.
+    // The supplied ContentCall bypasses its sentinel default; each omitted call
+    // runs the depth-1 and depth-0 recursive defaults exactly once.
     assert_eq!(
         native_logs,
         [
