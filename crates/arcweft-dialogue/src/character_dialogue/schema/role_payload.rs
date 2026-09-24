@@ -22,7 +22,6 @@ use std::{collections::BTreeMap, sync::OnceLock};
 const RICH_TEXT_ROLE_CODEC_TAG: u8 = 0;
 const RICH_TEXT_ROLE_CODEC_DIGEST_DOMAIN: &[u8] =
     b"arcweft.character-dialogue.rich-text-properties-codec.v1\0";
-const RICH_TEXT_ROLE_CODEC_FIELD_RULE: &[u8] = b"presentation-callable-properties-excluding-fx\0";
 
 /// One closed Dialogue-owned codec for a bound role payload.
 ///
@@ -30,8 +29,8 @@ const RICH_TEXT_ROLE_CODEC_FIELD_RULE: &[u8] = b"presentation-callable-propertie
 /// constructor and consumer contract for them.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CharacterDialogueRolePayloadCodec {
-    /// Sparse per-property values from the accepted presentation Content
-    /// callable inventory.
+    /// Sparse per-property values from the presentation-owned reusable style
+    /// projection. Content-only arguments are never configuration fields.
     RichTextProperties,
 }
 
@@ -149,17 +148,11 @@ impl CharacterDialogueRolePayloadCodec {
 impl CharacterDialogueRolePayloadSchema {
     fn try_rich_text_properties() -> Result<Self, CharacterDialogueValueError> {
         let fields = PRESENTATION_CONTENT_CALLABLE_CATALOG
-            .iter()
-            .flat_map(|definition| {
-                definition.parameters().iter().filter_map(move |parameter| {
-                    (parameter.id != PresentationContentCallableParameterId::Fx)
-                        .then_some((definition.id(), *parameter))
-                })
-            })
+            .reusable_style_parameters()
             .map(|(definition, parameter)| {
                 Ok(RichTextPolicyField {
                     definition,
-                    parameter,
+                    parameter: *parameter,
                     value_type: policy_value_type(parameter.kind)?,
                 })
             })
@@ -211,10 +204,9 @@ impl CharacterDialogueRolePayloadSchema {
         let mut hasher = blake3::Hasher::new();
         hasher.update(RICH_TEXT_ROLE_CODEC_DIGEST_DOMAIN);
         hasher.update(&[RICH_TEXT_ROLE_CODEC_TAG]);
-        hasher.update(RICH_TEXT_ROLE_CODEC_FIELD_RULE);
         hasher.update(
             PRESENTATION_CONTENT_CALLABLE_CATALOG
-                .schema_digest()
+                .reusable_style_schema_digest()
                 .as_bytes(),
         );
         hasher.update(&(fields.len() as u32).to_le_bytes());
@@ -729,6 +721,8 @@ fn schema_error(reason: &'static str) -> CharacterDialogueValueError {
 mod tests {
     use super::*;
     use arcweft_core::plan::RuntimePlanTypeProjection;
+    use arcweft_core::value::RuntimeInt;
+    use arcweft_presentation::rich_text::RichTextLayoutProperty;
 
     fn schema() -> &'static CharacterDialogueRolePayloadSchema {
         CharacterDialogueRolePayloadCodec::RichTextProperties
@@ -824,5 +818,93 @@ mod tests {
         };
         slots.pop();
         assert!(schema.decode_properties(&truncated).is_err());
+    }
+
+    #[test]
+    fn rich_text_configuration_rejects_content_reading_slots() {
+        let schema = schema();
+        assert!(
+            schema
+                .fields
+                .iter()
+                .all(|field| { field.definition != PresentationContentCallableDefinitionId::Ruby })
+        );
+        let content_parameters = PRESENTATION_CONTENT_CALLABLE_CATALOG
+            .iter()
+            .flat_map(|definition| {
+                definition.parameters().iter().filter_map(move |parameter| {
+                    (parameter.id != PresentationContentCallableParameterId::Fx)
+                        .then_some((definition.id(), parameter.id))
+                })
+            })
+            .collect::<Vec<_>>();
+        let reading = content_parameters
+            .iter()
+            .position(|coordinate| {
+                *coordinate
+                    == (
+                        PresentationContentCallableDefinitionId::Ruby,
+                        PresentationContentCallableParameterId::Value,
+                    )
+            })
+            .expect("the full Content catalog retains the Ruby reading argument");
+        let mut slots = vec![RuntimeValue::option_none(); content_parameters.len()];
+        slots[reading] = RuntimeValue::option_some(RuntimeValue::String("よみ".to_owned()));
+        assert!(matches!(
+            schema.decode_properties(&RuntimeValue::Tuple(slots)),
+            Err(CharacterDialogueValueError::Field {
+                field: "rich_text",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rich_text_configuration_preserves_ruby_typography_properties() {
+        let schema = schema();
+        let mut payload = schema.no_overrides_payload.clone();
+        let RuntimeValue::Tuple(slots) = &mut payload else {
+            panic!("sparse policy root is a tuple")
+        };
+        let mut expected = Vec::new();
+        for selector in [
+            RichTextLayoutSelector::RubyOver,
+            RichTextLayoutSelector::RubyUnder,
+            RichTextLayoutSelector::RubyInterCharacter,
+        ] {
+            for property in [
+                RichTextLayoutProperty::RubySize,
+                RichTextLayoutProperty::RubyGap,
+                RichTextLayoutProperty::RubyOverhang,
+                RichTextLayoutProperty::RubyCollisionGap,
+            ] {
+                let definition = PresentationContentCallableDefinitionId::Layout(selector);
+                let parameter = PresentationContentCallableParameterId::Layout(property);
+                let index = schema
+                    .fields
+                    .iter()
+                    .position(|field| {
+                        field.definition == definition && field.parameter.id == parameter
+                    })
+                    .expect("Ruby typography remains an accepted reusable style coordinate");
+                slots[index] = RuntimeValue::option_some(RuntimeValue::Tuple(vec![
+                    RuntimeValue::Int(RuntimeInt::I32(1_000)),
+                    RuntimeValue::UInt(RuntimeUInt::U8(1)),
+                ]));
+                expected.push((definition, parameter));
+            }
+        }
+        let decoded = schema.decode_properties(&payload).unwrap();
+        assert_eq!(decoded.len(), expected.len());
+        for property in decoded.iter() {
+            assert!(expected.contains(&(property.definition(), property.parameter())));
+            assert_eq!(
+                property.value(),
+                &CharacterDialogueRichTextPropertyValue::Length {
+                    milli: 1_000,
+                    unit: RichTextUnit::Px,
+                }
+            );
+        }
     }
 }

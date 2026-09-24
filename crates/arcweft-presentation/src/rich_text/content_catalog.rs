@@ -5,6 +5,8 @@
 //! projects these rows into its own callable schema; it does not re-create
 //! selector branches from source names.
 
+mod reusable_style;
+
 use arcweft_rich_text_schema::{
     CheckedOutputKind, PropertyPresence, RichTextCallableParameterPassing,
     RichTextCallableParameterPresence, RichTextCallableParameterSpec, RichTextCallableSchemaDigest,

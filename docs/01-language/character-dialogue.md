@@ -199,6 +199,15 @@ Custom-field descriptors likewise refer to source semantic identities in the
 active program, without repeating layout declarations on values. Generic opaque
 admission still leaves producer-owned meaning to the producer.
 
+The bound RichText payload uses Presentation's reusable scalar style projection,
+not every argument accepted by a content callable. This projection retains typed
+style, layout, and transform parameters from modifiers that preserve their body's
+content role. Ruby readings belong to their base-bearing `Content.Ruby` node;
+they are not reusable configuration fields. Ruby position, size, gap, overhang,
+and collision gap remain inherited typography. An Fx application retains its
+complete typed graph and is not decomposed into scalar policy fields. The
+configuration payload graph and digest both derive from this same projection.
+
 The four private policy Variant families retain complete nominal headers. Their
 layouts are computed from the complete policy schema graph and the active exact
 RichText owner, including the ordered Style choice in `Apply`. The graph is
