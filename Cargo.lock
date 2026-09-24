@@ -905,6 +905,7 @@ dependencies = [
  "arcweft-rich-text-schema",
  "arcweft-source",
  "arcweft-view",
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

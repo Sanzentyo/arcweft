@@ -46,6 +46,8 @@ use std::{
 };
 
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
+const CUSTOM_FIELD_CATALOG_DIGEST_DOMAIN: &[u8] =
+    b"arcweft.character-dialogue.custom-field-catalog.v1\0";
 
 /// A field's source type reference and policy in one accepted bundle generation.
 #[derive(Clone, Debug, PartialEq)]
@@ -194,18 +196,40 @@ impl CharacterDialogueRuntimeCustomFieldDescriptor {
 
 impl CharacterDialogueRuntimeCustomFieldCatalog {
     pub fn try_new(
-        digest: RuntimeValueDigest,
         descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor>,
     ) -> Result<Self, CharacterDialogueValueError> {
         let mut fields = BTreeMap::new();
         for descriptor in descriptors {
             let id = descriptor.id.clone();
-            if fields.insert(id.clone(), descriptor).is_some() {
+            if fields.contains_key(&id) {
                 return Err(CharacterDialogueValueError::DuplicateCustomField(id));
             }
+            Self::validate_descriptor_limits(&descriptor)?;
+            if fields.len() >= usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_fields) {
+                return Err(CharacterDialogueValueError::Limit {
+                    limit: "custom_fields",
+                    maximum: usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_fields),
+                });
+            }
+            fields.insert(id, descriptor);
         }
+        let digest = Self::digest_fields(&fields)?;
         Ok(Self { digest, fields })
     }
+
+    /// Constructs the catalog only when its computed descriptor digest matches
+    /// the digest advertised by an enclosing generation or bundle.
+    pub fn try_new_with_expected_digest(
+        expected: RuntimeValueDigest,
+        descriptors: impl IntoIterator<Item = CharacterDialogueRuntimeCustomFieldDescriptor>,
+    ) -> Result<Self, CharacterDialogueValueError> {
+        let catalog = Self::try_new(descriptors)?;
+        if catalog.digest != expected {
+            return Err(CharacterDialogueValueError::CustomSchemaMismatch);
+        }
+        Ok(catalog)
+    }
+
     pub const fn digest(&self) -> RuntimeValueDigest {
         self.digest
     }
@@ -220,6 +244,124 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
         id: &CharacterDialogueCustomFieldId,
     ) -> Option<&CharacterDialogueRuntimeCustomFieldDescriptor> {
         self.fields.get(id)
+    }
+
+    fn validate_descriptor_limits(
+        descriptor: &CharacterDialogueRuntimeCustomFieldDescriptor,
+    ) -> Result<(), CharacterDialogueValueError> {
+        let limits = PRODUCTION_CHARACTER_DIALOGUE_LIMITS;
+        if descriptor.id.as_str().len() > usize::from(limits.max_custom_field_id_bytes) {
+            return Err(CharacterDialogueValueError::Limit {
+                limit: "custom_field_id_bytes",
+                maximum: usize::from(limits.max_custom_field_id_bytes),
+            });
+        }
+        if descriptor.accepted_views.len() > limits.max_values_per_sequence as usize {
+            return Err(CharacterDialogueValueError::Limit {
+                limit: "custom_field_accepted_views",
+                maximum: limits.max_values_per_sequence as usize,
+            });
+        }
+        if descriptor
+            .accepted_views
+            .iter()
+            .any(|view| view.as_str().len() > usize::from(limits.max_public_id_bytes))
+        {
+            return Err(CharacterDialogueValueError::Limit {
+                limit: "custom_field_view_id_bytes",
+                maximum: usize::from(limits.max_public_id_bytes),
+            });
+        }
+        Ok(())
+    }
+
+    fn digest_fields(
+        fields: &BTreeMap<
+            CharacterDialogueCustomFieldId,
+            CharacterDialogueRuntimeCustomFieldDescriptor,
+        >,
+    ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+        let mut encoder = CustomFieldCatalogDigestEncoder::new();
+        encoder.write_len(fields.len(), "custom_fields")?;
+        for descriptor in fields.values() {
+            encoder.write_str(descriptor.id.as_str(), "custom_field_id_bytes")?;
+            encoder.write_bytes(descriptor.semantic_type.as_bytes(), "custom_catalog_bytes")?;
+            encoder.write_u8(u8::from(descriptor.clearable), "custom_catalog_bytes")?;
+            encoder.write_len(
+                descriptor.accepted_views.len(),
+                "custom_field_accepted_views",
+            )?;
+            for view in &descriptor.accepted_views {
+                encoder.write_str(view.as_str(), "custom_field_view_id_bytes")?;
+            }
+        }
+        Ok(encoder.finish())
+    }
+}
+
+struct CustomFieldCatalogDigestEncoder {
+    hasher: blake3::Hasher,
+    encoded_len: usize,
+}
+
+impl CustomFieldCatalogDigestEncoder {
+    fn new() -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(CUSTOM_FIELD_CATALOG_DIGEST_DOMAIN);
+        Self {
+            hasher,
+            encoded_len: CUSTOM_FIELD_CATALOG_DIGEST_DOMAIN.len(),
+        }
+    }
+
+    fn write_len(
+        &mut self,
+        value: usize,
+        limit: &'static str,
+    ) -> Result<(), CharacterDialogueValueError> {
+        let value = u32::try_from(value).map_err(|_| CharacterDialogueValueError::Limit {
+            limit,
+            maximum: u32::MAX as usize,
+        })?;
+        self.write_bytes(&value.to_le_bytes(), "custom_catalog_bytes")
+    }
+
+    fn write_str(
+        &mut self,
+        value: &str,
+        limit: &'static str,
+    ) -> Result<(), CharacterDialogueValueError> {
+        self.write_len(value.len(), limit)?;
+        self.write_bytes(value.as_bytes(), limit)
+    }
+
+    fn write_u8(
+        &mut self,
+        value: u8,
+        limit: &'static str,
+    ) -> Result<(), CharacterDialogueValueError> {
+        self.write_bytes(&[value], limit)
+    }
+
+    fn write_bytes(
+        &mut self,
+        bytes: &[u8],
+        limit: &'static str,
+    ) -> Result<(), CharacterDialogueValueError> {
+        let maximum = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize;
+        let Some(next_len) = self.encoded_len.checked_add(bytes.len()) else {
+            return Err(CharacterDialogueValueError::Limit { limit, maximum });
+        };
+        if next_len > maximum {
+            return Err(CharacterDialogueValueError::Limit { limit, maximum });
+        }
+        self.hasher.update(bytes);
+        self.encoded_len = next_len;
+        Ok(())
+    }
+
+    fn finish(self) -> RuntimeValueDigest {
+        RuntimeValueDigest::from_bytes(*self.hasher.finalize().as_bytes())
     }
 }
 

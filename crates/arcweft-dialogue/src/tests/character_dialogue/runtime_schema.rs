@@ -879,31 +879,28 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
 
 #[test]
 fn custom_entries_use_active_types_and_require_canonical_id_order() {
-    let (_, characters, views, empty_custom) = fixture();
+    let (_, characters, views, _) = fixture();
     let types = Types::new();
     let base_owner = types.program_owners()[0].clone();
-    let base_schema = types.schema(&characters, &views, &empty_custom, base_owner.clone());
+    let ids = ["alpha", "beta"].map(|name| {
+        CharacterDialogueCustomFieldId::try_new(format!("character_dialogue_field.{name}")).unwrap()
+    });
+    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(ids.clone().map(|id| {
+        CharacterDialogueRuntimeCustomFieldDescriptor::new(
+            id,
+            semantic(54),
+            true,
+            BTreeSet::from([ViewId::standard_dialogue()]),
+        )
+    }))
+    .unwrap();
+    let base_schema = types.schema(&characters, &views, &custom, base_owner.clone());
     let base = Types::base(
         &base_schema,
         &base_owner,
         sample_manifest().character(),
         types.character_type,
     );
-    let ids = ["alpha", "beta"].map(|name| {
-        CharacterDialogueCustomFieldId::try_new(format!("character_dialogue_field.{name}")).unwrap()
-    });
-    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(
-        base.contract().custom_schema(),
-        ids.clone().map(|id| {
-            CharacterDialogueRuntimeCustomFieldDescriptor::new(
-                id,
-                semantic(54),
-                true,
-                BTreeSet::from([base.config().view().clone()]),
-            )
-        }),
-    )
-    .unwrap();
     let custom_value = |value| {
         CharacterDialogueCustomValue::try_new(
             CharacterDialogueTypedValue::try_new(types.nominal(value)).unwrap(),
@@ -983,15 +980,14 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
         ));
     }
     let types = Types::new();
-    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(
-        custom.digest(),
-        [CharacterDialogueRuntimeCustomFieldDescriptor::new(
+    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new([
+        CharacterDialogueRuntimeCustomFieldDescriptor::new(
             CharacterDialogueCustomFieldId::try_new("character_dialogue_field.unused").unwrap(),
             semantic(99),
             true,
             BTreeSet::new(),
-        )],
-    )
+        ),
+    ])
     .unwrap();
     for owner in types.program_owners() {
         assert!(matches!(

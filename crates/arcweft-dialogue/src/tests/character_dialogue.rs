@@ -2,11 +2,11 @@ use crate::{
     CharacterDialogue, CharacterDialogueConfig, CharacterDialogueContractIdentity,
     CharacterDialogueCustomFieldId, CharacterDialogueCustomValue, CharacterDialogueHookValue,
     CharacterDialoguePatch, CharacterDialogueRichTextValue,
-    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueStyleValue,
-    CharacterDialogueTypedValue, CharacterDialogueValueError, CharacterDialogueVoice,
-    CharacterDialogueVoiceId, DialogueLocaleId, FallbackStylePolicy, InlineFailurePolicy,
-    InlineFallback, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath,
-    StructuredPatch,
+    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueStyleValue, CharacterDialogueTypedValue, CharacterDialogueValueError,
+    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId, FallbackStylePolicy,
+    InlineFailurePolicy, InlineFallback, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField,
+    RuntimeFieldPath, StructuredPatch,
 };
 use arcweft_character::{
     catalog::CharacterCatalog,
@@ -22,7 +22,7 @@ use arcweft_core::{
     value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
 };
 use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn sample_manifest() -> CharacterManifest {
     let body = CharacterPart::new(
@@ -115,9 +115,8 @@ fn fixture_with_style(
             RustViewId(1),
         ))
         .expect("register View");
-    let custom_digest = RuntimeValueDigest::from_bytes([3; 32]);
-    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(custom_digest, [])
-        .expect("custom catalog");
+    let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new([]).expect("custom catalog");
+    let custom_digest = custom.digest();
     let contract = CharacterDialogueContractIdentity::with_visual_manifest(
         crate::CharacterDialogueVisualManifestEvidence::Present(character_manifest),
         RuntimeValueDigest::from_bytes([2; 32]),
@@ -132,6 +131,156 @@ fn fixture_with_style(
     )
     .expect("dialogue");
     (dialogue, catalog, views, custom)
+}
+
+#[test]
+fn custom_field_catalog_digest_is_order_invariant_and_commits_descriptor_rows() {
+    let id_a = CharacterDialogueCustomFieldId::try_new("character_dialogue_field.alpha")
+        .expect("custom field ID");
+    let id_b = CharacterDialogueCustomFieldId::try_new("character_dialogue_field.beta")
+        .expect("custom field ID");
+    let view_a = ViewId::try_new("view.dialogue.standard").expect("View ID");
+    let view_b = ViewId::try_new("view.dialogue.mobile").expect("View ID");
+    let semantic_type = RuntimeSemanticTypeId::from_bytes([7; 32]);
+    let descriptor_a = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        id_a.clone(),
+        semantic_type,
+        true,
+        BTreeSet::from([view_a.clone(), view_b.clone()]),
+    );
+    let descriptor_b = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        id_b.clone(),
+        RuntimeSemanticTypeId::from_bytes([8; 32]),
+        false,
+        BTreeSet::from([view_b.clone()]),
+    );
+
+    let catalog = CharacterDialogueRuntimeCustomFieldCatalog::try_new([
+        descriptor_a.clone(),
+        descriptor_b.clone(),
+    ])
+    .expect("catalog");
+    let reversed = CharacterDialogueRuntimeCustomFieldCatalog::try_new([
+        descriptor_b.clone(),
+        descriptor_a.clone(),
+    ])
+    .expect("catalog with reversed producer order");
+    assert_eq!(catalog.digest(), reversed.digest());
+    assert_eq!(catalog.fields(), reversed.fields());
+    assert_eq!(
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new_with_expected_digest(
+            catalog.digest(),
+            [descriptor_a.clone(), descriptor_b.clone()],
+        )
+        .expect("advertised digest matches computed rows")
+        .digest(),
+        catalog.digest()
+    );
+    assert_eq!(
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new_with_expected_digest(
+            RuntimeValueDigest::from_bytes([0; 32]),
+            [descriptor_a.clone(), descriptor_b.clone()],
+        )
+        .unwrap_err(),
+        CharacterDialogueValueError::CustomSchemaMismatch
+    );
+
+    let changed_type = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        id_a.clone(),
+        RuntimeSemanticTypeId::from_bytes([9; 32]),
+        true,
+        BTreeSet::from([view_a.clone(), view_b.clone()]),
+    );
+    let changed_clearable = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        id_a.clone(),
+        semantic_type,
+        false,
+        BTreeSet::from([view_a.clone(), view_b.clone()]),
+    );
+    let changed_views = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        id_a.clone(),
+        semantic_type,
+        true,
+        BTreeSet::from([view_a]),
+    );
+    let changed_id = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.changed")
+            .expect("custom field ID"),
+        semantic_type,
+        true,
+        BTreeSet::from([view_b]),
+    );
+    for changed in [changed_type, changed_clearable, changed_views, changed_id] {
+        let changed =
+            CharacterDialogueRuntimeCustomFieldCatalog::try_new([changed, descriptor_b.clone()])
+                .expect("changed catalog");
+        assert_ne!(catalog.digest(), changed.digest());
+        assert_eq!(
+            CharacterDialogueRuntimeCustomFieldCatalog::try_new_with_expected_digest(
+                catalog.digest(),
+                changed.fields().values().cloned(),
+            )
+            .unwrap_err(),
+            CharacterDialogueValueError::CustomSchemaMismatch
+        );
+    }
+}
+
+#[test]
+fn custom_field_catalog_rejects_duplicate_ids_and_limit_overruns() {
+    let duplicate_id = CharacterDialogueCustomFieldId::try_new("character_dialogue_field.same")
+        .expect("custom field ID");
+    let duplicate = || {
+        CharacterDialogueRuntimeCustomFieldDescriptor::new(
+            duplicate_id.clone(),
+            RuntimeSemanticTypeId::from_bytes([3; 32]),
+            true,
+            BTreeSet::new(),
+        )
+    };
+    assert_eq!(
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new([duplicate(), duplicate()])
+            .unwrap_err(),
+        CharacterDialogueValueError::DuplicateCustomField(duplicate_id)
+    );
+
+    let too_many_fields =
+        (0..=PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_fields).map(|index| {
+            CharacterDialogueRuntimeCustomFieldDescriptor::new(
+                CharacterDialogueCustomFieldId::try_new(format!(
+                    "character_dialogue_field.field_{index}"
+                ))
+                .expect("unique custom field ID"),
+                RuntimeSemanticTypeId::from_bytes([4; 32]),
+                true,
+                BTreeSet::new(),
+            )
+        });
+    assert!(matches!(
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new(too_many_fields),
+        Err(CharacterDialogueValueError::Limit {
+            limit: "custom_fields",
+            maximum: 32,
+        })
+    ));
+
+    let too_many_views = (0..=PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_values_per_sequence)
+        .map(|index| ViewId::try_new(format!("view.custom_{index}")).expect("View ID"))
+        .collect();
+    let descriptor = CharacterDialogueRuntimeCustomFieldDescriptor::new(
+        CharacterDialogueCustomFieldId::try_new("character_dialogue_field.views")
+            .expect("custom field ID"),
+        RuntimeSemanticTypeId::from_bytes([5; 32]),
+        true,
+        too_many_views,
+    );
+    assert!(matches!(
+        CharacterDialogueRuntimeCustomFieldCatalog::try_new([descriptor]),
+        Err(CharacterDialogueValueError::Limit {
+            limit: "custom_field_accepted_views",
+            maximum: 4_096,
+        })
+    ));
 }
 
 fn option_some(value: RuntimeValue) -> RuntimeValue {
