@@ -1148,3 +1148,590 @@ fn assert_view_controls_visible(
     assert_eq!(snapshot.text_inputs, vec![text_input.clone()]);
     assert_eq!(snapshot.action_buttons, vec![action_button.clone()]);
 }
+
+mod dynamic_character_dialogue_context_tests {
+    use super::*;
+    use arcweft_bundle::resource_codec::view::ViewStyleResource;
+    use arcweft_character::{
+        catalog::{CharacterCatalog, CharacterVisualManifestEvidence},
+        id::CharacterId,
+        presentation_name::{
+            AcceptedCharacterPresentationCatalog, CharacterDisplayNameInput,
+            CharacterDisplayNameRecordInput, CharacterDisplayNameValue, CharacterNameLocale,
+            CharacterNameLocalePolicy, CharacterPresentationCatalogData,
+            CharacterPresentationCatalogInput, CharacterPresentationRole,
+        },
+    };
+    use arcweft_core::{
+        effect::RuntimeArtifactFingerprint, plan::RuntimeLineId,
+        runtime_id::RuntimeDialogueContentTemplateId, value::RuntimeDialogueContentValue,
+    };
+    use arcweft_core::{
+        entry::{
+            RuntimeNominalSchemaBody, RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition,
+            RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
+            RuntimeSchemaLimits, RuntimeValueDigest,
+        },
+        pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId},
+        plan::{
+            RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection as Type,
+            RuntimePlanTypeSeed, RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
+        },
+        task::RuntimeProgramOwner,
+        value::{
+            RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+            RuntimeOpaqueValueClass, RuntimeUInt, RuntimeValue,
+        },
+    };
+    use arcweft_dialogue::{
+        CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
+        CharacterDialogueGenerationDeclaration, CharacterDialoguePresentationContract,
+        CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldCatalog,
+        CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
+        CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+        CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
+        CharacterDialogueVisualType, DialoguePresentationProfile, DialogueProfileRevision,
+        character_presentation::{
+            CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+        },
+    };
+    use arcweft_id::{DeclarationIdentityFamily, LocaleTag, PublicId, TextKey};
+    use arcweft_interaction_model::dialogue::{
+        CharacterDialogueFieldCoordinate as Coordinate, CharacterDialoguePatchField,
+        CharacterDialoguePatchOperation as Operation,
+    };
+    use arcweft_presentation::rich_text::{
+        PRESENTATION_CONTENT_CALLABLE_CATALOG,
+        PresentationContentCallableDefinitionId as Definition,
+        PresentationContentCallableParameterId as Parameter,
+    };
+    use arcweft_render_text::resolve_frame_with_template;
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{
+        ProductSourceRef, SourceDocument, SourceDocumentId, SourceName, SourceSetRevision,
+    };
+    use arcweft_text_model::{
+        DialogueContentFragmentTemplate, DialogueContentSpec, DialoguePresentationSnapshot,
+        LineDisplayFrame, RichTextColor, RichTextDocument, RichTextNode, RichTextStyle,
+    };
+    use arcweft_view::{
+        AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewProgramId, ViewRegistry,
+        ViewSchemaId, ViewStyleProgram, ViewStyleSheet, ViewStyleSheetId,
+    };
+    use std::sync::Arc;
+
+    const ALICE: &str = "character.dynamic_alice";
+    const BOB: &str = "character.dynamic_bob";
+
+    fn semantic(tag: u8) -> RuntimeSemanticTypeId {
+        RuntimeSemanticTypeId::from_bytes([tag; 32])
+    }
+
+    fn role_semantic(role: Role) -> RuntimeSemanticTypeId {
+        semantic(20 + role.canonical_tag())
+    }
+
+    fn role_types() -> CharacterDialogueRuntimeRoleTypes {
+        CharacterDialogueRuntimeRoleTypes::new(
+            Role::AUTHORED_BASE.map(|role| {
+                let body = if role == Role::RichText {
+                    CharacterDialogueRuntimeRoleBody::bound(
+                        CharacterDialogueRolePayloadCodec::RichTextProperties
+                            .payload_schema()
+                            .expect("accepted RichText schema")
+                            .root(),
+                        CharacterDialogueRolePayloadCodec::RichTextProperties,
+                    )
+                } else {
+                    CharacterDialogueRuntimeRoleBody::Unbound
+                };
+                CharacterDialogueRuntimeRoleType::new(role_semantic(role), body)
+            }),
+            semantic(50),
+        )
+    }
+
+    fn runtime_plan() -> (RuntimePlan, RuntimeSemanticTypeId) {
+        let roles = role_types();
+        let producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
+        let mut seeds = Role::AUTHORED_BASE
+            .into_iter()
+            .map(|role| {
+                RuntimePlanTypeSeed::new(
+                    role_semantic(role),
+                    Type::Opaque {
+                        producer: producer.clone(),
+                        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: RuntimeOpaqueValueClass::Plain,
+                        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                        arguments: Box::new([]),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        seeds.extend(
+            CharacterDialogueRolePayloadCodec::RichTextProperties
+                .payload_schema()
+                .expect("accepted RichText schema")
+                .types()
+                .iter()
+                .cloned(),
+        );
+
+        let style_entity_type = semantic(51);
+        let style_type = *roles.style_ref();
+        seeds.extend([
+            RuntimePlanTypeSeed::new(style_entity_type, Type::EntityReference),
+            RuntimePlanTypeSeed::new(
+                style_type,
+                Type::Choice(vec![style_entity_type, role_semantic(Role::RichText)].into()),
+            ),
+        ]);
+
+        let alice_owner = CharacterDialogueType::exact(
+            CharacterId::try_new(ALICE).expect("valid Alice identity"),
+        )
+        .runtime_opaque_owner();
+        let bob_owner =
+            CharacterDialogueType::exact(CharacterId::try_new(BOB).expect("valid Bob identity"))
+                .runtime_opaque_owner();
+        let any_owner = CharacterDialogueType::any().runtime_opaque_owner();
+        let any_type = any_owner.semantic_identity();
+        for owner in [alice_owner, bob_owner, any_owner] {
+            let dialogue_type = owner.semantic_identity();
+            seeds.push(RuntimePlanTypeSeed::new(
+                dialogue_type,
+                Type::Opaque {
+                    producer: owner.producer().clone(),
+                    admission: owner.admission(),
+                    value_class: owner.value_class(),
+                    persistence: owner.persistence(),
+                    arguments: Box::new([]),
+                },
+            ));
+        }
+
+        let voice_type = semantic(56);
+        let voice_nominal = RuntimeNominalTypeId::try_new("DialogueVoice")
+            .expect("canonical DialogueVoice nominal id");
+        let voice_graph = RuntimeNominalSchemaGraph::try_new(
+            [RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(voice_nominal.clone(), voice_type),
+                Vec::<arcweft_core::entry::RuntimeTypeSchema>::new(),
+                RuntimeNominalSchemaBody::Variant {
+                    cases: vec![RuntimeNominalSchemaCase::new(0, "auto".to_owned(), None)].into(),
+                },
+            )],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("DialogueVoice schema");
+        let voice_layout = voice_graph
+            .try_layout_hash(voice_type)
+            .expect("DialogueVoice layout");
+        seeds.push(RuntimePlanTypeSeed::new(
+            voice_type,
+            Type::Nominal {
+                nominal: voice_nominal.clone(),
+                layout: voice_layout,
+                arguments: Box::new([]),
+            },
+        ));
+
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_semantic_batch(
+                seeds,
+                [],
+                [],
+                [RuntimeVariantDomainSeed::new(
+                    voice_type,
+                    voice_nominal,
+                    voice_layout,
+                    [RuntimeVariantCaseSeed::new("auto", None)],
+                )],
+                &voice_graph,
+            )
+            .expect("runtime schema types are admitted");
+        (builder.finish().expect("runtime plan"), any_type)
+    }
+
+    struct Fixture {
+        schema: CharacterDialogueRuntimeSchema,
+        owner: RuntimeProgramOwner,
+        alice: CharacterId,
+        bob: CharacterId,
+        catalog: AcceptedCharacterPresentationCatalog,
+        locale: ActiveSessionLocale,
+        style_program: ViewStyleProgram,
+        sheet_id: ViewStyleSheetId,
+        template: DialogueContentFragmentTemplate,
+        content: RuntimeDialogueContentValue,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let alice = CharacterId::try_new(ALICE).expect("valid Alice identity");
+            let bob = CharacterId::try_new(BOB).expect("valid Bob identity");
+            let asset_characters = Arc::new(
+                CharacterCatalog::try_from_declarations([
+                    (alice.clone(), CharacterVisualManifestEvidence::Absent),
+                    (bob.clone(), CharacterVisualManifestEvidence::Absent),
+                ])
+                .expect("accepted logical Character catalog"),
+            );
+
+            let profile = DialoguePresentationProfile::engine_default();
+            let mut views = ViewRegistry::default();
+            views
+                .register(ViewDescriptor::public_rust(
+                    profile.view().clone(),
+                    ViewSchemaId(1),
+                    RustViewId(1),
+                ))
+                .expect("accepted dialogue View");
+            let sheet_id = ViewStyleSheetId::try_new("style.dynamic_dialogue_fixture")
+                .expect("accepted Style identity");
+            let style_program = ViewStyleProgram::try_new(
+                vec![
+                    ViewStyleSheet::new(sheet_id.clone(), Vec::new(), Vec::new())
+                        .expect("accepted Style sheet"),
+                ],
+                Vec::new(),
+            )
+            .expect("accepted View Style program");
+            let style_resource = ViewStyleResource {
+                style_program_id: "view_style.dynamic_dialogue_fixture".to_owned(),
+                program: style_program.clone(),
+                ..ViewStyleResource::default()
+            };
+            let style_digest = RuntimeValueDigest::from_bytes(
+                style_resource
+                    .canonical_digest()
+                    .expect("canonical Style resource digest")
+                    .as_bytes(),
+            );
+
+            let roles = role_types();
+            let default_config =
+                CharacterDialogueConfig::try_from_presentation_profile(&profile, &roles)
+                    .expect("accepted profile defaults");
+            let any_type = CharacterDialogueType::any().runtime_semantic_identity();
+            let (plan, _) = runtime_plan();
+            let declaration = CharacterDialogueGenerationDeclaration::try_new(
+                [alice.clone(), bob.clone()].map(|character| {
+                    let dialogue_type =
+                        CharacterDialogueType::exact(character.clone()).runtime_semantic_identity();
+                    (
+                        character.clone(),
+                        CharacterDialogueCharacterDeclaration::new(
+                            dialogue_type,
+                            CharacterDialogueVisualType::Absent,
+                            CharacterDialogueRuntimeDefault::new(character, default_config.clone()),
+                        ),
+                    )
+                }),
+                any_type,
+                semantic(56),
+                roles,
+                CharacterDialogueRuntimeCustomFieldCatalog::try_new([])
+                    .expect("empty accepted custom catalog"),
+                CharacterDialoguePresentationContract::try_new(
+                    profile.clone(),
+                    profile_revision(),
+                    RuntimeValueDigest::from_bytes(
+                        *views
+                            .runtime_digest_v1()
+                            .expect("View registry digest")
+                            .as_bytes(),
+                    ),
+                    Some(style_digest),
+                )
+                .expect("accepted presentation contract"),
+            )
+            .expect("valid generation declaration");
+            let owner = RuntimeProgramOwner::Plan(Arc::new(plan));
+            let schema = declaration
+                .bind_runtime(
+                    Arc::new(views),
+                    asset_characters,
+                    Some(style_digest),
+                    owner.clone(),
+                )
+                .expect("generation binds to its real runtime plan and resources");
+            assert_eq!(schema.generation_digest(), declaration.digest());
+            let display_locale =
+                CharacterNameLocale::new(LocaleTag::try_new("en").expect("valid locale"));
+            let display_policy =
+                CharacterNameLocalePolicy::try_new(display_locale.clone(), Vec::new())
+                    .expect("accepted locale policy");
+            let base_name = CharacterDisplayNameInput::Visible(
+                CharacterDisplayNameValue::try_new("Alice Display Name")
+                    .expect("accepted display name"),
+            );
+            let display_record = CharacterDisplayNameRecordInput::try_new(
+                alice.clone(),
+                CharacterPresentationRole::Character,
+                None,
+                Some(base_name),
+                Vec::new(),
+                None,
+            )
+            .expect("accepted display-name row");
+            let display_data = CharacterPresentationCatalogData::try_from_inputs(
+                CharacterPresentationCatalogInput::try_new(display_policy, vec![display_record])
+                    .expect("accepted display catalog input"),
+            )
+            .expect("accepted display catalog");
+            let catalog = AcceptedCharacterPresentationCatalog::publish_initial(display_data)
+                .expect("accepted display generation");
+            let locale = ActiveSessionLocale::new(&display_locale);
+
+            let template = DialogueContentFragmentTemplate::try_new_canonical(
+                RuntimeDialogueContentTemplateId::from_zero_based(0).expect("template identity"),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                RichTextDocument::new(vec![RichTextNode::Text {
+                    text: "Dynamic dialogue".to_owned(),
+                }]),
+            )
+            .expect("canonical dialogue template");
+            let content = RuntimeDialogueContentValue::try_new(
+                RuntimeArtifactFingerprint::try_from_bytes([0x34; 32])
+                    .expect("artifact fingerprint"),
+                template.id(),
+                template.digest(),
+                [],
+            )
+            .expect("checked content envelope");
+
+            Self {
+                schema,
+                owner,
+                alice,
+                bob,
+                catalog,
+                locale,
+                style_program,
+                sheet_id,
+                template,
+                content,
+            }
+        }
+
+        fn spec(
+            &self,
+            target: CharacterPresentationTargetEvidence,
+            line: &str,
+        ) -> DialogueContentSpec {
+            let source = SourceDocument::try_new(
+                SourceDocumentId::try_new(format!("runtime-driver-{line}"))
+                    .expect("source document id"),
+                SourceName::Memory,
+                "dialogue display fixture",
+            )
+            .expect("source document");
+            let source = ProductSourceRef::try_for_identity(source.identity())
+                .expect("product source reference");
+            let checked_target =
+                CheckedCharacterPresentationPlan::try_new(target, self.catalog.generation())
+                    .expect("checked Character target");
+            let runtime_line = format!("say.{line}");
+            DialogueContentSpec::try_new(
+                RuntimeLineId::from_runtime_line_value(&runtime_line)
+                    .expect("runtime line identity"),
+                TextKey::try_new(format!("text.{line}")).expect("text key"),
+                &self.template,
+                checked_target,
+                DialoguePresentationSnapshot::new(
+                    DialoguePresentationProfile::engine_default(),
+                    profile_revision(),
+                ),
+                Vec::new(),
+                source,
+            )
+            .expect("canonical dialogue content spec")
+        }
+
+        fn value(&self, character: &CharacterId, with_style: bool) -> RuntimeOpaqueValue {
+            let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                family: DeclarationIdentityFamily::Character,
+                public_id: PublicId::try_new(character.as_str()).expect("Character public id"),
+            });
+            let fields = if with_style {
+                vec![
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::Style,
+                        operation: Operation::Set(RuntimeValue::EntityRef(
+                            RuntimeEntityReference::Project {
+                                family: DeclarationIdentityFamily::Style,
+                                public_id: PublicId::try_new(self.sheet_id.as_str())
+                                    .expect("Style public id"),
+                            },
+                        )),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::RichText,
+                        operation: Operation::Set(self.rich_text_color_value()),
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
+            self.schema
+                .construct(
+                    &self.owner,
+                    &target,
+                    &fields,
+                    CharacterDialogueType::any().runtime_semantic_identity(),
+                )
+                .expect("accepted CharacterDialogue value")
+                .opaque()
+                .clone()
+        }
+
+        fn rich_text_color_value(&self) -> RuntimeValue {
+            let codec = CharacterDialogueRolePayloadCodec::RichTextProperties;
+            let mut payload = codec.no_overrides_payload().expect("typed empty RichText");
+            let color_slot = PRESENTATION_CONTENT_CALLABLE_CATALOG
+                .reusable_style_parameters()
+                .position(|(definition, parameter)| {
+                    definition == Definition::Color && parameter.id == Parameter::Value
+                })
+                .expect("catalog-owned Color/Value slot");
+            let RuntimeValue::Tuple(slots) = &mut payload else {
+                panic!("sparse RichText policy has a typed tuple root");
+            };
+            slots[color_slot] = RuntimeValue::option_some(RuntimeValue::Tuple(vec![
+                RuntimeValue::UInt(RuntimeUInt::U8(17)),
+                RuntimeValue::UInt(RuntimeUInt::U8(34)),
+                RuntimeValue::UInt(RuntimeUInt::U8(51)),
+                RuntimeValue::UInt(RuntimeUInt::U8(255)),
+            ]));
+            RuntimeOpaqueTypeOwner::exact(
+                CharacterDialogueRuntimeSchema::opaque_type_producer(),
+                role_semantic(Role::RichText),
+            )
+            .try_wrap(payload)
+            .expect("accepted RichText role opaque value")
+        }
+
+        fn frame(
+            &self,
+            spec: &DialogueContentSpec,
+            target: &RuntimeOpaqueValue,
+        ) -> LineDisplayFrame {
+            let provider = CatalogDialogueRuntimeContextProvider::new(
+                &self.catalog,
+                &self.locale,
+                Some(&self.schema),
+                Some(&self.style_program),
+            );
+            let context = provider
+                .context_for(spec, target, &[])
+                .expect("accepted dynamic presentation context");
+            resolve_frame_with_template(spec, &self.template, &self.content, &context)
+                .expect("frame resolves with admitted content and context")
+        }
+
+        fn rejected(
+            &self,
+            spec: &DialogueContentSpec,
+            target: &RuntimeOpaqueValue,
+        ) -> DialogueRuntimeContextError {
+            let provider = CatalogDialogueRuntimeContextProvider::new(
+                &self.catalog,
+                &self.locale,
+                Some(&self.schema),
+                Some(&self.style_program),
+            );
+            provider
+                .context_for(spec, target, &[])
+                .expect_err("invalid dynamic CharacterDialogue evidence rejects")
+        }
+    }
+
+    fn profile_revision() -> DialogueProfileRevision {
+        let manifest = SourceDocument::try_new(
+            SourceDocumentId::try_new("runtime-driver-dialogue-display-profile")
+                .expect("manifest id"),
+            SourceName::Memory,
+            "schema = 1\n",
+        )
+        .expect("profile manifest");
+        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
+            .expect("profile source revision");
+        DialogueProfileRevision::from_admitted_parts(
+            manifest.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.dialogue_display_fixture")
+                .expect("View program identity"),
+            AcceptedViewProgramRevision::try_from_bytes([0x46; 32]).expect("View program revision"),
+            ResourceTypeRegistry::empty().digest(),
+        )
+    }
+
+    #[test]
+    fn dynamic_context_uses_admitted_config_and_rejects_generation_or_character_mismatch() {
+        let fixture = Fixture::new();
+        let dynamic = |generation| CharacterPresentationTargetEvidence::RuntimeCharacterDialogue {
+            generation,
+        };
+        let spec = fixture.spec(
+            dynamic(fixture.schema.generation_digest()),
+            "dynamic_context_success",
+        );
+        let accepted = fixture.value(&fixture.alice, true);
+        let frame = fixture.frame(&spec, &accepted);
+        assert_eq!(frame.character.id, fixture.alice);
+        assert_eq!(frame.character.display_name, "Alice Display Name");
+        assert_eq!(
+            frame.effective.view,
+            DialoguePresentationProfile::engine_default().view().clone()
+        );
+        assert_eq!(
+            frame.effective.style_sheet.as_ref(),
+            Some(&fixture.sheet_id)
+        );
+        assert_ne!(frame.effective.config_digest, RuntimeValueDigest::ZERO);
+        assert!(matches!(
+            frame.base_styles.as_slice(),
+            [RichTextStyle::Color {
+                value: RichTextColor::Rgba8 {
+                    value: [17, 34, 51, 255]
+                }
+            }]
+        ));
+
+        let stale_generation = fixture.spec(
+            dynamic(RuntimeValueDigest::from_bytes([0x99; 32])),
+            "dynamic_context_stale_generation",
+        );
+        assert!(matches!(
+            fixture.rejected(&stale_generation, &accepted),
+            DialogueRuntimeContextError::Rejected { reason, .. }
+                if reason.contains("generation does not match")
+        ));
+
+        let absent_character = fixture.spec(
+            dynamic(fixture.schema.generation_digest()),
+            "dynamic_context_unlisted_character",
+        );
+        let bob = fixture.value(&fixture.bob, false);
+        assert!(matches!(
+            fixture.rejected(&absent_character, &bob),
+            DialogueRuntimeContextError::Rejected { .. }
+        ));
+
+        let exact_alice = fixture.spec(
+            CharacterPresentationTargetEvidence::Exact(fixture.alice.clone()),
+            "dynamic_context_checked_character_mismatch",
+        );
+        assert!(matches!(
+            fixture.rejected(&exact_alice, &bob),
+            DialogueRuntimeContextError::Rejected { reason, .. }
+                if reason == "dialogue target does not match the checked Character"
+        ));
+    }
+}
