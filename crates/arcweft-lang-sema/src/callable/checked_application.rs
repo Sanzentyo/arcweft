@@ -928,6 +928,32 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
 }
 
 impl FrozenCallTypeSolution {
+    pub(crate) fn close_residual_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        arguments: &crate::types::constraints::ClosedTypeInstantiation,
+        enclosing: Option<&crate::types::constraints::ClosedTypeInstantiation>,
+        control: &mut C,
+    ) -> Result<
+        crate::types::constraints::ClosedTypeInstantiation,
+        crate::types::TypeProjectionError<C::Error>,
+    > {
+        self.solution
+            .close_residual_with_control(arguments, enclosing, control)
+    }
+
+    pub(crate) fn residual_arguments_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        completed: &crate::types::constraints::ClosedTypeInstantiation,
+        enclosing: Option<&crate::types::constraints::ClosedTypeInstantiation>,
+        control: &mut C,
+    ) -> Result<
+        crate::types::constraints::ClosedTypeInstantiation,
+        crate::types::TypeProjectionError<C::Error>,
+    > {
+        self.solution
+            .residual_arguments_with_control(completed, enclosing, control)
+    }
+
     pub(crate) fn close_instantiation_with_control<C: crate::types::TypeProjectionControl>(
         &self,
         enclosing: Option<&crate::types::constraints::ClosedTypeInstantiation>,

@@ -144,6 +144,18 @@ impl ResidualGenericBinder {
         &self.scope
     }
 
+    pub(super) fn type_origins(&self) -> &[GenericTypeReference] {
+        &self.type_origins
+    }
+
+    pub(super) fn const_origins(&self) -> &[GenericConstReference] {
+        &self.const_origins
+    }
+
+    pub(super) fn effect_origins(&self) -> &[GenericEffectReference] {
+        &self.effect_origins
+    }
+
     pub(super) fn contains_type(&self, parameter: &GenericTypeReference) -> bool {
         self.type_origins.binary_search(parameter).is_ok()
     }

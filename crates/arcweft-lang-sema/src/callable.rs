@@ -166,9 +166,9 @@ pub use join::{
     CheckedProjectFunctionParameterMaterialization, CheckedProjectFunctionProjectionFailure,
     CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeInput,
     CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
-    CheckedProjectFunctionRuntimeSelectionError, IntrinsicCallableCandidateTag,
-    select_project_function_root_runtime, select_project_function_runtime,
-    select_project_function_value_runtime,
+    CheckedProjectFunctionRuntimeSelectionError, CheckedProjectFunctionSpecialization,
+    IntrinsicCallableCandidateTag, select_project_function_root_runtime,
+    select_project_function_runtime, select_project_function_value_runtime,
 };
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,

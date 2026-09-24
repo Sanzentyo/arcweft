@@ -32,6 +32,9 @@ use super::{
     ResolvedCallableOrigin, ResolvedCallableState,
 };
 
+mod specialization;
+pub use specialization::CheckedProjectFunctionSpecialization;
+
 /// Failure while joining one final call fact with the current callable
 /// authority.  Every variant is typed evidence failure; no spelling or
 /// source-identity fallback is available.
@@ -196,6 +199,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     instantiation: CallableInstantiationDigest,
     base_instantiation: ResolvedCallableBaseInstantiation,
     solution: Arc<FrozenCallTypeSolution>,
+    input_continuation: Option<Arc<super::CheckedCallContinuation>>,
     function_type: TypeKind,
     callable_type: TypeKind,
     current_group_materialization: Box<[CheckedProjectFunctionParameterMaterialization]>,
@@ -641,6 +645,10 @@ pub enum CheckedProjectFunctionRuntimeSelectionError {
     OpenRootInstantiation,
     #[error("project-function runtime root cannot require an attached-content operand")]
     RootAttachedContent,
+    #[error("function specialization source does not match the checked project continuation")]
+    SpecializationSourceMismatch,
+    #[error("function specialization result does not match the closed project callable")]
+    SpecializationResultMismatch,
 }
 
 impl From<super::CallConstraintInvariant> for CheckedProjectFunctionRuntimeSelectionError {
@@ -847,6 +855,10 @@ pub fn select_project_function_runtime(
         instantiation: join.instantiation(),
         base_instantiation: selected.instantiation().clone(),
         solution,
+        input_continuation: match selected.state() {
+            ResolvedCallableState::Base => None,
+            ResolvedCallableState::Continuation(continuation) => Some(Arc::clone(continuation)),
+        },
         function_type,
         callable_type,
         current_group_materialization,

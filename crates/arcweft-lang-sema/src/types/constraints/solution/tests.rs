@@ -21,7 +21,7 @@ use crate::{
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-enum ProjectionStop {
+pub(super) enum ProjectionStop {
     #[error("stopped at {kind:?} depth {depth}")]
     Node {
         kind: crate::types::TypeProjectionNodeKind,
@@ -31,15 +31,15 @@ enum ProjectionStop {
     Binding,
 }
 
-struct ProjectionRecorder {
+pub(super) struct ProjectionRecorder {
     limit: usize,
-    reject_binding: bool,
+    pub(super) reject_binding: bool,
     nodes: Vec<(crate::types::TypeProjectionNodeKind, u64)>,
     bindings: usize,
 }
 
 impl ProjectionRecorder {
-    fn new(limit: usize) -> Self {
+    pub(super) fn new(limit: usize) -> Self {
         Self {
             limit,
             reject_binding: false,
@@ -79,21 +79,21 @@ impl crate::types::TypeProjectionControl for ProjectionRecorder {
 
 type Context<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
-fn parameter(slot: u16) -> GenericTypeParameterId {
+pub(super) fn parameter(slot: u16) -> GenericTypeParameterId {
     GenericTypeParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(734)),
         slot,
     )
 }
 
-fn constant() -> GenericConstParameterId {
+pub(super) fn constant() -> GenericConstParameterId {
     GenericConstParameterId::new(
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(734)),
         0,
     )
 }
 
-fn scope(recursive: bool, future: bool) -> TypeConstraintParameterScope {
+pub(super) fn scope(recursive: bool, future: bool) -> TypeConstraintParameterScope {
     let mut types = vec![TypeRow::new(parameter(0), TypeRole::Bindable)];
     let mut consts = vec![ConstRow::new(constant(), ConstRole::Bindable)];
     if recursive {
@@ -116,7 +116,10 @@ fn scope(recursive: bool, future: bool) -> TypeConstraintParameterScope {
     .expect("separated namespaces")
 }
 
-fn context<'a>(scope: TypeConstraintParameterScope, cancellation: &'a AtomicBool) -> Context<'a> {
+pub(super) fn context<'a>(
+    scope: TypeConstraintParameterScope,
+    cancellation: &'a AtomicBool,
+) -> Context<'a> {
     Context::with_scope(
         TypeConstraintLimits::new(65_536, 32_768, 1024, 1024),
         cancellation,
@@ -124,7 +127,7 @@ fn context<'a>(scope: TypeConstraintParameterScope, cancellation: &'a AtomicBool
     )
 }
 
-fn complete(
+pub(super) fn complete(
     scope: TypeConstraintParameterScope,
     ty: TypeKind,
     length: ArrayLength,

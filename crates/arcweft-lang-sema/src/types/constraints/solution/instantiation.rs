@@ -24,6 +24,8 @@ use super::{
     TypeConstraintSolution,
 };
 
+mod specialization;
+
 /// Failure to specialize a semantic type in a closed declaration environment.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TypeInstantiationError {
@@ -41,6 +43,10 @@ pub enum TypeInstantiationError {
     UnsatisfiedEffectConstraint,
     #[error("application still owns residual generic quantifiers: {binder:?}")]
     Residual { binder: GenericBinder },
+    #[error("specialization arguments do not belong to the source residual binder")]
+    SpecializationScopeMismatch,
+    #[error("specialization disagrees with the inherited completed application")]
+    SpecializationConflict,
     #[error("unresolved semantic type reached closed instance projection")]
     UnresolvedType,
     #[error("semantic type projection depth overflowed")]

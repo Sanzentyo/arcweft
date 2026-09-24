@@ -638,7 +638,7 @@ fn map_predicate(
     .map_err(TypeProjectionError::into_instantiation)
 }
 
-fn map_predicate_with_control<C: TypeProjectionControl>(
+pub(super) fn map_predicate_with_control<C: TypeProjectionControl>(
     predicate: &EffectPredicate,
     depth: u64,
     control: &mut C,

@@ -193,6 +193,16 @@ impl CheckedFunctionSpecialization {
         self.digest
     }
 
+    pub(crate) fn close_arguments_with_control<C: TypeProjectionControl>(
+        &self,
+        enclosing: Option<&crate::types::constraints::ClosedTypeInstantiation>,
+        control: &mut C,
+    ) -> Result<crate::types::constraints::ClosedTypeInstantiation, TypeProjectionError<C::Error>>
+    {
+        self.solution
+            .close_instantiation_with_control(enclosing, control)
+    }
+
     pub(crate) fn visit_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
