@@ -1,3 +1,5 @@
+#[path = "support/character_dialogue_generation.rs"]
+mod character_dialogue_generation;
 mod character_support;
 
 use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
@@ -148,15 +150,27 @@ fn wrong_base_sidecar_does_not_mutate_active_session_catalog() {
 }
 
 fn step_dialogue_text(owner: &mut WindowedRuntimeOwner) -> Option<String> {
-    let step = owner.session_mut().step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    step.presentation
-        .dialogue
-        .latest_active()
-        .and_then(|(_, entry)| entry.current_stage())
-        .map(|stage| stage.text().to_owned())
+    for tick in 1..=8 {
+        let step = owner.session_mut().step_with_clock(
+            RuntimeClockStep::from_millis(tick, 16).expect("clock"),
+            BundleStepInput::default(),
+        );
+        if let Some(text) = step
+            .presentation
+            .dialogue
+            .latest_active()
+            .and_then(|(_, entry)| entry.current_stage())
+            .map(|stage| stage.text().to_owned())
+        {
+            return Some(text);
+        }
+        assert!(
+            !step.finished,
+            "fixture dialogue finished before a stage appeared: status={}, diagnostics={:?}, events={:?}",
+            step.status_label, step.diagnostics, step.flow_events,
+        );
+    }
+    None
 }
 
 fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {
@@ -213,35 +227,18 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
     .expect("dialogue template");
     let mut builder = RuntimePlanBuilder::new();
     let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
-    let dialogue_target_type = arcweft_dialogue::CharacterDialogueType::exact(
-        arcweft_character::id::CharacterId::try_new("character.fixture")
-            .expect("fixture character ID"),
-    );
-    let dialogue_target_owner = dialogue_target_type.runtime_opaque_owner();
-    let dialogue_target_value = dialogue_target_owner
-        .try_wrap(arcweft_core::value::RuntimeValue::Unit)
-        .expect("fixture CharacterDialogue value wraps");
+    let character = arcweft_character::id::CharacterId::try_new("character.fixture")
+        .expect("fixture character ID");
     builder
         .admit_type_batch(
-            [
-                arcweft_core::plan::RuntimePlanTypeSeed::new(
-                    unit_type,
-                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
-                ),
-                arcweft_core::plan::RuntimePlanTypeSeed::new(
-                    dialogue_target_type.runtime_semantic_identity(),
-                    arcweft_core::plan::RuntimePlanTypeProjection::Opaque {
-                        producer: dialogue_target_owner.producer().clone(),
-                        admission: dialogue_target_owner.admission(),
-                        value_class: dialogue_target_owner.value_class(),
-                        persistence: dialogue_target_owner.persistence(),
-                        arguments: Box::default(),
-                    },
-                ),
-            ],
+            [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                unit_type,
+                arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+            )],
             [],
         )
-        .expect("dialogue target and unit result types admit");
+        .expect("unit result type admits");
+    character_dialogue_generation::admit_generation_types(&mut builder, &character);
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: line.clone(),
@@ -259,7 +256,14 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .expect("dialogue content admits");
     let line_task_group = builder
         .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-            activation_ops: Vec::new(),
+            activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                value: arcweft_core::plan::RuntimeExprSeed::new(
+                    unit_type,
+                    arcweft_core::plan::RuntimeExprSeedKind::Value(
+                        arcweft_core::value::RuntimeValue::Unit,
+                    ),
+                ),
+            }],
             result_type: unit_type,
             handle_sites: Box::default(),
             root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
@@ -280,10 +284,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Dialogue {
-                    target: arcweft_core::plan::RuntimeExprSeed::new(
-                        dialogue_target_type.runtime_semantic_identity(),
-                        arcweft_core::plan::RuntimeExprSeedKind::Value(dialogue_target_value),
-                    ),
+                    target: character_dialogue_generation::factory_expression(&character),
                     content,
                     result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
                         arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
@@ -341,7 +342,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .lower()
         .expect("product AWBC lowers")
         .program;
-    ArcweftBundle::try_new(
+    let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -363,7 +364,12 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
-    .with_character_presentation_catalog(character_support::character_catalog())
+    .with_character_presentation_catalog(character_support::character_catalog());
+    character_dialogue_generation::with_generation(
+        bundle,
+        character,
+        test_dialogue_profile_revision(),
+    )
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

@@ -283,7 +283,7 @@ pub fn build_windowed_live_patch_fixtures() -> WindowedLivePatchFixtures {
         "content_target",
         CONTENT_TARGET_SOURCE_LABEL,
         CONTENT_TARGET_SOURCE,
-        "Windowed smoke: content target",
+        "Windowed smoke: base",
         Some(BLUE_PNG),
         false,
         false,
@@ -469,7 +469,24 @@ pub fn content_only_smoke_report(
     fixtures: &WindowedLivePatchFixtures,
 ) -> Result<SmokeReport, String> {
     let mut harness = WindowedSmokeHarness::from_awfb(&fixtures.base.awfb)?;
-    harness.step_runtime(BundleStepInput::default());
+    for _ in 0..8 {
+        let step = harness.step_runtime(BundleStepInput::default());
+        if step
+            .presentation
+            .dialogue
+            .latest_active()
+            .and_then(|(_, entry)| entry.current_stage())
+            .is_some()
+        {
+            break;
+        }
+        if step.finished {
+            return Err(format!(
+                "content-only fixture dialogue finished before a stage appeared: status={}, diagnostics={:?}, events={:?}",
+                step.status_label, step.diagnostics, step.flow_events,
+            ));
+        }
+    }
     let before = harness.snapshot("content-only-before");
     harness.push_apply_patch(&fixtures.content_patch, PatchEventSource::EmbeddingApi);
     let outcomes = harness.render_then_drain_patch_boundary()?;
@@ -479,7 +496,24 @@ pub fn content_only_smoke_report(
         .session_mut()
         .start_foreground_entry_on_current_generation(BundleEntryStart::session_default())
         .map_err(|error| error.to_string())?;
-    harness.step_runtime(BundleStepInput::default());
+    for _ in 0..8 {
+        let step = harness.step_runtime(BundleStepInput::default());
+        if step
+            .presentation
+            .dialogue
+            .latest_active()
+            .and_then(|(_, entry)| entry.current_stage())
+            .is_some()
+        {
+            break;
+        }
+        if step.finished {
+            return Err(format!(
+                "content-only target dialogue finished before a stage appeared: status={}, diagnostics={:?}, events={:?}",
+                step.status_label, step.diagnostics, step.flow_events,
+            ));
+        }
+    }
     let after_observe = harness.snapshot("content-only-after-new-entry");
 
     Ok(SmokeReport {
@@ -1013,7 +1047,7 @@ fn dialogue_bundle(
     let plan = dialogue_runtime_plan(&line, display_text, changed_main_code, extra_flow);
     let source_map = source_map(source_label, source);
     let dialogue_content = dialogue_content_catalog(line, display_text, &source_map);
-    with_optional_fixture_image(
+    let bundle = with_optional_fixture_image(
         bundle_from_runtime_parts(
             source_label,
             source_map,
@@ -1022,6 +1056,12 @@ fn dialogue_bundle(
             "dialogue",
         ),
         image_bytes,
+    );
+    super::character_dialogue_generation::with_generation(
+        bundle,
+        arcweft_character::id::CharacterId::try_new("character.fixture")
+            .expect("fixture character ID"),
+        test_dialogue_profile_revision(),
     )
 }
 
@@ -1035,29 +1075,10 @@ fn dialogue_runtime_plan(
     let done = FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id");
     let template = fixture_dialogue_template(display_text);
     let mut builder = fixture_plan_builder();
-    let dialogue_target_type = arcweft_dialogue::CharacterDialogueType::exact(
-        arcweft_character::id::CharacterId::try_new("character.fixture")
-            .expect("fixture character ID"),
-    );
-    let dialogue_target_owner = dialogue_target_type.runtime_opaque_owner();
-    let dialogue_target_value = dialogue_target_owner
-        .try_wrap(RuntimeValue::Unit)
-        .expect("fixture CharacterDialogue value wraps");
-    builder
-        .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                dialogue_target_type.runtime_semantic_identity(),
-                RuntimePlanTypeProjection::Opaque {
-                    producer: dialogue_target_owner.producer().clone(),
-                    admission: dialogue_target_owner.admission(),
-                    value_class: dialogue_target_owner.value_class(),
-                    persistence: dialogue_target_owner.persistence(),
-                    arguments: Box::default(),
-                },
-            )],
-            [],
-        )
-        .expect("dialogue target type admits");
+    let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
+    let character = arcweft_character::id::CharacterId::try_new("character.fixture")
+        .expect("fixture character ID");
+    super::character_dialogue_generation::admit_generation_types(&mut builder, &character);
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: line.clone(),
@@ -1075,8 +1096,13 @@ fn dialogue_runtime_plan(
         .expect("dialogue content admits");
     let line_task_group = builder
         .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
-            activation_ops: Vec::new(),
-            result_type: arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+            activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                value: RuntimeExprSeed::new(
+                    unit_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                ),
+            }],
+            result_type: unit_type,
             handle_sites: Box::default(),
             root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
             cancel_rules: Box::default(),
@@ -1095,10 +1121,7 @@ fn dialogue_runtime_plan(
         dialogue_main_ops(
             content,
             changed_main_code,
-            RuntimeExprSeed::new(
-                dialogue_target_type.runtime_semantic_identity(),
-                RuntimeExprSeedKind::Value(dialogue_target_value),
-            ),
+            super::character_dialogue_generation::factory_expression(&character),
         ),
     );
     push_fixture_flow(

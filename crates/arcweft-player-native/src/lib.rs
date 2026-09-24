@@ -14,6 +14,10 @@ pub mod windowed_patch;
 mod windowed_player_ingress;
 mod windowed_runtime;
 
+#[cfg(test)]
+#[path = "../tests/support/character_dialogue_generation.rs"]
+mod character_dialogue_generation_test_support;
+
 #[cfg(feature = "dev-capture")]
 pub use dev_capture::{
     NativePlayerCaptureContentBBox, NativePlayerCaptureError, NativePlayerCaptureRequest,

@@ -68,7 +68,7 @@ fn content_only_patch_refreshes_catalog_and_preserves_window_renderer_input_cloc
             .after_observe
             .as_ref()
             .and_then(|snapshot| snapshot.runtime.presentation_text.as_deref()),
-        Some("Windowed smoke: content target")
+        Some("Windowed smoke: base")
     );
 }
 
