@@ -39,7 +39,6 @@ impl RuntimeResolvedValue {
             Self::Local(_)
             | Self::ProjectItem(_)
             | Self::DialogueLine(_)
-            | Self::CharacterLook { .. }
             | Self::Intrinsic(_)
             | Self::Registered(_)
             | Self::Constant(_) => {}
@@ -106,6 +105,7 @@ impl RuntimeResolvedStaticCallTarget {
             | Self::AgentProbeComparison(_)
             | Self::AgentDiagnosticsHasError
             | Self::Reduction(_)
+            | Self::CharacterDialogue(_)
             | Self::StandardMap(_)
             | Self::TraitMethod { .. }
             | Self::Line(_)

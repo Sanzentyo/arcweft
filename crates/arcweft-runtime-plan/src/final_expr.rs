@@ -43,6 +43,9 @@ use crate::semantic_facts::{
     RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
     RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
+use arcweft_interaction_model::dialogue::{
+    CharacterDialoguePatchField, CharacterDialoguePatchOperation,
+};
 
 pub(crate) struct FinalExprLowerer<'hir> {
     module: &'hir HirModule,
@@ -453,14 +456,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.lower_unit_variant(id)?
             }
             HirExprKind::Path(_) => self.lower_path(id)?,
-            HirExprKind::ShortVariant(_)
-                if matches!(
-                    self.value(id),
-                    Some(RuntimeResolvedValue::CharacterLook { .. })
-                ) =>
-            {
-                RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
-            }
             HirExprKind::ShortVariant(_) => self.lower_unit_variant(id)?,
             HirExprKind::Tuple(tuple) => RuntimeExprSeedKind::Tuple(
                 tuple
@@ -1418,6 +1413,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Ok(RuntimeExprSeedKind::Local(self.local(*local)?))
             }
             RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
+            RuntimeResolvedValue::ProjectItem(item) => Ok(RuntimeExprSeedKind::EntityRef(
+                project_entity_reference(item),
+            )),
             RuntimeResolvedValue::ProjectCallable { instance, .. } => {
                 let state = self.project_callable_states.and_then(|states| states.get(instance)).and_then(|states| states.first()).cloned()
                     .ok_or_else(|| format!("project declaration value {id:?} has no admitted initial callable state"))?;
@@ -1427,9 +1425,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 })
             }
             RuntimeResolvedValue::Intrinsic(_)
-            | RuntimeResolvedValue::ProjectItem(_)
             | RuntimeResolvedValue::DialogueLine(_)
-            | RuntimeResolvedValue::CharacterLook { .. }
             | RuntimeResolvedValue::Registered(_) => Err(format!(
                 "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
             )),
@@ -1548,6 +1544,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError,
             )
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(_))
+            | RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::CharacterDialogue(_),
+            )
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_)) => {
                 unreachable!("specialized dispatch was handled by source-row ANF")
             }
@@ -1681,6 +1680,41 @@ impl<'hir> FinalExprLowerer<'hir> {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let body = match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
+            ) => {
+                let value = |index: u32| {
+                    usize::try_from(index)
+                        .ok()
+                        .and_then(|index| local_values.get(index))
+                        .map(|(value, _)| value.clone())
+                        .ok_or_else(|| {
+                            format!("CharacterDialogue call {id:?} lost source operand {index}")
+                        })
+                };
+                let fields = dialogue
+                    .fields()
+                    .iter()
+                    .map(|field| {
+                        Ok(CharacterDialoguePatchField {
+                            coordinate: field.coordinate.clone(),
+                            operation: match field.operation {
+                                CharacterDialoguePatchOperation::Set(index) => {
+                                    CharacterDialoguePatchOperation::Set(value(index)?)
+                                }
+                                CharacterDialoguePatchOperation::Clear => {
+                                    CharacterDialoguePatchOperation::Clear
+                                }
+                            },
+                        })
+                    })
+                    .collect::<Result<Box<[_]>, String>>()?;
+                RuntimeExprSeedKind::CharacterDialogue {
+                    operation: dialogue.operation(),
+                    target: Box::new(value(dialogue.target())?),
+                    fields,
+                }
+            }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(
                 intrinsic,
             )) => self.lower_agent_intrinsic(id, *intrinsic, &local_values, selected)?,
@@ -2398,12 +2432,6 @@ impl<'hir> FinalExprLowerer<'hir> {
             Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(
                 arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
             ),
-            Some(RuntimeResolvedValue::CharacterLook { character, look }) => {
-                Ok(arcweft_core::value::RuntimeEntityReference::CharacterLook {
-                    character: character.clone(),
-                    look: look.clone(),
-                })
-            }
             _ => Err(format!(
                 "Agent semantic identity at {id:?} is not an exact accepted entity"
             )),

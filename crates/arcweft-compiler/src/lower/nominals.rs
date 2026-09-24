@@ -73,7 +73,7 @@ pub(super) fn accepted_type(
     }
 }
 
-pub(super) fn environment_enum_type(
+pub(super) fn closed_variant_type(
     ty: &TypeKind,
     identity: RuntimeSemanticTypeId,
     world: &RegisteredSemanticWorld,
@@ -85,48 +85,49 @@ pub(super) fn environment_enum_type(
         .filter(|owner| owner.ty() == *ty)
         .ok_or_else(|| RuntimeSemanticProjectionError::Type {
             reason: format!(
-                "closed environment enum `{}` has no exact accepted variant owner",
+                "closed variant `{}` has no exact accepted variant owner",
                 ty.source_label()
             ),
         })?;
-    let arcweft_lang_sema::final_analysis::CheckedVariantOwnerKind::BuiltinClosed {
-        nominal: owner_id,
-        ..
-    } = owner.kind()
-    else {
-        return Err(RuntimeSemanticProjectionError::Type {
-            reason: format!(
-                "closed environment enum `{}` is not owned by a closed environment binding",
-                ty.source_label()
-            ),
-        });
+    let runtime_nominal = match owner.kind() {
+        CheckedVariantOwnerKind::BuiltinClosed { nominal, .. } => {
+            RuntimeNominalTypeId::try_new(nominal.as_str().to_owned()).map_err(|source| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: format!("checked environment enum identity is invalid: {source}"),
+                }
+            })?
+        }
+        CheckedVariantOwnerKind::CharacterNominal { .. } => {
+            RuntimeNominalTypeId::from_checked_digest(*semantic_type.as_bytes())
+        }
+        _ => {
+            return Err(RuntimeSemanticProjectionError::Type {
+                reason: format!(
+                    "closed variant `{}` has no accepted environment or Character owner",
+                    ty.source_label()
+                ),
+            });
+        }
     };
     let source_graph = analysis
         .project_runtime_nominal_graph(world, ty, Default::default())
         .map_err(
             |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
-                nominal: owner_id.as_str().to_owned(),
+                nominal: runtime_nominal.as_str().to_owned(),
                 source: NominalSchemaProjectionError::SourceGraph(Box::new(source)),
             },
         )?;
     let layout = source_graph.try_layout_hash(identity).map_err(|source| {
         RuntimeSemanticProjectionError::NominalSchemaProjection {
-            nominal: owner_id.as_str().to_owned(),
+            nominal: runtime_nominal.as_str().to_owned(),
             source: NominalSchemaProjectionError::InvalidRuntimeSchema {
-                nominal: owner_id.as_str().to_owned(),
+                nominal: runtime_nominal.as_str().to_owned(),
                 reason: source.to_string(),
             },
         }
     })?;
-    let runtime_nominal =
-        RuntimeNominalTypeId::try_new(owner_id.as_str().to_owned()).map_err(|source| {
-            RuntimeSemanticProjectionError::Type {
-                reason: format!("checked environment enum identity is invalid: {source}"),
-            }
-        })?;
     Ok(RuntimeTypeShape::Nominal {
-        nominal: RuntimeResolvedNominal::builtin_closed(
-            owner_id.clone(),
+        nominal: RuntimeResolvedNominal::closed_variant(
             owner.clone(),
             runtime_nominal,
             identity,
@@ -246,11 +247,11 @@ pub(super) fn definition(
         }.into());
     };
     match nominal.source() {
-        RuntimeResolvedNominalSource::BuiltinClosed { proof, .. } => {
+        RuntimeResolvedNominalSource::ClosedVariant { proof } => {
             let semantic_type = SemanticTypeDigest::from_bytes(*ty.identity().as_bytes());
             if proof.semantic_type() != semantic_type {
                 return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "accepted closed-enum proof changed after nominal projection"
+                    reason: "accepted closed-variant proof changed after nominal projection"
                         .to_owned(),
                 });
             }

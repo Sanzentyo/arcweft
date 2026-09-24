@@ -470,18 +470,17 @@ impl FinalAnalysisExecutionProjection<'_> {
                             super::CheckedValueResolution::Local(_)
                                 | super::CheckedValueResolution::Registered(_)
                                 | super::CheckedValueResolution::Constant(_)
-                        ) || matches!(
-                            (value, hir.kind()),
-                            (
-                                super::CheckedValueResolution::ProjectItem(_),
-                                arcweft_lang_hir::expr::HirExprKind::EntityReference(_)
-                            )
-                        ) =>
+                        ) || (matches!(
+                            value,
+                            super::CheckedValueResolution::ProjectItem(_)
+                        ) && matches!(
+                            expression.value_type(),
+                            Some(TypeKind::Ref(_))
+                        )) =>
                     {
                         CheckedExecutableRuntimeExpressionFactFamily::Value
                     }
-                    CheckedExpressionResolution::DialogueLineReference(_)
-                    | CheckedExpressionResolution::StageLook(_) => {
+                    CheckedExpressionResolution::DialogueLineReference(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Value
                     }
                     CheckedExpressionResolution::Value(
@@ -501,7 +500,8 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::Nominal(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::NominalRecord
                     }
-                    CheckedExpressionResolution::Variant(_) => {
+                    CheckedExpressionResolution::Variant(_)
+                    | CheckedExpressionResolution::StageLook(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Variant
                     }
                     CheckedExpressionResolution::Await(_) => {

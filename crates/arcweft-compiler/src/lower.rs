@@ -6,6 +6,7 @@
 //! or consults the removed `TypeCheckReport` sidecar.
 
 mod callable_values;
+mod character_dialogue;
 mod closure_instances;
 #[cfg(test)]
 #[path = "lower/environment_record_pattern_tests.rs"]
@@ -839,36 +840,11 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedExpressionResolution::Value(value) => {
-                let project_item_is_runtime_entity =
-                    if matches!(value, CheckedValueResolution::ProjectItem(_)) {
-                        let module = project
-                            .modules()
-                            .find_map(|(_, module)| {
-                                (module.module_id() == owner.module()).then_some(module.as_ref())
-                            })
-                            .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
-                        matches!(
-                            module
-                                .resolve_expr(owner)
-                                .map_err(|error| RuntimeSemanticProjectionError::Value {
-                                    owner,
-                                    reason: error.to_string(),
-                                })?
-                                .kind(),
-                            HirExprKind::EntityReference(_)
-                        )
-                    } else {
-                        false
-                    };
                 let projected = if let Some(value) = runtime_callable_values.get(&owner) {
                     Some(value.clone())
                 } else {
-                    runtime_value_resolution(
-                        value,
-                        checked_expression_type(expression, owner)?,
-                        project_item_is_runtime_entity,
-                    )
-                    .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
+                    runtime_value_resolution(value, checked_expression_type(expression, owner)?)
+                        .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
                 };
                 if let Some(value) = projected {
                     input.push_value(owner, value);
@@ -1006,12 +982,9 @@ fn project_runtime_semantic_fact_inventories(
                 input.push_value(owner, RuntimeResolvedValue::DialogueLine(line));
             }
             CheckedExpressionResolution::StageLook(look) => {
-                input.push_value(
+                input.push_expression_variant(
                     owner,
-                    RuntimeResolvedValue::CharacterLook {
-                        character: look.character().clone(),
-                        look: look.look_id().clone(),
-                    },
+                    variants::runtime_stage_look(look, symbols, world, analysis)?,
                 );
             }
             CheckedExpressionResolution::ImplicitParameter { .. }
@@ -4128,11 +4101,13 @@ fn runtime_type_at(
         TypeKind::DataValue
         | TypeKind::DataErrorKind
         | TypeKind::DataPathSegment
-        | TypeKind::DataMapKind => nominals::environment_enum_type(ty, identity, world, analysis)?,
+        | TypeKind::DataMapKind => nominals::closed_variant_type(ty, identity, world, analysis)?,
         TypeKind::DataError | TypeKind::DataPath => {
             nominals::environment_record_type(ty, identity, world, analysis)?
         }
-        TypeKind::DataFormat => nominals::environment_enum_type(ty, identity, world, analysis)?,
+        TypeKind::DataFormat | TypeKind::CharacterNominal(_) => {
+            nominals::closed_variant_type(ty, identity, world, analysis)?
+        }
         TypeKind::DataShape(value) => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataShape(
             nested_at(value, RuntimeTypeProjectionStep::AgentDataShapeValue)?,
         )),
@@ -4444,6 +4419,13 @@ fn runtime_type_at(
                 arguments: Box::new([]),
             }
         }
+        TypeKind::Named(_)
+            if analysis
+                .accepted_closed_variant_owner(semantic_identity)
+                .is_some() =>
+        {
+            nominals::closed_variant_type(ty, identity, world, analysis)?
+        }
         TypeKind::Named(type_label) => {
             let carrier = world
                 .environment()
@@ -4477,8 +4459,7 @@ fn runtime_type_at(
         | TypeKind::Projection { .. }
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
-        | TypeKind::ViewValue
-        | TypeKind::CharacterNominal(_) => {
+        | TypeKind::ViewValue => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
                     "checked type `{}` has no closed runtime representation",
@@ -4632,19 +4613,17 @@ fn runtime_decimal(decimal: &HirDecimal, ty: &TypeKind) -> Result<RuntimeValue, 
 fn runtime_value_resolution(
     value: &CheckedValueResolution,
     ty: &TypeKind,
-    project_item_is_runtime_entity: bool,
 ) -> Result<Option<RuntimeResolvedValue>, String> {
     Ok(Some(match value {
         CheckedValueResolution::Local(local) => RuntimeResolvedValue::Local(*local),
-        CheckedValueResolution::ProjectItem(item) if project_item_is_runtime_entity => {
+        CheckedValueResolution::ProjectItem(item) if matches!(ty, TypeKind::Ref(_)) => {
             RuntimeResolvedValue::ProjectItem(
                 runtime_project_item(item).map_err(|error| error.to_string())?,
             )
         }
-        // A retained item selected through a Path is semantic input owned by
-        // its enclosing typed construct (for example Dialogue application),
-        // not a standalone runtime scalar. The parent checked fact carries
-        // the exact retained owner into runtime-plan lowering.
+        // A checked Ref is an entity value whether selected through an alias,
+        // a path or explicit reference syntax. Other retained items remain
+        // semantic inputs of their enclosing construct.
         // The selected call fact, not a callee path expression, owns the
         // generation-bound checked callable digest. A bare callable reference
         // needs a typed function-value identity before it can be executable.
@@ -5374,6 +5353,16 @@ fn runtime_call(
             reason: format!("runtime call has no exact checked callable join: {error}"),
         }
     })?;
+    if let Some(dialogue) = character_dialogue::runtime_character_dialogue_call(
+        owner,
+        application,
+        symbols,
+        world,
+        analysis,
+        enclosing,
+    )? {
+        return Ok(dialogue);
+    }
     let project_function_selection =
         select_project_function_runtime(application, callable_join, analysis.checked_callables())
             .map_err(|error| RuntimeSemanticProjectionError::Call {
@@ -6480,19 +6469,6 @@ fn runtime_project_function_instance_semantic_facts(
                             ));
                             continue;
                         }
-                        CheckedExpressionResolution::StageLook(look) => {
-                            expressions.push(RuntimeProjectFunctionExpressionSemanticFact::new(
-                                owner,
-                                expected.children().into(),
-                                RuntimeProjectFunctionExpressionPayload::Value(
-                                    RuntimeResolvedValue::CharacterLook {
-                                        character: look.character().clone(),
-                                        look: look.look_id().clone(),
-                                    },
-                                ),
-                            ));
-                            continue;
-                        }
                         _ => {
                             return Err(error(
                                 owner,
@@ -6501,7 +6477,6 @@ fn runtime_project_function_instance_semantic_facts(
                         }
                     }
                 };
-                let is_entity = matches!(hir.kind(), HirExprKind::EntityReference(_));
                 let value = if let CheckedValueResolution::ProjectCallable(declaration) = value {
                     callable_values::resolve(
                         owner,
@@ -6512,7 +6487,7 @@ fn runtime_project_function_instance_semantic_facts(
                         instances,
                     )?
                 } else {
-                    runtime_value_resolution(value, &lexical.instantiate_type(ty)?, is_entity)
+                    runtime_value_resolution(value, &lexical.instantiate_type(ty)?)
                         .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
                         .ok_or_else(|| {
                             error(owner, "instance value has no runtime scalar projection")
@@ -6587,19 +6562,21 @@ fn runtime_project_function_instance_semantic_facts(
                 )
             }
             CheckedExecutableRuntimeExpressionFactFamily::Variant => {
-                let CheckedExpressionResolution::Variant(variant) = checked.resolution() else {
-                    return Err(error(
-                        owner,
-                        "instance variant family disagrees with checked expression",
-                    ));
+                let variant = match checked.resolution() {
+                    CheckedExpressionResolution::Variant(variant) => {
+                        runtime_variant_under(variant, symbols, world, analysis, lexical.types())?
+                    }
+                    CheckedExpressionResolution::StageLook(look) => {
+                        variants::runtime_stage_look(look, symbols, world, analysis)?
+                    }
+                    _ => {
+                        return Err(error(
+                            owner,
+                            "instance variant family disagrees with checked expression",
+                        ));
+                    }
                 };
-                RuntimeProjectFunctionExpressionPayload::Variant(runtime_variant_under(
-                    variant,
-                    symbols,
-                    world,
-                    analysis,
-                    lexical.types(),
-                )?)
+                RuntimeProjectFunctionExpressionPayload::Variant(variant)
             }
             CheckedExecutableRuntimeExpressionFactFamily::Call => {
                 let facts = analysis.call(owner).ok_or_else(|| {

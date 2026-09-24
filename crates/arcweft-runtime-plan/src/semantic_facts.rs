@@ -75,13 +75,14 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
 };
-use arcweft_lang_sema::env::identity::EnvironmentBindingId;
 use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
 use crate::assertion_identity::RuntimeAssertionMode;
 
+mod character_dialogue;
 mod content;
+pub use character_dialogue::RuntimeCharacterDialogueCall;
 mod evaluated_effect;
 mod flow;
 mod lexical_scope;
@@ -1344,8 +1345,7 @@ pub enum RuntimeResolvedNominalSource {
         declaration: ProjectNominalDeclarationId,
         owner: ItemId,
     },
-    BuiltinClosed {
-        owner: EnvironmentBindingId,
+    ClosedVariant {
         proof: arcweft_lang_sema::final_analysis::CheckedVariantOwner,
     },
     BuiltinRecord {
@@ -1394,8 +1394,7 @@ impl RuntimeResolvedNominal {
         }
     }
 
-    pub fn builtin_closed(
-        owner: EnvironmentBindingId,
+    pub fn closed_variant(
         proof: arcweft_lang_sema::final_analysis::CheckedVariantOwner,
         runtime_nominal: RuntimeNominalTypeId,
         identity: RuntimeSemanticTypeId,
@@ -1403,7 +1402,7 @@ impl RuntimeResolvedNominal {
         source_graph: Arc<RuntimeNominalSchemaGraph>,
     ) -> Self {
         Self {
-            source: RuntimeResolvedNominalSource::BuiltinClosed { owner, proof },
+            source: RuntimeResolvedNominalSource::ClosedVariant { proof },
             runtime_nominal,
             identity,
             layout,
@@ -1434,7 +1433,7 @@ impl RuntimeResolvedNominal {
     fn valid_for_project(&self, project: HirAnalysisProjectView<'_>) -> bool {
         match &self.source {
             RuntimeResolvedNominalSource::Project { .. } => true,
-            RuntimeResolvedNominalSource::BuiltinClosed { .. } => true,
+            RuntimeResolvedNominalSource::ClosedVariant { .. } => true,
             RuntimeResolvedNominalSource::BuiltinRecord { .. } => true,
             RuntimeResolvedNominalSource::AcceptedRust(projection) => {
                 projection.validate_project(project).is_ok()
@@ -2375,10 +2374,6 @@ pub enum RuntimeResolvedValue {
     /// Checked one-way lowering of a durable `say.*` identity into the
     /// path-only runtime line domain.
     DialogueLine(RuntimeLineId),
-    CharacterLook {
-        character: arcweft_character::id::CharacterId,
-        look: arcweft_character::id::CharacterLookId,
-    },
     Intrinsic(RuntimeIntrinsic),
     Registered(RuntimeRegisteredValueId),
     Constant(RuntimeValue),
@@ -3073,6 +3068,8 @@ impl RuntimeResolvedVariant {
 /// Typed failure while consuming one ABI-positioned runtime call operand list.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeResolvedCallError {
+    #[error("CharacterDialogue operation does not consume its complete source-ordered operand row")]
+    CharacterDialogueSourceRow,
     #[error("runtime call ABI position {position} is outside operand count {operand_count}")]
     AbiPositionOutOfRange { position: u32, operand_count: u32 },
     #[error("runtime call repeats ABI position {position}")]
@@ -3268,6 +3265,22 @@ impl RuntimeResolvedCall {
                 );
             }
         }
+        if let RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
+        ) = &dispatch
+        {
+            if positioned_attached_content.is_some()
+                || project_function.is_some()
+                || !dialogue.accepts_source_row(&operands, result)
+            {
+                return Err(RuntimeResolvedCallError::CharacterDialogueSourceRow);
+            }
+        } else if operands
+            .iter()
+            .any(|operand| matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Callee))
+        {
+            return Err(RuntimeResolvedCallError::CharacterDialogueSourceRow);
+        }
         let direct_project_callable = dispatch.project_callable();
         let project_function_matches = match (&dispatch, &project_function) {
             (
@@ -3460,6 +3473,7 @@ impl RuntimeResolvedCall {
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
+                    | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
             )
         )
     }
@@ -3512,6 +3526,7 @@ impl RuntimeResolvedCallDispatch {
                 | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                 | RuntimeResolvedStaticCallTarget::Variant(_)
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
+                | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -3560,6 +3575,8 @@ pub enum RuntimeResolvedStaticCallTarget {
     Variant(RuntimeResolvedVariant),
     /// Core-owned `Reduction` value construction selected by semantic identity.
     Reduction(RuntimeReductionConstructor),
+    /// Exact immutable dialogue producer operation, consumed through source-row ANF.
+    CharacterDialogue(RuntimeCharacterDialogueCall),
     /// One checked standard `map` overload with exact callback and receiver
     /// expression coordinates. The ordinary callable identity is retained by
     /// semantic analysis; this projection selects its closed executable
@@ -3749,8 +3766,13 @@ pub enum RuntimeReductionConstructor {
 /// ABI operand origin retained by the final runtime carrier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeResolvedCallOperandOrigin {
+    /// Evaluated value callee of a closed structural producer operation.
+    Callee,
     Receiver,
-    Argument { argument: u32, slot: u32 },
+    Argument {
+        argument: u32,
+        slot: u32,
+    },
 }
 
 /// Exact checked callable-schema destination of one scalar runtime operand.
@@ -5727,11 +5749,21 @@ impl RuntimePlanSemanticFacts {
                 },
             )?;
             validate_resolved_value(&modules, runtime_owners, value)?;
-            match (resolve_expr(&modules, *expression)?, value) {
-                (
-                    HirExprKind::Path(_),
-                    RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
+            if matches!(value, RuntimeResolvedValue::ProjectItem(_))
+                && !matches!(
+                    expression_types
+                        .get(expression)
+                        .map(RuntimeNormalizedType::shape),
+                    Some(RuntimeTypeShape::EntityReference)
                 )
+            {
+                return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                    expression: *expression,
+                    expected: RuntimeSemanticFactFamily::Value,
+                });
+            }
+            match (resolve_expr(&modules, *expression)?, value) {
+                (HirExprKind::Path(_), RuntimeResolvedValue::DialogueLine(_))
                 | (
                     HirExprKind::EntityReference(_),
                     RuntimeResolvedValue::Local(_)
@@ -5750,7 +5782,6 @@ impl RuntimePlanSemanticFacts {
                     RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
                 )
                 | (HirExprKind::Path(_), _) => {}
-                (HirExprKind::ShortVariant(_), RuntimeResolvedValue::CharacterLook { .. }) => {}
                 _ => unreachable!("value fact family was checked immediately above"),
             }
         }
@@ -5954,6 +5985,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
                     | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                    | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
                     | RuntimeResolvedStaticCallTarget::Host(_),
@@ -8220,7 +8252,6 @@ fn validate_resolved_value(
         }
         RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
         RuntimeResolvedValue::DialogueLine(_)
-        | RuntimeResolvedValue::CharacterLook { .. }
         | RuntimeResolvedValue::Intrinsic(_)
         | RuntimeResolvedValue::Registered(_)
         | RuntimeResolvedValue::Constant(_) => Ok(()),
@@ -8731,6 +8762,17 @@ fn validate_call(
             validate_variant(modules, variant)?;
         }
         RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::CharacterDialogue(dialogue),
+        ) => {
+            if !dialogue.accepts_source_row(call.operands(), call.result())
+                || !dialogue.accepts_types(call.operands(), expression_types.get(&expression))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
+        RuntimeResolvedCallDispatch::Static(
             RuntimeResolvedStaticCallTarget::Agent(_)
             | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
             | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
@@ -8773,6 +8815,31 @@ fn validate_call(
             return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
         }
         match operand.origin() {
+            RuntimeResolvedCallOperandOrigin::Callee => {
+                let RuntimeResolvedCallOperandSource::Expression(source) = operand.source() else {
+                    return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                        expression,
+                    });
+                };
+                if hir_call.callee().value_expression() != Some(source)
+                    || !matches!(
+                        operand.binding(),
+                        RuntimeResolvedCallOperandBinding::Positional
+                    )
+                    || operand.parameter().is_some()
+                    || expression_types.get(&source) != Some(operand.ty())
+                    || !matches!(
+                        call.dispatch(),
+                        RuntimeResolvedCallDispatch::Static(
+                            RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
+                        )
+                    )
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                        expression,
+                    });
+                }
+            }
             RuntimeResolvedCallOperandOrigin::Receiver => {
                 let RuntimeResolvedCallOperandSource::Expression(source) = operand.source() else {
                     return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -9504,6 +9571,7 @@ fn validate_project_function_instance(
                 | RuntimeResolvedStaticCallTarget::Variant(_)
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                | RuntimeResolvedStaticCallTarget::CharacterDialogue(_)
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Host(_),

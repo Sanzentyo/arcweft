@@ -1,4 +1,6 @@
 use super::RuntimeFlowFact;
+#[path = "tests/character_dialogue.rs"]
+mod character_dialogue;
 #[path = "tests/scope_continuations.rs"]
 mod scope_continuations;
 use std::{collections::BTreeMap, sync::Arc};

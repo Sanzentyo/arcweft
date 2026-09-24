@@ -1,5 +1,54 @@
 use super::*;
 
+/// Projects the already selected manifest look through its accepted enum owner.
+/// The manifest-owned id selects the source ordinal; diagnostic spelling is not
+/// used to resolve a Character or reconstruct the enum identity.
+pub(super) fn runtime_stage_look(
+    look: &arcweft_lang_sema::final_analysis::CheckedStageLook,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeResolvedVariant, RuntimeSemanticProjectionError> {
+    let invalid = || RuntimeSemanticProjectionError::Type {
+        reason: "checked Character look no longer matches its accepted variant owner".to_owned(),
+    };
+    let owner = analysis
+        .accepted_closed_variant_owner(look.character_nominal())
+        .filter(|owner| owner.ty() == TypeKind::character_look(look.character().clone()))
+        .ok_or_else(invalid)?;
+    let manifest = world
+        .environment()
+        .character_manifest(look.character())
+        .ok_or_else(invalid)?;
+    let ordinal = manifest
+        .looks()
+        .iter()
+        .position(|candidate| candidate.id() == look.look_id())
+        .and_then(|ordinal| u32::try_from(ordinal).ok())
+        .ok_or_else(invalid)?;
+    let selected = owner.case(ordinal).ok_or_else(invalid)?;
+    if selected.diagnostic_name() != Some(look.look_id().as_str()) {
+        return Err(invalid());
+    }
+    let identity = RuntimeSemanticTypeId::from_bytes(*look.character_nominal().as_bytes());
+    RuntimeResolvedVariant::character(
+        identity,
+        RuntimeNominalTypeId::from_checked_digest(*identity.as_bytes()),
+        analysis
+            .project_runtime_nominal_graph(world, &owner.ty(), Default::default())
+            .map_err(
+                |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
+                    nominal: owner.ty().source_label(),
+                    source: NominalSchemaProjectionError::SourceGraph(Box::new(source)),
+                },
+            )?,
+        runtime_checked_variant_cases_under(owner, symbols, world, analysis, None)?,
+        ordinal,
+        look.look_id().as_str(),
+    )
+    .map_err(|error| runtime_variant_projection_error(&error))
+}
+
 pub(super) fn runtime_variant(
     variant: &CheckedVariantResolution,
     symbols: &ProjectSymbolTable,
