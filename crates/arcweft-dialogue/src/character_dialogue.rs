@@ -27,10 +27,11 @@ use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
 pub use external_call_backend::CharacterDialogueRuntimeExternalCallBackend;
 pub use generation::{
-    CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationDeclaration,
-    CharacterDialogueGenerationDeclarationCodecError, CharacterDialogueGenerationDeclarationError,
-    CharacterDialoguePresentationContract, CharacterDialogueTypeReference,
-    CharacterDialogueTypeReferenceMapError, CharacterDialogueVisualType,
+    CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationBindingError,
+    CharacterDialogueGenerationDeclaration, CharacterDialogueGenerationDeclarationCodecError,
+    CharacterDialogueGenerationDeclarationError, CharacterDialoguePresentationContract,
+    CharacterDialogueTypeReference, CharacterDialogueTypeReferenceMapError,
+    CharacterDialogueVisualType,
 };
 pub use identity::{
     CharacterDialogueContractIdentity, CharacterDialogueVisualManifestEvidence,

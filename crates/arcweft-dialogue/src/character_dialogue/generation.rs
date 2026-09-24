@@ -1,7 +1,9 @@
 //! Compiler-neutral, generation-owned CharacterDialogue declaration.
 
+mod binding;
 mod codec;
 
+pub use binding::CharacterDialogueGenerationBindingError;
 pub use codec::CharacterDialogueGenerationDeclarationCodecError;
 
 use super::{

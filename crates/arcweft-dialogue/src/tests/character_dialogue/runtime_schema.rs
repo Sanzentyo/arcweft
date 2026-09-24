@@ -1,11 +1,13 @@
 use super::*;
 use crate::{
-    CharacterDialogueConfig, CharacterDialogueRolePayloadCodec,
+    CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
+    CharacterDialogueGenerationBindingError, CharacterDialogueGenerationDeclaration,
+    CharacterDialogueGenerationDeclarationError, CharacterDialogueRolePayloadCodec,
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeDefault,
-    CharacterDialogueRuntimeDefaultCatalog, CharacterDialogueRuntimeExternalCallBackend,
-    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
-    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
-    CharacterDialogueRuntimeSchema, CharacterDialogueType,
+    CharacterDialogueRuntimeExternalCallBackend, CharacterDialogueRuntimeRole as Role,
+    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
+    CharacterDialogueVisualType,
 };
 use arcweft_character::catalog::CharacterVisualManifestEvidence;
 use arcweft_core::{
@@ -45,6 +47,8 @@ use arcweft_interaction_model::dialogue::{
 };
 use arcweft_view::{ViewId, ViewStyleSheetId};
 use std::{collections::BTreeSet, sync::Arc};
+
+mod binding;
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
@@ -484,12 +488,50 @@ impl Types {
             RuntimeProgramOwner::Awbc(Arc::new(self.awbc.clone())),
         ]
     }
-    fn default_catalog() -> CharacterDialogueRuntimeDefaultCatalog {
-        CharacterDialogueRuntimeDefaultCatalog::try_new([CharacterDialogueRuntimeDefault::new(
-            sample_manifest().character().clone(),
-            Self::default_config(),
-        )])
-        .unwrap()
+    fn try_declaration(
+        &self,
+        characters: &CharacterCatalog,
+        views: &ViewRegistry,
+        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
+    ) -> Result<CharacterDialogueGenerationDeclaration, CharacterDialogueGenerationDeclarationError>
+    {
+        let character = sample_manifest().character().clone();
+        let visual = characters.visual_manifest(&character).map_or(
+            CharacterDialogueVisualType::Absent,
+            |manifest| CharacterDialogueVisualType::Present {
+                manifest: RuntimeValueDigest::from_bytes(
+                    *manifest.semantic_fingerprint_v1().as_bytes(),
+                ),
+                look_type: look_source_type(),
+            },
+        );
+        CharacterDialogueGenerationDeclaration::try_new(
+            [(
+                character.clone(),
+                CharacterDialogueCharacterDeclaration::new(
+                    self.character_type,
+                    visual,
+                    CharacterDialogueRuntimeDefault::new(character, Self::default_config()),
+                ),
+            )],
+            self.any_type,
+            voice_source_type(),
+            self.roles.clone(),
+            custom.clone(),
+            super::generation::presentation_contract(
+                views,
+                crate::DialoguePresentationProfile::engine_default(),
+                None,
+            ),
+        )
+    }
+    fn declaration(
+        &self,
+        characters: &CharacterCatalog,
+        views: &ViewRegistry,
+        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
+    ) -> CharacterDialogueGenerationDeclaration {
+        self.try_declaration(characters, views, custom).unwrap()
     }
     fn try_schema(
         &self,
@@ -497,37 +539,11 @@ impl Types {
         views: &ViewRegistry,
         custom: &CharacterDialogueRuntimeCustomFieldCatalog,
         owner: RuntimeProgramOwner,
-    ) -> Result<CharacterDialogueRuntimeSchema, CharacterDialogueValueError> {
-        let authority = self.look_authority(characters, owner.clone());
-        self.try_schema_with_authority(views, custom, voice_source_type(), authority, owner)
-    }
-
-    fn look_authority(
-        &self,
-        characters: &CharacterCatalog,
-        owner: RuntimeProgramOwner,
-    ) -> Arc<RuntimeCharacterLookSourceAuthority> {
-        Arc::new(
-            RuntimeCharacterLookSourceAuthority::try_new(owner, Arc::new(characters.clone()))
-                .unwrap(),
-        )
-    }
-
-    fn try_schema_with_authority(
-        &self,
-        views: &ViewRegistry,
-        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
-        voice_type: RuntimeSemanticTypeId,
-        look_authority: Arc<RuntimeCharacterLookSourceAuthority>,
-        owner: RuntimeProgramOwner,
-    ) -> Result<CharacterDialogueRuntimeSchema, CharacterDialogueValueError> {
-        CharacterDialogueRuntimeSchema::try_new(
+    ) -> Result<CharacterDialogueRuntimeSchema, CharacterDialogueGenerationBindingError> {
+        self.declaration(characters, views, custom).bind_runtime(
             Arc::new(views.clone()),
-            Arc::new(custom.clone()),
-            Arc::new(Self::default_catalog()),
-            self.roles.clone(),
-            voice_type,
-            look_authority,
+            Arc::new(characters.clone()),
+            None,
             owner,
         )
     }
@@ -989,15 +1005,15 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
         )
     });
     types.roles = CharacterDialogueRuntimeRoleTypes::new(invalid_roles, semantic(50));
-    for owner in types.program_owners() {
-        assert!(matches!(
-            types.try_schema(&characters, &views, &custom, owner),
-            Err(CharacterDialogueValueError::RoleType {
+    assert!(matches!(
+        types.try_declaration(&characters, &views, &custom),
+        Err(CharacterDialogueGenerationDeclarationError::Value(
+            CharacterDialogueValueError::RoleType {
                 role: Role::Stage,
                 ..
-            })
-        ));
-    }
+            }
+        ))
+    ));
     let types = Types::new();
     let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new([
         CharacterDialogueRuntimeCustomFieldDescriptor::new(
@@ -1011,7 +1027,7 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
     for owner in types.program_owners() {
         assert!(matches!(
             types.try_schema(&characters, &views, &custom, owner),
-            Err(CharacterDialogueValueError::ProgramType(_))
+            Err(CharacterDialogueGenerationBindingError::ProgramType(_))
         ));
     }
 }
@@ -1051,23 +1067,32 @@ fn unbound_optional_roles_reject_set_and_profile_style_clear_is_no_overrides() {
         }) if public_id == style_sheet.public_id()
     ));
 
-    let defaults =
-        CharacterDialogueRuntimeDefaultCatalog::try_new([CharacterDialogueRuntimeDefault::new(
+    let original = types.declaration(&characters, &views, &custom);
+    let style_digest = RuntimeValueDigest::from_bytes([0x62; 32]);
+    let declaration = CharacterDialogueGenerationDeclaration::try_new(
+        [(
             character.clone(),
-            config,
-        )])
-        .unwrap();
-    let authority = types.look_authority(&characters, owner.clone());
-    let schema = CharacterDialogueRuntimeSchema::try_new(
-        Arc::new(views.clone()),
-        Arc::new(custom.clone()),
-        Arc::new(defaults),
-        roles,
+            CharacterDialogueCharacterDeclaration::new(
+                types.character_type,
+                original.characters()[&character].visual().clone(),
+                CharacterDialogueRuntimeDefault::new(character.clone(), config),
+            ),
+        )],
+        types.any_type,
         voice_source_type(),
-        authority,
-        owner.clone(),
+        roles,
+        custom.clone(),
+        super::generation::presentation_contract(&views, profile.clone(), Some(style_digest)),
     )
     .unwrap();
+    let schema = declaration
+        .bind_runtime(
+            Arc::new(views.clone()),
+            Arc::new(characters.clone()),
+            Some(style_digest),
+            owner.clone(),
+        )
+        .unwrap();
     let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
         family: DeclarationIdentityFamily::Character,
         public_id: PublicId::try_new(character.as_str()).unwrap(),
@@ -1489,34 +1514,57 @@ fn source_type_inventory_requires_exact_voice_rows_and_present_character_look_co
     let (_, characters, views, custom) = fixture();
     let types = Types::new();
     for owner in types.program_owners() {
-        let authority = types.look_authority(&characters, owner.clone());
+        let declaration = types.declaration(&characters, &views, &custom);
+        let schema = declaration
+            .bind_runtime(
+                Arc::new(views.clone()),
+                Arc::new(characters.clone()),
+                None,
+                owner.clone(),
+            )
+            .unwrap();
         let foreign_owner = match &owner {
             RuntimeProgramOwner::Plan(_) => RuntimeProgramOwner::Awbc(Arc::new(types.awbc.clone())),
             RuntimeProgramOwner::Awbc(_) => RuntimeProgramOwner::Plan(Arc::new(types.plan.clone())),
         };
-        assert!(authority.program_owner().same_program(&owner));
         assert!(
-            types
-                .try_schema_with_authority(
-                    &views,
-                    &custom,
-                    semantic(53),
-                    Arc::clone(&authority),
+            schema
+                .look_source_authority()
+                .program_owner()
+                .same_program(&owner)
+        );
+        let wrong_voice = CharacterDialogueGenerationDeclaration::try_new(
+            declaration
+                .characters()
+                .iter()
+                .map(|(character, row)| (character.clone(), row.clone())),
+            *declaration.any_dialogue(),
+            semantic(53),
+            declaration.roles().clone(),
+            declaration.custom_fields().clone(),
+            declaration.presentation().clone(),
+        )
+        .unwrap();
+        assert!(
+            wrong_voice
+                .bind_runtime(
+                    Arc::new(views.clone()),
+                    Arc::new(characters.clone()),
+                    None,
                     owner.clone(),
                 )
                 .is_err_and(|error| matches!(
                     error,
-                    CharacterDialogueValueError::VoiceSourceType { .. }
+                    CharacterDialogueGenerationBindingError::Schema(inner)
+                        if matches!(*inner, CharacterDialogueValueError::VoiceSourceType { .. })
                 ))
         );
+        let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id: PublicId::try_new(sample_manifest().character().as_str()).unwrap(),
+        });
         assert!(matches!(
-            types.try_schema_with_authority(
-                &views,
-                &custom,
-                voice_source_type(),
-                Arc::clone(&authority),
-                foreign_owner,
-            ),
+            schema.construct(&foreign_owner, &target, &[], types.any_type),
             Err(CharacterDialogueValueError::ForeignProgramOwner)
         ));
     }
@@ -1549,32 +1597,37 @@ fn generation_recomputes_default_digest_from_effective_config() {
     .defaults();
     let mut wrong = *actual.as_bytes();
     wrong[0] ^= 1;
-    let defaults = CharacterDialogueRuntimeDefaultCatalog::try_new([
-        CharacterDialogueRuntimeDefault::with_expected_digest(
-            sample_manifest().character().clone(),
-            Types::default_config(),
-            RuntimeValueDigest::from_bytes(wrong),
-        ),
-    ])
-    .unwrap();
-    let look_authority = types.look_authority(&characters, owner.clone());
+    let declaration = types.declaration(&characters, &views, &custom);
+    let character = sample_manifest().character().clone();
+    let wrong_defaults = CharacterDialogueGenerationDeclaration::try_new(
+        [(
+            character.clone(),
+            CharacterDialogueCharacterDeclaration::new(
+                types.character_type,
+                declaration.characters()[&character].visual().clone(),
+                CharacterDialogueRuntimeDefault::with_expected_digest(
+                    sample_manifest().character().clone(),
+                    Types::default_config(),
+                    RuntimeValueDigest::from_bytes(wrong),
+                ),
+            ),
+        )],
+        types.any_type,
+        voice_source_type(),
+        types.roles,
+        custom,
+        declaration.presentation().clone(),
+    );
     assert!(matches!(
-        CharacterDialogueRuntimeSchema::try_new(
-            Arc::new(views),
-            Arc::new(custom),
-            Arc::new(defaults),
-            types.roles,
-            voice_source_type(),
-            look_authority,
-            owner,
-        ),
-        Err(CharacterDialogueValueError::DefaultDigestMismatch(character))
-            if character == sample_manifest().character().clone()
+        wrong_defaults,
+        Err(CharacterDialogueGenerationDeclarationError::Value(
+            CharacterDialogueValueError::DefaultDigestMismatch(character)
+        )) if character == *sample_manifest().character()
     ));
 }
 
 #[test]
-fn generation_requires_defaults_for_every_logical_character_member() {
+fn generation_requires_every_logical_character_member_to_be_declared() {
     let (_, _, views, custom) = fixture();
     let types = Types::new();
     let catalog = CharacterCatalog::try_from_declarations([
@@ -1591,7 +1644,7 @@ fn generation_requires_defaults_for_every_logical_character_member() {
     let owner = types.program_owners()[0].clone();
     assert!(matches!(
         types.try_schema(&catalog, &views, &custom, owner),
-        Err(CharacterDialogueValueError::MissingDefaults(character))
+        Err(CharacterDialogueGenerationBindingError::UnexpectedCharacter(character))
             if character == CharacterId::try_new("character.bob").unwrap()
     ));
 }

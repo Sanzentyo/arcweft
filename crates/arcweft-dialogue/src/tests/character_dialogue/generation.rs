@@ -33,7 +33,7 @@ fn semantic(byte: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([byte; 32])
 }
 
-fn presentation_contract(
+pub(super) fn presentation_contract(
     views: &ViewRegistry,
     profile: DialoguePresentationProfile,
     style_resource: Option<RuntimeValueDigest>,

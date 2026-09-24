@@ -54,7 +54,7 @@ use std::{
     sync::Arc,
 };
 
-use super::generation::CharacterDialogueTypeReference;
+use super::generation::{CharacterDialogueGenerationDeclaration, CharacterDialogueTypeReference};
 
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
 const CUSTOM_FIELD_CATALOG_DIGEST_DOMAIN: &[u8] =
@@ -160,6 +160,7 @@ impl CharacterDialogueRuntimeDefaultCatalog {
 /// It owns the exact executable lease and shared immutable catalogs/defaults;
 /// all type lookup and value validation derive from that lease.
 pub struct CharacterDialogueRuntimeSchema {
+    generation_digest: RuntimeValueDigest,
     view_catalog: Arc<ViewRegistry>,
     custom_fields: Arc<CharacterDialogueRuntimeCustomFieldCatalog>,
     defaults: Arc<CharacterDialogueRuntimeDefaultCatalog>,
@@ -169,6 +170,15 @@ pub struct CharacterDialogueRuntimeSchema {
     program_owner: RuntimeProgramOwner,
     view_contracts: RuntimeValueDigest,
     policies: DialoguePolicyTypes,
+}
+
+impl std::fmt::Debug for CharacterDialogueRuntimeSchema {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CharacterDialogueRuntimeSchema")
+            .field("generation_digest", &self.generation_digest)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Fully admitted domain value and its exact opaque runtime representation.
@@ -430,14 +440,12 @@ impl CharacterDialogueRuntimeSchema {
         super::runtime_type::character_dialogue_opaque_type_producer()
     }
 
-    /// Resolves the complete role and custom type inventory before publishing a
-    /// producer context. Recursive payloads remain references to program rows.
-    pub fn try_new(
+    /// Completes schema admission after the declaration has checked actual
+    /// resources and executable roots. No caller supplies parallel role or
+    /// default inventories.
+    pub(super) fn try_bind_generation(
+        generation: &CharacterDialogueGenerationDeclaration<RuntimeSemanticTypeId>,
         view_catalog: Arc<ViewRegistry>,
-        custom_fields: Arc<CharacterDialogueRuntimeCustomFieldCatalog>,
-        defaults: Arc<CharacterDialogueRuntimeDefaultCatalog>,
-        roles: CharacterDialogueRuntimeRoleTypes,
-        voice_source_type: RuntimeSemanticTypeId,
         look_source_authority: Arc<RuntimeCharacterLookSourceAuthority>,
         program_owner: RuntimeProgramOwner,
     ) -> Result<Self, CharacterDialogueValueError> {
@@ -447,19 +455,28 @@ impl CharacterDialogueRuntimeSchema {
         {
             return Err(CharacterDialogueValueError::ForeignProgramOwner);
         }
+        let custom_fields = Arc::new(generation.custom_fields().clone());
+        let defaults = Arc::new(CharacterDialogueRuntimeDefaultCatalog::try_new(
+            generation
+                .characters()
+                .values()
+                .map(|row| row.defaults().clone()),
+        )?);
+        let roles = generation.roles().clone();
+        let voice_source_type = *generation.voice();
         let program = program_owner.types();
         let rich_text = roles.validate(program)?;
         Self::validate_voice_source_type(voice_source_type, program)?;
         for descriptor in custom_fields.fields.values() {
             program.require_type(descriptor.semantic_type)?;
         }
-        let view_contracts =
-            RuntimeValueDigest::from_bytes(*view_catalog.runtime_digest_v1()?.as_bytes());
+        let view_contracts = generation.presentation().view_registry_digest();
         let policies = DialoguePolicyTypes::try_new(
             rich_text,
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
         )?;
         let schema = Self {
+            generation_digest: generation.digest(),
             view_catalog,
             custom_fields,
             defaults,
@@ -504,6 +521,13 @@ impl CharacterDialogueRuntimeSchema {
 
     fn program_types(&self) -> arcweft_core::program_types::RuntimeProgramTypes<'_> {
         self.program_owner.types()
+    }
+
+    /// Static input contract shared by dynamic dialogue-line evidence. The
+    /// executable lease is retained separately by `Self::program_owner`.
+    #[must_use]
+    pub const fn generation_digest(&self) -> RuntimeValueDigest {
+        self.generation_digest
     }
 
     /// Returns the exact executable lease that owns this producer generation.
