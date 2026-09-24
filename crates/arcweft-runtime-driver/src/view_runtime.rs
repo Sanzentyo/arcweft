@@ -42,8 +42,8 @@ use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     EventKind, ViewHandlerInvocation, ViewHandlerProgramId, ViewHandlerRouteId, ViewId,
     ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
-    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
-    ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
+    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewStyleProgram,
+    ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -772,15 +772,8 @@ impl BundleViewRuntime {
         catalog: Option<ViewProgramCatalog>,
         handler_runtime: ViewHandlerRuntimeAuthority,
     ) -> Result<Self, BundleViewRuntimeError> {
-        if let Some(catalog) = &catalog {
-            for (view, definition) in catalog.definitions() {
-                registry.register_arcweft(
-                    view.clone(),
-                    ViewSchemaId(definition.state_schema_hash()),
-                    catalog.program_id().clone(),
-                    catalog.revision(),
-                )?;
-            }
+        if let Some(program) = product.program() {
+            program.register_runtime_views(&mut registry)?;
         }
         let inventory = ViewValueProgramInventory::from_programs(
             catalog.as_ref().map_or_else(Vec::new, |catalog| {

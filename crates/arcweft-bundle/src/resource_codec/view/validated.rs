@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use arcweft_source::{ProductSourceId, ProductSourceRef, SourceRevision, SourceSetRevision};
 use arcweft_view::{
-    AcceptedViewProgramRevision, ViewIdentityError, ViewProgramId,
+    AcceptedViewProgramRevision, ViewIdentityError, ViewProgramId, ViewRegistry, ViewRegistryError,
+    ViewSchemaId,
     style::{
         ViewEnvironmentCondition, ViewStyleDeclaration, ViewStyleProgram, ViewStyleRule,
         ViewStyleSheet, ViewStyleToken,
@@ -224,6 +225,23 @@ impl ValidatedViewProduct {
 }
 
 impl ValidatedViewProgramResource {
+    /// Registers the accepted runtime View identities and schemas in product
+    /// definition order. Callers may retain pre-registered Rust Views.
+    pub fn register_runtime_views(
+        &self,
+        registry: &mut ViewRegistry,
+    ) -> Result<(), ViewRegistryError> {
+        for definition in self.definitions() {
+            registry.register_arcweft(
+                definition.public_id.view_id().clone(),
+                ViewSchemaId(definition.state_schema_hash),
+                self.program_id.clone(),
+                self.accepted_revision,
+            )?;
+        }
+        Ok(())
+    }
+
     pub const fn program_id(&self) -> &ViewProgramId {
         &self.program_id
     }

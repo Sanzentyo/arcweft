@@ -9,7 +9,7 @@ use arcweft_bundle::resource_codec::view::{
 };
 use arcweft_view::{
     AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId, ViewRegistry,
-    ViewRegistryError, ViewSchemaId, ViewValueProgramInventory,
+    ViewRegistryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -193,14 +193,10 @@ impl BundleViewRuntime {
         for view in current.view_ids() {
             registry.retire_arcweft(view, current.program_id(), current.revision())?;
         }
-        for (view, definition) in candidate_catalog.definitions() {
-            registry.register_arcweft(
-                view.clone(),
-                ViewSchemaId(definition.state_schema_hash()),
-                candidate_catalog.program_id().clone(),
-                candidate_catalog.revision(),
-            )?;
-        }
+        candidate
+            .program()
+            .expect("accepted replacement retains its View program")
+            .register_runtime_views(&mut registry)?;
         let inventory = ViewValueProgramInventory::from_programs(
             candidate_catalog.resource().value_programs.clone(),
         )
