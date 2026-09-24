@@ -2,9 +2,10 @@ use super::*;
 use crate::{
     CharacterDialogueConfig, CharacterDialogueRolePayloadCodec,
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeDefault,
-    CharacterDialogueRuntimeDefaultCatalog, CharacterDialogueRuntimeRole as Role,
-    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
-    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
+    CharacterDialogueRuntimeDefaultCatalog, CharacterDialogueRuntimeExternalCallBackend,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
+    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
+    CharacterDialogueRuntimeSchema, CharacterDialogueType,
 };
 use arcweft_character::catalog::CharacterVisualManifestEvidence;
 use arcweft_core::{
@@ -29,10 +30,11 @@ use arcweft_core::{
         RuntimePlanBuilder, RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed,
         RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
     },
+    pure::{RuntimeExternalCallBackend, RuntimeExternalCallContext},
     task::RuntimeProgramOwner,
     value::{
-        RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-        RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth,
+        RuntimeCallTarget, RuntimeEntityReference, RuntimeEvalError, RuntimeOpaquePersistence,
+        RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth,
         RuntimeUnsignedIntWidth, runtime_sequence_dense_bytes,
     },
 };
@@ -1232,6 +1234,64 @@ fn generation_producer_constructs_and_reconfigures_absent_visual_members() {
         ),
         Err(CharacterDialogueValueError::MissingVisualManifest(actual)) if actual == character
     ));
+}
+
+#[test]
+fn runtime_external_call_backend_delegates_to_the_accepted_generation() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let character = sample_manifest().character().clone();
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+    let external = RuntimeCallTarget::try_from_label("fixture.external").unwrap();
+
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner.clone());
+        let direct = schema
+            .apply(
+                &owner,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[],
+                types.any_type,
+            )
+            .unwrap();
+        let mut backend = CharacterDialogueRuntimeExternalCallBackend::new(&schema);
+        assert!(
+            backend
+                .call_external(&RuntimeExternalCallContext::unbound(), &external, &[])
+                .is_none()
+        );
+        let delegated = backend
+            .produce_character_dialogue(
+                &owner,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[],
+                types.any_type,
+            )
+            .unwrap();
+        assert_eq!(delegated, direct);
+        let admitted = schema.admit(&owner, &delegated, types.any_type).unwrap();
+        assert_eq!(admitted.dialogue().character(), &character);
+
+        let foreign_owner = match &owner {
+            RuntimeProgramOwner::Plan(_) => RuntimeProgramOwner::Awbc(Arc::new(types.awbc.clone())),
+            RuntimeProgramOwner::Awbc(_) => RuntimeProgramOwner::Plan(Arc::new(types.plan.clone())),
+        };
+        assert!(matches!(
+            backend.produce_character_dialogue(
+                &foreign_owner,
+                CharacterDialogueOperation::Factory,
+                target.clone(),
+                &[],
+                types.any_type,
+            ),
+            Err(RuntimeEvalError::CharacterDialogueConstruction(_))
+        ));
+    }
 }
 
 #[test]

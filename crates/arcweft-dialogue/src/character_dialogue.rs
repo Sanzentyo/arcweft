@@ -1,5 +1,6 @@
 //! First-class immutable Character dialogue runtime value.
 
+mod external_call_backend;
 mod generation;
 mod identity;
 mod limits;
@@ -24,6 +25,7 @@ use thiserror::Error;
 
 use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
+pub use external_call_backend::CharacterDialogueRuntimeExternalCallBackend;
 pub use generation::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueGenerationDeclaration,
     CharacterDialogueGenerationDeclarationCodecError, CharacterDialogueGenerationDeclarationError,
