@@ -440,6 +440,25 @@ flow main() -> i64 { return repeat(42i64, 3i64) }
 );
 
 callable_case!(
+    mutually_recursive_generics_execute_for_distinct_types,
+    r#"
+fn forward<Left>(value: Left, remaining: i64) -> Left {
+    if remaining == 0i64 { value } else { backward(value, remaining - 1i64) }
+}
+fn backward<Right>(value: Right, remaining: i64) -> Right {
+    if remaining == 0i64 { value } else { forward(value, remaining - 1i64) }
+}
+flow main() -> bool {
+    let number = forward(42i64, 4i64)
+    let text = backward("kept", 3i64)
+    return number == 42i64 && text == "kept"
+}
+"#,
+    RuntimeValue::Bool(true),
+    "true"
+);
+
+callable_case!(
     shared_prefix_with_distinct_later_types,
     r#"
 fn choose<A, B>(first: A)(second: B) -> B { second }
