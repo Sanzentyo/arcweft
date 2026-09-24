@@ -121,7 +121,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let value = self.lower(expr);
                 let local = self.frame.local(
                     *binding,
-                    admitted_plan_type(self.inventory, self.plan, expr.ty()),
+                    admitted_plan_type(self.inventory, self.plan, local_type(self.plan, *binding)),
                 );
                 self.inventory.push_instruction(AwbcInstruction::Move {
                     dst: local,
