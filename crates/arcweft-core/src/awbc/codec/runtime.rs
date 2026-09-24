@@ -18,6 +18,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
+use arcweft_interaction_model::input::InputActionId;
 use std::num::NonZeroU32;
 
 impl Wire for AwbcIntrinsic {
@@ -916,13 +917,21 @@ impl Wire for CharacterId {
 
 impl Wire for AwbcLineCancelHandler {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.trigger.get().get().write_wire(writer)?;
+        writer.write_str(self.trigger.as_str())?;
         self.function.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let trigger = InputActionId::new(reader.read_str()?).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "Input action identity",
+                message: error.to_string(),
+                offset,
+            }
+        })?;
         Ok(Self {
-            trigger: runtime_dialogue_mark_id(reader)?,
+            trigger,
             function: AwbcFunctionId::read_wire(reader)?,
         })
     }

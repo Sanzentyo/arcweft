@@ -273,7 +273,7 @@ pub enum RuntimeLineTaskTriggerSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeLineTaskCancelRuleSeed {
-    pub trigger: RuntimeDialogueMarkSeedId,
+    pub trigger: arcweft_interaction_model::input::InputActionId,
     pub action: Vec<RuntimeFlowOpSeed>,
 }
 

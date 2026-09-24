@@ -64,7 +64,12 @@ impl Engine {
                         return true;
                     }
                 };
-                self.resume_dialogue_state(transaction, output, pure_backend);
+                self.resume_dialogue_state(
+                    transaction,
+                    input.dialogue_input_actions.as_slice(),
+                    output,
+                    pure_backend,
+                );
                 true
             }
             FlowFiberStatus::Waiting(state) => {
@@ -99,6 +104,7 @@ impl Engine {
     fn resume_dialogue_state(
         &mut self,
         mut transaction: super::dialogue::DialogueActivationTransaction,
+        input_actions: &[crate::step::RuntimeDialogueInputActionEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -210,23 +216,19 @@ impl Engine {
                     return;
                 }
             };
-            let marks = accepted_content.marks();
-            if let Some(cancelled) = cancel_live_line_task_group(&group, marks, line_task) {
-                let event = marks.iter().copied().find_map(|mark| {
-                    group
-                        .cancel_rules()
-                        .iter()
-                        .any(|rule| rule.trigger() == mark)
-                        .then(|| {
-                            content
-                                .marks()
-                                .iter()
-                                .find(|candidate| candidate.id() == mark)
-                                .map(|candidate| FlowEvent::LineCancelled {
-                                    trigger: candidate.label().to_owned(),
-                                })
-                        })
-                        .flatten()
+            let input_actions = match line_task.accept_input_action_events(input_actions) {
+                Ok(actions) => actions,
+                Err(error) => {
+                    *transaction.frame_mut() = frame;
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
+            };
+            let ready = accepted_content.ready().with_input_actions(&input_actions);
+            if let Some((action, cancelled)) = cancel_live_line_task_group(&group, ready, line_task)
+            {
+                let event = Some(FlowEvent::LineCancelled {
+                    trigger: action.as_str().to_owned(),
                 });
                 start = Some(super::dialogue::DialogueLineTaskStart {
                     event,
@@ -265,19 +267,15 @@ impl Engine {
                     return;
                 }
             }
-            let activation = match progress_live_line_task_group(
-                &group,
-                frame.elapsed,
-                accepted_content.ready(),
-                line_task,
-            ) {
-                Ok(activation) => activation,
-                Err(error) => {
-                    *transaction.frame_mut() = frame;
-                    self.begin_dialogue_failure(transaction, error.into(), output);
-                    return;
-                }
-            };
+            let activation =
+                match progress_live_line_task_group(&group, frame.elapsed, ready, line_task) {
+                    Ok(activation) => activation,
+                    Err(error) => {
+                        *transaction.frame_mut() = frame;
+                        self.begin_dialogue_failure(transaction, error.into(), output);
+                        return;
+                    }
+                };
             start = Some(super::dialogue::DialogueLineTaskStart {
                 event: None,
                 request_cancellation: false,

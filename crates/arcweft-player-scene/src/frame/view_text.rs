@@ -145,7 +145,7 @@ struct PreparedTargetRecord<'a> {
 struct DialoguePreparedState {
     dialogue: u64,
     entry: u64,
-    mount: u64,
+    mount: arcweft_view::ViewMountId,
     revision: u64,
     instance: u64,
     stage: u32,
@@ -251,7 +251,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         let state = DialoguePreparedState {
             dialogue: dialogue.dialogue.id().get(),
             entry: dialogue.entry.id().get(),
-            mount: root_output.mount.get(),
+            mount: root_output.mount,
             revision: dialogue.dialogue.revision().get(),
             instance: dialogue.entry.instance().get(),
             stage: dialogue.entry.stage_index().get(),

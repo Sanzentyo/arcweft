@@ -3086,6 +3086,42 @@ fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
 }
 
 #[test]
+fn line_cancel_input_action_roundtrips_in_schema_one_codec() {
+    let group = AwbcLineTaskGroup {
+        captures: Vec::new(),
+        activation: AwbcFunctionId(0),
+        result_type: AwbcTypeId(0),
+        handle_sites: Vec::new(),
+        root: AwbcLineTaskNodeId(0),
+        nodes: AwbcTableRange::new(0, 0),
+        cancel_handlers: vec![AwbcLineCancelHandler {
+            trigger: arcweft_interaction_model::input::InputActionId::new("dialogue.cancel")
+                .expect("valid input action"),
+            function: AwbcFunctionId(0),
+        }],
+        cleanup_completed: None,
+        cleanup_cancelled: None,
+        cleanup_failed: None,
+        cleanup: AwbcLineCleanupPolicy {
+            child_tasks: AwbcChildCleanup::Finish,
+            presentation: AwbcPresentationCleanup::KeepRegistered,
+            audio: AwbcAudioCleanup::KeepRegistered,
+        },
+    };
+    let program = AwbcProgram {
+        line_task_groups: vec![group.clone()],
+        ..AwbcProgram::default()
+    };
+
+    let encoded = program.encode_canonical().expect("encode cancel action");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode cancel action");
+
+    assert_eq!(AWBC_CODEC_VERSION, 1);
+    assert_eq!(decoded.line_task_groups, [group]);
+}
+
+#[test]
 fn optional_agent_record_types_roundtrip_in_the_schema_one_codec() {
     let runtime_types = [
         RuntimeAgentOperationalType::SourcePosition,

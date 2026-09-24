@@ -740,6 +740,9 @@ pub enum ViewFocusAutoScrollPolicy {
 pub struct ViewRuntimeActionButton {
     pub public_id: String,
     pub target: String,
+    /// Dialogue root mount supplied only by runtime View projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialogue_mount: Option<arcweft_view::ViewMountId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1164,6 +1167,7 @@ impl ViewProgramResource {
             .map(|button| ViewRuntimeActionButton {
                 public_id: button.public_id.clone(),
                 target: button.public_id.clone(),
+                dialogue_mount: None,
                 view: button.view.clone(),
                 containing_scroll_region: button.containing_scroll_region.clone(),
                 label: text

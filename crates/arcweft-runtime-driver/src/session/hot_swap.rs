@@ -268,6 +268,7 @@ impl BundleSession {
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());
                 self.pending_input_events.clear();
+                self.pending_dialogue_input_actions.clear();
                 self.pending_presentation_inputs.clear();
                 self.pending_host_call_results.clear();
                 self.waiting_action_receive_calls.clear();

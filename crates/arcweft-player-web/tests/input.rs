@@ -381,6 +381,7 @@ fn web_hidden_view_text_control_rejects_stale_hit_and_focus() {
 fn render_action_button(target: &str, action: &str) -> RenderActionButton {
     RenderActionButton {
         target: InteractionTarget::new(PublicId::try_new(target).expect("valid target id")),
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: None,

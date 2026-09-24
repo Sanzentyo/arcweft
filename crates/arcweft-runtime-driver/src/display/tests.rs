@@ -953,6 +953,7 @@ fn view_action_button() -> ViewRuntimeActionButton {
     ViewRuntimeActionButton {
         public_id: "button.continue".to_owned(),
         target: "button.continue".to_owned(),
+        dialogue_mount: None,
         view: Some("view.ModernFeedbackPanel".to_owned()),
         containing_scroll_region: None,
         label: "Continue".to_owned(),

@@ -482,7 +482,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .enumerate()
             .map(|(index, rule)| AwbcLineCancelHandler {
-                trigger: rule.trigger(),
+                trigger: rule.trigger().clone(),
                 function: self.lower_line_task_action(
                     &captures,
                     rule.action(),

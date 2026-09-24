@@ -29,7 +29,8 @@ use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
 use arcweft_lang_hir::expr::HirExprKind;
 use arcweft_lang_hir::identity::{ExprId, LocalId, PatternId, StmtId};
 use arcweft_lang_hir::stmt::{
-    HirStmtBindingPlanKind, HirStmtEvaluationPlan, HirStmtKind, HirStmtValuePlanKind,
+    HirCancelTrigger, HirStmtBindingPlanKind, HirStmtEvaluationPlan, HirStmtKind,
+    HirStmtValuePlanKind,
 };
 
 use super::{FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id};
@@ -104,7 +105,7 @@ enum NodeDraft {
 }
 
 struct CancelRuleDraft {
-    trigger: arcweft_core::plan::RuntimeDialogueMarkSeedId,
+    trigger: arcweft_interaction_model::input::InputActionId,
     action: Vec<FlowDraft>,
 }
 
@@ -229,10 +230,12 @@ impl LinePlanLowerer<'_, '_> {
                         children,
                     });
                 }
+                HirLinePlanItem::CancelRule(statement) => {
+                    self.lower_cancel_rule(*statement)?;
+                }
                 HirLinePlanItem::Init(_)
                 | HirLinePlanItem::Thread(_)
                 | HirLinePlanItem::On(_)
-                | HirLinePlanItem::CancelRule(_)
                 | HirLinePlanItem::Error(_) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "line-plan item {item:?} has no complete typed runtime projection"
@@ -597,6 +600,55 @@ impl LinePlanLowerer<'_, '_> {
                     "dialogue mark count exceeds the runtime identity domain",
                 )
             })
+    }
+
+    fn admitted_input_action(
+        &self,
+        statement: StmtId,
+    ) -> Result<arcweft_interaction_model::input::InputActionId, RuntimePlanLowerError> {
+        let HirStmtKind::CancelRule {
+            trigger: HirCancelTrigger::InputAction(name),
+            ..
+        } = self.resolve_statement(statement)?.kind()
+        else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "line-task cancel rule {statement:?} has no checked input-action trigger"
+            )));
+        };
+        let Some(action) = self
+            .flow
+            .semantic_facts
+            .trigger(statement)
+            .and_then(crate::semantic_facts::RuntimeTriggerAdmission::input_action_id)
+        else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "line-task cancel rule {statement:?} has no admitted input action"
+            )));
+        };
+        if action.as_str() != name.as_str() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "line-task cancel rule {statement:?} disagrees with its admitted input action"
+            )));
+        }
+        Ok(action.clone())
+    }
+
+    fn lower_cancel_rule(&mut self, statement: StmtId) -> Result<(), RuntimePlanLowerError> {
+        let kind = self.resolve_statement(statement)?.kind().clone();
+        let HirStmtKind::CancelRule { body, .. } = kind else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "dialogue line-plan cancel item {statement:?} is not a final-HIR cancel rule"
+            )));
+        };
+        let trigger = self.admitted_input_action(statement)?;
+        let action = self
+            .flow
+            .lower_body_as_one_error(&body)?
+            .into_iter()
+            .map(FlowDraft::Flow)
+            .collect();
+        self.cancel_rules.push(CancelRuleDraft { trigger, action });
+        Ok(())
     }
 
     fn allocate_child(&mut self) -> Result<ChildDraftId, RuntimePlanLowerError> {

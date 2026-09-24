@@ -3,8 +3,9 @@ use crate::runtime_id::{
     DialogueActivationId, RuntimeDialogueMarkId, RuntimeLineHandleSiteId, RuntimeLineHandleToken,
     RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
-use crate::step::RuntimeDialogueContentEventKind;
+use crate::step::{RuntimeDialogueContentEventKind, RuntimeDialogueInputActionEvent};
 use crate::time::LogicalDuration;
+use arcweft_interaction_model::input::InputActionId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -137,15 +138,15 @@ impl LineTaskGroup {
     /// shared reducer intentionally never sees `FlowOp` payloads.
     #[must_use]
     pub(crate) fn command_ops(&self, tag: &LineTaskWorkTag) -> &[FlowOp] {
-        match tag.work {
+        match tag.work() {
             LineTaskWork::Node(node) => match self.node(node) {
                 Some(LineTaskNode::Action(ops)) => ops,
                 _ => &[],
             },
-            LineTaskWork::Cancellation(mark) => self
+            LineTaskWork::Cancellation(action) => self
                 .cancel_rules
                 .iter()
-                .find(|rule| rule.trigger == mark)
+                .find(|rule| rule.trigger == action)
                 .map_or(&[], LineCancelRule::action),
             LineTaskWork::Cleanup(exit) => self.cleanup.actions(exit),
         }
@@ -160,11 +161,8 @@ pub(crate) trait LineTaskPlanView {
     fn root_node(&self) -> RuntimeLineTaskNodeId;
     fn node_view(&self, id: RuntimeLineTaskNodeId) -> Option<LineTaskNodeView<'_>>;
     fn has_action(&self, node: RuntimeLineTaskNodeId) -> bool;
-    fn cancellation_mark(
-        &self,
-        marks: &BTreeSet<RuntimeDialogueMarkId>,
-    ) -> Option<RuntimeDialogueMarkId>;
-    fn has_cancellation_work(&self, mark: RuntimeDialogueMarkId) -> bool;
+    fn cancellation_action(&self, actions: &[InputActionId]) -> Option<InputActionId>;
+    fn has_cancellation_work(&self, action: &InputActionId) -> bool;
     fn has_cleanup(&self, exit: ScopeExit) -> bool;
     fn scheduled_child(&self, _site: RuntimeLineHandleSiteId) -> Option<RuntimeLineTaskNodeId> {
         None
@@ -176,6 +174,7 @@ pub(crate) trait LineTaskPlanView {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LineTaskReadyEvents<'a> {
     marks: &'a BTreeSet<RuntimeDialogueMarkId>,
+    input_actions: &'a [InputActionId],
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -187,19 +186,27 @@ impl AcceptedLineTaskContentEvents {
     pub(crate) const fn ready(&self) -> LineTaskReadyEvents<'_> {
         LineTaskReadyEvents::new(&self.marks)
     }
-
-    pub(crate) const fn marks(&self) -> &BTreeSet<RuntimeDialogueMarkId> {
-        &self.marks
-    }
 }
 
 impl<'a> LineTaskReadyEvents<'a> {
     pub(crate) const fn new(marks: &'a BTreeSet<RuntimeDialogueMarkId>) -> Self {
-        Self { marks }
+        Self {
+            marks,
+            input_actions: &[],
+        }
+    }
+
+    pub(crate) const fn with_input_actions(mut self, input_actions: &'a [InputActionId]) -> Self {
+        self.input_actions = input_actions;
+        self
     }
 
     const fn marks(self) -> &'a BTreeSet<RuntimeDialogueMarkId> {
         self.marks
+    }
+
+    const fn input_actions(self) -> &'a [InputActionId] {
+        self.input_actions
     }
 }
 
@@ -245,14 +252,13 @@ impl LineTaskPlanView for LineTaskGroup {
         }
     }
 
-    fn cancellation_mark(
-        &self,
-        marks: &BTreeSet<RuntimeDialogueMarkId>,
-    ) -> Option<RuntimeDialogueMarkId> {
-        self.cancel_rules
-            .iter()
-            .find(|rule| marks.contains(&rule.trigger))
-            .map(LineCancelRule::trigger)
+    fn cancellation_action(&self, actions: &[InputActionId]) -> Option<InputActionId> {
+        actions.iter().find_map(|action| {
+            self.cancel_rules
+                .iter()
+                .any(|rule| &rule.trigger == action)
+                .then(|| action.clone())
+        })
     }
 
     fn has_action(&self, node: RuntimeLineTaskNodeId) -> bool {
@@ -267,10 +273,10 @@ impl LineTaskPlanView for LineTaskGroup {
         self.handle_site(site)?.scheduled_child()
     }
 
-    fn has_cancellation_work(&self, mark: RuntimeDialogueMarkId) -> bool {
+    fn has_cancellation_work(&self, action: &InputActionId) -> bool {
         self.cancel_rules
             .iter()
-            .find(|rule| rule.trigger == mark)
+            .find(|rule| &rule.trigger == action)
             .is_some_and(|rule| !rule.action.is_empty())
     }
 }
@@ -340,21 +346,21 @@ impl LineTaskExitPolicy {
     }
 }
 
-/// One mark-selected cancellation branch.
+/// One input-action-selected cancellation branch.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineCancelRule {
-    trigger: RuntimeDialogueMarkId,
+    trigger: InputActionId,
     action: Box<[FlowOp]>,
 }
 
 impl LineCancelRule {
-    pub(crate) const fn new(trigger: RuntimeDialogueMarkId, action: Box<[FlowOp]>) -> Self {
+    pub(crate) fn new(trigger: InputActionId, action: Box<[FlowOp]>) -> Self {
         Self { trigger, action }
     }
 
     #[must_use]
-    pub const fn trigger(&self) -> RuntimeDialogueMarkId {
-        self.trigger
+    pub const fn trigger(&self) -> &InputActionId {
+        &self.trigger
     }
 
     #[must_use]
@@ -514,24 +520,24 @@ impl LineTaskWorkTag {
     }
 
     #[must_use]
-    pub const fn work(&self) -> LineTaskWork {
-        self.work
+    pub fn work(&self) -> LineTaskWork {
+        self.work.clone()
     }
 
     #[must_use]
     pub(crate) const fn is_well_formed(&self) -> bool {
         matches!(
-            (&self.instance, self.work),
+            (&self.instance, &self.work),
             (LineTaskWorkInstance::Activation(_), _)
                 | (LineTaskWorkInstance::Scheduled(_), LineTaskWork::Node(_))
         )
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum LineTaskWork {
     Node(RuntimeLineTaskNodeId),
-    Cancellation(RuntimeDialogueMarkId),
+    Cancellation(InputActionId),
     Cleanup(ScopeExit),
 }
 
@@ -658,6 +664,7 @@ pub(crate) struct LineTaskLiveSnapshot {
     scheduled_lanes: Box<[LineTaskScheduledLaneSnapshot]>,
     scheduled_ready: Box<[RuntimeLineHandleToken]>,
     consumed_content_events: Box<[RuntimeDialogueContentEventKind]>,
+    consumed_input_actions: Box<[RuntimeDialogueInputActionEvent]>,
     cleanup_started: bool,
 }
 
@@ -733,6 +740,7 @@ impl LineTaskLiveSnapshot {
         scheduled_lanes: Box<[LineTaskScheduledLaneSnapshot]>,
         scheduled_ready: Box<[RuntimeLineHandleToken]>,
         consumed_content_events: Box<[RuntimeDialogueContentEventKind]>,
+        consumed_input_actions: Box<[RuntimeDialogueInputActionEvent]>,
         cleanup_started: bool,
     ) -> Self {
         Self {
@@ -742,6 +750,7 @@ impl LineTaskLiveSnapshot {
             scheduled_lanes,
             scheduled_ready,
             consumed_content_events,
+            consumed_input_actions,
             cleanup_started,
         }
     }
@@ -796,6 +805,10 @@ impl LineTaskLiveSnapshot {
         self.cleanup_started
     }
 
+    pub(crate) const fn consumed_input_actions(&self) -> &[RuntimeDialogueInputActionEvent] {
+        &self.consumed_input_actions
+    }
+
     /// Returns the exact runtime work identities that must each have one
     /// joined executor child. Static node coordinates alone are insufficient
     /// because scheduled lanes distinguish concurrent issuances by token.
@@ -803,7 +816,7 @@ impl LineTaskLiveSnapshot {
         self.activation_lane
             .outstanding
             .iter()
-            .copied()
+            .cloned()
             .map(|work| LineTaskWorkTag::activation(self.activation.clone(), work))
             .chain(self.scheduled_lanes.iter().flat_map(|scheduled| {
                 scheduled
@@ -843,6 +856,14 @@ pub(crate) enum LineTaskSnapshotError {
     DuplicateContentEvent {
         event: RuntimeDialogueContentEventKind,
     },
+    #[error("line-task snapshot repeats consumed input action {event:?}")]
+    DuplicateInputActionEvent {
+        event: RuntimeDialogueInputActionEvent,
+    },
+    #[error("line-task snapshot contains an input action for a different activation")]
+    StaleInputActionEvent {
+        event: RuntimeDialogueInputActionEvent,
+    },
     #[error("line-task snapshot marks terminal node {node} as an active root")]
     TerminalActiveRoot { node: RuntimeLineTaskNodeId },
     #[error("line-task snapshot marks node {node} cancelling without Cancelling state")]
@@ -874,7 +895,7 @@ impl LineTaskExecutionLane {
     fn snapshot(&self) -> LineTaskExecutionLaneSnapshot {
         LineTaskExecutionLaneSnapshot::new(
             self.node_states.clone(),
-            self.outstanding.iter().copied().collect(),
+            self.outstanding.iter().cloned().collect(),
             self.active_roots
                 .iter()
                 .copied()
@@ -930,6 +951,7 @@ pub struct LineTaskLiveState {
     scheduled_lanes: BTreeMap<RuntimeLineHandleToken, LineTaskExecutionLane>,
     scheduled_ready: BTreeSet<RuntimeLineHandleToken>,
     consumed_content_events: BTreeSet<RuntimeDialogueContentEventKind>,
+    consumed_input_actions: BTreeSet<RuntimeDialogueInputActionEvent>,
     cleanup_started: bool,
 }
 
@@ -943,6 +965,7 @@ impl LineTaskLiveState {
             scheduled_lanes: BTreeMap::new(),
             scheduled_ready: BTreeSet::new(),
             consumed_content_events: BTreeSet::new(),
+            consumed_input_actions: BTreeSet::new(),
             cleanup_started: false,
         }
     }
@@ -962,6 +985,7 @@ impl LineTaskLiveState {
                 .collect(),
             self.scheduled_ready.iter().cloned().collect(),
             self.consumed_content_events.iter().copied().collect(),
+            self.consumed_input_actions.iter().cloned().collect(),
             self.cleanup_started,
         )
     }
@@ -991,6 +1015,11 @@ impl LineTaskLiveState {
             scheduled_ready: snapshot.scheduled_ready.into_vec().into_iter().collect(),
             consumed_content_events: snapshot
                 .consumed_content_events
+                .into_vec()
+                .into_iter()
+                .collect(),
+            consumed_input_actions: snapshot
+                .consumed_input_actions
                 .into_vec()
                 .into_iter()
                 .collect(),
@@ -1058,6 +1087,49 @@ impl LineTaskLiveState {
             }
         }
         Ok(accepted)
+    }
+
+    /// Accepts only input actions routed to this exact dialogue activation.
+    /// Input identity prevents stale or replayed actions from canceling a line.
+    pub(crate) fn accept_input_action_events(
+        &mut self,
+        events: &[RuntimeDialogueInputActionEvent],
+    ) -> Result<Vec<InputActionId>, LineRuntimeError> {
+        let mut batch = BTreeSet::new();
+        let mut accepted = events
+            .iter()
+            .filter(|event| event.activation() == &self.activation)
+            .cloned()
+            .collect::<Vec<_>>();
+        accepted.sort_by(|left, right| {
+            (left.epoch(), left.sequence(), left.action()).cmp(&(
+                right.epoch(),
+                right.sequence(),
+                right.action(),
+            ))
+        });
+        for event in &accepted {
+            if !batch.insert(event.clone()) {
+                return Err(LineRuntimeError::DuplicateInputActionEvent {
+                    event: event.clone(),
+                });
+            }
+            if self.consumed_input_actions.contains(event) {
+                return Err(LineRuntimeError::ConsumedInputActionEvent {
+                    event: event.clone(),
+                });
+            }
+        }
+        self.consumed_input_actions.extend(batch);
+        let mut seen_actions = BTreeSet::new();
+        let actions = accepted
+            .iter()
+            .filter_map(|event| {
+                let action = event.action().clone();
+                seen_actions.insert(action.clone()).then_some(action)
+            })
+            .collect();
+        Ok(actions)
     }
 
     fn complete_work(
@@ -1169,6 +1241,19 @@ fn validate_snapshot<P: LineTaskPlanView>(
             return Err(LineTaskSnapshotError::DuplicateContentEvent { event });
         }
     }
+    let mut input_actions = BTreeSet::new();
+    for event in &snapshot.consumed_input_actions {
+        if event.activation() != &snapshot.activation {
+            return Err(LineTaskSnapshotError::StaleInputActionEvent {
+                event: event.clone(),
+            });
+        }
+        if !input_actions.insert(event) {
+            return Err(LineTaskSnapshotError::DuplicateInputActionEvent {
+                event: event.clone(),
+            });
+        }
+    }
     if snapshot.cleanup_started && matches!(snapshot.phase, LineTaskPhase::Active) {
         return Err(LineTaskSnapshotError::CleanupPhase);
     }
@@ -1215,12 +1300,12 @@ fn validate_lane_snapshot<P: LineTaskPlanView>(
         }
     }
     let mut outstanding = BTreeSet::new();
-    for &work in &lane.outstanding {
-        if !outstanding.insert(work) {
-            return Err(LineTaskSnapshotError::DuplicateOutstanding { work });
+    for work in &lane.outstanding {
+        if !outstanding.insert(work.clone()) {
+            return Err(LineTaskSnapshotError::DuplicateOutstanding { work: work.clone() });
         }
         match work {
-            LineTaskWork::Node(node) => validate_node(node)?,
+            LineTaskWork::Node(node) => validate_node(*node)?,
             LineTaskWork::Cancellation(_) | LineTaskWork::Cleanup(_) => {}
         }
         let valid_phase = match work {
@@ -1230,7 +1315,7 @@ fn validate_lane_snapshot<P: LineTaskPlanView>(
             }
         };
         if !valid_phase {
-            return Err(LineTaskSnapshotError::WorkPhase { work });
+            return Err(LineTaskSnapshotError::WorkPhase { work: work.clone() });
         }
     }
     Ok(())
@@ -1383,29 +1468,29 @@ pub(crate) fn progress_live_line_task_group<P: LineTaskPlanView>(
 /// This gives every executor the same ordering without exposing its queue.
 pub(crate) fn cancel_live_line_task_group<P: LineTaskPlanView>(
     group: &P,
-    marks: &BTreeSet<RuntimeDialogueMarkId>,
+    events: LineTaskReadyEvents<'_>,
     state: &mut LineTaskLiveState,
-) -> Option<LineTaskActivation> {
-    let mark = group.cancellation_mark(marks)?;
+) -> Option<(InputActionId, LineTaskActivation)> {
+    let action = group.cancellation_action(events.input_actions())?;
     if !state.begin_close(ScopeExit::Cancelled) {
         return None;
     }
     let mut activation = LineTaskActivation::default();
-    if group.has_cancellation_work(mark) {
+    if group.has_cancellation_work(&action) {
         activation.commands.push(LineTaskCommand::Run {
             tag: LineTaskWorkTag::activation(
                 state.activation.clone(),
-                LineTaskWork::Cancellation(mark),
+                LineTaskWork::Cancellation(action.clone()),
             ),
             policy: LineTaskExitPolicy::new(ChildJoinPolicy::Join, ChildCancelPolicy::Finish),
         });
         state
             .activation_lane
             .outstanding
-            .insert(LineTaskWork::Cancellation(mark));
+            .insert(LineTaskWork::Cancellation(action.clone()));
     }
     drain_cancellations(state, &mut activation);
-    Some(activation)
+    Some((action, activation))
 }
 
 /// Completes a live line scope after an explicit host advance.
@@ -1610,7 +1695,7 @@ fn activate_node<P: LineTaskPlanView>(
                 if policy.join == ChildJoinPolicy::Detached {
                     lane.set_node_state(id, LineTaskNodeState::Detached);
                 } else {
-                    lane.outstanding.insert(work);
+                    lane.outstanding.insert(work.clone());
                 }
                 activation.commands.push(LineTaskCommand::Run {
                     tag: LineTaskWorkTag {

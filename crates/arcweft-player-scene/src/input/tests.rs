@@ -58,7 +58,7 @@ fn prepare_with_dialogue_view(scene: &RenderScene, reveal_complete: bool) -> Pre
     frame.push_dialogue_view(PreparedDialogueViewState {
         dialogue: 0,
         entry: 0,
-        mount: 0,
+        mount: arcweft_view::ViewMountId::from_raw(0),
         revision: 0,
         instance: 0,
         stage: 0,
@@ -541,6 +541,7 @@ fn pointer_activation_on_action_button_clears_text_editor_focus() {
     let scene = RenderScene {
         action_buttons: vec![RenderActionButton {
             target: button_target.clone(),
+            dialogue_mount: None,
             label: "Send".to_owned(),
             enabled: true,
             containing_scroll_region: None,

@@ -11,6 +11,7 @@ arcweft-bundle = { workspace = true, default-features = false }
 arcweft-character = { workspace = true }
 arcweft-character-view = { workspace = true }
 arcweft-id = { workspace = true }
+arcweft-interaction-model = { workspace = true }
 arcweft-image = { workspace = true }
 arcweft-layout.workspace = true
 arcweft-presentation = { workspace = true }

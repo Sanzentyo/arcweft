@@ -858,6 +858,7 @@ fn scroll_region_offsets_and_clips_owned_action_buttons() {
     scene.choices.clear();
     scene.action_buttons = vec![RenderActionButton {
         target: target.clone(),
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: Some("scroll.feedback".to_owned()),
@@ -913,6 +914,7 @@ fn scroll_region_uses_visible_bounds_for_runtime_control_effect_plans() {
     scene.choices.clear();
     scene.action_buttons = vec![RenderActionButton {
         target,
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: Some("scroll.feedback".to_owned()),

@@ -20,6 +20,7 @@ use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
 #[derive(Clone, Debug, PartialEq)]
 pub struct RenderActionButton {
     pub target: InteractionTarget,
+    pub dialogue_mount: Option<arcweft_view::ViewMountId>,
     pub label: String,
     pub enabled: bool,
     pub containing_scroll_region: Option<String>,
@@ -47,6 +48,7 @@ pub enum RenderActionButtonAction {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedActionButton {
     pub target: InteractionTarget,
+    pub dialogue_mount: Option<arcweft_view::ViewMountId>,
     pub label: String,
     pub enabled: bool,
     pub action: RenderActionButtonAction,
@@ -125,6 +127,7 @@ pub(super) fn build_action_button(
     Ok((
         PreparedActionButton {
             target: button.target.clone(),
+            dialogue_mount: button.dialogue_mount,
             label: button.label.clone(),
             enabled: button.enabled,
             action: button.action.clone(),

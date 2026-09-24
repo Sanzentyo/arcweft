@@ -1,8 +1,9 @@
 use crate::line_task::{
-    ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy, LineTaskCleanup,
+    ChildCancelPolicy, ChildJoinPolicy, LineCancelRule, LineCleanupPolicy, LineTaskCleanup,
     LineTaskCompletionError, LineTaskExitPolicy, LineTaskGroup, LineTaskLiveState, LineTaskNode,
     LineTaskNodeView, LineTaskPlanView, LineTaskReadyEvents, LineTaskTrigger, ScopeExit,
-    complete_live_line_task_work, finish_live_line_task_group, progress_live_line_task_group,
+    cancel_live_line_task_group, complete_live_line_task_work, finish_live_line_task_group,
+    progress_live_line_task_group,
 };
 use crate::plan::FlowOp;
 use crate::runtime_id::{
@@ -10,8 +11,9 @@ use crate::runtime_id::{
     RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
     RuntimePersistentFiberId, RuntimePlanTypeId,
 };
-use crate::step::RuntimeDialogueContentEventKind;
+use crate::step::{RuntimeDialogueContentEventKind, RuntimeDialogueInputActionEvent};
 use crate::time::LogicalDuration;
+use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
@@ -27,6 +29,47 @@ fn activation(occurrence: u64) -> DialogueActivationId {
 
 fn result_type() -> RuntimePlanTypeId {
     RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN)
+}
+
+fn input_action(value: &str) -> InputActionId {
+    InputActionId::new(value).expect("valid input action")
+}
+
+fn input_action_event(
+    activation: &DialogueActivationId,
+    action: &str,
+    epoch: u64,
+    sequence: u64,
+) -> RuntimeDialogueInputActionEvent {
+    RuntimeDialogueInputActionEvent::new(
+        activation.clone(),
+        input_action(action),
+        InputEpoch::new(epoch),
+        InputSequence::new(sequence),
+    )
+}
+
+fn cancellation_group(actions: &[&str]) -> LineTaskGroup {
+    let rules = actions
+        .iter()
+        .map(|action| LineCancelRule::new(input_action(action), vec![FlowOp::Noop].into()))
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    LineTaskGroup::new(
+        Box::default(),
+        Box::default(),
+        result_type(),
+        Box::default(),
+        RuntimeLineTaskNodeId::from_zero_based(0).expect("zero node id"),
+        vec![LineTaskNode::Sequence(Box::default())].into_boxed_slice(),
+        rules,
+        LineTaskCleanup::new(
+            Box::default(),
+            Box::default(),
+            Box::default(),
+            LineCleanupPolicy::default(),
+        ),
+    )
 }
 
 fn group(actions: Vec<FlowOp>, cleanup: Vec<FlowOp>) -> LineTaskGroup {
@@ -268,6 +311,7 @@ fn reducer_restore_rejects_tampered_node_state_count() {
         Box::default(),
         Box::default(),
         Box::default(),
+        Box::default(),
         false,
     );
     assert!(matches!(
@@ -311,6 +355,73 @@ fn consumed_content_event_survives_snapshot_restore_and_rejects_replay() {
         Err(crate::line_task::LineRuntimeError::ConsumedContentEvent {
             event: RuntimeDialogueContentEventKind::Effect(site),
         }),
+    );
+}
+
+#[test]
+fn input_action_cancellation_is_activation_scoped_and_event_ordered() {
+    let group = cancellation_group(&["cancel.z", "cancel.b", "cancel.a"]);
+    let current = activation(43);
+    let mut state = LineTaskLiveState::new(&group, current.clone());
+    let events = [
+        input_action_event(&activation(42), "cancel.b", 1, 1),
+        input_action_event(&current, "cancel.a", 8, 3),
+        input_action_event(&current, "cancel.z", 8, 2),
+        input_action_event(&current, "cancel.b", 8, 2),
+    ];
+    let actions = state
+        .accept_input_action_events(&events)
+        .expect("events for current activation are accepted");
+    assert_eq!(
+        actions,
+        vec![
+            input_action("cancel.b"),
+            input_action("cancel.z"),
+            input_action("cancel.a")
+        ]
+    );
+
+    let marks = BTreeSet::new();
+    let ready = LineTaskReadyEvents::new(&marks).with_input_actions(&actions);
+    let (selected, activation) =
+        cancel_live_line_task_group(&group, ready, &mut state).expect("current action cancels");
+    assert_eq!(selected, input_action("cancel.b"));
+    assert!(matches!(
+        activation.commands.first(),
+        Some(crate::line_task::LineTaskCommand::Run { tag, .. })
+            if tag.work() == crate::line_task::LineTaskWork::Cancellation(input_action("cancel.b"))
+    ));
+}
+
+#[test]
+fn dialogue_content_marks_do_not_select_input_action_cancellation() {
+    let group = cancellation_group(&["cancel"]);
+    let mut state = LineTaskLiveState::new(&group, activation(44));
+    let mark =
+        crate::runtime_id::RuntimeDialogueMarkId::from_zero_based(0).expect("zero dialogue mark");
+    let marks = BTreeSet::from([mark]);
+    let ready = LineTaskReadyEvents::new(&marks);
+
+    assert!(cancel_live_line_task_group(&group, ready, &mut state).is_none());
+    assert!(!state.is_closing());
+}
+
+#[test]
+fn consumed_input_action_survives_snapshot_restore_and_rejects_replay() {
+    let group = group(Vec::new(), Vec::new());
+    let id = activation(45);
+    let mut state = LineTaskLiveState::new(&group, id.clone());
+    let event = input_action_event(&id, "cancel", 3, 9);
+    state
+        .accept_input_action_events(std::slice::from_ref(&event))
+        .expect("first action event is accepted");
+    let snapshot = state.snapshot();
+    assert_eq!(snapshot.consumed_input_actions(), [event.clone()]);
+    let mut restored = LineTaskLiveState::restore(&group, snapshot).expect("restore");
+
+    assert_eq!(
+        restored.accept_input_action_events(std::slice::from_ref(&event)),
+        Err(crate::line_task::LineRuntimeError::ConsumedInputActionEvent { event }),
     );
 }
 
@@ -364,14 +475,11 @@ impl LineTaskPlanView for ScheduledPlan {
         id == scheduled_node(2) && self.action_present
     }
 
-    fn cancellation_mark(
-        &self,
-        _marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
-    ) -> Option<crate::runtime_id::RuntimeDialogueMarkId> {
+    fn cancellation_action(&self, _actions: &[InputActionId]) -> Option<InputActionId> {
         None
     }
 
-    fn has_cancellation_work(&self, _mark: crate::runtime_id::RuntimeDialogueMarkId) -> bool {
+    fn has_cancellation_work(&self, _action: &InputActionId) -> bool {
         false
     }
 
@@ -507,6 +615,7 @@ fn scheduled_lane_restore_rejects_state_outside_its_static_subtree() {
         .into_boxed_slice(),
         live.scheduled_ready().to_vec().into_boxed_slice(),
         live.consumed_content_events().to_vec().into_boxed_slice(),
+        live.consumed_input_actions().to_vec().into_boxed_slice(),
         live.cleanup_started(),
     );
 

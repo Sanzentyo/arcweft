@@ -27,6 +27,7 @@ use arcweft_interaction_model::audio::{
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField,
 };
+use arcweft_interaction_model::input::InputActionId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Defines a closed AWBC-owned one-byte enum together with its sole numeric
@@ -2866,7 +2867,7 @@ impl AwbcLineOperation {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcLineCancelHandler {
-    pub trigger: RuntimeDialogueMarkId,
+    pub trigger: InputActionId,
     pub function: AwbcFunctionId,
 }
 

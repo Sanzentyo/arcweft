@@ -78,6 +78,7 @@ impl RuntimeActionButtonLowerer {
     ) -> Result<RenderActionButton, RuntimeActionButtonLoweringError> {
         Ok(RenderActionButton {
             target: lower_target(&button.target)?,
+            dialogue_mount: button.dialogue_mount,
             label: button.label.clone(),
             enabled: button.enabled,
             containing_scroll_region: button.containing_scroll_region.clone(),

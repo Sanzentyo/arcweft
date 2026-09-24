@@ -10,7 +10,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
-use arcweft_view::{EventKind, ViewId};
+use arcweft_view::{EventKind, ViewId, ViewMountId};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -44,7 +44,13 @@ pub(crate) fn project_view_resources(
     let mut projected = ProjectedViewResources {
         images: retain_non_executable(input.current_images, input.executable_definitions),
         text_inputs: retain_non_executable(input.text_inputs, input.executable_definitions),
-        action_buttons: retain_non_executable(input.action_buttons, input.executable_definitions),
+        action_buttons: retain_non_executable(input.action_buttons, input.executable_definitions)
+            .into_iter()
+            .map(|mut button| {
+                button.dialogue_mount = None;
+                button
+            })
+            .collect(),
         scroll_regions: retain_non_executable(input.scroll_regions, input.executable_definitions),
         surfaces: retain_non_executable(input.surfaces, input.executable_definitions),
         focus_groups: retain_non_executable(input.focus_groups, input.executable_definitions),
@@ -54,12 +60,13 @@ pub(crate) fn project_view_resources(
         ),
     };
     for mount in &frame.mounts {
-        project_mount(mount, input, &mut projected);
+        project_mount(frame, mount, input, &mut projected);
     }
     projected
 }
 
 fn project_mount(
+    frame: &BundleViewFrame,
     mount: &BundleViewMountOutput,
     input: &ViewProjectionInput<'_>,
     projected: &mut ProjectedViewResources,
@@ -71,7 +78,7 @@ fn project_mount(
         .collect::<BTreeSet<_>>();
     project_images(mount, input, projected);
     project_text_inputs(mount, input, &active, projected);
-    project_action_buttons(mount, input, &active, projected);
+    project_action_buttons(frame, mount, input, &active, projected);
     project_layout_resources(mount, input, &active, projected);
     project_focus(mount, input, &active, projected);
 }
@@ -138,11 +145,13 @@ fn project_text_inputs(
 }
 
 fn project_action_buttons(
+    frame: &BundleViewFrame,
     mount: &BundleViewMountOutput,
     input: &ViewProjectionInput<'_>,
     active: &BTreeSet<&str>,
     projected: &mut ProjectedViewResources,
 ) {
+    let dialogue_mount = dialogue_root_mount(frame, mount);
     projected.action_buttons.extend(
         input
             .action_buttons
@@ -152,6 +161,12 @@ fn project_action_buttons(
             })
             .cloned()
             .map(|mut button| {
+                button.dialogue_mount = matches!(
+                    &button.action,
+                    ViewRuntimeActionButtonAction::ActionInvoke { .. }
+                )
+                .then_some(dialogue_mount)
+                .flatten();
                 let authored_target = button.target.clone();
                 let handler = mount
                     .style_nodes
@@ -197,6 +212,20 @@ fn project_action_buttons(
                 button
             }),
     );
+}
+
+fn dialogue_root_mount(
+    frame: &BundleViewFrame,
+    mount: &BundleViewMountOutput,
+) -> Option<ViewMountId> {
+    mount.dialogue?;
+    let mut roots = frame.mounts.iter().filter(|candidate| {
+        candidate.handle == mount.handle
+            && candidate.path.segments().is_empty()
+            && candidate.dialogue.is_some()
+    });
+    let root = roots.next()?;
+    roots.next().is_none().then_some(root.mount)
 }
 
 fn project_layout_resources(
@@ -354,3 +383,195 @@ impl_view_owned!(
     ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation,
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dialogue::{
+        DialoguePageIndex, DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal,
+        DialogueViewStage,
+    };
+    use crate::presentation_handles::PresentationHandleId;
+    use crate::view_runtime::{BundleViewInstancePath, BundleViewMountOutput};
+    use arcweft_bundle::resource_codec::{ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle};
+    use arcweft_view::{
+        DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueStageIndex, ViewId,
+        ViewMountId,
+    };
+
+    #[test]
+    fn dialogue_button_projection_uses_matching_root_mount_and_overwrites_input_provenance() {
+        let handle = PresentationHandleId::try_new("handle.dialogue").unwrap();
+        let other_handle = PresentationHandleId::try_new("handle.other").unwrap();
+        let root_view = ViewId::try_new("view.dialogue.root").unwrap();
+        let child_view = ViewId::try_new("view.dialogue.child").unwrap();
+        let other_view = ViewId::try_new("view.other.root").unwrap();
+        let root = mount(
+            handle.clone(),
+            ViewMountId::from_raw(17),
+            root_view.clone(),
+            BundleViewInstancePath::default(),
+            Some(dialogue_state()),
+            Vec::new(),
+        );
+        let other_root = mount(
+            other_handle,
+            ViewMountId::from_raw(27),
+            other_view,
+            BundleViewInstancePath::default(),
+            Some(dialogue_state()),
+            Vec::new(),
+        );
+        let child_path = serde_json::from_str::<BundleViewInstancePath>(
+            r#"[{"kind":"call","instruction":3,"authored_key":null}]"#,
+        )
+        .unwrap();
+        let child = mount(
+            handle,
+            ViewMountId::from_raw(18),
+            child_view.clone(),
+            child_path,
+            Some(dialogue_state()),
+            vec!["button.cancel".to_owned()],
+        );
+        let frame = BundleViewFrame {
+            mounts: vec![other_root, root, child],
+            diagnostics: Vec::new(),
+        };
+        let button = ViewRuntimeActionButton {
+            public_id: "button.cancel".to_owned(),
+            target: "button.cancel".to_owned(),
+            dialogue_mount: Some(ViewMountId::from_raw(99)),
+            view: Some(child_view.as_str().to_owned()),
+            containing_scroll_region: None,
+            label: "Cancel".to_owned(),
+            enabled: true,
+            bounds: ViewRuntimeButtonBounds::new(0, 0, 100_000, 40_000),
+            action: ViewRuntimeActionButtonAction::ActionInvoke {
+                action: "action.dialogue.cancel".to_owned(),
+                payload: None,
+            },
+            style: ViewRuntimeControlVisualStyle::default(),
+        };
+        let executable_definitions = BTreeSet::from([root_view, child_view]);
+        let projected = project_view_resources(
+            &frame,
+            &ViewProjectionInput {
+                executable_definitions: &executable_definitions,
+                current_images: &[],
+                current_text_inputs: &[],
+                images: &[],
+                text_inputs: &[],
+                action_buttons: &[button],
+                scroll_regions: &[],
+                surfaces: &[],
+                focus_groups: &[],
+                focus_navigation: &[],
+            },
+        );
+
+        assert_eq!(projected.action_buttons.len(), 1);
+        assert_eq!(
+            projected.action_buttons[0].dialogue_mount,
+            Some(ViewMountId::from_raw(17))
+        );
+    }
+
+    #[test]
+    fn dialogue_button_projection_fails_closed_without_a_root_mount() {
+        let handle = PresentationHandleId::try_new("handle.dialogue").unwrap();
+        let child_view = ViewId::try_new("view.dialogue.child").unwrap();
+        let child_path = serde_json::from_str::<BundleViewInstancePath>(
+            r#"[{"kind":"call","instruction":3,"authored_key":null}]"#,
+        )
+        .unwrap();
+        let frame = BundleViewFrame {
+            mounts: vec![mount(
+                handle,
+                ViewMountId::from_raw(18),
+                child_view.clone(),
+                child_path,
+                Some(dialogue_state()),
+                vec!["button.cancel".to_owned()],
+            )],
+            diagnostics: Vec::new(),
+        };
+        let button = ViewRuntimeActionButton {
+            public_id: "button.cancel".to_owned(),
+            target: "button.cancel".to_owned(),
+            dialogue_mount: Some(ViewMountId::from_raw(99)),
+            view: Some(child_view.as_str().to_owned()),
+            containing_scroll_region: None,
+            label: "Cancel".to_owned(),
+            enabled: true,
+            bounds: ViewRuntimeButtonBounds::new(0, 0, 100_000, 40_000),
+            action: ViewRuntimeActionButtonAction::ActionInvoke {
+                action: "action.dialogue.cancel".to_owned(),
+                payload: None,
+            },
+            style: ViewRuntimeControlVisualStyle::default(),
+        };
+        let executable_definitions = BTreeSet::from([child_view]);
+        let projected = project_view_resources(
+            &frame,
+            &ViewProjectionInput {
+                executable_definitions: &executable_definitions,
+                current_images: &[],
+                current_text_inputs: &[],
+                images: &[],
+                text_inputs: &[],
+                action_buttons: &[button],
+                scroll_regions: &[],
+                surfaces: &[],
+                focus_groups: &[],
+                focus_navigation: &[],
+            },
+        );
+
+        assert_eq!(projected.action_buttons.len(), 1);
+        assert_eq!(projected.action_buttons[0].dialogue_mount, None);
+    }
+
+    fn mount(
+        handle: PresentationHandleId,
+        mount: ViewMountId,
+        view: ViewId,
+        path: BundleViewInstancePath,
+        dialogue: Option<crate::dialogue::DialogueViewState>,
+        active_targets: Vec<String>,
+    ) -> BundleViewMountOutput {
+        BundleViewMountOutput {
+            handle,
+            mount,
+            view,
+            path,
+            host_axis_seed: None,
+            dialogue,
+            active_targets,
+            active_images: Vec::new(),
+            paint: Vec::new(),
+            text: Vec::new(),
+            fx: Vec::new(),
+            events: Vec::new(),
+            style_nodes: Vec::new(),
+        }
+    }
+
+    fn dialogue_state() -> crate::dialogue::DialogueViewState {
+        crate::dialogue::DialogueViewState {
+            occurrence: DialogueViewOccurrence {
+                presentation: DialoguePresentationId::new(1),
+                entry: DialogueEntryId::new(2),
+                instance: DialogueInstanceId::new(3),
+            },
+            stage: DialogueViewStage {
+                index: DialogueStageIndex::new(4),
+                page: DialoguePageIndex::new(0),
+                stage_count: 2,
+                page_count: 1,
+            },
+            reveal: DialogueViewReveal::complete(),
+            primary_action: DialogueViewPrimaryAction { target: None },
+        }
+    }
+}

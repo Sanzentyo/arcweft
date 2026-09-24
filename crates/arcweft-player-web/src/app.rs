@@ -746,6 +746,7 @@ impl From<BundleImageCatalogError> for WebPlayerError {
 fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClipboardRequest> {
     let InputOutcome {
         actions,
+        dialogue_input_actions,
         view_handler_invocations,
         text_control_write_backs,
         clipboard_requests,
@@ -760,6 +761,15 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
             state.session.queue_dialogue_reveal_completion(target);
         }
         DialogueProgress::Advance { target } => state.session.queue_dialogue_advance(target),
+    }
+    for input_action in dialogue_input_actions {
+        if let Err(error) = state
+            .session
+            .queue_dialogue_input_action(input_action.observed, input_action.action)
+        {
+            set_fatal(state, WebPlayerError::Session(error.to_string()));
+            break;
+        }
     }
     for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {

@@ -39,6 +39,7 @@ fn runtime_action_button_style_reaches_render_action_button() {
     let button = ViewRuntimeActionButton {
         public_id: "button.submit_feedback".to_owned(),
         target: "button.submit_feedback".to_owned(),
+        dialogue_mount: None,
         view: None,
         containing_scroll_region: None,
         label: "Send".to_owned(),

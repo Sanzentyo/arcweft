@@ -60,7 +60,7 @@ pub(super) fn agent_dialogue_prepared_text_objects(
             state.dialogue == u64::try_from(dialogue).unwrap_or(u64::MAX)
                 && state.entry == u64::try_from(entry).unwrap_or(u64::MAX)
         })
-        .map(|state| format!("view.mount.{}", state.mount));
+        .map(|state| format!("view.mount.{}", state.mount.get()));
     let dialogue_object = dialogue_view_object(capture_step, frame, &owner, parent_id, viewport)?;
     let mut objects = vec![dialogue_object.clone()];
     objects.extend(dialogue_children(

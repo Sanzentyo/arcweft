@@ -157,6 +157,7 @@ pub struct BundleSessionRuntimeSnapshot {
     pub source_label: String,
     pub next_step_index: u64,
     pub next_task_sequence: u64,
+    pub next_dialogue_input_sequence: u64,
     pub next_generation_id: u64,
     #[serde(deserialize_with = "deserialize_required_option")]
     pub runtime_generation_pin: Option<GenerationId>,

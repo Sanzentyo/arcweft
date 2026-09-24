@@ -348,6 +348,7 @@ fn runtime_action_button(public_id: &str) -> ViewRuntimeActionButton {
     ViewRuntimeActionButton {
         public_id: public_id.to_owned(),
         target: public_id.to_owned(),
+        dialogue_mount: None,
         view: Some("view.ModernFeedbackPanel".to_owned()),
         containing_scroll_region: None,
         label: "Continue".to_owned(),

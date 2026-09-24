@@ -3193,6 +3193,14 @@ pub enum LineRuntimeError {
     ConsumedContentEvent {
         event: crate::step::RuntimeDialogueContentEventKind,
     },
+    #[error("dialogue input action repeats within one input batch: {event:?}")]
+    DuplicateInputActionEvent {
+        event: crate::step::RuntimeDialogueInputActionEvent,
+    },
+    #[error("dialogue input action was already consumed by this activation: {event:?}")]
+    ConsumedInputActionEvent {
+        event: crate::step::RuntimeDialogueInputActionEvent,
+    },
     #[error("dialogue content event arrived outside a live line-task reducer: {event:?}")]
     ContentEventOutsideLiveLineTask {
         event: crate::step::RuntimeDialogueContentEventKind,

@@ -253,6 +253,9 @@ impl InputController {
                 && !effects.action_button_activation,
         );
         outcome
+            .dialogue_input_actions
+            .extend(effects.dialogue_input_actions);
+        outcome
             .view_handler_invocations
             .extend(effects.view_handler_invocations);
         outcome.dialogue_progress = outcome.dialogue_progress.merge(effects.dialogue_progress);

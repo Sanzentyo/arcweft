@@ -3,9 +3,12 @@ use arcweft_bundle::resource_codec::view::{
     ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds, ViewRuntimeControlVisualStyle,
 };
 use arcweft_id::PublicId;
+use arcweft_interaction_model::input::InputActionId;
 use arcweft_player_scene::action_buttons::RuntimeActionButtonLowerer;
 use arcweft_player_scene::fonts::DEFAULT_PLAYER_FONT_RESOURCE_BYTES;
-use arcweft_player_scene::input::{InputController, InputDiagnosticKind, InputPointerModifiers};
+use arcweft_player_scene::input::{
+    DialogueInputAction, InputController, InputDiagnosticKind, InputPointerModifiers,
+};
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::{InteractionTarget, KeyPhase, PointerId, ViewportPoint};
 use arcweft_presentation::semantic::{
@@ -52,6 +55,7 @@ fn scene_with_text_input_and_action_button() -> RenderScene {
         )],
         action_buttons: vec![RenderActionButton {
             target: button_target,
+            dialogue_mount: None,
             label: "Send".to_owned(),
             enabled: true,
             containing_scroll_region: None,
@@ -88,6 +92,7 @@ fn action_invoke_scene() -> RenderScene {
         text_inputs: Vec::new(),
         action_buttons: vec![RenderActionButton {
             target: target("button.continue"),
+            dialogue_mount: None,
             label: "Continue".to_owned(),
             enabled: true,
             containing_scroll_region: None,
@@ -120,22 +125,16 @@ fn action_invoke_scene() -> RenderScene {
 fn prepare_with_dialogue_view(scene: &RenderScene) -> PreparedFrame {
     let mut frame = prepare(scene).expect("frame prepares");
     frame.push_dialogue_view(PreparedDialogueViewState {
-        dialogue: 0,
-        entry: 0,
-        mount: 0,
-        revision: 0,
-        instance: 0,
-        stage: 0,
+        dialogue: 19,
+        entry: 23,
+        mount: arcweft_view::ViewMountId::from_raw(7),
+        revision: 31,
+        instance: 29,
+        stage: 4,
         bounds: HitRect::new(32.0, 300.0, 736.0, 148.0),
-        reveal_complete: true,
-        advance_available: true,
-        primary_action: Some(arcweft_view::DialogueAdvanceTarget::new(
-            arcweft_view::DialoguePresentationId::new(0),
-            arcweft_view::DialogueEntryId::new(0),
-            arcweft_view::DialogueInstanceId::new(0),
-            arcweft_view::DialogueStageIndex::new(0),
-            arcweft_view::DialogueRevision::new(0),
-        )),
+        reveal_complete: false,
+        advance_available: false,
+        primary_action: None,
     });
     frame
 }
@@ -182,6 +181,49 @@ fn pointer_activation_on_action_button_does_not_implicitly_advance_dialogue() {
 }
 
 #[test]
+fn accepted_dialogue_action_button_emits_the_exact_prepared_dialogue_token() {
+    let mut scene = action_invoke_scene();
+    scene.action_buttons[0].dialogue_mount = Some(arcweft_view::ViewMountId::from_raw(7));
+    let frame = prepare_with_dialogue_view(&scene);
+    let mut input = InputController::default();
+    let position = ViewportPoint::new(64.0, 64.0);
+
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+    assert_eq!(outcome.actions().len(), 1);
+    assert_eq!(
+        outcome.dialogue_input_actions,
+        vec![DialogueInputAction {
+            observed: arcweft_view::DialogueAdvanceTarget::new(
+                arcweft_view::DialoguePresentationId::new(19),
+                arcweft_view::DialogueEntryId::new(23),
+                arcweft_view::DialogueInstanceId::new(29),
+                arcweft_view::DialogueStageIndex::new(4),
+                arcweft_view::DialogueRevision::new(31),
+            ),
+            action: InputActionId::new("action.feedback.submit_name").unwrap(),
+        }]
+    );
+    assert!(!outcome.dialogue_progress.advances());
+}
+
+#[test]
+fn dialogue_action_button_with_unmatched_root_mount_emits_only_generic_action() {
+    let mut scene = action_invoke_scene();
+    scene.action_buttons[0].dialogue_mount = Some(arcweft_view::ViewMountId::from_raw(8));
+    let frame = prepare_with_dialogue_view(&scene);
+    let mut input = InputController::default();
+    let position = ViewportPoint::new(64.0, 64.0);
+
+    input.pointer_down(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+    let outcome = input.pointer_up(&frame, PointerId(0), position, InputPointerModifiers::NONE);
+
+    assert_eq!(outcome.actions().len(), 1);
+    assert!(outcome.dialogue_input_actions.is_empty());
+}
+
+#[test]
 fn pointer_activation_on_noop_button_does_not_emit_action_or_write_back() {
     let mut scene = scene_with_text_input_and_action_button();
     scene.action_buttons[0].action = RenderActionButtonAction::Noop;
@@ -222,8 +264,9 @@ fn pointer_activation_on_action_invoke_button_emits_semantic_action() {
 
 #[test]
 fn pointer_activation_reports_semantic_action_rejection() {
-    let scene = action_invoke_scene();
-    let mut frame = prepare(&scene).unwrap();
+    let mut scene = action_invoke_scene();
+    scene.action_buttons[0].dialogue_mount = Some(arcweft_view::ViewMountId::from_raw(7));
+    let mut frame = prepare_with_dialogue_view(&scene);
     let original_node = frame
         .semantics
         .find(&target("button.continue"))
@@ -259,6 +302,7 @@ fn pointer_activation_reports_semantic_action_rejection() {
             },
         }
     );
+    assert!(outcome.dialogue_input_actions.is_empty());
 }
 
 #[test]
@@ -277,6 +321,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         &[ViewRuntimeActionButton {
             public_id: "button.continue".to_owned(),
             target: "button.continue".to_owned(),
+            dialogue_mount: Some(arcweft_view::ViewMountId::from_raw(42)),
             view: None,
             containing_scroll_region: None,
             label: "Continue".to_owned(),
@@ -294,6 +339,10 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         &text_inputs,
     )
     .expect("runtime button lowers");
+    assert_eq!(
+        buttons[0].dialogue_mount,
+        Some(arcweft_view::ViewMountId::from_raw(42))
+    );
 
     let RenderActionButtonAction::ActionInvoke { payload, .. } = &buttons[0].action else {
         panic!("expected action invoke render action");
@@ -304,6 +353,7 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
         &[ViewRuntimeActionButton {
             public_id: "button.literal".to_owned(),
             target: "button.literal".to_owned(),
+            dialogue_mount: None,
             view: None,
             containing_scroll_region: None,
             label: "Literal".to_owned(),

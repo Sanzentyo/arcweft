@@ -1648,20 +1648,8 @@ impl RuntimePlanBuilder {
         &self,
         seed: RuntimeLineTaskCancelRuleSeed,
     ) -> Result<LineCancelRule, RuntimePlanBuildError> {
-        let (content, trigger) = seed
-            .trigger
-            .resolve(&self.issuer)
-            .ok_or(RuntimePlanBuildError::ForeignDialogueMarkSeed)?;
-        if self
-            .dialogue_content
-            .get(content)
-            .and_then(|content| content.marks().get(trigger.index()))
-            .is_none()
-        {
-            return Err(RuntimePlanBuildError::ForeignDialogueMarkSeed);
-        }
         Ok(LineCancelRule::new(
-            trigger,
+            seed.trigger,
             self.lower_flow_ops(seed.action)?.into_boxed_slice(),
         ))
     }
@@ -1730,13 +1718,6 @@ impl RuntimePlanBuilder {
     ) -> Result<BTreeSet<RuntimeDialogueContentPlanId>, RuntimePlanBuildError> {
         let mut owners = BTreeSet::new();
         self.collect_line_task_node_event_owners(&seed.root, &mut owners)?;
-        for rule in &seed.cancel_rules {
-            let (content, _) = rule
-                .trigger
-                .resolve(&self.issuer)
-                .ok_or(RuntimePlanBuildError::ForeignDialogueMarkSeed)?;
-            owners.insert(content);
-        }
         Ok(owners)
     }
 

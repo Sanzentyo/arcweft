@@ -124,6 +124,39 @@ impl DialoguePresentationStore {
         })
     }
 
+    /// Resolves the exact dialogue occurrence observed with an input action.
+    /// Unlike an advance, cancellation remains valid while content is revealing.
+    pub(crate) fn resolve_input_action_activation(
+        &self,
+        target: DialogueAdvanceTarget,
+    ) -> Result<DialogueActivationId, DialogueAdvanceRejection> {
+        let dialogue = self
+            .presentations
+            .get(&target.dialogue)
+            .ok_or(DialogueAdvanceRejection::UnknownPresentation)?;
+        if dialogue.revision != target.revision {
+            return Err(DialogueAdvanceRejection::StaleRevision);
+        }
+        if dialogue.active != Some(target.entry) {
+            return Err(DialogueAdvanceRejection::StaleEntry);
+        }
+        let entry = dialogue
+            .entries
+            .iter()
+            .find(|entry| entry.id == target.entry)
+            .ok_or(DialogueAdvanceRejection::StaleEntry)?;
+        if entry.instance != target.instance {
+            return Err(DialogueAdvanceRejection::StaleInstance);
+        }
+        if entry.stage != target.stage {
+            return Err(DialogueAdvanceRejection::StaleStage);
+        }
+        if entry.current_stage().is_none() {
+            return Err(DialogueAdvanceRejection::InvalidStage);
+        }
+        Ok(entry.activation.clone())
+    }
+
     /// Emits each typed mark/effect coordinate exactly once when its authored
     /// stage first becomes current. Semantic reveal is stage-based and
     /// independent from renderer-local typewriter timing, so an instant visual

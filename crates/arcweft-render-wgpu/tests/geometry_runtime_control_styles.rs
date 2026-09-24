@@ -318,6 +318,7 @@ fn text_controls_and_buttons_use_authored_font_family() {
     });
     let button = RenderActionButton {
         target: button_target,
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: None,
@@ -435,6 +436,7 @@ fn foreground_filter_reaches_runtime_control_filter_plan() {
     let input_target = target("input.feedback");
     let button = RenderActionButton {
         target: button_target.clone(),
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: None,
@@ -520,6 +522,7 @@ fn authored_control_depth_orders_text_inputs_and_buttons_together() {
     });
     let button = RenderActionButton {
         target: button_target,
+        dialogue_mount: None,
         label: "Send".to_owned(),
         enabled: true,
         containing_scroll_region: None,
@@ -561,6 +564,7 @@ fn scene_with_button(
         vec![text_control(input_target.clone())],
         vec![RenderActionButton {
             target: button_target,
+            dialogue_mount: None,
             label: "Send".to_owned(),
             enabled: true,
             containing_scroll_region: None,

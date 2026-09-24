@@ -10,9 +10,10 @@ use super::{
     BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
     BundleSessionSnapshot, BundleViewRuntime, DialogueContentCatalog, RuntimeExecutor,
     RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry,
-    ViewVirtualizationRuntime, digest_label, reconciled_root_handles_for_restore,
-    validate_presentation_runtime_status, validate_presentation_snapshot,
-    validate_product_awbc_snapshot, validate_virtual_list_scroll_owner,
+    ViewProjectionInput, ViewVirtualizationRuntime, digest_label, project_view_resources,
+    reconciled_root_handles_for_restore, validate_presentation_runtime_status,
+    validate_presentation_snapshot, validate_product_awbc_snapshot,
+    validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -35,6 +36,7 @@ impl BundleSession {
         self.presentation_generation = self.swap.pin_active_generation();
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         self.pending_input_events.clear();
+        self.pending_dialogue_input_actions.clear();
         self.pending_presentation_inputs.clear();
         self.pending_host_call_results.clear();
         self.pending_deferred_root_events.clear();
@@ -106,6 +108,7 @@ impl BundleSession {
                 source_label: self.source_label.clone(),
                 next_step_index,
                 next_task_sequence: self.next_task_sequence,
+                next_dialogue_input_sequence: self.next_dialogue_input_sequence,
                 next_generation_id: self.next_generation_id,
                 runtime_generation_pin: self.runtime_generation_pin.as_ref().map(|pin| pin.id),
             },
@@ -272,6 +275,7 @@ impl BundleSession {
             source_label,
             next_step_index,
             next_task_sequence,
+            next_dialogue_input_sequence,
             next_generation_id,
             runtime_generation_pin,
         } = snapshot.runtime;
@@ -332,6 +336,35 @@ impl BundleSession {
             .map_err(|error| BundleSessionSaveError::ViewRuntime {
                 message: error.to_string(),
             })?;
+        let executable_definitions = restored_view_runtime.definition_ids();
+        let projected_buttons = project_view_resources(
+            &snapshot.presentation.view,
+            &ViewProjectionInput {
+                executable_definitions: &executable_definitions,
+                current_images: &snapshot.presentation.images,
+                current_text_inputs: &snapshot.presentation.text_inputs,
+                images: &self.image_objects,
+                text_inputs: &self.text_inputs,
+                action_buttons: &self.action_buttons,
+                scroll_regions: &self.scroll_regions,
+                surfaces: &self.surfaces,
+                focus_groups: &self.focus_groups,
+                focus_navigation: &self.focus_navigation,
+            },
+        )
+        .action_buttons;
+        if snapshot
+            .presentation
+            .action_buttons
+            .iter()
+            .filter(|button| button.dialogue_mount.is_some())
+            .any(|button| !projected_buttons.contains(button))
+        {
+            return Err(BundleSessionSaveError::Presentation {
+                message: "dialogue action-button provenance differs from its sealed View mount"
+                    .to_owned(),
+            });
+        }
         for list in restored_view_virtualization.mounts() {
             validate_virtual_list_scroll_owner(
                 &self.scroll_regions,
@@ -349,11 +382,13 @@ impl BundleSession {
         self.source_label = source_label;
         self.next_step_index = next_step_index;
         self.next_task_sequence = next_task_sequence;
+        self.next_dialogue_input_sequence = next_dialogue_input_sequence;
         self.next_generation_id = next_generation_id;
         self.executor = restored_executor;
         self.runtime_generation_pin =
             restore_runtime_generation_pin.then(|| self.swap.pin_active_generation());
         self.pending_input_events.clear();
+        self.pending_dialogue_input_actions.clear();
         self.pending_presentation_inputs.clear();
         self.pending_text_control_write_backs.clear();
         self.pending_host_call_results.clear();
@@ -383,9 +418,14 @@ impl BundleSession {
                 count: self.pending_presentation_inputs.len(),
             });
         }
-        if !self.pending_input_events.is_empty() {
+        let pending_input_count = self
+            .pending_input_events
+            .len()
+            .checked_add(self.pending_dialogue_input_actions.len())
+            .expect("pending input collections fit addressable memory");
+        if pending_input_count > 0 {
             blockers.push(BundleSessionPendingBlocker::PendingInputEvents {
-                count: self.pending_input_events.len(),
+                count: pending_input_count,
             });
         }
         if !self.pending_text_control_write_backs.is_empty() {

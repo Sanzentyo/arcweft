@@ -2,8 +2,8 @@ use self::root_command::PendingRootCommandResult;
 use self::virtualization::validate_virtual_list_scroll_owner;
 use crate::clock::RuntimeClockStep;
 use crate::dialogue::{
-    BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceTarget,
-    DialoguePresentationStore,
+    BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceRejection,
+    DialogueAdvanceTarget, DialoguePresentationStore,
 };
 use crate::display::{
     ActiveSessionLocale, BundlePresentationResources, BundlePresentationSnapshot,
@@ -62,9 +62,9 @@ use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
 use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use arcweft_core::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use arcweft_core::step::{
-    RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallId, RuntimeHostCallRequest,
-    RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
-    RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
+    RuntimeDialogueInputActionEvent, RuntimeHostCallError, RuntimeHostCallErrorKind,
+    RuntimeHostCallId, RuntimeHostCallRequest, RuntimeHostCallResult, RuntimeStepBudget,
+    RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
 };
 use arcweft_core::task::GenerationId;
 use arcweft_core::task::{
@@ -74,7 +74,7 @@ use arcweft_core::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
-    InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
+    InputActionId, InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
 use arcweft_interaction_model::payload::InteractionPayload;
 use arcweft_presentation::appearance::{
@@ -159,10 +159,18 @@ pub struct BundleStepInput {
     pub deferred_root_events: Vec<RootEventInput>,
     pub presentation_inputs: Vec<BundlePresentationInput>,
     pub input_events: Vec<RoutedInputEvent>,
+    pub dialogue_input_actions: Vec<RuntimeDialogueInputActionEvent>,
     pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
+}
+
+/// Result of routing an input action from one observed dialogue View occurrence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueInputActionQueueOutcome {
+    Queued,
+    Rejected(DialogueAdvanceRejection),
 }
 
 /// Runtime-ready input after pending host work and presentation routing are resolved.
@@ -282,6 +290,7 @@ pub struct BundleSession {
     resource_types: Arc<ResourceTypeRegistry>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
+    pending_dialogue_input_actions: Vec<RuntimeDialogueInputActionEvent>,
     pending_presentation_inputs: Vec<BundlePresentationInput>,
     pending_text_control_write_backs: Vec<RuntimeTextControlWriteBack>,
     pending_host_call_results: Vec<RuntimeHostCallResult>,
@@ -292,6 +301,7 @@ pub struct BundleSession {
     view_virtualization: ViewVirtualizationRuntime,
     next_step_index: usize,
     next_task_sequence: u64,
+    next_dialogue_input_sequence: u64,
     swap: SwapSession,
     /// Generation that owns retained dialogue/View presentation state, even
     /// after the foreground fiber has completed.
@@ -342,6 +352,8 @@ pub enum BundleSessionError {
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
     MissingSemanticActionPayload { action: String },
+    #[error("dialogue input action identity allocator is exhausted")]
+    DialogueInputIdentityExhausted,
     #[error(
         "runtime text-control write-back target `{target}` with session {session} is not active"
     )]
@@ -517,6 +529,38 @@ impl BundleSession {
     /// Queues a core input event produced by a platform/presentation adapter.
     pub fn queue_input(&mut self, event: RoutedInputEvent) {
         self.pending_input_events.push(event);
+    }
+
+    /// Queues a dialogue action only for the exact occurrence observed by the
+    /// input adapter. A stale View token is a rejected input, not a session error.
+    pub fn queue_dialogue_input_action(
+        &mut self,
+        observed: DialogueAdvanceTarget,
+        action: InputActionId,
+    ) -> Result<DialogueInputActionQueueOutcome, BundleSessionError> {
+        match self
+            .presentation
+            .dialogue
+            .resolve_input_action_activation(observed)
+        {
+            Ok(activation) => {
+                let sequence = self.next_dialogue_input_sequence;
+                self.next_dialogue_input_sequence = sequence
+                    .checked_add(1)
+                    .ok_or(BundleSessionError::DialogueInputIdentityExhausted)?;
+                let epoch = u64::try_from(self.next_step_index)
+                    .map_err(|_| BundleSessionError::DialogueInputIdentityExhausted)?;
+                self.pending_dialogue_input_actions
+                    .push(RuntimeDialogueInputActionEvent::new(
+                        activation,
+                        action,
+                        InputEpoch::new(epoch),
+                        InputSequence::new(sequence),
+                    ));
+                Ok(DialogueInputActionQueueOutcome::Queued)
+            }
+            Err(reason) => Ok(DialogueInputActionQueueOutcome::Rejected(reason)),
+        }
     }
 
     /// Final semantic bridge from Arcweft presentation actions to core input
@@ -863,6 +907,9 @@ impl BundleSession {
         self.release_completed_task_generation_pins(&task_events);
         input.input_events.append(&mut self.pending_input_events);
         input
+            .dialogue_input_actions
+            .append(&mut self.pending_dialogue_input_actions);
+        input
             .presentation_inputs
             .append(&mut self.pending_presentation_inputs);
         let mut dialogue_advances = Vec::new();
@@ -878,6 +925,7 @@ impl BundleSession {
                 root_events: input.root_events,
                 deferred_root_events: input.deferred_root_events,
                 input_events: input.input_events,
+                dialogue_input_actions: input.dialogue_input_actions,
                 dialogue_content_events,
                 dialogue_advances,
                 need_states: input.need_states,
@@ -1451,6 +1499,82 @@ mod view_handler_queue_tests {
         assert!(session.program_owner().same_program(
             &arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&runtime.program))
         ));
+    }
+
+    #[test]
+    fn dialogue_input_action_uses_the_observed_activation_and_rejects_stale_revision() {
+        let mut session = BundleSession::new(&session_bundle(), BundleSessionOptions::default())
+            .expect("valid product session");
+        let view = ViewId::standard_dialogue();
+        let definition = crate::dialogue::DialogueViewDefinition::new(view.clone());
+        let activation = arcweft_core::runtime_id::DialogueActivationId::new(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x47; 32])
+                .expect("fixture artifact"),
+            arcweft_core::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+            serde_json::from_value(serde_json::json!(1)).expect("fixture content identity"),
+            7,
+        );
+        session
+            .presentation
+            .dialogue
+            .apply_operations(&[crate::dialogue::DialoguePresentationOperation::append(
+                activation.clone(),
+                definition.clone(),
+                dialogue_frame(view),
+            )])
+            .expect("retained dialogue occurrence");
+        let dialogue = session
+            .presentation
+            .dialogue
+            .get_by_definition(&definition)
+            .expect("retained dialogue presentation");
+        let entry = dialogue.active_entry().expect("active dialogue occurrence");
+        assert!(!entry.is_waiting_for_advance());
+        let observed = DialogueAdvanceTarget::new(
+            dialogue.id(),
+            entry.id(),
+            entry.instance(),
+            entry.stage_index(),
+            dialogue.revision(),
+        );
+        let action = InputActionId::new("SkipLine").expect("action identity");
+        assert_eq!(
+            session
+                .queue_dialogue_input_action(observed, action.clone())
+                .expect("input identity remains available"),
+            DialogueInputActionQueueOutcome::Queued
+        );
+        let [queued] = session.pending_dialogue_input_actions.as_slice() else {
+            panic!("one activation-bound action is queued");
+        };
+        assert_eq!(queued.activation(), &activation);
+        assert_eq!(queued.action(), &action);
+        assert_eq!(queued.sequence(), InputSequence::new(0));
+        assert_eq!(
+            session
+                .queue_dialogue_input_action(observed, action.clone())
+                .expect("next input identity remains available"),
+            DialogueInputActionQueueOutcome::Queued
+        );
+        assert_eq!(
+            session.pending_dialogue_input_actions[1].sequence(),
+            InputSequence::new(1)
+        );
+        let stale = DialogueAdvanceTarget::new(
+            observed.dialogue,
+            observed.entry,
+            observed.instance,
+            observed.stage,
+            observed.revision.next().expect("fixture revision advances"),
+        );
+        assert_eq!(
+            session
+                .queue_dialogue_input_action(stale, action)
+                .expect("stale input is not a session failure"),
+            DialogueInputActionQueueOutcome::Rejected(DialogueAdvanceRejection::StaleRevision)
+        );
+        assert_eq!(session.pending_dialogue_input_actions.len(), 2);
+        assert_eq!(session.next_dialogue_input_sequence, 2);
     }
 
     #[test]

@@ -539,7 +539,7 @@ pub struct PreparedFrame {
 pub struct PreparedDialogueViewState {
     pub dialogue: u64,
     pub entry: u64,
-    pub mount: u64,
+    pub mount: arcweft_view::ViewMountId,
     pub revision: u64,
     pub instance: u64,
     pub stage: u32,

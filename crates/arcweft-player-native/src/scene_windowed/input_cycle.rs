@@ -383,6 +383,7 @@ impl NativeSceneState {
     fn apply_outcome(&mut self, outcome: InputOutcome) -> Result<(), NativeSceneWindowError> {
         let InputOutcome {
             actions,
+            dialogue_input_actions,
             view_handler_invocations,
             text_control_write_backs,
             clipboard_requests,
@@ -392,6 +393,12 @@ impl NativeSceneState {
             redraw: _,
         } = outcome;
         self.apply_dialogue_progress(dialogue_progress);
+        for input_action in dialogue_input_actions {
+            let _ = self
+                .runtime
+                .session_mut()
+                .queue_dialogue_input_action(input_action.observed, input_action.action)?;
+        }
         for action in actions {
             self.runtime.session_mut().queue_semantic_action(&action)?;
         }
@@ -421,6 +428,7 @@ impl NativeSceneState {
             let outcome = self.input.apply_clipboard_outcome(&frame, host_outcome)?;
             let InputOutcome {
                 actions,
+                dialogue_input_actions,
                 view_handler_invocations,
                 text_control_write_backs,
                 clipboard_requests,
@@ -430,6 +438,12 @@ impl NativeSceneState {
                 redraw: _,
             } = outcome;
             self.apply_dialogue_progress(dialogue_progress);
+            for input_action in dialogue_input_actions {
+                let _ = self
+                    .runtime
+                    .session_mut()
+                    .queue_dialogue_input_action(input_action.observed, input_action.action)?;
+            }
             for action in actions {
                 self.runtime.session_mut().queue_semantic_action(&action)?;
             }

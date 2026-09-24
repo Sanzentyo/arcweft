@@ -8,7 +8,7 @@ use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimePayload;
 use arcweft_interaction_model::{
     audio::{AudioCommandEnvelope, AudioEvent},
-    input::{InputEventKind, RoutedInputEvent},
+    input::{InputActionId, InputEpoch, InputEventKind, InputSequence, RoutedInputEvent},
     payload::InteractionPayload,
 };
 pub use arcweft_manifest_model::HostCallContractDigest;
@@ -18,6 +18,9 @@ pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub input_events: Vec<RoutedInputEvent>,
+    /// Dialogue cancellation actions bound to the exact activation that was
+    /// visible when the action was routed.
+    pub dialogue_input_actions: Vec<RuntimeDialogueInputActionEvent>,
     pub dialogue_content_events: Vec<RuntimeDialogueContentEvent>,
     pub dialogue_advances: Vec<DialogueActivationId>,
     pub need_states: Vec<RuntimeNeedState>,
@@ -41,6 +44,7 @@ pub struct RuntimeStepInputRef<'a> {
     tick: TickId,
     dt: LogicalDuration,
     input_events: &'a [RoutedInputEvent],
+    dialogue_input_actions: &'a [RuntimeDialogueInputActionEvent],
     dialogue_content_events: &'a [RuntimeDialogueContentEvent],
     dialogue_advances: &'a [DialogueActivationId],
     need_states: &'a [RuntimeNeedState],
@@ -59,6 +63,56 @@ pub struct RuntimeStepInputRef<'a> {
 pub struct RuntimeDialogueContentEvent {
     activation: DialogueActivationId,
     kind: RuntimeDialogueContentEventKind,
+}
+
+/// One semantic input action routed to the dialogue activation observed by
+/// the input adapter. The input identity prevents stale actions from being
+/// applied to a later activation of the same authored line.
+#[derive(
+    Clone, Debug, serde::Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize,
+)]
+pub struct RuntimeDialogueInputActionEvent {
+    activation: DialogueActivationId,
+    action: InputActionId,
+    epoch: InputEpoch,
+    sequence: InputSequence,
+}
+
+impl RuntimeDialogueInputActionEvent {
+    #[must_use]
+    pub const fn new(
+        activation: DialogueActivationId,
+        action: InputActionId,
+        epoch: InputEpoch,
+        sequence: InputSequence,
+    ) -> Self {
+        Self {
+            activation,
+            action,
+            epoch,
+            sequence,
+        }
+    }
+
+    #[must_use]
+    pub const fn activation(&self) -> &DialogueActivationId {
+        &self.activation
+    }
+
+    #[must_use]
+    pub const fn action(&self) -> &InputActionId {
+        &self.action
+    }
+
+    #[must_use]
+    pub const fn epoch(&self) -> InputEpoch {
+        self.epoch
+    }
+
+    #[must_use]
+    pub const fn sequence(&self) -> InputSequence {
+        self.sequence
+    }
 }
 
 impl RuntimeDialogueContentEvent {
@@ -502,6 +556,7 @@ impl RuntimeStepInput {
             tick: self.tick,
             dt: self.dt,
             input_events: self.input_events.as_slice(),
+            dialogue_input_actions: self.dialogue_input_actions.as_slice(),
             dialogue_content_events: self.dialogue_content_events.as_slice(),
             dialogue_advances: self.dialogue_advances.as_slice(),
             need_states: self.need_states.as_slice(),
@@ -554,6 +609,11 @@ impl<'a> RuntimeStepInputRef<'a> {
 
     pub const fn input_events(&self) -> &'a [RoutedInputEvent] {
         self.input_events
+    }
+
+    #[must_use]
+    pub const fn dialogue_input_actions(&self) -> &'a [RuntimeDialogueInputActionEvent] {
+        self.dialogue_input_actions
     }
 
     pub const fn dialogue_content_events(&self) -> &'a [RuntimeDialogueContentEvent] {

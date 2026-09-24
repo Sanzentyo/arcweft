@@ -67,9 +67,10 @@ use crate::plan::{ChoiceRuntimeOption, FlowEvent};
 use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::root::RootRuntime;
 use crate::step::{
-    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
-    RuntimeHostCallRequest, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
-    RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
+    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeDialogueInputActionEvent,
+    RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallRequest, RuntimeStepInput,
+    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
+    RuntimeStepStopReason,
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
@@ -585,11 +586,11 @@ impl<'a> AwbcLineTaskPlanView<'a> {
                 AwbcLineTaskNode::Action(function) => Some(*function),
                 _ => None,
             },
-            LineTaskWork::Cancellation(mark) => self
+            LineTaskWork::Cancellation(action) => self
                 .group
                 .cancel_handlers
                 .iter()
-                .find(|handler| handler.trigger == mark)
+                .find(|handler| handler.trigger == action)
                 .map(|handler| handler.function),
             LineTaskWork::Cleanup(ScopeExit::Completed) => self.group.cleanup_completed,
             LineTaskWork::Cleanup(ScopeExit::Cancelled) => self.group.cleanup_cancelled,
@@ -662,22 +663,27 @@ impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
             .is_some_and(|node| matches!(node, AwbcLineTaskNode::Action(_)))
     }
 
-    fn cancellation_mark(
+    fn cancellation_action(
         &self,
-        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
-    ) -> Option<crate::runtime_id::RuntimeDialogueMarkId> {
-        self.group
-            .cancel_handlers
-            .iter()
-            .find(|handler| marks.contains(&handler.trigger))
-            .map(|handler| handler.trigger)
+        actions: &[arcweft_interaction_model::input::InputActionId],
+    ) -> Option<arcweft_interaction_model::input::InputActionId> {
+        actions.iter().find_map(|action| {
+            self.group
+                .cancel_handlers
+                .iter()
+                .any(|handler| &handler.trigger == action)
+                .then(|| action.clone())
+        })
     }
 
-    fn has_cancellation_work(&self, mark: crate::runtime_id::RuntimeDialogueMarkId) -> bool {
+    fn has_cancellation_work(
+        &self,
+        action: &arcweft_interaction_model::input::InputActionId,
+    ) -> bool {
         self.group
             .cancel_handlers
             .iter()
-            .any(|handler| handler.trigger == mark)
+            .any(|handler| &handler.trigger == action)
     }
 
     fn has_cleanup(&self, exit: ScopeExit) -> bool {
@@ -1802,6 +1808,7 @@ impl AwbcProductStepExecutor {
                 line_task_captures,
                 result,
                 resume,
+                input.dialogue_input_actions.as_slice(),
                 output,
                 pure_backend,
             ),
@@ -2099,6 +2106,7 @@ impl AwbcProductStepExecutor {
         captures: Box<[RuntimeValue]>,
         result: crate::awbc::schema::AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
+        input_actions: &[RuntimeDialogueInputActionEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
@@ -2255,6 +2263,18 @@ impl AwbcProductStepExecutor {
                 return self.begin_product_dialogue_failure(transaction, error, output);
             }
         };
+        let accepted_input_actions = match transaction.frame_mut().line_task_mut() {
+            Some(line_task) => match line_task.accept_input_action_events(input_actions) {
+                Ok(actions) => actions,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error.into(), output);
+                }
+            },
+            None => Vec::new(),
+        };
+        let ready = accepted_content
+            .ready()
+            .with_input_actions(&accepted_input_actions);
         let mut reducer_activation =
             match self.progress_line_task(transaction.frame_mut(), &accepted_content) {
                 Ok(activation) => activation,
@@ -2263,7 +2283,7 @@ impl AwbcProductStepExecutor {
                 }
             };
         let (cancel_trigger, cancel_activation) =
-            match self.cancel_line_task(transaction.frame_mut(), accepted_content.marks()) {
+            match self.cancel_line_task(transaction.frame_mut(), ready) {
                 Ok(result) => result,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(transaction, error, output);
@@ -2317,7 +2337,7 @@ impl AwbcProductStepExecutor {
                     output.requests.line_commands.extend(commands);
                     if let Some(trigger) = cancel_trigger {
                         output.flow_events.push(FlowEvent::LineCancelled {
-                            trigger: self.dialogue_mark_label(content, trigger),
+                            trigger: trigger.as_str().to_owned(),
                         });
                     }
                     false
@@ -2335,7 +2355,7 @@ impl AwbcProductStepExecutor {
                     output.requests.line_commands.extend(commands);
                     if let Some(trigger) = cancel_trigger {
                         output.flow_events.push(FlowEvent::LineCancelled {
-                            trigger: self.dialogue_mark_label(content, trigger),
+                            trigger: trigger.as_str().to_owned(),
                         });
                     }
                     self.fiber = parent;
@@ -2355,7 +2375,7 @@ impl AwbcProductStepExecutor {
         output.requests.line_commands.extend(commands);
         if let Some(trigger) = cancel_trigger {
             output.flow_events.push(FlowEvent::LineCancelled {
-                trigger: self.dialogue_mark_label(content, trigger),
+                trigger: trigger.as_str().to_owned(),
             });
         }
         false
@@ -2602,10 +2622,10 @@ impl AwbcProductStepExecutor {
     fn cancel_line_task(
         &self,
         active: &mut ActiveDialogue,
-        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
+        events: crate::line_task::LineTaskReadyEvents<'_>,
     ) -> Result<
         (
-            Option<crate::runtime_id::RuntimeDialogueMarkId>,
+            Option<arcweft_interaction_model::input::InputActionId>,
             crate::line_task::LineTaskActivation,
         ),
         ProductStepError,
@@ -2617,10 +2637,10 @@ impl AwbcProductStepExecutor {
             let state = active
                 .line_task_mut()
                 .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-            let selected = view.cancellation_mark(marks);
-            let activation = cancel_live_line_task_group(&view, marks, state);
-            let selected = activation.as_ref().and(selected);
-            (selected, activation.unwrap_or_default())
+            match cancel_live_line_task_group(&view, events, state) {
+                Some((action, activation)) => (Some(action), activation),
+                None => (None, crate::line_task::LineTaskActivation::default()),
+            }
         };
         Ok((selected, commands))
     }
@@ -2719,20 +2739,6 @@ impl AwbcProductStepExecutor {
             complete_live_line_task_work(&view, state, tag, failed)
         }?;
         self.prepare_line_task_commands_from(transaction, completion, batch)
-    }
-
-    fn dialogue_mark_label(
-        &self,
-        content: AwbcContentUnitId,
-        id: crate::runtime_id::RuntimeDialogueMarkId,
-    ) -> String {
-        self.program
-            .content_units
-            .get(content.index())
-            .and_then(|content| content.marks.iter().find(|mark| mark.id == id))
-            .and_then(|mark| self.program.strings.get(mark.label.index()))
-            .cloned()
-            .unwrap_or_else(|| id.to_string())
     }
 
     fn present_choice(

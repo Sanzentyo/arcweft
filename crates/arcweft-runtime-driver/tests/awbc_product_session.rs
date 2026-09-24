@@ -1,6 +1,10 @@
 use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_bundle::resource_codec::{
+    ViewRuntimeActionButton, ViewRuntimeActionButtonAction, ViewRuntimeButtonBounds,
+    ViewRuntimeControlVisualStyle,
+};
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::task::GenerationId;
 use arcweft_core::{
@@ -60,6 +64,7 @@ use arcweft_runtime_driver::{
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
+use arcweft_view::ViewMountId;
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
     arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
@@ -465,6 +470,47 @@ fn rejected_session_restore_does_not_partially_mutate_the_live_session() {
         session
             .snapshot_session()
             .expect("live session remains valid"),
+        before
+    );
+}
+
+#[test]
+fn restored_dialogue_action_button_requires_sealed_mount_provenance() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let mut forged = before.clone();
+    forged
+        .presentation
+        .action_buttons
+        .push(ViewRuntimeActionButton {
+            public_id: "button.forged-dialogue-action".to_owned(),
+            target: "button.forged-dialogue-action".to_owned(),
+            dialogue_mount: Some(ViewMountId::from_raw(44)),
+            view: None,
+            containing_scroll_region: None,
+            label: "Skip".to_owned(),
+            enabled: true,
+            bounds: ViewRuntimeButtonBounds::new(0, 0, 1_000, 1_000),
+            action: ViewRuntimeActionButtonAction::ActionInvoke {
+                action: "SkipLine".to_owned(),
+                payload: None,
+            },
+            style: ViewRuntimeControlVisualStyle::default(),
+        });
+
+    let error = session
+        .restore_session_snapshot(forged)
+        .expect_err("unprojected dialogue action provenance is rejected");
+    assert!(matches!(error, BundleSessionSaveError::Presentation { .. }));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("rejected restore is atomic"),
         before
     );
 }

@@ -16,10 +16,12 @@ use crate::line_task::{
 };
 use crate::observation::RuntimeObservationState;
 use crate::runtime_id::{
-    DialogueActivationId, RuntimeDialogueEffectCallbackActivationId, RuntimeDialogueMarkId,
-    RuntimeLineHandleToken, RuntimeLineTaskNodeId,
+    DialogueActivationId, RuntimeDialogueEffectCallbackActivationId, RuntimeLineHandleToken,
+    RuntimeLineTaskNodeId,
 };
-use crate::step::{RuntimeDialogueContentEventKind, RuntimeHostCallId};
+use crate::step::{
+    RuntimeDialogueContentEventKind, RuntimeDialogueInputActionEvent, RuntimeHostCallId,
+};
 use crate::stream::StreamRuntimeState;
 use crate::task::{TaskEvent, TaskId, TaskPublicationCursor};
 use crate::value::RuntimePayload;
@@ -92,14 +94,16 @@ fn validate_product_dialogue_phase(
     })
 }
 
-fn snapshot_work(work: LineTaskWork) -> AwbcProductLineTaskWorkSnapshot {
+fn snapshot_work(work: &LineTaskWork) -> AwbcProductLineTaskWorkSnapshot {
     match work {
         LineTaskWork::Node(node) => {
-            AwbcProductLineTaskWorkSnapshot::Node(snapshot_node_index(node))
+            AwbcProductLineTaskWorkSnapshot::Node(snapshot_node_index(*node))
         }
-        LineTaskWork::Cancellation(mark) => AwbcProductLineTaskWorkSnapshot::Cancellation(mark),
+        LineTaskWork::Cancellation(action) => {
+            AwbcProductLineTaskWorkSnapshot::Cancellation(action.clone())
+        }
         LineTaskWork::Cleanup(exit) => {
-            AwbcProductLineTaskWorkSnapshot::Cleanup(snapshot_exit(exit))
+            AwbcProductLineTaskWorkSnapshot::Cleanup(snapshot_exit(*exit))
         }
     }
 }
@@ -114,8 +118,8 @@ fn restore_work(work: AwbcProductLineTaskWorkSnapshot) -> Option<LineTaskWork> {
             RuntimeLineTaskNodeId::from_zero_based(usize::try_from(node).ok()?)
                 .map(LineTaskWork::Node)
         }
-        AwbcProductLineTaskWorkSnapshot::Cancellation(mark) => {
-            Some(LineTaskWork::Cancellation(mark))
+        AwbcProductLineTaskWorkSnapshot::Cancellation(action) => {
+            Some(LineTaskWork::Cancellation(action))
         }
         AwbcProductLineTaskWorkSnapshot::Cleanup(exit) => {
             Some(LineTaskWork::Cleanup(restore_exit(exit)))
@@ -133,7 +137,7 @@ fn snapshot_work_tag(tag: &LineTaskWorkTag) -> AwbcProductLineTaskWorkTagSnapsho
                 AwbcProductLineTaskWorkInstanceSnapshot::Scheduled(token.clone())
             }
         },
-        work: snapshot_work(tag.work()),
+        work: snapshot_work(&tag.work()),
     }
 }
 
@@ -238,6 +242,7 @@ fn snapshot_live_state(state: &LineTaskLiveState) -> AwbcProductLineTaskLiveSnap
             .collect(),
         scheduled_ready: state.scheduled_ready().to_vec(),
         consumed_content_events: state.consumed_content_events().to_vec(),
+        consumed_input_actions: state.consumed_input_actions().to_vec(),
         cleanup_started: state.cleanup_started(),
     }
 }
@@ -254,7 +259,7 @@ fn snapshot_execution_lane(
             .copied()
             .map(snapshot_node_state)
             .collect(),
-        outstanding: outstanding.iter().copied().map(snapshot_work).collect(),
+        outstanding: outstanding.iter().map(snapshot_work).collect(),
         active_roots: active_roots
             .iter()
             .copied()
@@ -348,6 +353,7 @@ fn restore_live_snapshot(
         scheduled_lanes.into_boxed_slice(),
         snapshot.scheduled_ready.into_boxed_slice(),
         snapshot.consumed_content_events.into_boxed_slice(),
+        snapshot.consumed_input_actions.into_boxed_slice(),
         snapshot.cleanup_started,
     ))
 }
@@ -1135,6 +1141,7 @@ pub struct AwbcProductLineTaskLiveSnapshot {
     pub scheduled_lanes: Vec<AwbcProductLineTaskScheduledLaneSnapshot>,
     pub scheduled_ready: Vec<RuntimeLineHandleToken>,
     pub consumed_content_events: Vec<RuntimeDialogueContentEventKind>,
+    pub consumed_input_actions: Vec<RuntimeDialogueInputActionEvent>,
     pub cleanup_started: bool,
 }
 
@@ -1186,11 +1193,11 @@ pub enum AwbcProductLineTaskNodeStateSnapshot {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcProductLineTaskWorkSnapshot {
     Node(u32),
-    Cancellation(RuntimeDialogueMarkId),
+    Cancellation(arcweft_interaction_model::input::InputActionId),
     Cleanup(AwbcProductLineTaskExitSnapshot),
 }
 
@@ -1983,14 +1990,14 @@ impl AwbcProductStepExecutor {
                 message: "line-owned child fiber uses unverified detach ownership".to_owned(),
             });
         }
-        match tag.work {
+        match &tag.work {
             AwbcProductLineTaskWorkSnapshot::Node(node) => {
-                let Some(global) = group.nodes.start.checked_add(node) else {
+                let Some(global) = group.nodes.start.checked_add(*node) else {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
                         message: "line-owned child fiber node index overflows its group".to_owned(),
                     });
                 };
-                if node >= group.nodes.len
+                if *node >= group.nodes.len
                     || !matches!(
                         self.program.line_task_nodes.get(global as usize),
                         Some(crate::awbc::schema::AwbcLineTaskNode::Action(_))
@@ -2002,11 +2009,11 @@ impl AwbcProductStepExecutor {
                     });
                 }
             }
-            AwbcProductLineTaskWorkSnapshot::Cancellation(mark) => {
+            AwbcProductLineTaskWorkSnapshot::Cancellation(action) => {
                 if !group
                     .cancel_handlers
                     .iter()
-                    .any(|handler| handler.trigger == mark)
+                    .any(|handler| &handler.trigger == action)
                 {
                     return Err(AwbcProductStepBuildError::RestoreSnapshot {
                         message: "line-owned child fiber references unknown cancellation work"

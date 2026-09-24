@@ -1183,6 +1183,7 @@ dependencies = [
  "arcweft-dialogue",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-interaction-model",
  "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",

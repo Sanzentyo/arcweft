@@ -66,6 +66,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                dialogue_input_actions: Vec::new(),
                 view_handler_invocations: Vec::new(),
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
@@ -89,6 +90,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                dialogue_input_actions: Vec::new(),
                 view_handler_invocations: Vec::new(),
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
@@ -189,6 +191,9 @@ impl InputController {
             diagnostics,
             !activates_choice && !focused_view_control,
         );
+        outcome
+            .dialogue_input_actions
+            .extend(submit.dialogue_input_action);
         outcome.dialogue_progress = outcome.dialogue_progress.merge(submit.dialogue_progress);
         outcome
             .view_handler_invocations

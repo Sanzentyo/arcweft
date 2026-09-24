@@ -2,6 +2,7 @@ use crate::controller::{
     ControllerInputChange, ControllerInputNormalizer, NormalizedControllerAction,
 };
 use arcweft_id::PublicId;
+use arcweft_interaction_model::input::InputActionId;
 use arcweft_presentation::clipboard::{
     TextClipboardOutcome, TextClipboardRequest, TextClipboardRequestId,
 };
@@ -191,6 +192,7 @@ impl InputPointerModifiers {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InputOutcome {
     pub actions: Vec<Action>,
+    pub dialogue_input_actions: Vec<DialogueInputAction>,
     pub view_handler_invocations: Vec<ViewHandlerInvocation>,
     pub text_control_write_backs: Vec<TextControlWriteBack>,
     pub clipboard_requests: Vec<TextClipboardRequest>,
@@ -198,6 +200,13 @@ pub struct InputOutcome {
     pub dialogue_progress: DialogueProgress,
     pub cancel: bool,
     pub redraw: bool,
+}
+
+/// Typed action accepted from an action button in one mounted dialogue View.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogueInputAction {
+    pub observed: arcweft_view::DialogueAdvanceTarget,
+    pub action: InputActionId,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -253,6 +262,7 @@ pub enum InputDiagnosticKind {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct ActionButtonSubmitOutcome {
     action: Option<Action>,
+    dialogue_input_action: Option<DialogueInputAction>,
     write_back: Option<TextControlWriteBack>,
     diagnostic: Option<InputDiagnostic>,
     dialogue_progress: DialogueProgress,
@@ -261,6 +271,7 @@ struct ActionButtonSubmitOutcome {
 #[derive(Debug, Default)]
 struct PointerActivationEffects {
     actions: Vec<Action>,
+    dialogue_input_actions: Vec<DialogueInputAction>,
     view_handler_invocations: Vec<ViewHandlerInvocation>,
     text_control_write_backs: Vec<TextControlWriteBack>,
     diagnostics: Vec<InputDiagnostic>,
@@ -321,6 +332,7 @@ impl InputOutcome {
     fn redraw(redraw: bool) -> Self {
         Self {
             actions: Vec::new(),
+            dialogue_input_actions: Vec::new(),
             view_handler_invocations: Vec::new(),
             text_control_write_backs: Vec::new(),
             clipboard_requests: Vec::new(),
@@ -341,6 +353,8 @@ impl InputOutcome {
 
     pub fn merge(&mut self, other: Self) {
         self.actions.extend(other.actions);
+        self.dialogue_input_actions
+            .extend(other.dialogue_input_actions);
         self.view_handler_invocations
             .extend(other.view_handler_invocations);
         self.text_control_write_backs
@@ -422,6 +436,7 @@ impl InputController {
         }
         InputOutcome {
             actions: Vec::new(),
+            dialogue_input_actions: Vec::new(),
             view_handler_invocations: Vec::new(),
             text_control_write_backs,
             clipboard_requests: Vec::new(),
@@ -735,14 +750,20 @@ impl InputController {
             }
             RenderActionButtonAction::ActionInvoke { action, payload } => (action, payload),
         };
-        let action = match frame.semantics.lower_action(target, action) {
-            Ok(action) => Some(match payload {
-                Some(payload) => action.with_payload(payload.clone()),
-                None => action,
-            }),
+        let (action, dialogue_input_action) = match frame.semantics.lower_action(target, action) {
+            Ok(lowered) => (
+                Some(match payload {
+                    Some(payload) => lowered.with_payload(payload.clone()),
+                    None => lowered,
+                }),
+                button
+                    .dialogue_mount
+                    .and_then(|mount| dialogue_input_action(frame, mount, action)),
+            ),
             Err(reason) => {
                 return ActionButtonSubmitOutcome {
                     action: None,
+                    dialogue_input_action: None,
                     write_back: None,
                     diagnostic: Some(InputDiagnostic {
                         kind: InputDiagnosticKind::SemanticActionRejected {
@@ -757,6 +778,7 @@ impl InputController {
         };
         ActionButtonSubmitOutcome {
             action,
+            dialogue_input_action,
             write_back: None,
             diagnostic: None,
             dialogue_progress: DialogueProgress::None,
@@ -885,6 +907,7 @@ fn activation_outcome(
     );
     InputOutcome {
         actions,
+        dialogue_input_actions: Vec::new(),
         view_handler_invocations: Vec::new(),
         text_control_write_backs,
         clipboard_requests: Vec::new(),
@@ -1026,12 +1049,37 @@ fn pointer_activation_effects(
         .collect();
     PointerActivationEffects {
         actions,
+        dialogue_input_actions: submit.dialogue_input_action.into_iter().collect(),
         view_handler_invocations,
         text_control_write_backs: submit.write_back.into_iter().collect(),
         diagnostics: submit.diagnostic.into_iter().collect(),
         action_button_activation: frame_target_is_action_button(frame, event.target()),
         dialogue_progress: submit.dialogue_progress,
     }
+}
+
+fn dialogue_input_action(
+    frame: &PreparedFrame,
+    mount: arcweft_view::ViewMountId,
+    action: &PublicId,
+) -> Option<DialogueInputAction> {
+    let mut matching_views = frame
+        .dialogue_views()
+        .iter()
+        .filter(|dialogue| dialogue.mount == mount);
+    let dialogue = matching_views.next()?;
+    if matching_views.next().is_some() {
+        return None;
+    }
+    let observed = arcweft_view::DialogueAdvanceTarget::new(
+        arcweft_view::DialoguePresentationId::new(dialogue.dialogue),
+        arcweft_view::DialogueEntryId::new(dialogue.entry),
+        arcweft_view::DialogueInstanceId::new(dialogue.instance),
+        arcweft_view::DialogueStageIndex::new(dialogue.stage),
+        arcweft_view::DialogueRevision::new(dialogue.revision),
+    );
+    let action = InputActionId::new(action.as_str().to_owned()).ok()?;
+    Some(DialogueInputAction { observed, action })
 }
 
 fn frame_target_is_text_input(
