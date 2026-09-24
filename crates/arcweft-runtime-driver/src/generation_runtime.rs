@@ -144,6 +144,12 @@ impl<R> GenerationRuntimeTable<R> {
         self.images.keys().copied()
     }
 
+    /// Visits the accepted runtime images retained for active and pinned
+    /// generations in deterministic generation order.
+    pub fn images(&self) -> impl ExactSizeIterator<Item = &GenerationRuntimeImage<R>> {
+        self.images.values()
+    }
+
     /// Returns whether the table has a runtime for `generation`.
     pub fn contains_generation(&self, generation: GenerationId) -> bool {
         self.images.contains_key(&generation)
@@ -190,6 +196,13 @@ mod tests {
             &"next"
         );
         assert_eq!(table.len(), 2);
+        assert_eq!(
+            table
+                .images()
+                .map(GenerationRuntimeImage::generation_id)
+                .collect::<Vec<_>>(),
+            [GenerationId::new(0), GenerationId::new(1)]
+        );
     }
 
     #[test]

@@ -820,6 +820,16 @@ impl ArcweftBundle {
             .find(|package| package.character == id)
     }
 
+    /// Admits one logical Character catalog from the exact bundled package
+    /// bytes and generation declaration. This uses the AWFB validation path.
+    pub fn admitted_character_catalog(
+        &self,
+    ) -> Result<std::sync::Arc<arcweft_character::catalog::CharacterCatalog>, BundleCodecError>
+    {
+        self.validate_kind()?;
+        character_dialogue_generation::admitted_character_catalog(self).map(std::sync::Arc::new)
+    }
+
     #[must_use]
     pub fn with_image_objects(
         mut self,

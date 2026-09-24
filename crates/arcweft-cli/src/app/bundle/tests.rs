@@ -9,7 +9,7 @@ use arcweft_character::{
 use arcweft_compiler::project::{
     CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
 };
-use arcweft_core::plan::RuntimeLineId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId, task::RuntimeProgramOwner};
 use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision,
     character_presentation::{
@@ -31,7 +31,7 @@ use arcweft_text_model::{
     DialogueContentCatalog, DialogueContentFragmentTemplate, DialogueContentSpec, RichTextDocument,
     RichTextNode,
 };
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId, ViewRegistry};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -427,6 +427,43 @@ compression = "none"
             .map(|value| value.digest()),
         Some(generation.digest())
     );
+    let view_product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
+        Some(restored.source_map.clone()),
+        restored.view_program.clone(),
+        restored.view_style.clone(),
+        arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
+    )
+    .expect("AWFB View product admits");
+    let mut views = ViewRegistry::default();
+    view_product
+        .program()
+        .expect("profile publishes standard Dialogue View")
+        .register_runtime_views(&mut views)
+        .expect("accepted View registry");
+    let style_digest = restored
+        .view_style
+        .as_ref()
+        .map(|style| {
+            style
+                .canonical_digest()
+                .map(|digest| RuntimeValueDigest::from_bytes(digest.as_bytes()))
+        })
+        .transpose()
+        .expect("accepted Style digest");
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(restored.product_awbc_program().clone()));
+    restored
+        .character_dialogue_generation
+        .as_ref()
+        .expect("AWFB generation")
+        .bind_runtime(
+            Arc::new(views),
+            restored
+                .admitted_character_catalog()
+                .expect("AWFB Character catalog"),
+            style_digest,
+            owner,
+        )
+        .expect("production AWFB resources bind to executable Dialogue schema");
 
     fs::remove_dir_all(root).expect("fixture root removes");
 }

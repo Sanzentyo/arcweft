@@ -909,6 +909,7 @@ mod tests {
         ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleCodecError, BundleFormat,
         BundleManifest, BundleRuntimeSummary,
     };
+    use arcweft_character::id::CharacterId;
     use arcweft_character::manifest::CharacterManifest;
     use arcweft_character::package::{CharacterLayerPayload, CharacterPackage};
     use arcweft_core::awbc::schema::{
@@ -1389,6 +1390,11 @@ mod tests {
         }));
         let decoded = from_awfb_slice(&bytes).expect("package bytes admit");
         assert_eq!(decoded.character_packages, [package]);
+        let catalog = decoded
+            .admitted_character_catalog()
+            .expect("package bytes produce a typed Character catalog");
+        let character = CharacterId::try_new("character.zundamon").expect("Character identity");
+        assert!(catalog.visual_manifest(&character).is_some());
 
         let mut changed = bundle;
         changed

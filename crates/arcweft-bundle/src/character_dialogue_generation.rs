@@ -5,14 +5,16 @@ use crate::{
     ArcweftBundle, BundleCodecError, BundleVirtualFileSpace,
     character_package::BundleCharacterPackage,
 };
-use arcweft_character::package::{
-    CHARACTER_PACKAGE_MANIFEST_PATH, CharacterLayerPayload, CharacterPackage,
+use arcweft_character::{
+    catalog::{CharacterCatalog, CharacterVisualManifestEvidence},
+    manifest::CharacterManifest,
+    package::{CHARACTER_PACKAGE_MANIFEST_PATH, CharacterLayerPayload, CharacterPackage},
 };
 use arcweft_core::awbc::schema::AwbcRuntimeTypeShape;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::value::RuntimeCharacterDialogueProducerId;
 use arcweft_dialogue::{CharacterDialogueGenerationDeclaration, CharacterDialogueVisualType};
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 const MAGIC: &[u8; 8] = b"AWDG\r\n\x1a\n";
 const VERSION: u32 = 1;
@@ -25,6 +27,15 @@ pub(crate) type RuntimeGeneration = CharacterDialogueGenerationDeclaration<Runti
 /// logical Character's accepted visual declaration. Package metadata alone is
 /// insufficient because an AWFB may carry mismatched manifest or PNG bytes.
 pub(crate) fn validate_binding(bundle: &ArcweftBundle) -> Result<(), BundleCodecError> {
+    admitted_character_catalog(bundle).map(|_| ())
+}
+
+/// Returns the same checked logical and visual Character catalog that AWFB
+/// admission validates. Runtime consumers use this result instead of parsing
+/// package paths or manifests a second way.
+pub(crate) fn admitted_character_catalog(
+    bundle: &ArcweftBundle,
+) -> Result<CharacterCatalog, BundleCodecError> {
     let producer = RuntimeCharacterDialogueProducerId::get();
     let program = bundle.product_awbc_program();
     if program.runtime_types.iter().any(|ty| {
@@ -41,6 +52,7 @@ pub(crate) fn validate_binding(bundle: &ArcweftBundle) -> Result<(), BundleCodec
             "executable CharacterDialogue type has no generation declaration",
         ));
     }
+    let mut manifests = BTreeMap::<_, CharacterManifest>::new();
     for metadata in &bundle.character_packages {
         let id = &metadata.character;
         let suffix = format!("/{CHARACTER_PACKAGE_MANIFEST_PATH}");
@@ -94,6 +106,15 @@ pub(crate) fn validate_binding(bundle: &ArcweftBundle) -> Result<(), BundleCodec
                 "metadata differs from the validated package",
             ));
         }
+        if manifests
+            .insert(
+                package.manifest().character().clone(),
+                package.manifest().clone(),
+            )
+            .is_some()
+        {
+            return Err(invalid_package(id, "duplicate Character package"));
+        }
         if let Some(generation) = &bundle.character_dialogue_generation {
             let row = generation
                 .characters()
@@ -118,21 +139,38 @@ pub(crate) fn validate_binding(bundle: &ArcweftBundle) -> Result<(), BundleCodec
             }
         }
     }
-    if let Some(generation) = &bundle.character_dialogue_generation {
-        for (character, row) in generation.characters() {
-            if matches!(row.visual(), CharacterDialogueVisualType::Present { .. })
-                && !bundle
-                    .character_packages
-                    .iter()
-                    .any(|package| package.character == character.as_str())
-            {
-                return Err(invalid_generation(format!(
-                    "visual Character `{character}` has no bundled package"
-                )));
-            }
-        }
-    }
-    Ok(())
+    let declarations = if let Some(generation) = &bundle.character_dialogue_generation {
+        generation
+            .characters()
+            .iter()
+            .map(|(character, row)| {
+                let visual = match row.visual() {
+                    CharacterDialogueVisualType::Absent => CharacterVisualManifestEvidence::Absent,
+                    CharacterDialogueVisualType::Present { .. } => {
+                        let manifest = manifests.get(character).ok_or_else(|| {
+                            invalid_generation(format!(
+                                "visual Character `{character}` has no bundled package"
+                            ))
+                        })?;
+                        CharacterVisualManifestEvidence::Present(manifest.clone())
+                    }
+                };
+                Ok((character.clone(), visual))
+            })
+            .collect::<Result<Vec<_>, BundleCodecError>>()?
+    } else {
+        manifests
+            .into_iter()
+            .map(|(character, manifest)| {
+                (
+                    character,
+                    CharacterVisualManifestEvidence::Present(manifest),
+                )
+            })
+            .collect()
+    };
+    CharacterCatalog::try_from_declarations(declarations)
+        .map_err(|error| invalid_generation(error.to_string()))
 }
 
 fn invalid_package(character_id: &str, message: impl Into<String>) -> BundleCodecError {

@@ -93,6 +93,7 @@ use thiserror::Error;
 
 mod axis_seed;
 mod construction;
+mod dialogue_backend;
 pub mod environment;
 mod fx;
 mod hot_swap;
@@ -334,6 +335,8 @@ pub enum BundleSessionError {
     DecodeBundle { message: String },
     #[error("invalid Character presentation product: {message}")]
     CharacterPresentation { message: String },
+    #[error("invalid CharacterDialogue runtime generation: {message}")]
+    CharacterDialogueGeneration { message: String },
     #[error("unsupported semantic action `{action}` at the game runtime boundary")]
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
@@ -675,7 +678,13 @@ impl BundleSession {
             text_control_write_backs,
             diagnostics: input_diagnostics,
         } = self.prepare_step_input(clock, input);
-        let mut pure_backend = VmRuntimePureCallBackend::default();
+        let schemas = self
+            .runtime_images
+            .images()
+            .filter_map(|image| image.runtime().character_dialogue_schema.clone())
+            .collect::<Vec<_>>();
+        let mut pure_backend = VmRuntimePureCallBackend::default()
+            .with_external_calls(dialogue_backend::GenerationDialogueBackend::new(schemas));
         let result = self.executor.step_with_pure_backend(
             runtime,
             RuntimeStepOptions {

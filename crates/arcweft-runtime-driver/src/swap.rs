@@ -7,6 +7,7 @@ use arcweft_bundle::{ArcweftBundle, BundleKind as ArcweftBundleKind, BundleVirtu
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
 };
+use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::entry::{
     AgentBudget, AgentPolicyHash, EntryBindingIdentity, RuntimeCallableRole, RuntimeNominalTypeId,
     RuntimeStatefulEntryRoles, TypeLayoutHash as CoreTypeLayoutHash,
@@ -46,6 +47,9 @@ pub struct ProgramGeneration {
     pub id: GenerationId,
     pub content_root: BundleDigest,
     pub dialogue_content: BundleDigest,
+    /// Exact immutable Dialogue producer generation. A changed declaration
+    /// needs separate runtime images even when AWBC code slots are identical.
+    pub character_dialogue_generation: Option<RuntimeValueDigest>,
     pub awbc_abi: u32,
     pub code_slots: BTreeMap<CodeSlotId, CodeSlot>,
     pub state_layouts: BTreeMap<StateId, TypeLayoutHash>,
@@ -175,6 +179,7 @@ impl ProgramGeneration {
             id,
             content_root,
             dialogue_content,
+            character_dialogue_generation: None,
             awbc_abi: 1,
             code_slots: BTreeMap::new(),
             state_layouts: BTreeMap::new(),
@@ -204,6 +209,10 @@ impl ProgramGeneration {
             content_root(bundle)?,
             adapter_requirements(bundle)?,
             dialogue_content_digest(bundle)?,
+            bundle
+                .character_dialogue_generation
+                .as_ref()
+                .map(|value| value.digest()),
         )
     }
 
@@ -213,12 +222,14 @@ impl ProgramGeneration {
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
         dialogue_content: BundleDigest,
+        character_dialogue_generation: Option<RuntimeValueDigest>,
     ) -> Result<Self, GenerationBuildError> {
         let (state_layouts, entry_compatibility) = awbc_entry_compatibility(program)?;
         Ok(Self {
             id,
             content_root,
             dialogue_content,
+            character_dialogue_generation,
             awbc_abi: program.header.abi_version,
             code_slots: awbc_code_slots(program)?,
             state_layouts,
@@ -308,6 +319,7 @@ fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildE
     #[derive(Serialize)]
     struct ContentFingerprint<'a> {
         dialogue_content: &'a DialogueContentCatalog,
+        character_dialogue_generation: Option<RuntimeValueDigest>,
         virtual_files: Vec<&'a BundleVirtualFile>,
         image_assets: Vec<&'a arcweft_bundle::BundleImageAsset>,
         audio: serde_json::Value,
@@ -328,6 +340,10 @@ fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildE
 
     digest_serde(&ContentFingerprint {
         dialogue_content: &bundle.dialogue_content,
+        character_dialogue_generation: bundle
+            .character_dialogue_generation
+            .as_ref()
+            .map(|value| value.digest()),
         virtual_files,
         image_assets,
         audio: serde_json::to_value(&bundle.audio)?,
@@ -583,6 +599,9 @@ pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> Sw
     {
         return SwapCompatibility::RestartRequired;
     }
+    if active.character_dialogue_generation != next.character_dialogue_generation {
+        return SwapCompatibility::CodeGenerational;
+    }
     if active.code_slots == next.code_slots {
         return if active.dialogue_content == next.dialogue_content {
             SwapCompatibility::ContentOnly
@@ -747,5 +766,29 @@ impl SwapSession {
                 actual: self.phase,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod character_generation_tests {
+    use super::{ProgramGeneration, SwapCompatibility, classify_swap};
+    use arcweft_bundle::container::BundleDigest;
+    use arcweft_core::{entry::RuntimeValueDigest, task::GenerationId};
+
+    #[test]
+    fn a_changed_dialogue_declaration_keeps_a_separate_runtime_generation() {
+        let active =
+            ProgramGeneration::empty(GenerationId::new(1), BundleDigest::ZERO, BundleDigest::ZERO);
+        let mut next = active.clone();
+        next.id = GenerationId::new(2);
+        next.character_dialogue_generation = Some(RuntimeValueDigest::from_bytes([7; 32]));
+        assert_eq!(
+            classify_swap(&active, &next),
+            SwapCompatibility::CodeGenerational
+        );
+        assert_eq!(
+            classify_swap(&next, &active),
+            SwapCompatibility::CodeGenerational
+        );
     }
 }

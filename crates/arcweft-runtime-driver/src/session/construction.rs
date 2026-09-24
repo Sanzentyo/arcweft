@@ -21,6 +21,8 @@ pub(super) struct SessionRuntime {
     pub(super) entry: AwbcEntryId,
     pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) dialogue_content: DialogueContentCatalog,
+    pub(super) character_dialogue_schema:
+        Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
     pub(super) character_presentation: Option<AcceptedCharacterPresentationCatalog>,
     pub(super) active_locale: Option<ActiveSessionLocale>,
     pub(super) image_objects: Vec<BundleImageObject>,
@@ -39,6 +41,7 @@ pub(super) struct SessionRuntime {
 #[derive(Clone, Debug)]
 struct SessionRuntimeResources {
     dialogue_content: DialogueContentCatalog,
+    character_dialogue_schema: Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
     character_presentation: Option<AcceptedCharacterPresentationCatalog>,
     active_locale: Option<ActiveSessionLocale>,
     image_objects: Vec<BundleImageObject>,
@@ -234,6 +237,7 @@ impl SessionRuntime {
             entry,
             executor,
             dialogue_content: resources.dialogue_content,
+            character_dialogue_schema: resources.character_dialogue_schema,
             character_presentation: resources.character_presentation,
             active_locale: resources.active_locale,
             image_objects: resources.image_objects,
@@ -269,6 +273,7 @@ impl SessionRuntime {
             entry,
             SessionRuntimeResources {
                 dialogue_content: self.dialogue_content.clone(),
+                character_dialogue_schema: self.character_dialogue_schema.clone(),
                 character_presentation: self.character_presentation.clone(),
                 active_locale: self.active_locale.clone(),
                 image_objects: self.image_objects.clone(),
@@ -355,12 +360,47 @@ fn build_session_runtime_with_executor(
         bundle.view_text.clone(),
         Arc::clone(&program),
     )?;
+    let character_dialogue_schema = bundle
+        .character_dialogue_generation
+        .as_ref()
+        .map(|declaration| {
+            let style_digest = bundle
+                .view_style
+                .as_ref()
+                .map(|style| {
+                    style.canonical_digest().map(|digest| {
+                        arcweft_core::entry::RuntimeValueDigest::from_bytes(digest.as_bytes())
+                    })
+                })
+                .transpose()
+                .map_err(|error| BundleSessionError::CharacterDialogueGeneration {
+                    message: error.to_string(),
+                })?;
+            let characters = bundle.admitted_character_catalog().map_err(|error| {
+                BundleSessionError::CharacterDialogueGeneration {
+                    message: error.to_string(),
+                }
+            })?;
+            declaration
+                .bind_runtime(
+                    Arc::new(view_runtime.registry().clone()),
+                    characters,
+                    style_digest,
+                    arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+                )
+                .map(Arc::new)
+                .map_err(|error| BundleSessionError::CharacterDialogueGeneration {
+                    message: error.to_string(),
+                })
+        })
+        .transpose()?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
     let (character_presentation, active_locale) = accepted_character_presentation(bundle)?;
     let resources = SessionRuntimeResources {
         dialogue_content: bundle.dialogue_content.clone(),
+        character_dialogue_schema,
         character_presentation,
         active_locale,
         image_objects: bundle.image_objects.clone(),
