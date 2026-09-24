@@ -223,6 +223,11 @@ If a cancellation branch can complete the line differently, it must either:
 - or make the whole expression return Result<R, LineCancel> with try-line syntax.
 ```
 
+The normal `out` value is the pending result while the line is active. A
+cancellation branch may select another value of the same result type before
+the line publishes its result. The selected result is published once, after
+cancelled children and the applicable scoped cleanup have finished.
+
 Example with explicit cancel result:
 
 ```arcw

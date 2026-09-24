@@ -344,6 +344,10 @@ Registered `defer` blocks run when their owning scope exits, including normal
 completion, early control transfer, line cancellation, and child-task
 cancellation. A cancelled child task must unwind its defer stack before it is
 considered joined.
+Registration happens only when execution reaches the `defer` statement. Each
+scope runs its matching registered blocks once in reverse registration order;
+an untaken branch registers nothing. A line scope waits for cancelled children
+to unwind before running its own registered cleanup.
 
 ```arcw
 alice(look=smile, focus=.soft)[
@@ -539,6 +543,12 @@ match outcome {
 ```
 
 If the result is ignored, the default line policy is used. A `goto` cancellation terminates the current flow segment and produces a `FlowExit.Goto`.
+
+An `input(.Action)` rule matches a semantic action routed from the dialogue
+View for the exact observed line activation. It does not match a content mark or
+an unrelated custom input event with the same name. A stale action from an old
+entry or stage cannot cancel a later line. When several matching actions enter
+one runtime step, their routed event order selects one cancellation rule.
 
 ---
 
