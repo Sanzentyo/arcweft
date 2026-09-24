@@ -24,14 +24,15 @@ use thiserror::Error;
 use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
 pub use identity::{
-    CharacterDialogueContractIdentity, CharacterDialogueVoice, CharacterDialogueVoiceId,
-    DialogueLocaleId,
+    CharacterDialogueContractIdentity, CharacterDialogueVisualManifestEvidence,
+    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
 };
 pub use limits::{CharacterDialogueLimits, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, StructuredPatch};
 pub use runtime_type::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use schema::{
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeDefaultCatalog,
     CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
     CharacterDialogueRuntimeSchema, CharacterDialogueValue,
 };
@@ -104,8 +105,10 @@ pub enum CharacterDialogueValueError {
     Limit { limit: &'static str, maximum: usize },
     #[error("character `{0}` is not present in the accepted character catalog")]
     MissingCharacter(CharacterId),
-    #[error("character `{0}` manifest digest does not match the runtime value")]
-    CharacterManifestMismatch(CharacterId),
+    #[error("character `{0}` visual-manifest evidence does not match the runtime value")]
+    VisualManifestEvidenceMismatch(CharacterId),
+    #[error("character `{0}` has no visual manifest for the requested look")]
+    MissingVisualManifest(CharacterId),
     #[error("character `{character}` has no look `{look}`")]
     MissingLook {
         character: CharacterId,
@@ -123,10 +126,23 @@ pub enum CharacterDialogueValueError {
     NonCanonicalCustomOrder,
     #[error("CharacterDialogue has no accepted defaults for character `{0}`")]
     MissingDefaults(CharacterId),
+    #[error("duplicate CharacterDialogue defaults for character `{0}`")]
+    DuplicateDefaults(CharacterId),
+    #[error("CharacterDialogue default digest does not match the effective config for `{0}`")]
+    DefaultDigestMismatch(CharacterId),
     #[error("CharacterDialogue defaults digest is stale for character `{0}`")]
     DefaultsMismatch(CharacterId),
+    #[error("CharacterDialogue Voice source type binding is invalid: {reason}")]
+    VoiceSourceType { reason: &'static str },
+    #[error("CharacterDialogue Look source type binding for `{character}` is invalid: {reason}")]
+    LookSourceType {
+        character: CharacterId,
+        reason: &'static str,
+    },
     #[error("CharacterDialogue View contracts digest is stale")]
     ViewContractsMismatch,
+    #[error("CharacterDialogue producer is bound to a different executable")]
+    ForeignProgramOwner,
     #[error("CharacterDialogue role {role:?} has an invalid type binding: {reason}")]
     RoleType {
         role: CharacterDialogueRuntimeRole,

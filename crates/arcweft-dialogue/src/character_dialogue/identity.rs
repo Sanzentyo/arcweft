@@ -11,10 +11,22 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct CharacterDialogueContractIdentity {
-    character_manifest: RuntimeValueDigest,
+    visual_manifest: CharacterDialogueVisualManifestEvidence,
     defaults: RuntimeValueDigest,
     custom_schema: RuntimeValueDigest,
     view_contracts: RuntimeValueDigest,
+}
+
+/// Accepted visual-manifest evidence for one logical Character declaration.
+///
+/// A Character may be a logical runtime member without a visual manifest. The
+/// `Absent` case is explicit and cannot be confused with an empty manifest or
+/// a fabricated digest.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "fingerprint", rename_all = "snake_case")]
+pub enum CharacterDialogueVisualManifestEvidence {
+    Absent,
+    Present(RuntimeValueDigest),
 }
 
 /// Reusable voice selection for one `CharacterDialogue`.
@@ -35,14 +47,14 @@ pub struct DialogueLocaleId(LocaleId);
 
 impl CharacterDialogueContractIdentity {
     #[must_use]
-    pub const fn new(
-        character_manifest: RuntimeValueDigest,
+    pub const fn with_visual_manifest(
+        visual_manifest: CharacterDialogueVisualManifestEvidence,
         defaults: RuntimeValueDigest,
         custom_schema: RuntimeValueDigest,
         view_contracts: RuntimeValueDigest,
     ) -> Self {
         Self {
-            character_manifest,
+            visual_manifest,
             defaults,
             custom_schema,
             view_contracts,
@@ -50,8 +62,17 @@ impl CharacterDialogueContractIdentity {
     }
 
     #[must_use]
-    pub const fn character_manifest(self) -> RuntimeValueDigest {
-        self.character_manifest
+    pub const fn visual_manifest(self) -> CharacterDialogueVisualManifestEvidence {
+        self.visual_manifest
+    }
+
+    /// Returns the actual manifest fingerprint when visual evidence is present.
+    #[must_use]
+    pub const fn character_manifest(self) -> Option<RuntimeValueDigest> {
+        match self.visual_manifest {
+            CharacterDialogueVisualManifestEvidence::Absent => None,
+            CharacterDialogueVisualManifestEvidence::Present(fingerprint) => Some(fingerprint),
+        }
     }
 
     #[must_use]

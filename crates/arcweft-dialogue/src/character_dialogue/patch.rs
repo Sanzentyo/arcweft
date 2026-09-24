@@ -576,7 +576,161 @@ fn validate_assignment_paths<'a>(
     Ok(())
 }
 
-fn standard_dialogue_view() -> ViewId {
+pub(super) fn standard_dialogue_view() -> ViewId {
     ViewId::try_new_engine_owned("std.view.dialogue")
         .expect("reserved standard dialogue View identity is valid")
+}
+
+pub(super) fn clear_style(
+    value: &CharacterDialogueStyleValue,
+) -> Result<CharacterDialogueStyleValue, CharacterDialogueValueError> {
+    apply_style(value, &StructuredPatch::clear_all())
+}
+
+pub(super) fn clear_rich_text(
+    value: &CharacterDialogueRichTextValue,
+) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
+    apply_rich_text(value, &StructuredPatch::clear_all())
+}
+
+pub(super) fn merge_style_set(
+    base: &CharacterDialogueStyleValue,
+    incoming: RuntimeValue,
+) -> Result<CharacterDialogueStyleValue, CharacterDialogueValueError> {
+    let value = if matches!(incoming, RuntimeValue::EntityRef(_)) {
+        incoming
+    } else {
+        merge_runtime_value(base.typed().value(), &incoming)
+    };
+    CharacterDialogueStyleValue::try_new(super::CharacterDialogueTypedValue::try_new(value)?)
+}
+
+pub(super) fn merge_rich_text_set(
+    base: &CharacterDialogueRichTextValue,
+    incoming: RuntimeValue,
+) -> Result<CharacterDialogueRichTextValue, CharacterDialogueValueError> {
+    let value = merge_runtime_value(base.typed().value(), &incoming);
+    CharacterDialogueRichTextValue::try_new(super::CharacterDialogueTypedValue::try_new(value)?)
+}
+
+fn merge_runtime_value(base: &RuntimeValue, incoming: &RuntimeValue) -> RuntimeValue {
+    if matches!(
+        incoming.builtin_variant_case(),
+        Some((
+            arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone,
+            None
+        ))
+    ) {
+        return base.clone();
+    }
+    if let Some((
+        arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+        Some(patch),
+    )) = incoming.builtin_variant_case()
+    {
+        let value = match base.builtin_variant_case() {
+            Some((
+                arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                Some(current),
+            )) => merge_runtime_value(current, patch),
+            _ => patch.clone(),
+        };
+        return RuntimeValue::option_some(value);
+    }
+
+    match (base, incoming) {
+        (RuntimeValue::Opaque(base), RuntimeValue::Opaque(incoming))
+            if base.producer() == incoming.producer()
+                && base.semantic_identity() == incoming.semantic_identity()
+                && base.value_class() == incoming.value_class()
+                && base.persistence() == incoming.persistence() =>
+        {
+            let owner = arcweft_core::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                base.producer().clone(),
+                base.semantic_identity(),
+                base.value_class(),
+                base.persistence(),
+            );
+            let payload = merge_runtime_value(base.payload(), incoming.payload());
+            owner
+                .try_wrap(payload)
+                .expect("merging a validated opaque payload preserves its exact owner")
+        }
+        (RuntimeValue::Tuple(base), RuntimeValue::Tuple(incoming))
+            if base.len() == incoming.len() =>
+        {
+            RuntimeValue::Tuple(
+                base.iter()
+                    .zip(incoming)
+                    .map(|(base, incoming)| merge_runtime_value(base, incoming))
+                    .collect(),
+            )
+        }
+        (RuntimeValue::Record(base), RuntimeValue::Record(incoming))
+            if base.len() == incoming.len()
+                && base.iter().zip(incoming).all(|(base, incoming)| {
+                    base.field() == incoming.field() && base.name() == incoming.name()
+                }) =>
+        {
+            RuntimeValue::try_record(
+                base.iter()
+                    .zip(incoming)
+                    .map(|(base, incoming)| {
+                        (
+                            base.name().to_owned(),
+                            merge_runtime_value(base.value(), incoming.value()),
+                        )
+                    })
+                    .collect(),
+            )
+            .expect("merging a validated record preserves its unique field layout")
+        }
+        (RuntimeValue::NominalRecord(base), RuntimeValue::NominalRecord(incoming))
+            if base.type_id() == incoming.type_id()
+                && base.semantic_identity() == incoming.semantic_identity()
+                && base.layout() == incoming.layout()
+                && base.fields().len() == incoming.fields().len() =>
+        {
+            RuntimeValue::NominalRecord(arcweft_core::value::RuntimeNominalRecordValue::new(
+                base.type_id().clone(),
+                base.semantic_identity(),
+                base.layout(),
+                base.fields()
+                    .iter()
+                    .zip(incoming.fields())
+                    .map(|(base, incoming)| merge_runtime_value(base, incoming))
+                    .collect(),
+            ))
+        }
+        (
+            RuntimeValue::Variant {
+                owner: base_owner,
+                ordinal: base_ordinal,
+                name: base_name,
+                payload: Some(base_payload),
+            },
+            RuntimeValue::Variant {
+                owner: incoming_owner,
+                ordinal: incoming_ordinal,
+                name: incoming_name,
+                payload: Some(incoming_payload),
+            },
+        ) if base_owner == incoming_owner
+            && base_ordinal == incoming_ordinal
+            && base_name == incoming_name =>
+        {
+            RuntimeValue::Variant {
+                owner: incoming_owner.clone(),
+                ordinal: *incoming_ordinal,
+                name: incoming_name.clone(),
+                payload: Some(Box::new(merge_runtime_value(
+                    base_payload,
+                    incoming_payload,
+                ))),
+            }
+        }
+        // A leaf Set replaces the prior leaf. Structured containers recurse
+        // only when both values carry the same exact structural identity.
+        _ => incoming.clone(),
+    }
 }

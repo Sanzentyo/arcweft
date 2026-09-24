@@ -9,31 +9,41 @@ use super::{
     CharacterDialogueCustomValue, CharacterDialogueFocusValue, CharacterDialogueHookValue,
     CharacterDialoguePortraitValue, CharacterDialogueRichTextValue,
     CharacterDialogueRuntimeRole as Role, CharacterDialogueStageValue, CharacterDialogueStyleValue,
-    CharacterDialogueTypedValue, CharacterDialogueValueError, CharacterDialogueVoice,
-    CharacterDialogueVoiceId, DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
+    CharacterDialogueTypedValue, CharacterDialogueValueError,
+    CharacterDialogueVisualManifestEvidence, CharacterDialogueVoice, CharacterDialogueVoiceId,
+    DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
 };
 use crate::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_character::{
-    catalog::CharacterCatalog,
+    catalog::CharacterVisualManifestEvidence,
     id::{CharacterId, CharacterLookId},
 };
 use arcweft_core::{
+    character_nominal::{RuntimeCharacterLookSourceAuthority, RuntimeCharacterLookSourceError},
     entry::{RuntimeSchemaLimits, RuntimeValueDigest},
     pattern::{
-        RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-        RuntimeVariantIdentity,
+        RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeOpaqueTypeProducerId,
+        RuntimeSemanticTypeId, RuntimeVariantIdentity,
     },
     program_types::RuntimeProgramTypes,
+    task::RuntimeProgramOwner,
     value::{
         RuntimeEntityReference, RuntimeOpaqueValue, RuntimeSeq, RuntimeValue,
         runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::DeclarationIdentityFamily;
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueFieldCoordinate, CharacterDialogueOperation, CharacterDialoguePatchField,
+    CharacterDialoguePatchOperation,
+};
 use arcweft_view::{ViewId, ViewRegistry};
 use policies::{DialoguePolicyTypes, DialogueRuntimeVariantOwner};
 pub use roles::{CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
 
@@ -53,18 +63,96 @@ pub struct CharacterDialogueRuntimeCustomFieldCatalog {
     fields: BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueRuntimeCustomFieldDescriptor>,
 }
 
-/// Producer context borrowing the active program and accepted generation inputs.
-/// Type and payload references resolve only through that program. Defaults and
-/// the source custom-catalog digest must come from the generation being loaded.
-/// Construction checks structural consistency; it does not grant publication
-/// authority to a compiler or bundle integrator.
-pub struct CharacterDialogueRuntimeSchema<'a> {
-    character_catalog: &'a CharacterCatalog,
-    view_catalog: &'a ViewRegistry,
-    custom_fields: &'a CharacterDialogueRuntimeCustomFieldCatalog,
-    defaults: &'a BTreeMap<CharacterId, RuntimeValueDigest>,
-    roles: &'a CharacterDialogueRuntimeRoleTypes,
-    program: RuntimeProgramTypes<'a>,
+/// Effective default configuration and its accepted generation digest for one
+/// logical Character declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CharacterDialogueRuntimeDefault {
+    character: CharacterId,
+    config: CharacterDialogueConfig,
+    expected_digest: Option<RuntimeValueDigest>,
+}
+
+impl CharacterDialogueRuntimeDefault {
+    #[must_use]
+    pub const fn new(character: CharacterId, config: CharacterDialogueConfig) -> Self {
+        Self {
+            character,
+            config,
+            expected_digest: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_expected_digest(
+        character: CharacterId,
+        config: CharacterDialogueConfig,
+        digest: RuntimeValueDigest,
+    ) -> Self {
+        Self {
+            character,
+            config,
+            expected_digest: Some(digest),
+        }
+    }
+
+    #[must_use]
+    pub const fn character(&self) -> &CharacterId {
+        &self.character
+    }
+
+    #[must_use]
+    pub const fn expected_digest(&self) -> Option<RuntimeValueDigest> {
+        self.expected_digest
+    }
+
+    #[must_use]
+    pub const fn config(&self) -> &CharacterDialogueConfig {
+        &self.config
+    }
+}
+
+/// Complete accepted default configuration rows owned by one runtime generation.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CharacterDialogueRuntimeDefaultCatalog {
+    defaults: BTreeMap<CharacterId, CharacterDialogueRuntimeDefault>,
+}
+
+impl CharacterDialogueRuntimeDefaultCatalog {
+    pub fn try_new(
+        defaults: impl IntoIterator<Item = CharacterDialogueRuntimeDefault>,
+    ) -> Result<Self, CharacterDialogueValueError> {
+        let mut rows = BTreeMap::new();
+        for default in defaults {
+            let character = default.character.clone();
+            if rows.insert(character.clone(), default).is_some() {
+                return Err(CharacterDialogueValueError::DuplicateDefaults(character));
+            }
+        }
+        Ok(Self { defaults: rows })
+    }
+
+    #[must_use]
+    pub fn get(&self, character: &CharacterId) -> Option<&CharacterDialogueRuntimeDefault> {
+        self.defaults.get(character)
+    }
+
+    pub fn rows(&self) -> impl ExactSizeIterator<Item = &CharacterDialogueRuntimeDefault> {
+        self.defaults.values()
+    }
+}
+
+/// Generation-owned CharacterDialogue producer and admission context.
+///
+/// It owns the exact executable lease and shared immutable catalogs/defaults;
+/// all type lookup and value validation derive from that lease.
+pub struct CharacterDialogueRuntimeSchema {
+    view_catalog: Arc<ViewRegistry>,
+    custom_fields: Arc<CharacterDialogueRuntimeCustomFieldCatalog>,
+    defaults: Arc<CharacterDialogueRuntimeDefaultCatalog>,
+    roles: CharacterDialogueRuntimeRoleTypes,
+    voice_source_type: RuntimeSemanticTypeId,
+    look_source_authority: Arc<RuntimeCharacterLookSourceAuthority>,
+    program_owner: RuntimeProgramOwner,
     view_contracts: RuntimeValueDigest,
     policies: DialoguePolicyTypes,
 }
@@ -135,7 +223,7 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
     }
 }
 
-impl<'a> CharacterDialogueRuntimeSchema<'a> {
+impl CharacterDialogueRuntimeSchema {
     /// Sole producer for configuration roles and exact `CharacterDialogue` values.
     pub fn opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
         super::runtime_type::character_dialogue_opaque_type_producer()
@@ -144,14 +232,23 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
     /// Resolves the complete role and custom type inventory before publishing a
     /// producer context. Recursive payloads remain references to program rows.
     pub fn try_new(
-        character_catalog: &'a CharacterCatalog,
-        view_catalog: &'a ViewRegistry,
-        custom_fields: &'a CharacterDialogueRuntimeCustomFieldCatalog,
-        defaults: &'a BTreeMap<CharacterId, RuntimeValueDigest>,
-        roles: &'a CharacterDialogueRuntimeRoleTypes,
-        program: RuntimeProgramTypes<'a>,
+        view_catalog: Arc<ViewRegistry>,
+        custom_fields: Arc<CharacterDialogueRuntimeCustomFieldCatalog>,
+        defaults: Arc<CharacterDialogueRuntimeDefaultCatalog>,
+        roles: CharacterDialogueRuntimeRoleTypes,
+        voice_source_type: RuntimeSemanticTypeId,
+        look_source_authority: Arc<RuntimeCharacterLookSourceAuthority>,
+        program_owner: RuntimeProgramOwner,
     ) -> Result<Self, CharacterDialogueValueError> {
+        if !look_source_authority
+            .program_owner()
+            .same_program(&program_owner)
+        {
+            return Err(CharacterDialogueValueError::ForeignProgramOwner);
+        }
+        let program = program_owner.types();
         let rich_text = roles.validate(program)?;
+        Self::validate_voice_source_type(voice_source_type, program)?;
         for descriptor in custom_fields.fields.values() {
             program.require_type(descriptor.semantic_type)?;
         }
@@ -161,16 +258,157 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
             rich_text,
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
         )?;
-        Ok(Self {
-            character_catalog,
+        let schema = Self {
             view_catalog,
             custom_fields,
             defaults,
             roles,
-            program,
+            voice_source_type,
+            look_source_authority,
+            program_owner,
             view_contracts,
             policies,
-        })
+        };
+        for character in schema
+            .look_source_authority
+            .character_catalog()
+            .characters()
+        {
+            if schema.defaults.get(character).is_none() {
+                return Err(CharacterDialogueValueError::MissingDefaults(
+                    character.clone(),
+                ));
+            }
+        }
+        for default in schema.defaults.rows() {
+            let digest = schema.config_digest(default.config())?;
+            if default
+                .expected_digest()
+                .is_some_and(|expected| expected != digest)
+            {
+                return Err(CharacterDialogueValueError::DefaultDigestMismatch(
+                    default.character().clone(),
+                ));
+            }
+            let contract = schema.contract_for(default.character(), digest)?;
+            let dialogue = CharacterDialogue::try_new(
+                default.character().clone(),
+                contract,
+                default.config().clone(),
+            )?;
+            schema.validate_dialogue(&dialogue)?;
+        }
+        Ok(schema)
+    }
+
+    fn program_types(&self) -> arcweft_core::program_types::RuntimeProgramTypes<'_> {
+        self.program_owner.types()
+    }
+
+    /// Returns the exact executable lease that owns this producer generation.
+    #[must_use]
+    pub const fn program_owner(&self) -> &RuntimeProgramOwner {
+        &self.program_owner
+    }
+
+    /// Returns the accepted source Voice identity retained from this program.
+    #[must_use]
+    pub const fn voice_source_type(&self) -> RuntimeSemanticTypeId {
+        self.voice_source_type
+    }
+
+    /// Returns the Core authority that owns the exact Character catalog and
+    /// proves every present `Look<C>` row against this executable.
+    #[must_use]
+    pub const fn look_source_authority(&self) -> &Arc<RuntimeCharacterLookSourceAuthority> {
+        &self.look_source_authority
+    }
+
+    fn validate_voice_source_type(
+        semantic_type: RuntimeSemanticTypeId,
+        program: RuntimeProgramTypes<'_>,
+    ) -> Result<(), CharacterDialogueValueError> {
+        let invalid = || CharacterDialogueValueError::VoiceSourceType {
+            reason: "expected the accepted one-case DialogueVoice enum containing only `auto`",
+        };
+        let RuntimeCheckedType::Variant {
+            owner:
+                RuntimeVariantIdentity::Nominal {
+                    nominal,
+                    semantic_identity,
+                    ..
+                },
+            arguments,
+            cases,
+        } = program.checked_type(semantic_type)?
+        else {
+            return Err(invalid());
+        };
+        if nominal.as_str() != "DialogueVoice"
+            || semantic_identity != semantic_type
+            || !arguments.is_empty()
+            || cases.len() != 1
+            || cases[0].name != "auto"
+            || cases[0].payload.is_some()
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+
+    fn contract_for(
+        &self,
+        character: &CharacterId,
+        defaults: RuntimeValueDigest,
+    ) -> Result<CharacterDialogueContractIdentity, CharacterDialogueValueError> {
+        Ok(CharacterDialogueContractIdentity::with_visual_manifest(
+            self.visual_manifest_contract(character)?,
+            defaults,
+            self.custom_fields.digest,
+            self.view_contracts,
+        ))
+    }
+
+    fn visual_manifest_contract(
+        &self,
+        character: &CharacterId,
+    ) -> Result<CharacterDialogueVisualManifestEvidence, CharacterDialogueValueError> {
+        match self
+            .look_source_authority
+            .character_catalog()
+            .visual_evidence(character)
+        {
+            None => Err(CharacterDialogueValueError::MissingCharacter(
+                character.clone(),
+            )),
+            Some(CharacterVisualManifestEvidence::Absent) => {
+                Ok(CharacterDialogueVisualManifestEvidence::Absent)
+            }
+            Some(CharacterVisualManifestEvidence::Present(manifest)) => {
+                Ok(CharacterDialogueVisualManifestEvidence::Present(
+                    RuntimeValueDigest::from_bytes(*manifest.semantic_fingerprint_v1().as_bytes()),
+                ))
+            }
+        }
+    }
+
+    fn config_digest(
+        &self,
+        config: &CharacterDialogueConfig,
+    ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+        RuntimeValue::Tuple(self.encode_config_fields(config))
+            .try_digest_with_limits(Self::limits())
+            .map_err(CharacterDialogueValueError::from)
+    }
+
+    /// Computes the canonical digest for the current effective configuration
+    /// after admitting it through this exact generation schema.
+    pub fn effective_config_digest(
+        &self,
+        dialogue: &CharacterDialogue,
+    ) -> Result<RuntimeValueDigest, CharacterDialogueValueError> {
+        self.validate_dialogue(dialogue)?;
+        self.config_digest(&dialogue.config)
     }
 
     fn limits() -> RuntimeSchemaLimits {
@@ -227,7 +465,11 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
         };
         let character = CharacterId::try_new(public_id.as_str())
             .map_err(|error| field_shape("character_id", error.to_string()))?;
-        if self.character_catalog.get(&character).is_none() {
+        if !self
+            .look_source_authority
+            .character_catalog()
+            .contains_character(&character)
+        {
             return Err(CharacterDialogueValueError::MissingCharacter(character));
         }
         let expected = super::CharacterDialogueType::exact(character).runtime_opaque_owner();
@@ -281,28 +523,396 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
             .try_digest(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_encoded_bytes as usize)?)
     }
 
+    /// Constructs a fresh value from the accepted Character defaults and the
+    /// already evaluated, source-ordered field rows.
+    pub fn construct(
+        &self,
+        owner: &RuntimeProgramOwner,
+        target: &RuntimeValue,
+        fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        result_type: RuntimeSemanticTypeId,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        self.ensure_program_owner(owner)?;
+        let character = Self::character_target(target)?;
+        if !self
+            .look_source_authority
+            .character_catalog()
+            .contains_character(&character)
+        {
+            return Err(CharacterDialogueValueError::MissingCharacter(character));
+        }
+        let defaults = self
+            .defaults
+            .get(&character)
+            .ok_or_else(|| CharacterDialogueValueError::MissingDefaults(character.clone()))?;
+        let contract = self.contract_for(&character, self.config_digest(defaults.config())?)?;
+        let base = CharacterDialogue::try_new(character, contract, defaults.config.clone())?;
+        let dialogue = self.apply_runtime_fields(base, fields)?;
+        self.admit_result(dialogue, result_type)
+    }
+
+    /// Reconfigures the exact live CharacterDialogue value using evaluated
+    /// source-ordered field rows. Its Character identity and generation
+    /// contract remain those of the admitted target.
+    pub fn reconfigure(
+        &self,
+        owner: &RuntimeProgramOwner,
+        target: &RuntimeValue,
+        fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        result_type: RuntimeSemanticTypeId,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        let target = self.admit(owner, target, result_type)?;
+        let dialogue = self.apply_runtime_fields(target.dialogue, fields)?;
+        self.admit_result(dialogue, result_type)
+    }
+
+    /// Validates a value against this generation and its exact executable
+    /// before returning the domain value used by dynamic application/display.
+    pub fn admit(
+        &self,
+        owner: &RuntimeProgramOwner,
+        value: &RuntimeValue,
+        semantic_type: RuntimeSemanticTypeId,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        self.ensure_program_owner(owner)?;
+        self.program_types()
+            .accepts_value(semantic_type, value, Self::limits())?;
+        let RuntimeValue::Opaque(value) = value else {
+            return Err(field_shape(
+                "runtime_value",
+                "expected an opaque CharacterDialogue value",
+            ));
+        };
+        self.try_decode_opaque(value)
+    }
+
+    /// Closed operation entry used by the Core typed producer boundary.
+    pub fn apply(
+        &self,
+        owner: &RuntimeProgramOwner,
+        operation: CharacterDialogueOperation,
+        target: RuntimeValue,
+        fields: &[CharacterDialoguePatchField<RuntimeValue>],
+        result_type: RuntimeSemanticTypeId,
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
+        self.ensure_program_owner(owner)?;
+        let value = match operation {
+            CharacterDialogueOperation::Factory => {
+                self.construct(owner, &target, fields, result_type)?
+            }
+            CharacterDialogueOperation::Reconfigure => {
+                self.reconfigure(owner, &target, fields, result_type)?
+            }
+        };
+        Ok(value.into_runtime_value())
+    }
+
+    fn ensure_program_owner(
+        &self,
+        owner: &RuntimeProgramOwner,
+    ) -> Result<(), CharacterDialogueValueError> {
+        if self.program_owner.same_program(owner) {
+            Ok(())
+        } else {
+            Err(CharacterDialogueValueError::ForeignProgramOwner)
+        }
+    }
+
+    fn admit_result(
+        &self,
+        dialogue: CharacterDialogue,
+        semantic_type: RuntimeSemanticTypeId,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        let value = self.encode(&dialogue)?;
+        self.program_types().accepts_value(
+            semantic_type,
+            &RuntimeValue::Opaque(value.opaque.clone()),
+            Self::limits(),
+        )?;
+        Ok(value)
+    }
+
+    fn character_target(value: &RuntimeValue) -> Result<CharacterId, CharacterDialogueValueError> {
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id,
+        }) = value
+        else {
+            return Err(field_shape(
+                "target",
+                "factory target must be a Character entity reference",
+            ));
+        };
+        CharacterId::try_new(public_id.as_str())
+            .map_err(|error| field_shape("target", error.to_string()))
+    }
+
+    fn apply_runtime_fields(
+        &self,
+        mut dialogue: CharacterDialogue,
+        fields: &[CharacterDialoguePatchField<RuntimeValue>],
+    ) -> Result<CharacterDialogue, CharacterDialogueValueError> {
+        let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_patch_fields);
+        if fields.len() > maximum {
+            return Err(CharacterDialogueValueError::Limit {
+                limit: "patch_fields",
+                maximum,
+            });
+        }
+        for field in fields {
+            self.apply_runtime_field(&dialogue.character, &mut dialogue.config, field)?;
+        }
+        CharacterDialogue::try_new(
+            dialogue.character.clone(),
+            dialogue.contract,
+            dialogue.config,
+        )
+    }
+
+    fn apply_runtime_field(
+        &self,
+        character: &CharacterId,
+        config: &mut CharacterDialogueConfig,
+        field: &CharacterDialoguePatchField<RuntimeValue>,
+    ) -> Result<(), CharacterDialogueValueError> {
+        match &field.operation {
+            CharacterDialoguePatchOperation::Set(value) => {
+                self.apply_runtime_field_value(character, config, &field.coordinate, value)
+            }
+            CharacterDialoguePatchOperation::Clear => {
+                self.clear_runtime_field(config, &field.coordinate)
+            }
+        }
+    }
+
+    fn apply_runtime_field_value(
+        &self,
+        character: &CharacterId,
+        config: &mut CharacterDialogueConfig,
+        coordinate: &CharacterDialogueFieldCoordinate,
+        value: &RuntimeValue,
+    ) -> Result<(), CharacterDialogueValueError> {
+        match coordinate {
+            CharacterDialogueFieldCoordinate::Voice => {
+                config.voice = Some(self.decode_source_voice(value)?);
+            }
+            CharacterDialogueFieldCoordinate::Look => {
+                config.look = Some(self.decode_source_look(character, value)?);
+            }
+            CharacterDialogueFieldCoordinate::Stage => {
+                config.stage = Some(CharacterDialogueStageValue::try_new(
+                    Self::decode_role_value(value)?,
+                )?);
+            }
+            CharacterDialogueFieldCoordinate::Portrait => {
+                config.portrait = Some(CharacterDialoguePortraitValue::try_new(
+                    Self::decode_role_value(value)?,
+                )?);
+            }
+            CharacterDialogueFieldCoordinate::Focus => {
+                config.focus = Some(CharacterDialogueFocusValue::try_new(
+                    Self::decode_role_value(value)?,
+                )?);
+            }
+            CharacterDialogueFieldCoordinate::Cleanup => {
+                config.cleanup = Some(CharacterDialogueCleanupValue::try_new(
+                    Self::decode_role_value(value)?,
+                )?);
+            }
+            CharacterDialogueFieldCoordinate::View => config.view = Self::decode_view(value)?,
+            CharacterDialogueFieldCoordinate::SourceLocale => {
+                config.source_locale = Some(Self::decode_source_locale(value)?);
+            }
+            CharacterDialogueFieldCoordinate::Hooks => config.hooks = self.decode_hooks(value)?,
+            CharacterDialogueFieldCoordinate::Style => {
+                config.style = super::patch::merge_style_set(&config.style, value.clone())?;
+            }
+            CharacterDialogueFieldCoordinate::RichText => {
+                config.rich_text =
+                    super::patch::merge_rich_text_set(&config.rich_text, value.clone())?;
+            }
+            CharacterDialogueFieldCoordinate::InlineFailure => {
+                config.inline_failure = self.decode_inline_failure(value)?;
+            }
+            CharacterDialogueFieldCoordinate::Custom(id) => {
+                let typed = CharacterDialogueTypedValue::try_new(value.clone())?;
+                config
+                    .custom
+                    .insert(id.clone(), CharacterDialogueCustomValue::try_new(typed)?);
+            }
+        }
+        Ok(())
+    }
+
+    fn clear_runtime_field(
+        &self,
+        config: &mut CharacterDialogueConfig,
+        coordinate: &CharacterDialogueFieldCoordinate,
+    ) -> Result<(), CharacterDialogueValueError> {
+        match coordinate {
+            CharacterDialogueFieldCoordinate::Voice => config.voice = None,
+            CharacterDialogueFieldCoordinate::Look => config.look = None,
+            CharacterDialogueFieldCoordinate::Stage => config.stage = None,
+            CharacterDialogueFieldCoordinate::Portrait => config.portrait = None,
+            CharacterDialogueFieldCoordinate::Focus => config.focus = None,
+            CharacterDialogueFieldCoordinate::Cleanup => config.cleanup = None,
+            CharacterDialogueFieldCoordinate::View => {
+                config.view = super::patch::standard_dialogue_view();
+            }
+            CharacterDialogueFieldCoordinate::SourceLocale => config.source_locale = None,
+            CharacterDialogueFieldCoordinate::Hooks => config.hooks.clear(),
+            CharacterDialogueFieldCoordinate::Style => {
+                config.style = super::patch::clear_style(&config.style)?;
+            }
+            CharacterDialogueFieldCoordinate::RichText => {
+                config.rich_text = super::patch::clear_rich_text(&config.rich_text)?;
+            }
+            CharacterDialogueFieldCoordinate::InlineFailure => {
+                config.inline_failure = InlineFailurePolicy::FailLine;
+            }
+            CharacterDialogueFieldCoordinate::Custom(id) => {
+                let descriptor = self
+                    .custom_fields
+                    .get(id)
+                    .ok_or_else(|| CharacterDialogueValueError::UnknownCustomField(id.clone()))?;
+                if !descriptor.clearable {
+                    return Err(field_shape(
+                        "custom",
+                        format!("custom field `{id}` is not clearable"),
+                    ));
+                }
+                config.custom.remove(id);
+            }
+        }
+        Ok(())
+    }
+
+    fn decode_role_value(
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueTypedValue, CharacterDialogueValueError> {
+        CharacterDialogueTypedValue::try_new(value.clone())
+    }
+
+    fn decode_view(value: &RuntimeValue) -> Result<ViewId, CharacterDialogueValueError> {
+        let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = value
+        else {
+            return Err(field_shape("view", "expected View entity reference"));
+        };
+        if *family != DeclarationIdentityFamily::View {
+            return Err(field_shape("view", "expected View entity reference"));
+        }
+        ViewId::parse_public(public_id.as_str())
+            .map_err(|error| field_shape("view", error.to_string()))
+    }
+
+    fn decode_source_locale(
+        value: &RuntimeValue,
+    ) -> Result<DialogueLocaleId, CharacterDialogueValueError> {
+        let RuntimeValue::String(value) = value else {
+            return Err(field_shape("source_locale", "expected String"));
+        };
+        DialogueLocaleId::try_new(value.clone())
+    }
+
+    fn decode_hooks(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<Vec<CharacterDialogueHookValue>, CharacterDialogueValueError> {
+        let RuntimeValue::Seq(values) = value else {
+            return Err(field_shape("hooks", "expected Seq"));
+        };
+        values
+            .clone()
+            .into_values()
+            .into_iter()
+            .map(|value| {
+                CharacterDialogueHookValue::try_new(CharacterDialogueTypedValue::try_new(value)?)
+            })
+            .collect()
+    }
+
+    fn decode_source_voice(
+        &self,
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
+        let semantic_type = self.voice_source_type;
+        self.program_types()
+            .accepts_value(semantic_type, value, Self::limits())?;
+        let RuntimeCheckedType::Variant { owner, cases, .. } =
+            self.program_types().checked_type(semantic_type)?
+        else {
+            return Err(CharacterDialogueValueError::VoiceSourceType {
+                reason: "accepted Voice type is not a nominal enum",
+            });
+        };
+        let RuntimeValue::Variant {
+            owner: value_owner,
+            ordinal,
+            name,
+            payload,
+        } = value
+        else {
+            return Err(field_shape(
+                "voice",
+                "expected accepted DialogueVoice value",
+            ));
+        };
+        if value_owner != &owner || *ordinal != 0 || name != &cases[0].name || payload.is_some() {
+            return Err(field_shape(
+                "voice",
+                "value does not match the accepted DialogueVoice case row",
+            ));
+        }
+        Ok(CharacterDialogueVoice::Auto)
+    }
+
+    fn decode_source_look(
+        &self,
+        character: &CharacterId,
+        value: &RuntimeValue,
+    ) -> Result<CharacterLookId, CharacterDialogueValueError> {
+        self.look_source_authority
+            .decode(&self.program_owner, character, value)
+            .map_err(|error| match error {
+                RuntimeCharacterLookSourceError::ForeignProgram => {
+                    CharacterDialogueValueError::ForeignProgramOwner
+                }
+                RuntimeCharacterLookSourceError::MissingVisualManifest(character) => {
+                    CharacterDialogueValueError::MissingVisualManifest(character)
+                }
+                RuntimeCharacterLookSourceError::InvalidLookType(character) => {
+                    CharacterDialogueValueError::LookSourceType {
+                        character,
+                        reason: "accepted Core Look authority rejected the executable row",
+                    }
+                }
+                RuntimeCharacterLookSourceError::InvalidLookValue(character) => {
+                    field_shape("look", format!("invalid Look value for `{character}`"))
+                }
+                RuntimeCharacterLookSourceError::NominalGraph(error) => {
+                    CharacterDialogueValueError::NominalSchema(error)
+                }
+                RuntimeCharacterLookSourceError::ProgramType(error) => {
+                    CharacterDialogueValueError::ProgramType(error)
+                }
+            })
+    }
+
     fn validate_dialogue(
         &self,
         dialogue: &CharacterDialogue,
     ) -> Result<(), CharacterDialogueValueError> {
         dialogue.config.validate()?;
-        let manifest = self
-            .character_catalog
-            .get(&dialogue.character)
-            .ok_or_else(|| {
-                CharacterDialogueValueError::MissingCharacter(dialogue.character.clone())
-            })?;
-        if manifest.semantic_fingerprint_v1().as_bytes()
-            != dialogue.contract.character_manifest().as_bytes()
-        {
-            return Err(CharacterDialogueValueError::CharacterManifestMismatch(
+        let visual_manifest = self.visual_manifest_contract(&dialogue.character)?;
+        if visual_manifest != dialogue.contract.visual_manifest() {
+            return Err(CharacterDialogueValueError::VisualManifestEvidenceMismatch(
                 dialogue.character.clone(),
             ));
         }
         let defaults = self.defaults.get(&dialogue.character).ok_or_else(|| {
             CharacterDialogueValueError::MissingDefaults(dialogue.character.clone())
         })?;
-        if *defaults != dialogue.contract.defaults() {
+        if self.config_digest(defaults.config())? != dialogue.contract.defaults() {
             return Err(CharacterDialogueValueError::DefaultsMismatch(
                 dialogue.character.clone(),
             ));
@@ -310,13 +920,20 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
         if dialogue.contract.view_contracts() != self.view_contracts {
             return Err(CharacterDialogueValueError::ViewContractsMismatch);
         }
-        if let Some(look) = &dialogue.config.look
-            && manifest.look(look).is_none()
-        {
-            return Err(CharacterDialogueValueError::MissingLook {
-                character: dialogue.character.clone(),
-                look: look.clone(),
-            });
+        if let Some(look) = &dialogue.config.look {
+            let manifest = self
+                .look_source_authority
+                .character_catalog()
+                .visual_manifest(&dialogue.character)
+                .ok_or_else(|| {
+                    CharacterDialogueValueError::MissingVisualManifest(dialogue.character.clone())
+                })?;
+            if manifest.look(look).is_none() {
+                return Err(CharacterDialogueValueError::MissingLook {
+                    character: dialogue.character.clone(),
+                    look: look.clone(),
+                });
+            }
         }
         if self.view_catalog.resolve(&dialogue.config.view).is_none() {
             return Err(CharacterDialogueValueError::MissingView(
@@ -390,7 +1007,7 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
                     view: config.view.clone(),
                 });
             }
-            self.program.accepts_value(
+            self.program_types().accepts_value(
                 descriptor.semantic_type,
                 value.typed().value(),
                 Self::limits(),
@@ -412,19 +1029,26 @@ impl CharacterDialogueValue {
     }
 }
 
-impl CharacterDialogueRuntimeSchema<'_> {
+impl CharacterDialogueRuntimeSchema {
     fn encode_payload(&self, dialogue: &CharacterDialogue) -> RuntimeValue {
         let contract = dialogue.contract;
         let config = &dialogue.config;
-        let fields = vec![
+        let mut fields = vec![
             RuntimeValue::EntityRef(RuntimeEntityReference::Project {
                 family: DeclarationIdentityFamily::Character,
                 public_id: dialogue.character.as_public_id(),
             }),
-            Self::digest_value(contract.character_manifest()),
+            Self::encode_visual_manifest(contract.visual_manifest()),
             Self::digest_value(contract.defaults()),
             Self::digest_value(contract.custom_schema()),
             Self::digest_value(contract.view_contracts()),
+        ];
+        fields.extend(self.encode_config_fields(config));
+        RuntimeValue::Tuple(fields)
+    }
+
+    fn encode_config_fields(&self, config: &CharacterDialogueConfig) -> Vec<RuntimeValue> {
+        vec![
             Self::encode_option(config.voice.as_ref().map(|voice| self.encode_voice(voice))),
             Self::encode_option(
                 config
@@ -477,8 +1101,7 @@ impl CharacterDialogueRuntimeSchema<'_> {
             config.rich_text.typed().value().clone(),
             self.encode_inline_failure(&config.inline_failure),
             Self::encode_custom(&config.custom),
-        ];
-        RuntimeValue::Tuple(fields)
+        ]
     }
 
     fn decode_payload(
@@ -502,14 +1125,14 @@ impl CharacterDialogueRuntimeSchema<'_> {
         }
         let character = CharacterId::try_new(public_id.as_str())
             .map_err(|error| field_shape("character_id", error.to_string()))?;
-        let contract = CharacterDialogueContractIdentity::new(
-            Self::decode_digest(&fields[1], "character_manifest_digest")?,
+        let contract = CharacterDialogueContractIdentity::with_visual_manifest(
+            Self::decode_visual_manifest(&fields[1])?,
             Self::decode_digest(&fields[2], "defaults_digest")?,
             Self::decode_digest(&fields[3], "custom_schema_digest")?,
             Self::decode_digest(&fields[4], "view_contracts_digest")?,
         );
         let voice = Self::decode_option(&fields[5], "voice")?
-            .map(|voice| self.decode_voice(voice))
+            .map(|voice| self.decode_stored_voice(voice))
             .transpose()?;
         let look = Self::decode_option(&fields[6], "look")?
             .map(|value| {
@@ -602,7 +1225,7 @@ impl CharacterDialogueRuntimeSchema<'_> {
         }
     }
 
-    fn decode_voice(
+    fn decode_stored_voice(
         &self,
         value: &RuntimeValue,
     ) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
@@ -923,6 +1546,26 @@ impl CharacterDialogueRuntimeSchema<'_> {
 
     fn digest_value(value: RuntimeValueDigest) -> RuntimeValue {
         runtime_sequence_dense_bytes(value.as_bytes().to_vec())
+    }
+
+    fn encode_visual_manifest(evidence: CharacterDialogueVisualManifestEvidence) -> RuntimeValue {
+        match evidence {
+            CharacterDialogueVisualManifestEvidence::Absent => Self::encode_option(None),
+            CharacterDialogueVisualManifestEvidence::Present(digest) => {
+                Self::encode_option(Some(Self::digest_value(digest)))
+            }
+        }
+    }
+
+    fn decode_visual_manifest(
+        value: &RuntimeValue,
+    ) -> Result<CharacterDialogueVisualManifestEvidence, CharacterDialogueValueError> {
+        match Self::decode_option(value, "visual_manifest")? {
+            None => Ok(CharacterDialogueVisualManifestEvidence::Absent),
+            Some(value) => Ok(CharacterDialogueVisualManifestEvidence::Present(
+                Self::decode_digest(value, "visual_manifest_digest")?,
+            )),
+        }
     }
 
     fn decode_digest(

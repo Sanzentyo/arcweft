@@ -1,38 +1,67 @@
 use super::*;
 use crate::{
-    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeRole as Role,
-    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
-    CharacterDialogueRuntimeSchema, CharacterDialogueType,
+    CharacterDialogueConfig, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeDefaultCatalog,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleType,
+    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
 };
+use arcweft_character::catalog::CharacterVisualManifestEvidence;
 use arcweft_core::{
     awbc::schema::{
         AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape as AwbcType,
-        AwbcStringId, AwbcTypeId,
+        AwbcStringId, AwbcTypeId, AwbcVariantCase, AwbcVariantIdentity,
     },
+    character_nominal::{CharacterNominalType, RuntimeCharacterLookSourceAuthority},
     entry::{
-        RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition,
-        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
-        RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema, TypeLayoutHash,
+        RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaCase,
+        RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField, RuntimeNominalSchemaGraph,
+        RuntimeNominalSchemaIdentity, RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema,
+        TypeLayoutHash,
     },
-    pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId},
+    pattern::{
+        RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeCheckedType,
+        RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
+    },
     plan::{
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlan,
         RuntimePlanBuilder, RuntimePlanTypeProjection as Type, RuntimePlanTypeSeed,
+        RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
     },
-    program_types::RuntimeProgramTypes,
+    task::RuntimeProgramOwner,
     value::{
         RuntimeEntityReference, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-        RuntimeOpaqueValueClass, RuntimeRecordFieldId,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId, runtime_sequence_dense_bytes,
     },
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
-use std::collections::BTreeSet;
+use arcweft_interaction_model::dialogue::{
+    CharacterDialogueFieldCoordinate as Coordinate, CharacterDialogueOperation,
+    CharacterDialoguePatchField, CharacterDialoguePatchOperation as Operation,
+};
+use arcweft_view::ViewId;
+use std::{collections::BTreeSet, sync::Arc};
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([tag; 32])
 }
 fn role_semantic(role: Role) -> RuntimeSemanticTypeId {
     semantic(20 + role.canonical_tag())
+}
+fn voice_source_type() -> RuntimeSemanticTypeId {
+    semantic(56)
+}
+fn look_source_type() -> RuntimeSemanticTypeId {
+    CharacterNominalType::Look {
+        character: sample_manifest().character().clone(),
+    }
+    .runtime_semantic_identity()
+}
+fn voice_source_nominal() -> RuntimeNominalTypeId {
+    RuntimeNominalTypeId::try_new("DialogueVoice").unwrap()
+}
+fn look_source_nominal() -> RuntimeNominalTypeId {
+    RuntimeNominalTypeId::from_checked_digest(*look_source_type().as_bytes())
 }
 
 fn test_payload_graph() -> (
@@ -44,19 +73,35 @@ fn test_payload_graph() -> (
     let nominal = RuntimeNominalTypeId::try_new("dialogue.TestPayload").unwrap();
     let identity = semantic(54);
     let graph = RuntimeNominalSchemaGraph::try_new(
-        vec![RuntimeNominalSchemaDefinition::new(
-            RuntimeNominalSchemaIdentity::new(nominal.clone(), identity),
-            vec![],
-            RuntimeNominalSchemaBody::Record {
-                shape: RuntimeNominalRecordShape::Record,
-                fields: vec![RuntimeNominalSchemaField::new(
-                    field,
-                    Some("flag".into()),
-                    RuntimeTypeSchema::Bool,
-                )]
-                .into(),
-            },
-        )],
+        vec![
+            RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(nominal.clone(), identity),
+                vec![],
+                RuntimeNominalSchemaBody::Record {
+                    shape: RuntimeNominalRecordShape::Record,
+                    fields: vec![RuntimeNominalSchemaField::new(
+                        field,
+                        Some("flag".into()),
+                        RuntimeTypeSchema::Bool,
+                    )]
+                    .into(),
+                },
+            ),
+            RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(voice_source_nominal(), voice_source_type()),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: vec![RuntimeNominalSchemaCase::new(0, "auto".into(), None)].into(),
+                },
+            ),
+            RuntimeNominalSchemaDefinition::new(
+                RuntimeNominalSchemaIdentity::new(look_source_nominal(), look_source_type()),
+                vec![],
+                RuntimeNominalSchemaBody::Variant {
+                    cases: vec![RuntimeNominalSchemaCase::new(0, "normal".into(), None)].into(),
+                },
+            ),
+        ],
         RuntimeSchemaLimits::engine_default(),
     )
     .unwrap();
@@ -78,14 +123,37 @@ pub(super) fn role_value(role: Role, payload: RuntimeValue) -> CharacterDialogue
     CharacterDialogueTypedValue::try_new(owner.try_wrap(payload).unwrap()).unwrap()
 }
 
+fn source_variant_value(
+    owner: &RuntimeProgramOwner,
+    semantic_type: RuntimeSemanticTypeId,
+    ordinal: u32,
+    name: &str,
+    payload: Option<RuntimeValue>,
+) -> RuntimeValue {
+    let RuntimeCheckedType::Variant {
+        owner: variant_owner,
+        ..
+    } = owner.types().checked_type(semantic_type).unwrap()
+    else {
+        panic!("source binding must name an accepted variant type")
+    };
+    RuntimeValue::Variant {
+        owner: variant_owner,
+        ordinal,
+        name: name.to_owned(),
+        payload: payload.map(Box::new),
+    }
+}
+
 struct Types {
     plan: RuntimePlan,
     awbc: AwbcProgram,
     roles: CharacterDialogueRuntimeRoleTypes,
-    defaults: BTreeMap<CharacterId, RuntimeValueDigest>,
     nominal: RuntimeNominalTypeId,
     nominal_identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
+    character_type: RuntimeSemanticTypeId,
+    any_type: RuntimeSemanticTypeId,
 }
 
 impl Types {
@@ -93,7 +161,16 @@ impl Types {
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         let (nominal, nominal_identity, graph) = test_payload_graph();
         let layout = graph.try_layout_hash(nominal_identity).unwrap();
+        let voice_layout = graph.try_layout_hash(voice_source_type()).unwrap();
+        let look_layout = graph.try_layout_hash(look_source_type()).unwrap();
         let producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
+        let character = sample_manifest().character().clone();
+        let character_dialogue = CharacterDialogueType::exact(character);
+        let any_dialogue = CharacterDialogueType::any();
+        let character_type = character_dialogue.runtime_semantic_identity();
+        let any_type = any_dialogue.runtime_semantic_identity();
+        let exact_owner = character_dialogue.runtime_opaque_owner();
+        let any_owner = any_dialogue.runtime_opaque_owner();
         let mut seeds = Role::AUTHORED_BASE
             .into_iter()
             .map(|role| {
@@ -126,6 +203,62 @@ impl Types {
                 },
             ),
             RuntimePlanTypeSeed::new(semantic(55), Type::Bool),
+            RuntimePlanTypeSeed::new(
+                semantic(58),
+                Type::Option {
+                    item: semantic(55),
+                    some_payload: semantic(60),
+                },
+            ),
+            RuntimePlanTypeSeed::new(
+                semantic(59),
+                Type::Option {
+                    item: semantic(53),
+                    some_payload: semantic(61),
+                },
+            ),
+            RuntimePlanTypeSeed::new(semantic(60), Type::Tuple(vec![semantic(55)].into())),
+            RuntimePlanTypeSeed::new(semantic(61), Type::Tuple(vec![semantic(53)].into())),
+            RuntimePlanTypeSeed::new(
+                semantic(62),
+                Type::Tuple(vec![semantic(58), semantic(59)].into()),
+            ),
+            RuntimePlanTypeSeed::new(
+                voice_source_type(),
+                Type::Nominal {
+                    nominal: voice_source_nominal(),
+                    layout: voice_layout,
+                    arguments: Box::new([]),
+                },
+            ),
+            RuntimePlanTypeSeed::new(
+                look_source_type(),
+                Type::Nominal {
+                    nominal: look_source_nominal(),
+                    layout: look_layout,
+                    arguments: Box::new([]),
+                },
+            ),
+            RuntimePlanTypeSeed::new(
+                character_type,
+                Type::Opaque {
+                    producer: exact_owner.producer().clone(),
+                    admission: exact_owner.admission(),
+                    value_class: exact_owner.value_class(),
+                    persistence: exact_owner.persistence(),
+                    arguments: Box::new([]),
+                },
+            ),
+            RuntimePlanTypeSeed::new(
+                any_type,
+                Type::Opaque {
+                    producer: any_owner.producer().clone(),
+                    admission: any_owner.admission(),
+                    value_class: any_owner.value_class(),
+                    persistence: any_owner.persistence(),
+                    arguments: Box::new([]),
+                },
+            ),
         ]);
         let mut builder = RuntimePlanBuilder::new();
         builder
@@ -141,7 +274,20 @@ impl Types {
                         semantic(55),
                     )],
                 )],
-                [],
+                [
+                    RuntimeVariantDomainSeed::new(
+                        voice_source_type(),
+                        voice_source_nominal(),
+                        voice_layout,
+                        [RuntimeVariantCaseSeed::new("auto", None)],
+                    ),
+                    RuntimeVariantDomainSeed::new(
+                        look_source_type(),
+                        look_source_nominal(),
+                        look_layout,
+                        [RuntimeVariantCaseSeed::new("normal", None)],
+                    ),
+                ],
                 &graph,
             )
             .unwrap();
@@ -185,11 +331,99 @@ impl Types {
             ),
             AwbcRuntimeType::new(semantic(55), AwbcType::Bool),
         ]);
+        for owner in [exact_owner, any_owner] {
+            runtime_types.push(AwbcRuntimeType::new(
+                owner.semantic_identity(),
+                AwbcType::Opaque {
+                    producer: AwbcStringId(0),
+                    admission: owner.admission(),
+                    value_class: owner.value_class(),
+                    persistence: owner.persistence(),
+                    arguments: vec![],
+                },
+            ));
+        }
+        runtime_types.extend([
+            AwbcRuntimeType::new(
+                semantic(58),
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                    arguments: vec![],
+                    cases: vec![
+                        AwbcVariantCase {
+                            name: AwbcStringId(7),
+                            payload: Some(AwbcTypeId(16)),
+                        },
+                        AwbcVariantCase {
+                            name: AwbcStringId(8),
+                            payload: None,
+                        },
+                    ],
+                },
+            ),
+            AwbcRuntimeType::new(
+                semantic(59),
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                    arguments: vec![],
+                    cases: vec![
+                        AwbcVariantCase {
+                            name: AwbcStringId(7),
+                            payload: Some(AwbcTypeId(17)),
+                        },
+                        AwbcVariantCase {
+                            name: AwbcStringId(8),
+                            payload: None,
+                        },
+                    ],
+                },
+            ),
+            AwbcRuntimeType::new(semantic(60), AwbcType::Tuple(vec![AwbcTypeId(11)])),
+            AwbcRuntimeType::new(semantic(61), AwbcType::Tuple(vec![AwbcTypeId(9)])),
+            AwbcRuntimeType::new(
+                semantic(62),
+                AwbcType::Tuple(vec![AwbcTypeId(14), AwbcTypeId(15)]),
+            ),
+            AwbcRuntimeType::new(
+                voice_source_type(),
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Nominal {
+                        public_id: AwbcStringId(3),
+                        layout: *voice_layout.as_bytes(),
+                    },
+                    arguments: vec![],
+                    cases: vec![AwbcVariantCase {
+                        name: AwbcStringId(4),
+                        payload: None,
+                    }],
+                },
+            ),
+            AwbcRuntimeType::new(
+                look_source_type(),
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Nominal {
+                        public_id: AwbcStringId(5),
+                        layout: *look_layout.as_bytes(),
+                    },
+                    arguments: vec![],
+                    cases: vec![AwbcVariantCase {
+                        name: AwbcStringId(6),
+                        payload: None,
+                    }],
+                },
+            ),
+        ]);
         let awbc = AwbcProgram {
             strings: vec![
                 producer.as_str().to_owned(),
                 nominal.as_str().to_owned(),
                 "flag".into(),
+                voice_source_nominal().as_str().to_owned(),
+                "auto".into(),
+                look_source_nominal().as_str().to_owned(),
+                "normal".into(),
+                "Some".into(),
+                "None".into(),
             ],
             runtime_types,
             ..AwbcProgram::default()
@@ -200,6 +434,8 @@ impl Types {
                     role_semantic(role),
                     if role == Role::Hook {
                         semantic(54)
+                    } else if role == Role::RichText {
+                        semantic(62)
                     } else {
                         semantic(52)
                     },
@@ -211,37 +447,116 @@ impl Types {
             plan,
             awbc,
             roles,
-            defaults: BTreeMap::from([(
-                sample_manifest().character().clone(),
-                RuntimeValueDigest::from_bytes([2; 32]),
-            )]),
             nominal,
             nominal_identity,
             layout,
+            character_type,
+            any_type,
         }
     }
-    fn programs(&self) -> [RuntimeProgramTypes<'_>; 2] {
+    fn program_owners(&self) -> [RuntimeProgramOwner; 2] {
         [
-            RuntimeProgramTypes::Plan(&self.plan),
-            RuntimeProgramTypes::Awbc(&self.awbc),
+            RuntimeProgramOwner::Plan(Arc::new(self.plan.clone())),
+            RuntimeProgramOwner::Awbc(Arc::new(self.awbc.clone())),
         ]
     }
-    fn schema<'a>(
-        &'a self,
-        characters: &'a CharacterCatalog,
-        views: &'a ViewRegistry,
-        custom: &'a CharacterDialogueRuntimeCustomFieldCatalog,
-        program: RuntimeProgramTypes<'a>,
-    ) -> CharacterDialogueRuntimeSchema<'a> {
+    fn default_catalog() -> CharacterDialogueRuntimeDefaultCatalog {
+        CharacterDialogueRuntimeDefaultCatalog::try_new([CharacterDialogueRuntimeDefault::new(
+            sample_manifest().character().clone(),
+            Self::default_config(),
+        )])
+        .unwrap()
+    }
+    fn try_schema(
+        &self,
+        characters: &CharacterCatalog,
+        views: &ViewRegistry,
+        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
+        owner: RuntimeProgramOwner,
+    ) -> Result<CharacterDialogueRuntimeSchema, CharacterDialogueValueError> {
+        let authority = self.look_authority(characters, owner.clone());
+        self.try_schema_with_authority(views, custom, voice_source_type(), authority, owner)
+    }
+
+    fn look_authority(
+        &self,
+        characters: &CharacterCatalog,
+        owner: RuntimeProgramOwner,
+    ) -> Arc<RuntimeCharacterLookSourceAuthority> {
+        Arc::new(
+            RuntimeCharacterLookSourceAuthority::try_new(owner, Arc::new(characters.clone()))
+                .unwrap(),
+        )
+    }
+
+    fn try_schema_with_authority(
+        &self,
+        views: &ViewRegistry,
+        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
+        voice_type: RuntimeSemanticTypeId,
+        look_authority: Arc<RuntimeCharacterLookSourceAuthority>,
+        owner: RuntimeProgramOwner,
+    ) -> Result<CharacterDialogueRuntimeSchema, CharacterDialogueValueError> {
         CharacterDialogueRuntimeSchema::try_new(
-            characters,
-            views,
-            custom,
-            &self.defaults,
-            &self.roles,
-            program,
+            Arc::new(views.clone()),
+            Arc::new(custom.clone()),
+            Arc::new(Self::default_catalog()),
+            self.roles.clone(),
+            voice_type,
+            look_authority,
+            owner,
+        )
+    }
+    fn schema(
+        &self,
+        characters: &CharacterCatalog,
+        views: &ViewRegistry,
+        custom: &CharacterDialogueRuntimeCustomFieldCatalog,
+        owner: RuntimeProgramOwner,
+    ) -> CharacterDialogueRuntimeSchema {
+        self.try_schema(characters, views, custom, owner).unwrap()
+    }
+
+    fn default_config() -> CharacterDialogueConfig {
+        let style = CharacterDialogueStyleValue::try_new(role_value(
+            Role::RichText,
+            RuntimeValue::Tuple(vec![
+                RuntimeValue::option_none(),
+                RuntimeValue::option_none(),
+            ]),
+        ))
+        .unwrap();
+        let rich_text = CharacterDialogueRichTextValue::try_new(role_value(
+            Role::RichText,
+            RuntimeValue::Tuple(vec![
+                RuntimeValue::option_none(),
+                RuntimeValue::option_none(),
+            ]),
+        ))
+        .unwrap();
+        CharacterDialogueConfig::try_new(
+            ViewId::try_new_engine_owned("std.view.dialogue").unwrap(),
+            style,
+            rich_text,
         )
         .unwrap()
+    }
+
+    fn base(
+        schema: &CharacterDialogueRuntimeSchema,
+        owner: &RuntimeProgramOwner,
+        character: &CharacterId,
+        result_type: RuntimeSemanticTypeId,
+    ) -> CharacterDialogue {
+        let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id: PublicId::try_new(character.as_str()).unwrap(),
+        });
+        schema
+            .construct(owner, &target, &[], result_type)
+            .unwrap()
+            .dialogue()
+            .clone()
     }
     fn nominal(&self, value: RuntimeValue) -> RuntimeValue {
         RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
@@ -266,8 +581,17 @@ fn rewrap(dialogue: &CharacterDialogue, payload: RuntimeValue) -> RuntimeOpaqueV
 
 #[test]
 fn native_and_awbc_round_trip_the_tuple_and_every_policy_case() {
-    let (base, characters, views, custom) = fixture();
+    let (_, characters, views, custom) = fixture();
     let types = Types::new();
+    let owners = types.program_owners();
+    let base_owner = owners[0].clone();
+    let base_schema = types.schema(&characters, &views, &custom, base_owner.clone());
+    let base = Types::base(
+        &base_schema,
+        &base_owner,
+        sample_manifest().character(),
+        types.character_type,
+    );
     let entity_style = CharacterDialogueStyleValue::try_new(
         CharacterDialogueTypedValue::try_new(RuntimeValue::EntityRef(
             RuntimeEntityReference::Project {
@@ -333,13 +657,17 @@ fn native_and_awbc_round_trip_the_tuple_and_every_policy_case() {
                 )
                 .unwrap();
             let mut digests = Vec::new();
-            for program in types.programs() {
-                let schema = types.schema(&characters, &views, &custom, program);
+            for owner in owners.iter().cloned() {
+                let schema = types.schema(&characters, &views, &custom, owner);
                 let encoded = schema.encode(&dialogue).unwrap();
                 let RuntimeValue::Tuple(fields) = encoded.opaque().payload() else {
                     panic!("tuple")
                 };
                 assert_eq!(fields.len(), 18);
+                assert!(matches!(
+                    fields[1],
+                    RuntimeValue::Variant { ordinal: 0, .. }
+                ));
                 assert!(matches!(&fields[16], RuntimeValue::Variant { .. }));
                 assert_eq!(
                     schema
@@ -357,10 +685,16 @@ fn native_and_awbc_round_trip_the_tuple_and_every_policy_case() {
 
 #[test]
 fn rejects_outer_owner_removed_carrier_and_tuple_arity_before_publication() {
-    let (dialogue, characters, views, custom) = fixture();
+    let (_, characters, views, custom) = fixture();
     let types = Types::new();
-    for program in types.programs() {
-        let schema = types.schema(&characters, &views, &custom, program);
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner.clone());
+        let dialogue = Types::base(
+            &schema,
+            &owner,
+            sample_manifest().character(),
+            types.character_type,
+        );
         let encoded = schema.encode(&dialogue).unwrap();
         let RuntimeValue::Tuple(fields) = encoded.opaque().payload() else {
             unreachable!()
@@ -406,10 +740,16 @@ fn rejects_outer_owner_removed_carrier_and_tuple_arity_before_publication() {
 
 #[test]
 fn rejects_stale_contracts_and_tampered_policy_headers() {
-    let (dialogue, characters, views, custom) = fixture();
+    let (_, characters, views, custom) = fixture();
     let types = Types::new();
-    for program in types.programs() {
-        let schema = types.schema(&characters, &views, &custom, program);
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner.clone());
+        let dialogue = Types::base(
+            &schema,
+            &owner,
+            sample_manifest().character(),
+            types.character_type,
+        );
         let encoded = schema.encode(&dialogue).unwrap();
         let RuntimeValue::Tuple(fields) = encoded.opaque().payload() else {
             unreachable!()
@@ -456,10 +796,16 @@ fn rejects_stale_contracts_and_tampered_policy_headers() {
 
 #[test]
 fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
-    let (base, characters, views, custom) = fixture();
+    let (_, characters, views, custom) = fixture();
     let types = Types::new();
-    for program in types.programs() {
-        let schema = types.schema(&characters, &views, &custom, program);
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner.clone());
+        let base = Types::base(
+            &schema,
+            &owner,
+            sample_manifest().character(),
+            types.character_type,
+        );
         for payload in [
             types.nominal(RuntimeValue::String("wrong child".into())),
             RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
@@ -533,8 +879,16 @@ fn role_payload_admission_rejects_nested_nominal_type_and_header_mismatches() {
 
 #[test]
 fn custom_entries_use_active_types_and_require_canonical_id_order() {
-    let (base, characters, views, _) = fixture();
+    let (_, characters, views, empty_custom) = fixture();
     let types = Types::new();
+    let base_owner = types.program_owners()[0].clone();
+    let base_schema = types.schema(&characters, &views, &empty_custom, base_owner.clone());
+    let base = Types::base(
+        &base_schema,
+        &base_owner,
+        sample_manifest().character(),
+        types.character_type,
+    );
     let ids = ["alpha", "beta"].map(|name| {
         CharacterDialogueCustomFieldId::try_new(format!("character_dialogue_field.{name}")).unwrap()
     });
@@ -569,8 +923,8 @@ fn custom_entries_use_active_types_and_require_canonical_id_order() {
                 ),
         )
         .unwrap();
-    for program in types.programs() {
-        let schema = types.schema(&characters, &views, &custom, program);
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner);
         let encoded = schema.encode(&dialogue).unwrap();
         assert_eq!(
             schema
@@ -622,16 +976,9 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
             .map(|role| CharacterDialogueRuntimeRoleType::new(role_semantic(role), semantic(99))),
         semantic(50),
     );
-    for program in types.programs() {
+    for owner in types.program_owners() {
         assert!(matches!(
-            CharacterDialogueRuntimeSchema::try_new(
-                &characters,
-                &views,
-                &custom,
-                &types.defaults,
-                &types.roles,
-                program
-            ),
+            types.try_schema(&characters, &views, &custom, owner),
             Err(CharacterDialogueValueError::ProgramType(_))
         ));
     }
@@ -646,19 +993,437 @@ fn schema_preflights_unused_role_payloads_and_custom_types() {
         )],
     )
     .unwrap();
-    for program in types.programs() {
+    for owner in types.program_owners() {
         assert!(matches!(
-            CharacterDialogueRuntimeSchema::try_new(
-                &characters,
-                &views,
-                &custom,
-                &types.defaults,
-                &types.roles,
-                program
-            ),
+            types.try_schema(&characters, &views, &custom, owner),
             Err(CharacterDialogueValueError::ProgramType(_))
         ));
     }
+}
+
+#[test]
+fn generation_producer_constructs_and_reconfigures_absent_visual_members() {
+    let (_, _, views, custom) = fixture();
+    let types = Types::new();
+    let character = sample_manifest().character().clone();
+    let characters = CharacterCatalog::try_from_declarations([(
+        character.clone(),
+        CharacterVisualManifestEvidence::Absent,
+    )])
+    .unwrap();
+    assert!(characters.contains_character(&character));
+    assert!(characters.visual_manifest(&character).is_none());
+    let owner = types.program_owners()[1].clone();
+    let schema = types.schema(&characters, &views, &custom, owner.clone());
+    assert!(schema.program_owner().same_program(&owner));
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+    let fields = [
+        CharacterDialoguePatchField {
+            coordinate: Coordinate::SourceLocale,
+            operation: Operation::Set(RuntimeValue::String("en-US".into())),
+        },
+        CharacterDialoguePatchField {
+            coordinate: Coordinate::SourceLocale,
+            operation: Operation::Clear,
+        },
+        CharacterDialoguePatchField {
+            coordinate: Coordinate::SourceLocale,
+            operation: Operation::Set(RuntimeValue::String("ja-JP".into())),
+        },
+    ];
+    let produced = schema
+        .apply(
+            &owner,
+            CharacterDialogueOperation::Factory,
+            target.clone(),
+            &fields,
+            types.any_type,
+        )
+        .unwrap();
+    let admitted = schema.admit(&owner, &produced, types.any_type).unwrap();
+    assert_eq!(
+        admitted
+            .dialogue()
+            .config()
+            .source_locale()
+            .unwrap()
+            .as_str(),
+        "ja-JP"
+    );
+    assert_eq!(
+        admitted.opaque().semantic_identity(),
+        CharacterDialogueType::exact(character.clone()).runtime_semantic_identity()
+    );
+    let RuntimeValue::Tuple(payload) = admitted.opaque().payload() else {
+        panic!("CharacterDialogue payload must remain the exact 18-slot tuple")
+    };
+    assert_eq!(payload.len(), 18);
+    assert_eq!(payload[1], RuntimeValue::option_none());
+    assert_eq!(
+        payload[2],
+        runtime_sequence_dense_bytes(
+            admitted
+                .dialogue()
+                .contract()
+                .defaults()
+                .as_bytes()
+                .to_vec()
+        )
+    );
+    assert_eq!(
+        payload[12],
+        RuntimeValue::option_some(RuntimeValue::String("ja-JP".into()))
+    );
+
+    let reconfigured = schema
+        .apply(
+            &owner,
+            CharacterDialogueOperation::Reconfigure,
+            produced.clone(),
+            &[CharacterDialoguePatchField {
+                coordinate: Coordinate::SourceLocale,
+                operation: Operation::Clear,
+            }],
+            types.any_type,
+        )
+        .unwrap();
+    let reconfigured = schema.admit(&owner, &reconfigured, types.any_type).unwrap();
+    assert_eq!(reconfigured.dialogue().config().source_locale(), None);
+    assert_eq!(
+        reconfigured.opaque().semantic_identity(),
+        admitted.opaque().semantic_identity()
+    );
+
+    let foreign_owner = RuntimeProgramOwner::Awbc(Arc::new(types.awbc.clone()));
+    assert!(matches!(
+        schema.admit(&foreign_owner, &produced, types.any_type),
+        Err(CharacterDialogueValueError::ForeignProgramOwner)
+    ));
+    assert!(matches!(
+        schema.construct(
+            &owner,
+            &target,
+            &[CharacterDialoguePatchField {
+                coordinate: Coordinate::Look,
+                operation: Operation::Set(RuntimeValue::String("normal".into())),
+            }],
+            types.any_type,
+        ),
+        Err(CharacterDialogueValueError::MissingVisualManifest(actual)) if actual == character
+    ));
+}
+
+#[test]
+fn source_voice_and_look_values_are_joined_through_exact_program_rows() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let character = sample_manifest().character().clone();
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+    let rich_text = |first, second| {
+        role_value(Role::RichText, RuntimeValue::Tuple(vec![first, second])).into_value()
+    };
+    for owner in types.program_owners() {
+        let schema = types.schema(&characters, &views, &custom, owner.clone());
+        let base = Types::base(&schema, &owner, &character, types.character_type);
+        let base_digest = schema.effective_config_digest(&base).unwrap();
+        let voice = source_variant_value(&owner, voice_source_type(), 0, "auto", None);
+        let look = source_variant_value(&owner, look_source_type(), 0, "normal", None);
+        let produced = schema
+            .construct(
+                &owner,
+                &target,
+                &[
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::Voice,
+                        operation: Operation::Set(voice),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::Look,
+                        operation: Operation::Set(look),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::RichText,
+                        operation: Operation::Set(rich_text(
+                            RuntimeValue::option_some(RuntimeValue::Bool(true)),
+                            RuntimeValue::option_none(),
+                        )),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::RichText,
+                        operation: Operation::Set(rich_text(
+                            RuntimeValue::option_some(RuntimeValue::Bool(false)),
+                            RuntimeValue::option_some(RuntimeValue::String("new".into())),
+                        )),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::Style,
+                        operation: Operation::Set(rich_text(
+                            RuntimeValue::option_some(RuntimeValue::Bool(true)),
+                            RuntimeValue::option_none(),
+                        )),
+                    },
+                    CharacterDialoguePatchField {
+                        coordinate: Coordinate::Style,
+                        operation: Operation::Set(rich_text(
+                            RuntimeValue::option_none(),
+                            RuntimeValue::option_some(RuntimeValue::String("style".into())),
+                        )),
+                    },
+                ],
+                types.any_type,
+            )
+            .unwrap();
+        let value = schema
+            .admit(&owner, &produced.into_runtime_value(), types.any_type)
+            .unwrap();
+        assert_eq!(
+            value.dialogue().config().voice(),
+            Some(&CharacterDialogueVoice::Auto)
+        );
+        assert_eq!(
+            value
+                .dialogue()
+                .config()
+                .look()
+                .map(CharacterLookId::as_str),
+            Some("normal")
+        );
+        let RuntimeValue::Opaque(rich_text) = value.dialogue().config().rich_text().typed().value()
+        else {
+            panic!("exact RichText owner")
+        };
+        assert_eq!(
+            rich_text.payload(),
+            &RuntimeValue::Tuple(vec![
+                RuntimeValue::option_some(RuntimeValue::Bool(false)),
+                RuntimeValue::option_some(RuntimeValue::String("new".into())),
+            ])
+        );
+        let RuntimeValue::Opaque(style) = value.dialogue().config().style().typed().value() else {
+            panic!("structured Style branch")
+        };
+        assert_eq!(
+            style.payload(),
+            &RuntimeValue::Tuple(vec![
+                RuntimeValue::option_some(RuntimeValue::Bool(true)),
+                RuntimeValue::option_some(RuntimeValue::String("style".into())),
+            ])
+        );
+        assert_ne!(
+            schema.effective_config_digest(value.dialogue()).unwrap(),
+            base_digest
+        );
+
+        let RuntimeValue::Tuple(payload) = value.opaque().payload() else {
+            panic!("exact 18-slot wire tuple")
+        };
+        assert!(matches!(
+            payload[5].builtin_variant_case(),
+            Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(
+                RuntimeValue::Variant { ordinal: 0, name, payload: None, .. }
+            ))) if name == "Auto"
+        ));
+        assert_eq!(
+            payload[6],
+            RuntimeValue::option_some(RuntimeValue::String("normal".into()))
+        );
+    }
+}
+
+#[test]
+fn source_patch_rows_reject_values_outside_the_exact_voice_and_character_look_cases() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let owner = types.program_owners()[0].clone();
+    let schema = types.schema(&characters, &views, &custom, owner.clone());
+    let character = sample_manifest().character().clone();
+    let target = RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(character.as_str()).unwrap(),
+    });
+    let valid_voice = source_variant_value(&owner, voice_source_type(), 0, "auto", None);
+    let valid_look = source_variant_value(&owner, look_source_type(), 0, "normal", None);
+    let RuntimeValue::Variant {
+        owner: look_owner, ..
+    } = source_variant_value(&owner, look_source_type(), 0, "normal", None)
+    else {
+        unreachable!()
+    };
+    let mut foreign_voice_owner = valid_voice.clone();
+    let RuntimeValue::Variant {
+        owner: value_owner, ..
+    } = &mut foreign_voice_owner
+    else {
+        unreachable!()
+    };
+    *value_owner = look_owner;
+    let invalid_voice_values = [
+        foreign_voice_owner,
+        source_variant_value(&owner, voice_source_type(), 0, "Auto", None),
+        source_variant_value(
+            &owner,
+            voice_source_type(),
+            0,
+            "auto",
+            Some(RuntimeValue::Unit),
+        ),
+    ];
+    for value in invalid_voice_values {
+        assert!(
+            schema
+                .construct(
+                    &owner,
+                    &target,
+                    &[CharacterDialoguePatchField {
+                        coordinate: Coordinate::Voice,
+                        operation: Operation::Set(value),
+                    }],
+                    types.any_type,
+                )
+                .is_err()
+        );
+    }
+    for value in [
+        RuntimeValue::String("normal".into()),
+        source_variant_value(&owner, look_source_type(), 0, "Normal", None),
+        source_variant_value(&owner, look_source_type(), 1, "normal", None),
+    ] {
+        assert!(
+            schema
+                .construct(
+                    &owner,
+                    &target,
+                    &[CharacterDialoguePatchField {
+                        coordinate: Coordinate::Look,
+                        operation: Operation::Set(value),
+                    }],
+                    types.any_type,
+                )
+                .is_err()
+        );
+    }
+    assert_eq!(
+        source_variant_value(&owner, look_source_type(), 0, "normal", None),
+        valid_look
+    );
+}
+
+#[test]
+fn source_type_inventory_requires_exact_voice_rows_and_present_character_look_coverage() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    for owner in types.program_owners() {
+        let authority = types.look_authority(&characters, owner.clone());
+        let foreign_owner = match &owner {
+            RuntimeProgramOwner::Plan(_) => RuntimeProgramOwner::Awbc(Arc::new(types.awbc.clone())),
+            RuntimeProgramOwner::Awbc(_) => RuntimeProgramOwner::Plan(Arc::new(types.plan.clone())),
+        };
+        assert!(authority.program_owner().same_program(&owner));
+        assert!(
+            types
+                .try_schema_with_authority(
+                    &views,
+                    &custom,
+                    semantic(53),
+                    Arc::clone(&authority),
+                    owner.clone(),
+                )
+                .is_err_and(|error| matches!(
+                    error,
+                    CharacterDialogueValueError::VoiceSourceType { .. }
+                ))
+        );
+        assert!(matches!(
+            types.try_schema_with_authority(
+                &views,
+                &custom,
+                voice_source_type(),
+                Arc::clone(&authority),
+                foreign_owner,
+            ),
+            Err(CharacterDialogueValueError::ForeignProgramOwner)
+        ));
+    }
+
+    let mut incomplete_awbc = types.awbc.clone();
+    incomplete_awbc
+        .runtime_types
+        .retain(|row| row.semantic_identity() != look_source_type());
+    assert!(matches!(
+        RuntimeCharacterLookSourceAuthority::try_new(
+            RuntimeProgramOwner::Awbc(Arc::new(incomplete_awbc)),
+            Arc::new(characters),
+        ),
+        Err(arcweft_core::character_nominal::RuntimeCharacterLookSourceError::ProgramType(_))
+    ));
+}
+
+#[test]
+fn generation_recomputes_default_digest_from_effective_config() {
+    let (_, characters, views, custom) = fixture();
+    let types = Types::new();
+    let owner = types.program_owners()[0].clone();
+    let actual = Types::base(
+        &types.schema(&characters, &views, &custom, owner.clone()),
+        &owner,
+        sample_manifest().character(),
+        types.character_type,
+    )
+    .contract()
+    .defaults();
+    let mut wrong = *actual.as_bytes();
+    wrong[0] ^= 1;
+    let defaults = CharacterDialogueRuntimeDefaultCatalog::try_new([
+        CharacterDialogueRuntimeDefault::with_expected_digest(
+            sample_manifest().character().clone(),
+            Types::default_config(),
+            RuntimeValueDigest::from_bytes(wrong),
+        ),
+    ])
+    .unwrap();
+    let look_authority = types.look_authority(&characters, owner.clone());
+    assert!(matches!(
+        CharacterDialogueRuntimeSchema::try_new(
+            Arc::new(views),
+            Arc::new(custom),
+            Arc::new(defaults),
+            types.roles,
+            voice_source_type(),
+            look_authority,
+            owner,
+        ),
+        Err(CharacterDialogueValueError::DefaultDigestMismatch(character))
+            if character == sample_manifest().character().clone()
+    ));
+}
+
+#[test]
+fn generation_requires_defaults_for_every_logical_character_member() {
+    let (_, _, views, custom) = fixture();
+    let types = Types::new();
+    let catalog = CharacterCatalog::try_from_declarations([
+        (
+            sample_manifest().character().clone(),
+            CharacterVisualManifestEvidence::Present(sample_manifest()),
+        ),
+        (
+            CharacterId::try_new("character.bob").unwrap(),
+            CharacterVisualManifestEvidence::Absent,
+        ),
+    ])
+    .unwrap();
+    let owner = types.program_owners()[0].clone();
+    assert!(matches!(
+        types.try_schema(&catalog, &views, &custom, owner),
+        Err(CharacterDialogueValueError::MissingDefaults(character))
+            if character == CharacterId::try_new("character.bob").unwrap()
+    ));
 }
 
 #[test]
@@ -667,7 +1432,7 @@ fn structured_role_patches_preserve_opaque_ownership_and_normalize_the_body() {
         Role::RichText,
         RuntimeValue::Tuple(vec![
             RuntimeValue::option_some(RuntimeValue::Bool(true)),
-            RuntimeValue::F64(-0.0),
+            RuntimeValue::option_some(RuntimeValue::String("old".into())),
         ]),
     ))
     .unwrap();
@@ -691,7 +1456,10 @@ fn structured_role_patches_preserve_opaque_ownership_and_normalize_the_body() {
         unreachable!()
     };
     assert_eq!(fields[0], RuntimeValue::option_none());
-    assert!(matches!(&fields[1], RuntimeValue::F64(value) if value.to_bits() == 0));
+    assert_eq!(
+        fields[1],
+        RuntimeValue::option_some(RuntimeValue::String("old".into()))
+    );
     let RuntimeValue::Opaque(original) = base.config().style().typed().value() else {
         unreachable!()
     };

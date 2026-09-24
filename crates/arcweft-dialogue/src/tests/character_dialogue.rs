@@ -67,7 +67,10 @@ fn nominal_typed(fields: Vec<RuntimeValue>) -> CharacterDialogueTypedValue {
 fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
     CharacterDialogueStyleValue::try_new(runtime_schema::role_value(
         crate::CharacterDialogueRuntimeRole::RichText,
-        RuntimeValue::Tuple(vec![]),
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::option_none(),
+            RuntimeValue::option_none(),
+        ]),
     ))
     .unwrap()
 }
@@ -75,7 +78,10 @@ fn style(_layout_byte: u8) -> CharacterDialogueStyleValue {
 fn rich_text(_layout_byte: u8) -> CharacterDialogueRichTextValue {
     CharacterDialogueRichTextValue::try_new(runtime_schema::role_value(
         crate::CharacterDialogueRuntimeRole::RichText,
-        RuntimeValue::Tuple(vec![]),
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::option_none(),
+            RuntimeValue::option_none(),
+        ]),
     ))
     .unwrap()
 }
@@ -112,8 +118,8 @@ fn fixture_with_style(
     let custom_digest = RuntimeValueDigest::from_bytes([3; 32]);
     let custom = CharacterDialogueRuntimeCustomFieldCatalog::try_new(custom_digest, [])
         .expect("custom catalog");
-    let contract = CharacterDialogueContractIdentity::new(
-        character_manifest,
+    let contract = CharacterDialogueContractIdentity::with_visual_manifest(
+        crate::CharacterDialogueVisualManifestEvidence::Present(character_manifest),
         RuntimeValueDigest::from_bytes([2; 32]),
         custom_digest,
         RuntimeValueDigest::from_bytes(*views.runtime_digest_v1().unwrap().as_bytes()),

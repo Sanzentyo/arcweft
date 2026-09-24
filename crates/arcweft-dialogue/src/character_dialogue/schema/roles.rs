@@ -110,13 +110,13 @@ impl CharacterDialogueRuntimeRoleTypes {
     }
 }
 
-impl CharacterDialogueRuntimeSchema<'_> {
+impl CharacterDialogueRuntimeSchema {
     pub(super) fn validate_role(
         &self,
         role: Role,
         value: &RuntimeValue,
     ) -> Result<(), CharacterDialogueValueError> {
-        self.program
+        self.program_types()
             .accepts_value(self.roles.value_type(role), value, Self::limits())?;
         let authored = if role == Role::Style {
             if let RuntimeValue::EntityRef(reference) = value {
@@ -148,7 +148,7 @@ impl CharacterDialogueRuntimeSchema<'_> {
             .roles
             .authored(authored)
             .expect("authored role has a fixed slot");
-        self.program
+        self.program_types()
             .accepts_value(binding.payload, value.payload(), Self::limits())?;
         Ok(())
     }

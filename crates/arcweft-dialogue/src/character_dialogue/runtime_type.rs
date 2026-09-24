@@ -2,13 +2,13 @@
 
 use arcweft_character::id::CharacterId;
 use arcweft_core::pattern::{
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-    RuntimeSemanticTypeIdentityEncoder,
+    RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder,
 };
+use arcweft_core::value::RuntimeCharacterDialogueProducerId;
 
-pub(super) fn character_dialogue_opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
-    RuntimeOpaqueTypeProducerId::try_new("std.character_dialogue")
-        .expect("the canonical CharacterDialogue producer is valid")
+pub(super) fn character_dialogue_opaque_type_producer()
+-> arcweft_core::pattern::RuntimeOpaqueTypeProducerId {
+    RuntimeCharacterDialogueProducerId::get()
 }
 
 /// Character identity precision retained by a checked `CharacterDialogue` value.

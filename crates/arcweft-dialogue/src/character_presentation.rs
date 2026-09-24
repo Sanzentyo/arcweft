@@ -164,8 +164,10 @@ mod tests {
 
     #[test]
     fn runtime_target_retains_the_opaque_dialogue_contract() {
-        let contract = CharacterDialogueContractIdentity::new(
-            RuntimeValueDigest::from_bytes([3; 32]),
+        let contract = CharacterDialogueContractIdentity::with_visual_manifest(
+            crate::CharacterDialogueVisualManifestEvidence::Present(
+                RuntimeValueDigest::from_bytes([3; 32]),
+            ),
             RuntimeValueDigest::from_bytes([4; 32]),
             RuntimeValueDigest::from_bytes([5; 32]),
             RuntimeValueDigest::from_bytes([6; 32]),
