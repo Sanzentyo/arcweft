@@ -816,3 +816,9 @@ resolution の未解決箇所であり、この fixture cut では変更して�
 では未完了のままである。正確な `arcw compile --emit check` は移動した
 011/009/010 と修正した 024/025 すべてで exit 0、0 warning、0 obligation。
 Sema contextual receiver cut の library test は `649e655` 時点で 916/916。
+
+**2026-09-25 workspace compile checkpoint:** fixture 分類と実行成功判定を
+`4c88b48e58430590099f09d21e4fa86fd07aa21c` まで main に push した clean
+checkout で、`cargo check --workspace --all-targets --all-features --quiet` が終了コード0。
+既存 warning は残る。これは workspace test、Clippy、019/030 の fixture 受理を
+代替しない。
