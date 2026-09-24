@@ -58,6 +58,11 @@ pub enum HirEntrySourcePart {
     MemberValue {
         member: u32,
     },
+    /// Whole source of one retained adapter route member. Route payload
+    /// expressions keep their own source owners, unlike ordinary role RHSs.
+    RouteWhole {
+        member: u32,
+    },
 }
 
 /// Final-HIR callable whose source components are owned by one item query.

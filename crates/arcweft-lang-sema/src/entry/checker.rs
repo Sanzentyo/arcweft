@@ -473,7 +473,7 @@ impl<'a> EntryCheckContext<'a> {
                             "entry kind `{}` cannot declare adapter routes",
                             entry_kind_label(entry.kind())
                         ),
-                        entry_source(module, owner, HirEntrySourcePart::Whole),
+                        entry_route_source(module, owner, ordinal),
                     ));
                 }
                 HirEntryMember::Option(_) => {
@@ -830,7 +830,7 @@ impl<'a> EntryCheckContext<'a> {
                 let mut checked = Vec::with_capacity(routes.len());
                 let mut dispatches = Vec::<(HirHttpMethod, HirRoutePath, SourceSpan)>::new();
                 for (ordinal, route) in routes {
-                    let source = entry_member_source(module, owner, *ordinal);
+                    let source = entry_route_source(module, owner, *ordinal);
                     let Some(route) =
                         self.checked_entry_route(module, route, source.clone(), diagnostics)
                     else {
@@ -881,7 +881,7 @@ impl<'a> EntryCheckContext<'a> {
                             .map(|(ordinal, _)| entry_member_source(module, owner, *ordinal))
                             .chain(
                                 routes.iter().map(|(ordinal, _)| {
-                                    entry_member_source(module, owner, *ordinal)
+                                    entry_route_source(module, owner, *ordinal)
                                 }),
                             ),
                     ),
@@ -1981,6 +1981,11 @@ fn entry_source(module: &HirModule, owner: ItemId, part: HirEntrySourcePart) -> 
 fn entry_member_source(module: &HirModule, owner: ItemId, ordinal: usize) -> SourceSpan {
     let member = u32::try_from(ordinal).expect("accepted Entry member ordinal fits u32");
     entry_source(module, owner, HirEntrySourcePart::MemberValue { member })
+}
+
+fn entry_route_source(module: &HirModule, owner: ItemId, ordinal: usize) -> SourceSpan {
+    let member = u32::try_from(ordinal).expect("accepted Entry route ordinal fits u32");
+    entry_source(module, owner, HirEntrySourcePart::RouteWhole { member })
 }
 
 fn expression_source(project: HirAnalysisProjectView<'_>, expression: ExprId) -> SourceSpan {

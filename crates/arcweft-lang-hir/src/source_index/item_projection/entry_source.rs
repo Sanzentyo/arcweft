@@ -50,7 +50,7 @@ impl StagedHirSourceIndex {
                 actual: attached.snapshot_id().clone(),
             });
         }
-        let Some((id, member_values)) = entry_sources(owner, attached, retained)? else {
+        let Some((id, members)) = entry_sources(owner, attached, retained)? else {
             return self.reject(
                 HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
                     owner: SyntheticOwner::Item(owner),
@@ -58,13 +58,8 @@ impl StagedHirSourceIndex {
             );
         };
         self.stage_entry_component(parsed, owner, HirEntrySourcePart::Id, &id)?;
-        for (member, span) in member_values {
-            self.stage_entry_component(
-                parsed,
-                owner,
-                HirEntrySourcePart::MemberValue { member },
-                &span,
-            )?;
+        for (part, span) in members {
+            self.stage_entry_component(parsed, owner, part, &span)?;
         }
         Ok(())
     }
@@ -123,6 +118,27 @@ impl HirItemKind {
                     })
                 }
             }
+            (Self::Entry(entry), HirEntrySourcePart::RouteWhole { member }) => {
+                let Ok(index) = usize::try_from(member) else {
+                    return Err(HirSourceQueryError::ItemOrdinalOutOfBounds {
+                        owner,
+                        role: HirItemSourceRole::Entry(part),
+                        length: u32::try_from(entry.members().len()).unwrap_or(u32::MAX),
+                    });
+                };
+                if matches!(
+                    entry.members().get(index),
+                    Some(crate::item::HirEntryMember::Route(_))
+                ) {
+                    Ok(())
+                } else {
+                    Err(HirSourceQueryError::ItemOrdinalOutOfBounds {
+                        owner,
+                        role: HirItemSourceRole::Entry(part),
+                        length: u32::try_from(entry.members().len()).unwrap_or(u32::MAX),
+                    })
+                }
+            }
             _ => Err(HirSourceQueryError::ItemRoleNotApplicable {
                 owner,
                 role: HirItemSourceRole::Entry(part),
@@ -150,7 +166,7 @@ pub(super) fn exact_manifest(
             } if *actual == owner
         )
     };
-    let Some((id, member_values)) = expected else {
+    let Some((id, members)) = expected else {
         return index
             .requirements
             .keys()
@@ -162,14 +178,13 @@ pub(super) fn exact_manifest(
                 .find(|candidate| is_entry_query(candidate))
                 .is_none();
     };
-    let mut expected = Vec::with_capacity(member_values.len() + 1);
+    let mut expected = Vec::with_capacity(members.len() + 1);
     expected.push((entry_query(owner, HirEntrySourcePart::Id), id));
-    expected.extend(member_values.into_iter().map(|(member, span)| {
-        (
-            entry_query(owner, HirEntrySourcePart::MemberValue { member }),
-            span,
-        )
-    }));
+    expected.extend(
+        members
+            .into_iter()
+            .map(|(part, span)| (entry_query(owner, part), span)),
+    );
     let expected = expected
         .into_iter()
         .map(|(query, span)| {
@@ -196,13 +211,16 @@ pub(super) fn exact_manifest(
 #[allow(
     clippy::result_large_err,
     clippy::type_complexity,
-    reason = "the closed Entry projection returns exact ID and ordered member-value source evidence"
+    reason = "the closed Entry projection returns exact ID and ordered typed member source evidence"
 )]
 fn entry_sources(
     owner: ItemId,
     attached: &TypedItemNode,
     retained: &HirItemKind,
-) -> Result<Option<(SourceSpan, Vec<(u32, SourceSpan)>)>, HirSourceCommitInvariantError> {
+) -> Result<
+    Option<(SourceSpan, Vec<(HirEntrySourcePart, SourceSpan)>)>,
+    HirSourceCommitInvariantError,
+> {
     match (attached, retained) {
         (TypedItemNode::Entry(node), HirItemKind::Entry(retained)) => {
             let entry = node.semantics().map_err(|error| {
@@ -222,13 +240,13 @@ fn entry_sources(
                 AttachedEntryId::Authored { expression, .. } => expression.syntax().source_span(),
                 AttachedEntryId::Missing(syntax) => syntax.syntax().source_span(),
             };
-            let member_values = entry
+            let members = entry
                 .body()
                 .members()
                 .iter()
-                .filter_map(entry_member_value_source)
+                .filter_map(entry_member_source)
                 .collect();
-            Ok(Some((id, member_values)))
+            Ok(Some((id, members)))
         }
         _ if matches!(attached, TypedItemNode::Entry(_))
             || matches!(retained, HirItemKind::Entry(_)) =>
@@ -243,7 +261,7 @@ fn entry_sources(
     }
 }
 
-fn entry_member_value_source(member: &AttachedEntryMember) -> Option<(u32, SourceSpan)> {
+fn entry_member_source(member: &AttachedEntryMember) -> Option<(HirEntrySourcePart, SourceSpan)> {
     let source = match member {
         AttachedEntryMember::StateType(binding) | AttachedEntryMember::EventType(binding) => {
             entry_type_value_source(binding.value())
@@ -252,11 +270,22 @@ fn entry_member_value_source(member: &AttachedEntryMember) -> Option<(u32, Sourc
         | AttachedEntryMember::Reducer(binding)
         | AttachedEntryMember::Controller(binding) => entry_path_value_source(binding.value()),
         AttachedEntryMember::Goto { target, .. } => entry_expression_value_source(target),
-        AttachedEntryMember::Route { .. }
-        | AttachedEntryMember::Option { .. }
-        | AttachedEntryMember::Error { .. } => return None,
+        AttachedEntryMember::Route { syntax, .. } => {
+            return Some((
+                HirEntrySourcePart::RouteWhole {
+                    member: member.source_ordinal(),
+                },
+                syntax.syntax().source_span(),
+            ));
+        }
+        AttachedEntryMember::Option { .. } | AttachedEntryMember::Error { .. } => return None,
     };
-    Some((member.source_ordinal(), source))
+    Some((
+        HirEntrySourcePart::MemberValue {
+            member: member.source_ordinal(),
+        },
+        source,
+    ))
 }
 
 fn entry_type_value_source(

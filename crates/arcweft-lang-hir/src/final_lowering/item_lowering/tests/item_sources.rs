@@ -608,6 +608,26 @@ fn entry_member_value_roles_preserve_each_final_role_rhs_without_sidecar_reconst
             ..
         }) if actual == owner
     ));
+    let AttachedEntryMember::Route { syntax, .. } = &members[6] else {
+        panic!("source-order member six is the Route")
+    };
+    assert_present_span(
+        &module,
+        &parsed,
+        entry_query(owner, HirEntrySourcePart::RouteWhole { member: 6 }),
+        &syntax.syntax().source_span(),
+    );
+    assert!(matches!(
+        module.source_site(
+            parsed.document().identity(),
+            entry_query(owner, HirEntrySourcePart::RouteWhole { member: 5 }),
+        ),
+        Err(HirSourceQueryError::ItemOrdinalOutOfBounds {
+            owner: actual,
+            length: 8,
+            ..
+        }) if actual == owner
+    ));
 }
 
 #[test]
