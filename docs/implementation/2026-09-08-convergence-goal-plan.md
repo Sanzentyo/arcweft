@@ -522,3 +522,25 @@ cached diff check は通過した。ログは `target/.arcweft-local/2026-09-24-
 取消し・保存復元境界の修正と再検証は scheduler/restore 工程の残件である。
 workspace `test-workspace`、最終 doctest、codec/golden、該当 Tier 2 と
 goal の他工程も未完了であり、この checkpoint は全体完了の証拠ではない。
+
+## Callable 変更 crate gate 訂正 — 2026-09-24
+
+**Supersedes:** 直前 checkpoint の `direct_suspension` 未合格記録。
+`main` の `df1528dc14f8fe77a99f3523375bd0e5fadb8c81` を検査し、
+working tree は clean。`InvalidFrame` は取消し実装ではなく、検証対象の
+AWBC に宣言されていない lexical scope を fixture が保存していたことが原因。
+scope 宣言、Enter/Exit 命令と保存 cursor を一致させたテスト修正を
+`48359e2d09a1ee5d41807ecf0b9fbb6babb97057` として push した。
+`direct_suspension` は 8/8 で通過した。
+
+Sema の外部 API compile-fail fixture は、現在非公開の `CheckedMatchRef`
+を内部証拠として検査し直し、重複した旧テストを削除した。
+診断 stderr の更新は `df1528dc14f8fe77a99f3523375bd0e5fadb8c81`
+として push し、`api_compile` は 14/14 で通過した。
+
+`cargo test -p arcweft-core -p arcweft-lang-sema -p arcweft-runtime-plan
+-p arcweft-compiler -p arcweft-runtime-codegen -p arcweft-runtime-accelerator
+--all-features` は終了コード0で全テスト・対象 doctest が通過した。
+ログは `target/.arcweft-local/2026-09-24-callable-changed-crates-tests-6.log`。
+この gate は6 crate の証拠であり、workspace `test-workspace` および
+goal の他工程の完了を示すものではない。
