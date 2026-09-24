@@ -15,7 +15,11 @@ use arcweft_lang_hir::{
     },
     identity::{ExprId, HirModuleId, StmtId},
     module::HirModule,
-    project::{HirExpressionEvaluationEdge, HirProjectEvaluationTopology},
+    project::{
+        HirDeclarationBodyTopology, HirDeclarationEvaluationPhase,
+        HirDeclarationParameterRootChild, HirExpressionEvaluationEdge,
+        HirProjectEvaluationTopology,
+    },
     source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite},
     stmt::{HirStatementBodyRole, HirStatementChild, HirStatementChildRole, HirStmtKind},
     symbol::CallableDeclarationKey,
@@ -444,14 +448,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
-                    let mut row = PreparedExecutionEffectRow::default();
-                    for root in body.roots() {
-                        if body_projection_has_selected_owner(root.projection(), |owner| {
-                            self.selected.contains_body_owner(owner)
-                        }) {
-                            row.union_with(&self.fold_body(root.projection())?, self.control)?;
-                        }
-                    }
+                    let row = self.fold_declaration_phases(body, true)?;
                     if self
                         .declarations
                         .insert(body.declaration().clone(), row.clone())
@@ -490,13 +487,59 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .declaration(declaration)
             .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
         self.active_declaration = Some(declaration.clone());
-        let mut row = PreparedExecutionEffectRow::default();
-        for root in topology.body().roots() {
-            row.union_with(&self.fold_body(root.projection())?, self.control)?;
-        }
+        let row = self.fold_declaration_phases(topology.body(), false)?;
         self.active_declaration = None;
         self.declarations.insert(declaration.clone(), row);
         self.finish()
+    }
+
+    fn fold_declaration_phases(
+        &mut self,
+        body: &HirDeclarationBodyTopology,
+        selected_body_only: bool,
+    ) -> Result<PreparedExecutionEffectRow, FinalSemanticAnalysisError> {
+        let mut row = PreparedExecutionEffectRow::default();
+        for phase in body.phases() {
+            match phase {
+                HirDeclarationEvaluationPhase::Parameter(root) => {
+                    if let HirDeclarationParameterRootChild::Expression(owner) = root.child()
+                        && self
+                            .selected
+                            .contains_body_owner(HirBodyChild::Expression(owner))
+                    {
+                        self.seal_expression(owner)?;
+                    }
+                }
+                HirDeclarationEvaluationPhase::AttachedContent(root) => {
+                    if let Some(owner) = root.default_value()
+                        && self
+                            .selected
+                            .contains_body_owner(HirBodyChild::Expression(owner))
+                    {
+                        self.seal_expression(owner)?;
+                    }
+                }
+                HirDeclarationEvaluationPhase::Contract(root) => {
+                    let owner = root.child();
+                    if self
+                        .selected
+                        .contains_body_owner(HirBodyChild::Expression(owner))
+                    {
+                        self.seal_expression(owner)?;
+                    }
+                }
+                HirDeclarationEvaluationPhase::Body(root) => {
+                    if !selected_body_only
+                        || body_projection_has_selected_owner(root.projection(), |owner| {
+                            self.selected.contains_body_owner(owner)
+                        })
+                    {
+                        row.union_with(&self.fold_body(root.projection())?, self.control)?;
+                    }
+                }
+            }
+        }
+        Ok(row)
     }
 
     fn finish(mut self) -> Result<PreparedExecutionEffectCatalog, FinalSemanticAnalysisError> {

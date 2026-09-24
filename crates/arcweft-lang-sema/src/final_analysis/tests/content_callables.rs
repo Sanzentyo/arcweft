@@ -686,6 +686,53 @@ fn fallback(prefix: DialogueContent)(current: DialogueContent)[body: DialogueCon
 }
 
 #[test]
+fn recursive_generic_default_captures_parameters_used_only_inside_its_closure() {
+    let fixture = fixture(
+        r#"
+fn fallback<T>(value: T, seed: DialogueContent, depth: i64)[body: DialogueContent = {
+    if depth == 0i64 {
+        seed
+    } else {
+        let recur = || fallback(value, seed, depth - 1i64);
+        recur()
+    }
+}] -> DialogueContent { body }
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("recursive default closure is checked");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root HIR module");
+    let (item, function) = module
+        .items()
+        .find_map(|(item, hir)| match hir.kind() {
+            arcweft_lang_hir::item::HirItemKind::Function(function) => Some((item, function)),
+            _ => None,
+        })
+        .expect("fallback function");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_item() == item)
+        .map(|symbol| symbol.declaration().clone())
+        .expect("fallback declaration");
+    let default = report
+        .checked_callables()
+        .project_callable(&declaration)
+        .expect("checked fallback")
+        .attached_content()
+        .and_then(|attached| attached.default())
+        .expect("checked attached default");
+    let value = function.parameter_groups()[0].parameters()[0].locals()[0];
+    assert!(default.captures().iter().any(|capture| {
+        capture
+            .used_locals()
+            .iter()
+            .any(|used| used.local() == value)
+    }));
+}
+
+#[test]
 fn attached_default_rest_capture_uses_vec_binding_type() {
     let fixture = fixture(
         r#"

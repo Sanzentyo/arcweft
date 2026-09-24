@@ -1473,6 +1473,7 @@ fn checked_attached_content_default_captures(
         let checked = analysis
             .expression(owner)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+        let mut local_uses = Vec::new();
         if let Some(local) = checked.execution_local_use() {
             let local_ty = analysis
                 .local(local)
@@ -1480,6 +1481,49 @@ fn checked_attached_content_default_captures(
             if checked.source_value_type() != Some(local_ty.ty()) {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
+            local_uses.push(local);
+        }
+        match checked.resolution() {
+            CheckedExpressionResolution::Closure(closure) => {
+                for capture in closure.captures() {
+                    let binding = analysis
+                        .capture(capture.capture())
+                        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                    let local_ty = analysis.local(capture.local()).ok_or(
+                        FinalSemanticAnalysisError::LocalTypeUnavailable {
+                            owner: capture.local(),
+                        },
+                    )?;
+                    if binding.ty() != local_ty.ty() {
+                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                    }
+                    local_uses.push(capture.local());
+                }
+            }
+            CheckedExpressionResolution::ImplicitCallable(callable) => {
+                for capture in callable.captures() {
+                    let local_ty = analysis.local(capture.lookup_local()).ok_or(
+                        FinalSemanticAnalysisError::LocalTypeUnavailable {
+                            owner: capture.lookup_local(),
+                        },
+                    )?;
+                    if local_ty.ty().semantic_identity_digest()? != capture.value_type()
+                        || coordinates
+                            .binding(capture.lookup_local())
+                            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                            != *capture.origin()
+                    {
+                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                    }
+                    local_uses.push(capture.lookup_local());
+                }
+            }
+            _ => {}
+        }
+        for local in local_uses {
+            let local_ty = analysis
+                .local(local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: local })?;
             let origin = coordinates
                 .binding(local)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
