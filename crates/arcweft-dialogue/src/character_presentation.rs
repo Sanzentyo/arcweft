@@ -1,6 +1,5 @@
 //! Checked Character presentation evidence carried by runtime plans.
 
-use crate::CharacterDialogueContractIdentity;
 use arcweft_character::{
     id::CharacterId,
     presentation_name::{
@@ -8,6 +7,7 @@ use arcweft_character::{
         CharacterPresentationSemanticDigest,
     },
 };
+use arcweft_core::entry::RuntimeValueDigest;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -15,20 +15,14 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CharacterPresentationTargetEvidence {
     Exact(CharacterId),
-    RuntimeCharacterDialogue {
-        contract: CharacterDialogueContractIdentity,
-    },
+    RuntimeCharacterDialogue { generation: RuntimeValueDigest },
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum CharacterPresentationTargetEvidenceWire {
-    Exact {
-        character: CharacterId,
-    },
-    RuntimeCharacterDialogue {
-        contract: CharacterDialogueContractIdentity,
-    },
+    Exact { character: CharacterId },
+    RuntimeCharacterDialogue { generation: RuntimeValueDigest },
 }
 
 impl Serialize for CharacterPresentationTargetEvidence {
@@ -40,9 +34,9 @@ impl Serialize for CharacterPresentationTargetEvidence {
             Self::Exact(character) => CharacterPresentationTargetEvidenceWire::Exact {
                 character: character.clone(),
             },
-            Self::RuntimeCharacterDialogue { contract } => {
+            Self::RuntimeCharacterDialogue { generation } => {
                 CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
-                    contract: *contract,
+                    generation: *generation,
                 }
             }
         }
@@ -60,9 +54,9 @@ impl<'de> Deserialize<'de> for CharacterPresentationTargetEvidence {
                 CharacterPresentationTargetEvidenceWire::Exact { character } => {
                     Self::Exact(character)
                 }
-                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue { contract } => {
-                    Self::RuntimeCharacterDialogue { contract }
-                }
+                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
+                    generation,
+                } => Self::RuntimeCharacterDialogue { generation },
             },
         )
     }
@@ -91,8 +85,8 @@ pub enum CheckedCharacterPresentationPlanError {
         expected: CharacterPresentationLocalePolicyDigest,
         actual: CharacterPresentationLocalePolicyDigest,
     },
-    #[error("runtime CharacterDialogue contract does not match the checked target")]
-    CharacterContractMismatch,
+    #[error("runtime CharacterDialogue generation does not match the checked target")]
+    DialogueGenerationMismatch,
     #[error("Character `{character}` is absent from the accepted presentation catalog")]
     UnknownCharacter { character: CharacterId },
 }
@@ -133,7 +127,6 @@ impl CheckedCharacterPresentationPlan {
 #[cfg(test)]
 mod tests {
     use super::{CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan};
-    use crate::CharacterDialogueContractIdentity;
     use arcweft_character::{
         id::CharacterId,
         presentation_name::{
@@ -163,16 +156,9 @@ mod tests {
     }
 
     #[test]
-    fn runtime_target_retains_the_opaque_dialogue_contract() {
-        let contract = CharacterDialogueContractIdentity::with_visual_manifest(
-            crate::CharacterDialogueVisualManifestEvidence::Present(
-                RuntimeValueDigest::from_bytes([3; 32]),
-            ),
-            RuntimeValueDigest::from_bytes([4; 32]),
-            RuntimeValueDigest::from_bytes([5; 32]),
-            RuntimeValueDigest::from_bytes([6; 32]),
-        );
-        let target = CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { contract };
+    fn runtime_target_retains_the_generation_contract() {
+        let generation = RuntimeValueDigest::from_bytes([3; 32]);
+        let target = CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { generation };
         let wire = serde_json::to_value(&target).unwrap();
         assert_eq!(
             serde_json::from_value::<CharacterPresentationTargetEvidence>(wire.clone()).unwrap(),
