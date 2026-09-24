@@ -13,6 +13,7 @@ pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
 mod project_call;
 mod type_kind;
+mod type_scope;
 mod type_table;
 mod value_admission;
 mod variant_case;
@@ -97,6 +98,11 @@ pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
     RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeClass,
     RuntimePlanTypeProjection,
+};
+pub use type_scope::{
+    RuntimeArrayLength, RuntimeBoundConstReference, RuntimeBoundEffectReference,
+    RuntimeBoundTypeReference, RuntimeFunctionTypeContract, RuntimeTypeBinder, RuntimeTypeScope,
+    RuntimeTypeScopeError,
 };
 pub use type_table::{
     MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
