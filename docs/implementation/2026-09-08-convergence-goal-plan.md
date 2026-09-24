@@ -438,3 +438,40 @@ been rerun for this checkpoint. The next cut is a Dialogue-owned binding from
 the immutable declaration plus actual View/Style/Character resources and the
 executable owner into one runtime schema; driver execution must select it by
 the calling program generation.
+
+## CharacterDialogue 実行・表示接続 checkpoint — 2026-09-24
+
+既存 `main` checkout で次の契約単位を commit/push した。各 SHA は完全な Git
+object ID であり、作業ツリーは最後の source cut `bdcc697742191836ab765b9551330d62636eb4be`
+の push 直後に clean と確認した。
+
+| 契約単位 | Full Git SHA |
+| --- | --- |
+| 宣言から実行プログラム所有の schema を束縛 | `98355fe1c0070a71b8e5883969c277fed419f28f` |
+| Bundle の受理済み Character 資源と retained runtime image へ schema を接続 | `69e0309440f65be06575f5f04fc53fd557865c21` |
+| Dialogue RichText 設定から text-model style への型付き投影 | `3d601b66766a2136a00b2cab32225ebf66ebb9ba` |
+| Presentation 所有の再利用可能 Style パラメータ投影と Ruby 本文の除外 | `64a28a9c589b4788a285685b67679c75883ef85b` |
+| Native/AWBC 実行テストへの実プログラム所有 producer 注入 | `4ed35f6e47dfe6f8e9d25a73007a7b16fb43e079` |
+| 動的表示設定・View Style 選択・保持世代と置換状態遷移 | `bdcc697742191836ab765b9551330d62636eb4be` |
+
+この地点で受理済み runtime schema が実際の opaque `CharacterDialogue` と
+同じ executable owner を検査し、表示時に有効な View、Voice、RichText、
+Style sheet、その他の設定を解決する。選択された Style sheet は会話 View の
+root scope に View 既定値の後で入る。世代置換は View/Style の意味論変更を
+検出し、古い表示と theme の所有世代を fiber 終了後も保持する。保持世代が
+現行単一成果物の save 形式で表現できないときは、現行世代として偽装せず
+型付きエラーで拒否する。
+
+この cut で観測した gate: Compiler `evaluated_effects` 17/17、text-model
+library 20/20、Dialogue library 60件と integration 4件、Presentation
+library 131件と integration 47件、driver の世代/置換 focused 9/9、選択
+Style/Clear focused 1/1、driver all-feature library 78件と integration
+22+5+30件が通過した。対象 crate の all-target/all-feature Clippy は終了
+コード0（既存 warning あり）、構造 gate は blocking 0、staged diff check
+は通過した。workspace all-target/all-feature check、`callable_execution`
+全 matrix、test-workspace はこの checkpoint では未実行である。
+
+残る必須作業は、動的表示の実値による直接回帰テスト、StageLook の
+旧参照移行、旧世代を含む保存復元の完全な世代表現、callable 全 matrix、
+Match/View/task-plan/nominal/scheduler の各受入条件と最終 workspace gate
+である。局所 gate の成功を収束 goal 全体の完了とは扱わない。
