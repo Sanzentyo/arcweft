@@ -197,6 +197,7 @@ pub struct CheckedProjectFunctionRuntimeSelection {
     base_instantiation: ResolvedCallableBaseInstantiation,
     solution: Arc<FrozenCallTypeSolution>,
     function_type: TypeKind,
+    callable_type: TypeKind,
     current_group_materialization: Box<[CheckedProjectFunctionParameterMaterialization]>,
     effects: crate::effects::EffectSet,
     input: CheckedProjectFunctionRuntimeInput,
@@ -228,9 +229,14 @@ pub struct CheckedProjectFunctionInstanceSolution {
     solution: Arc<ClosedTypeInstantiation>,
     instantiation: CallableInstantiationDigest,
     function_type: TypeKind,
+    callable_type: TypeKind,
 }
 
 impl CheckedProjectFunctionInstanceSolution {
+    /// Complete closed group chain of the original declaration.
+    pub const fn callable_type(&self) -> &TypeKind {
+        &self.callable_type
+    }
     pub const fn instantiation(&self) -> CallableInstantiationDigest {
         self.instantiation
     }
@@ -376,13 +382,76 @@ impl CheckedProjectFunctionRuntimeSelection {
         ) {
             return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
         }
+        self.close_environment_with_control(&self.function_type, enclosing, control)
+    }
+
+    /// Selects the latent body of a closed callable value without fabricating
+    /// a terminal source application. A residual generic scheme has no closed
+    /// body instance until a checked specialization selects one.
+    pub fn close_callable_value_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        catalog: &CheckedCallableCatalog,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+        control: &mut C,
+    ) -> Result<
+        Option<CheckedProjectFunctionRootRuntimeSelection>,
+        CheckedProjectFunctionInstanceProjectionError<C::Error>,
+    > {
+        control
+            .check()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        if !self.solution.is_fully_instantiated() {
+            return Ok(None);
+        }
+        let checked = catalog
+            .project_callable(&self.declaration)
+            .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
+        let terminal = checked
+            .signature()
+            .groups()
+            .last()
+            .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
+            .index();
+        let mut terminal_type = &self.function_type;
+        for _ in self.group.get()..terminal.get() {
+            let TypeKind::Function { return_type, .. } = terminal_type else {
+                return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+            };
+            terminal_type = return_type;
+        }
+        let solution = self.close_environment_with_control(terminal_type, enclosing, control)?;
+        let TypeKind::Function { effects, .. } = solution.function_type() else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+        };
+        let effects = effects
+            .resolve(&EffectSubstitution::new())
+            .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
+        Ok(Some(CheckedProjectFunctionRootRuntimeSelection {
+            declaration: self.declaration.clone(),
+            group: terminal,
+            function_type: solution.function_type().clone(),
+            solution,
+            effects,
+        }))
+    }
+
+    fn close_environment_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        function_type: &TypeKind,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+        control: &mut C,
+    ) -> Result<
+        CheckedProjectFunctionInstanceSolution,
+        CheckedProjectFunctionInstanceProjectionError<C::Error>,
+    > {
         let solution = self.solution.close_instantiation_with_control(
             enclosing.map(|row| row.solution.as_ref()),
             control,
         )?;
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.map_or(&empty, |row| row.solution.as_ref());
-        let function_type = caller.instantiate_type_with_control(&self.function_type, control)?;
+        let function_type = caller.instantiate_type_with_control(function_type, control)?;
+        let callable_type = caller.instantiate_type_with_control(&self.callable_type, control)?;
         let instantiation = callable_instantiation_digest_from_bindings(
             &self.base_instantiation,
             solution.type_bindings(),
@@ -403,6 +472,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             solution: Arc::new(solution),
             instantiation,
             function_type,
+            callable_type,
         })
     }
 
@@ -444,6 +514,69 @@ pub enum CheckedProjectFunctionInstanceProjectionError<E: std::error::Error + 's
     Selection(#[from] CheckedProjectFunctionRuntimeSelectionError),
     #[error(transparent)]
     Projection(#[from] crate::types::TypeProjectionError<E>),
+}
+
+/// Closes the latent body of a declaration used as a value. This is a producer
+/// selection, so it neither invents a source application nor invokes a group.
+pub fn select_project_function_value_runtime(
+    declaration: &CallableDeclarationKey,
+    catalog: &CheckedCallableCatalog,
+) -> Result<CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError>
+{
+    if declaration.owner() != CallableDeclarationOwner::Function {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidRootDeclaration);
+    }
+    let checked = catalog
+        .project_callable(declaration)
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
+    if !matches!(
+        checked.execution(),
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame)
+    ) {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
+    }
+    if !checked.signature().generic_inventory().types().is_empty()
+        || !checked.signature().generic_inventory().consts().is_empty()
+    {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::OpenRootInstantiation);
+    }
+    let group = checked
+        .signature()
+        .groups()
+        .last()
+        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup)?
+        .index();
+    let callable_type = checked
+        .signature()
+        .declared_function_type_from_group(CallableGroupIndex::ZERO, checked.exposed_row())?;
+    let solution = ClosedTypeInstantiation::default();
+    let callable_type = solution.instantiate_type(&callable_type)?;
+    let mut function_type = &callable_type;
+    for _ in 0..group.get() {
+        let TypeKind::Function { return_type, .. } = function_type else {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+        };
+        function_type = return_type;
+    }
+    let function_type = function_type.clone();
+    let effects = checked
+        .exposed_row()
+        .resolve(&EffectSubstitution::new())
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
+    let instantiation = empty_callable_instantiation_digest()
+        .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript)?;
+    Ok(CheckedProjectFunctionRootRuntimeSelection {
+        declaration: declaration.clone(),
+        group,
+        function_type: function_type.clone(),
+        effects,
+        solution: CheckedProjectFunctionInstanceSolution {
+            solution: Arc::new(solution),
+            instantiation,
+            function_type,
+            callable_type,
+        },
+    })
 }
 
 impl CheckedProjectFunctionRootRuntimeSelection {
@@ -582,6 +715,7 @@ pub fn select_project_function_root_runtime(
             solution: Arc::new(ClosedTypeInstantiation::default()),
             instantiation,
             function_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,
+            callable_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,
         },
         function_type,
         effects,
@@ -631,6 +765,11 @@ pub fn select_project_function_runtime(
     }
 
     let solution = Arc::clone(application.core().solution());
+    let callable_type = solution.instantiate_result(
+        &selected
+            .base()
+            .callable_type_with_terminal_effects(checked.exposed_row())?,
+    )?;
     let (input, function_type) = match selected.state() {
         ResolvedCallableState::Base => {
             let ty = selected
@@ -709,6 +848,7 @@ pub fn select_project_function_runtime(
         base_instantiation: selected.instantiation().clone(),
         solution,
         function_type,
+        callable_type,
         current_group_materialization,
         effects,
         input,

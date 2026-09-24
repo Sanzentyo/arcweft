@@ -994,9 +994,18 @@ fn assert_dialogue_effect_sites(
         let declared = &manifest.effects()[index];
         assert_eq!(effect.site().index(), index);
         assert_eq!(declared.site(), effect.site());
+        let callback = plan
+            .callable_states()
+            .get(effect.state())
+            .expect("dialogue callback state");
+        let arcweft_core::plan::RuntimeCallableTransition::Invoke { function: site, .. } =
+            &callback.transition
+        else {
+            panic!("dialogue effect callback must invoke a function site");
+        };
         let function = plan
             .function_sites()
-            .get(effect.function())
+            .get(*site)
             .expect("dialogue callback function site");
         assert!(function.parameter_inputs().next().is_none());
         let RuntimeFunctionSiteBody::Executable(body) = function.body() else {

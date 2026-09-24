@@ -146,6 +146,11 @@ fn digest_edge_kind(hasher: &mut Sha256, kind: &HirRuntimeReachabilityEdgeKind) 
             hasher.update(call.raw().cache_fingerprint_input());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
+        HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { value, declaration } => {
+            hasher.update([6]);
+            hasher.update(value.raw().cache_fingerprint_input());
+            hasher.update(declaration.semantic_digest().as_bytes());
+        }
         HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
             call,
             implementation,

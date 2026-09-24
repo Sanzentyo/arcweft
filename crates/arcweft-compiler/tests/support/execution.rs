@@ -6,6 +6,7 @@ use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
 use arcweft_core::value::RuntimeValue;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use std::sync::Arc;
 
 pub(super) fn assert_native_return(source: &str, expected: &str) {
     let compiled = compile_source(source).expect("callable program compiles");
@@ -50,11 +51,24 @@ pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
     )
     .expect("callable AWBC decodes");
     assert_eq!(program, report.program);
+    let program = Arc::new(program);
+    let artifact = arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&encoded).as_bytes(),
+    )
+    .expect("canonical callable program fingerprint");
+    let context = vm::VmExecutionContext::for_program(artifact, Arc::clone(&program));
+    let mut host = vm::RejectingVmHost;
     let mut fiber =
         FiberState::for_entry(&program, AwbcEntryId(0), 1, 65_536).expect("main entry starts");
     for _ in 0..256 {
-        let output = vm::step(&program, &mut fiber, VmStepOptions::default())
-            .expect("AWBC callable step succeeds");
+        let output = vm::step_with_host_context(
+            &program,
+            &mut fiber,
+            VmStepOptions::default(),
+            &context,
+            &mut host,
+        )
+        .expect("AWBC callable step succeeds");
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => {

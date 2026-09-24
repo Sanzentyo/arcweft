@@ -2367,7 +2367,10 @@ impl RuntimeProjectItem {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeResolvedValue {
     Local(LocalId),
-    ProjectCallable(RuntimeProjectCallable),
+    ProjectCallable {
+        callable: RuntimeProjectCallable,
+        instance: RuntimeProjectFunctionInstanceKey,
+    },
     ProjectItem(RuntimeProjectItem),
     /// Checked one-way lowering of a durable `say.*` identity into the
     /// path-only runtime line domain.
@@ -3276,13 +3279,9 @@ impl RuntimeResolvedCall {
                 direct == plan.callable()
                     && matches!(plan.input(), RuntimeProjectFunctionCallInput::Direct)
             }
-            (RuntimeResolvedCallDispatch::Value { callee }, Some(plan)) => matches!(
-                plan.input(),
-                RuntimeProjectFunctionCallInput::Continuation {
-                    callee: expected,
-                    ..
-                } if expected == callee
-            ),
+            (RuntimeResolvedCallDispatch::Value { callee }, Some(plan)) => {
+                plan.input().callee() == Some(*callee)
+            }
             (
                 RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
                     _,
@@ -5736,7 +5735,7 @@ impl RuntimePlanSemanticFacts {
                 | (
                     HirExprKind::EntityReference(_),
                     RuntimeResolvedValue::Local(_)
-                    | RuntimeResolvedValue::ProjectCallable(_)
+                    | RuntimeResolvedValue::ProjectCallable { .. }
                     | RuntimeResolvedValue::Intrinsic(_)
                     | RuntimeResolvedValue::Registered(_)
                     | RuntimeResolvedValue::Constant(_),
@@ -5865,10 +5864,34 @@ impl RuntimePlanSemanticFacts {
         }
 
         let calls = collect_unique(input.calls, RuntimeSemanticFactFamily::Call)?;
-        let mut invoked_project_function_instances = project_function_roots
+        let mut referenced_project_function_instances = project_function_roots
             .values()
             .map(|root| root.instance().clone())
             .collect::<BTreeSet<_>>();
+        let mut callable_values = values
+            .iter()
+            .map(|(owner, value)| (*owner, value, expression_types.get(owner)))
+            .collect::<Vec<_>>();
+        for semantics in project_function_instances
+            .values()
+            .map(RuntimeProjectFunctionInstanceFact::semantics)
+            .chain(root_closures.values().map(|closure| closure.semantics()))
+        {
+            semantics.visit_callable_values(&mut |owner, value, ty| {
+                callable_values.push((owner, value, ty))
+            });
+        }
+        for (expression, value, ty) in callable_values {
+            if let RuntimeResolvedValue::ProjectCallable { callable, instance } = value {
+                let fact = project_function_instances.get(instance).ok_or(
+                    RuntimeSemanticFactsError::MissingProjectFunctionInstance { expression },
+                )?;
+                if fact.callable() != callable || ty != Some(fact.callable_type()) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                referenced_project_function_instances.insert(instance.clone());
+            }
+        }
         for (expression, call) in &calls {
             if instance_expression_owners.contains(expression) {
                 return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
@@ -5914,7 +5937,7 @@ impl RuntimePlanSemanticFacts {
                 expression_types.get(expression),
                 &project_function_instances,
             )? {
-                invoked_project_function_instances.insert(instance);
+                referenced_project_function_instances.insert(instance);
             }
             let executable = match call.dispatch() {
                 RuntimeResolvedCallDispatch::Static(
@@ -5961,7 +5984,7 @@ impl RuntimePlanSemanticFacts {
                     expression_types.get(&owner).copied(),
                     &project_function_instances,
                 )? {
-                    invoked_project_function_instances.insert(invoked);
+                    referenced_project_function_instances.insert(invoked);
                 }
             }
         }
@@ -5986,13 +6009,13 @@ impl RuntimePlanSemanticFacts {
                     expected_type,
                     &project_function_instances,
                 )? {
-                    invoked_project_function_instances.insert(invoked);
+                    referenced_project_function_instances.insert(invoked);
                 }
             }
         }
         if project_function_instances
             .keys()
-            .any(|key| !invoked_project_function_instances.contains(key))
+            .any(|key| !referenced_project_function_instances.contains(key))
         {
             return Err(RuntimeSemanticFactsError::UnreferencedProjectFunctionInstance);
         }
@@ -8188,7 +8211,13 @@ fn validate_resolved_value(
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
             require_runtime_local_reference(runtime_owners, *local)
         }
-        RuntimeResolvedValue::ProjectCallable(callable) => validate_callable(modules, callable),
+        RuntimeResolvedValue::ProjectCallable { callable, instance } => {
+            validate_callable(modules, callable)?;
+            if instance.callable() != callable.runtime() {
+                return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+            }
+            Ok(())
+        }
         RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
         RuntimeResolvedValue::DialogueLine(_)
         | RuntimeResolvedValue::CharacterLook { .. }
@@ -9487,15 +9516,34 @@ fn validate_project_function_instance(
             return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
         }
     }
+    // The authored TypeId remains a checked source projection, while the
+    // selected instance's pattern binding owns the closed parameter ABI.
+    // An inferred callback row can make those two normalized types differ.
     if !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Expression(
         instance.body().tail(),
     )) || instance.parameters().iter().any(|parameter| {
+        let binding_matches_abi = match parameter.kind() {
+            arcweft_lang_hir::item::HirParameterKind::Fixed
+            | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => {
+                parameter.binding_ty() == parameter.abi_ty()
+            }
+            arcweft_lang_hir::item::HirParameterKind::RestPositional => {
+                matches!(
+                    parameter.binding_ty().shape(),
+                    RuntimeTypeShape::Sequence {
+                        kind: RuntimeSequenceKind::Vec,
+                        item,
+                    } if item.as_ref() == parameter.abi_ty()
+                )
+            }
+        };
         projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(
             parameter.pattern(),
         )) != Some(&parameter.binding_ty())
-            || projected_types.get(&RuntimeProjectFunctionTypeOwner::Type(
+            || !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Type(
                 parameter.source_type(),
-            )) != Some(&parameter.abi_ty())
+            ))
+            || !binding_matches_abi
     }) {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
@@ -10383,17 +10431,22 @@ fn validate_project_function_instance_reference(
     let Some(plan) = call.project_function() else {
         return Ok(None);
     };
-    let Some(instance) = plan.outcome().instance() else {
-        return Ok(None);
-    };
+    let instance = plan.outcome().callable_instance();
     let Some(fact) = instances.get(instance) else {
         return Err(RuntimeSemanticFactsError::MissingProjectFunctionInstance { expression });
     };
+    let mut function_type = fact.callable_type();
+    for _ in 0..call.completed_group().get() {
+        let RuntimeTypeShape::Function { result, .. } = function_type.shape() else {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        };
+        function_type = result;
+    }
     if fact.callable() != plan.callable()
         || plan
             .input()
             .function_type()
-            .is_some_and(|function_type| function_type != fact.function_type())
+            .is_some_and(|input_type| input_type != function_type)
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
@@ -10405,23 +10458,14 @@ fn validate_project_function_instance_reference(
         .parameters()
         .iter()
         .filter_map(|parameter| {
-            matches!(
-                parameter.source(),
-                RuntimeProjectFunctionParameterSource::ContinuationPrefix { .. }
-            )
-            .then_some(parameter.binding_ty())
+            (parameter.group().get() < call.completed_group().get())
+                .then_some(parameter.binding_ty())
         })
         .collect::<Vec<_>>();
     let instance_current_group_parameters = fact
         .parameters()
         .iter()
-        .filter_map(|parameter| {
-            matches!(
-                parameter.source(),
-                RuntimeProjectFunctionParameterSource::CurrentGroup { .. }
-            )
-            .then_some(parameter)
-        })
+        .filter_map(|parameter| (parameter.group() == call.completed_group()).then_some(parameter))
         .collect::<Vec<_>>();
     if input_prefix_types.len() != instance_prefix_types.len()
         || input_prefix_types
@@ -10443,7 +10487,7 @@ fn validate_project_function_instance_reference(
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
-    let RuntimeTypeShape::Function { result, .. } = fact.function_type().shape() else {
+    let RuntimeTypeShape::Function { result, .. } = function_type.shape() else {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     };
     if expression_type != Some(result.as_ref()) {

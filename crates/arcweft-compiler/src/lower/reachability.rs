@@ -22,7 +22,7 @@ use arcweft_lang_sema::{
     final_analysis::{
         CheckedCallExecutionCallee, CheckedChoice, CheckedExpressionExecution,
         CheckedExpressionResolution, CheckedItemRole, CheckedOrdinaryFunctionEmission,
-        CheckedRuntimeValueDisposition, CheckedStatementPayload,
+        CheckedRuntimeValueDisposition, CheckedStatementPayload, CheckedValueResolution,
         FinalAnalysisExecutionProjectionError, FinalSemanticAnalysis, FinalSemanticAnalysisError,
     },
 };
@@ -180,10 +180,17 @@ pub fn project_runtime_reachability<'project>(
         edges.extend(checked_iteration_edges(statement, iteration));
     }
     for (owner, checked) in analysis.expressions() {
-        let CheckedExpressionResolution::Closure(closure) = checked.resolution() else {
-            continue;
-        };
-        edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+        match checked.resolution() {
+            CheckedExpressionResolution::Closure(closure) => {
+                edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+            }
+            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                callable,
+            )) => {
+                edges.extend(checked_project_callable_value_edge(owner, callable));
+            }
+            _ => {}
+        }
     }
     for entry in &selected_entries {
         append_entry_edges(entry, symbols, &mut edges)?;
@@ -269,10 +276,17 @@ pub(crate) fn project_view_value_program_reachability<'project>(
         edges.extend(checked_iteration_edges(statement, iteration));
     }
     for (owner, checked) in analysis.expressions() {
-        let CheckedExpressionResolution::Closure(closure) = checked.resolution() else {
-            continue;
-        };
-        edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+        match checked.resolution() {
+            CheckedExpressionResolution::Closure(closure) => {
+                edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+            }
+            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                callable,
+            )) => {
+                edges.extend(checked_project_callable_value_edge(owner, callable));
+            }
+            _ => {}
+        }
     }
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
@@ -417,6 +431,22 @@ fn checked_closure_execution_edge(source: ExprId, closure: ExprId) -> HirRuntime
         HirRuntimeExecutableOwner::Closure(closure),
         HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
     )
+}
+
+fn checked_project_callable_value_edge(
+    value: ExprId,
+    callable: &arcweft_lang_sema::final_analysis::CheckedProjectCallable,
+) -> Option<HirRuntimeReachabilityEdge> {
+    (callable.declaration().owner() == CallableDeclarationOwner::Function).then(|| {
+        HirRuntimeReachabilityEdge::new(
+            HirRuntimeReachabilitySite::Expression(value),
+            HirRuntimeExecutableOwner::Item(callable.owner()),
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue {
+                value,
+                declaration: callable.declaration().clone(),
+            },
+        )
+    })
 }
 
 pub fn validate_reachable_runtime_callables(
@@ -677,6 +707,11 @@ fn validate_checked_executable_edges(
             CheckedExpressionResolution::Closure(closure) => {
                 BTreeSet::from([checked_closure_execution_edge(owner, closure.owner())])
             }
+            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                callable,
+            )) => checked_project_callable_value_edge(owner, callable)
+                .into_iter()
+                .collect(),
             _ => continue,
         };
         validate_exact_edge_set(

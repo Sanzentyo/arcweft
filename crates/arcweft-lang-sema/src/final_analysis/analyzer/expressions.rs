@@ -1360,6 +1360,9 @@ impl Analyzer<'_, '_, '_> {
         {
             let ty = match &resolution {
                 CheckedValueResolution::Local(local) => self.facts.locals().get(local).cloned(),
+                CheckedValueResolution::ProjectCallable(callable) => {
+                    Some(self.prepare_named_callable_value_type(owner, callable)?)
+                }
                 _ => value_resolution_type(self.catalogs.world, &resolution),
             }
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;

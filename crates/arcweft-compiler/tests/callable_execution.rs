@@ -181,6 +181,49 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    named_curried_function_value,
+    r#"
+fn add(first: i64)(second: i64) -> i64 { first + second }
+flow main() -> i64 {
+    let factory = add
+    let prefix = factory(1i64)
+    return prefix(41i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    callable_origins_remain_distinct_across_a_branch,
+    r#"
+fn add(first: i64)(second: i64) -> i64 { first + second }
+fn subtract(first: i64)(second: i64) -> i64 { second - first }
+flow main() -> i64 {
+    let left = if true { add } else { subtract }
+    let right = if false { add } else { subtract }
+    return left(1i64)(20i64) + right(1i64)(22i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    closure_retains_a_project_prefix,
+    r#"
+fn add(first: i64)(second: i64) -> i64 { first + second }
+flow main() -> i64 {
+    let prefix = add(1i64)
+    let invoke = || prefix(41i64)
+    return invoke()
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     nested_generic_calls,
     r#"
 fn identity<T>(value: T) -> T { value }

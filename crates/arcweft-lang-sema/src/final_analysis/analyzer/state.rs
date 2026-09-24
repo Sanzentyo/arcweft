@@ -878,7 +878,7 @@ impl SemanticFactState {
 
     pub(super) fn request_effect_projection(
         &mut self,
-        site: CheckedCallSite,
+        site: crate::callable::PreparedCallableEffectProjectionSite,
         candidate: &crate::callable::PreparedResolvedCallable,
     ) -> Result<crate::callable::PreparedCallResultRef, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;

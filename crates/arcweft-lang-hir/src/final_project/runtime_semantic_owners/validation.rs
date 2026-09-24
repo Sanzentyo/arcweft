@@ -10,7 +10,7 @@ use crate::{
     item::{HirImplMember, HirItemKind},
     project::HirAnalysisProjectView,
     stmt::HirStmtKind,
-    symbol::{ImplMethodDeclarationId, ImplMethodKind},
+    symbol::{CallableDeclarationOwner, ImplMethodDeclarationId, ImplMethodKind},
 };
 
 pub(super) fn validate_roots_and_edges(
@@ -61,6 +61,11 @@ fn edge_source_family_matches(
             | HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. },
         ) => resolve_expression_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirExprKind::Call(_))),
+        (
+            HirRuntimeReachabilitySite::Expression(owner),
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { .. },
+        ) => resolve_expression_kind(project, *owner)
+            .is_some_and(|kind| matches!(kind, HirExprKind::Path(_))),
         (
             HirRuntimeReachabilitySite::Statement(owner),
             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
@@ -119,6 +124,15 @@ fn edge_kind_matches_target(
     edge: &HirRuntimeReachabilityEdge,
 ) -> bool {
     match (&edge.kind, &edge.target) {
+        (
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { declaration, .. },
+            HirRuntimeExecutableOwner::Item(target),
+        ) => {
+            declaration.owner() == CallableDeclarationOwner::Function
+                && resolve_item_kind(project, *target)
+                    .is_some_and(|kind| matches!(kind, HirItemKind::Function(_)))
+        }
+        (HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { .. }, _) => false,
         (
             HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
                 implementation,

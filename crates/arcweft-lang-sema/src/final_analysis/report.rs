@@ -483,6 +483,14 @@ impl FinalAnalysisExecutionProjection<'_> {
                     | CheckedExpressionResolution::StageLook(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Value
                     }
+                    CheckedExpressionResolution::Value(
+                        super::CheckedValueResolution::ProjectCallable(callable),
+                    ) if runtime_type_owners.contains(&owner)
+                        && callable.declaration().owner()
+                            == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function =>
+                    {
+                        CheckedExecutableRuntimeExpressionFactFamily::Value
+                    }
                     CheckedExpressionResolution::Value(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Consumed
                     }

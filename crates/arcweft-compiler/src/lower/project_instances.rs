@@ -31,6 +31,7 @@ mod tests;
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ProjectInstantiationOrigin {
     Call(ExprId),
+    CallableValue(ExprId),
     Root(ItemId),
 }
 
@@ -39,6 +40,7 @@ impl ProjectInstantiationOrigin {
         let reason = reason.into();
         match self {
             Self::Call(owner) => RuntimeSemanticProjectionError::Call { owner, reason },
+            Self::CallableValue(owner) => RuntimeSemanticProjectionError::Value { owner, reason },
             Self::Root(owner) => {
                 RuntimeSemanticProjectionError::ProjectFunctionInstance { owner, reason }
             }
@@ -457,6 +459,28 @@ pub(super) enum ProjectInstanceProjection<'session> {
 }
 
 impl ProjectInstanceProjection<'_> {
+    pub(super) fn close_callable_value(
+        &self,
+        origin: ProjectInstantiationOrigin,
+        selection: &CheckedProjectFunctionRuntimeSelection,
+        catalog: &arcweft_lang_sema::callable::CheckedCallableCatalog,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+    ) -> Result<Option<CheckedProjectFunctionRootRuntimeSelection>, RuntimeSemanticProjectionError>
+    {
+        let work = match self {
+            Self::Discover(session) => &session.work,
+            Self::Materialize { graph, .. } => &graph.work,
+        };
+        selection.close_callable_value_with_control(catalog, enclosing, &mut work.type_control(origin)).map_err(|source| {
+            match source {
+                arcweft_lang_sema::callable::CheckedProjectFunctionInstanceProjectionError::Projection(
+                    arcweft_lang_sema::types::TypeProjectionError::Control(error)
+                ) => RuntimeSemanticProjectionError::ProjectInstantiation(error),
+                source => RuntimeSemanticProjectionError::ProjectFunctionProjection { origin, source: Box::new(source) },
+            }
+        })
+    }
+
     pub(super) fn close_instance(
         &self,
         origin: ProjectInstantiationOrigin,

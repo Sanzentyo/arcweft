@@ -153,6 +153,7 @@ impl<'a> AwbcLowerer<'a> {
             flow_lowerer.into_diagnostics()
         };
         expr::lower_pending_closures(&mut inventory, plan);
+        inventory.lower_callable_states(plan);
         inventory.lower_pure_program_bindings(plan);
 
         diagnostics.extend(inventory.take_diagnostics());

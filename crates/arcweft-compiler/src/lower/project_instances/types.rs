@@ -40,8 +40,8 @@ impl<'a> ProjectInstanceTypes<'a> {
         self.solution
     }
 
-    pub(in crate::lower) const fn function_type(self) -> &'a TypeKind {
-        self.solution.function_type()
+    pub(in crate::lower) const fn callable_type(self) -> &'a TypeKind {
+        self.solution.callable_type()
     }
 
     pub(in crate::lower) fn instantiate_type(

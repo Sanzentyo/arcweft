@@ -63,6 +63,12 @@ pub(crate) struct FinalExprLowerer<'hir> {
     /// enclosing Let chain.
     specialized_operand_locals: Option<&'hir BTreeMap<(ExprId, u32), RuntimeLocalSeedId>>,
     closure_sites: Option<&'hir BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>>,
+    project_callable_states: Option<
+        &'hir BTreeMap<
+            crate::semantic_facts::RuntimeProjectFunctionInstanceKey,
+            Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
+        >,
+    >,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
 }
 
@@ -178,6 +184,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             scope_continuations: Vec::new(),
             specialized_operand_locals: None,
             closure_sites: None,
+            project_callable_states: None,
             overrides: BTreeMap::new(),
         }
     }
@@ -234,6 +241,17 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     pub(crate) fn with_overrides(mut self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
         self.overrides = overrides;
+        self
+    }
+
+    pub(crate) fn with_project_callable_states(
+        mut self,
+        states: &'hir BTreeMap<
+            crate::semantic_facts::RuntimeProjectFunctionInstanceKey,
+            Box<[arcweft_core::plan::RuntimeCallableStateSeedId]>,
+        >,
+    ) -> Self {
+        self.project_callable_states = Some(states);
         self
     }
 
@@ -657,6 +675,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             scope_continuations: self.scope_continuations.clone(),
             specialized_operand_locals: self.specialized_operand_locals,
             closure_sites: self.closure_sites,
+            project_callable_states: self.project_callable_states,
             semantic_facts: self.semantic_facts,
             overrides: merged,
         }
@@ -1399,8 +1418,15 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Ok(RuntimeExprSeedKind::Local(self.local(*local)?))
             }
             RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
+            RuntimeResolvedValue::ProjectCallable { instance, .. } => {
+                let state = self.project_callable_states.and_then(|states| states.get(instance)).and_then(|states| states.first()).cloned()
+                    .ok_or_else(|| format!("project declaration value {id:?} has no admitted initial callable state"))?;
+                Ok(RuntimeExprSeedKind::MakeCallable {
+                    state,
+                    captures: Box::new([]),
+                })
+            }
             RuntimeResolvedValue::Intrinsic(_)
-            | RuntimeResolvedValue::ProjectCallable(_)
             | RuntimeResolvedValue::ProjectItem(_)
             | RuntimeResolvedValue::DialogueLine(_)
             | RuntimeResolvedValue::CharacterLook { .. }
@@ -1991,6 +2017,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Ok(RuntimeDialogueContentEffectBindingSeed {
                     site: effect.site(),
                     function,
+                    callable_type: effect.callable_type().identity(),
                     captures: captures.into_boxed_slice(),
                 })
             })

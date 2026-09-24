@@ -112,6 +112,12 @@ pub enum HirRuntimeReachabilityEdgeKind {
         call: ExprId,
         declaration: CallableDeclarationKey,
     },
+    /// Retains the latent body of an ordinary named function used as a value.
+    /// This edge does not imply that any argument group has been invoked.
+    CheckedProjectCallableValue {
+        value: ExprId,
+        declaration: CallableDeclarationKey,
+    },
     CheckedTraitMethodCall {
         call: ExprId,
         implementation: ItemId,
@@ -143,6 +149,7 @@ pub enum HirRuntimeReachabilityEdgeKind {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum HirRuntimeReachabilityEdgeAuthority {
     ProjectCall(CallableDeclarationKey),
+    ProjectCallableValue(CallableDeclarationKey),
     TraitMethodCall(ImplMethodDeclarationId),
     IteratorWitnessMethod(HirRuntimeIteratorWitnessMethodRole),
     ClosureExecution,
@@ -1400,6 +1407,10 @@ fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
             | HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { call, .. },
         ) => source == call,
         (
+            HirRuntimeReachabilitySite::Expression(source),
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { value, .. },
+        ) => source == value,
+        (
             HirRuntimeReachabilitySite::Statement(_),
             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
         ) => true,
@@ -1425,6 +1436,9 @@ fn edge_authority(kind: &HirRuntimeReachabilityEdgeKind) -> HirRuntimeReachabili
     match kind {
         HirRuntimeReachabilityEdgeKind::CheckedProjectCall { declaration, .. } => {
             HirRuntimeReachabilityEdgeAuthority::ProjectCall(declaration.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { declaration, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::ProjectCallableValue(declaration.clone())
         }
         HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { method, .. } => {
             HirRuntimeReachabilityEdgeAuthority::TraitMethodCall(method.clone())

@@ -3984,6 +3984,111 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
 }
 
 #[test]
+fn checked_callable_value_edges_retain_latent_bodies_and_reject_nonfunction_targets() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-callable-values",
+        "runtime-callable-values.arcw",
+        "fn latent() -> bool { true }\nflow root() { let handler = latent }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.analysis_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-callable-values");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .unwrap()
+        .into_evaluation_topology()
+        .unwrap();
+    let flow = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(super::HirProjectItemRef::id)
+        .unwrap();
+    let function = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Function(_)))
+        .map(super::HirProjectItemRef::id)
+        .unwrap();
+    let value = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Path(_)).then_some(owner)
+        })
+        .unwrap();
+    let body_value = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Literal(_)).then_some(owner)
+        })
+        .unwrap();
+    let declaration = CallableDeclarationKey::Existing(
+        CallableDeclarationId::try_new(
+            package,
+            root_path,
+            CallableDeclarationOwner::Function,
+            "latent",
+        )
+        .unwrap(),
+    );
+    let edge = |value, target| {
+        HirRuntimeReachabilityEdge::new(
+            super::HirRuntimeReachabilitySite::Expression(value),
+            HirRuntimeExecutableOwner::Item(target),
+            super::HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue {
+                value,
+                declaration: declaration.clone(),
+            },
+        )
+    };
+    let build = |edges| {
+        let input = HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            topology.generation().symbol_world().clone(),
+            topology.generation().symbol_revision(),
+            vec![HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirRuntimeExecutableOwner::Item(flow),
+            )],
+            edges,
+        )
+        .unwrap();
+        executable.runtime_semantic_reachability(
+            input,
+            &topology,
+            |_| None,
+            |owner| retained_runtime_projection(executable, owner),
+        )
+    };
+    let without = build(Vec::new()).unwrap();
+    assert!(!without.contains_expression(body_value));
+    let reached = build(vec![edge(value, function)]).unwrap();
+    assert!(reached.contains_expression(body_value));
+    let path = reached
+        .first_path(&HirRuntimeExecutableOwner::Item(function))
+        .unwrap();
+    assert_eq!(path.steps(), [edge(value, function)]);
+    assert_ne!(without.identity().digest(), reached.identity().digest());
+    assert!(matches!(
+        build(vec![edge(value, flow)]),
+        Err(HirRuntimeReachabilityError::InvalidEdgeTarget { .. })
+    ));
+    assert!(matches!(
+        build(vec![edge(body_value, function)]),
+        Err(HirRuntimeReachabilityError::InvalidEdgeKind { .. })
+    ));
+}
+
+#[test]
 fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targets() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();

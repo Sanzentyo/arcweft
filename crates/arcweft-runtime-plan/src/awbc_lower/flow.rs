@@ -17,12 +17,10 @@ use arcweft_core::awbc::schema::{
     AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup,
     AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
     AwbcParallelPolicy, AwbcPatternId, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
-    AwbcProjectCallAttachedPresence, AwbcProjectCallCaptureSource, AwbcProjectCallDefaultFunction,
-    AwbcProjectCallInput, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
-    AwbcProjectCallOrdinaryMaterialization, AwbcProjectCallOutcome, AwbcProjectContinuationAbi,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTrapCode,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use arcweft_core::entry::RuntimeEntryRoles;
@@ -38,12 +36,9 @@ use arcweft_core::plan::{
     RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
     RuntimeProjectCallAttachedPresence as RuntimeProjectCallAttachedPresenceCore,
     RuntimeProjectCallOrdinaryMaterialization as RuntimeProjectCallOrdinaryMaterializationCore,
-    RuntimeProjectCallOutcome as RuntimeProjectCallOutcomeCore, RuntimeProjectCallPlan,
-    RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
+    RuntimeProjectCallPlan, RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
 };
-use arcweft_core::value::{
-    RuntimeCallTarget, RuntimeExpr, RuntimeProjectContinuationAbi, RuntimeValue,
-};
+use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Builds one contiguous flow body while allowing host-visible suspension
@@ -994,13 +989,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 if let Some(missing) = content_plan
                     .effect_sites()
                     .iter()
-                    .map(|site| site.function())
-                    .find(|function| self.plan.function_sites().get(*function).is_none())
+                    .map(|site| site.state())
+                    .find(|state| self.plan.callable_states().get(*state).is_none())
                 {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path,
                         format!(
-                            "dialogue effect callback function site {missing} is absent from the RuntimePlan"
+                            "dialogue effect callback state {missing} is absent from the RuntimePlan"
                         ),
                     ));
                     return;
@@ -1073,7 +1068,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         format!("{path}.dialogue.effect.{}", site.site()),
                         self.plan,
                     );
-                    let function = lowerer.prepare_function_site(site.function());
+                    let state = site.state();
                     let captures = site
                         .captures()
                         .iter()
@@ -1081,7 +1076,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         .collect();
                     effects.push(AwbcDialogueContentEffectBinding {
                         site: site.site(),
-                        function,
+                        state,
                         captures,
                     });
                 }
@@ -1225,7 +1220,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         });
                 }
             }
-            FlowOp::ApplyFunction {
+            FlowOp::ApplyGroup {
                 callee,
                 args,
                 result,
@@ -1556,27 +1551,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         result: &RuntimePattern,
         path: &str,
     ) {
-        // The callee, when present, and every physical operand are lowered in
-        // source order.  The core ProjectCall state machine performs only the
-        // logical ABI materialization after these values have been evaluated;
-        // no operand is rediscovered from a type or callable label.
-        let input = match plan.input() {
-            arcweft_core::plan::RuntimeProjectCallInput::Direct => AwbcProjectCallInput::Direct,
-            arcweft_core::plan::RuntimeProjectCallInput::Continuation {
-                callee,
-                expected_abi,
-            } => {
-                let callee =
-                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(callee);
-                let Some(expected_abi) = self.lower_project_call_abi(expected_abi, path) else {
-                    return;
-                };
-                AwbcProjectCallInput::Continuation {
-                    callee,
-                    expected_abi,
-                }
-            }
-        };
+        // The callee expression is evaluated before the source-ordered
+        // operands. The program-owned state authenticates the closed origin.
+        let callee =
+            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(plan.callee());
         let operands = plan
             .operands()
             .iter()
@@ -1601,16 +1579,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 RuntimeProjectCallOrdinaryMaterializationCore::Fixed(row) => {
                     AwbcProjectCallOrdinaryMaterialization::Fixed {
                         parameter: row.parameter(),
-                        abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
-                        binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
                         source_index: row.source_index(),
                     }
                 }
                 RuntimeProjectCallOrdinaryMaterializationCore::Rest(row) => {
                     AwbcProjectCallOrdinaryMaterialization::Rest {
                         parameter: row.parameter(),
-                        abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
-                        binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
                         source_indices: row.source_indices().to_vec(),
                     }
                 }
@@ -1632,112 +1606,33 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     RuntimeProjectCallAttachedPresenceCore::DefaultedPresent => {
                         AwbcProjectCallAttachedPresence::DefaultedPresent
                     }
-                    RuntimeProjectCallAttachedPresenceCore::DefaultedOmitted(default) => {
-                        let Some(function) = self.prepare_function_site(default.site(), path)
-                        else {
-                            return;
-                        };
-                        AwbcProjectCallAttachedPresence::DefaultedOmitted {
-                            default: AwbcProjectCallDefaultFunction {
-                                site: function,
-                                captures: default
-                                    .captures()
-                                    .iter()
-                                    .map(|capture| match capture {
-                                        arcweft_core::plan::RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix {
-                                            position,
-                                        } => AwbcProjectCallCaptureSource::ContinuationPrefix {
-                                            position: *position,
-                                        },
-                                        arcweft_core::plan::RuntimeProjectCallDefaultCaptureSource::CurrentLogical {
-                                            position,
-                                        } => AwbcProjectCallCaptureSource::CurrentLogical {
-                                            position: *position,
-                                        },
-                                    })
-                                    .collect(),
-                            },
-                        }
+                    RuntimeProjectCallAttachedPresenceCore::DefaultedOmitted => {
+                        AwbcProjectCallAttachedPresence::DefaultedOmitted
                     }
                 };
                 Some(AwbcProjectCallAttachedMaterialization {
-                    abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
-                    binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
                     source_index: row.source_index(),
                     presence,
                 })
             }
         };
-        let outcome = match plan.outcome() {
-            RuntimeProjectCallOutcomeCore::Continue {
-                result_abi,
-                next_group,
-            } => {
-                let Some(result_abi) = self.lower_project_call_abi(result_abi, path) else {
-                    return;
-                };
-                AwbcProjectCallOutcome::Continue {
-                    result_abi,
-                    next_group: *next_group,
-                }
-            }
-            RuntimeProjectCallOutcomeCore::Invoke { function_site } => {
-                let Some(function) = self.prepare_function_site(*function_site, path) else {
-                    return;
-                };
-                AwbcProjectCallOutcome::Invoke { function }
-            }
-        };
-        let result_ty = admitted_plan_type(self.inventory, self.plan, result.ty());
         let result_pattern = lower_pattern(self.inventory, self.plan, frame, result);
         body.suspend(
             self.inventory,
             AwbcSafePointKind::CallableBoundary,
             |resume| AwbcTerminator::ProjectCall {
                 call: AwbcProjectCall {
-                    input,
+                    callee,
+                    state: plan.state(),
                     completed_group: plan.completed_group(),
                     operands,
                     ordinary,
                     attached,
-                    outcome,
-                    result_ty,
                     result_pattern,
                     resume,
                 },
             },
         );
-    }
-
-    fn lower_project_call_abi(
-        &mut self,
-        abi: &RuntimeProjectContinuationAbi,
-        path: &str,
-    ) -> Option<AwbcProjectContinuationAbi> {
-        let Some(function_type) = self.inventory.semantic_type(abi.function_type()) else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                path,
-                "project continuation ABI function type is absent from the AWBC inventory",
-            ));
-            return None;
-        };
-        let Some(prefix_types) = abi
-            .prefix_types()
-            .iter()
-            .map(|ty| self.inventory.semantic_type(*ty))
-            .collect::<Option<Vec<_>>>()
-        else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                path,
-                "project continuation ABI prefix type is absent from the AWBC inventory",
-            ));
-            return None;
-        };
-        Some(AwbcProjectContinuationAbi {
-            lineage: abi.lineage(),
-            function_type,
-            prefix_types,
-        })
     }
 
     fn prepare_function_site(
@@ -3281,7 +3176,7 @@ fn collect_flow_dependencies(
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
-            | FlowOp::ApplyFunction { .. }
+            | FlowOp::ApplyGroup { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
             | FlowOp::Effect(_)

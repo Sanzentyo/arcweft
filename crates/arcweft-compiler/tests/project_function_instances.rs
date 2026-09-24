@@ -404,20 +404,25 @@ flow main() -> i64 {
         .collect::<Vec<_>>();
     assert_eq!(calls.len(), 2);
     assert!(matches!(
-        calls[0].input(),
-        arcweft_core::plan::RuntimeProjectCallInput::Direct
+        calls[0].callee().kind(),
+        arcweft_core::value::RuntimeExprKind::MakeCallable { .. }
     ));
     assert!(matches!(
-        calls[0].outcome(),
-        arcweft_core::plan::RuntimeProjectCallOutcome::Continue { .. }
+        compiled.plan.callable_states().get(calls[0].state()).unwrap().transition,
+        arcweft_core::plan::RuntimeCallableTransition::Retain { state, .. } if state == calls[1].state()
     ));
     assert!(matches!(
-        calls[1].input(),
-        arcweft_core::plan::RuntimeProjectCallInput::Continuation { .. }
+        calls[1].callee().kind(),
+        arcweft_core::value::RuntimeExprKind::Local(_)
     ));
     assert!(matches!(
-        calls[1].outcome(),
-        arcweft_core::plan::RuntimeProjectCallOutcome::Invoke { .. }
+        compiled
+            .plan
+            .callable_states()
+            .get(calls[1].state())
+            .unwrap()
+            .transition,
+        arcweft_core::plan::RuntimeCallableTransition::Invoke { .. }
     ));
     assert_eq!(compiled.plan.function_sites().len(), 1);
     assert!(compiled.plan.pure_helpers().is_empty());

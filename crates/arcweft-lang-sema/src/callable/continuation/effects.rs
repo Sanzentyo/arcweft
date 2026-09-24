@@ -11,6 +11,19 @@ use crate::{
     effect_row::EffectRow,
 };
 
+/// The actual producer that needs a declaration's latent callable type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedCallableEffectProjectionSite {
+    CallResult(CheckedCallSite),
+    CallableValue(arcweft_lang_hir::identity::ExprId),
+}
+
+impl From<CheckedCallSite> for PreparedCallableEffectProjectionSite {
+    fn from(site: CheckedCallSite) -> Self {
+        Self::CallResult(site)
+    }
+}
+
 /// A projection request belongs to one live graph generation and is never
 /// reconstructed from a declaration name or a function-shaped placeholder.
 #[derive(Clone)]
@@ -27,7 +40,7 @@ impl std::fmt::Debug for PreparedCallResultRef {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PreparedEffectRequest {
-    site: CheckedCallSite,
+    site: PreparedCallableEffectProjectionSite,
     candidate: CallableCandidateId,
     schema: CallableSignatureSchemaDigest,
     checked: CheckedCallableId,
@@ -147,7 +160,7 @@ impl PreparedCallableEffectRows {
     pub(super) fn request(
         &mut self,
         issuer: &Arc<PreparedCallGraphIssuer>,
-        site: CheckedCallSite,
+        site: PreparedCallableEffectProjectionSite,
         candidate: &PreparedResolvedCallable,
     ) -> Result<PreparedCallResultRef, CallConstraintInvariant> {
         let checked = candidate

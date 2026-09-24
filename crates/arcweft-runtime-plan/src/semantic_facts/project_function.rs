@@ -240,6 +240,8 @@ pub enum RuntimeProjectFunctionCallInput {
     /// The call names the project declaration directly and has no previously
     /// evaluated prefix.
     Direct,
+    /// The initial state is read from a checked value source before operands.
+    Value { callee: ExprId },
     /// The call consumes one previously produced continuation. `callee` is a
     /// generation-local HIR join only; `lineage` is the stable semantic
     /// identity checked by the runtime value boundary.
@@ -253,27 +255,27 @@ impl RuntimeProjectFunctionCallInput {
     pub const fn callee(&self) -> Option<ExprId> {
         match self {
             Self::Direct => None,
-            Self::Continuation { callee, .. } => Some(*callee),
+            Self::Value { callee } | Self::Continuation { callee, .. } => Some(*callee),
         }
     }
 
     pub const fn lineage(&self) -> Option<RuntimeProjectContinuationLineageId> {
         match self {
-            Self::Direct => None,
+            Self::Direct | Self::Value { .. } => None,
             Self::Continuation { abi, .. } => Some(abi.lineage()),
         }
     }
 
     pub const fn function_type(&self) -> Option<&RuntimeNormalizedType> {
         match self {
-            Self::Direct => None,
+            Self::Direct | Self::Value { .. } => None,
             Self::Continuation { abi, .. } => Some(abi.function_type()),
         }
     }
 
     pub const fn continuation_abi(&self) -> Option<&RuntimeProjectContinuationAbi> {
         match self {
-            Self::Direct => None,
+            Self::Direct | Self::Value { .. } => None,
             Self::Continuation { abi, .. } => Some(abi),
         }
     }
@@ -287,6 +289,7 @@ pub enum RuntimeProjectFunctionCallOutcome {
     Continue {
         abi: RuntimeProjectContinuationAbi,
         next_group: CallableGroupIndex,
+        instance: RuntimeProjectFunctionInstanceKey,
     },
     /// The current group closes the call and invokes this exact compiler-
     /// produced function instance.
@@ -296,6 +299,11 @@ pub enum RuntimeProjectFunctionCallOutcome {
 }
 
 impl RuntimeProjectFunctionCallOutcome {
+    pub const fn callable_instance(&self) -> &RuntimeProjectFunctionInstanceKey {
+        match self {
+            Self::Continue { instance, .. } | Self::Invoke { instance } => instance,
+        }
+    }
     pub const fn lineage(&self) -> Option<RuntimeProjectContinuationLineageId> {
         match self {
             Self::Continue { abi, .. } => Some(abi.lineage()),
@@ -382,21 +390,25 @@ impl RuntimeProjectFunctionCallPlan {
                 return Err(RuntimeProjectFunctionFactError::InvalidParameterMaterialization);
             }
         }
-        if matches!(input, RuntimeProjectFunctionCallInput::Direct) != (completed_group.get() == 0)
+        if !matches!(input, RuntimeProjectFunctionCallInput::Continuation { .. })
+            != (completed_group.get() == 0)
         {
             return Err(RuntimeProjectFunctionFactError::InvalidContinuationAbi);
         }
         match &outcome {
-            RuntimeProjectFunctionCallOutcome::Continue { abi, next_group }
-                if completed_group.get().checked_add(1) != Some(next_group.get())
-                    || abi.prefix_types().len() != output_prefix_len
-                    || !abi.prefix_types().starts_with(input_prefix_types)
-                    || abi.prefix_types()[input_prefix_types.len()..]
-                        .iter()
-                        .zip(current_group_materialization.iter())
-                        .any(|(actual, materialization)| {
-                            actual != materialization.binding_ty()
-                        }) =>
+            RuntimeProjectFunctionCallOutcome::Continue {
+                abi,
+                next_group,
+                instance,
+            } if completed_group.get().checked_add(1) != Some(next_group.get())
+                || instance.callable() != callable.runtime()
+                || instance.group().get() < next_group.get()
+                || abi.prefix_types().len() != output_prefix_len
+                || !abi.prefix_types().starts_with(input_prefix_types)
+                || abi.prefix_types()[input_prefix_types.len()..]
+                    .iter()
+                    .zip(current_group_materialization.iter())
+                    .any(|(actual, materialization)| actual != materialization.binding_ty()) =>
             {
                 return Err(RuntimeProjectFunctionFactError::InvalidContinuationAbi);
             }
@@ -1941,6 +1953,33 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             })
     }
 
+    pub fn visit_callable_values<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            ExprId,
+            &'facts RuntimeResolvedValue,
+            Option<&'facts RuntimeNormalizedType>,
+        ),
+    ) {
+        for expression in &self.expressions {
+            match expression.payload() {
+                RuntimeProjectFunctionExpressionPayload::Value(
+                    value @ RuntimeResolvedValue::ProjectCallable { .. },
+                ) => {
+                    visitor(
+                        expression.owner(),
+                        value,
+                        self.expression_type(expression.owner()),
+                    );
+                }
+                RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
+                    closure.semantics().visit_callable_values(visitor)
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn visit_calls<'facts>(
         &'facts self,
         visitor: &mut impl FnMut(ExprId, &'facts RuntimeResolvedCall),
@@ -1984,7 +2023,7 @@ pub struct RuntimeProjectFunctionInstanceFact {
     suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
     control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
     execution: RuntimeProjectFunctionExecution,
-    function_type: RuntimeNormalizedType,
+    callable_type: RuntimeNormalizedType,
     parameters: Box<[RuntimeProjectFunctionParameterAbi]>,
     effects: Box<[EffectId]>,
     attached_default: Option<RuntimeProjectAttachedDefaultFunctionFact>,
@@ -2003,7 +2042,7 @@ impl RuntimeProjectFunctionInstanceFact {
         suspension: arcweft_lang_sema::final_analysis::CheckedSuspensionRole,
         control: arcweft_lang_sema::final_analysis::CheckedExecutableControlRole,
         execution: RuntimeProjectFunctionExecution,
-        function_type: RuntimeNormalizedType,
+        callable_type: RuntimeNormalizedType,
         parameters: Box<[RuntimeProjectFunctionParameterAbi]>,
         effects: Box<[EffectId]>,
         attached_default: Option<RuntimeProjectAttachedDefaultFunctionFact>,
@@ -2017,6 +2056,13 @@ impl RuntimeProjectFunctionInstanceFact {
         }
         if key.callable() != callable.runtime() {
             return Err(RuntimeProjectFunctionFactError::InstanceKeyMismatch);
+        }
+        let mut function_type = &callable_type;
+        for _ in 0..key.group().get() {
+            let RuntimeTypeShape::Function { result, .. } = function_type.shape() else {
+                return Err(RuntimeProjectFunctionFactError::InvalidFunctionType);
+            };
+            function_type = result;
         }
         let RuntimeTypeShape::Function {
             parameters: function_parameters,
@@ -2224,7 +2270,7 @@ impl RuntimeProjectFunctionInstanceFact {
             suspension,
             control,
             execution,
-            function_type,
+            callable_type,
             parameters,
             effects,
             attached_default,
@@ -2253,8 +2299,19 @@ impl RuntimeProjectFunctionInstanceFact {
         self.control
     }
 
-    pub const fn function_type(&self) -> &RuntimeNormalizedType {
-        &self.function_type
+    pub const fn callable_type(&self) -> &RuntimeNormalizedType {
+        &self.callable_type
+    }
+
+    pub fn function_type(&self) -> &RuntimeNormalizedType {
+        let mut ty = &self.callable_type;
+        for _ in 0..self.key.group().get() {
+            let RuntimeTypeShape::Function { result, .. } = ty.shape() else {
+                unreachable!("the complete callable group chain was validated at admission");
+            };
+            ty = result;
+        }
+        ty
     }
 
     pub const fn parameters(&self) -> &[RuntimeProjectFunctionParameterAbi] {

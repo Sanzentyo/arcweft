@@ -104,8 +104,8 @@ pub(crate) use continuation::{
     PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
     PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
     PreparedCallPrefixReplayMismatch, PreparedCallResultRef, PreparedCallSiteContinuation,
-    PreparedCallableEffectView, PreparedChildConstraintInitialization,
-    PreparedConstraintInitialization,
+    PreparedCallableEffectProjectionSite, PreparedCallableEffectView,
+    PreparedChildConstraintInitialization, PreparedConstraintInitialization,
 };
 pub use continuation::{
     CheckedAttachedContentApplicationFamily, CheckedCallSite, PreparedCallGraphInvariant,
@@ -167,6 +167,7 @@ pub use join::{
     CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
     CheckedProjectFunctionRuntimeSelectionError, IntrinsicCallableCandidateTag,
     select_project_function_root_runtime, select_project_function_runtime,
+    select_project_function_value_runtime,
 };
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,

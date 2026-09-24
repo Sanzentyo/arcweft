@@ -198,6 +198,7 @@ pub struct RuntimeDialogueEffectProgramFact {
     site: RuntimeDialogueEffectSiteId,
     trigger: RuntimeDialogueEffectTrigger,
     effects: EffectSet,
+    callable_type: RuntimeNormalizedType,
     operation: RuntimeEvaluatedEffectFact,
     captures: Box<[RuntimeDialogueEffectCaptureFact]>,
 }
@@ -207,6 +208,7 @@ impl RuntimeDialogueEffectProgramFact {
         site: RuntimeDialogueEffectSiteId,
         trigger: RuntimeDialogueEffectTrigger,
         effects: EffectSet,
+        callable_type: RuntimeNormalizedType,
         operation: RuntimeEvaluatedEffectFact,
         captures: impl Into<Box<[RuntimeDialogueEffectCaptureFact]>>,
     ) -> Self {
@@ -214,6 +216,7 @@ impl RuntimeDialogueEffectProgramFact {
             site,
             trigger,
             effects,
+            callable_type,
             operation,
             captures: captures.into(),
         }
@@ -229,6 +232,10 @@ impl RuntimeDialogueEffectProgramFact {
 
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
+    }
+
+    pub const fn callable_type(&self) -> &RuntimeNormalizedType {
+        &self.callable_type
     }
 
     pub const fn operation(&self) -> &RuntimeEvaluatedEffectFact {

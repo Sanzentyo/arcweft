@@ -27,13 +27,16 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeFunctionInputBinding, RuntimeFunctionSiteBody,
-    RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeCallableAttachedContract, RuntimeCallableInputSource,
+    RuntimeCallablePosition, RuntimeCallableRetainedInput, RuntimeCallableRetainedRole,
+    RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeDialogueValueRole,
+    RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFunctionInputBinding, RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan,
+    RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
-    RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId, RuntimeLocalDeclarationId,
-    RuntimePlanTypeId,
+    RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId,
+    RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
@@ -94,6 +97,7 @@ pub struct AwbcLowerStats {
     pub stream_plans: usize,
     pub trait_methods: usize,
     pub callable_executables: usize,
+    pub callable_states: usize,
     pub flow_bindings: usize,
     pub flow_executables: usize,
     pub entries: usize,
@@ -116,6 +120,7 @@ impl AwbcLowerStats {
             stream_plans: program.stream_plans.len(),
             trait_methods: program.trait_methods.len(),
             callable_executables: program.callable_executables.len(),
+            callable_states: program.callable_states.len(),
             flow_bindings: program.flow_bindings.len(),
             flow_executables: program.flow_executables.len(),
             entries: program.entries.len(),
@@ -151,6 +156,10 @@ pub struct AwbcInventory {
     trait_methods: BTreeMap<RuntimeTraitMethodId, AwbcTraitMethodId>,
     function_sites: BTreeMap<RuntimeFunctionSiteId, AwbcFunctionId>,
     pending_closures: Vec<PendingAwbcClosure>,
+    pending_callable_states: Vec<(
+        RuntimeCallableStateId,
+        RuntimeCallableStateDefinition<AwbcTypeId, AwbcFunctionId>,
+    )>,
 }
 
 #[derive(Clone, Debug)]
@@ -238,6 +247,7 @@ impl AwbcInventory {
             trait_methods: BTreeMap::new(),
             function_sites: BTreeMap::new(),
             pending_closures: Vec::new(),
+            pending_callable_states: Vec::new(),
         };
         this.intern_string(source_label);
         this
@@ -250,6 +260,137 @@ impl AwbcInventory {
             .map(|(flow, function)| AwbcFlowBinding { flow, function })
             .collect();
         self.program
+    }
+
+    pub(crate) fn lower_callable_states(&mut self, plan: &RuntimePlan) {
+        let mut states = Vec::with_capacity(plan.callable_states().len());
+        for (state_id, definition) in plan.callable_states().iter_with_ids() {
+            let mapped = definition.clone().try_map(
+                |ty| {
+                    self.plan_type(ty)
+                        .ok_or_else(|| format!("callable state type {ty} was not reserved in AWBC"))
+                },
+                |site| {
+                    self.function_site_function(site).ok_or_else(|| {
+                        format!("callable state body site {site} was not lowered to AWBC")
+                    })
+                },
+                |state| Ok::<_, String>(state),
+            );
+            match mapped {
+                Ok(state) => states.push(state),
+                Err(message) => self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("callable_state.{state_id}"),
+                    message,
+                )),
+            }
+        }
+        for (expected_id, state) in std::mem::take(&mut self.pending_callable_states) {
+            if expected_id.index() != states.len() {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("callable_state.{expected_id}"),
+                    "synthetic callable state table identity is not contiguous",
+                ));
+                continue;
+            }
+            states.push(state);
+        }
+        self.program.callable_states = states;
+    }
+
+    pub(crate) fn intern_control_callable_type(
+        &mut self,
+        result: AwbcTypeId,
+    ) -> Result<AwbcTypeId, AwbcLowerDiagnostic> {
+        let semantic = self
+            .program
+            .runtime_types
+            .get(result.index())
+            .map(AwbcRuntimeType::semantic_identity)
+            .ok_or_else(|| {
+                AwbcLowerDiagnostic::error(
+                    format!("callable_type.{result:?}"),
+                    "synthetic control callable result type is absent",
+                )
+            })?;
+        let mut identity = arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder::new();
+        identity.write_tag(0xff05);
+        identity.write_len(0);
+        identity.write_bytes(semantic.as_bytes());
+        self.intern_semantic_type(
+            identity.finish(),
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result,
+            },
+        )
+    }
+
+    pub(crate) fn reserve_control_callable_state(
+        &mut self,
+        plan_state_count: usize,
+        function_type: AwbcTypeId,
+        result: AwbcTypeId,
+        function: AwbcFunctionId,
+        capture_types: &[AwbcTypeId],
+    ) -> Result<RuntimeCallableStateId, AwbcLowerDiagnostic> {
+        let index = plan_state_count
+            .checked_add(self.pending_callable_states.len())
+            .ok_or_else(|| {
+                AwbcLowerDiagnostic::error(
+                    "callable_state",
+                    "synthetic callable state table length overflowed",
+                )
+            })?;
+        let state = RuntimeCallableStateId::from_zero_based(index).ok_or_else(|| {
+            AwbcLowerDiagnostic::error(
+                "callable_state",
+                "synthetic callable state table exceeds the identity domain",
+            )
+        })?;
+        let retained = capture_types
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(position, ty)| {
+                Ok(RuntimeCallableRetainedInput {
+                    role: RuntimeCallableRetainedRole::Capture {
+                        position: u32::try_from(position).map_err(|_| {
+                            AwbcLowerDiagnostic::error(
+                                "callable_state",
+                                "synthetic callable capture count exceeds u32",
+                            )
+                        })?,
+                    },
+                    ty,
+                })
+            })
+            .collect::<Result<Box<[_]>, AwbcLowerDiagnostic>>()?;
+        self.pending_callable_states.push((
+            state,
+            RuntimeCallableStateDefinition {
+                function_type,
+                origin: state,
+                position: RuntimeCallablePosition::Unapplied,
+                retained,
+                parameters: Box::new([]),
+                result,
+                attached: RuntimeCallableAttachedContract::None,
+                transition: RuntimeCallableTransition::Invoke {
+                    function,
+                    captures: (0..capture_types.len())
+                        .map(|position| RuntimeCallableInputSource::Retained {
+                            position: u32::try_from(position)
+                                .expect("capture position was checked above"),
+                        })
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                    arguments: Box::new([]),
+                },
+                partials: Box::new([]),
+            },
+        ));
+        Ok(state)
     }
 
     pub fn lower_pure_program_bindings(&mut self, plan: &RuntimePlan) {
@@ -735,7 +876,7 @@ impl AwbcInventory {
                 );
             }
             AwbcRuntimeTypeShape::Tuple(_)
-            | AwbcRuntimeTypeShape::Sequence(_)
+            | AwbcRuntimeTypeShape::Sequence { .. }
             | AwbcRuntimeTypeShape::Variant { .. }
             | AwbcRuntimeTypeShape::Choice(_)
             | AwbcRuntimeTypeShape::Nominal { .. }
@@ -988,11 +1129,8 @@ impl AwbcInventory {
             RuntimeValue::Iterator(_) => {
                 panic!("runtime iterator state cannot be encoded as an AWBC constant")
             }
-            RuntimeValue::Function(_) => {
-                panic!("runtime function state cannot be encoded as an AWBC constant")
-            }
-            RuntimeValue::ProjectContinuation(_) => {
-                panic!("runtime project continuation cannot be encoded as an AWBC constant")
+            RuntimeValue::Callable(_) => {
+                panic!("runtime callable state cannot be encoded as an AWBC constant")
             }
             RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
                 shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
@@ -1069,7 +1207,7 @@ impl AwbcInventory {
                         .collect(),
                 )
             }
-            (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence(item)) => {
+            (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence { item, .. }) => {
                 AwbcConstant::Sequence(
                     values
                         .clone()

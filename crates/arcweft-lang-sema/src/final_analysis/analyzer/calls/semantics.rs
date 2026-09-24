@@ -37,19 +37,6 @@ pub(super) fn physical_evaluation_kind(
     PhysicalArgumentEvaluationKind::Authored
 }
 
-pub(in super::super) fn source_callable_schema_type(
-    schema: &crate::callable::CallableSignatureSchema,
-) -> Option<TypeKind> {
-    schema
-        .project_function_type_from_group(
-            CallableGroupIndex::ZERO,
-            schema.effects().fixed_row()?,
-            || schema.value_type().cloned().ok_or(()),
-            |_, parameter| parameter.declared_type().cloned().ok_or(()),
-        )
-        .ok()
-}
-
 impl Analyzer<'_, '_, '_> {
     pub(super) fn checked_callable_effect_authority(
         &self,

@@ -1,5 +1,8 @@
 //! Runtime-plan lowering from one accepted final-HIR project generation.
 
+#[path = "final_flow/callable_states.rs"]
+mod callable_states;
+
 #[path = "final_flow/control_locals.rs"]
 mod control_locals;
 #[path = "final_flow/line_plan.rs"]
@@ -36,16 +39,14 @@ use arcweft_core::plan::{
     RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed, RuntimeLineId,
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAbiSeed,
-    RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresenceSeed,
-    RuntimeProjectCallDefaultCaptureSource, RuntimeProjectCallDefaultFunctionSeed,
-    RuntimeProjectCallFixedMaterializationSeed, RuntimeProjectCallInputSeed,
+    RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
+    RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallFixedMaterializationSeed,
     RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
-    RuntimeProjectCallOutcomeSeed, RuntimeProjectCallPlanSeed,
-    RuntimeProjectCallRestMaterializationSeed, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperOrigin, RuntimePureHelperSeedId, RuntimePureInputType, RuntimePureOutputType,
-    RuntimePureProgramBindingSeed, RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
+    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed,
+    RuntimePureHelperDeclarationSeed, RuntimePureHelperOrigin, RuntimePureHelperSeedId,
+    RuntimePureInputType, RuntimePureOutputType, RuntimePureProgramBindingSeed,
+    RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity,
+    RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::{
@@ -434,6 +435,7 @@ struct PendingDialogueContentDefinition<'facts> {
     effect_sites: Vec<(
         arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
         RuntimeFunctionSiteSeedId,
+        RuntimeSemanticTypeId,
         Box<[RuntimeExprSeed]>,
     )>,
     marks: Box<[String]>,
@@ -451,9 +453,8 @@ struct FinalLoweringContext<'project, 'data> {
     project: HirAnalysisProjectView<'project>,
     facts: &'data RuntimePlanSemanticFacts,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
+    project_callable_states: &'data callable_states::ProjectCallableStates,
     project_function_sites:
-        &'data BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
-    project_default_function_sites:
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
     project_function_locals:
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
@@ -508,6 +509,7 @@ impl FinalLoweringContext<'_, '_> {
         .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals)
         .with_closure_sites(self.closure_sites)
+        .with_project_callable_states(self.project_callable_states)
     }
 
     fn scoped_expr_lowerer<'a>(
@@ -1266,6 +1268,13 @@ pub fn lower_runtime_plan_with_stats(
             &mut builder,
             &mut errors,
         );
+    let project_callable_states = callable_states::materialize(
+        facts,
+        &project_function_sites,
+        &project_default_function_sites,
+        &mut builder,
+        &mut errors,
+    );
     rust_defaults::lower(facts, &mut builder, &mut errors);
     let pure_program_definitions = reserve_pure_programs(facts, &locals, &mut builder, &mut errors);
     let (trait_methods, trait_definitions) =
@@ -1283,8 +1292,8 @@ pub fn lower_runtime_plan_with_stats(
         project,
         facts,
         locals: &locals,
+        project_callable_states: &project_callable_states,
         project_function_sites: &project_function_sites,
-        project_default_function_sites: &project_default_function_sites,
         project_function_locals: &project_instance_locals,
         closure_sites: &closure_sites,
         closure_locals: &closure_locals,
@@ -3200,10 +3209,11 @@ fn lower_dialogue_content<'facts>(
             effect_sites: definition
                 .effect_sites
                 .into_iter()
-                .map(|(site, function, captures)| {
+                .map(|(site, function, callable_type, captures)| {
                     arcweft_core::plan::RuntimeDialogueEffectSiteSeed {
                         site,
                         function,
+                        callable_type,
                         captures,
                     }
                 })
@@ -3650,7 +3660,12 @@ fn lower_dialogue_application<'facts>(
                             })
                         })
                         .collect::<Option<Vec<_>>>()?;
-                    Some((effect.site(), function, captures.into_boxed_slice()))
+                    Some((
+                        effect.site(),
+                        function,
+                        effect.callable_type().identity(),
+                        captures.into_boxed_slice(),
+                    ))
                 })
                 .ok_or_else(|| {
                     format!(
@@ -3807,16 +3822,12 @@ fn lower_controller_callable(
                 callable.role().callable.as_str()
             ))
         })?;
-    let site = context
-        .project_function_sites
+    let state = context
+        .project_callable_states
         .get(root.instance())
+        .and_then(|states| states.first())
         .cloned()
-        .ok_or_else(|| {
-            RuntimePlanLowerError::new(format!(
-                "Entry controller `{}` project-function root has no reserved function site",
-                callable.role().callable.as_str()
-            ))
-        })?;
+        .ok_or_else(|| RuntimePlanLowerError::new("entry controller callable state is absent"))?;
     let result_ty = match instance.function_type().shape() {
         RuntimeTypeShape::Function { result, parameters }
             if parameters.is_empty()
@@ -3851,14 +3862,18 @@ fn lower_controller_callable(
     );
     let project_call = RuntimeFlowOpSeed::ProjectCall {
         plan: RuntimeProjectCallPlanSeed {
-            input: RuntimeProjectCallInputSeed::Direct,
+            callee: RuntimeExprSeed::new(
+                instance.callable_type().identity(),
+                arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
+                    state: state.clone(),
+                    captures: Box::new([]),
+                },
+            ),
+            state,
             completed_group: 0,
             operands: Box::new([]),
             ordinary: Box::new([]),
             attached: None,
-            outcome: RuntimeProjectCallOutcomeSeed::Invoke {
-                function_site: site,
-            },
         },
         result: result_pattern,
     };
@@ -4183,10 +4198,7 @@ struct FinalFlowLowerer<'a> {
     trait_methods: &'a BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
-    project_function_sites:
-        &'a BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
-    project_default_function_sites:
-        &'a BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeFunctionSiteSeedId>,
+    project_callable_states: &'a callable_states::ProjectCallableStates,
     dialogue_effect_sites: &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     dialogue_content: &'a BTreeMap<
         arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
@@ -4281,8 +4293,7 @@ impl<'a> FinalFlowLowerer<'a> {
             trait_methods: context.trait_methods,
             function_sites: context.function_sites,
             closure_sites: context.closure_sites,
-            project_function_sites: context.project_function_sites,
-            project_default_function_sites: context.project_default_function_sites,
+            project_callable_states: context.project_callable_states,
             dialogue_effect_sites: context.dialogue_effect_sites,
             dialogue_content: context.dialogue_content,
             control: context.control,
@@ -4352,6 +4363,7 @@ impl<'a> FinalFlowLowerer<'a> {
             (&self.control.pipes, &self.control.tries),
         )
         .with_closure_sites(self.closure_sites)
+        .with_project_callable_states(self.project_callable_states)
         .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals);
         lowerer.with_scoped_semantics(self.semantic_facts)
@@ -5298,26 +5310,37 @@ impl<'a> FinalFlowLowerer<'a> {
             ))
         })?;
         let lowerer = self.expr_lowerer().with_overrides(overrides.clone());
-        let input = match checked.input() {
+        let instance = checked.outcome().callable_instance();
+        let state = self
+            .project_callable_states
+            .get(instance)
+            .and_then(|states| states.get(call.completed_group().get()))
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "project callable {expression:?} has no admitted group state"
+                ))
+            })?;
+        let callee = match checked.input() {
             crate::semantic_facts::RuntimeProjectFunctionCallInput::Direct => {
-                RuntimeProjectCallInputSeed::Direct
+                let ty = self
+                    .facts
+                    .project_function_instance(instance)
+                    .ok_or_else(|| RuntimePlanLowerError::new("callable instance is absent"))?
+                    .callable_type()
+                    .identity();
+                RuntimeExprSeed::new(
+                    ty,
+                    arcweft_core::plan::RuntimeExprSeedKind::MakeCallable {
+                        state: state.clone(),
+                        captures: Box::new([]),
+                    },
+                )
             }
-            crate::semantic_facts::RuntimeProjectFunctionCallInput::Continuation {
-                callee,
-                abi,
-            } => RuntimeProjectCallInputSeed::Continuation {
-                callee: lowerer.lower(*callee).map_err(RuntimePlanLowerError::new)?,
-                expected_abi: RuntimeProjectCallAbiSeed {
-                    lineage: abi.lineage(),
-                    function_type: abi.function_type().identity(),
-                    prefix_types: abi
-                        .prefix_types()
-                        .iter()
-                        .map(RuntimeNormalizedType::identity)
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
-                },
-            },
+            crate::semantic_facts::RuntimeProjectFunctionCallInput::Value { callee }
+            | crate::semantic_facts::RuntimeProjectFunctionCallInput::Continuation {
+                callee, ..
+            } => lowerer.lower(*callee).map_err(RuntimePlanLowerError::new)?,
         };
         let mut operands = call
             .operands()
@@ -5386,59 +5409,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     RuntimeResolvedAttachedContent::DefaultedPresent { .. } => {
                         RuntimeProjectCallAttachedPresenceSeed::DefaultedPresent
                     }
-                    RuntimeResolvedAttachedContent::DefaultedOmitted { .. } => {
-                        let crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Invoke {
-                            instance,
-                        } = checked.outcome()
-                        else {
-                            return Err(RuntimePlanLowerError::new(format!(
-                                "project call {expression:?} omitted a default before terminal invocation"
-                            )));
-                        };
-                        let default_site = self
-                            .project_default_function_sites
-                            .get(instance)
-                            .cloned()
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(format!(
-                                    "project call {expression:?} has no reserved attached default site for {:?}",
-                                    instance
-                                ))
-                            })?;
-                        let default = self
-                            .facts
-                            .project_function_instance(instance)
-                            .and_then(RuntimeProjectFunctionInstanceFact::attached_default)
-                            .ok_or_else(|| {
-                                RuntimePlanLowerError::new(format!(
-                                    "project call {expression:?} has no checked attached default for {:?}",
-                                    instance
-                                ))
-                            })?;
-                        let captures = default
-                            .captures()
-                            .iter()
-                            .map(|capture| match capture.source() {
-                                RuntimeProjectFunctionParameterSource::ContinuationPrefix {
-                                    position,
-                                } => RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix {
-                                    position,
-                                },
-                                RuntimeProjectFunctionParameterSource::CurrentGroup {
-                                    position,
-                                } => RuntimeProjectCallDefaultCaptureSource::CurrentLogical {
-                                    position,
-                                },
-                            })
-                            .collect::<Vec<_>>()
-                            .into_boxed_slice();
-                        RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted(
-                            RuntimeProjectCallDefaultFunctionSeed {
-                                site: default_site,
-                                captures,
-                            },
-                        )
-                    }
+                    RuntimeResolvedAttachedContent::DefaultedOmitted { .. } => RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted,
                 };
                 Ok(RuntimeProjectCallAttachedMaterializationSeed {
                     abi_ty: descriptor.abi_ty().identity(),
@@ -5485,44 +5456,9 @@ impl<'a> FinalFlowLowerer<'a> {
             })
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()?
             .into_boxed_slice();
-        let outcome = match checked.outcome() {
-            crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Continue {
-                abi,
-                next_group,
-            } => RuntimeProjectCallOutcomeSeed::Continue {
-                result_abi: RuntimeProjectCallAbiSeed {
-                    lineage: abi.lineage(),
-                    function_type: abi.function_type().identity(),
-                    prefix_types: abi
-                        .prefix_types()
-                        .iter()
-                        .map(RuntimeNormalizedType::identity)
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
-                },
-                next_group: u32::try_from(next_group.get()).map_err(|_| {
-                    RuntimePlanLowerError::new(format!(
-                        "project call {expression:?} next group exceeds checked limits"
-                    ))
-                })?,
-            },
-            crate::semantic_facts::RuntimeProjectFunctionCallOutcome::Invoke { instance } => {
-                RuntimeProjectCallOutcomeSeed::Invoke {
-                    function_site: self
-                        .project_function_sites
-                        .get(instance)
-                        .cloned()
-                        .ok_or_else(|| {
-                            RuntimePlanLowerError::new(format!(
-                                "project call {expression:?} has no reserved instance site for {:?}",
-                                instance
-                            ))
-                        })?,
-                }
-            }
-        };
         Ok(RuntimeProjectCallPlanSeed {
-            input,
+            callee,
+            state,
             completed_group: u32::try_from(call.completed_group().get()).map_err(|_| {
                 RuntimePlanLowerError::new(format!(
                     "project call {expression:?} group exceeds checked limits"
@@ -5531,7 +5467,6 @@ impl<'a> FinalFlowLowerer<'a> {
             operands: operands.into_boxed_slice(),
             ordinary,
             attached,
-            outcome,
         })
     }
 

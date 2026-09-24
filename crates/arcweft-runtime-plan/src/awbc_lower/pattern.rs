@@ -9,7 +9,9 @@ use arcweft_core::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimePattern, RuntimePatternKind,
     RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
 };
-use arcweft_core::plan::{RuntimeAgentTypeProjection, RuntimePlan, RuntimePlanTypeProjection};
+use arcweft_core::plan::{
+    RuntimeAgentTypeProjection, RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+};
 use arcweft_core::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
 #[cfg(test)]
@@ -274,9 +276,10 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Iterator(item) => {
             AwbcRuntimeTypeShape::Iterator(reserved_plan_type(inventory, *item)?)
         }
-        RuntimePlanTypeProjection::Sequence { item, .. } => {
-            AwbcRuntimeTypeShape::Sequence(reserved_plan_type(inventory, *item)?)
-        }
+        RuntimePlanTypeProjection::Sequence { kind, item } => AwbcRuntimeTypeShape::Sequence {
+            kind: *kind,
+            item: reserved_plan_type(inventory, *item)?,
+        },
         RuntimePlanTypeProjection::Array { item, length } => AwbcRuntimeTypeShape::Array {
             item: reserved_plan_type(inventory, *item)?,
             length: *length,
@@ -599,9 +602,12 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::EntityReference => AwbcRuntimeTypeShape::EntityRef,
         RuntimeCheckedType::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimeCheckedType::Bytes => AwbcRuntimeTypeShape::Bytes,
-        RuntimeCheckedType::Sequence(item) => {
-            AwbcRuntimeTypeShape::Sequence(intern_runtime_type(inventory, item))
-        }
+        RuntimeCheckedType::Sequence(item) => AwbcRuntimeTypeShape::Sequence {
+            // `RuntimeCheckedType` represents a kind-erased value predicate.
+            // Keep it distinct from the exact Vec family used by callable rest bindings.
+            kind: RuntimePlanSequenceKind::Seq,
+            item: intern_runtime_type(inventory, item),
+        },
         RuntimeCheckedType::Map { kind, key, value } => AwbcRuntimeTypeShape::Map {
             kind: *kind,
             key: intern_runtime_type(inventory, key),

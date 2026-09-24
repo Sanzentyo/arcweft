@@ -32,7 +32,8 @@ use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
 mod effects;
 use effects::PreparedEffectDelta;
 pub(crate) use effects::{
-    PreparedCallResultRef, PreparedCallableEffectRows, PreparedCallableEffectView,
+    PreparedCallResultRef, PreparedCallableEffectProjectionSite, PreparedCallableEffectRows,
+    PreparedCallableEffectView,
 };
 
 /// The typed semantic family of an attached-content call site.
@@ -1128,7 +1129,7 @@ impl<P, U> PreparedCallGraph<P, U> {
 
     pub(crate) fn request_effect_projection(
         &mut self,
-        site: CheckedCallSite,
+        site: PreparedCallableEffectProjectionSite,
         candidate: &super::PreparedResolvedCallable,
     ) -> Result<PreparedCallResultRef, CallConstraintInvariant> {
         self.ensure_active_delta()?;

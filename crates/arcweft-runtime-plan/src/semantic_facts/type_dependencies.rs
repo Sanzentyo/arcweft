@@ -35,7 +35,7 @@ impl RuntimeResolvedValue {
         roots: &mut Vec<&'a RuntimeNormalizedType>,
     ) {
         match self {
-            Self::ProjectCallable(callable) => callable.append_normalized_types(roots),
+            Self::ProjectCallable { callable, .. } => callable.append_normalized_types(roots),
             Self::Local(_)
             | Self::ProjectItem(_)
             | Self::DialogueLine(_)
@@ -184,6 +184,7 @@ impl RuntimeContentFragmentFact {
     ) {
         roots.extend(self.values().iter().map(RuntimeDialogueValueExpression::ty));
         for effect in self.effects() {
+            roots.push(effect.callable_type());
             roots.extend(
                 effect
                     .captures()
@@ -211,7 +212,7 @@ impl RuntimeProjectFunctionInstanceFact {
         &'a self,
         roots: &mut Vec<&'a RuntimeNormalizedType>,
     ) {
-        roots.push(self.function_type());
+        roots.push(self.callable_type());
         roots.extend(
             self.parameters()
                 .iter()

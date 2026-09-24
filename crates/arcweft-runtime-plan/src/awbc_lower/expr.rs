@@ -13,14 +13,15 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
 use arcweft_core::plan::{
-    RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-    RuntimeReceiverMode,
+    RuntimeCallableAttachedContract, RuntimeCallableTransition, RuntimeFunctionSiteBody,
+    RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimeReceiverMode,
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
     RuntimeFieldProjection, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
     RuntimeUnaryOp,
 };
+use std::collections::BTreeSet;
 
 /// Expression lowerer used by flow/source/stream builders.
 pub struct AwbcExprLowerer<'a, 'b, 'plan> {
@@ -165,20 +166,14 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     .collect();
                 let effects = effects
                     .iter()
-                    .map(|effect| {
-                        let function = self
-                            .inventory
-                            .function_site_function(effect.function)
-                            .expect("admitted content callback has an AWBC function identity");
-                        AwbcDialogueContentEffectBinding {
-                            site: effect.site,
-                            function,
-                            captures: effect
-                                .captures
-                                .iter()
-                                .map(|capture| self.lower(capture))
-                                .collect(),
-                        }
+                    .map(|effect| AwbcDialogueContentEffectBinding {
+                        site: effect.site,
+                        state: effect.state,
+                        captures: effect
+                            .captures
+                            .iter()
+                            .map(|capture| self.lower(capture))
+                            .collect(),
                     })
                     .collect();
                 let destination = self
@@ -401,10 +396,19 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 self.lower(body)
             }
             RuntimeExprKind::Call { callee, args } => self.lower_call(expr.ty(), callee, args),
-            RuntimeExprKind::Function { site, captures } => {
-                self.lower_function_site(*site, captures, expr.ty())
+            RuntimeExprKind::MakeCallable { state, captures } => {
+                let captures = captures.iter().map(|capture| self.lower(capture)).collect();
+                let dst = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory.push_instruction(AwbcInstruction::MakeCallable {
+                    dst,
+                    state: *state,
+                    captures,
+                });
+                dst
             }
-            RuntimeExprKind::Apply { callee, args } => {
+            RuntimeExprKind::ApplyGroup { callee, args } => {
                 self.lower_function_application(callee, args, expr.ty())
             }
             RuntimeExprKind::TraitCall {
@@ -598,7 +602,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
     }
 
     /// Evaluates source operands once, then assembles the admitted positional
-    /// ABI for the VM's function invocation instruction.
+    /// ABI for the VM's callable-group instruction.
     pub(super) fn lower_function_application(
         &mut self,
         callee: &RuntimeExpr,
@@ -672,80 +676,8 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             .frame
             .temp(admitted_plan_type(self.inventory, self.plan, result_type));
         self.inventory
-            .push_instruction(AwbcInstruction::ApplyFunction { dst, callee, args });
+            .push_instruction(AwbcInstruction::ApplyGroup { dst, callee, args });
         dst
-    }
-
-    fn lower_function_site(
-        &mut self,
-        site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
-        captures: &[RuntimeExpr],
-        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
-    ) -> AwbcRegisterId {
-        let function = self.prepare_function_site(site);
-        let function_site = self
-            .plan
-            .function_sites()
-            .get(site)
-            .expect("function site was checked by prepare_function_site");
-        let capture_inputs = function_site.capture_inputs().collect::<Vec<_>>();
-        if capture_inputs.len() != captures.len() {
-            panic!(
-                "admitted function site {site} has {} capture inputs but function expression supplied {} captures at {}",
-                capture_inputs.len(),
-                captures.len(),
-                self.path
-            );
-        }
-        let params = function_site
-            .parameter_inputs()
-            .map(|input| self.inventory.local_name(input.input_local()))
-            .collect();
-        let capture_names = capture_inputs
-            .iter()
-            .map(|input| self.inventory.local_name(input.input_local()))
-            .collect();
-        let captures = captures.iter().map(|capture| self.lower(capture)).collect();
-        let dst = self
-            .frame
-            .temp(admitted_plan_type(self.inventory, self.plan, result_type));
-        self.inventory
-            .push_instruction(AwbcInstruction::MakeFunction {
-                dst,
-                function,
-                params,
-                capture_names,
-                captures,
-            });
-        dst
-    }
-
-    /// Reserves one plan function site and queues its body for normal AWBC
-    /// lowering. Outer capture expressions are retained by the Function
-    /// expression itself; the site owns only its synthetic input ABI rows.
-    pub(crate) fn prepare_function_site(
-        &mut self,
-        site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
-    ) -> arcweft_core::awbc::schema::AwbcFunctionId {
-        let Some(function_site) = self.plan.function_sites().get(site) else {
-            panic!(
-                "admitted function site {site} is absent from the RuntimePlan at {}",
-                self.path
-            );
-        };
-        let already_lowered = self.inventory.function_site_function(site).is_some();
-        let function = self.inventory.reserve_function_site_slot(site);
-        if !already_lowered {
-            self.inventory
-                .push_pending_closure(PendingAwbcClosure::FunctionSite {
-                    function,
-                    inputs: function_site.inputs().to_vec().into_boxed_slice(),
-                    result: function_site.result(),
-                    body: function_site.body().clone(),
-                    path: format!("{}.function.{site}", self.path),
-                });
-        }
-        function
     }
 
     fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
@@ -760,24 +692,53 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 path: format!("{}.control.{}", self.path, function.0),
             });
 
-        let callee = self.frame.temp(self.inventory.dynamic_ty());
-        let capture_names = captures
+        let capture_types: Vec<_> = captures
             .iter()
-            .map(|capture| self.inventory.local_name(capture.local))
+            .map(|capture| {
+                admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    local_type(self.plan, capture.local),
+                )
+            })
             .collect();
-        self.inventory
-            .push_instruction(AwbcInstruction::MakeFunction {
-                dst: callee,
+        let result = admitted_plan_type(self.inventory, self.plan, expr.ty());
+        let function_type = self
+            .inventory
+            .intern_control_callable_type(result)
+            .unwrap_or_else(|diagnostic| {
+                panic!(
+                    "cannot lower synthetic callable at {}: {}",
+                    self.path, diagnostic.message
+                )
+            });
+        let state = self
+            .inventory
+            .reserve_control_callable_state(
+                self.plan.callable_states().len(),
+                function_type,
+                result,
                 function,
-                params: Vec::new(),
-                capture_names,
+                &capture_types,
+            )
+            .unwrap_or_else(|diagnostic| {
+                panic!(
+                    "cannot lower synthetic callable state at {}: {}",
+                    self.path, diagnostic.message
+                )
+            });
+        let callee = self.frame.temp(function_type);
+        self.inventory
+            .push_instruction(AwbcInstruction::MakeCallable {
+                dst: callee,
+                state,
                 captures: captures.iter().map(|capture| capture.register).collect(),
             });
         let dst = self
             .frame
             .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
         self.inventory
-            .push_instruction(AwbcInstruction::ApplyFunction {
+            .push_instruction(AwbcInstruction::ApplyGroup {
                 dst,
                 callee,
                 args: Vec::new(),
@@ -851,6 +812,24 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
 }
 
 pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &RuntimePlan) {
+    let mut callable_sites = BTreeSet::new();
+    for (_, state) in plan.callable_states().iter_with_ids() {
+        if let RuntimeCallableTransition::Invoke { function, .. } = &state.transition {
+            callable_sites.insert(*function);
+        }
+        if let RuntimeCallableAttachedContract::Defaulted { default, .. } = &state.attached {
+            callable_sites.insert(default.function);
+        }
+    }
+    for site in callable_sites {
+        let _ = ensure_function_site(
+            inventory,
+            plan,
+            site,
+            &format!("callable state body {site}"),
+        );
+    }
+
     while let Some(closure) = inventory.pop_pending_closure() {
         match closure {
             PendingAwbcClosure::FunctionSite {
@@ -964,7 +943,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                     function,
                     AwbcFunction {
                         public_id: None,
-                        kind: AwbcFunctionKind::Synthetic,
+                        kind: AwbcFunctionKind::Ordinary,
                         signature,
                         frame_layout: layout,
                         blocks: AwbcTableRange::new(block.0, block_len),
@@ -979,6 +958,33 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             } => unreachable!("control-expression thunks cannot have executable bodies"),
         }
     }
+}
+
+fn ensure_function_site(
+    inventory: &mut AwbcInventory,
+    plan: &RuntimePlan,
+    site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
+    path: &str,
+) -> Option<arcweft_core::awbc::schema::AwbcFunctionId> {
+    let Some(declaration) = plan.function_sites().get(site) else {
+        inventory.diagnostic(AwbcLowerDiagnostic::error(
+            path,
+            format!("runtime function site {site} is absent from the RuntimePlan"),
+        ));
+        return None;
+    };
+    let already_reserved = inventory.function_site_function(site).is_some();
+    let function = inventory.reserve_function_site_slot(site);
+    if !already_reserved {
+        inventory.push_pending_closure(PendingAwbcClosure::FunctionSite {
+            function,
+            inputs: declaration.inputs().to_vec().into_boxed_slice(),
+            result: declaration.result(),
+            body: declaration.body().clone(),
+            path: format!("{path}.function.{site}"),
+        });
+    }
+    Some(function)
 }
 
 fn local_type(
@@ -1372,7 +1378,7 @@ fn lower_standard_sequence_map(
         index,
     });
     let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
-    inventory.push_instruction(AwbcInstruction::ApplyFunction {
+    inventory.push_instruction(AwbcInstruction::ApplyGroup {
         dst: mapped,
         callee: mapping,
         args: vec![item],
@@ -1447,7 +1453,7 @@ fn lower_standard_array_map(
             index: index_register,
         });
         let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
-        inventory.push_instruction(AwbcInstruction::ApplyFunction {
+        inventory.push_instruction(AwbcInstruction::ApplyGroup {
             dst: mapped,
             callee: mapping,
             args: vec![item],
@@ -1521,7 +1527,7 @@ fn lower_standard_variant_map(
         mode: AwbcBindMode::Declare,
     });
     let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
-    inventory.push_instruction(AwbcInstruction::ApplyFunction {
+    inventory.push_instruction(AwbcInstruction::ApplyGroup {
         dst: mapped,
         callee: mapping,
         args: vec![success_payload.expect("success variant has one payload")],

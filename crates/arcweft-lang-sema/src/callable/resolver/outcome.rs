@@ -837,6 +837,49 @@ impl PreparedResolvedCallable {
             .projected_function_type_from_group(self.base_call_group(), effects)
     }
 
+    /// Projects a declaration value through the same group topology, using
+    /// its checked terminal invocation row and any body-inferred result.
+    pub(crate) fn callable_value_type(
+        &self,
+        terminal: CallableTerminalEffectProjection<'_>,
+    ) -> Result<CallableProjection<TypeKind>, super::super::CallConstraintInvariant> {
+        match terminal {
+            CallableTerminalEffectProjection::Known {
+                effects,
+                result_schema,
+            } => {
+                let schema = self.schema();
+                schema
+                    .project_function_type_from_group(
+                        self.base_call_group(),
+                        effects,
+                        || {
+                            result_schema
+                                .unwrap_or_else(|| schema.result_schema())
+                                .value_type()
+                                .cloned()
+                                .ok_or(
+                                    super::super::CallConstraintInvariant::MalformedSchemaInventory,
+                                )
+                        },
+                        |_, parameter| {
+                            parameter.declared_type().cloned().ok_or(
+                                super::super::CallConstraintInvariant::MalformedSchemaInventory,
+                            )
+                        },
+                    )
+                    .map(CallableProjection::Ready)
+                    .map_err(Into::into)
+            }
+            CallableTerminalEffectProjection::Pending(checked) => {
+                Ok(CallableProjection::Pending(CallableProjectionPending {
+                    checked: checked.clone(),
+                    group: self.base_call_group(),
+                }))
+            }
+        }
+    }
+
     /// Checks a value callee against the authority that selected it. A saved
     /// continuation already carries its quantified function type and frozen
     /// solution; its next application opens that solution, not the value's

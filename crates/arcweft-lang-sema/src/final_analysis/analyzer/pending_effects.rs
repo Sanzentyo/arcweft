@@ -4,8 +4,9 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use crate::{
     callable::{
-        CallableProjection, CallableTerminalEffectProjection, CheckedCallSite,
-        CheckedCallableDeclaration, PreparedResolvedCallable,
+        CallableCandidateId, CallableInstantiation, CallableProjection,
+        CallableTerminalEffectProjection, CheckedCallSite, CheckedCallableDeclaration,
+        PreparedCallableEffectProjectionSite, PreparedResolvedCallable,
     },
     effect_row::EffectRow,
     final_analysis::{
@@ -20,10 +21,74 @@ use super::{
     Analyzer,
     callable_effect_graph::prepared_fixed_call_effect_rows,
     executable_ingress::{PreparedExecutableDeclarationInventory, PreparedExecutableIngressFacts},
+    expression_error::AnalyzerExpressionError,
     items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
+    state::CandidateFactTransactionAction,
 };
 
 impl Analyzer<'_, '_, '_> {
+    /// A named value needs its full latent arrow, including inferred effects,
+    /// without claiming that the expression invoked the declaration.
+    pub(super) fn prepare_named_callable_value_type(
+        &mut self,
+        owner: arcweft_lang_hir::identity::ExprId,
+        callable: &crate::final_analysis::CheckedProjectCallable,
+    ) -> Result<crate::types::TypeKind, AnalyzerExpressionError> {
+        let staged = self.staged_callables.as_ref().ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+        })?;
+        let pending = staged
+            .builder
+            .pending_by_candidate(&CallableCandidateId::Project(
+                callable.declaration().clone(),
+            ))
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+            })?;
+        let record = Arc::clone(pending.record());
+        let candidate = PreparedResolvedCallable::try_from_checked_record(
+            pending.id().clone(),
+            Arc::clone(&record),
+            crate::callable::SignatureOrigin::Project {
+                declaration: callable.declaration().clone(),
+                binding: None,
+            },
+            CallableInstantiation::None,
+            Vec::new(),
+            Some(record.authority()),
+            &self.catalogs.callable_limits,
+        )
+        .map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
+        })?;
+        let result = self.run_candidate_fact_transaction(
+            |this, _, _| -> Result<_, AnalyzerExpressionError> {
+                this.prepare_callable_body_effects(
+                    PreparedCallableEffectProjectionSite::CallableValue(owner),
+                    &candidate,
+                )
+                .map_err(AnalyzerExpressionError::fatal)?;
+                let terminal = this
+                    .source_callable_terminal_effects(&candidate)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let ty = candidate.callable_value_type(terminal).map_err(|_| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CheckedCallableCatalog,
+                    )
+                })?;
+                let CallableProjection::Ready(ty) = ty else {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CheckedCallableCatalog,
+                    ));
+                };
+                Ok(CandidateFactTransactionAction::Commit(ty))
+            },
+        )?;
+        result
+            .into_committed()
+            .map_err(AnalyzerExpressionError::fact)
+    }
+
     /// Only a projection that needs an inferred terminal row enters this
     /// prerequisite. Ordinary terminal calls retain their typed effect edge.
     pub(super) fn prepare_pending_result_projection(
@@ -41,14 +106,14 @@ impl Analyzer<'_, '_, '_> {
             || (result_schema_has_omitted_function_rows(candidate.schema())
                 && effects.inferred_result_schema().is_none())
         {
-            self.prepare_callable_body_effects(site, candidate)?;
+            self.prepare_callable_body_effects(site.into(), candidate)?;
         }
         Ok(())
     }
 
     fn prepare_callable_body_effects(
         &mut self,
-        site: CheckedCallSite,
+        site: PreparedCallableEffectProjectionSite,
         candidate: &PreparedResolvedCallable,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let terminal = self.source_callable_terminal_effects(candidate)?;
@@ -180,7 +245,7 @@ impl Analyzer<'_, '_, '_> {
             })
             .collect::<Vec<_>>();
         for (site, candidate, effect_projection) in calls {
-            self.prepare_callable_body_effects(site, &candidate)?;
+            self.prepare_callable_body_effects(site.into(), &candidate)?;
             let CallableTerminalEffectProjection::Known { effects: row, .. } =
                 self.source_callable_terminal_effects(&candidate)?
             else {

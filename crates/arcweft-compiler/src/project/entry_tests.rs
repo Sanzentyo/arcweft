@@ -81,7 +81,10 @@ fn controller_function_body<'a>(
         panic!("controller adapter must call its sole function site and return its result");
     };
     let call = plan.project_call_sites().get(*site).unwrap().plan();
-    let arcweft_core::plan::RuntimeProjectCallOutcome::Invoke { function_site } = call.outcome()
+    let arcweft_core::plan::RuntimeCallableTransition::Invoke {
+        function: function_site,
+        ..
+    } = &plan.callable_states().get(call.state()).unwrap().transition
     else {
         panic!("controller entry must invoke its terminal function site");
     };
