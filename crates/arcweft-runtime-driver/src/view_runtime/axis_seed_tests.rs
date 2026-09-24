@@ -837,6 +837,7 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         text_key: arcweft_id::TextKey::try_new("text.restore.collision").unwrap(),
         effective: arcweft_text_model::CharacterDialoguePresentationConfig {
             view: arcweft_view::ViewId::try_new("view.Dialogue").unwrap(),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

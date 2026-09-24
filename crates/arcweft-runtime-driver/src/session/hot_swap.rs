@@ -1,14 +1,16 @@
 //! Atomic bundle and patch hot-swap transactions.
 
+#[cfg(test)]
+mod presentation_generation_tests;
+
 use super::{
     Arc, ArcweftBundle, BundleHotSwapError, BundleHotSwapReport, BundlePatchArtifact,
     BundlePatchReadiness, BundlePatchReadinessReport, BundlePresentationSnapshot, BundleSession,
-    BundleSessionArtifactIdentity, BundleSessionError, BundleView, GenerationId,
+    BundleSessionArtifactIdentity, BundleSessionError, BundleView, BundleViewRuntime, GenerationId,
     GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration, ReadBudget,
     SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
-    build_session_runtime, build_session_runtime_preserving_executor, classify_swap_for_entry,
-    decode_patch_bundle, project_view_resources, reconciled_root_handles_for_restore,
-    validate_virtual_list_scroll_owner,
+    build_session_runtime, classify_swap_for_entry, decode_patch_bundle, project_view_resources,
+    reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -60,6 +62,14 @@ impl BundleSession {
                 compatibility,
             });
         }
+        let compatibility = if self.presentation_generation.id != self.swap.active_generation_id() {
+            // A prior generational swap left the installed presentation on its
+            // original product. Compatibility with the new-entry generation
+            // does not authorize replacing that retained View/Style owner.
+            compatibility.max(SwapCompatibility::CodeGenerational)
+        } else {
+            compatibility
+        };
         if compatibility == SwapCompatibility::RestartRequired {
             return Err(BundleHotSwapError::RestartRequired { compatibility });
         }
@@ -89,17 +99,23 @@ impl BundleSession {
             });
         }
 
-        let mut next_runtime = if matches!(
+        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
+        let compatibility =
+            compatibility.max(self.view_replacement_compatibility(&next_runtime.view_runtime));
+        if matches!(
             compatibility,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
         ) {
-            build_session_runtime_preserving_executor(bundle, &self.options, &self.executor)?
-        } else {
-            build_session_runtime(bundle, &self.options)?
-        };
+            next_runtime.retain_executor_state(&self.executor)?;
+        }
         let mut next_environment = self.environment.clone();
-        let _environment_update =
-            next_environment.replace_theme(next_runtime.view_theme_environment)?;
+        if matches!(
+            compatibility,
+            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
+        ) {
+            let _environment_update =
+                next_environment.replace_theme(next_runtime.view_theme_environment)?;
+        }
         let mut next_presentation = self.presentation.clone();
         preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
         if matches!(
@@ -271,7 +287,13 @@ impl BundleSession {
             self.swap.active().clone(),
             next_runtime,
         ))?;
-        self.environment = next_environment;
+        if matches!(
+            committed,
+            SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
+        ) {
+            self.environment = next_environment;
+            self.presentation_generation = self.swap.pin_active_generation();
+        }
         if committed == SwapCompatibility::CodeCompatible {
             self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         }
@@ -282,6 +304,29 @@ impl BundleSession {
             generation: next_id,
             compatibility: committed,
         })
+    }
+
+    fn view_replacement_compatibility(&self, candidate: &BundleViewRuntime) -> SwapCompatibility {
+        let current = self.view_runtime.product();
+        let candidate = candidate.product();
+        let same_program = match (current.program(), candidate.program()) {
+            (Some(current), Some(candidate)) => {
+                current.program_id() == candidate.program_id()
+                    && current.accepted_revision() == candidate.accepted_revision()
+            }
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        let same_style = match (current.style(), candidate.style()) {
+            (Some(current), Some(candidate)) => current.has_same_runtime_semantics(candidate),
+            (None, None) => true,
+            (Some(_), None) | (None, Some(_)) => false,
+        };
+        if same_program && same_style {
+            SwapCompatibility::ContentOnly
+        } else {
+            SwapCompatibility::CodeGenerational
+        }
     }
 
     /// Applies a materialized target whose patch identities were verified.

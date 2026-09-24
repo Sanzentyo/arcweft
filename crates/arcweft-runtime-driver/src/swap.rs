@@ -702,7 +702,13 @@ impl SwapSession {
         next: Arc<ProgramGeneration>,
         compatibility: SwapCompatibility,
     ) -> Result<SwapCompatibility, SwapError> {
-        self.expect_phase(SwapPhase::Idle)?;
+        if self.phase == SwapPhase::Retiring {
+            if self.in_step {
+                return Err(SwapError::RuntimeNotQuiescent);
+            }
+        } else {
+            self.expect_phase(SwapPhase::Idle)?;
+        }
         if self.prepared.is_some() {
             return Err(SwapError::SwapAlreadyPrepared);
         }
@@ -737,11 +743,17 @@ impl SwapSession {
     }
 
     pub fn retire_unused(&mut self) {
-        self.phase = SwapPhase::Retiring;
         self.retired
             .retain(|generation| Arc::strong_count(generation) > 1);
-        if self.retired.is_empty() {
-            self.phase = SwapPhase::Idle;
+        if matches!(
+            self.phase,
+            SwapPhase::Idle | SwapPhase::Committed | SwapPhase::Retiring
+        ) {
+            self.phase = if self.retired.is_empty() {
+                SwapPhase::Idle
+            } else {
+                SwapPhase::Retiring
+            };
         }
     }
 
@@ -768,6 +780,9 @@ impl SwapSession {
         }
     }
 }
+
+#[cfg(test)]
+mod retirement_tests;
 
 #[cfg(test)]
 mod character_generation_tests {

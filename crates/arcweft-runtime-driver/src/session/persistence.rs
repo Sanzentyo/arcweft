@@ -27,8 +27,12 @@ impl BundleSession {
             .get(generation)?
             .runtime()
             .start_entry(start, &self.options.root_command_host_calls)?;
+        let mut environment = self.environment.clone();
+        let _environment_update = environment.replace_theme(runtime.view_theme_environment)?;
         let entry = runtime.entry;
         self.activate_runtime(runtime);
+        self.environment = environment;
+        self.presentation_generation = self.swap.pin_active_generation();
         self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         self.pending_input_events.clear();
         self.pending_presentation_inputs.clear();
@@ -43,6 +47,7 @@ impl BundleSession {
     }
 
     pub fn snapshot_session(&self) -> Result<BundleSessionSnapshot, BundleSessionSaveError> {
+        self.validate_live_session_save_generations()?;
         let blockers = self.session_save_blockers();
         if !blockers.is_empty() {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
@@ -360,6 +365,7 @@ impl BundleSession {
         self.presentation = snapshot.presentation;
         self.view_virtualization = restored_view_virtualization;
         self.view_runtime = restored_view_runtime;
+        self.presentation_generation = self.swap.pin_active_generation();
         self.retire_unused_generations();
         Ok(())
     }
@@ -437,10 +443,38 @@ impl BundleSession {
         blockers
     }
 
+    fn validate_live_session_save_generations(&self) -> Result<(), BundleSessionSaveError> {
+        let active = self.swap.active_generation_id();
+        for (field, generation) in [
+            (
+                "presentation_generation",
+                Some(self.presentation_generation.id),
+            ),
+            (
+                "runtime_generation_pin",
+                self.runtime_generation_pin
+                    .as_ref()
+                    .map(|generation| generation.id),
+            ),
+        ] {
+            if let Some(generation) = generation
+                && generation != active
+            {
+                return Err(BundleSessionSaveError::GenerationMismatch {
+                    field,
+                    saved: format!("{generation:?}"),
+                    actual: format!("{active:?}"),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn validate_session_save_generation(
         &self,
         snapshot: &BundleSessionGenerationSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
+        self.validate_live_session_save_generations()?;
         let active = self.active_generation();
         if snapshot.active_generation != active.id {
             return Err(BundleSessionSaveError::GenerationMismatch {

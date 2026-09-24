@@ -59,6 +59,7 @@ fn runtime_context(view: &str) -> RuntimeLineContext {
         },
         CharacterDialoguePresentationConfig {
             view: arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

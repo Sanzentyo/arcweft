@@ -64,6 +64,7 @@ fn test_line_context() -> RuntimeLineContext {
         },
         CharacterDialoguePresentationConfig {
             view: arcweft_bundle::standard_view::dialogue_view_id(),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

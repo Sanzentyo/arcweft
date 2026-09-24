@@ -87,6 +87,7 @@ fn context_with_styles(
         },
         CharacterDialoguePresentationConfig {
             view: ViewId::try_new("view.frame-resolution.test").expect("View identity"),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

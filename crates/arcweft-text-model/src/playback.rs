@@ -1370,6 +1370,7 @@ mod tests {
             text_key: TextKey::try_new("text.playback.test").expect("text key"),
             effective: CharacterDialoguePresentationConfig {
                 view: ViewId::try_new("view.playback.test").expect("View identity"),
+                style_sheet: None,
                 voice: None,
                 look: None,
                 stage: None,

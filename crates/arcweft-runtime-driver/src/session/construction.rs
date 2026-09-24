@@ -173,6 +173,7 @@ impl BundleSession {
             next_step_index: 0,
             next_task_sequence: 0,
             swap: SwapSession::new(generation.clone()),
+            presentation_generation: Arc::clone(&generation),
             runtime_generation_pin: Some(generation),
             task_generation_pins: BTreeMap::new(),
             tasks: RuntimeTaskRegistry::default(),
@@ -291,27 +292,21 @@ impl SessionRuntime {
         )
         .map_err(BundleEntryStartError::from)
     }
+
+    pub(super) fn retain_executor_state(
+        &mut self,
+        current: &ArcweftRuntimeExecutor,
+    ) -> Result<(), BundleSessionError> {
+        let mut executor = current.clone();
+        executor.replace_product_awbc_program_arc(Arc::clone(&self.program))?;
+        self.executor = executor;
+        Ok(())
+    }
 }
 
 pub(super) fn build_session_runtime(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
-) -> Result<SessionRuntime, BundleSessionError> {
-    build_session_runtime_with_executor(bundle, options, None)
-}
-
-pub(super) fn build_session_runtime_preserving_executor(
-    bundle: &ArcweftBundle,
-    options: &BundleSessionOptions,
-    executor: &ArcweftRuntimeExecutor,
-) -> Result<SessionRuntime, BundleSessionError> {
-    build_session_runtime_with_executor(bundle, options, Some(executor))
-}
-
-fn build_session_runtime_with_executor(
-    bundle: &ArcweftBundle,
-    options: &BundleSessionOptions,
-    preserved_executor: Option<&ArcweftRuntimeExecutor>,
 ) -> Result<SessionRuntime, BundleSessionError> {
     if bundle.bundle_kind != BundleKind::Game {
         return Err(BundleSessionError::UnsupportedBundleKind(
@@ -415,26 +410,13 @@ fn build_session_runtime_with_executor(
         view_theme_environment,
         view_style_palettes,
     };
-    match preserved_executor {
-        Some(executor) => {
-            let mut executor = executor.clone();
-            executor.replace_product_awbc_program_arc(Arc::clone(&program))?;
-            Ok(SessionRuntime::with_executor(
-                bundle.source_display_name().to_owned(),
-                program,
-                entry,
-                resources,
-                executor,
-            ))
-        }
-        None => SessionRuntime::new(
-            bundle.source_display_name().to_owned(),
-            program,
-            entry,
-            resources,
-        )
-        .map_err(BundleSessionError::from),
-    }
+    SessionRuntime::new(
+        bundle.source_display_name().to_owned(),
+        program,
+        entry,
+        resources,
+    )
+    .map_err(BundleSessionError::from)
 }
 
 fn accepted_character_presentation(

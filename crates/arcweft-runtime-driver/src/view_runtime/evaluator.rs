@@ -50,7 +50,8 @@ use arcweft_presentation::fx::{
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_view::{
     EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewId, ViewMountId, ViewMountState,
-    ViewRegistry, ViewValueEvaluationError, ViewValueProgramId, ViewValueProgramInventory,
+    ViewRegistry, ViewStyleApplicationTarget, ViewValueEvaluationError, ViewValueProgramId,
+    ViewValueProgramInventory,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -930,6 +931,22 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
         let mut style_scopes = style_scopes;
         let root_style_result = style_scopes
             .enter_definition(&definition.styles, &mut self.style_scope_allocator)
+            .and_then(|()| {
+                if key.path.segments().is_empty()
+                    && let Some(sheet) = self
+                        .dialogue_inputs
+                        .get(&key.handle)
+                        .and_then(|input| input.frame.effective.style_sheet.as_ref())
+                {
+                    style_scopes.enter_definition(
+                        &[ViewStyleApplicationTarget::Named {
+                            sheet: sheet.clone(),
+                        }],
+                        &mut self.style_scope_allocator,
+                    )?;
+                }
+                Ok(())
+            })
             .map_err(|error| EvaluationFailure::style_scope(None, error));
         let mount_id = mounted.state.mount();
         let mut builder = MountRenderBuilder::new(mount_id, style_scopes);

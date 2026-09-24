@@ -118,9 +118,7 @@ pub use self::root_command::{
     RootCommandHostCallCatalogError, RootCommandHostCallEndpoint, RootCommandHostResultRoute,
 };
 pub use self::virtualization::BundleVirtualListMountError;
-use construction::{
-    SessionRuntime, build_session_runtime, build_session_runtime_preserving_executor,
-};
+use construction::{SessionRuntime, build_session_runtime};
 use text_control::apply_text_control_write_back_to_controls;
 
 /// Host-selected options for a portable bundle session.
@@ -295,6 +293,9 @@ pub struct BundleSession {
     next_step_index: usize,
     next_task_sequence: u64,
     swap: SwapSession,
+    /// Generation that owns retained dialogue/View presentation state, even
+    /// after the foreground fiber has completed.
+    presentation_generation: Arc<ProgramGeneration>,
     runtime_generation_pin: Option<Arc<ProgramGeneration>>,
     task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
     tasks: RuntimeTaskRegistry,
@@ -361,6 +362,8 @@ pub enum BundleEntryStartError {
     ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
     #[error(transparent)]
     RootCommandHostCatalog(#[from] RootCommandHostCallCatalogError),
+    #[error(transparent)]
+    Environment(#[from] PresentationEnvironmentUpdateError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -715,11 +718,29 @@ impl BundleSession {
                 _ => None,
             })
             .collect();
+        let runtime_generation = self.runtime_generation_pin.as_ref().map_or_else(
+            || self.swap.active_generation_id(),
+            |generation| generation.id,
+        );
         let context_provider = self
-            .character_presentation
-            .as_ref()
-            .zip(self.active_locale.as_ref())
-            .map(|(catalog, locale)| CatalogDialogueRuntimeContextProvider::new(catalog, locale));
+            .runtime_images
+            .get(runtime_generation)
+            .ok()
+            .map(|image| image.runtime())
+            .and_then(|runtime| {
+                runtime
+                    .character_presentation
+                    .as_ref()
+                    .zip(runtime.active_locale.as_ref())
+                    .map(|(catalog, locale)| {
+                        CatalogDialogueRuntimeContextProvider::new(
+                            catalog,
+                            locale,
+                            runtime.character_dialogue_schema.as_deref(),
+                            runtime.view_runtime.style_program(),
+                        )
+                    })
+            });
         let display = resolve_display_frames(
             &self.dialogue_content,
             &flow_events,
@@ -1577,6 +1598,7 @@ mod view_handler_queue_tests {
             text_key: TextKey::try_new("text.session.view.handler").expect("text key"),
             effective: CharacterDialoguePresentationConfig {
                 view,
+                style_sheet: None,
                 voice: None,
                 look: None,
                 stage: None,

@@ -16,7 +16,7 @@ use arcweft_dialogue::{
 };
 use arcweft_id::TextKey;
 use arcweft_presentation::fx::FxApplication;
-use arcweft_view::ViewId;
+use arcweft_view::{ViewId, ViewStyleSheetId};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -33,6 +33,7 @@ pub struct DialoguePresentationCharacter {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CharacterDialoguePresentationConfig {
     pub view: ViewId,
+    pub style_sheet: Option<ViewStyleSheetId>,
     pub voice: Option<CharacterDialogueVoice>,
     pub look: Option<CharacterLookId>,
     pub stage: Option<CharacterDialogueStageValue>,
@@ -465,6 +466,7 @@ mod serde_tests {
             text_key: TextKey::try_new("text.test.001").expect("text key"),
             effective: CharacterDialoguePresentationConfig {
                 view: ViewId::try_new("view.dialogue.test").expect("View identity"),
+                style_sheet: None,
                 voice: None,
                 look: None,
                 stage: None,

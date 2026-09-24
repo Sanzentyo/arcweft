@@ -165,6 +165,7 @@ fn dialogue_frame(
             },
             CharacterDialoguePresentationConfig {
                 view: view_id(view),
+                style_sheet: None,
                 voice: None,
                 look: None,
                 stage: None,
@@ -1173,6 +1174,75 @@ fn style_scope_follows_subtrees_without_leaking_to_siblings() {
     assert_eq!(nodes[2].applications[2].application_order(), 3);
     assert_eq!(nodes[3].applications.len(), 2);
     assert_eq!(nodes[4].applications.len(), 1);
+}
+
+#[test]
+fn dialogue_selected_style_is_scoped_after_view_defaults_and_clear_removes_it() {
+    let view_default = ViewStyleSheetId::try_new("style.view-default").unwrap();
+    let dialogue_selected = ViewStyleSheetId::try_new("style.dialogue-selected").unwrap();
+    let program = ViewProgramResource {
+        program_id: program_id("view.program.dialogue-selected-style"),
+        definitions: vec![ViewDefinitionResource {
+            public_id: definition_ref("view.Dialogue"),
+            body: ViewInstructionSpan::new(0, 1),
+            styles: vec![ViewStyleApplicationTarget::named(view_default.clone())],
+            parameters: vec![ViewParameterResource {
+                ordinal: 0,
+                name: "dialogue".to_owned(),
+                role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
+                semantic_type: arcweft_core::value::RuntimeDialogueOpaqueRole::View
+                    .semantic_identity(),
+                value_type: None,
+                value_slot: None,
+                default_program: None,
+            }],
+            state_schema_hash: 1,
+        }],
+        instructions: vec![ViewProgramInstruction::EmitCustom {
+            element: "DialogueBody".to_owned(),
+            styles: Vec::new(),
+            part: None,
+            source: None,
+        }],
+        ..ViewProgramResource::default()
+    };
+    let mut runtime = BundleViewRuntime::try_new(Some(program), None, None).unwrap();
+    let mut display = dialogue_frame("say.dialogue.style", "view.Dialogue", "Hero", Vec::new());
+    let view = view_id("view.Dialogue");
+    let handle = PresentationHandleId::try_new("dialogue.style").unwrap();
+    display.effective.style_sheet = Some(dialogue_selected.clone());
+    let input = DialogueViewInput {
+        handle: handle.clone(),
+        view: &view,
+        frame: &display,
+        state: dialogue_view_state(1),
+    };
+    let selected = runtime.evaluate_with_dialogue(&[], &[input], &[], false);
+    assert!(selected.diagnostics.is_empty(), "{selected:#?}");
+    let applications = &selected.mounts[0].style_nodes[0].applications;
+    assert_eq!(applications.len(), 2);
+    assert!(
+        matches!(applications[0].target(), ViewStyleApplicationTarget::Named { sheet } if sheet == &view_default)
+    );
+    assert!(
+        matches!(applications[1].target(), ViewStyleApplicationTarget::Named { sheet } if sheet == &dialogue_selected)
+    );
+    assert!(applications[0].application_order() < applications[1].application_order());
+
+    display.effective.style_sheet = None;
+    let input = DialogueViewInput {
+        handle,
+        view: &view,
+        frame: &display,
+        state: dialogue_view_state(1),
+    };
+    let cleared = runtime.evaluate_with_dialogue(&[], &[input], &[], false);
+    assert!(cleared.diagnostics.is_empty(), "{cleared:#?}");
+    let applications = &cleared.mounts[0].style_nodes[0].applications;
+    assert_eq!(applications.len(), 1);
+    assert!(
+        matches!(applications[0].target(), ViewStyleApplicationTarget::Named { sheet } if sheet == &view_default)
+    );
 }
 
 fn call_boundary_style_program(

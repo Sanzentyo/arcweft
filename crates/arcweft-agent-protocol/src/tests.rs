@@ -122,6 +122,7 @@ fn test_line_display_frame() -> LineDisplayFrame {
         text_key: TextKey::try_new("text.test.001").expect("text key"),
         effective: CharacterDialoguePresentationConfig {
             view: ViewId::try_new("view.dialogue.test").expect("View identity"),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

@@ -58,6 +58,7 @@ fn context() -> RuntimeLineContext {
         },
         CharacterDialoguePresentationConfig {
             view: ViewId::try_new("view.resolved-document.test").expect("View identity"),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

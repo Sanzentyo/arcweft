@@ -32,11 +32,14 @@ use arcweft_core::plan::{
     RuntimeDialogueValueBinding,
 };
 use arcweft_core::value::{
-    RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeOpaqueValue,
+    RuntimeCharacterDialogueProducerId, RuntimeDialogueContentValue, RuntimeEntityReference,
+    RuntimeOpaqueValue, RuntimeValue,
 };
-use arcweft_dialogue::CharacterDialogueType;
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
-use arcweft_id::LocaleTag;
+use arcweft_dialogue::{
+    CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeSchema, CharacterDialogueType,
+};
+use arcweft_id::{DeclarationIdentityFamily, LocaleTag};
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_presentation::{
@@ -46,7 +49,9 @@ use arcweft_render_text::{RuntimeLineContext, resolve_materialized_frame};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentCatalog, DialogueContentFragmentTemplate,
     DialogueContentSpec, DialoguePresentationCharacter,
+    project_character_dialogue_rich_text_properties,
 };
+use arcweft_view::{ViewStyleProgram, ViewStyleSheetId};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -116,6 +121,8 @@ pub trait DialogueRuntimeContextProvider {
 pub(crate) struct CatalogDialogueRuntimeContextProvider<'a> {
     catalog: &'a AcceptedCharacterPresentationCatalog,
     active_locale: &'a ActiveSessionLocale,
+    schema: Option<&'a CharacterDialogueRuntimeSchema>,
+    style_program: Option<&'a ViewStyleProgram>,
 }
 
 impl<'a> CatalogDialogueRuntimeContextProvider<'a> {
@@ -123,10 +130,14 @@ impl<'a> CatalogDialogueRuntimeContextProvider<'a> {
     pub(crate) const fn new(
         catalog: &'a AcceptedCharacterPresentationCatalog,
         active_locale: &'a ActiveSessionLocale,
+        schema: Option<&'a CharacterDialogueRuntimeSchema>,
+        style_program: Option<&'a ViewStyleProgram>,
     ) -> Self {
         Self {
             catalog,
             active_locale,
+            schema,
+            style_program,
         }
     }
 }
@@ -148,25 +159,58 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
                     .to_owned(),
             });
         }
+        let reject = |reason: String| DialogueRuntimeContextError::Rejected {
+            line: content.line().clone(),
+            reason,
+        };
+        let admitted = self.schema.map(|schema| {
+            schema
+                .admit(
+                    schema.program_owner(),
+                    &RuntimeValue::Opaque(target.clone()),
+                    target.semantic_identity(),
+                )
+                .map_err(|error| reject(error.to_string()))
+        });
+        let admitted = admitted.transpose()?;
         let character = match content.character().target() {
-            CharacterPresentationTargetEvidence::Exact(character) => character,
-            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { .. } => {
-                return Err(DialogueRuntimeContextError::Rejected {
-                    line: content.line().clone(),
-                    reason: "runtime CharacterDialogue target has no decoded runtime value"
-                        .to_owned(),
-                });
+            CharacterPresentationTargetEvidence::Exact(character) => {
+                if let Some(value) = admitted.as_ref() {
+                    if value.dialogue().character() != character {
+                        return Err(reject(
+                            "dialogue target does not match the checked Character".to_owned(),
+                        ));
+                    }
+                } else if target.producer() != &RuntimeCharacterDialogueProducerId::get()
+                    || target.semantic_identity()
+                        != CharacterDialogueType::exact(character.clone())
+                            .runtime_semantic_identity()
+                {
+                    return Err(reject(
+                        "dialogue target does not match the checked Character".to_owned(),
+                    ));
+                }
+                character
+            }
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { generation } => {
+                let Some(schema) = self.schema else {
+                    return Err(reject(
+                        "runtime CharacterDialogue schema is unavailable".to_owned(),
+                    ));
+                };
+                if schema.generation_digest() != *generation {
+                    return Err(reject(
+                        "runtime CharacterDialogue generation does not match the checked target"
+                            .to_owned(),
+                    ));
+                }
+                admitted
+                    .as_ref()
+                    .expect("schema admission completed above")
+                    .dialogue()
+                    .character()
             }
         };
-        if target.producer() != &RuntimeCharacterDialogueProducerId::get()
-            || target.semantic_identity()
-                != CharacterDialogueType::exact(character.clone()).runtime_semantic_identity()
-        {
-            return Err(DialogueRuntimeContextError::Rejected {
-                line: content.line().clone(),
-                reason: "dialogue target does not match the checked Character".to_owned(),
-            });
-        }
         let resolved = self
             .catalog
             .data()
@@ -176,27 +220,103 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
                 reason: error.to_string(),
             })?;
         let presentation = content.presentation();
+        let (effective, base_styles) = if let (Some(schema), Some(value)) =
+            (self.schema, admitted.as_ref())
+        {
+            let config = value.dialogue().config();
+            let style_sheet = match config.style().typed().value() {
+                RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                    family: DeclarationIdentityFamily::Style,
+                    public_id,
+                }) => {
+                    let sheet = ViewStyleSheetId::parse_public(public_id.as_str().to_owned())
+                        .map_err(|error| reject(error.to_string()))?;
+                    if !self
+                        .style_program
+                        .is_some_and(|program| program.sheet(&sheet).is_some())
+                    {
+                        return Err(reject(format!(
+                            "selected Style sheet `{sheet:?}` is absent from the accepted View product"
+                        )));
+                    }
+                    Some(sheet)
+                }
+                RuntimeValue::Opaque(style) => {
+                    let properties = CharacterDialogueRolePayloadCodec::RichTextProperties
+                        .decode_properties(style.payload())
+                        .map_err(|error| reject(error.to_string()))?;
+                    if !properties.is_empty() {
+                        return Err(reject(
+                            "structured CharacterDialogue Style cannot select a View sheet"
+                                .to_owned(),
+                        ));
+                    }
+                    None
+                }
+                _ => {
+                    return Err(reject(
+                        "admitted Style role has no supported presentation value".to_owned(),
+                    ));
+                }
+            };
+            let RuntimeValue::Opaque(rich_text) = config.rich_text().typed().value() else {
+                return Err(reject(
+                    "admitted RichText role has no opaque payload".to_owned(),
+                ));
+            };
+            let properties = CharacterDialogueRolePayloadCodec::RichTextProperties
+                .decode_properties(rich_text.payload())
+                .map_err(|error| reject(error.to_string()))?;
+            let styles = project_character_dialogue_rich_text_properties(&properties)
+                .map_err(|error| reject(error.to_string()))?;
+            (
+                CharacterDialoguePresentationConfig {
+                    view: config.view().clone(),
+                    style_sheet,
+                    voice: config.voice().cloned(),
+                    look: config.look().cloned(),
+                    stage: config.stage().cloned(),
+                    portrait: config.portrait().cloned(),
+                    focus: config.focus().cloned(),
+                    cleanup: config.cleanup().cloned(),
+                    source_locale: config.source_locale().cloned(),
+                    hooks: config.hooks().to_vec(),
+                    inline_failure: config.inline_failure().clone(),
+                    custom: config.custom().clone(),
+                    config_digest: schema
+                        .effective_config_digest(value.dialogue())
+                        .map_err(|error| reject(error.to_string()))?,
+                },
+                styles,
+            )
+        } else {
+            (
+                CharacterDialoguePresentationConfig {
+                    view: presentation.view().clone(),
+                    style_sheet: None,
+                    voice: None,
+                    look: None,
+                    stage: None,
+                    portrait: None,
+                    focus: None,
+                    cleanup: None,
+                    source_locale: None,
+                    hooks: Vec::new(),
+                    inline_failure: presentation.inline_failure().clone(),
+                    custom: BTreeMap::new(),
+                    config_digest: RuntimeValueDigest::ZERO,
+                },
+                Vec::new(),
+            )
+        };
         Ok(RuntimeLineContext::new(
             values.to_vec(),
             DialoguePresentationCharacter {
                 id: character.clone(),
                 display_name: resolved.value().to_owned(),
             },
-            CharacterDialoguePresentationConfig {
-                view: presentation.view().clone(),
-                voice: None,
-                look: None,
-                stage: None,
-                portrait: None,
-                focus: None,
-                cleanup: None,
-                source_locale: None,
-                hooks: Vec::new(),
-                inline_failure: presentation.inline_failure().clone(),
-                custom: BTreeMap::new(),
-                config_digest: RuntimeValueDigest::ZERO,
-            },
-            Vec::new(),
+            effective,
+            base_styles,
             content.inline_styles().to_vec(),
         ))
     }

@@ -962,6 +962,7 @@ fn minimal_dialogue_frame(view: ViewId) -> LineDisplayFrame {
         text_key: TextKey::try_new("text.compiler.view.handler").expect("dialogue text key"),
         effective: CharacterDialoguePresentationConfig {
             view,
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,

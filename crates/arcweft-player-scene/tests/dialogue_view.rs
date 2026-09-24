@@ -423,6 +423,7 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
             },
             CharacterDialoguePresentationConfig {
                 view: arcweft_bundle::standard_view::dialogue_view_id(),
+                style_sheet: None,
                 voice: None,
                 look: None,
                 stage: None,

@@ -93,6 +93,7 @@ fn runtime_line_context() -> RuntimeLineContext {
         CharacterDialoguePresentationConfig {
             view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
                 .expect("standard dialogue View id"),
+            style_sheet: None,
             voice: None,
             look: None,
             stage: None,
