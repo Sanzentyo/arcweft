@@ -1609,8 +1609,8 @@ fallbacks = []
 
 pub character root_speaker {}
 
-test @test.root_dialogue scenario {
-    root_speaker(id = @say.root_dialogue)[Hello[p]]
+flow @flow.root_dialogue root_dialogue {
+    root_speaker[Hello[p]]
 }
 ";
     project.write("src/main.arcw", root_source);
@@ -1622,8 +1622,8 @@ pub fn child_helper() -> Unit {
     ()
 }
 
-test @test.child_dialogue scenario {
-    child_speaker(id = @say.child_dialogue)[Hello[p]]
+flow @flow.child_dialogue child_dialogue {
+    child_speaker[Hello[p]]
 }
 ";
     project.write("src/side.arcw", child_source);
@@ -1648,7 +1648,7 @@ test @test.child_dialogue scenario {
         profile.diagnostics()
     );
 
-    let hover = hover_text(&mut session, uri, child_source, "child_speaker(");
+    let hover = hover_text(&mut session, uri, child_source, "child_speaker[");
     assert!(
         hover.contains("CharacterDialogue content application"),
         "{hover}"

@@ -536,14 +536,14 @@ mod tests {
     #[test]
     fn hover_describes_distinct_closed_flow_and_function_effect_rows() {
         let source = r"
-extern capability fixture_agent {
-    fn observe() -> Unit effects { agent.observe }
+extern capability fixture_filesystem {
+    fn read() -> Unit effects { fs.read }
 }
 
 fn load_story() -> Unit
-effects { agent.observe }
+effects { fs.read }
 {
-    let _observed = fixture_agent.observe()
+    let _observed = fixture_filesystem.read()
     ()
 }
 
@@ -578,7 +578,7 @@ effects { network.request }
                     "unexpected Function hover: {text}"
                 );
                 assert!(
-                    text.contains("effects: { agent.observe }"),
+                    text.contains("effects: { fs.read }"),
                     "unexpected Function effects: {text}"
                 );
             }
@@ -589,13 +589,13 @@ effects { network.request }
     #[test]
     fn hover_describes_inferred_function_effect_row() {
         let source = r"
-extern capability fixture_agent {
-    fn observe() -> Unit effects { agent.observe }
+extern capability fixture_filesystem {
+    fn read() -> Unit effects { fs.read }
 }
 
 fn load_story() -> Unit
 {
-    fixture_agent.observe()
+    fixture_filesystem.read()
     ()
 }
 ";
@@ -614,7 +614,7 @@ fn load_story() -> Unit
                     "unexpected Function hover: {text}"
                 );
                 assert!(
-                    text.contains("effects: { agent.observe }"),
+                    text.contains("effects: { fs.read }"),
                     "unexpected inferred Function effects: {text}"
                 );
             }
@@ -663,19 +663,19 @@ fn defaulted()[body: DialogueContent = defaulted()] -> DialogueContent { body }
     #[test]
     fn callable_effect_row_hover_ignores_body_name_references() {
         let source = r"
-extern capability fixture_agent {
-    fn observe() -> Unit effects { agent.observe }
+extern capability fixture_filesystem {
+    fn read() -> Unit effects { fs.read }
 }
 
 fn load_story() -> Unit
-effects { agent.observe }
+effects { fs.read }
 {
-    fixture_agent.observe()
+    fixture_filesystem.read()
     ()
 }
 
 fn invoke_story() -> Unit
-effects { agent.observe }
+effects { fs.read }
 {
     let _body = load_story()
     ()
@@ -698,8 +698,8 @@ effects { agent.observe }
     #[test]
     fn hover_describes_closure_expression_inferred_open_effect_row() {
         let source = r"
-extern capability fixture_agent {
-    fn observe() -> Unit effects { agent.observe }
+extern capability fixture_filesystem {
+    fn read() -> Unit effects { fs.read }
 }
 
 fn retain_callback() -> Unit
@@ -727,7 +727,7 @@ effects { }
             other => panic!("unexpected hover contents: {other:?}"),
         }
 
-        let body_offset = source.rfind("observe").expect("body call offset");
+        let body_offset = source.rfind("read").expect("body call offset");
         let body_position = document.line_index().position_from_byte_offset(body_offset);
         let body_hover = hover(&fixture.profile, document, body_position);
         if let Some(body_hover) = body_hover {
@@ -744,14 +744,14 @@ effects { }
     #[test]
     fn closure_expected_effect_bound_does_not_inflate_hovered_concrete_effects() {
         let source = r"
-extern capability fixture_agent {
-    fn observe() -> Unit effects { agent.observe }
+extern capability fixture_filesystem {
+    fn read() -> Unit effects { fs.read }
 }
 
 fn retain_callback() -> Unit
 effects { }
 {
-    let later: (Unit) -> Unit effects { agent.observe } = |_unit: Unit| -> Unit {
+    let later: (Unit) -> Unit effects { fs.read } = |_unit: Unit| -> Unit {
             ()
         }
     ()
@@ -873,6 +873,7 @@ version = "0.1.0"
 kind = "agent"
 entry = "@entry.agent.main"
 source = "src/main.arcw"
+adapter = "native-file"
 "#
             .to_owned()
         }
