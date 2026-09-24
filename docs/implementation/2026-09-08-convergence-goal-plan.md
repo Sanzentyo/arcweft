@@ -689,3 +689,24 @@ Syntax lib は682 passed、workspace fmt は終了コード0。CLI の
 捕捉値所有、失敗／取消時の子 scope と root activation の unwind、native と
 AWBC 共通の work identity である。023 の `cancel on` と合わせ、工程1の
 runtime acceptance は未完了。
+
+**2026-09-25 取消入力 selector の型付き producer checkpoint:**
+
+Supersedes: 直前の「023 の `cancel on` は Syntax/HIR で回復される」という
+当時の観測。
+
+`cancel on input(.SkipLine)` の専用 Syntax/HIR owner、braced/colon body、
+回復、selector の source span、Sema の `InputActionId` と RuntimePlan の
+Trigger fact を接続した。Thread body の子を HIR child edge と body projection
+へ二重登録していた欠陥も、後者を authority として修正した。
+`6a45bdf9ed62f3cdd83f639b6df9cc133c3c3463` を main へ push 済みで、
+この時点の working tree は clean。Syntax lib 684/684、HIR lib は既知の
+長時間 nominal limit 1件を除き 910 passed / 8 ignored、Sema lib 912/912、
+RuntimePlan lib 79/79。変更 crate の all-target /
+all-feature Clippy と workspace fmt は終了コード0（既存 warning あり）。
+`current_check_fixtures_pass` は 019 の実行側 `defer` 未接続で失敗する。
+023 を単独実行すると `.Skipped` の最終型が決まらず Sema で停止する。
+子文付き `cancel` の簡約例は Sema と runtime semantic fact まで通り、
+RuntimePlan が未完成の実行投影を明示的に拒否する。したがってこの commit
+は source→checked fact の完了証拠であり、取消実行・戻り値選択・cleanup
+の受理証拠ではない。workspace 全 gate はこの変更後に再実行していない。
