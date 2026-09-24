@@ -1129,6 +1129,8 @@ Clippy for Core, HIR, Sema, RuntimePlan, compiler, runtime-codegen, and
 runtime-driver succeeded; Clippy emitted warnings. The CLI fixture
 `022_family_relative_test_bench_ids.arcw` passed direct `compile --emit check`
 with zero warnings and zero obligations.
+After the integrated `main` push, the workspace all-target/all-feature Cargo
+check also passed on the pushed source with warnings.
 
 Compiler `callable_execution` passed 81/87 on Native and AWBC. The six remaining
 failures are the two backend cases for each of CharacterDialogue factory,
