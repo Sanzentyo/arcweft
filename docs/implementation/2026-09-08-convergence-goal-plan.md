@@ -1091,3 +1091,25 @@ carrier と native/AWBC の返却は独立した全層移行が必要。042 の 
 effect call を expression arm に置いた `match` は runtime disposition を要求する。
 この一連は Match/consumer migration の対象であり、fixture を単なる通過形へ弱めず
 未編集のまま維持した。workspace test と spec fixture gate は引き続き不合格。
+
+**2026-09-25 dialogue head / proof fixture checkpoint:**
+
+直前 checkpoint の current-pass 025 は、`proof` の現行固定 parameter group と
+supported expression body だけを検証する `025_proof_declaration.arcw` に整理した
+(`e2f4e89fdfa87df87ec8ddfa502919e1d6ef67ab`)。以前の fixture にあった
+`check no_lifetime_below`、値なし `promote_unchecked`、unsafe region は compiler-pass
+受理証拠ではなかった。unsafe audit の HIR/verifier 専用検査は維持し、promotion の
+型付き operand・lifetime・ArcError/Result return・native/AWBC 実装が完成するまで
+compiler-pass の成功とは主張しない。025 単独 CLI check は終了コード0。
+
+027 の syntax failure は、bracket dialogue call の後続 `with:` のコロンを
+`speaker: content` の先頭コロンとして拾うことが原因だった。speaker-colon の探索を
+先頭物理行に限定し、bracket call の `with:` plan projection を保持する回帰テストを
+追加した (`171d60a1f591f0956420c85e826dbab32bc48c80`)。Syntax lib 686/686、
+既存 HIR line-plan focused test 1/1、fmt と cached diff check は終了コード0。
+元 027 fixture は syntax diagnostic を越えたが HIR recovery が続く。局所 source
+切り分けでは `init:` は plan の Error item になり、`on mark(...) =>` では HIR arena
+を通るものの、残る計画項目と後続の裸 `{ ... }` に recovery がある。
+`on mark(...):` と bracket call に続く裸 lexical scope の一般接続は別の
+producer/consumer 境界として未完了であり、fixture は未編集で維持した。
+CLI `current_check_fixtures_pass` の全体合格、workspace test の合格証拠はまだない。
