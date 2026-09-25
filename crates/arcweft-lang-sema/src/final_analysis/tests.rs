@@ -1303,19 +1303,71 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
             .structural_reason(),
         Some(super::CheckedStructuralExecutionReason::ContextualCapability)
     );
+    let schedule_calls = report
+        .calls()
+        .filter_map(|(_, call)| call.selected_application())
+        .filter(|application| {
+            application.core().candidates().selected().id()
+                == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        report
-            .calls()
-            .filter(|(_, call)| {
-                call.selected_application().is_some_and(|application| {
-                    application.core().candidates().selected().id()
-                        == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
-                })
-            })
+        schedule_calls.len(),
+        4,
+        "each schedule has a prefix and completion"
+    );
+    assert_eq!(
+        schedule_calls
+            .iter()
+            .filter(|application| matches!(
+                application.result(),
+                crate::callable::CheckedCallResult::Continuation(_)
+            ))
             .count(),
         2,
-        "bare-indented and callback-let forms share LineScheduleCallableId::At",
+        "both anchors remain checked prefix applications",
     );
+    assert_eq!(
+        schedule_calls
+            .iter()
+            .filter(|application| matches!(
+                application.core().candidates().selected().state(),
+                crate::callable::ResolvedCallableState::Continuation(_)
+            ))
+            .count(),
+        2,
+        "both callbacks complete the same curried schedule authority",
+    );
+    for (owner, call) in report.calls() {
+        let Some(application) = call.selected_application() else {
+            continue;
+        };
+        if application.core().candidates().selected().id()
+            != &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+        {
+            continue;
+        }
+        let plan = report
+            .expression(owner)
+            .and_then(super::CheckedExpression::execution_plan)
+            .expect("line schedule execution plan");
+        if matches!(
+            application.result(),
+            crate::callable::CheckedCallResult::Continuation(_)
+        ) {
+            assert_eq!(
+                plan.call_disposition(),
+                Some(super::CheckedRuntimeCallDisposition::FusedLineSchedulePrefix),
+            );
+            assert_eq!(plan.value(), super::CheckedRuntimeValueDisposition::Omit);
+        } else {
+            assert!(plan.executes_as_runtime_call());
+            assert_eq!(
+                application.result().value_type(),
+                Some(&TypeKind::CueHandle)
+            );
+        }
+    }
     assert!(!report.calls().any(|(_, call)| {
         call.selected_application().is_some_and(|application| {
             matches!(

@@ -1,6 +1,6 @@
 //! Execution-plan publication requires consistent result and call evidence.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     effects::EffectSet,
@@ -37,7 +37,13 @@ fn call_execution_requires_result_availability_to_match_selection() {
             .collect::<BTreeMap<_, _>>();
         let owner = *calls.keys().next().expect("one call");
         assert!(matches!(
-            super::execution_plan_for_expression(owner, &forged, &calls, &BTreeMap::new(),),
+            super::execution_plan_for_expression(
+                owner,
+                &forged,
+                &calls,
+                &BTreeMap::new(),
+                &BTreeSet::new(),
+            ),
             Err(FinalSemanticAnalysisError::CallFactMismatch)
         ));
     }

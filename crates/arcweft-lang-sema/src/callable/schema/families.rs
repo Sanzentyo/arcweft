@@ -1133,17 +1133,35 @@ impl LineScheduleCallableId {
             TypeKind::CueHandle,
             EffectRow::closed(EffectSet::new()),
         );
-        one_positional(
-            "anchor",
-            TypeKind::Duration,
-            TypeKind::function_with_effects(
-                [callback],
-                TypeKind::CueHandle,
-                EffectRow::closed(EffectSet::new()),
-            ),
-            &[EffectId::DIALOGUE_SCHEDULE_LABEL],
+        let groups = vec![
+            CallableParameterGroup::try_new(
+                crate::callable::CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                vec![required_positional(0, "anchor", TypeKind::Duration)],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("line schedule anchor group is canonical"),
+            CallableParameterGroup::try_new(
+                crate::callable::CallableGroupIndex::try_from_usize(1)
+                    .expect("line schedule callback group is representable"),
+                CallableGroupKind::Curried,
+                vec![required_positional(0, "callback", callback)],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("line schedule callback group is canonical"),
+        ];
+        CallableSignatureSchema::try_new(
+            groups,
+            TypeKind::CueHandle,
+            CallableEffectSchema::fixed(EffectRow::closed(
+                [EffectId::dialogue_schedule()].into_iter().collect(),
+            )),
+            closed(),
             CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
         )
+        .expect("line schedule schema is canonical")
     }
 }
 

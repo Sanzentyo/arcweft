@@ -2040,6 +2040,13 @@ pub enum CheckedExpressionCallCallee {
     },
 }
 
+/// Runtime handling of a checked Call after its exact application was sealed.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CheckedRuntimeCallDisposition {
+    Invoke,
+    FusedLineSchedulePrefix,
+}
+
 /// Stable role occupied by one evaluated-effect expression in its owner.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedEvaluatedEffectRole {
@@ -2076,6 +2083,7 @@ pub enum CheckedExpressionExecutionPlan {
         application: CheckedCallApplicationDigest,
         result: CheckedRuntimeValueDisposition,
         callee: CheckedExpressionCallCallee,
+        disposition: CheckedRuntimeCallDisposition,
         evaluated_effect_roles: Box<[CheckedEvaluatedEffectRole]>,
     },
 }
@@ -2101,7 +2109,25 @@ impl CheckedExpressionExecutionPlan {
             application,
             result,
             callee,
+            disposition: CheckedRuntimeCallDisposition::Invoke,
             evaluated_effect_roles: Box::new([]),
+        }
+    }
+
+    pub(crate) fn fused_line_schedule_prefix(application: CheckedCallApplicationDigest) -> Self {
+        Self::Call {
+            application,
+            result: CheckedRuntimeValueDisposition::Omit,
+            callee: CheckedExpressionCallCallee::Static,
+            disposition: CheckedRuntimeCallDisposition::FusedLineSchedulePrefix,
+            evaluated_effect_roles: Box::new([]),
+        }
+    }
+
+    pub const fn call_disposition(&self) -> Option<CheckedRuntimeCallDisposition> {
+        match self {
+            Self::Call { disposition, .. } => Some(*disposition),
+            Self::Structural { .. } => None,
         }
     }
 
@@ -2162,7 +2188,13 @@ impl CheckedExpressionExecutionPlan {
     }
 
     pub fn executes_as_runtime_call(&self) -> bool {
-        matches!(self, Self::Call { .. }) && self.evaluated_effect_roles().is_empty()
+        matches!(
+            self,
+            Self::Call {
+                disposition: CheckedRuntimeCallDisposition::Invoke,
+                ..
+            }
+        ) && self.evaluated_effect_roles().is_empty()
     }
 
     pub(crate) fn with_evaluated_effect_roles(
@@ -2184,6 +2216,7 @@ impl CheckedExpressionExecutionPlan {
                 application,
                 result,
                 callee,
+                disposition,
                 ..
             } => Self::Call {
                 application,
@@ -2193,6 +2226,7 @@ impl CheckedExpressionExecutionPlan {
                     CheckedRuntimeValueDisposition::Omit
                 },
                 callee,
+                disposition,
                 evaluated_effect_roles: roles,
             },
         }

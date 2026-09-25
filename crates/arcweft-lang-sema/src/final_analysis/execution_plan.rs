@@ -80,6 +80,7 @@ pub(super) fn seal(
     }
 
     let contextual_receivers = contextual_receiver_sources(&expressions, calls)?;
+    let line_schedule_prefixes = fused_line_schedule_prefixes(calls)?;
     for (owner, checked) in &expressions {
         let contextual_kind = match checked.value_type() {
             Some(crate::types::TypeKind::LineContext) => {
@@ -102,8 +103,13 @@ pub(super) fn seal(
     let replacements = expressions
         .into_iter()
         .map(|(owner, checked)| {
-            let plan =
-                execution_plan_for_expression(owner, &checked, calls, &contextual_receivers)?;
+            let plan = execution_plan_for_expression(
+                owner,
+                &checked,
+                calls,
+                &contextual_receivers,
+                &line_schedule_prefixes,
+            )?;
             let effect_roles = roles
                 .remove(&owner)
                 .unwrap_or_default()
@@ -229,11 +235,55 @@ fn add_effect_execution_roles(
     Ok(())
 }
 
+fn fused_line_schedule_prefixes(
+    calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
+) -> Result<BTreeSet<ExprId>, FinalSemanticAnalysisError> {
+    use crate::callable::{
+        CallableCandidateId, CheckedCallCalleeExecution, CheckedCallResult, LineScheduleCallableId,
+        ResolvedCallableState,
+    };
+
+    let mut prefixes = BTreeSet::new();
+    for facts in calls.values() {
+        let Some(completion) = facts.selected_application() else {
+            continue;
+        };
+        let selected = completion.core().candidates().selected();
+        if selected.id() != &CallableCandidateId::LineSchedule(LineScheduleCallableId::At) {
+            continue;
+        }
+        let ResolvedCallableState::Continuation(continuation) = selected.state() else {
+            continue;
+        };
+        let prefix_owner = continuation.prefix_call_site().expression();
+        let CheckedCallCalleeExecution::Value { source } = completion.core().callee() else {
+            return Err(FinalSemanticAnalysisError::CallFactMismatch);
+        };
+        if source.owner() != prefix_owner {
+            continue;
+        }
+        let prefix = calls
+            .get(&prefix_owner)
+            .and_then(crate::callable::CallTargetFacts::selected_application)
+            .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?;
+        if prefix.core().digest() != continuation.prefix_application_core()
+            || prefix.core().stable_site() != continuation.prefix_application_site()
+            || prefix.core().site() != continuation.prefix_call_site()
+            || !matches!(prefix.result(), CheckedCallResult::Continuation(_))
+        {
+            return Err(FinalSemanticAnalysisError::CallFactMismatch);
+        }
+        prefixes.insert(prefix_owner);
+    }
+    Ok(prefixes)
+}
+
 fn execution_plan_for_expression(
     owner: ExprId,
     checked: &super::CheckedExpression,
     calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
     contextual_receivers: &BTreeMap<ExprId, crate::callable::CheckedCallContextualReceiverKind>,
+    line_schedule_prefixes: &BTreeSet<ExprId>,
 ) -> Result<Option<super::CheckedExpressionExecutionPlan>, FinalSemanticAnalysisError> {
     use super::{
         CheckedExpressionCallCallee, CheckedExpressionResolution, CheckedRuntimeValueDisposition,
@@ -253,6 +303,18 @@ fn execution_plan_for_expression(
             return Err(FinalSemanticAnalysisError::CallFactMismatch);
         }
         return Ok(None);
+    }
+    if line_schedule_prefixes.contains(&owner) {
+        let application = calls
+            .get(&owner)
+            .and_then(crate::callable::CallTargetFacts::selected_application)
+            .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?;
+        if !matches!(checked.resolution(), CheckedExpressionResolution::Call) {
+            return Err(FinalSemanticAnalysisError::CallFactMismatch);
+        }
+        return Ok(Some(
+            super::CheckedExpressionExecutionPlan::fused_line_schedule_prefix(application.digest()),
+        ));
     }
     let value = if checked.result().value_type().is_some() {
         CheckedRuntimeValueDisposition::Retain
