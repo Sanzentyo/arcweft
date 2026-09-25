@@ -1236,3 +1236,38 @@ fixture 内の `GameEvent` 宣言が存在しないため nominal TypeId が未�
 同操作は `Option<T>` を返すだけでなく receiver の Vec を更新する必要があり、
 AWBC `while`/`while let` にも別の CFG 実装不足がある。両者を型付きの独立した
 変更として閉じ、044 の実行を検証する。元 fixture は未編集のまま。
+
+## Vec.pop_front / AWBC condition-loop checkpoint — 2026-09-25
+
+Supersedes: 直前 checkpoint の「044 は未宣言 `GameEvent` と `Vec.pop_front()` で停止」。
+確認した `main`/`origin/main` は
+`8b5503c376cf1650cefa786bcc03295ccfce2282` で一致し、working tree は clean。
+044 fixture に inline `GameEvent` 宣言を補い、`compile --emit check` は
+1 flow、warning/obligation とも 0 で通過した。CLI の集約 spec check も 044 を
+通過し、次の 045 で停止した。
+
+`Vec<T>.pop_front()` は checked local/parameter receiver の mutation fact を
+静的 `VecPopFront` target に結び、RuntimePlan admission で `Vec<T> -> Option<T>`
+を検証する。native は最も内側の束縛を更新し、sequence の Values/Dense/
+TupleColumns/RecordColumns から先頭値を clone せずに移動する。AWBC schema-1
+opcode、codec、verifier、VM は同じ更新を local/parameter register に行い、
+保存復元は既存の sequence/register snapshot を使う。AWBC `while` と
+`while let` は条件 header の再評価、pattern・guard・束縛、scope の終了、
+`break`/`continue` の CFG に接続した。2要素を順に取り出す decoded AWBC
+実行と一回目の処理後の snapshot/restore を確認した。
+
+検証: focused core pop-front 4/4、AWBC loop 5/5、044 単独 CLI check、
+workspace all-target/all-feature check、Clippy、fmt、structure audit gate
+（0 blockers）、cached diff check は終了コード0。`RUST_MIN_STACK=16777216` の
+`just test-workspace` は初回 AWBC opcode owner の期待順序で失敗し、定義順に
+訂正して focused test 1/1 を確認。再実行では非 CLI のテストを通過し、CLI
+`spec_should_pass_check_fixtures_pass_after_refactor` が 045
+`dialogue_sugar_ruby_timed_cancel.arcw` の HIR required recovery で停止した。
+全 recipe の合格ではない。
+
+Sol Max と照合した残る境界: writable Vec receiver の維持契約には、既存の
+assignment place が認める local/parameter を根にした直接 nominal field も含む。
+この commit の実行対象は local/parameter のみなので、field place の typed
+mutation は後続 cut で必須。index/deref/nested field は現行の checked writable
+place 自体が受け入れない。`For` の `break`/`continue` は native/AWBC とも
+未接続で、canonical `WhileNext`/`WhileLetNext` は sealed plan が拒否する。
