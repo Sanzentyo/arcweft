@@ -822,3 +822,32 @@ Sema contextual receiver cut の library test は `649e655` 時点で 916/916。
 checkout で、`cargo check --workspace --all-targets --all-features --quiet` が終了コード0。
 既存 warning は残る。これは workspace test、Clippy、019/030 の fixture 受理を
 代替しない。
+
+**2026-09-25 checked defer / collect convergence checkpoint:**
+
+inspected `main`/`origin/main` は `a88c5bfacc4d926ada484ea1b71a10d2375ee726`、
+working tree は clean。Sema の defer は outcome だけでなく Block body と自由ローカルの
+型付き capture ABI を保持する（`a9a067100c1931c6de269c9ff17357eb74ec8ae9`）。
+compiler→RuntimePlan の global/closed-instance fact に body、capture、checked effects
+を投影・検証した（`67827583eae1686c44f775c1740c46bc08b01a0a`、
+`2aef7f59084ccd6423c6cc77c462f0a9c9f2c37c`）。global defer body の executable
+function site と capture input を行コンテンツ lowering より前に予約し、行 root の
+到達文から `RegisterDefer(LineRoot)` を発行する
+`a88c5bfacc4d926ada484ea1b71a10d2375ee726` を push 済み。
+RuntimePlan 80/80 lib tests、changed-crate compiler check、RuntimePlan all-target/all-feature
+Clippy、fmt は exit 0（既存 warning あり）。正確な
+`current_pass/check/019_line_defer_cleanup.arcw` は `arcw check` exit 0、
+0 warning、0 obligation。これは登録 site と静的 plan の受理であり、deferred body
+の native/AWBC unwind、nested scope の登録・所有、失敗/取消結果選択は未完了。
+`current_pass/check/023_dialogue_cancel_defer_on.arcw` は次の `Out` statement lowering
+で失敗し、行コンテンツ handle も未発行である。現在の global defer 以外と defer
+body 内 assertion は、未実装を成功扱いしないよう lowering で明示的に拒否する。
+
+collection `collect` は Sema が Vec/Seq receiver item と destination `Vec<Item>` の
+制約を接続し、919/919 lib tests を通過した
+`d69a7e99d7ff322a2a626508c978af31547c1661`、compiler が選択済み
+`CollectionMethodId::Collect` を `CoreIterCollect` へ写す
+`0eda52ef6d9328a6ae9056ca502d07dd4b6f27b6` を push 済み。
+`spec_should_pass/check/030_closure_pipeline_value_position.arcw` の `arcw check` は
+exit 0、0 warning、0 obligation。`arcw run` はこの check fixture に公開 entrypoint
+がないため bundle entrypoint 検証で停止し、実行受理の証拠ではない。
