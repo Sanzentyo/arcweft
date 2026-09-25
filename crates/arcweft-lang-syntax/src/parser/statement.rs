@@ -226,6 +226,19 @@ pub(super) fn emit_unbraced_block_until(
     parser.finish();
 }
 
+/// Emits an indentation-owned statement block without inventing a value tail.
+/// Its enclosing owner retains the `:` token and the suite boundary.
+fn emit_unbraced_statement_block_until(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+    role: SyntaxRole,
+) {
+    parser.start(SyntaxKind::Block, role);
+    emit_block_sequence(parser, end, item_kind, BlockSequenceKind::Statement);
+    parser.finish();
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BlockSequenceKind {
     Value,
@@ -259,6 +272,8 @@ fn emit_block_sequence(
             .then(|| dialogue_plan::dialogue_plan_end(parser, start, close))
             .flatten()
             .map(|end| (end, false))
+            .or_else(|| line_plan_defer_item_end(parser, start, close).map(|end| (end, false)))
+            .or_else(|| line_plan_on_item_end(parser, start, close).map(|end| (end, false)))
             .or_else(|| {
                 thread_flow
                     .then(|| bare_scope_after_postfix_bracket(parser, start, close))
@@ -577,6 +592,28 @@ pub(super) fn line_plan_defer_item_end(
 ) -> Option<usize> {
     let head = defer_on_head(parser, start, end)?;
     let colon = head.body_token?;
+    if token_text(parser, colon) != Some(":") {
+        return None;
+    }
+    let interval = indentation::indented_suite_interval(parser, start, colon, end);
+    interval
+        .issue()
+        .is_none()
+        .then(|| trimmed_end(parser, start, interval.end()))
+}
+
+/// Retains a complete indented `on ...:` handler when a braced line plan
+/// measures its source-ordered items.
+pub(super) fn line_plan_on_item_end(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    if token_text(parser, start) != Some("on") {
+        return None;
+    }
+    let head_end = indentation::physical_line_end(parser, start, end);
+    let colon = indentation::trailing_owner_body_token(parser, start, head_end, true)?;
     if token_text(parser, colon) != Some(":") {
         return None;
     }
@@ -1767,15 +1804,83 @@ fn emit_wait_children(parser: &mut DocumentParser<'_, '_>, end: usize) {
 }
 
 fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
+    let owner_start = parser.cursor();
     parser.bump();
     parser.bump_trivia();
-    let arrow = top_level_operator(parser, parser.cursor(), end, "=>").unwrap_or(end);
-    trigger::emit_trigger_pattern(parser, arrow, SyntaxRole::Condition);
-    bump_until(parser, arrow);
-    if parser.cursor() < end {
+    let body = indentation::trailing_braced_body_interval(parser, parser.cursor(), end);
+    let head_end = indentation::physical_line_end(parser, owner_start, end);
+    let colon = indentation::trailing_owner_body_token(parser, parser.cursor(), head_end, true)
+        .filter(|index| token_text(parser, *index) == Some(":"));
+    let arrow = top_level_operator(parser, parser.cursor(), end, "=>");
+    let trigger_end = [body.map(|(open, _)| open), colon, arrow]
+        .into_iter()
+        .flatten()
+        .min()
+        .unwrap_or(end);
+    trigger::emit_trigger_pattern(parser, trigger_end, SyntaxRole::Condition);
+    bump_until(parser, trigger_end);
+    if arrow == Some(trigger_end) {
         parser.bump();
         parser.bump_trivia();
-        emit_statement(parser, end, item_kind, 0);
+        if parser.cursor() < end {
+            emit_statement_with_role(parser, end, item_kind, SyntaxRole::Statement(0));
+        } else {
+            emit_required_statement_body_recovery(
+                parser,
+                "syntax.statement.on_missing_body",
+                "on handler requires a statement after `=>`",
+            );
+        }
+    } else if let Some((open, body_end)) = body.filter(|(open, _)| *open == trigger_end) {
+        debug_assert_eq!(parser.cursor(), open);
+        let _ = emit_braced_statement_block_until(
+            parser,
+            body_end,
+            item_kind,
+            SyntaxKind::Block,
+            SyntaxRole::Body,
+            "syntax.statement.on_missing_close",
+        );
+        if first_significant(parser, parser.cursor(), end).is_some() {
+            let start = parser.current_offset();
+            parser.start(SyntaxKind::ErrorNode, SyntaxRole::TrailingRecovery(0));
+            bump_until(parser, end);
+            parser.finish();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.statement.on_trailing_tokens",
+                SourceRange::new(start, parser.current_offset()),
+                "unexpected tokens after on handler body",
+            )));
+        }
+        bump_until(parser, end);
+    } else if let Some(colon) = colon.filter(|colon| *colon == trigger_end) {
+        let interval = indentation::indented_suite_interval(parser, owner_start, colon, end);
+        parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+        parser.bump();
+        parser.finish();
+        if interval.issue().is_some() {
+            emit_required_statement_body_recovery(
+                parser,
+                "syntax.statement.on_invalid_indent",
+                "on handler requires an indented statement body",
+            );
+            bump_until(parser, end);
+        } else {
+            bump_until(parser, interval.first_item());
+            emit_unbraced_statement_block_until(
+                parser,
+                interval.end(),
+                item_kind,
+                SyntaxRole::Body,
+            );
+            bump_until(parser, end);
+        }
+    } else {
+        emit_required_statement_body_recovery(
+            parser,
+            "syntax.statement.on_missing_body",
+            "on handler requires `=>` and one statement, or a braced or indented body",
+        );
     }
 }
 

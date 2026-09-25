@@ -300,9 +300,9 @@ impl LinePlanLowerer<'_, '_> {
                 }
             }
             LinePlanStatementProjection::Other => match kind {
-                HirStmtKind::On { body, .. } => {
+                HirStmtKind::On { scope, body, .. } => {
                     let trigger = self.admitted_dialogue_mark(statement)?;
-                    let actions = self.lower_statement_actions(&body)?;
+                    let actions = self.lower_on_actions(scope, &body)?;
                     let id = self.allocate_child()?;
                     self.root_children.push(NodeDraft::Child {
                         id,
@@ -412,9 +412,9 @@ impl LinePlanLowerer<'_, '_> {
                 }
             }
             LinePlanStatementProjection::Other => match kind {
-                HirStmtKind::On { body, .. } => {
+                HirStmtKind::On { scope, body, .. } => {
                     let trigger = self.admitted_dialogue_mark(statement)?;
-                    let actions = self.lower_statement_actions(&body)?;
+                    let actions = self.lower_on_actions(scope, &body)?;
                     let id = self.allocate_child()?;
                     Ok(NodeDraft::Child {
                         id,
@@ -489,15 +489,32 @@ impl LinePlanLowerer<'_, '_> {
         })
     }
 
-    fn lower_statement_actions(
+    fn lower_on_actions(
         &mut self,
+        scope: arcweft_lang_hir::identity::ScopeId,
         statements: &[StmtId],
     ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
-        let mut actions = Vec::new();
+        let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
+            identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+        })];
         for statement in statements {
-            let kind = self.resolve_statement(*statement)?.kind().clone();
-            actions.extend(self.lower_statement_action(*statement, &kind)?);
+            let payload = self.resolve_statement(*statement)?;
+            if payload.scope() != scope {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "On handler statement {statement:?} is outside its retained scope {scope:?}"
+                )));
+            }
+            let kind = payload.kind().clone();
+            if matches!(kind, HirStmtKind::Defer { .. }) {
+                actions.push(FlowDraft::Flow(self.flow.lower_defer_registration(
+                    *statement,
+                    arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
+                )?));
+            } else {
+                actions.extend(self.lower_statement_action(*statement, &kind)?);
+            }
         }
+        actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
         Ok(actions)
     }
 

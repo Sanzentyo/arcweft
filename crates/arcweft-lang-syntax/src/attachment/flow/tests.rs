@@ -1374,7 +1374,41 @@ fn on_statement_attachment_owns_typed_trigger_and_body() {
         AttachedTriggerPattern::Mark(trigger)
             if trigger.selector().name().is_some_and(|name| name.as_str() == "checkpoint")
     ));
-    assert_eq!(on.body().kind(), SyntaxKind::GotoStatement);
+    assert_eq!(
+        on.body().statements().unwrap()[0].kind(),
+        SyntaxKind::GotoStatement
+    );
+}
+
+#[test]
+fn on_statement_block_forms_preserve_ordered_handler_statements() {
+    for body_source in [
+        "{ log.info(\"first\"); log.info(\"second\") }\n",
+        ":\n        log.info(\"first\")\n        log.info(\"second\")\n",
+    ] {
+        let source = format!("flow on_mark {{\n    on mark(@.checkpoint) {body_source}}}\n");
+        let snapshot = attach(&source);
+        let declaration = flow(&snapshot).semantics().unwrap();
+        let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+            panic!("On fixture requires a Flow body");
+        };
+        let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+            panic!("On handler must remain a statement item");
+        };
+        let on = statement
+            .cast::<OnStatementKind>()
+            .unwrap()
+            .semantics()
+            .unwrap();
+        let statements = on.body().statements().unwrap();
+        assert_eq!(statements.len(), 2, "{body_source}");
+        assert!(
+            statements
+                .iter()
+                .all(|statement| statement.kind() == SyntaxKind::ExpressionStatement)
+        );
+        assert!(!on.has_recovery(), "{body_source}");
+    }
 }
 
 #[test]

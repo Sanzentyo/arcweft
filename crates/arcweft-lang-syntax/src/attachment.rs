@@ -185,7 +185,8 @@ pub use source_file::{AttachedPath, AttachedPathRoot};
 pub use statement::{
     AttachedBreakStatement, AttachedContinueStatement, AttachedControlLabel,
     AttachedDeferBlockBody, AttachedDeferBlockStatement, AttachedDeferStatement,
-    AttachedGotoStatement, AttachedOnStatement, AttachedOutStatement, AttachedSignalStatement,
+    AttachedGotoStatement, AttachedOnStatement, AttachedOnStatementBody, AttachedOutStatement,
+    AttachedSignalStatement,
 };
 pub use style::{
     AttachedStyleAssignment, AttachedStyleAssignmentState, AttachedStyleBody,

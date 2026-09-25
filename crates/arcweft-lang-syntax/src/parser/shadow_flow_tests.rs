@@ -19,6 +19,65 @@ fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
 }
 
 #[test]
+fn on_handler_blocks_preserve_statement_bodies_and_recovery_sites() {
+    for source in [
+        "flow handled() -> String {\n    on event(event) { log.info(\"first\"); log.info(\"second\") }\n    return \"done\"\n}\n",
+        "flow handled() -> String {\n    on event(event):\n        log.info(\"first\")\n        log.info(\"second\")\n    return \"done\"\n}\n",
+    ] {
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        assert!(built.diagnostics().is_empty(), "{:#?}", built.diagnostics());
+        assert_eq!(
+            kind_count(built.index().entries(), SyntaxKind::OnStatement),
+            1
+        );
+        assert_eq!(
+            kind_count(built.index().entries(), SyntaxKind::ExpressionStatement),
+            2
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    let arrow_with_block =
+        "flow arrow() -> String {\n    on event(event) => if true { log.info(\"inside\") }\n    return \"done\"\n}\n";
+    let built = parse_document(
+        &document(arrow_with_block),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
+    assert!(built.diagnostics().is_empty(), "{:#?}", built.diagnostics());
+    assert_eq!(kind_count(built.index().entries(), SyntaxKind::OnStatement), 1);
+    assert_eq!(kind_count(built.index().entries(), SyntaxKind::IfStatement), 1);
+    assert_eq!(built.green().to_string(), arrow_with_block);
+
+    let missing = "flow missing() -> String {\n    on event(event):\n    return \"done\"\n}\n";
+    let built = parse_document(&document(missing), crate::parser::ParseOptions::default()).unwrap();
+    let diagnostic = built
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.statement.on_invalid_indent")
+        .expect("missing indented On body keeps a parser diagnostic");
+    assert_eq!(diagnostic.range().start(), missing.find(":\n").unwrap() + 1);
+    assert!(diagnostic.range().is_empty());
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::MissingBody),
+        1
+    );
+    assert_eq!(built.green().to_string(), missing);
+
+    let unclosed = "flow unclosed() -> String {\n    on event(event) { log.info(\"first\")";
+    let built =
+        parse_document(&document(unclosed), crate::parser::ParseOptions::default()).unwrap();
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.statement.on_missing_close")
+    );
+    assert_eq!(built.green().to_string(), unclosed);
+}
+
+#[test]
 fn flow_receiver_shape_requires_a_typed_pattern_annotation() {
     let source = "flow invalid(self) {}\n";
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();

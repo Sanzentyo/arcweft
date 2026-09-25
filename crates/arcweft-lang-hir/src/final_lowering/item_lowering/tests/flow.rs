@@ -116,6 +116,125 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
 }
 
 #[test]
+fn dialogue_mark_on_blocks_keep_one_statement_owner_and_ordered_body() {
+    for plan in [
+        "    with:\n        on mark(@.checkpoint):\n            log.info(\"first\")\n            log.info(\"second\")\n",
+        "    with { on mark(@.checkpoint) { log.info(\"first\"); log.info(\"second\") } }\n",
+    ] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow on_mark() -> String {{\n    alice()[before [mark @.checkpoint] after[p]]\n{plan}    return \"done\"\n}}\n"
+        );
+        let parsed = parse("arcweft-test://proof/dialogue-mark-on-block", &source);
+        assert!(
+            parsed.diagnostics().is_empty(),
+            "{:#?}",
+            parsed.diagnostics()
+        );
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().unwrap();
+        let module = lower(&mut database, &parsed, &key);
+        assert_eq!(
+            module.status(),
+            HirModuleStatus::Clean,
+            "{:#?}",
+            module.diagnostics()
+        );
+        let (_, _, flow) = resolve_flow(&module, 1);
+        let [
+            HirThreadFlowItem::DialogueApplication(dialogue),
+            HirThreadFlowItem::Statement(_),
+        ] = flow.body().items()
+        else {
+            panic!(
+                "handler line and return must remain sibling Flow items: {:#?}\n{source}",
+                flow.body().items()
+            );
+        };
+        let HirExprKind::AttachedContentApplication(application) =
+            module.resolve_expr(*dialogue).unwrap().kind()
+        else {
+            panic!("line retains its dialogue application");
+        };
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            plan: Some(plan),
+            ..
+        } = application.family()
+        else {
+            panic!("line retains its plan");
+        };
+        let [HirLinePlanItem::Statement(on)] = plan.items() else {
+            panic!("On remains one statement-owned plan item");
+        };
+        let HirStmtKind::On { scope, body, .. } = module.resolve_stmt(*on).unwrap().kind() else {
+            panic!("On owns its trigger and ordered handler statements");
+        };
+        assert_eq!(body.len(), 2);
+        for statement in body.iter() {
+            assert_eq!(module.resolve_stmt(*statement).unwrap().scope(), *scope);
+        }
+    }
+}
+
+#[test]
+fn dialogue_on_block_retains_scoped_defer_body() {
+    let source = concat!(
+        "pub character alice { display = \"Alice\" }\n",
+        "flow on_defer() -> String {\n",
+        "    alice()[before [mark @.checkpoint] after[p]]\n",
+        "    with:\n",
+        "        on mark(@.checkpoint):\n",
+        "            defer on failed:\n",
+        "                log.info(\"handler failed\")\n",
+        "            log.info(\"handler reached\")\n",
+        "        out ()\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let parsed = parse("arcweft-test://proof/dialogue-on-defer", source);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:#?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let HirThreadFlowItem::DialogueApplication(dialogue) = flow.body().items()[0] else {
+        panic!("first Flow item must be the dialogue application");
+    };
+    let HirExprKind::AttachedContentApplication(application) =
+        module.resolve_expr(dialogue).unwrap().kind()
+    else {
+        panic!("line retains its dialogue application");
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("line retains its plan");
+    };
+    let HirLinePlanItem::Statement(on) = plan.items()[0] else {
+        panic!("On remains a statement-owned plan item");
+    };
+    let HirStmtKind::On { body, .. } = module.resolve_stmt(on).unwrap().kind() else {
+        panic!("On retains an ordered body");
+    };
+    assert_eq!(body.len(), 2);
+    assert!(matches!(
+        module.resolve_stmt(body[0]).unwrap().kind(),
+        HirStmtKind::Defer { .. }
+    ));
+}
+
+#[test]
 fn dialogue_line_cancel_rule_retains_typed_trigger_and_nested_thread_scope() {
     let source = concat!(
         "pub character alice { display = \"Alice\" }\n",

@@ -99,6 +99,7 @@ fn emit_braced_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
         }
         let start = parser.cursor();
         let terminator = super::line_plan_defer_item_end(parser, start, close)
+            .or_else(|| super::line_plan_on_item_end(parser, start, close))
             .map(|end| (end, false))
             .or_else(|| find_statement_terminator(parser, start, close));
         let segment_end = terminator.map_or(close, |(index, _)| index);

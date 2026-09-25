@@ -995,19 +995,32 @@ impl StagedHirModuleTransaction<'_> {
         )?;
         let (trigger, trigger_locals, trigger_recovery) =
             self.lower_attached_trigger(attached.trigger(), owner, scope, mark_catalog)?;
-        let lowered_body = self.lower_attached_statement_with_mark_catalog(
-            attached.body(),
-            scope,
-            HirStatementContext::Thread,
-            mark_catalog,
-        )?;
-        let mut locals = Vec::with_capacity(trigger_locals.len() + lowered_body.locals.len());
+        let body = attached
+            .body()
+            .statements()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        require_limit(HirLimit::Statements, body.len())?;
+        let mut body_owners = Vec::with_capacity(body.len());
+        let mut body_locals = Vec::new();
+        let mut body_recovery = false;
+        for statement in &body {
+            let lowered = self.lower_attached_statement_with_mark_catalog(
+                statement,
+                scope,
+                HirStatementContext::Thread,
+                mark_catalog,
+            )?;
+            body_owners.push(lowered.owner);
+            body_locals.extend_from_slice(&lowered.locals);
+            body_recovery |= lowered.poisoned;
+        }
+        let mut locals = Vec::with_capacity(trigger_locals.len() + body_locals.len());
         locals.extend_from_slice(&trigger_locals);
-        locals.extend_from_slice(&lowered_body.locals);
+        locals.extend_from_slice(&body_locals);
         require_limit(HirLimit::LocalsPerScope, locals.len())?;
         self.close_scope_members(scope, locals.clone().into_boxed_slice())?;
 
-        let recovery = if trigger_recovery || lowered_body.poisoned || attached.has_recovery() {
+        let recovery = if trigger_recovery || body_recovery || attached.has_recovery() {
             Some(HirStmtRecoveryIssue::RecoveredChild {
                 role: HirStmtChildRole::Condition,
             })
@@ -1018,7 +1031,7 @@ impl StagedHirModuleTransaction<'_> {
             HirStmtKind::On {
                 trigger,
                 scope,
-                body: Box::new([lowered_body.owner]),
+                body: body_owners.into_boxed_slice(),
             },
             Box::new([]),
             recovery,

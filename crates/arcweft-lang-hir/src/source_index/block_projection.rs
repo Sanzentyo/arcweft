@@ -14,10 +14,11 @@ use arcweft_lang_syntax::attachment::node::{
 };
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedOnStatement,
-    AttachedRequiredNestedThreadFlowBody, AttachedTriggerPattern, BlockTailNode,
-    IfStatementElseNode, IfStatementHeadNode, LetInitializerNode, MatchStatementArmBodyNode,
-    MatchStatementBodyNode, MatchStatementExpressionNode, RequiredStatementExpressionNode,
-    StatementNode, SyntaxNodeId, UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
+    AttachedOnStatementBody, AttachedRequiredNestedThreadFlowBody, AttachedTriggerPattern,
+    BlockTailNode, IfStatementElseNode, IfStatementHeadNode, LetInitializerNode,
+    MatchStatementArmBodyNode, MatchStatementBodyNode, MatchStatementExpressionNode,
+    RequiredStatementExpressionNode, StatementNode, SyntaxNodeId, UnsafeAuditBodyNode,
+    UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };
 use arcweft_lang_syntax::expressions::ExpressionProjection;
 use arcweft_lang_syntax::grammar::SyntaxKind;
@@ -1312,9 +1313,35 @@ fn on_statement_evidence(
     body: &[StmtId],
     generations: &mut BTreeMap<HirName, LocalGeneration>,
 ) -> Option<StatementEvidence> {
-    let [body_owner] = body else {
+    let authored_body = attached.body().statements().ok()?;
+    if authored_body.len() != body.len() {
         return None;
-    };
+    }
+    match attached.body() {
+        AttachedOnStatementBody::Arrow(_) => {}
+        AttachedOnStatementBody::Missing(missing) => {
+            if !missing.range().is_empty() {
+                return None;
+            }
+        }
+        AttachedOnStatementBody::Braced(block) => {
+            if block.optional_tail().ok()?.is_some()
+                || block.open_delimiter().ok()?.range().is_empty()
+                || block.close_delimiter().is_err()
+            {
+                return None;
+            }
+        }
+        AttachedOnStatementBody::Indented { colon, block } => {
+            if colon.range().is_empty()
+                || block.optional_tail().ok()?.is_some()
+                || block.open_delimiter().is_ok()
+                || block.close_delimiter().is_ok()
+            {
+                return None;
+            }
+        }
+    }
     let trigger = trigger_evidence(
         parsed,
         slots,
@@ -1341,22 +1368,26 @@ fn on_statement_evidence(
         return None;
     }
 
-    let body = statement_matches(
-        parsed,
-        slots,
-        arenas,
-        *body_owner,
-        attached.body(),
-        trigger_scope,
-        generations,
-        HirStatementContext::Thread,
-    )?;
     let mut expected_locals = trigger.0.to_vec();
-    expected_locals.extend_from_slice(&body.locals);
+    let mut body_poisoned = false;
+    for (owner, statement) in body.iter().zip(&authored_body) {
+        let evidence = statement_matches(
+            parsed,
+            slots,
+            arenas,
+            *owner,
+            statement,
+            trigger_scope,
+            generations,
+            HirStatementContext::Thread,
+        )?;
+        expected_locals.extend_from_slice(&evidence.locals);
+        body_poisoned |= evidence.is_poisoned();
+    }
     if scope.locals() != expected_locals {
         return None;
     }
-    let state = if trigger.1 || body.is_poisoned() || attached.has_recovery() {
+    let state = if trigger.1 || body_poisoned || attached.has_recovery() {
         HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
             role: HirStmtChildRole::Condition,
         })

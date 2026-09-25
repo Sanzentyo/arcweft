@@ -5,16 +5,16 @@ use super::access::RequiredStatementExpressionNode;
 use super::expression::AttachedExpressionNode;
 use super::family::ExpressionFamily;
 use super::family::{StatementFamily, StatementNode};
-use super::node::MissingBodyKind;
 use super::node::{
     AstKind, AstNode, BreakStatementKind, ContinueStatementKind, DeferBlockStatementKind,
     DeferStatementKind, ErrorNodeKind, GotoStatementKind, NameReferenceKind, OnStatementKind,
     OutStatementKind, SignalStatementKind,
 };
+use super::node::{BlockKind, ColonKind, MissingBodyKind};
 use super::trigger::{AttachedTriggerPattern, attach_trigger_pattern};
 use crate::ast::line_plan::DeferOutcome;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
-use crate::grammar::{SyntaxRole, SyntaxRoleClass};
+use crate::grammar::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::name::{SyntaxName, SyntaxNameIssue};
 use arcweft_source::SourceSpan;
 
@@ -213,7 +213,52 @@ pub struct AttachedContinueStatement {
     forbidden_suffix: Option<AstNode<ErrorNodeKind>>,
 }
 
-/// Complete typed `on TRIGGER => STATEMENT` relation.
+/// The exact source form of one event handler body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedOnStatementBody {
+    Arrow(StatementNode),
+    Braced(AstNode<BlockKind>),
+    Indented {
+        colon: AstNode<ColonKind>,
+        block: AstNode<BlockKind>,
+    },
+    Missing(AstNode<MissingBodyKind>),
+}
+
+impl AttachedOnStatementBody {
+    /// Statements executed by the handler in their authored order.
+    pub fn statements(&self) -> Result<Vec<StatementNode>, SyntaxAccessError> {
+        match self {
+            Self::Arrow(statement) => Ok(vec![statement.clone()]),
+            Self::Braced(block) | Self::Indented { block, .. } => block.statements(),
+            Self::Missing(_) => Ok(Vec::new()),
+        }
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        match self {
+            Self::Arrow(statement) => statement.kind() == SyntaxKind::ErrorStatement,
+            Self::Braced(block) => {
+                block
+                    .close_delimiter()
+                    .map_or(true, |close| close.range().is_empty())
+                    || block.statements().map_or(true, |items| {
+                        items
+                            .iter()
+                            .any(|item| item.kind() == SyntaxKind::ErrorStatement)
+                    })
+            }
+            Self::Indented { block, .. } => block.statements().map_or(true, |items| {
+                items
+                    .iter()
+                    .any(|item| item.kind() == SyntaxKind::ErrorStatement)
+            }),
+            Self::Missing(_) => true,
+        }
+    }
+}
+
+/// Complete typed `on TRIGGER` handler relation.
 ///
 /// The trigger attachment retains a typed marker selector when the trigger is
 /// `mark`; final HIR resolves that selector against the owning dialogue
@@ -222,7 +267,7 @@ pub struct AttachedContinueStatement {
 pub struct AttachedOnStatement {
     syntax: AstNode<OnStatementKind>,
     trigger: AttachedTriggerPattern,
-    body: StatementNode,
+    body: AttachedOnStatementBody,
 }
 
 impl AttachedOnStatement {
@@ -234,14 +279,20 @@ impl AttachedOnStatement {
         &self.trigger
     }
 
-    /// The one statement evaluated when the trigger is accepted.
-    pub const fn body(&self) -> &StatementNode {
+    /// The authored body evaluated when the trigger is accepted.
+    pub const fn body(&self) -> &AttachedOnStatementBody {
         &self.body
     }
 
     pub fn has_recovery(&self) -> bool {
         self.trigger.has_recovery()
-            || matches!(self.body.kind(), crate::grammar::SyntaxKind::ErrorStatement)
+            || self.body.has_recovery()
+            || self.syntax.syntax().children().iter().any(|child| {
+                matches!(
+                    child.role(),
+                    SyntaxRole::Recovery(_) | SyntaxRole::TrailingRecovery(_)
+                )
+            })
     }
 }
 
@@ -402,15 +453,38 @@ impl AstNode<OnStatementKind> {
             .syntax()
             .optional_unique_child(SyntaxRole::Condition)?
             .ok_or(SyntaxAccessError::InvalidTriggerShape { id: self.id() })?;
-        let body = self.required_family_child::<StatementFamily>(SyntaxRole::Statement(0))?;
         if self.syntax().children().iter().any(|child| {
             !matches!(
                 child.role(),
-                SyntaxRole::Condition | SyntaxRole::Statement(0) | SyntaxRole::Recovery(_)
+                SyntaxRole::Condition
+                    | SyntaxRole::Statement(0)
+                    | SyntaxRole::Body
+                    | SyntaxRole::Colon
+                    | SyntaxRole::Recovery(_)
+                    | SyntaxRole::TrailingRecovery(_)
             )
         }) {
             return Err(SyntaxAccessError::InvalidTriggerShape { id: self.id() });
         }
+        let arrow = self.optional_family_child::<StatementFamily>(SyntaxRole::Statement(0))?;
+        let colon = self.optional_exact_child::<ColonKind>(SyntaxRole::Colon)?;
+        let bodies = self.syntax().children_with_role(SyntaxRole::Body);
+        let body = match (arrow, colon, bodies.as_slice()) {
+            (Some(statement), None, []) => AttachedOnStatementBody::Arrow(statement),
+            (None, None, [body]) if body.kind() == SyntaxKind::Block => {
+                AttachedOnStatementBody::Braced(body.clone().cast::<BlockKind>()?)
+            }
+            (None, Some(colon), [body]) if body.kind() == SyntaxKind::Block => {
+                AttachedOnStatementBody::Indented {
+                    colon,
+                    block: body.clone().cast::<BlockKind>()?,
+                }
+            }
+            (None, _, [body]) if body.kind() == SyntaxKind::MissingBody => {
+                AttachedOnStatementBody::Missing(body.clone().cast::<MissingBodyKind>()?)
+            }
+            _ => return Err(SyntaxAccessError::InvalidTriggerShape { id: self.id() }),
+        };
         Ok(AttachedOnStatement {
             syntax: self.clone(),
             trigger: attach_trigger_pattern(trigger)?,
