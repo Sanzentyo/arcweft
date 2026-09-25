@@ -196,7 +196,7 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
-    fn record_path_capture(
+    pub(super) fn record_path_capture(
         &mut self,
         owner: ExprId,
         scope: ScopeId,

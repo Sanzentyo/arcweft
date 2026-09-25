@@ -1153,6 +1153,20 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         .expect("accepted symbol generation")
         .into_evaluation_topology()
         .unwrap_or_else(|error| panic!("line-plan evaluation topology: {error:?}"));
+    let module = fixture
+        .project
+        .analysis_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let hir_closure_captures = module
+        .expressions()
+        .filter_map(|(_, expression)| match expression.kind() {
+            HirExprKind::Closure(closure) => Some(closure.captures().len()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(hir_closure_captures, [1, 1], "HIR scheduled captures");
     let report = analyze(&fixture)
         .unwrap_or_else(|error| panic!("typed Dialogue line-plan bindings: {error:?}"));
     let character = CharacterId::try_new("character.akane").expect("Character identity");
@@ -1367,6 +1381,25 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
                 Some(&TypeKind::CueHandle)
             );
         }
+    }
+    let scheduled_closures = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Closure(closure) => Some(closure),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(scheduled_closures.len(), 2);
+    for closure in scheduled_closures {
+        let [capture] = closure.captures() else {
+            panic!("scheduled actor callback retains one captured local");
+        };
+        assert_eq!(
+            report.local(capture.local()).map(super::CheckedBinding::ty),
+            Some(&TypeKind::StageActorHandle(StageActorHandleType::Exact(
+                character.clone()
+            ))),
+        );
     }
     assert!(!report.calls().any(|(_, call)| {
         call.selected_application().is_some_and(|application| {

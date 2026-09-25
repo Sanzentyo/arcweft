@@ -6,6 +6,7 @@ use arcweft_lang_syntax::attachment::{
     AttachedCandidateNode, AttachedCandidatePathExpression, AttachedExpressionNode,
 };
 use arcweft_lang_syntax::expressions::{ExpressionComponentRole, ExpressionRecordFieldPart};
+use arcweft_lang_syntax::types::TypeRefComponentRole;
 use arcweft_source::SourceSpan;
 
 use crate::arena::ArenaSnapshot;
@@ -104,13 +105,16 @@ impl<'a> CaptureValidation<'a> {
         expression: &HirExpr,
         attached: &AttachedExpressionNode,
     ) -> Option<()> {
-        let path_source = attached.path().and_then(|path| {
-            if let [segment] = path.segments() {
-                Some(segment.source_span())
-            } else {
-                None
+        let path_source = match (attached.path(), attached.nominal_path_type()) {
+            (Some(path), None) => match path.segments() {
+                [segment] => Some(segment.source_span()),
+                _ => None,
+            },
+            (None, Some(type_ref)) => {
+                type_ref.component(TypeRefComponentRole::PathSegment { ordinal: 0 })
             }
-        });
+            _ => None,
+        };
         self.expression(owner, expression, path_source, |field| {
             attached.component(ExpressionComponentRole::RecordField {
                 field,

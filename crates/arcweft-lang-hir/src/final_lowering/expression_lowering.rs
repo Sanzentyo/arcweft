@@ -30,6 +30,7 @@ use arcweft_lang_syntax::expressions::{
 };
 use arcweft_lang_syntax::grammar::SyntaxAwaitBranchKind;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
+use arcweft_lang_syntax::types::TypeRefComponentRole;
 
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{
@@ -315,12 +316,21 @@ impl StagedHirModuleTransaction<'_> {
                             HirPathValue::Recovered(recovery)
                         }
                     },
-                    (None, Some(type_ref)) => HirPathValue::Resolved(project_type_path(
-                        type_ref
-                            .value()
-                            .nominal_path()
-                            .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-                    )?),
+                    (None, Some(type_ref)) => {
+                        let projected = project_type_path(
+                            type_ref
+                                .value()
+                                .nominal_path()
+                                .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+                        )?;
+                        if projected.lexical_name().is_some() {
+                            let source = type_ref
+                                .component(TypeRefComponentRole::PathSegment { ordinal: 0 })
+                                .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
+                            self.record_path_capture(owner, scope, &projected, source)?;
+                        }
+                        HirPathValue::Resolved(projected)
+                    }
                     _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
                 };
                 let recovery = value
