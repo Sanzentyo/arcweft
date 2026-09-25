@@ -1,0 +1,6 @@
+pub character alice { display = "Alice" }
+
+flow bare_scope_after_dialogue() -> String {
+    @<character.alice>()[本文。[p]] { log.info("after") }
+    return "done"
+}
