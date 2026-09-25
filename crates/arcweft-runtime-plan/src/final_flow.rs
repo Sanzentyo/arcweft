@@ -5,6 +5,8 @@ mod callable_states;
 
 #[path = "final_flow/control_locals.rs"]
 mod control_locals;
+#[path = "final_flow/defer.rs"]
+mod defer;
 #[path = "final_flow/line_plan.rs"]
 mod line_plan;
 #[path = "final_flow/rust_defaults.rs"]
@@ -30,9 +32,9 @@ use arcweft_core::entry::{
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed,
-    RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
+    RuntimeChoiceOptionSeed, RuntimeDeferOwner, RuntimeDialogueContentPlanSeedId,
+    RuntimeDropPolicySeed, RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
     RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
     RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
@@ -48,6 +50,7 @@ use arcweft_core::plan::{
     RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity,
     RuntimeTraitMethodSeedId,
 };
+use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::{
     RuntimeCallArgumentMode, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
@@ -470,6 +473,7 @@ struct FinalLoweringContext<'project, 'data> {
     closure_locals: &'data BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
     trait_methods: &'data BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'data BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    defer_sites: &'data BTreeMap<StmtId, RuntimeDeferSiteId>,
     dialogue_effect_sites:
         &'data BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     dialogue_value_capture_input_locals:
@@ -1299,6 +1303,7 @@ pub fn lower_runtime_plan_with_stats(
     let (trait_methods, trait_definitions) =
         reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
     let empty_dialogue_effect_sites = BTreeMap::new();
+    let empty_defer_sites = BTreeMap::new();
     let empty_dialogue_value_capture_input_locals = BTreeMap::new();
     let empty_dialogue_value_result_locals = BTreeMap::new();
     let empty_dialogue_effect_capture_input_locals = BTreeMap::new();
@@ -1323,6 +1328,7 @@ pub fn lower_runtime_plan_with_stats(
         closure_locals: &closure_locals,
         trait_methods: &trait_methods,
         function_sites: &function_sites,
+        defer_sites: &empty_defer_sites,
         dialogue_effect_sites: &empty_dialogue_effect_sites,
         dialogue_value_capture_input_locals: &empty_dialogue_value_capture_input_locals,
         dialogue_value_result_locals: &empty_dialogue_value_result_locals,
@@ -1430,7 +1436,13 @@ pub fn lower_runtime_plan_with_stats(
         dialogue_value_result_locals: &dialogue_value_result_locals,
         ..context
     };
-    let (dialogue_content, dialogue_assertion_sites) =
+    let (defer_sites, defer_definitions) =
+        defer::reserve_global_defer_sites(&context, &mut builder, &mut errors);
+    let context = FinalLoweringContext {
+        defer_sites: &defer_sites,
+        ..context
+    };
+    let (dialogue_content, mut dialogue_assertion_sites) =
         lower_dialogue_content(&context, &dialogue_effect_sites, &mut builder, &mut errors);
     let context = FinalLoweringContext {
         dialogue_content: &dialogue_content,
@@ -1440,6 +1452,12 @@ pub fn lower_runtime_plan_with_stats(
     // Bodies may invoke any reserved function site or start any admitted
     // dialogue occurrence. Define them only after both inventories exist.
     define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
+    dialogue_assertion_sites.extend(defer::define_global_defer_sites(
+        &context,
+        &defer_definitions,
+        &mut builder,
+        &mut errors,
+    ));
     define_project_function_sites(
         &context,
         &project_function_definitions,
@@ -4154,6 +4172,7 @@ enum RuntimeAssertionOwner {
     Closure(arcweft_lang_sema::callable::CheckedClosureId),
     Flow(FlowRuntimeId),
     Line(RuntimeLineId),
+    Defer(StmtId),
 }
 
 impl RuntimeAssertionOwner {
@@ -4167,6 +4186,7 @@ impl RuntimeAssertionOwner {
             ),
             Self::Flow(flow) => flow.canonical_label(),
             Self::Line(line) => line.canonical_label(),
+            Self::Defer(statement) => format!("defer@{statement:?}"),
         }
     }
 }
@@ -4179,6 +4199,7 @@ struct FinalFlowLowerer<'a> {
     locals: &'a BTreeMap<LocalId, RuntimeLocalSeedId>,
     trait_methods: &'a BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     project_callable_states: &'a callable_states::ProjectCallableStates,
     callable_sources: &'a callable_states::ProjectCallableSourceStates,
@@ -4283,6 +4304,7 @@ impl<'a> FinalFlowLowerer<'a> {
             locals: context.locals,
             trait_methods: context.trait_methods,
             function_sites: context.function_sites,
+            defer_sites: context.defer_sites,
             closure_sites: context.closure_sites,
             project_callable_states: context.project_callable_states,
             callable_sources: context.callable_sources,
@@ -4657,6 +4679,9 @@ impl<'a> FinalFlowLowerer<'a> {
         kind: &HirStmtKind,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match kind {
+            HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
+                "defer {id:?} requires scope-owned runtime registration"
+            ))),
             HirStmtKind::Assertion { mode, conditions } => {
                 self.lower_assertion(id, *mode, conditions)
             }
@@ -4951,6 +4976,50 @@ impl<'a> FinalFlowLowerer<'a> {
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
         }
+    }
+
+    fn lower_defer_registration(
+        &self,
+        statement: StmtId,
+        owner: RuntimeDeferOwner,
+    ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
+        let fact = self.semantic_facts.defer(statement).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "defer {statement:?} has no selected checked body fact"
+            ))
+        })?;
+        let site = *self.defer_sites.get(&statement).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "defer {statement:?} has no reserved executable site"
+            ))
+        })?;
+        let captures = fact
+            .captures()
+            .iter()
+            .map(|capture| {
+                self.locals
+                    .get(&capture.local())
+                    .cloned()
+                    .map(|local| {
+                        RuntimeExprSeed::new(
+                            capture.ty().identity(),
+                            arcweft_core::plan::RuntimeExprSeedKind::Local(local),
+                        )
+                    })
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "defer {statement:?} capture {:?} has no admitted local",
+                            capture.local()
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(RuntimeFlowOpSeed::RegisterDefer {
+            site,
+            outcome: fact.outcome(),
+            captures,
+            owner,
+        })
     }
 
     fn contains_flow_value_expression(
@@ -6491,6 +6560,11 @@ impl<'a> FinalFlowLowerer<'a> {
                         condition_index,
                         profile,
                     )
+                }
+                RuntimeAssertionOwner::Defer(statement) => {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "defer {statement:?} assertion has no stable executable guard owner"
+                    )));
                 }
             };
             let condition_expr = self

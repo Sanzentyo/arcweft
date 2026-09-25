@@ -313,9 +313,11 @@ impl LinePlanLowerer<'_, '_> {
                     });
                 }
                 HirStmtKind::Defer { .. } => {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "line-plan defer expression {statement:?} has no expression-owned checked effect disposition"
-                    )));
+                    self.activation_ops
+                        .push(FlowDraft::Flow(self.flow.lower_defer_registration(
+                            statement,
+                            arcweft_core::plan::RuntimeDeferOwner::LineRoot,
+                        )?));
                 }
                 HirStmtKind::Expression { expression } => {
                     if let Some(child) = self.lower_thread_expression(expression)? {

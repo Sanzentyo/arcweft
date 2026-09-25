@@ -7850,6 +7850,10 @@ impl RuntimePlanSemanticFacts {
         self.defers.get(&statement)
     }
 
+    pub fn defers(&self) -> impl ExactSizeIterator<Item = (StmtId, &RuntimeDeferFact)> {
+        self.defers.iter().map(|(owner, fact)| (*owner, fact))
+    }
+
     pub fn awaited(&self, expression: ExprId) -> Option<&RuntimeAwaitFact> {
         self.awaits.get(&expression)
     }
