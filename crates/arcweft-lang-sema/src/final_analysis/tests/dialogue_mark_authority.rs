@@ -289,7 +289,11 @@ flow main() -> String {
     let message = "captured";
     alice: hello[p]
     with:
-        defer { log.info(message) }
+        defer { log.info(message); }
+        defer {
+            let captured = message;
+            log.info(captured);
+        }
         defer on failed { log.info("literal") }
         out ()
     return "done"
@@ -305,21 +309,29 @@ flow main() -> String {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(defers.len(), 2);
-    let [capture] = defers[0].captures() else {
-        panic!("outer message is captured by the first defer body")
+    assert_eq!(defers.len(), 3);
+    let [direct_capture] = defers[0].captures() else {
+        panic!("outer message is captured by the effect statement defer body")
     };
-    assert_eq!(capture.ty(), &crate::types::TypeKind::String);
+    assert_eq!(direct_capture.ty(), &crate::types::TypeKind::String);
+    let [local_initializer_capture] = defers[1].captures() else {
+        panic!("outer message is captured through a body-local initializer")
+    };
+    assert_eq!(local_initializer_capture.local(), direct_capture.local());
+    assert_eq!(
+        local_initializer_capture.ty(),
+        &crate::types::TypeKind::String
+    );
     assert_eq!(
         report
-            .local(capture.local())
+            .local(direct_capture.local())
             .expect("capture local remains checked")
             .ty(),
-        capture.ty()
+        direct_capture.ty()
     );
-    assert!(defers[1].captures().is_empty());
+    assert!(defers[2].captures().is_empty());
     assert_eq!(
-        defers[1].outcome(),
+        defers[2].outcome(),
         arcweft_lang_syntax::ast::line_plan::DeferOutcome::Failed
     );
 }

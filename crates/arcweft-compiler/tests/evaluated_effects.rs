@@ -1393,9 +1393,10 @@ fn line_root_deferred_children_execute_in_native_and_awbc_lifo() {
         r#"
 pub character alice { display = "Alice" }
 flow main() -> Unit {
+    let message = "first"
     alice: hello[p]
     with:
-        defer { log.info("first"); }
+        defer { log.info(message); }
         defer on failed { log.info("failed"); }
         defer { log.info("last"); }
 }

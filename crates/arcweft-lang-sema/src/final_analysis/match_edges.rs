@@ -435,28 +435,31 @@ impl CheckedSelectedExpressionGraph {
     }
 }
 
-fn selected_expression_edges(
-    graph: &CheckedSelectedExpressionGraph,
-) -> BTreeMap<ExprId, Box<[SelectedHirExpressionEdge]>> {
-    graph
-        .owners()
-        .map(|owner| {
-            let edges = graph
-                .expression_edges(owner)
-                .iter()
-                .filter_map(|edge| match edge {
-                    HirExpressionEvaluationEdge::Expression {
-                        role,
-                        ownership: arcweft_lang_hir::expr::HirExpressionChildOwnership::Owning,
-                        child,
-                    } => Some((*child, role.clone())),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
-            (owner, edges)
-        })
-        .collect()
+/// The checked structural children of one expression owner. Ordinary
+/// owning expression edges carry their sema-accepted roles; expression roots
+/// reached through an executable body remain the original selected HIR
+/// evaluation edges, including their typed body/statement roles.
+#[derive(Debug)]
+struct CheckedStructuralOwnerEdges {
+    ordered: Box<[CheckedStructuralChildEdge]>,
+}
+
+#[derive(Debug)]
+enum CheckedStructuralChildEdge {
+    Expression {
+        child: ExprId,
+        role: CheckedExpressionChildRole,
+    },
+    Evaluation(HirExpressionEvaluationEdge),
+}
+
+impl CheckedStructuralChildEdge {
+    const fn child(&self) -> ExprId {
+        match self {
+            Self::Expression { child, .. } => *child,
+            Self::Evaluation(edge) => edge.child(),
+        }
+    }
 }
 
 /// Move-only structural edge authority sealed before call application
@@ -465,10 +468,7 @@ fn selected_expression_edges(
 /// walk or parallel checked-role table is permitted across those phases.
 #[derive(Debug)]
 pub(super) struct CheckedStructuralEdgeDraft {
-    facts: BTreeMap<
-        ExprId,
-        Result<Box<[(ExprId, CheckedExpressionChildRole)]>, CheckedChildEdgeError>,
-    >,
+    facts: BTreeMap<ExprId, Result<CheckedStructuralOwnerEdges, CheckedChildEdgeError>>,
     call_owners: BTreeSet<ExprId>,
     record_owners: BTreeSet<ExprId>,
     record_fields: Option<BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>>,
@@ -484,23 +484,54 @@ impl CheckedExpressionEdgeAuthority for CheckedStructuralEdgeDraft {
             .get(&parent)?
             .as_ref()
             .ok()?
+            .ordered
             .iter()
-            .find_map(|(candidate, role)| (*candidate == child).then(|| role.clone()))
+            .find_map(|edge| match edge {
+                CheckedStructuralChildEdge::Expression {
+                    child: candidate,
+                    role,
+                } if *candidate == child => Some(role.clone()),
+                CheckedStructuralChildEdge::Expression { .. }
+                | CheckedStructuralChildEdge::Evaluation(_) => None,
+            })
     }
 }
 
 impl CheckedStructuralEdgeDraft {
-    /// Borrows the already-selected owning expression children in exact HIR
-    /// order. Consumers use this draft instead of reopening raw HIR edges.
-    pub(super) fn expression_children(
+    fn checked_expression_children(
         &self,
         owner: ExprId,
-    ) -> Result<&[(ExprId, CheckedExpressionChildRole)], CheckedChildEdgeError> {
-        self.facts
+    ) -> Result<
+        impl Iterator<Item = (ExprId, &CheckedExpressionChildRole)> + '_,
+        CheckedChildEdgeError,
+    > {
+        let edges = self
+            .facts
             .get(&owner)
             .ok_or(CheckedChildEdgeError::MissingExpression)?
-            .as_deref()
-            .map_err(Clone::clone)
+            .as_ref()
+            .map_err(Clone::clone)?;
+        Ok(edges.ordered.iter().filter_map(|edge| match edge {
+            CheckedStructuralChildEdge::Expression { child, role } => Some((*child, role)),
+            CheckedStructuralChildEdge::Evaluation(_) => None,
+        }))
+    }
+
+    /// Borrows every selected expression child reached by the expression's
+    /// ordinary owning edges and executable body/statement edges, in the
+    /// selected HIR evaluation order. This is the complete checked boundary
+    /// used when finding free locals in executable bodies.
+    pub(super) fn free_capture_children(
+        &self,
+        owner: ExprId,
+    ) -> Result<impl DoubleEndedIterator<Item = ExprId> + '_, CheckedChildEdgeError> {
+        let edges = self
+            .facts
+            .get(&owner)
+            .ok_or(CheckedChildEdgeError::MissingExpression)?
+            .as_ref()
+            .map_err(Clone::clone)?;
+        Ok(edges.ordered.iter().map(CheckedStructuralChildEdge::child))
     }
 
     /// Returns the unique checked `Operand` child edge for one Try owner.
@@ -513,21 +544,18 @@ impl CheckedStructuralEdgeDraft {
         owner: ExprId,
     ) -> Result<ExprId, CheckedTryOperandAuthorityViolation> {
         let edges = self
-            .facts
-            .get(&owner)
-            .ok_or(CheckedTryOperandAuthorityViolation::MissingOperand { owner })?
-            .as_ref()
+            .checked_expression_children(owner)
             .map_err(|_| CheckedTryOperandAuthorityViolation::MissingOperand { owner })?;
-        let mut operands = edges
-            .iter()
-            .filter(|(_, role)| matches!(role, CheckedExpressionChildRole::Operand));
-        let Some((child, _)) = operands.next() else {
+        let mut operands = edges.filter_map(|(child, role)| {
+            matches!(role, CheckedExpressionChildRole::Operand).then_some(child)
+        });
+        let Some(child) = operands.next() else {
             return Err(CheckedTryOperandAuthorityViolation::MissingOperand { owner });
         };
         if operands.next().is_some() {
             return Err(CheckedTryOperandAuthorityViolation::DuplicateOperand { owner });
         }
-        Ok(*child)
+        Ok(child)
     }
 
     pub(super) fn attach_record_fields(
@@ -548,17 +576,14 @@ impl CheckedStructuralEdgeDraft {
 
     fn call_callee(&self, owner: ExprId) -> Result<Option<ExprId>, CheckedCallableJoinError> {
         let edges = self
-            .facts
-            .get(&owner)
-            .ok_or(CheckedCallableJoinError::NotSelected)?
-            .as_ref()
+            .checked_expression_children(owner)
             .map_err(|_| CheckedCallableJoinError::NotSelected)?;
-        let mut callees = edges.iter().filter_map(|(child, role)| {
+        let mut callees = edges.filter_map(|(child, role)| {
             matches!(
                 role,
                 CheckedExpressionChildRole::Callee | CheckedExpressionChildRole::ContentCallee
             )
-            .then_some(*child)
+            .then_some(child)
         });
         let callee = callees.next();
         if callees.next().is_some() {
@@ -572,11 +597,22 @@ impl CheckedStructuralEdgeDraft {
         modules: &BTreeMap<HirModuleId, &HirModule>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     ) -> Self {
-        let raw_edges = selected_expression_edges(selected);
         let mut facts = BTreeMap::new();
         let mut call_owners = BTreeSet::new();
         let mut record_owners = BTreeSet::new();
-        for (owner, edges) in raw_edges {
+        for owner in selected.owners() {
+            let selected_edges = selected.expression_edges(owner);
+            let edges = selected_edges
+                .iter()
+                .filter_map(|edge| match edge {
+                    HirExpressionEvaluationEdge::Expression {
+                        role,
+                        ownership: arcweft_lang_hir::expr::HirExpressionChildOwnership::Owning,
+                        child,
+                    } => Some((*child, role.clone())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
             let Some(owner_expression) = modules
                 .get(&owner.module())
                 .and_then(|module| module.resolve_expr(owner).ok())
@@ -695,9 +731,54 @@ impl CheckedStructuralEdgeDraft {
                     }
                 }
             }
+            let mut ordered = Vec::with_capacity(selected_edges.len());
+            let mut enriched = enriched.into_iter();
+            if first_error.is_none() {
+                for edge in selected_edges {
+                    match edge {
+                        HirExpressionEvaluationEdge::Expression {
+                            ownership, child, ..
+                        } if ownership
+                            == &arcweft_lang_hir::expr::HirExpressionChildOwnership::Owning =>
+                        {
+                            let Some((checked_child, role)) = enriched.next() else {
+                                first_error = Some(CheckedChildEdgeError::ChildCountMismatch);
+                                break;
+                            };
+                            if checked_child != *child {
+                                first_error = Some(CheckedChildEdgeError::ChildIdentityMismatch);
+                                break;
+                            }
+                            ordered.push(CheckedStructuralChildEdge::Expression {
+                                child: *child,
+                                role,
+                            });
+                        }
+                        HirExpressionEvaluationEdge::Expression { .. } => {}
+                        evaluation => {
+                            if !expressions.contains_key(&evaluation.child()) {
+                                first_error = Some(CheckedChildEdgeError::MissingExpression);
+                                break;
+                            }
+                            ordered
+                                .push(CheckedStructuralChildEdge::Evaluation(evaluation.clone()));
+                        }
+                    }
+                }
+            }
+            if first_error.is_none() && enriched.next().is_some() {
+                first_error = Some(CheckedChildEdgeError::ChildCountMismatch);
+            }
             facts.insert(
                 owner,
-                first_error.map_or_else(|| Ok(enriched.into_boxed_slice()), Err),
+                first_error.map_or_else(
+                    || {
+                        Ok(CheckedStructuralOwnerEdges {
+                            ordered: ordered.into_boxed_slice(),
+                        })
+                    },
+                    Err,
+                ),
             );
         }
         Self {
@@ -735,7 +816,17 @@ impl CheckedStructuralEdgeDraft {
                 None
             };
             let mut edges = match structural {
-                Ok(edges) => edges,
+                Ok(edges) => edges
+                    .ordered
+                    .into_vec()
+                    .into_iter()
+                    .filter_map(|edge| match edge {
+                        CheckedStructuralChildEdge::Expression { child, role } => {
+                            Some((child, role))
+                        }
+                        CheckedStructuralChildEdge::Evaluation(_) => None,
+                    })
+                    .collect::<Vec<_>>(),
                 Err(error) => {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
                     continue;
@@ -776,7 +867,8 @@ impl CheckedStructuralEdgeDraft {
                     continue;
                 }
             }
-            match CheckedExpressionEdgeFact::seal(edges, record_fields, callable) {
+            match CheckedExpressionEdgeFact::seal(edges.into_boxed_slice(), record_fields, callable)
+            {
                 Ok(fact) => {
                     final_facts.insert(owner, Ok(fact));
                 }

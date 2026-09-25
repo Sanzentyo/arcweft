@@ -13,7 +13,8 @@ use super::{
 
 /// Collects the free locals of a selected expression body in source order.
 /// The supplied lookups are generation-bound checked facts; this traversal
-/// never reopens HIR children or infers captures from source spelling.
+/// follows the selected structural/evaluation edge draft and never reopens
+/// HIR children or infers captures from source spelling.
 pub(super) fn collect_checked_free_locals(
     root: ExprId,
     coordinates: &SemanticCoordinateIndex<'_, '_>,
@@ -48,9 +49,9 @@ pub(super) fn collect_checked_free_locals(
             }
         }
         let children = structural_edges
-            .expression_children(owner)
+            .free_capture_children(owner)
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        pending.extend(children.iter().rev().map(|(child, _)| *child));
+        pending.extend(children.rev());
     }
     Ok(captures.into_boxed_slice())
 }
