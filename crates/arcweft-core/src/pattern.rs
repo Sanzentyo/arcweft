@@ -222,7 +222,7 @@ pub const RUNTIME_STANDARD_VIRTUAL_PATH: RuntimeStandardOpaqueTypeSpec =
 /// Closed standard opaque inventory. Both semantic catalogs and external
 /// adapter references consume this inventory, so producer identity cannot
 /// diverge between those boundaries.
-pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
+pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 12] = [
     RUNTIME_STANDARD_REDUCTION,
     RuntimeStandardOpaqueTypeSpec::new(&["Watch"], 1, "std.watch"),
     RuntimeStandardOpaqueTypeSpec::new(&["Sample"], 1, "std.sample"),
@@ -234,7 +234,6 @@ pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
     RuntimeStandardOpaqueTypeSpec::new(&["ContentLoadError"], 0, "std.content_load_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["DialogueText"], 0, "std.dialogue_text"),
     RuntimeStandardOpaqueTypeSpec::new(&["ImageHandle"], 0, "std.image_handle"),
-    RuntimeStandardOpaqueTypeSpec::new(&["PresentationLifetime"], 0, "std.presentation_lifetime"),
     RuntimeStandardOpaqueTypeSpec::new(&["VoiceError"], 0, "std.voice_error"),
 ];
 

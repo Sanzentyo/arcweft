@@ -293,6 +293,36 @@ flow main() -> i64 {
 }
 
 #[test]
+fn presentation_lifetime_projects_as_its_closed_environment_enum() {
+    let compiled = crate::source::compile_source(
+        r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> i64 { return 0i64 }
+"#,
+    )
+    .expect("presentation lifetime source compiles");
+    let lease = &compiled.analysis;
+    let projected = runtime_type(
+        &TypeKind::Named("PresentationLifetime".to_owned()),
+        lease.project_symbols(),
+        lease.registered_world(),
+        lease.final_analysis().as_ref(),
+    )
+    .expect("presentation lifetime retains its checked enum owner");
+    let RuntimeTypeShape::Nominal { nominal, arguments } = projected.shape() else {
+        panic!("presentation lifetime is a closed enum");
+    };
+    let arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominalSource::ClosedVariant { proof } =
+        nominal.source()
+    else {
+        panic!("presentation lifetime has a closed variant proof");
+    };
+    assert!(arguments.is_empty());
+    assert_eq!(proof.ty(), TypeKind::Named("PresentationLifetime".to_owned()));
+    assert_eq!(proof.cases()[3].diagnostic_name(), Some("line"));
+}
+
+#[test]
 fn factory_and_reconfigure_project_manifest_owned_look_cases() {
     let compiled = fixtures::compile_with_character_manifest(
         r#"

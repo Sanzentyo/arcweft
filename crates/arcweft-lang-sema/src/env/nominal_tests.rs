@@ -625,7 +625,6 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ("ContentLoadError", "std.content_load_error"),
         ("DialogueText", "std.dialogue_text"),
         ("ImageHandle", "std.image_handle"),
-        ("PresentationLifetime", "std.presentation_lifetime"),
         ("VoiceError", "std.voice_error"),
     ] {
         let record = environment
@@ -639,6 +638,13 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ));
         assert_eq!(record.arity(), 0);
     }
+    assert!(
+        environment
+            .nominal_catalog()
+            .exact(&path("PresentationLifetime"))
+            .is_none(),
+        "PresentationLifetime is the closed environment enum, not an opaque nominal"
+    );
     assert!(
         environment
             .nominal_catalog()
