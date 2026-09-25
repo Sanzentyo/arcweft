@@ -185,7 +185,7 @@ pub fn warning(
     amplitude: Length = 2px,
 ) -> Fx {
     Fx.stack([
-        Fx.text(weight = .strong, color = accent),
+        Fx.text(weight = 700, color = accent),
         wave(amplitude = amplitude),
     ])
 }
