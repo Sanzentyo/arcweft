@@ -1,16 +1,16 @@
-pub character alice {
-    display = "Alice"
-}
+pub character alice { display = "Alice" }
 
-flow dialogue_edge {
+flow dialogue_edge() -> String {
     alice(voice=auto):
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     with:
-        at(0.42s): alice.face("worried")
+        let actor = alice.stage.acquire(scope=line)
+        at(0.42s): actor.look(.worried)
         defer on cancelled:
             log.info("cancelled")
         cancel on input(.SkipLine) {
-            out .Skipped
+            out "Skipped"
         }
-        out .Done
+        out "Done"
+    return "done"
 }

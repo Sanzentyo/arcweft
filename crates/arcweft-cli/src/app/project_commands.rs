@@ -8,8 +8,8 @@ use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
-    project_compilation_context, resolve_source_selection, semantic_context_for_selection,
-    verify_compiled_project,
+    profile_project_compilation_context, project_compilation_context, resolve_source_selection,
+    semantic_context_for_selection, verify_compiled_project,
 };
 use super::runtime::profile::compile_accepted_project_runtime_plan;
 use super::runtime::run::watch_inputs;
@@ -2304,7 +2304,11 @@ where
             .expect("loaded projects retain their root source document"),
     );
     let semantic = semantic_context_for_selection(&selection, None)?;
-    let context = project_compilation_context(&loaded, &selection, &semantic)?;
+    let context = if let Some(topology) = selection.profile_topology() {
+        profile_project_compilation_context(topology, &semantic)?
+    } else {
+        project_compilation_context(&loaded, &selection, &semantic)?
+    };
     let compiler = Arc::clone(
         selection
             .compiler_session()

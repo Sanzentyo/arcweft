@@ -41,6 +41,13 @@ fn run_fixture_from_temp(
     configure: impl FnOnce(&mut Command),
 ) -> std::process::Output {
     let temp_path = temp_fixture_copy(path);
+    let assets = path.with_extension("assets");
+    if assets.is_dir() {
+        copy_fixture_tree(
+            &assets,
+            temp_path.parent().expect("fixture copy retains its parent"),
+        );
+    }
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_arcw"));
     configure(&mut cmd);
     let profile = path.with_extension("toml");
@@ -62,6 +69,22 @@ fn run_fixture_from_temp(
         let _ = fs::remove_dir_all(parent);
     }
     output
+}
+
+fn copy_fixture_tree(source: &Path, destination: &Path) {
+    fs::create_dir_all(destination).expect("fixture asset directory is created");
+    for entry in fs::read_dir(source).expect("fixture asset directory is readable") {
+        let entry = entry.expect("fixture asset entry is readable");
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type().expect("fixture asset type is readable");
+        if kind.is_dir() {
+            copy_fixture_tree(&entry.path(), &target);
+        } else if kind.is_file() {
+            fs::copy(entry.path(), target).expect("fixture asset is copied");
+        } else {
+            panic!("fixture assets contain only files and directories");
+        }
+    }
 }
 
 fn temp_fixture_copy(path: &Path) -> PathBuf {

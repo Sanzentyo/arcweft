@@ -1,0 +1,19 @@
+schema = 1
+
+[package]
+id = "org.arcweft.fixture.dialogue-ruby-timed-cancel"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.alice"]
+visibility = "package"
+demand = "required"
+
+[profiles.fixture]
+kind = "game"
+source = "045_dialogue_sugar_ruby_timed_cancel.arcw"
+
+[profiles.fixture.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
