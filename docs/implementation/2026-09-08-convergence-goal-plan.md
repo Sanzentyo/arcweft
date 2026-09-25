@@ -915,3 +915,20 @@ defer capture ABI から漏れ、RuntimePlan 構築が lexical scope 不足で�
 実行 fixture はこの未接続境界を混ぜないよう、定数引数の効果文で LIFO/フィルタを
 検証した。自由変数付き末尾効果の実行、nested/CurrentScope、取消側 `Out` の結果選択、
 defer 内の Product-owned Dialogue/Choice suspension は残る。
+
+**2026-09-25 defer body capture convergence checkpoint:**
+
+Supersedes: 直前 checkpoint の「効果文内の自由変数が defer capture ABI から漏れる」
+実装状態。末尾効果呼び出しが `ReturnExpr` として実行されない問題は継続する。
+
+inspected `main`/`origin/main` は `87188c4474034a9fa8096bd3498eb91a9a915ea5` で
+一致し、working tree は clean。Sema の単一 `CheckedStructuralEdgeDraft` が選択済み
+実行グラフの文・body の式エッジを順序付きで保持し、defer の自由変数収集はその checked
+エッジを辿る。`defer { log.info(message); }` と body 内 `let captured = message` の双方で
+外側の `message` を一度だけ capture し、body 内ローカルは capture しない。
+
+検証は Sema focused 1/1、Sema lib 919/919、外側の `message` を使う実 source の
+native/AWBC LIFO 実行 1/1、`cargo fmt --all -- --check`、workspace
+all-target/all-feature check、Sema all-target/all-feature Clippy が終了コード 0（既存 warning
+あり）。compiler `evaluated_effects` target 全体の別テストにあった RuntimePlan 型グラフ
+失敗の受理証拠にはならない。Block 末尾の効果呼び出しはまだ効果として下りていない。
