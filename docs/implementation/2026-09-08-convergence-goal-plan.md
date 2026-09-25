@@ -1289,3 +1289,18 @@ focused HIR projection と Syntax/HIR 対象 Clippy も終了コード0。
 および `defer on cancelled` と Unit Flow の Type fact 欠落は、この parser
 変更で解決したとは扱わない。これらを別の型付き consumer/fixture 境界として
 調べ、timed cue と取消の受理証拠を維持する。
+
+## Bare dialogue と attached plan の分類 checkpoint — 2026-09-26
+
+確認した `main`/`origin/main` は
+`c47a076fff725fda52aadfe8311121ab2e1fbc18` で一致する。
+working tree は直接 field の `Vec.pop_front()` と 045 package fixture の
+統合中で dirty。裸の `alice(...):` / bracket dialogue の文 owner が
+aligned `with:` plan を含む場合、分類対象を plan 開始前の head に限定した。
+従来は plan 内 `let actor = ...` の `=` を外側の Assignment と誤認し、
+HIR required recovery になっていた。文の emission は full plan interval を
+保ち、plan 内の Let と Out を source order で残す
+(`c47a076fff725fda52aadfe8311121ab2e1fbc18`)。
+focused parser/HIR 回帰、既存 nested cancel-body test、Syntax/HIR 対象 Clippy、
+cached diff check は終了コード0。045 の profile 登録、timed cue、native/AWBC
+実行、全体 fixture gate の合格はこの cut の証拠ではなく引き続き確認する。
