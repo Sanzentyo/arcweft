@@ -103,6 +103,47 @@ pub enum ValueInstruction {
     Vec2Y,
 }
 
+impl ValueInstruction {
+    /// Returns the verifier's result type for one binary value instruction.
+    /// Non-binary instructions and invalid operand pairs have no result here.
+    pub fn binary_result_type(
+        &self,
+        left: FxRuntimeType,
+        right: FxRuntimeType,
+    ) -> Option<FxRuntimeType> {
+        match self {
+            Self::Add | Self::Sub => add_sub_result(left, right),
+            Self::Mul => mul_result(left, right),
+            Self::Div => div_result(left, right),
+            Self::Min | Self::Max => order_result(left, right),
+            Self::Equal => equal_result(left, right),
+            Self::Less | Self::LessEqual | Self::Greater | Self::GreaterEqual => {
+                compare_result(left, right)
+            }
+            Self::And | Self::Or => bools_result(left, right),
+            _ => None,
+        }
+    }
+
+    /// Returns the verifier's result type for one unary value instruction.
+    pub fn unary_result_type(&self, operand: FxRuntimeType) -> Option<FxRuntimeType> {
+        match self {
+            Self::Neg => neg_result(operand),
+            Self::Abs => abs_result(operand),
+            Self::Sin | Self::Cos => trig_result(operand),
+            Self::Floor | Self::Fract => f32_result(operand),
+            Self::Not => bool_result(operand),
+            Self::HashNoise => hash_noise_result(operand),
+            Self::FloorToI32 => floor_to_i32_result(operand),
+            Self::BitcastU32ToI32 => bitcast_u32_to_i32_result(operand),
+            Self::SecondsValue => seconds_value_result(operand),
+            Self::Vec2X => vec2_x_result(operand),
+            Self::Vec2Y => vec2_y_result(operand),
+            _ => None,
+        }
+    }
+}
+
 /// Declared input and return types for a value program.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ValueProgramSchema {

@@ -1232,6 +1232,35 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
         let expression = module
             .resolve_expr(owner)
             .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+        if matches!(expression.kind(), HirExprKind::Literal(_))
+            && let FxStaticType::Runtime(runtime) = expected
+        {
+            let value = fx_runtime_literal(module, owner, runtime)?;
+            return Ok(CheckedFxSymbolicValue::Constant(CheckedFxConstant::Abi(
+                FxDefinitionArgumentValue::Runtime(value),
+            )));
+        }
+        if let HirExprKind::ShortVariant(name) = expression.kind() {
+            let name = name
+                .as_resolved()
+                .ok_or(CheckedFxDefinitionSealError::InvalidValue { owner, expected })?;
+            let constant = match expected {
+                FxStaticType::Target => {
+                    FxTarget::from_source_name(name.as_str()).map(CheckedFxConstant::Target)
+                }
+                FxStaticType::Phase => {
+                    FxPhase::from_source_name(name.as_str()).map(CheckedFxConstant::Phase)
+                }
+                FxStaticType::ShaderStage => FxShaderStage::from_source_name(name.as_str())
+                    .map(CheckedFxConstant::ShaderStage),
+                FxStaticType::Selector(domain) => FxSelectorId::try_new(domain, name.as_str())
+                    .ok()
+                    .map(CheckedFxConstant::Selector),
+                _ => None,
+            }
+            .ok_or(CheckedFxDefinitionSealError::InvalidValue { owner, expected })?;
+            return Ok(CheckedFxSymbolicValue::Constant(constant));
+        }
         if let HirExprKind::Closure(closure) = expression.kind() {
             if expected != FxStaticType::Runtime(FxRuntimeType::Transform2D) {
                 return Err(CheckedFxDefinitionSealError::InvalidValue { owner, expected });
@@ -1779,14 +1808,81 @@ impl super::checked_value_program::CheckedValueProgramSealContext
     }
 
     fn inferred_type(&mut self, owner: ExprId) -> Result<FxRuntimeType, Self::Error> {
-        self.owner
-            .analyzer
-            .facts
-            .expressions()
-            .get(&owner)
-            .and_then(PreparedExpressionFact::value_type)
-            .and_then(fx_runtime_type)
-            .ok_or(CheckedFxDefinitionSealError::InvalidBody)
+        use arcweft_lang_hir::expr::{HirExprKind, HirUnaryOp};
+        use arcweft_lang_hir::leaf::{
+            HirFloatLiteral, HirFloatWidth, HirIntegerLiteral, HirIntegerSuffix, HirLiteral,
+            HirUnitNumberLiteral, HirUnitNumberUnit,
+        };
+
+        let expression = self.expression(owner)?;
+        match expression.kind() {
+            HirExprKind::Literal(literal) => match literal {
+                HirLiteral::Boolean(_) => Ok(FxRuntimeType::Bool),
+                HirLiteral::Float(HirFloatLiteral::Value {
+                    explicit_width: None | Some(HirFloatWidth::F32),
+                    ..
+                }) => Ok(FxRuntimeType::F32),
+                HirLiteral::Integer(HirIntegerLiteral::Value {
+                    suffix: None | Some(HirIntegerSuffix::I32),
+                    ..
+                }) => Ok(FxRuntimeType::I32),
+                HirLiteral::Integer(HirIntegerLiteral::Value {
+                    suffix: Some(HirIntegerSuffix::U32),
+                    ..
+                }) => Ok(FxRuntimeType::U32),
+                HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { unit, .. }) => match unit {
+                    HirUnitNumberUnit::Px
+                    | HirUnitNumberUnit::Pt
+                    | HirUnitNumberUnit::Em
+                    | HirUnitNumberUnit::Rem
+                    | HirUnitNumberUnit::Vw
+                    | HirUnitNumberUnit::Vh => Ok(FxRuntimeType::Length),
+                    HirUnitNumberUnit::Deg | HirUnitNumberUnit::Rad | HirUnitNumberUnit::Turn => {
+                        Ok(FxRuntimeType::Angle)
+                    }
+                    _ => Err(CheckedFxDefinitionSealError::InvalidBody),
+                },
+                _ => Err(CheckedFxDefinitionSealError::InvalidBody),
+            },
+            HirExprKind::Path(_) => self
+                .input(owner)?
+                .map(|parameter| parameter.runtime_type())
+                .ok_or(CheckedFxDefinitionSealError::InvalidBody),
+            HirExprKind::Select(_) => self
+                .context_slot(owner)?
+                .map(FxContextSlot::value_type)
+                .ok_or(CheckedFxDefinitionSealError::InvalidBody),
+            HirExprKind::Call(_) => {
+                let (identity, sources) = self.call(owner)?;
+                let (_, arity, result) = super::checked_value_program::call_instruction(&identity)
+                    .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                if sources.len() != arity {
+                    return Err(CheckedFxDefinitionSealError::InvalidBody);
+                }
+                result.ok_or(CheckedFxDefinitionSealError::InvalidBody)
+            }
+            HirExprKind::Unary(unary) => {
+                let operand = self.inferred_type(unary.operand())?;
+                let instruction = match unary.operator() {
+                    HirUnaryOp::Negate => ValueInstruction::Neg,
+                    HirUnaryOp::Not => ValueInstruction::Not,
+                };
+                instruction
+                    .unary_result_type(operand)
+                    .ok_or(CheckedFxDefinitionSealError::InvalidBody)
+            }
+            HirExprKind::Binary(binary) => {
+                let left = self.inferred_type(binary.left())?;
+                let right = self.inferred_type(binary.right())?;
+                let instruction =
+                    super::checked_value_program::binary_instruction(binary.operator())
+                        .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                instruction
+                    .binary_result_type(left, right)
+                    .ok_or(CheckedFxDefinitionSealError::InvalidBody)
+            }
+            _ => Err(CheckedFxDefinitionSealError::InvalidBody),
+        }
     }
 
     fn constant(
@@ -1794,20 +1890,12 @@ impl super::checked_value_program::CheckedValueProgramSealContext
         owner: ExprId,
         expected: FxRuntimeType,
     ) -> Result<Option<FxRuntimeValue>, Self::Error> {
-        let value = self.owner.seal_symbolic_value(
-            self.module_id,
-            owner,
-            FxStaticType::Runtime(expected),
-            self.parameters,
-            self.runtime_parameter_types,
-        )?;
-        let CheckedFxSymbolicValue::Constant(CheckedFxConstant::Abi(
-            FxDefinitionArgumentValue::Runtime(value),
-        )) = value
-        else {
-            return Ok(None);
-        };
-        Ok(Some(value))
+        let module = self
+            .owner
+            .analyzer
+            .module(self.module_id)
+            .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+        fx_runtime_literal(module, owner, expected).map(Some)
     }
 
     fn input(
@@ -1860,38 +1948,175 @@ impl super::checked_value_program::CheckedValueProgramSealContext
     }
 
     fn call(&mut self, owner: ExprId) -> Result<(CallableCandidateId, Vec<ExprId>), Self::Error> {
-        let application = self
-            .owner
-            .analyzer
-            .facts
-            .calls()
-            .get(&owner)
-            .and_then(crate::callable::CallTargetFacts::selected_application)
-            .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
-        let sources = application
-            .core()
-            .execution()
+        use arcweft_lang_hir::{
+            expr::{
+                HirCallArgumentListTerminator, HirCallCallee, HirCallTypeApplication, HirCallValue,
+            },
+            leaf::{HirPathRoot, HirPathSegment},
+            symbol::ProjectValueLookup,
+        };
+
+        let expression = self.expression(owner)?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        };
+        if !matches!(
+            call.explicit_type_application(),
+            HirCallTypeApplication::Absent
+        ) || call.terminator() != HirCallArgumentListTerminator::Closed
+        {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        }
+        let sources = call
             .arguments()
             .iter()
-            .flat_map(|argument| argument.slots())
-            .map(|slot| match slot.source().raw() {
-                crate::callable::CheckedCallArgumentSlotSource::Expression(expression) => {
-                    Ok(expression)
+            .map(|argument| {
+                if !matches!(argument, HirCallArgument::Positional { .. })
+                    || !matches!(argument.value_state(), HirCallValue::Present { .. })
+                {
+                    return Err(CheckedFxDefinitionSealError::InvalidBody);
                 }
-                crate::callable::CheckedCallArgumentSlotSource::CompactNumericElement {
-                    ..
-                } => Err(CheckedFxDefinitionSealError::InvalidBody),
+                Ok(argument.value())
             })
             .collect::<Result<Vec<_>, _>>()?;
-        Ok((
-            application.core().candidates().selected().id().clone(),
-            sources,
-        ))
+        let identity = match call.callee() {
+            HirCallCallee::UnresolvedDot {
+                value_receiver,
+                member,
+                ..
+            } => {
+                if self.owner.checked_local(self.module_id, *value_receiver)?
+                    != Some(self.sample_context)
+                {
+                    return Err(CheckedFxDefinitionSealError::InvalidBody);
+                }
+                let name = member
+                    .resolved()
+                    .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                let name = crate::callable::CallableName::try_new(name.as_str())
+                    .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?;
+                let method = crate::callable::DomainMethodId::resolve(
+                    &TypeKind::Named("FxSampleContext".to_owned()),
+                    &name,
+                )
+                .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                CallableCandidateId::DomainMethod(method)
+            }
+            HirCallCallee::Value { value } => {
+                let callee = self.expression(*value)?;
+                match callee.kind() {
+                    HirExprKind::Select(select) => {
+                        if self.owner.checked_local(self.module_id, select.target())?
+                            != Some(self.sample_context)
+                        {
+                            return Err(CheckedFxDefinitionSealError::InvalidBody);
+                        }
+                        let HirSelectedMember::Name(name) = select.member() else {
+                            return Err(CheckedFxDefinitionSealError::InvalidBody);
+                        };
+                        let name = crate::callable::CallableName::try_new(name.as_str())
+                            .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?;
+                        let method = crate::callable::DomainMethodId::resolve(
+                            &TypeKind::Named("FxSampleContext".to_owned()),
+                            &name,
+                        )
+                        .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                        CallableCandidateId::DomainMethod(method)
+                    }
+                    HirExprKind::Path(path) => {
+                        let path = path
+                            .as_resolved()
+                            .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                        if path.root() != HirPathRoot::ImplicitCrate
+                            || self.owner.checked_local(self.module_id, *value)?.is_some()
+                        {
+                            return Err(CheckedFxDefinitionSealError::InvalidBody);
+                        }
+                        let module = self
+                            .owner
+                            .analyzer
+                            .module(self.module_id)
+                            .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+                        let source = super::statements::expression_span(module, *value)
+                            .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+                        if !matches!(
+                            self.owner.analyzer.symbols.resolve_hir_value_target(
+                                module.key().path(),
+                                path,
+                                source,
+                            ),
+                            Ok(ProjectValueLookup::Absent)
+                        ) {
+                            return Err(CheckedFxDefinitionSealError::InvalidBody);
+                        }
+                        let segments = path
+                            .segments()
+                            .iter()
+                            .map(|segment| {
+                                let name = match segment {
+                                    HirPathSegment::Identifier(name) => name.as_str(),
+                                    HirPathSegment::ProjectSymbol(name) => name.as_str(),
+                                };
+                                crate::callable::CallableName::try_new(name)
+                                    .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let path = crate::callable::CallablePath::try_new(segments)
+                            .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?;
+                        let builtin = BuiltinCallableId::resolve(&path)
+                            .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+                        CallableCandidateId::Builtin(builtin)
+                    }
+                    _ => return Err(CheckedFxDefinitionSealError::InvalidBody),
+                }
+            }
+            HirCallCallee::Associated { .. } => {
+                return Err(CheckedFxDefinitionSealError::InvalidBody);
+            }
+        };
+        Ok((identity, sources))
     }
 
     fn invalid(&self, owner: ExprId) -> Self::Error {
         CheckedFxDefinitionSealError::UnsupportedExpression { owner }
     }
+}
+
+fn fx_runtime_literal(
+    module: &arcweft_lang_hir::module::HirModule,
+    owner: ExprId,
+    expected: FxRuntimeType,
+) -> Result<FxRuntimeValue, CheckedFxDefinitionSealError> {
+    use crate::checked_text_proxy::CheckedCompileTimeScalarKind as ScalarKind;
+    let kind = match expected {
+        FxRuntimeType::Bool => ScalarKind::Bool,
+        FxRuntimeType::I32 | FxRuntimeType::U32 => ScalarKind::Int,
+        FxRuntimeType::F32 => ScalarKind::Milli,
+        FxRuntimeType::Length => ScalarKind::Length,
+        FxRuntimeType::Angle => ScalarKind::Angle,
+        FxRuntimeType::Seconds => ScalarKind::Duration,
+        FxRuntimeType::Color | FxRuntimeType::Vec2 | FxRuntimeType::Transform2D => {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        }
+    };
+    let reduced = crate::checked_text_proxy::reduce_literal_expression(module, owner, &kind)
+        .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?;
+    if expected == FxRuntimeType::U32 {
+        let crate::checked_compile_time::CheckedCompileTimeScalar::Int(value) = reduced else {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        };
+        return u32::try_from(value)
+            .map(FxRuntimeValue::U32)
+            .map_err(|_| CheckedFxDefinitionSealError::InvalidBody);
+    }
+    let value = crate::final_analysis::CheckedCompileTimeValue::scalar(reduced);
+    let FxDefinitionArgumentValue::Runtime(value) =
+        checked_project_fx_argument(FxDefinitionParameterType::Runtime(expected), &value)
+            .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?
+    else {
+        return Err(CheckedFxDefinitionSealError::InvalidBody);
+    };
+    Ok(value)
 }
 
 fn map_constructor_arguments(

@@ -118,7 +118,7 @@ where
     ))
 }
 
-fn binary_instruction(operator: HirBinaryOp) -> Option<ValueInstruction> {
+pub(super) fn binary_instruction(operator: HirBinaryOp) -> Option<ValueInstruction> {
     Some(match operator {
         HirBinaryOp::Add => ValueInstruction::Add,
         HirBinaryOp::Subtract => ValueInstruction::Sub,
@@ -135,7 +135,7 @@ fn binary_instruction(operator: HirBinaryOp) -> Option<ValueInstruction> {
     })
 }
 
-fn call_instruction(
+pub(super) fn call_instruction(
     identity: &CallableCandidateId,
 ) -> Option<(ValueInstruction, usize, Option<FxRuntimeType>)> {
     match identity {

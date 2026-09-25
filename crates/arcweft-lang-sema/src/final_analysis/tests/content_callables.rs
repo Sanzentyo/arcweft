@@ -1244,6 +1244,160 @@ fn typed_sampler() -> Fx {
 }
 
 #[test]
+fn project_fx_sampler_seals_context_math_and_runtime_parameters() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn moving(speed: f32 = 1.0, amplitude: Length = 2px) -> Fx {
+    Fx.transform(sample = |ctx| Transform2D {
+        translate_y: sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude,
+    })
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("typed sampler math seals");
+    let project = report
+        .checked_fx_definitions()
+        .definitions()
+        .find_map(|(_, definition)| definition.project())
+        .expect("project Fx definition");
+    let CheckedFxGraphExpression::Constructor(call) = project.body().root() else {
+        panic!("Fx.transform constructor body");
+    };
+    let program = call
+        .arguments()
+        .iter()
+        .find_map(|argument| match argument.value() {
+            CheckedFxConstructorArgumentValue::Value(CheckedFxSymbolicValue::Program(program)) => {
+                Some(program)
+            }
+            _ => None,
+        })
+        .expect("checked sampler program");
+    let sampled = program
+        .evaluate(
+            arcweft_presentation::fx::ValueProgramInputs {
+                parameters: &[
+                    arcweft_presentation::fx::FxRuntimeValue::F32(
+                        arcweft_presentation::fx::FiniteF32::try_new(1.0).unwrap(),
+                    ),
+                    arcweft_presentation::fx::FxRuntimeValue::Length(
+                        arcweft_presentation::fx::Length::try_pixels(2.0).unwrap(),
+                    ),
+                ],
+                state: &[],
+            },
+            arcweft_presentation::fx::FxSampleContext::from_elapsed(
+                arcweft_presentation::fx::Seconds::try_seconds(0.5).unwrap(),
+                0,
+                0,
+                false,
+            ),
+            &mut arcweft_presentation::fx::FxEvaluationBudget::new(64),
+        )
+        .expect("checked sampler evaluates");
+    let arcweft_presentation::fx::FxRuntimeValue::Transform2D(transform) = sampled else {
+        panic!("sampler returns Transform2D");
+    };
+    assert!((transform.translate_y.pixels() - 0.5_f32.sin() * 2.0).abs() < 0.0001);
+}
+
+#[test]
+fn project_fx_sampler_seals_typed_numeric_literals() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn moving() -> Fx {
+    Fx.transform(sample = |ctx| Transform2D {
+        translate_y: sin(ctx.time + 0.5) * 2px,
+    })
+}
+"#,
+        None,
+    );
+    analyze(&fixture).expect("sampler literals use the typed Fx value domain");
+}
+
+#[test]
+fn project_fx_sampler_rejects_mixed_units() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn moving(speed: Length = 1px) -> Fx {
+    Fx.transform(sample = |ctx| Transform2D {
+        translate_y: sin(ctx.time * speed + ctx.ordinal_phase()) * 2px,
+    })
+}
+"#,
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(
+            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
+                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn project_fx_sampler_does_not_treat_shadowed_sin_as_builtin() {
+    let fixture = fixture(
+        r#"
+fn sin(value: f32) -> f32 { value }
+
+#[fx]
+fn moving() -> Fx {
+    Fx.transform(sample = |ctx| Transform2D {
+        translate_y: sin(ctx.time) * 2px,
+    })
+}
+"#,
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(
+            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
+                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn project_fx_numeric_weight_seals_without_ordinary_expression_facts() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn emphasis() -> Fx {
+    Fx.text(weight = 700)
+}
+"#,
+        None,
+    );
+    analyze(&fixture).expect("numeric Fx weight belongs to the symbolic graph");
+}
+
+#[test]
+fn project_fx_target_short_variant_seals_without_ordinary_expression_facts() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn moving() -> Fx {
+    Fx.transform(target = .glyph, sample = |ctx| Transform2D {})
+}
+"#,
+        None,
+    );
+    analyze(&fixture).expect("typed Fx target belongs to the symbolic graph");
+}
+
+#[test]
 fn project_fx_builtin_wave_body_seals_default_row_and_short_phase() {
     let fixture = fixture(
         r#"
