@@ -421,6 +421,10 @@ so repeated visits to one site remain separate work items. The
 unwinder visits registrations in reverse order, runs bodies whose filter
 matches the current exit, and releases captured resources for every skipped
 registration.
+The activation fixes the exit reason before draining the stack. It moves one
+matching capture packet to a dialogue-owned child at a time and waits for that
+exact registration ID to finish before selecting the next; a body failure does
+not restart the stack with a different filter.
 
 Lifetime registry paths are typed static keys, not stringly dynamic maps.
 The core model keeps the data Sans I/O; host backends receive deterministic

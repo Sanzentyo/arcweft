@@ -1,4 +1,7 @@
-use super::defer::{AwbcRuntimeDeferredRegistrationSnapshot, RuntimeLineDeferredRegistration};
+use super::defer::{
+    AwbcRuntimeDeferredRegistrationSnapshot, RuntimeDeferInFlight, RuntimeDeferUnwindState,
+    RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration,
+};
 use super::{LineTaskLiveSnapshot, LineTaskScheduledCompletion, LineTaskWorkTag, ScopeExit};
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
@@ -321,6 +324,7 @@ pub struct RuntimeDialogueActivationState<T> {
     scheduled: Vec<RuntimeScheduledLineTask>,
     deferred: Vec<RuntimeLineDeferredRegistration>,
     next_defer_registration: u64,
+    defer_unwind: Option<RuntimeDeferUnwindState>,
     result: RuntimeDialogueResultState<T>,
     frame_released: bool,
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
@@ -357,6 +361,7 @@ pub(crate) struct AwbcRuntimeDialogueActivationSnapshot<T> {
     scheduled: Vec<AwbcRuntimeScheduledLineTaskSnapshot>,
     deferred: Vec<AwbcRuntimeDeferredRegistrationSnapshot>,
     next_defer_registration: u64,
+    defer_unwind: Option<RuntimeDeferUnwindState>,
     result: AwbcRuntimeDialogueResultSnapshot<T>,
     frame_released: bool,
 }
@@ -476,6 +481,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             scheduled: Vec::new(),
             deferred: Vec::new(),
             next_defer_registration: 1,
+            defer_unwind: None,
             result: RuntimeDialogueResultState::Uncommitted,
             frame_released: false,
             prepared_commands: Vec::new(),
@@ -486,6 +492,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     pub(crate) fn can_register_deferred(&self) -> Result<(), LineRuntimeError> {
         if self.frame_released {
             return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        if self.defer_unwind.is_some() {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
         }
         if self.next_defer_registration == 0 || self.next_defer_registration == u64::MAX {
             return Err(LineRuntimeError::DeferRegistrationIdentityExhausted);
@@ -516,17 +525,153 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(id)
     }
 
-    /// Pops the next registration in LIFO order. The unwinder must inspect
-    /// its outcome filter and release captured affine values even when the
-    /// body does not run.
-    pub fn pop_deferred(&mut self) -> Option<RuntimeLineDeferredRegistration> {
-        self.deferred.pop()
+    /// Freezes the exit reason before executing any deferred body. A body
+    /// failure cannot restart the stack with a different filter.
+    pub(crate) fn begin_deferred_unwind(
+        &mut self,
+        exit: ScopeExit,
+    ) -> Result<(), LineRuntimeError> {
+        if self.frame_released {
+            return Err(LineRuntimeError::ActivationFrameReleased);
+        }
+        match &self.defer_unwind {
+            Some(unwind) if unwind.exit != exit => Err(LineRuntimeError::InvalidDeferredTransition),
+            Some(_) => Ok(()),
+            None => {
+                self.defer_unwind = Some(RuntimeDeferUnwindState {
+                    exit,
+                    inflight: None,
+                });
+                Ok(())
+            }
+        }
+    }
+
+    /// Selects exactly one LIFO registration. Skipped bodies release their
+    /// affine packet; runnable bodies transfer custody to one typed child tag.
+    pub(crate) fn prepare_next_deferred(
+        &mut self,
+        activation: &DialogueActivationId,
+    ) -> Result<Option<RuntimeDeferUnwindStep>, LineRuntimeError> {
+        let Some(unwind) = &self.defer_unwind else {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
+        };
+        if unwind.inflight.is_some() {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
+        }
+        let Some(_) = self.deferred.last() else {
+            return Ok(None);
+        };
+        let mut candidate = self.clone();
+        let registration = candidate
+            .deferred
+            .pop()
+            .expect("checked pending defer exists");
+        let mut tokens = std::collections::BTreeSet::new();
+        for capture in registration.captures() {
+            for handle in capture
+                .affine_line_handles()
+                .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
+            {
+                if handle.token().activation() != activation
+                    || !tokens.insert(handle.token().clone())
+                {
+                    return Err(LineRuntimeError::InvalidDeferredTransition);
+                }
+                let lease = candidate
+                    .ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.owner() != &RuntimeHandleOwnerSlot::LineScope
+                    || lease.resource().kind() != handle.kind()
+                {
+                    return Err(LineRuntimeError::WrongOwner);
+                }
+            }
+        }
+        let step = if registration.outcome_filter().matches(unwind.exit) {
+            let tag = LineTaskWorkTag::activation(
+                activation.clone(),
+                super::LineTaskWork::Defer(registration.id()),
+            );
+            let mut ledger = candidate.ledger.clone();
+            for token in &tokens {
+                ledger.transfer(
+                    token,
+                    &RuntimeHandleOwnerSlot::LineScope,
+                    RuntimeHandleOwnerSlot::ChildScope(tag.clone()),
+                )?;
+            }
+            candidate.ledger = ledger;
+            candidate
+                .defer_unwind
+                .as_mut()
+                .expect("unwind exists")
+                .inflight = Some(RuntimeDeferInFlight {
+                id: registration.id(),
+                site: registration.site(),
+            });
+            RuntimeDeferUnwindStep::Run(registration)
+        } else {
+            let mut ledger = candidate.ledger.clone();
+            let mut queue =
+                RuntimeCommandQueue::new(activation.clone(), candidate.command_sequence);
+            for token in &tokens {
+                ledger.drop_owned(token, &RuntimeHandleOwnerSlot::LineScope, &mut queue)?;
+            }
+            candidate.ledger = ledger;
+            candidate.record_commands(activation, queue)?;
+            RuntimeDeferUnwindStep::Skipped(registration.id())
+        };
+        *self = candidate;
+        Ok(Some(step))
+    }
+
+    /// Completes only the child named by the activation's in-flight record.
+    pub(crate) fn complete_deferred_child(
+        &mut self,
+        activation: &DialogueActivationId,
+        id: RuntimeDeferRegistrationId,
+        site: RuntimeDeferSiteId,
+        live: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+    ) -> Result<(), LineRuntimeError> {
+        if self
+            .defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            != Some(RuntimeDeferInFlight { id, site })
+        {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
+        }
+        let mut candidate = self.clone();
+        let tag = LineTaskWorkTag::activation(activation.clone(), super::LineTaskWork::Defer(id));
+        candidate.finish_child_scope(
+            &tag,
+            live,
+            &std::collections::BTreeSet::new(),
+            RuntimeDropPolicy::Default,
+        )?;
+        candidate
+            .defer_unwind
+            .as_mut()
+            .expect("unwind exists")
+            .inflight = None;
+        *self = candidate;
+        Ok(())
     }
 
     /// Returns the currently pending line-root registrations in stack order.
     #[must_use]
     pub fn deferred_registrations(&self) -> &[RuntimeLineDeferredRegistration] {
         &self.deferred
+    }
+
+    fn has_pending_deferred_work(&self) -> bool {
+        !self.deferred.is_empty()
+            || self
+                .defer_unwind
+                .as_ref()
+                .is_some_and(|unwind| unwind.inflight.is_some())
     }
 
     /// Validates saved defer sites against the executable table that owns them.
@@ -545,6 +690,16 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 site: registration.site(),
             });
         }
+        if let Some(inflight) = self
+            .defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            && !contains_site(inflight.site)
+        {
+            return Err(LineRuntimeError::UnknownDeferredSite {
+                site: inflight.site,
+            });
+        }
         Ok(())
     }
 
@@ -552,7 +707,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self,
         activation: &DialogueActivationId,
     ) -> Result<(), LineRuntimeError> {
-        if self.frame_released && !self.deferred.is_empty() {
+        if self.frame_released && self.has_pending_deferred_work() {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         if self.next_defer_registration == 0
@@ -563,6 +718,28 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             || self.deferred.last().is_some_and(|registration| {
                 registration.id().get().get() >= self.next_defer_registration
             })
+        {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        if let Some(inflight) = self
+            .defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            && (inflight.id.get().get() >= self.next_defer_registration
+                || self
+                    .deferred
+                    .last()
+                    .is_some_and(|pending| pending.id() >= inflight.id))
+        {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        // An activation-only snapshot cannot authenticate a running child.
+        // Product restore must pair its saved owner and packet before this
+        // in-flight state becomes admissible.
+        if self
+            .defer_unwind
+            .as_ref()
+            .is_some_and(|unwind| unwind.inflight.is_some())
         {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
@@ -1604,7 +1781,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         activation: &DialogueActivationId,
         preserve_result: bool,
     ) -> Result<(), LineRuntimeError> {
-        if !self.deferred.is_empty() {
+        if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
         let mut candidate = self.clone();
@@ -1664,7 +1841,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.frame_released {
             return Err(LineRuntimeError::DuplicateFrameRelease);
         }
-        if !self.deferred.is_empty() {
+        if self.has_pending_deferred_work() {
             return Err(LineRuntimeError::DeferredRegistrationsRemain);
         }
         self.frame_released = true;
@@ -1673,7 +1850,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     #[must_use]
     pub(crate) fn failure_close_ready(&self) -> bool {
-        self.deferred.is_empty()
+        !self.has_pending_deferred_work()
             && self.issued_commands.is_empty()
             && self.superseded_commands.is_empty()
             && self.scheduled.iter().all(|scheduled| {
@@ -1693,7 +1870,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     #[must_use]
     pub(crate) fn successful_close_ready(&self) -> bool {
-        self.deferred.is_empty()
+        !self.has_pending_deferred_work()
             && self.issued_commands.is_empty()
             && self.superseded_commands.is_empty()
             && self.scheduled.iter().all(|scheduled| {
@@ -1716,12 +1893,14 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
 
     #[must_use]
     pub(crate) fn is_terminal(&self) -> bool {
-        self.deferred.is_empty() && self.terminal_kind().is_some() && self.failure_close_ready()
+        !self.has_pending_deferred_work()
+            && self.terminal_kind().is_some()
+            && self.failure_close_ready()
     }
 
     #[must_use]
     pub(crate) fn terminal_kind(&self) -> Option<RuntimeDialogueTerminalKind> {
-        if !self.frame_released || !self.deferred.is_empty() {
+        if !self.frame_released || self.has_pending_deferred_work() {
             return None;
         }
         match self.result {
@@ -1737,7 +1916,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         self,
     ) -> Result<RuntimePublishedDialogueHandles, LineRuntimeError> {
         if self.terminal_kind() != Some(RuntimeDialogueTerminalKind::Published)
-            || !self.deferred.is_empty()
+            || self.has_pending_deferred_work()
             || !self.issued_commands.is_empty()
             || !self.superseded_commands.is_empty()
             || !self.prepared_commands.is_empty()
@@ -1786,6 +1965,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .map(AwbcRuntimeDeferredRegistrationSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
             next_defer_registration: state.next_defer_registration,
+            defer_unwind: state.defer_unwind.clone(),
             result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result)?,
             frame_released: state.frame_released,
         })
@@ -1813,6 +1993,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .map(|registration| registration.into_live(owner))
                 .collect::<Result<_, _>>()?,
             next_defer_registration: self.next_defer_registration,
+            defer_unwind: self.defer_unwind,
             result: self.result.into_live(owner)?,
             frame_released: self.frame_released,
             prepared_commands: Vec::new(),
@@ -3266,6 +3447,10 @@ pub enum LineRuntimeError {
     DeferredRegistrationsRemain,
     #[error("defer registration identity domain is exhausted")]
     DeferRegistrationIdentityExhausted,
+    #[error(
+        "deferred unwind transition disagrees with the activation's fixed exit and work identity"
+    )]
+    InvalidDeferredTransition,
     #[error("deferred registration site is absent from the executable table: {site}")]
     UnknownDeferredSite { site: RuntimeDeferSiteId },
     #[error("scheduled callback does not have one exact child-scope capture owner")]
@@ -3405,8 +3590,8 @@ pub enum LineRuntimeError {
 mod tests {
     use super::{
         AwbcRuntimeDialogueActivationSnapshot, LineRuntimeError, RuntimeCueLease, RuntimeCueOrigin,
-        RuntimeDialogueActivationState, RuntimeDialogueResultState, RuntimeHandleLease,
-        RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
+        RuntimeDeferUnwindStep, RuntimeDialogueActivationState, RuntimeDialogueResultState,
+        RuntimeHandleLease, RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
         RuntimeLineDeferredRegistration, RuntimeScheduledLineTask, ScopeExit,
     };
     use crate::awbc::schema::{
@@ -3474,6 +3659,7 @@ mod tests {
 
     #[test]
     fn line_root_defers_are_dynamic_lifo_entries_filtered_by_exit() {
+        let activation = scheduled_activation();
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
         let repeated_site = defer_site(0);
         state
@@ -3483,7 +3669,7 @@ mod tests {
                 deferred("oldest"),
             )
             .expect("register first occurrence");
-        state
+        let completion_only = state
             .register_deferred(
                 defer_site(1),
                 RuntimeDeferOutcomeFilter::Completed,
@@ -3510,26 +3696,193 @@ mod tests {
             state.release_frame(),
             Err(LineRuntimeError::DeferredRegistrationsRemain)
         );
+        state
+            .begin_deferred_unwind(ScopeExit::Failed)
+            .expect("fix failure exit");
+        let Some(RuntimeDeferUnwindStep::Run(newest)) = state
+            .prepare_next_deferred(&activation)
+            .expect("prepare newest callback")
+        else {
+            panic!("newest callback must run")
+        };
         assert_eq!(
-            state
-                .pop_deferred()
-                .expect("newest failure callback")
-                .captures(),
+            newest.captures(),
             [RuntimeValue::String("newest".to_owned())]
         );
-        let skipped = state.pop_deferred().expect("completion-only callback");
-        assert!(!skipped.outcome_filter().matches(ScopeExit::Failed));
         assert_eq!(
-            state
-                .pop_deferred()
-                .expect("older always callback")
-                .captures(),
+            state.prepare_next_deferred(&activation).err(),
+            Some(LineRuntimeError::InvalidDeferredTransition)
+        );
+        assert_eq!(
+            state.begin_deferred_unwind(ScopeExit::Completed),
+            Err(LineRuntimeError::InvalidDeferredTransition)
+        );
+        assert_eq!(
+            state.complete_deferred_child(
+                &activation,
+                completion_only,
+                newest.site(),
+                &std::collections::BTreeSet::new(),
+            ),
+            Err(LineRuntimeError::InvalidDeferredTransition)
+        );
+        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("snapshot in-flight defer identity");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let unpaired = snapshot
+            .into_live(&owner)
+            .expect("restore activation values");
+        assert_eq!(
+            unpaired.restore_admit(&activation),
+            Err(LineRuntimeError::InvalidRestoredDeferredState)
+        );
+        state
+            .complete_deferred_child(
+                &activation,
+                newest.id(),
+                newest.site(),
+                &std::collections::BTreeSet::new(),
+            )
+            .expect("complete newest");
+        let Some(RuntimeDeferUnwindStep::Skipped(skipped)) = state
+            .prepare_next_deferred(&activation)
+            .expect("skip completion-only")
+        else {
+            panic!("completion-only callback is skipped")
+        };
+        assert_eq!(skipped, completion_only);
+        let Some(RuntimeDeferUnwindStep::Run(oldest)) = state
+            .prepare_next_deferred(&activation)
+            .expect("prepare oldest callback")
+        else {
+            panic!("oldest callback must run")
+        };
+        assert_eq!(
+            oldest.captures(),
             [RuntimeValue::String("oldest".to_owned())]
         );
-        assert!(state.pop_deferred().is_none());
+        state
+            .complete_deferred_child(
+                &activation,
+                oldest.id(),
+                oldest.site(),
+                &std::collections::BTreeSet::new(),
+            )
+            .expect("complete oldest");
+        assert!(
+            state
+                .prepare_next_deferred(&activation)
+                .expect("empty stack")
+                .is_none()
+        );
         state.abandon().expect("close uncommitted activation");
         state.release_frame().expect("all registrations consumed");
         assert!(state.is_terminal());
+    }
+
+    #[test]
+    fn skipped_line_defer_releases_its_affine_capture() {
+        let activation = scheduled_activation();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        let kind = crate::value::RuntimeHandleKind::Voice;
+        let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+            kind.try_producer().expect("voice producer"),
+            RuntimeSemanticTypeId::from_bytes([0x8f; 32]),
+            crate::value::RuntimeOpaqueValueClass::AffineHandle(kind),
+            crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+        );
+        let value = state
+            .ledger
+            .issue_exact(
+                &activation,
+                RuntimeLineHandleSiteId::from_zero_based(0),
+                kind,
+                &owner,
+                RuntimeHandleResource::Voice(super::RuntimeVoiceLease::new(
+                    crate::presentation::RuntimeVoiceSessionId::try_new("voice")
+                        .expect("voice session"),
+                    0,
+                    false,
+                )),
+                RuntimeHandleOwnerSlot::LineScope,
+            )
+            .expect("issue line-scoped voice handle");
+        let token = RuntimeLineHandleToken::try_decode_payload(value.payload())
+            .expect("issued handle token");
+        let id = state
+            .register_deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Completed,
+                vec![RuntimeValue::Opaque(value)],
+            )
+            .expect("register captured handle");
+        state
+            .begin_deferred_unwind(ScopeExit::Failed)
+            .expect("fix failure exit");
+        let Some(RuntimeDeferUnwindStep::Skipped(skipped)) = state
+            .prepare_next_deferred(&activation)
+            .expect("skip nonmatching body")
+        else {
+            panic!("completion-only body must skip")
+        };
+        assert_eq!(skipped, id);
+        assert_eq!(
+            state.ledger.lease(&token).expect("captured lease").state(),
+            RuntimeHandleLeaseState::Cancelling
+        );
+        assert!(state.has_pending_commands());
+        assert!(state.deferred_registrations().is_empty());
+    }
+
+    #[test]
+    fn deferred_unwind_snapshot_keeps_the_fixed_exit_between_registrations() {
+        let activation = scheduled_activation();
+        let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
+        state
+            .register_deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Failed,
+                deferred("run after restore"),
+            )
+            .expect("register failure body");
+        state
+            .register_deferred(
+                defer_site(1),
+                RuntimeDeferOutcomeFilter::Completed,
+                deferred("skip before snapshot"),
+            )
+            .expect("register completion body");
+        state
+            .begin_deferred_unwind(ScopeExit::Failed)
+            .expect("fix failure exit");
+        assert!(matches!(
+            state.prepare_next_deferred(&activation).expect("skip top"),
+            Some(RuntimeDeferUnwindStep::Skipped(_))
+        ));
+        let snapshot = AwbcRuntimeDialogueActivationSnapshot::from_live(&state)
+            .expect("snapshot between deferred bodies");
+        let encoded = serde_json::to_vec(&snapshot).expect("encode snapshot");
+        let decoded: AwbcRuntimeDialogueActivationSnapshot<AwbcTypeId> =
+            serde_json::from_slice(&encoded).expect("decode snapshot");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::new(AwbcProgram::default()));
+        let mut restored = decoded.into_live(&owner).expect("restore values");
+        restored
+            .restore_admit(&activation)
+            .expect("admit fixed-exit state");
+        assert_eq!(
+            restored.begin_deferred_unwind(ScopeExit::Completed),
+            Err(LineRuntimeError::InvalidDeferredTransition)
+        );
+        let Some(RuntimeDeferUnwindStep::Run(remaining)) = restored
+            .prepare_next_deferred(&activation)
+            .expect("resume LIFO")
+        else {
+            panic!("remaining failure body runs")
+        };
+        assert_eq!(
+            remaining.captures(),
+            [RuntimeValue::String("run after restore".to_owned())]
+        );
     }
 
     #[test]
@@ -3575,24 +3928,6 @@ mod tests {
 
         assert_eq!(restored.deferred, state.deferred);
         assert_eq!(restored.next_defer_registration, 3);
-        assert_eq!(
-            restored
-                .pop_deferred()
-                .expect("top cancellation callback")
-                .captures(),
-            [RuntimeValue::Tuple(vec![
-                RuntimeValue::Bool(true),
-                RuntimeValue::String("nested".to_owned()),
-            ])]
-        );
-        assert_eq!(
-            restored
-                .pop_deferred()
-                .expect("older always callback")
-                .captures(),
-            [RuntimeValue::String("first capture".to_owned())]
-        );
-        assert!(restored.pop_deferred().is_none());
         let third = restored
             .register_deferred(
                 defer_site(0),
@@ -3601,6 +3936,37 @@ mod tests {
             )
             .expect("restored activation continues issuing distinct IDs");
         assert_eq!(third.get().get(), 3);
+        restored
+            .begin_deferred_unwind(ScopeExit::Cancelled)
+            .expect("fix cancel exit");
+        for expected in ["after restore", "nested", "first capture"] {
+            let Some(RuntimeDeferUnwindStep::Run(registration)) = restored
+                .prepare_next_deferred(&activation)
+                .expect("prepare restored callback")
+            else {
+                panic!("all restored callbacks match")
+            };
+            let label = match &registration.captures()[0] {
+                RuntimeValue::String(value) => value.as_str(),
+                RuntimeValue::Tuple(_) => "nested",
+                _ => panic!("exact captured shape"),
+            };
+            assert_eq!(label, expected);
+            restored
+                .complete_deferred_child(
+                    &activation,
+                    registration.id(),
+                    registration.site(),
+                    &std::collections::BTreeSet::new(),
+                )
+                .expect("complete restored callback");
+        }
+        assert!(
+            restored
+                .prepare_next_deferred(&activation)
+                .expect("drained")
+                .is_none()
+        );
     }
 
     #[test]

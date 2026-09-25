@@ -87,6 +87,28 @@ impl RuntimeLineDeferredRegistration {
     }
 }
 
+/// One executor-owned child currently running a line-root defer body.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimeDeferInFlight {
+    pub(crate) id: RuntimeDeferRegistrationId,
+    pub(crate) site: RuntimeDeferSiteId,
+}
+
+/// The fixed exit reason and at most one active deferred body for one line.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimeDeferUnwindState {
+    pub(crate) exit: ScopeExit,
+    pub(crate) inflight: Option<RuntimeDeferInFlight>,
+}
+
+/// One atomic LIFO transition selected by the shared activation.
+pub(crate) enum RuntimeDeferUnwindStep {
+    Run(RuntimeLineDeferredRegistration),
+    Skipped(RuntimeDeferRegistrationId),
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AwbcRuntimeDeferredRegistrationSnapshot {

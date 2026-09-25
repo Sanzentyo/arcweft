@@ -152,6 +152,7 @@ impl LineTaskGroup {
                 .find(|rule| rule.trigger == action)
                 .map_or(&[], LineCancelRule::action),
             LineTaskWork::Cleanup(exit) => self.cleanup.actions(exit),
+            LineTaskWork::Defer(_) => &[],
         }
     }
 }
@@ -542,6 +543,8 @@ pub enum LineTaskWork {
     Node(RuntimeLineTaskNodeId),
     Cancellation(InputActionId),
     Cleanup(ScopeExit),
+    /// Dialogue-owned dynamic work; never enters reducer outstanding sets.
+    Defer(crate::runtime_id::RuntimeDeferRegistrationId),
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -830,7 +833,9 @@ impl LineTaskLiveSnapshot {
                         LineTaskWork::Node(node) => {
                             Some(LineTaskWorkTag::scheduled(scheduled.token().clone(), *node))
                         }
-                        LineTaskWork::Cancellation(_) | LineTaskWork::Cleanup(_) => None,
+                        LineTaskWork::Cancellation(_)
+                        | LineTaskWork::Cleanup(_)
+                        | LineTaskWork::Defer(_) => None,
                     })
             }))
             .collect()
@@ -1310,12 +1315,16 @@ fn validate_lane_snapshot<P: LineTaskPlanView>(
         match work {
             LineTaskWork::Node(node) => validate_node(*node)?,
             LineTaskWork::Cancellation(_) | LineTaskWork::Cleanup(_) => {}
+            LineTaskWork::Defer(_) => {
+                return Err(LineTaskSnapshotError::WorkPhase { work: work.clone() });
+            }
         }
         let valid_phase = match work {
             LineTaskWork::Node(_) => !matches!(phase, LineTaskPhase::Closed { .. }),
             LineTaskWork::Cancellation(_) | LineTaskWork::Cleanup(_) => {
                 !scheduled && matches!(phase, LineTaskPhase::Closing { .. })
             }
+            LineTaskWork::Defer(_) => false,
         };
         if !valid_phase {
             return Err(LineTaskSnapshotError::WorkPhase { work: work.clone() });

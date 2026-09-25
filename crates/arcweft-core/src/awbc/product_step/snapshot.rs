@@ -105,6 +105,7 @@ fn snapshot_work(work: &LineTaskWork) -> AwbcProductLineTaskWorkSnapshot {
         LineTaskWork::Cleanup(exit) => {
             AwbcProductLineTaskWorkSnapshot::Cleanup(snapshot_exit(*exit))
         }
+        LineTaskWork::Defer(id) => AwbcProductLineTaskWorkSnapshot::Defer(*id),
     }
 }
 
@@ -124,6 +125,7 @@ fn restore_work(work: AwbcProductLineTaskWorkSnapshot) -> Option<LineTaskWork> {
         AwbcProductLineTaskWorkSnapshot::Cleanup(exit) => {
             Some(LineTaskWork::Cleanup(restore_exit(exit)))
         }
+        AwbcProductLineTaskWorkSnapshot::Defer(id) => Some(LineTaskWork::Defer(id)),
     }
 }
 
@@ -1199,6 +1201,7 @@ pub enum AwbcProductLineTaskWorkSnapshot {
     Node(u32),
     Cancellation(arcweft_interaction_model::input::InputActionId),
     Cleanup(AwbcProductLineTaskExitSnapshot),
+    Defer(crate::runtime_id::RuntimeDeferRegistrationId),
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
@@ -2033,6 +2036,12 @@ impl AwbcProductStepExecutor {
                             .to_owned(),
                     });
                 }
+            }
+            AwbcProductLineTaskWorkSnapshot::Defer(_) => {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "defer child work requires an activation-owned inflight registration"
+                        .to_owned(),
+                });
             }
         }
         Ok(())

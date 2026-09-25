@@ -595,6 +595,7 @@ impl<'a> AwbcLineTaskPlanView<'a> {
             LineTaskWork::Cleanup(ScopeExit::Completed) => self.group.cleanup_completed,
             LineTaskWork::Cleanup(ScopeExit::Cancelled) => self.group.cleanup_cancelled,
             LineTaskWork::Cleanup(ScopeExit::Failed) => self.group.cleanup_failed,
+            LineTaskWork::Defer(_) => None,
         }
     }
 }
