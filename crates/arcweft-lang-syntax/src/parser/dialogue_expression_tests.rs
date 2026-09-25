@@ -109,6 +109,56 @@ mod tests {
     }
 
     #[test]
+    fn bare_dialogue_plans_classify_only_the_dialogue_head() {
+        for (document_id, dialogue) in [
+            (
+                "memory:bare-colon-dialogue-plan-classification",
+                "    alice(voice=auto):\n        聞いて。[p]\n",
+            ),
+            (
+                "memory:bare-bracket-dialogue-plan-classification",
+                "    alice(voice=auto)[聞いて。[p]]\n",
+            ),
+        ] {
+            let source = format!(
+                "flow opening() -> String {{\n{dialogue}    with:\n        let actor = alice.stage.acquire(scope=line)\n        out \"Done\"\n    return \"done\"\n}}\n"
+            );
+            let document = SourceDocument::try_new(
+                SourceDocumentId::try_new(document_id).unwrap(),
+                SourceName::Memory,
+                source.as_str(),
+            )
+            .unwrap();
+            let built = parse_document(&document, crate::parser::ParseOptions::default())
+                .expect("bare Dialogue with an aligned line plan parses");
+            assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+            assert_eq!(built.green().to_string(), source);
+
+            let dialogue_applications = applications(&built);
+            let [application] = dialogue_applications.as_slice() else {
+                panic!("bare Dialogue must remain one attached content application");
+            };
+            assert!(application.has_plan());
+            assert!(!built.index().entries().iter().any(|entry| {
+                entry.kind() == SyntaxKind::AssignmentStatement
+                    && entry.role() == SyntaxRole::ThreadFlowItem(0)
+            }));
+            assert!(built.index().entries().iter().any(|entry| {
+                entry.kind() == SyntaxKind::LetStatement
+                    && entry.role() == SyntaxRole::DialogueLinePlanItem(0)
+            }));
+            assert!(built.index().entries().iter().any(|entry| {
+                entry.kind() == SyntaxKind::OutStatement
+                    && entry.role() == SyntaxRole::DialogueLinePlanItem(1)
+            }));
+            assert!(built.index().entries().iter().any(|entry| {
+                entry.kind() == SyntaxKind::ReturnStatement
+                    && entry.role() == SyntaxRole::ThreadFlowItem(1)
+            }));
+        }
+    }
+
+    #[test]
     fn bracket_dialogue_with_indented_plan_keeps_its_head_distinct_from_with_colon() {
         let source = "flow opening {\n    alice()[本文。[mark @.release][p]]\n    with:\n        on mark(@.release) => log.info(\"released\")\n}\n";
         let built = parse_document(&document(source), crate::parser::ParseOptions::default())

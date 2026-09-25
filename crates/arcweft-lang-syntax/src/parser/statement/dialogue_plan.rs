@@ -512,17 +512,32 @@ fn emit_indented_cancel_rule_body(
             break;
         }
         let start = parser.cursor();
-        let item_end = indented_item_end(
-            parser,
-            start,
-            interval.end(),
-            suite_indent,
-            |_, _| true,
-            |_, _| false,
+        let item_indent = indent_cursor.observe(parser, start);
+        let dialogue_plan = (item_indent == suite_indent)
+            .then(|| dialogue_plan_interval(parser, start, interval.end()))
+            .flatten();
+        let item_end = dialogue_plan.map_or_else(
+            || {
+                indented_item_end(
+                    parser,
+                    start,
+                    interval.end(),
+                    suite_indent,
+                    |_, _| true,
+                    |_, _| false,
+                )
+            },
+            DialoguePlanInterval::end,
         );
         let significant_end = trimmed_end(parser, start, item_end);
-        if indent_cursor.observe(parser, start) == suite_indent {
-            super::emit_thread_flow_item(parser, significant_end, item_kind, ordinal);
+        if item_indent == suite_indent {
+            super::emit_thread_flow_item(
+                parser,
+                significant_end,
+                item_kind,
+                ordinal,
+                dialogue_plan.map(DialoguePlanInterval::owner_end),
+            );
         } else {
             parser.start(
                 SyntaxKind::ErrorStatement,
@@ -604,14 +619,31 @@ fn emit_callback_expression(
     parser.finish();
 }
 
-/// Finds an exact eligible `with` continuation and returns the exclusive end
-/// of its body. The caller has already selected a statement-owned expression
-/// interval, so only token geometry participates here.
-pub(super) fn dialogue_plan_end(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct DialoguePlanInterval {
+    owner_end: usize,
+    end: usize,
+}
+
+impl DialoguePlanInterval {
+    pub(super) const fn owner_end(self) -> usize {
+        self.owner_end
+    }
+
+    pub(super) const fn end(self) -> usize {
+        self.end
+    }
+}
+
+/// Finds an exact eligible `with` continuation and the exclusive end of its
+/// body. The owner interval ends at `with`, so statement classification sees
+/// only the dialogue head while the expression emitter still receives the
+/// complete plan interval.
+pub(super) fn dialogue_plan_interval(
     parser: &DocumentParser<'_, '_>,
     statement_start: usize,
     limit: usize,
-) -> Option<usize> {
+) -> Option<DialoguePlanInterval> {
     let head_end = physical_line_end(parser, statement_start, limit);
     let mut depth = 0_usize;
     let mut saw_postfix_close = false;
@@ -649,10 +681,14 @@ pub(super) fn dialogue_plan_end(
         .then_some(next)
     }?;
     let introducer = first_significant(parser, with.saturating_add(1), limit)?;
-    match token_text(parser, introducer) {
+    let end = match token_text(parser, introducer) {
         Some("{") => find_matching_close_before(parser, introducer + 1, limit, "{")
-            .map_or(Some(limit), |close| Some(close.saturating_add(1))),
-        Some(":") => Some(indented_suite_interval(parser, with, introducer, limit).end()),
-        _ => None,
-    }
+            .map_or(limit, |close| close.saturating_add(1)),
+        Some(":") => indented_suite_interval(parser, with, introducer, limit).end(),
+        _ => return None,
+    };
+    Some(DialoguePlanInterval {
+        owner_end: with,
+        end,
+    })
 }

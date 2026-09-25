@@ -120,6 +120,81 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
 }
 
 #[test]
+fn bare_dialogue_line_plan_assignment_stays_in_the_ordered_plan() {
+    for (document_id, dialogue) in [
+        (
+            "arcweft-test://proof/bare-colon-dialogue-line-plan",
+            "    alice(voice=auto):\n        聞いて。[p]\n",
+        ),
+        (
+            "arcweft-test://proof/bare-bracket-dialogue-line-plan",
+            "    alice(voice=auto)[聞いて。[p]]\n",
+        ),
+    ] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow bare_dialogue() -> String {{\n{dialogue}    with:\n        let actor = alice.stage.acquire(scope=line)\n        out \"Done\"\n    return \"done\"\n}}\n"
+        );
+        let parsed = parse(document_id, &source);
+        assert!(
+            parsed.diagnostics().is_empty(),
+            "{document_id}: {:?}",
+            parsed.diagnostics()
+        );
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().unwrap();
+        let module = lower(&mut database, &parsed, &key);
+        assert_eq!(
+            module.status(),
+            HirModuleStatus::Clean,
+            "{document_id}: {:#?}",
+            module.diagnostics()
+        );
+
+        let (_, _, flow) = resolve_flow(&module, 1);
+        let [
+            HirThreadFlowItem::DialogueApplication(dialogue),
+            HirThreadFlowItem::Statement(return_statement),
+        ] = flow.body().items()
+        else {
+            panic!("bare Dialogue and its following return retain source order");
+        };
+        let HirExprKind::AttachedContentApplication(application) = module
+            .resolve_expr(*dialogue)
+            .expect("bare Dialogue application")
+            .kind()
+        else {
+            panic!("flow Dialogue item owns its attached content application");
+        };
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            plan: Some(plan),
+            ..
+        } = application.family()
+        else {
+            panic!("bare Dialogue application owns its aligned line plan");
+        };
+        let [
+            HirLinePlanItem::Statement(actor_statement),
+            HirLinePlanItem::Statement(out_statement),
+        ] = plan.items()
+        else {
+            panic!("line plan retains its ordered let and out statements");
+        };
+        assert!(matches!(
+            module.resolve_stmt(*actor_statement).unwrap().kind(),
+            HirStmtKind::Let { .. }
+        ));
+        assert!(matches!(
+            module.resolve_stmt(*out_statement).unwrap().kind(),
+            HirStmtKind::Out { .. }
+        ));
+        assert!(matches!(
+            module.resolve_stmt(*return_statement).unwrap().kind(),
+            HirStmtKind::Return { .. }
+        ));
+    }
+}
+
+#[test]
 fn inline_dialogue_timed_cue_lowers_as_a_clean_callback_call() {
     let parsed = parse(
         "arcweft-test://proof/inline-dialogue-timed-cue-hir",

@@ -268,10 +268,11 @@ fn emit_block_sequence(
         }
         let start = parser.cursor();
         let thread_flow = sequence_kind == BlockSequenceKind::ThreadFlow;
-        let mut terminator = thread_flow
-            .then(|| dialogue_plan::dialogue_plan_end(parser, start, close))
-            .flatten()
-            .map(|end| (end, false))
+        let dialogue_plan = thread_flow
+            .then(|| dialogue_plan::dialogue_plan_interval(parser, start, close))
+            .flatten();
+        let mut terminator = dialogue_plan
+            .map(|interval| (interval.end(), false))
             .or_else(|| line_plan_defer_item_end(parser, start, close).map(|end| (end, false)))
             .or_else(|| line_plan_on_item_end(parser, start, close).map(|end| (end, false)))
             .or_else(|| {
@@ -320,7 +321,13 @@ fn emit_block_sequence(
                 significant_end
             };
             if sequence_kind == BlockSequenceKind::ThreadFlow {
-                emit_thread_flow_item(parser, end, item_kind, statement);
+                emit_thread_flow_item(
+                    parser,
+                    end,
+                    item_kind,
+                    statement,
+                    dialogue_plan.map(dialogue_plan::DialoguePlanInterval::owner_end),
+                );
             } else {
                 emit_statement(parser, end, item_kind, statement);
             }
@@ -350,9 +357,11 @@ fn emit_thread_flow_item(
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
+    dialogue_owner_end: Option<usize>,
 ) {
     let role = SyntaxRole::ThreadFlowItem(ordinal);
-    let kind = classify_thread_flow_item(parser, end, item_kind);
+    let classification_end = dialogue_owner_end.unwrap_or(end);
+    let kind = classify_thread_flow_item(parser, classification_end, item_kind);
     if kind != SyntaxKind::ExpressionStatement {
         emit_statement_kind(parser, end, item_kind, role, kind, true);
         return;
