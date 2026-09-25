@@ -259,6 +259,12 @@ fn emit_block_sequence(
             .then(|| dialogue_plan::dialogue_plan_end(parser, start, close))
             .flatten()
             .map(|end| (end, false))
+            .or_else(|| {
+                thread_flow
+                    .then(|| bare_scope_after_postfix_bracket(parser, start, close))
+                    .flatten()
+                    .map(|open| (open, false))
+            })
             .or_else(|| thread_flow_await_terminator(parser, start, close, thread_flow))
             .or_else(|| thread_flow_dialogue_terminator(parser, start, close, thread_flow))
             .or_else(|| find_statement_terminator(parser, start, close));
@@ -435,6 +441,42 @@ fn trim_trailing_newline(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
                 .is_some_and(|token| token.kind() == SyntaxKind::NewlineToken)
         })
         .unwrap_or(end)
+}
+
+/// A brace immediately after a complete postfix bracket starts its own
+/// lexical Scope item. The bracket's expression owner cannot absorb a bare
+/// block as a line plan; only an explicit `with` can do that.
+fn bare_scope_after_postfix_bracket(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<usize> {
+    let mut delimiters = Vec::new();
+    for index in start..end {
+        let text = token_text(parser, index)?;
+        match text {
+            "(" | "[" | "{" => delimiters.push(text),
+            ")" if delimiters.last() == Some(&"(") => {
+                delimiters.pop();
+            }
+            "]" if delimiters.last() == Some(&"[") => {
+                delimiters.pop();
+                if delimiters.is_empty() {
+                    let next = first_significant(parser, index + 1, end)?;
+                    if token_text(parser, next) == Some("{")
+                        && !indentation::has_newline_between(parser, index + 1, next)
+                    {
+                        return Some(next);
+                    }
+                }
+            }
+            "}" if delimiters.last() == Some(&"{") => {
+                delimiters.pop();
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn thread_flow_dialogue_terminator(

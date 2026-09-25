@@ -83,6 +83,25 @@ mod tests {
     }
 
     #[test]
+    fn bracket_dialogue_followed_by_bare_scope_has_two_flow_items() {
+        let source = "flow opening {\n    alice()[本文。[p]] { log.info(\"after\") }\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("bracket dialogue and bare scope parse");
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(applications(&built).len(), 1);
+        assert_eq!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .filter(|entry| entry.kind() == SyntaxKind::ScopeStatement)
+                .count(),
+            1
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
     fn retained_ruby_is_a_typed_dialogue_node_surface() {
         let source = "flow opening {\n    alice[｜漢字《かんじ》|[base](reading)]\n}\n";
         let built = parse_document(&document(source), crate::parser::ParseOptions::default())
