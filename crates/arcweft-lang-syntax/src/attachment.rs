@@ -205,9 +205,9 @@ pub use test_bench::{
     AttachedTestKind,
 };
 pub use thread_body::{
-    AttachedFlowStatementBody, AttachedNestedThreadFlowBody, AttachedRequiredNestedThreadFlowBody,
-    AttachedRequiredThreadExpressionBody, AttachedThreadExpressionBody, AttachedThreadFlowItem,
-    AttachedThreadFlowItemFamily,
+    AttachedFlowStatementBody, AttachedForBody, AttachedForBodyBlock, AttachedNestedThreadFlowBody,
+    AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
+    AttachedThreadExpressionBody, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
 };
 pub use thread_statement::{
     AttachedForStatement, AttachedIncludeStatement, AttachedRequiredIncludeTarget,

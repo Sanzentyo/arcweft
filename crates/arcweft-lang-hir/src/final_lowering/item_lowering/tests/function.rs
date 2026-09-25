@@ -8,7 +8,7 @@ use crate::item::{
     HirFunctionSignature, HirParameter, HirParameterKind,
 };
 use crate::module::HirModuleStatus;
-use crate::stmt::HirStmtKind;
+use crate::stmt::{HirContextualStmtBody, HirStmtKind};
 use crate::type_ref::{HirType, HirTypeKind};
 
 #[test]
@@ -83,6 +83,79 @@ fn function_body_retains_agent_composite_wait_expression() {
         "{:#?}",
         module.diagnostics()
     );
+}
+
+#[test]
+fn ordinary_function_for_body_retains_yield_and_freezes_its_scope() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-for-yield",
+        concat!(
+            "struct IteratorItem {}\n",
+            "struct CaptureError {}\n",
+            "fn pass_frames(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorItem, CaptureError> {\n",
+            "    for frame in frames {\n",
+            "        yield frame\n",
+            "    }\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, function) = function(&module, 2);
+    let HirFunctionBody::Block {
+        scope: function_scope,
+        statements,
+        ..
+    } = function.body()
+    else {
+        panic!("ordinary function must retain its block body")
+    };
+    let [for_owner] = statements.as_ref() else {
+        panic!("the function body owns one For statement")
+    };
+    let for_statement = module
+        .resolve_stmt(*for_owner)
+        .expect("function For statement");
+    let HirStmtKind::For(for_statement) = for_statement.kind() else {
+        panic!("the function body retains its For statement")
+    };
+    let HirContextualStmtBody::Ordinary {
+        scope: for_scope,
+        statements: for_statements,
+    } = for_statement.body()
+    else {
+        panic!("ordinary function For body must retain ordinary statements")
+    };
+    let [yield_owner] = for_statements.as_ref() else {
+        panic!("the For body owns one Yield statement")
+    };
+    assert!(matches!(
+        module
+            .resolve_stmt(*yield_owner)
+            .expect("For body Yield statement")
+            .kind(),
+        HirStmtKind::Yield { .. }
+    ));
+
+    let for_scope_payload = module
+        .resolve_scope(*for_scope)
+        .expect("For body scope accepted by source freeze");
+    assert_eq!(for_scope_payload.parent(), Some(*function_scope));
+    assert_eq!(for_scope_payload.owner(), &HirScopeOwner::Stmt(*for_owner));
+    assert_eq!(for_scope_payload.locals(), for_statement.locals());
 }
 
 fn function(

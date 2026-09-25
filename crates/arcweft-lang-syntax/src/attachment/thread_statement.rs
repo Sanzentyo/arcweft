@@ -13,7 +13,10 @@ use super::node::{
 };
 use super::source_file::AttachedDelimiterState;
 use super::statement::{invalid, keyword_statement_projection, optional_recovery, require_roles};
-use super::thread_body::{AttachedRequiredNestedThreadFlowBody, required_nested_thread_flow_body};
+use super::thread_body::{
+    AttachedForBody, AttachedRequiredNestedThreadFlowBody, required_for_body,
+    required_nested_thread_flow_body,
+};
 use super::{AttachedPatternNode, SyntaxAccessError};
 use crate::expressions::ExpressionProjection;
 use crate::grammar::keyword_statement_projection::{
@@ -294,7 +297,7 @@ pub struct AttachedForStatement {
     pattern: AttachedPatternNode,
     in_keyword: AstNode<ForInKind>,
     source: RequiredStatementExpressionNode,
-    body: AttachedRequiredNestedThreadFlowBody,
+    body: AttachedForBody,
 }
 
 impl AttachedForStatement {
@@ -314,7 +317,7 @@ impl AttachedForStatement {
         &self.source
     }
 
-    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+    pub const fn body(&self) -> &AttachedForBody {
         &self.body
     }
 
@@ -512,7 +515,7 @@ impl AstNode<ForStatementKind> {
                 .semantic()?,
             in_keyword: self.required_exact_child::<ForInKind>(SyntaxRole::Token)?,
             source: required_statement_expression(self, SyntaxRole::Scrutinee)?,
-            body: required_nested_thread_flow_body(self)?,
+            body: required_for_body(self)?,
         })
     }
 }

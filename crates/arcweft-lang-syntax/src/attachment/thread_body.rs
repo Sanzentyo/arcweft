@@ -261,6 +261,98 @@ impl AttachedRequiredNestedThreadFlowBody {
     }
 }
 
+/// Required `for` body block, retained until HIR selects its ordinary or
+/// Thread/Flow statement projection from the enclosing statement context.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedForBody {
+    Block(AttachedForBodyBlock),
+    Missing(AstNode<MissingBodyKind>),
+}
+
+impl AttachedForBody {
+    pub fn thread_flow_body(
+        &self,
+    ) -> Result<AttachedRequiredNestedThreadFlowBody, SyntaxAccessError> {
+        match self {
+            Self::Block(body) => Ok(AttachedRequiredNestedThreadFlowBody::Present(
+                body.syntax.thread_flow_body()?,
+            )),
+            Self::Missing(missing) => Ok(AttachedRequiredNestedThreadFlowBody::Missing(
+                missing.clone(),
+            )),
+        }
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        match self {
+            Self::Block(body) => body.is_unclosed() || syntax_has_recovery(&body.syntax.syntax()),
+            Self::Missing(_) => true,
+        }
+    }
+}
+
+/// Exact source-backed Block owner used by a `for` body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedForBodyBlock {
+    syntax: AstNode<BlockKind>,
+    open: AstNode<OpenBraceKind>,
+    close: AstNode<CloseBraceKind>,
+}
+
+impl AttachedForBodyBlock {
+    fn from_block(syntax: AstNode<BlockKind>) -> Result<Self, SyntaxAccessError> {
+        if syntax.optional_tail()?.is_some() {
+            return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: syntax.id() });
+        }
+        let open = syntax.required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)?;
+        let close = syntax.required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)?;
+        Ok(Self {
+            syntax,
+            open,
+            close,
+        })
+    }
+
+    pub const fn syntax(&self) -> &AstNode<BlockKind> {
+        &self.syntax
+    }
+
+    pub const fn open(&self) -> &AstNode<OpenBraceKind> {
+        &self.open
+    }
+
+    pub const fn close(&self) -> &AstNode<CloseBraceKind> {
+        &self.close
+    }
+
+    /// Direct ordinary statements, when this block has the ordinary Block
+    /// child-role projection.
+    pub fn statements(&self) -> Result<Vec<StatementNode>, SyntaxAccessError> {
+        if self.syntax.syntax().children().iter().any(|child| {
+            !matches!(
+                child.role().class(),
+                SyntaxRoleClass::Statement
+                    | SyntaxRoleClass::OpenDelimiter
+                    | SyntaxRoleClass::CloseDelimiter
+                    | SyntaxRoleClass::Recovery
+            )
+        }) {
+            return Err(SyntaxAccessError::InvalidThreadFlowBodyShape {
+                id: self.syntax.id(),
+            });
+        }
+        self.syntax.statements()
+    }
+
+    pub fn is_unclosed(&self) -> bool {
+        !self.open.range().is_empty()
+            && matches!(
+                self.close.delimiter_state(),
+                AttachedDelimiterState::Missing(_)
+            )
+    }
+}
+
 /// One nested statement-only body with the same closed item family as Flow
 /// declarations and Thread expressions.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -417,6 +509,28 @@ pub(crate) fn required_nested_thread_flow_body<K: super::node::AstKind>(
                 return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() });
             }
             Ok(AttachedRequiredNestedThreadFlowBody::Missing(missing))
+        }
+        _ => Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() }),
+    }
+}
+
+pub(crate) fn required_for_body<K: super::node::AstKind>(
+    owner: &AstNode<K>,
+) -> Result<AttachedForBody, SyntaxAccessError> {
+    let body = owner
+        .syntax()
+        .optional_unique_child(SyntaxRole::Body)?
+        .ok_or(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() })?;
+    match body.kind() {
+        SyntaxKind::Block => Ok(AttachedForBody::Block(AttachedForBodyBlock::from_block(
+            body.cast()?,
+        )?)),
+        SyntaxKind::MissingBody => {
+            let missing = body.cast::<MissingBodyKind>()?;
+            if !missing.range().is_empty() {
+                return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() });
+            }
+            Ok(AttachedForBody::Missing(missing))
         }
         _ => Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: owner.id() }),
     }

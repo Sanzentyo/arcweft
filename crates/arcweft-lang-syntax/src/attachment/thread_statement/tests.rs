@@ -7,11 +7,12 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{AttachedForStatement, AttachedWhileLetStatement, AttachedWhileStatement};
 use crate::attachment::node::{
-    BreakStatementKind, CloseBraceKind, ExpressionStatementKind, FlowItemKind, ThreadExpressionKind,
+    BreakStatementKind, CloseBraceKind, ExpressionStatementKind, FlowItemKind, ForStatementKind,
+    ThreadExpressionKind,
 };
 use crate::attachment::source_file::AttachedDelimiterState;
 use crate::attachment::{
-    AttachedExpressionNode, AttachedFlowStatementBody, AttachedRequiredFlowBody,
+    AttachedExpressionNode, AttachedFlowStatementBody, AttachedForBody, AttachedRequiredFlowBody,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
     AttachedThreadExpressionBody, AttachedThreadFlowItem, GrammarIdentityMap,
     RequiredStatementExpressionNode, StatementNode, SyntaxDatabaseId, SyntaxLineageId,
@@ -186,7 +187,8 @@ fn loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies() {
         for_statement.source(),
         RequiredStatementExpressionNode::Expression(source) if source.source_text() == "source"
     ));
-    assert_one_nested_item(for_statement.body());
+    let thread_body = for_statement.body().thread_flow_body().unwrap();
+    assert_one_nested_item(&thread_body);
     assert!(!for_statement.has_recovery());
 }
 
@@ -206,8 +208,39 @@ fn for_source_accepts_transparent_group_delimiters_without_a_second_expression_i
         RequiredStatementExpressionNode::Expression(source)
             if source.source_text() == "Counter { start: 0, end: 3 }"
     ));
-    assert_one_nested_item(statement.body());
+    let thread_body = statement.body().thread_flow_body().unwrap();
+    assert_one_nested_item(&thread_body);
     assert!(!statement.has_recovery());
+}
+
+#[test]
+fn for_body_retains_ordinary_statement_block_for_function_context() {
+    let snapshot = attach(
+        "fn pass(frames: Stream<Frame, StreamError>) -> Stream<Frame, StreamError> {\n\
+             for frame in frames {\n\
+                 yield frame\n\
+             }\n\
+         }\n",
+    );
+    let statement = snapshot
+        .nodes()
+        .find(|node| node.kind() == crate::grammar::SyntaxKind::ForStatement)
+        .expect("function For statement")
+        .cast::<ForStatementKind>()
+        .unwrap();
+    let statement = statement.semantics().expect("typed For statement");
+    let AttachedForBody::Block(body) = statement.body() else {
+        panic!("ordinary For retains its exact Block owner")
+    };
+    let attached_statements = body.syntax().statements().unwrap();
+    let [yield_statement] = attached_statements.as_slice() else {
+        panic!("ordinary For Block exposes its direct statement inventory")
+    };
+    assert_eq!(
+        yield_statement.syntax().kind(),
+        crate::grammar::SyntaxKind::YieldStatement
+    );
+    assert!(statement.body().thread_flow_body().is_err());
 }
 
 #[test]
@@ -304,7 +337,7 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(matches!(
         statement.body(),
-        AttachedRequiredNestedThreadFlowBody::Missing(missing) if missing.range().is_empty()
+        AttachedForBody::Missing(missing) if missing.range().is_empty()
     ));
     assert!(statement.has_recovery());
 }
@@ -345,8 +378,12 @@ fn loop_family_unclosed_bodies_share_the_typed_missing_close_owner() {
                 assert_unclosed_nested_body(&nested, head);
             }
             AttachedThreadFlowItem::For(statement) => {
-                let nested = statement.semantics().unwrap().body().clone();
-                assert_unclosed_nested_body(&nested, head);
+                let body = statement.semantics().unwrap().body().clone();
+                let AttachedForBody::Block(body) = body else {
+                    panic!("authored open brace must retain a For Block for {head}");
+                };
+                assert!(body.is_unclosed());
+                assert!(statement.semantics().unwrap().body().has_recovery());
             }
             item => panic!("unexpected loop-family item: {:?}", item.family()),
         }

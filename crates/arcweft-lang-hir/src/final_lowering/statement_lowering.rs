@@ -1982,6 +1982,15 @@ impl StagedHirModuleTransaction<'_> {
         let statements = block
             .statements()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        self.lower_attached_statement_sequence(&statements, scope, context)
+    }
+
+    fn lower_attached_statement_sequence(
+        &mut self,
+        statements: &[StatementNode],
+        scope: ScopeId,
+        context: HirStatementContext,
+    ) -> Result<LoweredStatementBlock, HirLowerFailure> {
         require_limit(HirLimit::Statements, statements.len())?;
         let mut body = Vec::with_capacity(statements.len());
         let mut locals = Vec::new();

@@ -2778,10 +2778,18 @@ impl Analyzer<'_, '_, '_> {
                             .select_iteration(input_type)
                             .map_err(AnalyzerExpressionError::fatal)?;
                         let ty = super::statements::iteration_iterator(&iteration);
-                        if self
+                        let replaced = self
                             .facts
                             .set_iteration_fact(owner, iteration)
-                            .map_err(AnalyzerExpressionError::fact)?
+                            .map_err(AnalyzerExpressionError::fact)?;
+                        // A candidate re-evaluates the synthetic owner against its
+                        // own inputs; the fact ledger journals the previous
+                        // published selection for rollback or projection.
+                        if replaced
+                            && matches!(
+                                context.authority(),
+                                super::expression_error::AnalyzerExpressionFactAuthority::Published
+                            )
                         {
                             return Err(AnalyzerExpressionError::fatal(
                                 FinalSemanticAnalysisError::WrongPayloadFamily,
