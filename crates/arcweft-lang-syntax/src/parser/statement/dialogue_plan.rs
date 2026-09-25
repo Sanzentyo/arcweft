@@ -647,9 +647,13 @@ pub(super) fn dialogue_plan_interval(
     let head_end = physical_line_end(parser, statement_start, limit);
     let mut depth = 0_usize;
     let mut saw_postfix_close = false;
+    let mut saw_await = false;
     let mut with = None;
     for index in statement_start..head_end {
         let text = token_text(parser, index)?;
+        if depth == 0 && text == "await" {
+            saw_await = true;
+        }
         if depth == 0 && text == "with" {
             with = Some(index);
             break;
@@ -663,6 +667,9 @@ pub(super) fn dialogue_plan_interval(
             }
             _ => {}
         }
+    }
+    if saw_await {
+        return None;
     }
     let with = if let Some(with) = with {
         Some(with)

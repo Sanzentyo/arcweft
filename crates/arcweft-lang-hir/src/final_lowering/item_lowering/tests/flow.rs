@@ -3,7 +3,8 @@ use super::*;
 use crate::arena::HirArenaPayload;
 use crate::dialogue_application::HirLinePlanItem;
 use crate::expr::{
-    HirCallArgument, HirCallValue, HirExprKind, HirThreadBodyOwner, HirThreadFlowItem,
+    HirAwaitBranchKind, HirCallArgument, HirCallValue, HirExprKind, HirThreadBodyOwner,
+    HirThreadFlowItem,
 };
 use crate::item::{
     HirContractMode, HirFlowContractClause, HirFlowIdentity, HirFlowIssueClass, HirFlowIssueOwner,
@@ -1106,6 +1107,68 @@ fn let_await_result_match_lowers_cleanly() {
     let statement = module.resolve_stmt(*statement).unwrap();
     assert!(matches!(statement.kind(), HirStmtKind::Let { .. }));
     assert!(!statement.is_poisoned());
+}
+
+#[test]
+fn inline_await_pending_branch_publishes_nested_body() {
+    for (case, await_head) in [
+        (
+            "inline",
+            "    let value = await asset.image(@asset:.bg.room) with:\n",
+        ),
+        (
+            "next-line",
+            "    let value = await asset.image(@asset:.bg.room)\n    with:\n",
+        ),
+    ] {
+        let source = format!(
+            "{}{}{}{}{}",
+            "flow main() -> Unit effects { log.write } {\n",
+            await_head,
+            "        pending progress:\n",
+            "            log.info(\"loading\", progress = progress.ratio)\n",
+            "    return ()\n}\n",
+        );
+        let parsed = parse(
+            &format!("arcweft-test://proof/await-pending-branch-{case}"),
+            &source,
+        );
+        assert!(
+            parsed.diagnostics().is_empty(),
+            "{case}: {:?}",
+            parsed.diagnostics()
+        );
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().expect("HIR database");
+        let module = lower(&mut database, &parsed, &key);
+        assert_eq!(
+            module.status(),
+            HirModuleStatus::Clean,
+            "{case}: {:#?}",
+            module.diagnostics()
+        );
+        let (_, _, flow) = resolve_flow(&module, 0);
+        let [
+            HirThreadFlowItem::Statement(binding),
+            HirThreadFlowItem::Statement(_),
+        ] = flow.body().items()
+        else {
+            panic!("Await binding and return remain separate Flow items")
+        };
+        let HirStmtKind::Let { initializer, .. } = module.resolve_stmt(*binding).unwrap().kind()
+        else {
+            panic!("Await binding remains a Let statement")
+        };
+        let HirExprKind::Await(awaited) = module.resolve_expr(*initializer).unwrap().kind() else {
+            panic!("Let initializer remains one Await expression")
+        };
+        let [branch] = awaited.branches() else {
+            panic!("Await retains one pending branch")
+        };
+        assert_eq!(branch.kind(), HirAwaitBranchKind::Pending);
+        assert_eq!(branch.locals().len(), 1);
+        assert_eq!(branch.body().child_edges().len(), 1);
+    }
 }
 
 #[test]
