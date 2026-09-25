@@ -887,3 +887,31 @@ Clippy、workspace all-target/all-feature check は exit 0（既存 warning あ�
 inflight を含む activation-only snapshot は、子 fiber との厳密な照合が未接続の間
 fail closed にしている。終了時の handle unwind は deferred stack/inflight が
 空になるまで拒否する。nested/CurrentScope の登録と取消結果選択も未完了。
+
+**2026-09-25 line-root defer executor checkpoint:**
+
+Supersedes: 直前 checkpoint の「native/AWBC 子実行と inflight restore 未接続」という
+実装状態。固定 exit と取消 `Out` の未完了判定は継続する。
+
+inspected `main`/`origin/main` は `6f2e2178fdaec1e8f4e3ba7cd86b2ac830201da6` で
+一致し、working tree は clean。native と decoded AWBC Product は共有 activation の
+inflight 登録 ID を親 dialogue に所有させ、捕捉 packet を子 fiber に渡して LIFO で
+実行する。条件不一致の body は実行せず、完了・失敗後に次の登録へ進む。AWBC 子は
+HostCall/Need/Await/AwaitMany/budget 中断を保持・再開し、save/restore では登録 ID、
+site、content、子の capture/handle packet を照合する。activation だけの inflight
+snapshot と不一致の子は引き続き拒否する。
+
+検証は core lib 613/613、AWBC Product focused 27/27、実 source の登録/capture/
+codec と native/AWBC LIFO 実行の compiler focused 各 1/1、`cargo fmt --all -- --check`、
+`cargo check --workspace --all-targets --all-features --quiet`、core all-target/all-feature
+Clippy が終了コード 0（既存 warning あり）。compiler `evaluated_effects` target 全体は
+20/21 で、既存の `evaluated_effect_operands_reach_awbc_from_final_checked_sources` が
+RuntimePlan transaction type graph に semantic type がないとして失敗した。この cut で
+変更した経路の focused tests は通過したが、target 全体の受理とは扱わない。
+
+defer body の `log.info(...)` を Block の末尾式に置くと現行 lowering は `ReturnExpr`
+として扱い、ログ効果を出さない。一方、効果文にすると body 内の自由変数が Sema の
+defer capture ABI から漏れ、RuntimePlan 構築が lexical scope 不足で失敗する。
+実行 fixture はこの未接続境界を混ぜないよう、定数引数の効果文で LIFO/フィルタを
+検証した。自由変数付き末尾効果の実行、nested/CurrentScope、取消側 `Out` の結果選択、
+defer 内の Product-owned Dialogue/Choice suspension は残る。
