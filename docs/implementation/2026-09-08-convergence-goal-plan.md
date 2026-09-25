@@ -964,3 +964,9 @@ workspace Clippy、変更 crate all-target/all-feature Clippy、fmt は終了コ
 tests の `callable_origins_remain_distinct_across_a_branch` が compilation 中に process
 exit `-1073741571`（stack overflow）で停止する。同じ単独テストと全 integration
 targets は上記 stack 設定で合格した。既定 stack の失敗を合格扱いしない。
+
+追加の native/decoded AWBC 実行証拠を
+`f482f0065054674305579d8434605a7067685196` で main に push した。inspected
+`main`/`origin/main` は同じ SHA、working tree は clean。通常 Flow の Pipe tail と
+Project function の直接 Call/Pipe tail は、各 backend で `piped` ログを正確に 1 回出す。
+compiler `evaluated_effects` target 23/23、同 test target の Clippy と fmt は終了コード0。
