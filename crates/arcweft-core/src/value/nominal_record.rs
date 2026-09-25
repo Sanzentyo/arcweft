@@ -359,6 +359,30 @@ impl RuntimeNominalRecordValue {
             .and_then(|ordinal| self.fields.get(ordinal))
     }
 
+    pub(crate) fn field_mut(&mut self, field: RuntimeRecordFieldId) -> Option<&mut RuntimeValue> {
+        usize::try_from(field.zero_based())
+            .ok()
+            .and_then(|ordinal| self.fields.get_mut(ordinal))
+    }
+
+    pub(crate) fn pop_sequence_front_field(
+        &mut self,
+        field: RuntimeRecordFieldId,
+    ) -> Result<Option<RuntimeValue>, super::RuntimeEvalError> {
+        let Some(value) = self.field_mut(field) else {
+            return Err(super::RuntimeEvalError::MissingField {
+                field: format!("field#{}", field.zero_based()),
+                value: "nominal record".to_owned(),
+            });
+        };
+        match value {
+            RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
+            value => Err(super::RuntimeEvalError::ExpectedSequence(
+                super::runtime_value_label(value),
+            )),
+        }
+    }
+
     /// Replaces one field selected by its accepted defining-order identity.
     ///
     /// The caller retains the supplied value when the identity is outside this

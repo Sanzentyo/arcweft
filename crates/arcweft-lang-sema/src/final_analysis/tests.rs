@@ -1627,20 +1627,21 @@ fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
         })
         .expect("assignment statement retains one checked place");
 
-    assert_eq!(assignment.place().field().declaration_ordinal(), 1);
-    assert_eq!(assignment.place().field_type(), &TypeKind::Bool);
+    let field_place = assignment
+        .place()
+        .nominal_field()
+        .expect("assignment retains a nominal field place");
+    assert_eq!(field_place.field().declaration_ordinal(), 1);
+    assert_eq!(field_place.field_type(), &TypeKind::Bool);
     assert_eq!(assignment.value_type(), &TypeKind::Bool);
-    assert_eq!(
-        assignment.place().nominal().declaration().name().as_str(),
-        "Point"
-    );
+    assert_eq!(field_place.nominal().declaration().name().as_str(), "Point");
     assert!(matches!(
         report
             .local(assignment.place().local())
             .expect("assignment base is one accepted local")
             .ty(),
         TypeKind::ProjectNominal(nominal)
-            if nominal.declaration() == assignment.place().nominal().declaration()
+            if nominal.declaration() == field_place.nominal().declaration()
     ));
 }
 

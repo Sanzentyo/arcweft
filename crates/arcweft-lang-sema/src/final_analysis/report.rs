@@ -503,6 +503,15 @@ impl FinalAnalysisExecutionProjection<'_> {
                     CheckedExpressionResolution::Value(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Consumed
                     }
+                    CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field(
+                        _,
+                    )) if matches!(hir.kind(), arcweft_lang_hir::expr::HirExprKind::Path(_))
+                        && expression
+                            .mutable_place()
+                            .is_some_and(|place| place.nominal_field().is_some()) =>
+                    {
+                        CheckedExecutableRuntimeExpressionFactFamily::Value
+                    }
                     CheckedExpressionResolution::Select(_) => {
                         CheckedExecutableRuntimeExpressionFactFamily::Select
                     }
@@ -1172,6 +1181,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             &evaluation_topology,
             &modules,
             &dialogue_lines,
+            &locals,
             &expressions,
             &calls,
             &structural_edges,

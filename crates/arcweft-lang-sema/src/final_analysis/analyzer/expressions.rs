@@ -3123,6 +3123,118 @@ impl Analyzer<'_, '_, '_> {
         .map(Some)
     }
 
+    pub(super) fn prepare_direct_project_field_path_receiver(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        scope: ScopeId,
+        path: &arcweft_lang_hir::leaf::HirPath,
+    ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
+        if path.root() != HirPathRoot::ImplicitCrate || path.segments().len() != 2 {
+            return Ok(None);
+        }
+        let Some((base_path, HirPathSegment::Identifier(field_name))) =
+            path.split_terminal_segment()
+        else {
+            return Ok(None);
+        };
+        if base_path.segments().len() != 1 {
+            return Ok(None);
+        }
+        let Some(CheckedValueResolution::Local(base)) = self
+            .resolve_path_value(module, owner, scope, &base_path)
+            .map_err(AnalyzerExpressionError::fatal)?
+        else {
+            return Ok(None);
+        };
+        let Some(target_type @ TypeKind::ProjectNominal(_)) = self.facts.locals().get(&base) else {
+            return Ok(None);
+        };
+        self.prepare_project_nominal_field_expression(
+            owner,
+            target_type,
+            Some(base),
+            EffectSet::new(),
+            &field_name,
+        )
+        .map(Some)
+    }
+
+    pub(super) fn path_has_local_prefix(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        scope: ScopeId,
+        path: &arcweft_lang_hir::leaf::HirPath,
+    ) -> Result<bool, AnalyzerExpressionError> {
+        if path.root() != HirPathRoot::ImplicitCrate {
+            return Ok(false);
+        }
+        let mut prefix = path.clone();
+        while let Some((shorter, _)) = prefix.split_terminal_segment() {
+            if matches!(
+                self.resolve_path_value(module, owner, scope, &shorter)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+                Some(CheckedValueResolution::Local(_))
+            ) {
+                return Ok(true);
+            }
+            prefix = shorter;
+        }
+        Ok(false)
+    }
+
+    fn prepare_project_nominal_field_expression(
+        &self,
+        owner: ExprId,
+        target_type: &TypeKind,
+        mutable_base: Option<arcweft_lang_hir::identity::LocalId>,
+        effects: EffectSet,
+        name: &arcweft_lang_hir::leaf::HirName,
+    ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
+        let TypeKind::ProjectNominal(target_nominal) = target_type else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        let declaration = self
+            .symbols
+            .nominal(target_nominal.declaration())
+            .cloned()
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let ProjectNominalBody::Struct { fields } = declaration.body() else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        let (ordinal, field) = fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name().as_str() == name.as_str())
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner,
+            })
+        })?;
+        let declared_ty = self.types.get(&field.ty()).ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::TypeResolutionFailed {
+                owner: field.ty(),
+            })
+        })?;
+        let substitutions = nominal_substitutions(&declaration, target_nominal)
+            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+        let nominal = checked_project_nominal(&declaration, target_type)
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let ty = substitutions.apply(declared_ty);
+        Ok(PreparedExpressionFact::from(
+            crate::final_analysis::PreparedProjectFieldExpression::new(
+                PreparedExpressionShell::value(ty.clone(), CheckedTypeSelection::Inferred, effects),
+                nominal,
+                mutable_base,
+                ordinal,
+                ty,
+                name.clone(),
+            ),
+        ))
+    }
+
     fn check_select_expression(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -3159,98 +3271,69 @@ impl Analyzer<'_, '_, '_> {
                 }),
             )));
         }
-        let (ty, resolution) = if let Some((field, ty)) =
-            target_type.agent_field_type(name.as_str())
-        {
-            (ty, super::CheckedSelectResolution::AgentField { field })
-        } else if let Some((field, ty)) = target_type.progress_field(name.as_str()) {
-            (ty, super::CheckedSelectResolution::ProgressField { field })
-        } else {
-            match target_type {
-                TypeKind::ProjectNominal(target_nominal) => {
-                    let declaration = self
-                        .symbols
-                        .nominal(target_nominal.declaration())
-                        .cloned()
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let ProjectNominalBody::Struct { fields } = declaration.body() else {
-                        return Err(AnalyzerExpressionError::rejected(owner));
-                    };
-                    let (ordinal, field) = fields
-                        .iter()
-                        .enumerate()
-                        .find(|(_, field)| field.name().as_str() == name.as_str())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let ordinal = u32::try_from(ordinal).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                        )
-                    })?;
-                    let declared_ty = self.types.get(&field.ty()).ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
-                        )
-                    })?;
-                    let substitutions = nominal_substitutions(&declaration, &target_nominal)
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let nominal = checked_project_nominal(&declaration, target_type)
-                        .map_err(AnalyzerExpressionError::fatal)?;
-                    let ty = substitutions.apply(declared_ty);
-                    return Ok(PreparedExpressionFact::from(
-                        crate::final_analysis::PreparedProjectFieldExpression::new(
-                            crate::final_analysis::PreparedExpressionShell::value(
-                                ty.clone(),
-                                CheckedTypeSelection::Inferred,
-                                target.effects().clone(),
-                            ),
-                            nominal,
-                            ordinal,
-                            ty,
-                            name.clone(),
-                        ),
-                    ));
-                }
-                TypeKind::Named(type_name) => {
-                    let environment = self.catalogs.world.environment().typecheck_env();
-                    let record = environment
-                        .environment_record(type_name.as_str())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    checked_environment_field_selection(
-                        environment,
-                        record,
-                        type_name.as_str(),
-                        name,
-                        owner,
-                    )?
-                }
-                TypeKind::AcceptedNominal(nominal) => {
-                    let environment = self.catalogs.world.environment().typecheck_env();
-                    let record = environment
-                        .nominal_catalog()
-                        .exact(nominal.declaration().canonical_path())
-                        .filter(|record| record.id() == nominal.declaration())
-                        .filter(|record| {
-                            matches!(
-                                record.try_instantiate(nominal.arguments().to_vec()),
-                                Ok(ref instantiated) if instantiated == target_type
-                            )
-                        })
-                        .and_then(|record| record.environment_record())
-                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    let type_name =
-                        crate::types::direct_type_name(nominal.declaration().canonical_path())
+        let (ty, resolution) =
+            if let Some((field, ty)) = target_type.agent_field_type(name.as_str()) {
+                (ty, super::CheckedSelectResolution::AgentField { field })
+            } else if let Some((field, ty)) = target_type.progress_field(name.as_str()) {
+                (ty, super::CheckedSelectResolution::ProgressField { field })
+            } else {
+                match target_type {
+                    TypeKind::ProjectNominal(_) => {
+                        let mutable_base = match target.checked_resolution() {
+                            Some(CheckedExpressionResolution::Value(
+                                CheckedValueResolution::Local(local),
+                            )) => Some(*local),
+                            _ => None,
+                        };
+                        return self.prepare_project_nominal_field_expression(
+                            owner,
+                            target_type,
+                            mutable_base,
+                            target.effects().clone(),
+                            name,
+                        );
+                    }
+                    TypeKind::Named(type_name) => {
+                        let environment = self.catalogs.world.environment().typecheck_env();
+                        let record = environment
+                            .environment_record(type_name.as_str())
                             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                    checked_environment_field_selection(
-                        environment,
-                        record,
-                        type_name,
-                        name,
-                        owner,
-                    )?
+                        checked_environment_field_selection(
+                            environment,
+                            record,
+                            type_name.as_str(),
+                            name,
+                            owner,
+                        )?
+                    }
+                    TypeKind::AcceptedNominal(nominal) => {
+                        let environment = self.catalogs.world.environment().typecheck_env();
+                        let record = environment
+                            .nominal_catalog()
+                            .exact(nominal.declaration().canonical_path())
+                            .filter(|record| record.id() == nominal.declaration())
+                            .filter(|record| {
+                                matches!(
+                                    record.try_instantiate(nominal.arguments().to_vec()),
+                                    Ok(ref instantiated) if instantiated == target_type
+                                )
+                            })
+                            .and_then(|record| record.environment_record())
+                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                        let type_name =
+                            crate::types::direct_type_name(nominal.declaration().canonical_path())
+                                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                        checked_environment_field_selection(
+                            environment,
+                            record,
+                            type_name,
+                            name,
+                            owner,
+                        )?
+                    }
+                    _ => return Err(AnalyzerExpressionError::rejected(owner)),
                 }
-                _ => return Err(AnalyzerExpressionError::rejected(owner)),
-            }
-        };
+            };
         Ok(CheckedExpression::value(
             ty,
             CheckedTypeSelection::Inferred,

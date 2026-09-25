@@ -387,7 +387,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
         matches!(
             checked.checked_resolution(),
             Some(CheckedExpressionResolution::Value(_))
-        )
+        ) || checked.runtime_value_type().is_some()
     });
     let namespace_binding = checked
         .and_then(PreparedExpressionFact::checked_resolution)

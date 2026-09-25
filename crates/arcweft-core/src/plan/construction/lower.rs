@@ -30,7 +30,7 @@ use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
     RuntimeAgentFieldValue, RuntimeAgentSignatureError, RuntimeAgentTypeContext,
     RuntimeAgentTypeOperand, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
-    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
+    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection, RuntimeMutablePlace,
     RuntimeNominalRecordExpr, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
     RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeUnaryOp,
     RuntimeUnsignedIntWidth, RuntimeValue,
@@ -52,9 +52,10 @@ use super::{
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
     RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineOperationSeed,
-    RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder, RuntimeRecordFieldSeedId,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
+    RuntimePlanBuilder, RuntimeRecordFieldSeedId, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
+    RuntimeStreamPlanSeed,
 };
 
 impl RuntimeAgentTypeContext for RuntimePlanBuilder {
@@ -163,22 +164,15 @@ impl RuntimePlanBuilder {
                 require_same("local expression", ty, local_ty)?;
                 RuntimeExprKind::Local(local)
             }
-            RuntimeExprSeedKind::SequencePopFront { receiver } => {
-                let (receiver, receiver_ty) = self.resolve_local(&receiver)?;
-                let item = match self.projection(receiver_ty)? {
-                    RuntimePlanTypeProjection::Sequence {
-                        kind: crate::plan::RuntimePlanSequenceKind::Vec,
-                        item,
-                    } => *item,
-                    _ => return invalid_projection("Vec.pop_front receiver", receiver_ty),
-                };
+            RuntimeExprSeedKind::SequencePopFront { place } => {
+                let (place, item) = self.lower_vec_pop_front_place(place)?;
                 self.require_projection("Vec.pop_front result", ty, |projection| {
                     matches!(
                         projection,
                         RuntimePlanTypeProjection::Option { item: result, .. } if *result == item
                     )
                 })?;
-                RuntimeExprKind::SequencePopFront { receiver }
+                RuntimeExprKind::SequencePopFront { place }
             }
             RuntimeExprSeedKind::EntityRef(entity) => {
                 self.require_projection("entity-reference expression", ty, |projection| {
@@ -1287,6 +1281,37 @@ impl RuntimePlanBuilder {
         }
     }
 
+    fn lower_vec_pop_front_place(
+        &self,
+        place: RuntimeMutablePlaceSeed,
+    ) -> Result<(RuntimeMutablePlace, RuntimePlanTypeId), RuntimePlanBuildError> {
+        let (place, sequence_type) = match place {
+            RuntimeMutablePlaceSeed::Local(local) => {
+                let (local, sequence_type) = self.resolve_local(&local)?;
+                (RuntimeMutablePlace::Local(local), sequence_type)
+            }
+            RuntimeMutablePlaceSeed::NominalField { base, field } => {
+                let (base, record_type) = self.resolve_local(&base)?;
+                if self.nominal_record_domains.get(record_type).is_none() {
+                    return invalid_projection("Vec.pop_front nominal-field base", record_type);
+                }
+                let (field, sequence_type) = self.resolve_record_field(record_type, field)?;
+                (
+                    RuntimeMutablePlace::NominalField { base, field },
+                    sequence_type,
+                )
+            }
+        };
+        let item = match self.projection(sequence_type)? {
+            RuntimePlanTypeProjection::Sequence {
+                kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                item,
+            } => *item,
+            _ => return invalid_projection("Vec.pop_front receiver", sequence_type),
+        };
+        Ok((place, item))
+    }
+
     fn lower_function_application(
         &self,
         callee: RuntimeExprSeed,
@@ -2303,9 +2328,13 @@ impl RuntimePlanBuilder {
                 used.insert(*local);
                 Ok(())
             }
-            RuntimeExprKind::SequencePopFront { receiver } => {
-                require_local_in_scope(*receiver, scope)?;
-                used.insert(*receiver);
+            RuntimeExprKind::SequencePopFront { place } => {
+                let base = match place {
+                    RuntimeMutablePlace::Local(local) => *local,
+                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                };
+                require_local_in_scope(base, scope)?;
+                used.insert(base);
                 Ok(())
             }
             RuntimeExprKind::Let {

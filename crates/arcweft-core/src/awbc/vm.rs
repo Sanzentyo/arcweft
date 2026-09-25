@@ -13,13 +13,13 @@ use super::fiber::{
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
     AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection, AwbcFunctionId, AwbcInstruction,
-    AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperationId, AwbcOpcode, AwbcPattern,
-    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCall, AwbcProjectCallAttachedPresence,
-    AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId,
-    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
-    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperationId, AwbcMutablePlace, AwbcOpcode,
+    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCall,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId,
+    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTraitReceiverMode,
+    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
@@ -31,9 +31,9 @@ use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeAgentValue, RuntimeCallableApplication, RuntimeCallableBodyReference,
     RuntimeCallableInvocation, RuntimeCallableValue, RuntimeFieldValue, RuntimeNominalRecordValue,
-    RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue, evaluate_binary,
-    evaluate_unary, runtime_sequence_from_literal_values, runtime_sequence_repeat_value,
-    runtime_value_label,
+    RuntimeRecordFieldId, RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue,
+    evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_value_label,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -884,31 +884,58 @@ fn execute_instruction(
                 }
             }
         }
-        AwbcInstruction::SequencePopFront { dst, sequence } => {
-            if dst == sequence {
+        AwbcInstruction::SequencePopFront { dst, place } => {
+            let base = match place {
+                AwbcMutablePlace::Local(sequence) => *sequence,
+                AwbcMutablePlace::NominalField { base, .. } => *base,
+            };
+            if dst == &base {
                 return Err(VmError::Runtime(
                     "Vec.pop_front destination aliases its receiver".to_owned(),
                 ));
             }
             let popped = {
                 let frame = fiber.active_frame_mut()?;
-                match frame
+                let Some(value) = frame
                     .registers
-                    .get_mut(sequence.index())
+                    .get_mut(base.index())
                     .and_then(Option::as_mut)
-                {
-                    Some(RuntimeValue::Seq(sequence)) => sequence.pop_front(),
-                    Some(_) => {
+                else {
+                    return Err(FiberStateError::RegisterOutOfBounds {
+                        register: base.0,
+                        layout: frame.layout.0,
+                    }
+                    .into());
+                };
+                match (place, value) {
+                    (AwbcMutablePlace::Local(_), RuntimeValue::Seq(sequence)) => {
+                        sequence.pop_front()
+                    }
+                    (
+                        AwbcMutablePlace::NominalField { field, .. },
+                        RuntimeValue::NominalRecord(record),
+                    ) => {
+                        let field =
+                            RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                                .map_err(|_| {
+                                    VmError::Runtime(
+                                        "Vec.pop_front has an invalid nominal field identity"
+                                            .to_owned(),
+                                    )
+                                })?;
+                        record
+                            .pop_sequence_front_field(field)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?
+                    }
+                    (AwbcMutablePlace::Local(_), _) => {
                         return Err(VmError::Runtime(
                             "Vec.pop_front expected a sequence value".to_owned(),
                         ));
                     }
-                    None => {
-                        return Err(FiberStateError::RegisterOutOfBounds {
-                            register: sequence.0,
-                            layout: frame.layout.0,
-                        }
-                        .into());
+                    (AwbcMutablePlace::NominalField { .. }, _) => {
+                        return Err(VmError::Runtime(
+                            "Vec.pop_front expected a nominal record receiver".to_owned(),
+                        ));
                     }
                 }
             };

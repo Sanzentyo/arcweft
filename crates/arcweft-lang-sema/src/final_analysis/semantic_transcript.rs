@@ -1133,6 +1133,7 @@ fn expression_digest_at_with_state(
         content_body_digest.as_ref(),
         None,
     )?;
+    write_mutable_place_payload(&mut hasher, checked, coordinates, analysis)?;
     write_record_expression_fields(&mut hasher, edges)?;
     write_effects(&mut hasher, checked.effects())?;
     match checked.evaluated_effect() {
@@ -1636,15 +1637,21 @@ fn write_statement_payload(
         CheckedStatementPayload::Structural => {}
         CheckedStatementPayload::Assignment(assignment) => {
             let place = assignment.place();
+            let field_place = place
+                .nominal_field()
+                .ok_or(SemanticTranscriptError::MissingIdentity)?;
             transcript_update!(
                 hasher,
-                &coordinates.binding(place.local())?.canonical_bytes()?
+                &coordinates.binding(place.local_id())?.canonical_bytes()?
             );
-            write_nominal(hasher, place.nominal(), analysis)?;
-            write_field_selection(hasher, place.field())?;
+            write_nominal(hasher, field_place.nominal(), analysis)?;
+            write_field_selection(hasher, field_place.field())?;
             transcript_update!(
                 hasher,
-                place.field_type().semantic_identity_digest()?.as_bytes()
+                field_place
+                    .field_type()
+                    .semantic_identity_digest()?
+                    .as_bytes()
             );
             transcript_update!(
                 hasher,
@@ -3402,6 +3409,39 @@ fn write_resolution_payload(
             }
         }
     }
+    Ok(())
+}
+
+fn write_mutable_place_payload(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    checked: &super::CheckedExpression,
+    coordinates: &SemanticCoordinateIndex<'_, '_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<(), SemanticTranscriptError> {
+    let Some(place) = checked
+        .mutable_place()
+        .filter(|place| place.nominal_field().is_some())
+    else {
+        transcript_update!(hasher, &[0]);
+        return Ok(());
+    };
+    let field_place = place
+        .nominal_field()
+        .ok_or(SemanticTranscriptError::MissingIdentity)?;
+    transcript_update!(hasher, &[1]);
+    write_bytes(
+        hasher,
+        &coordinates.binding(place.local_id())?.canonical_bytes()?,
+    )?;
+    write_nominal(hasher, field_place.nominal(), analysis)?;
+    write_field_selection(hasher, field_place.field())?;
+    transcript_update!(
+        hasher,
+        field_place
+            .field_type()
+            .semantic_identity_digest()?
+            .as_bytes()
+    );
     Ok(())
 }
 

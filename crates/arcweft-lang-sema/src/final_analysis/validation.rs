@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use arcweft_lang_hir::scope::LocalLookup;
 use arcweft_lang_hir::{
     expr::{HirCallCallee, HirPlaceholderKind},
     project::HirProjectEvaluationTopology,
@@ -511,6 +512,7 @@ pub(super) fn validate_expressions(
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
+    locals: &BTreeMap<LocalId, CheckedBinding>,
     expressions: &BTreeMap<ExprId, CheckedExpression>,
     calls: &BTreeMap<ExprId, CallTargetFacts>,
     structural_edges: &CheckedStructuralEdgeDraft,
@@ -524,6 +526,22 @@ pub(super) fn validate_expressions(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let fact_type = fact.value_type();
+        if let Some(place) = fact.mutable_place()
+            && let Some(field_place) = place.nominal_field()
+        {
+            let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
+                fact.resolution()
+            else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            if selection != field_place.field()
+                || locals.get(&place.local_id()).map(CheckedBinding::ty)
+                    != Some(&field_place.nominal().ty())
+                || fact_type != Some(field_place.field_type())
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
         if let Some(specialization) = fact.function_specialization()
             && (specialization.owner() != owner
                 || fact_type != Some(specialization.specialized_type())
@@ -802,6 +820,10 @@ fn expression_resolution_matches(
         (
             HirExprKind::Path(_) | HirExprKind::EntityReference(_),
             CheckedExpressionResolution::Value(_),
+        )
+        | (
+            HirExprKind::Path(_),
+            CheckedExpressionResolution::Select(CheckedSelectResolution::Field(_)),
         )
         | (HirExprKind::Select(_), CheckedExpressionResolution::Select(_))
         | (
@@ -1392,24 +1414,67 @@ fn validate_field_selection(
     ty: &TypeKind,
     selection: &super::CheckedFieldSelection,
 ) -> Result<(), FinalSemanticAnalysisError> {
-    let expression = resolve_module(modules, owner.module())?
+    let module = resolve_module(modules, owner.module())?;
+    let expression = module
         .resolve_expr(owner)
         .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-    let HirExprKind::Select(select) = expression.kind() else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    let target_type = match expression.kind() {
+        HirExprKind::Select(select) => {
+            let target = expressions.get(&select.target()).ok_or(
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: select.target(),
+                },
+            )?;
+            target
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: select.target(),
+                })?
+                .clone()
+        }
+        HirExprKind::Path(path) => {
+            let path = path
+                .as_resolved()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            if path.root() != arcweft_lang_hir::leaf::HirPathRoot::ImplicitCrate
+                || path.segments().len() != 2
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let Some((base_path, arcweft_lang_hir::leaf::HirPathSegment::Identifier(field_name))) =
+                path.split_terminal_segment()
+            else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            if base_path.segments().len() != 1
+                || field_name.as_str() != selection.diagnostic_name().as_str()
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let checked = expressions
+                .get(&owner)
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+            let place = checked
+                .mutable_place()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let field_place = place
+                .nominal_field()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            if field_place.field() != selection {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let source = required_expression_source(module, owner, HirExprSourceRole::Whole)?;
+            if !matches!(
+                module.lookup_path_local(expression.scope(), &base_path, &source),
+                Ok(LocalLookup::Found(base)) if base == place.local_id()
+            ) {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            field_place.nominal().ty()
+        }
+        _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     };
-    let target = expressions.get(&select.target()).ok_or(
-        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-            owner: select.target(),
-        },
-    )?;
-    let target_type =
-        target
-            .value_type()
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                owner: select.target(),
-            })?;
-    let valid_family = match (selection.field(), selection.runtime_field(), target_type) {
+    let valid_family = match (selection.field(), selection.runtime_field(), &target_type) {
         (
             crate::record_field::CheckedRecordFieldSemanticId::Project(_),
             Some(runtime_field),
@@ -2130,8 +2195,12 @@ pub(super) fn validate_statements(
         match fact.payload() {
             CheckedStatementPayload::Assignment(assignment) => {
                 let place = assignment.place();
-                if locals.get(&place.local()).map(CheckedBinding::ty) != Some(&place.nominal().ty())
-                    || place.field_type() != assignment.value_type()
+                let Some(field_place) = place.nominal_field() else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                if locals.get(&place.local_id()).map(CheckedBinding::ty)
+                    != Some(&field_place.nominal().ty())
+                    || field_place.field_type() != assignment.value_type()
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }

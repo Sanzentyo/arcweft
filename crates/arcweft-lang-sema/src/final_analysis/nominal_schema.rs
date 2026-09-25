@@ -1658,7 +1658,7 @@ fn seal_prepared_expression(
             if sealed_record.is_some() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            let (shell, nominal, declaration_ordinal, field_type, diagnostic_name) =
+            let (shell, nominal, mutable_base, declaration_ordinal, field_type, diagnostic_name) =
                 prepared.into_parts();
             let projection = context.get_cached(&nominal)?;
             let field_type_digest = field_type.semantic_identity_digest()?;
@@ -1687,17 +1687,25 @@ fn seal_prepared_expression(
                 diagnostic_name,
             )
             .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            Ok((
-                CheckedExpression::typed_value(
-                    value,
-                    effects,
-                    CheckedExpressionResolution::Select(
-                        crate::final_analysis::CheckedSelectResolution::Field(selection),
-                    ),
+            let checked = CheckedExpression::typed_value(
+                value,
+                effects,
+                CheckedExpressionResolution::Select(
+                    crate::final_analysis::CheckedSelectResolution::Field(selection.clone()),
+                ),
+            );
+            let checked = if let Some(base) = mutable_base {
+                let place = crate::final_analysis::CheckedMutablePlace::try_nominal_field(
+                    base, nominal, selection, field_type,
                 )
-                .into(),
-                None,
-            ))
+                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                checked
+                    .with_mutable_place(place)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+            } else {
+                checked
+            };
+            Ok((checked.into(), None))
         }
         PreparedExpressionFact::ProjectRecord(prepared) => {
             let (shell, nominal, prepared_fields) = prepared.into_parts();

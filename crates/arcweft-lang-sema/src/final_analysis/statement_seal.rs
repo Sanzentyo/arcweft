@@ -23,13 +23,13 @@ use crate::{
 };
 
 use super::{
-    CheckedAssignment, CheckedAssignmentPlace, CheckedBinding, CheckedDefer, CheckedExpression,
-    CheckedExpressionResolution, CheckedIncludeFlowTarget, CheckedScopeIdentity,
-    CheckedSelectBranchHead, CheckedSelectResolution, CheckedSelectStatement, CheckedStatement,
-    CheckedStatementPayload, CheckedTrigger, CheckedUnsafeAudit, FinalSemanticAnalysisError,
-    PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof, PreparedStatementIngressSeal,
-    PreparedStatementPayload, PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
-    statement_effects::CheckedStatementPayloadSealer,
+    CheckedAssignment, CheckedBinding, CheckedDefer, CheckedExpression,
+    CheckedExpressionResolution, CheckedIncludeFlowTarget, CheckedMutablePlace,
+    CheckedScopeIdentity, CheckedSelectBranchHead, CheckedSelectResolution, CheckedSelectStatement,
+    CheckedStatement, CheckedStatementPayload, CheckedTrigger, CheckedUnsafeAudit,
+    FinalSemanticAnalysisError, PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof,
+    PreparedStatementIngressSeal, PreparedStatementPayload, PreparedStatementScrutineeProof,
+    PreparedTriggerScrutineeProof, statement_effects::CheckedStatementPayloadSealer,
 };
 
 /// Move-only all-statement producer used by the final effect transaction.
@@ -208,8 +208,9 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         if target_type != &field_type || value_type != &field_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let place = CheckedAssignmentPlace::try_new(local, nominal, selection.clone(), field_type)
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let place =
+            CheckedMutablePlace::try_nominal_field(local, nominal, selection.clone(), field_type)
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         Ok(CheckedStatementPayload::Assignment(Box::new(
             CheckedAssignment::new(place, value_type.clone()),
         )))

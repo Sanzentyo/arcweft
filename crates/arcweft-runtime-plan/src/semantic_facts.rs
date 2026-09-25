@@ -2408,6 +2408,11 @@ impl RuntimeProjectItem {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeResolvedValue {
     Local(LocalId),
+    NominalField {
+        base: LocalId,
+        owner: RuntimeSemanticTypeId,
+        field: RuntimeRecordFieldId,
+    },
     ProjectCallable {
         callable: RuntimeProjectCallable,
         target: RuntimeProjectCallableValueTarget,
@@ -3238,7 +3243,20 @@ pub struct RuntimeResolvedCall {
 /// Checked mutation owned by one final call fact.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedCallMutation {
-    VecPopFront { source: ExprId, receiver: LocalId },
+    VecPopFront {
+        source: ExprId,
+        place: RuntimeResolvedMutablePlace,
+    },
+}
+
+/// Exact checked receiver place for an operation that consumes a Vec.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedMutablePlace {
+    Local(LocalId),
+    NominalField {
+        base: LocalId,
+        field: RuntimeRecordFieldId,
+    },
 }
 
 impl RuntimeResolvedCall {
@@ -6044,6 +6062,16 @@ impl RuntimePlanSemanticFacts {
                 },
             )?;
             validate_resolved_value(&modules, runtime_owners, value)?;
+            if let RuntimeResolvedValue::NominalField { base, owner, .. } = value
+                && local_declarations
+                    .get(base)
+                    .is_none_or(|base_type| base_type.identity() != *owner)
+            {
+                return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                    expression: *expression,
+                    expected: RuntimeSemanticFactFamily::Value,
+                });
+            }
             if matches!(value, RuntimeResolvedValue::ProjectItem(_))
                 && !matches!(
                     expression_types
@@ -8774,6 +8802,12 @@ fn validate_resolved_value(
                 .resolve_local(*local)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
             require_runtime_local_reference(runtime_owners, *local)
+        }
+        RuntimeResolvedValue::NominalField { base, .. } => {
+            module_for(modules, base.module())?
+                .resolve_local(*base)
+                .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *base })?;
+            require_runtime_local_reference(runtime_owners, *base)
         }
         RuntimeResolvedValue::ProjectCallable { callable, target } => {
             validate_callable(modules, callable)?;

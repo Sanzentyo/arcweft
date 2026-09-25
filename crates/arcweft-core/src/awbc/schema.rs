@@ -1457,6 +1457,13 @@ pub struct AwbcBlock {
     pub source_map: Option<AwbcSourceMapId>,
 }
 
+/// Register-backed mutable place accepted by sequence mutation instructions.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcMutablePlace {
+    Local(AwbcRegisterId),
+    NominalField { base: AwbcRegisterId, field: u32 },
+}
+
 /// Top-level execution class of one AWBC opcode.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AwbcOpcodeClass {
@@ -1819,7 +1826,7 @@ pub enum AwbcInstruction {
     },
     SequencePopFront {
         dst: AwbcRegisterId,
-        sequence: AwbcRegisterId,
+        place: AwbcMutablePlace,
     },
     MakeRecord {
         dst: AwbcRegisterId,

@@ -1894,8 +1894,8 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Value(value) => Ok(value.clone()),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
             RuntimeExprKind::Local(local) => self.evaluate_local(*local),
-            RuntimeExprKind::SequencePopFront { receiver } => {
-                self.env.pop_sequence_front(*receiver).map(|value| {
+            RuntimeExprKind::SequencePopFront { place } => {
+                self.env.pop_sequence_front(*place).map(|value| {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }

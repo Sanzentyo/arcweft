@@ -6,9 +6,9 @@ use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
     AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
     AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
-    AwbcIntrinsic, AwbcIntrinsicId, AwbcPattern, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace, AwbcPattern, AwbcPatternId, AwbcPureHelperId,
+    AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange,
+    AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
@@ -18,8 +18,8 @@ use arcweft_core::plan::{
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeFieldProjection, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-    RuntimeUnaryOp,
+    RuntimeFieldProjection, RuntimeMutablePlace, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder, RuntimeUnaryOp,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -75,18 +75,31 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     self.path
                 )
             }),
-            RuntimeExprKind::SequencePopFront { receiver } => {
-                let sequence = self.frame.register_for_local(*receiver).unwrap_or_else(|| {
-                    panic!(
-                        "admitted Vec.pop_front receiver local `{receiver}` is not in the AWBC frame at {}",
-                        self.path
-                    )
-                });
+            RuntimeExprKind::SequencePopFront { place } => {
+                let local_register = |local| {
+                    self.frame.register_for_local(local).unwrap_or_else(|| {
+                        panic!(
+                            "admitted Vec.pop_front receiver local `{local}` is not in the AWBC frame at {}",
+                            self.path
+                        )
+                    })
+                };
+                let place = match place {
+                    RuntimeMutablePlace::Local(local) => {
+                        AwbcMutablePlace::Local(local_register(*local))
+                    }
+                    RuntimeMutablePlace::NominalField { base, field } => {
+                        AwbcMutablePlace::NominalField {
+                            base: local_register(*base),
+                            field: field.zero_based(),
+                        }
+                    }
+                };
                 let dst = self
                     .frame
                     .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
                 self.inventory
-                    .push_instruction(AwbcInstruction::SequencePopFront { dst, sequence });
+                    .push_instruction(AwbcInstruction::SequencePopFront { dst, place });
                 dst
             }
             RuntimeExprKind::EntityRef(value) => {

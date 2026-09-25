@@ -270,7 +270,7 @@ fn sequence_pop_front_expr(
     RuntimeExprSeed::new(
         option_type,
         RuntimeExprSeedKind::SequencePopFront {
-            receiver: receiver.clone(),
+            place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(receiver.clone()),
         },
     )
 }

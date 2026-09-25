@@ -11,8 +11,8 @@ use crate::awbc::schema::{
     AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
     AwbcEffectPlanId, AwbcFieldProjection, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
     AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId,
-    AwbcLineOperationId, AwbcMatchArm, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId,
-    AwbcPatternRest, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
+    AwbcLineOperationId, AwbcMatchArm, AwbcMutablePlace, AwbcOpcode, AwbcOpcodeClass, AwbcPattern,
+    AwbcPatternId, AwbcPatternRest, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
     AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
     AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRecordPatternField,
     AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
@@ -25,6 +25,39 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
 };
+
+impl Wire for AwbcMutablePlace {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Local(register) => {
+                writer.write_u8(0);
+                register.write_wire(writer)?;
+            }
+            Self::NominalField { base, field } => {
+                writer.write_u8(1);
+                base.write_wire(writer)?;
+                field.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Local(AwbcRegisterId::read_wire(reader)?)),
+            1 => Ok(Self::NominalField {
+                base: AwbcRegisterId::read_wire(reader)?,
+                field: u32::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "mutable place",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
 
 impl Wire for crate::runtime_id::RuntimeDeferSiteId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -466,9 +499,9 @@ impl Wire for AwbcInstruction {
                 sequence.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
-            Self::SequencePopFront { dst, sequence } => {
+            Self::SequencePopFront { dst, place } => {
                 dst.write_wire(writer)?;
-                sequence.write_wire(writer)?;
+                place.write_wire(writer)?;
             }
             Self::MakeRecord { dst, ty, fields } => {
                 dst.write_wire(writer)?;
@@ -751,7 +784,7 @@ impl Wire for AwbcInstruction {
             },
             AwbcOpcode::SequencePopFront => Self::SequencePopFront {
                 dst: AwbcRegisterId::read_wire(reader)?,
-                sequence: AwbcRegisterId::read_wire(reader)?,
+                place: AwbcMutablePlace::read_wire(reader)?,
             },
             AwbcOpcode::MakeRecord => Self::MakeRecord {
                 dst: AwbcRegisterId::read_wire(reader)?,

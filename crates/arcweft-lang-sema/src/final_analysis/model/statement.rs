@@ -181,18 +181,16 @@ pub enum CheckedAssertionDisposition {
     OmittedDebug,
 }
 
-/// Closed writable place admitted for one final-HIR assignment.
+/// Exact checked project-nominal field selected as a direct mutable place.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAssignmentPlace {
-    local: LocalId,
+pub struct CheckedNominalFieldPlace {
     nominal: CheckedProjectNominal,
     field: CheckedFieldSelection,
     field_type: TypeKind,
 }
 
-impl CheckedAssignmentPlace {
+impl CheckedNominalFieldPlace {
     pub(crate) fn try_new(
-        local: LocalId,
         nominal: CheckedProjectNominal,
         field: CheckedFieldSelection,
         field_type: TypeKind,
@@ -204,15 +202,10 @@ impl CheckedAssignmentPlace {
             return None;
         }
         Some(Self {
-            local,
             nominal,
             field,
             field_type,
         })
-    }
-
-    pub const fn local(&self) -> LocalId {
-        self.local
     }
 
     pub const fn nominal(&self) -> &CheckedProjectNominal {
@@ -223,28 +216,69 @@ impl CheckedAssignmentPlace {
         &self.field
     }
 
-    pub const fn runtime_field(&self) -> Option<arcweft_core::value::RuntimeRecordFieldId> {
-        self.field.runtime_field()
-    }
-
     pub const fn field_type(&self) -> &TypeKind {
         &self.field_type
+    }
+}
+
+/// One checked writable place rooted in a local or one direct nominal field.
+///
+/// Nested selections, indexes, dereferences, and computed receivers have no
+/// representation in this authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMutablePlace {
+    local: LocalId,
+    nominal_field: Option<CheckedNominalFieldPlace>,
+}
+
+impl CheckedMutablePlace {
+    pub(crate) const fn from_local(local: LocalId) -> Self {
+        Self {
+            local,
+            nominal_field: None,
+        }
+    }
+
+    pub(crate) fn try_nominal_field(
+        local: LocalId,
+        nominal: CheckedProjectNominal,
+        field: CheckedFieldSelection,
+        field_type: TypeKind,
+    ) -> Option<Self> {
+        Some(Self {
+            local,
+            nominal_field: Some(CheckedNominalFieldPlace::try_new(
+                nominal, field, field_type,
+            )?),
+        })
+    }
+
+    pub const fn local_id(&self) -> LocalId {
+        self.local
+    }
+
+    pub const fn local(&self) -> LocalId {
+        self.local
+    }
+
+    pub const fn nominal_field(&self) -> Option<&CheckedNominalFieldPlace> {
+        self.nominal_field.as_ref()
     }
 }
 
 /// Complete semantic assignment fact for one final-HIR statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedAssignment {
-    place: CheckedAssignmentPlace,
+    place: CheckedMutablePlace,
     value_type: TypeKind,
 }
 
 impl CheckedAssignment {
-    pub(crate) const fn new(place: CheckedAssignmentPlace, value_type: TypeKind) -> Self {
+    pub(crate) const fn new(place: CheckedMutablePlace, value_type: TypeKind) -> Self {
         Self { place, value_type }
     }
 
-    pub const fn place(&self) -> &CheckedAssignmentPlace {
+    pub const fn place(&self) -> &CheckedMutablePlace {
         &self.place
     }
 

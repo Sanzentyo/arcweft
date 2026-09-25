@@ -157,12 +157,12 @@ use arcweft_lang_sema::{
         CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimePatternFactFamily,
         CheckedExecutableRuntimeStatementFactFamily, CheckedExplicitDropPolicy,
         CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
-        CheckedIteratorFamily, CheckedOrdinaryFunctionEmission, CheckedPatternResolution,
-        CheckedProjectItemOwner, CheckedProjectNominal, CheckedRecordPattern,
-        CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSourceRef,
-        CheckedRecordValueSource, CheckedSelectResolution, CheckedStatementPayload,
-        CheckedTraitConformance, CheckedTraitIdentity, CheckedTriggerView, CheckedTryCarrier,
-        CheckedValueResolution, CheckedVariantOwner, CheckedVariantOwnerKind,
+        CheckedIteratorFamily, CheckedNominalFieldPlace, CheckedOrdinaryFunctionEmission,
+        CheckedPatternResolution, CheckedProjectItemOwner, CheckedProjectNominal,
+        CheckedRecordPattern, CheckedRecordPatternOwner, CheckedRecordPatternRest,
+        CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedSelectResolution,
+        CheckedStatementPayload, CheckedTraitConformance, CheckedTraitIdentity, CheckedTriggerView,
+        CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantOwnerKind,
         CheckedVariantResolution, FinalAnalysisImplicitCallableBody, FinalAnalysisTryView,
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
         NominalSchemaProjectionError, RuntimeProjectNominalKind,
@@ -224,13 +224,13 @@ use arcweft_runtime_plan::{
         RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
         RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
         RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-        RuntimeResolvedHostCall, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
-        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
-        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
-        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
-        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
-        RuntimeTraitMethodFact, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
-        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeResolvedHostCall, RuntimeResolvedMutablePlace, RuntimeResolvedNominal,
+        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
+        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmission,
+        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -311,6 +311,8 @@ pub enum RuntimeSemanticProjectionError {
         #[source]
         source: NominalSchemaProjectionError,
     },
+    #[error("checked assignment at {owner:?} does not carry a nominal-field place")]
+    InvalidAssignmentPlace { owner: StmtId },
     #[error("project nominal {declaration:?} is absent from the accepted symbol table")]
     MissingNominal {
         declaration: Box<ProjectNominalDeclarationId>,
@@ -894,7 +896,47 @@ fn project_runtime_semantic_fact_inventories(
                 }
             }
             CheckedExpressionResolution::Select(select) => {
-                if let Some(select) = runtime_select(owner, select, world, analysis)? {
+                let module = project
+                    .modules()
+                    .find_map(|(_, module)| {
+                        (module.module_id() == owner.module()).then_some(module.as_ref())
+                    })
+                    .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+                let hir = module.resolve_expr(owner).map_err(|_| {
+                    RuntimeSemanticProjectionError::Type {
+                        reason: format!(
+                            "runtime expression {owner:?} is absent from its HIR module"
+                        ),
+                    }
+                })?;
+                if matches!(hir.kind(), HirExprKind::Path(_))
+                    && matches!(select, CheckedSelectResolution::Field(_))
+                {
+                    let place = expression.mutable_place().ok_or_else(|| {
+                        RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "nominal field path has no checked field-place authority"
+                                .to_owned(),
+                        }
+                    })?;
+                    let field_place = place.nominal_field().ok_or_else(|| {
+                        RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "nominal field path has no direct nominal-field place"
+                                .to_owned(),
+                        }
+                    })?;
+                    input.push_value(
+                        owner,
+                        runtime_nominal_field_value(
+                            owner,
+                            place.local_id(),
+                            field_place,
+                            analysis,
+                            None,
+                        )?,
+                    );
+                } else if let Some(select) = runtime_select(owner, select, world, analysis)? {
                     input.push_select(owner, select);
                 }
             }
@@ -1398,7 +1440,10 @@ fn runtime_assignment_under(
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeAssignmentFact, RuntimeSemanticProjectionError> {
     let place = assignment.place();
-    let field = place
+    let field_place = place
+        .nominal_field()
+        .ok_or(RuntimeSemanticProjectionError::InvalidAssignmentPlace { owner })?;
+    let field = field_place
         .field()
         .project_runtime_field(analysis)
         .map_err(
@@ -1408,16 +1453,16 @@ fn runtime_assignment_under(
             || RuntimeSemanticProjectionError::AssignmentFieldProjection {
                 owner,
                 source: NominalSchemaProjectionError::InvalidProjectFieldRelation {
-                    owner: place.field().owner_type(),
-                    ordinal: place.field().declaration_ordinal(),
+                    owner: field_place.field().owner_type(),
+                    ordinal: field_place.field().declaration_ordinal(),
                 },
             },
         )?;
     Ok(RuntimeAssignmentFact::new(
-        place.local(),
-        runtime_nominal_under(place.nominal(), analysis, instance)?,
+        place.local_id(),
+        runtime_nominal_under(field_place.nominal(), analysis, instance)?,
         field.field().runtime_field(),
-        runtime_type_under(place.field_type(), instance, symbols, world, analysis)?,
+        runtime_type_under(field_place.field_type(), instance, symbols, world, analysis)?,
         runtime_type_under(assignment.value_type(), instance, symbols, world, analysis)?,
     ))
 }
@@ -4853,6 +4898,27 @@ fn runtime_value_resolution(
     }))
 }
 
+fn runtime_nominal_field_value(
+    owner: ExprId,
+    base: LocalId,
+    field_place: &CheckedNominalFieldPlace,
+    analysis: &FinalSemanticAnalysis,
+    instance: Option<ProjectInstanceTypes<'_>>,
+) -> Result<RuntimeResolvedValue, RuntimeSemanticProjectionError> {
+    let field = field_place.field().runtime_field().ok_or_else(|| {
+        RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "checked nominal field has no runtime field identity".to_owned(),
+        }
+    })?;
+    let nominal = runtime_nominal_under(field_place.nominal(), analysis, instance)?;
+    Ok(RuntimeResolvedValue::NominalField {
+        base,
+        owner: nominal.identity(),
+        field,
+    })
+}
+
 fn runtime_project_item(
     item: &arcweft_lang_sema::final_analysis::CheckedProjectItem,
 ) -> Result<RuntimeProjectItem, RuntimeSemanticProjectionError> {
@@ -5689,12 +5755,10 @@ fn runtime_call(
                                 .to_owned(),
                         }
                     })?;
-                    let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
-                        checked_receiver.resolution()
-                    else {
+                    let Some(place) = checked_receiver.mutable_place() else {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
-                            reason: "Vec.pop_front receiver must be a local or parameter"
+                            reason: "Vec.pop_front receiver must be a local or direct nominal field place"
                                 .to_owned(),
                         });
                     };
@@ -5704,12 +5768,28 @@ fn runtime_call(
                     ) {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
-                            reason: "Vec.pop_front checked receiver is not a Vec local".to_owned(),
+                            reason: "Vec.pop_front checked receiver is not a Vec".to_owned(),
                         });
                     }
+                    let place = match place.nominal_field() {
+                        Some(field) => {
+                            let runtime_field = field.field().runtime_field().ok_or_else(|| {
+                                RuntimeSemanticProjectionError::Call {
+                                    owner,
+                                    reason: "Vec.pop_front field has no runtime field identity"
+                                        .to_owned(),
+                                }
+                            })?;
+                            RuntimeResolvedMutablePlace::NominalField {
+                                base: place.local_id(),
+                                field: runtime_field,
+                            }
+                        }
+                        None => RuntimeResolvedMutablePlace::Local(place.local_id()),
+                    };
                     mutation = Some(RuntimeResolvedCallMutation::VecPopFront {
                         source: receiver,
-                        receiver: *local,
+                        place,
                     });
                 }
                 operands.push(RuntimeResolvedCallOperand::new(
@@ -6752,47 +6832,70 @@ fn runtime_project_function_instance_semantic_facts(
                 let ty = checked.value_type().ok_or_else(|| {
                     error(owner, "instance value has no checked runtime value type")
                 })?;
-                let CheckedExpressionResolution::Value(value) = checked.resolution() else {
-                    match checked.resolution() {
-                        CheckedExpressionResolution::DialogueLineReference(target) => {
-                            let line = RuntimeLineId::from_source_entity_body(target.as_str())
-                                .map_err(|source| RuntimeSemanticProjectionError::Value {
+                let value = match checked.resolution() {
+                    CheckedExpressionResolution::Value(value) => {
+                        if let CheckedValueResolution::ProjectCallable(declaration) = value {
+                            callable_values::resolve(
+                                owner,
+                                declaration,
+                                symbols,
+                                world,
+                                analysis,
+                                lexical.types().map(ProjectInstanceTypes::solution),
+                                instances,
+                            )?
+                        } else {
+                            runtime_value_resolution(value, &lexical.instantiate_type(ty)?)
+                                .map_err(|reason| RuntimeSemanticProjectionError::Value {
                                     owner,
-                                    reason: source.to_string(),
-                                })?;
-                            expressions.push(RuntimeProjectFunctionExpressionSemanticFact::new(
-                                owner,
-                                expected.children().into(),
-                                RuntimeProjectFunctionExpressionPayload::Value(
-                                    RuntimeResolvedValue::DialogueLine(line),
-                                ),
-                            ));
-                            continue;
-                        }
-                        _ => {
-                            return Err(error(
-                                owner,
-                                "instance value family disagrees with checked expression",
-                            ));
+                                    reason,
+                                })?
+                                .ok_or_else(|| {
+                                    error(owner, "instance value has no runtime scalar projection")
+                                })?
                         }
                     }
-                };
-                let value = if let CheckedValueResolution::ProjectCallable(declaration) = value {
-                    callable_values::resolve(
-                        owner,
-                        declaration,
-                        symbols,
-                        world,
-                        analysis,
-                        lexical.types().map(ProjectInstanceTypes::solution),
-                        instances,
-                    )?
-                } else {
-                    runtime_value_resolution(value, &lexical.instantiate_type(ty)?)
-                        .map_err(|reason| RuntimeSemanticProjectionError::Value { owner, reason })?
-                        .ok_or_else(|| {
-                            error(owner, "instance value has no runtime scalar projection")
-                        })?
+                    CheckedExpressionResolution::DialogueLineReference(target) => {
+                        let line = RuntimeLineId::from_source_entity_body(target.as_str())
+                            .map_err(|source| RuntimeSemanticProjectionError::Value {
+                                owner,
+                                reason: source.to_string(),
+                            })?;
+                        expressions.push(RuntimeProjectFunctionExpressionSemanticFact::new(
+                            owner,
+                            expected.children().into(),
+                            RuntimeProjectFunctionExpressionPayload::Value(
+                                RuntimeResolvedValue::DialogueLine(line),
+                            ),
+                        ));
+                        continue;
+                    }
+                    CheckedExpressionResolution::Select(CheckedSelectResolution::Field(_))
+                        if matches!(hir.kind(), HirExprKind::Path(_)) =>
+                    {
+                        let place = checked.mutable_place().ok_or_else(|| {
+                            error(owner, "instance nominal field path has no checked place")
+                        })?;
+                        let field_place = place.nominal_field().ok_or_else(|| {
+                            error(
+                                owner,
+                                "instance nominal field path has no field-place proof",
+                            )
+                        })?;
+                        runtime_nominal_field_value(
+                            owner,
+                            place.local_id(),
+                            field_place,
+                            analysis,
+                            lexical.types(),
+                        )?
+                    }
+                    _ => {
+                        return Err(error(
+                            owner,
+                            "instance value family disagrees with checked expression",
+                        ));
+                    }
                 };
                 RuntimeProjectFunctionExpressionPayload::Value(value)
             }

@@ -9,8 +9,8 @@ use arcweft_core::plan::{
     RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeExprMatchArmSeed,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed,
     RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
-    RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed, RuntimeRecordFieldSeedId,
-    RuntimeTraitMethodSeedId,
+    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed,
+    RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
@@ -39,11 +39,12 @@ use crate::semantic_facts::{
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
     RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
     RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedSelect,
-    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeScopeContinuation, RuntimeScopeOwner, RuntimeScopedExecutableSemanticFactView,
-    RuntimeStandardMapCall, RuntimeStandardMapFamily as SemanticStandardMapFamily,
-    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
+    RuntimeResolvedMutablePlace, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
+    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
+    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -1501,6 +1502,15 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::Local(local) => {
                 Ok(RuntimeExprSeedKind::Local(self.local(*local)?))
             }
+            RuntimeResolvedValue::NominalField { base, owner, field } => {
+                Ok(RuntimeExprSeedKind::Field {
+                    target: Box::new(self.lower_local_capture(*base)?),
+                    field: RuntimeFieldProjectionSeed::Nominal {
+                        owner: *owner,
+                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                    },
+                })
+            }
             RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
             RuntimeResolvedValue::ProjectItem(item) => Ok(RuntimeExprSeedKind::EntityRef(
                 project_entity_reference(item),
@@ -1610,11 +1620,19 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
-        if let Some(RuntimeResolvedCallMutation::VecPopFront { receiver, .. }) = selected.mutation()
-        {
-            return Ok(RuntimeExprSeedKind::SequencePopFront {
-                receiver: self.local(receiver)?,
-            });
+        if let Some(RuntimeResolvedCallMutation::VecPopFront { place, .. }) = selected.mutation() {
+            let place = match place {
+                RuntimeResolvedMutablePlace::Local(local) => {
+                    RuntimeMutablePlaceSeed::Local(self.local(local)?)
+                }
+                RuntimeResolvedMutablePlace::NominalField { base, field } => {
+                    RuntimeMutablePlaceSeed::NominalField {
+                        base: self.local(base)?,
+                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                    }
+                }
+            };
+            return Ok(RuntimeExprSeedKind::SequencePopFront { place });
         }
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
             map,

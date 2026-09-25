@@ -2212,6 +2212,7 @@ struct CheckedExpressionData {
     result: CheckedExpressionResult,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
+    mutable_place: Option<CheckedMutablePlace>,
     execution: Option<CheckedExpressionExecutionPlan>,
     evaluated_effect: Option<Box<CheckedEvaluatedEffect>>,
     match_fact: Option<CheckedMatchFact>,
@@ -2225,6 +2226,7 @@ impl CheckedExpression {
                 result: CheckedExpressionResult::Unavailable,
                 effects: EffectSet::new(),
                 resolution: CheckedExpressionResolution::Call,
+                mutable_place: None,
                 execution: None,
                 evaluated_effect: None,
                 match_fact: None,
@@ -2256,6 +2258,7 @@ impl CheckedExpression {
                 result: CheckedExpressionResult::Value(result),
                 effects,
                 resolution,
+                mutable_place: None,
                 execution: Some(CheckedExpressionExecutionPlan::structural(
                     CheckedRuntimeValueDisposition::Retain,
                     CheckedStructuralExecutionReason::Value,
@@ -2279,6 +2282,7 @@ impl CheckedExpression {
                 ),
                 effects,
                 resolution,
+                mutable_place: None,
                 execution: Some(CheckedExpressionExecutionPlan::structural(
                     CheckedRuntimeValueDisposition::Omit,
                     CheckedStructuralExecutionReason::ContentEmission,
@@ -2388,6 +2392,34 @@ impl CheckedExpression {
         &self.data.resolution
     }
 
+    /// Returns the checked writable place represented by this expression.
+    /// Direct local values derive their place from the local resolution;
+    /// direct project-field selections retain the place sealed with the field.
+    pub fn mutable_place(&self) -> Option<CheckedMutablePlace> {
+        match self.resolution() {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                Some(CheckedMutablePlace::from_local(*local))
+            }
+            _ => self.data.mutable_place.clone(),
+        }
+    }
+
+    /// Attaches one sealed direct nominal-field place to its checked select.
+    #[must_use]
+    pub(crate) fn with_mutable_place(mut self, place: CheckedMutablePlace) -> Option<Self> {
+        let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
+            self.resolution()
+        else {
+            return None;
+        };
+        let field = place.nominal_field()?;
+        if field.field() != selection || self.value_type() != Some(field.field_type()) {
+            return None;
+        }
+        self.data.mutable_place = Some(place);
+        Some(self)
+    }
+
     /// Final sema-owned execution authority, absent for tooling-only call
     /// outcomes. Absence is not a structural instruction to omit the value.
     pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
@@ -2493,7 +2525,17 @@ impl CheckedExpression {
         } else if let Some(ty) = self.value_type() {
             visitor(ty)?;
         }
-        self.data.resolution.visit_types(visitor)
+        self.data.resolution.visit_types(visitor)?;
+        if let Some(field) = self
+            .data
+            .mutable_place
+            .as_ref()
+            .and_then(CheckedMutablePlace::nominal_field)
+        {
+            visitor(field.field_type())?;
+            field.nominal().visit_types(visitor)?;
+        }
+        Ok(())
     }
 }
 
@@ -2558,11 +2600,12 @@ pub use evaluated_effect::{
 #[path = "model/statement.rs"]
 mod statement;
 pub use statement::{
-    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace, CheckedDefer,
-    CheckedIncludeFlowTarget, CheckedIteration, CheckedIteratorFamily, CheckedScopeIdentity,
-    CheckedSelectBranchHead, CheckedSelectStatement, CheckedSelectStatementView, CheckedStatement,
-    CheckedStatementPayload, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTrigger, CheckedTriggerView, CheckedUnsafeAudit,
+    CheckedAssertionDisposition, CheckedAssignment, CheckedDefer, CheckedIncludeFlowTarget,
+    CheckedIteration, CheckedIteratorFamily, CheckedMutablePlace, CheckedNominalFieldPlace,
+    CheckedScopeIdentity, CheckedSelectBranchHead, CheckedSelectStatement,
+    CheckedSelectStatementView, CheckedStatement, CheckedStatementPayload,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTrigger,
+    CheckedTriggerView, CheckedUnsafeAudit,
 };
 
 /// Invocation behavior of one ordinary function.

@@ -1786,6 +1786,16 @@ impl RuntimeRecordFieldSeedId {
     }
 }
 
+/// Construction-only writable Vec place rooted in one checked local.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeMutablePlaceSeed {
+    Local(RuntimeLocalSeedId),
+    NominalField {
+        base: RuntimeLocalSeedId,
+        field: RuntimeRecordFieldSeedId,
+    },
+}
+
 /// Checked field coordinate before plan-local owner/type rewriting.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeFieldProjectionSeed {
@@ -1859,9 +1869,9 @@ pub enum RuntimeExprSeedKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExprSeed),
     Local(RuntimeLocalSeedId),
-    /// Removes the first item from an exact Vec local and returns `Option<T>`.
+    /// Removes the first item from an exact admitted Vec place and returns `Option<T>`.
     SequencePopFront {
-        receiver: RuntimeLocalSeedId,
+        place: RuntimeMutablePlaceSeed,
     },
     EntityRef(RuntimeEntityReference),
     Let {
@@ -2265,9 +2275,12 @@ impl RuntimeExprSeed {
             }
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),
             RuntimeExprSeedKind::Local(local) => push_free_local(local, bound, locals),
-            RuntimeExprSeedKind::SequencePopFront { receiver } => {
-                push_free_local(receiver, bound, locals)
-            }
+            RuntimeExprSeedKind::SequencePopFront { place } => match place {
+                RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
+                RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                    push_free_local(base, bound, locals)
+                }
+            },
             RuntimeExprSeedKind::Let {
                 binding,
                 expr,

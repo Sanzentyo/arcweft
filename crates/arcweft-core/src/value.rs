@@ -1190,6 +1190,16 @@ pub struct RuntimeExpr {
     kind: RuntimeExprKind,
 }
 
+/// Writable Vec receiver admitted as a local or one direct nominal field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeMutablePlace {
+    Local(RuntimeLocalDeclarationId),
+    NominalField {
+        base: RuntimeLocalDeclarationId,
+        field: RuntimeRecordFieldId,
+    },
+}
+
 /// Checked runtime identity retained by an entity-reference expression or
 /// pattern. Project identities preserve their accepted declaration family;
 /// structural dialogue lines retain their typed runtime ID.
@@ -1373,9 +1383,9 @@ pub enum RuntimeExprKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExpr),
     Local(RuntimeLocalDeclarationId),
-    /// Removes the first item from an exact Vec local and returns `Option<T>`.
+    /// Removes the first item from an admitted Vec place and returns `Option<T>`.
     SequencePopFront {
-        receiver: RuntimeLocalDeclarationId,
+        place: RuntimeMutablePlace,
     },
     EntityRef(RuntimeEntityReference),
     Let {
@@ -1653,9 +1663,14 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Value(value) => f.write_str(&runtime_value_label(value)),
             RuntimeExprKind::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
             RuntimeExprKind::Local(local) => write!(f, "local#{local}"),
-            RuntimeExprKind::SequencePopFront { receiver } => {
-                write!(f, "vec_pop_front/local#{receiver}")
-            }
+            RuntimeExprKind::SequencePopFront { place } => match place {
+                RuntimeMutablePlace::Local(local) => {
+                    write!(f, "vec_pop_front/local#{local}")
+                }
+                RuntimeMutablePlace::NominalField { base, field } => {
+                    write!(f, "vec_pop_front/local#{base}.field#{}", field.zero_based())
+                }
+            },
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),
             RuntimeExprKind::Let { binding, .. } => write!(f, "let local#{binding}"),
             RuntimeExprKind::Scope { identity, .. } => match identity.name() {

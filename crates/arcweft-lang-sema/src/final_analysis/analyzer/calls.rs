@@ -4212,40 +4212,90 @@ impl Analyzer<'_, '_, '_> {
                                     }
                                 }
                                 None => {
-                                    let line_context = path.lexical_name() == Some("line")
-                                        && scope_is_dialogue_line_plan(module, expression.scope());
-                                    if line_context && owns_callee_expression_fact {
-                                        self.facts
-                                            .publish_new_expression(
-                                                *value_receiver,
-                                                CheckedExpression::value(
-                                                    TypeKind::LineContext,
-                                                    CheckedTypeSelection::Inferred,
-                                                    EffectSet::new(),
-                                                    CheckedExpressionResolution::Value(
-                                                        CheckedValueResolution::LineContext,
+                                    if let Some(receiver_fact) = self
+                                        .prepare_direct_project_field_path_receiver(
+                                            module,
+                                            *value_receiver,
+                                            expression.scope(),
+                                            path,
+                                        )?
+                                    {
+                                        if owns_callee_expression_fact
+                                            && !self
+                                                .facts
+                                                .expressions()
+                                                .contains_key(value_receiver)
+                                        {
+                                            self.facts
+                                                .publish_new_expression(
+                                                    *value_receiver,
+                                                    receiver_fact,
+                                                )
+                                                .map_err(|_| {
+                                                    AnalyzerExpressionError::fatal(
+                                                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                                                    )
+                                                })?;
+                                        }
+                                    } else {
+                                        if self.path_has_local_prefix(
+                                            module,
+                                            *value_receiver,
+                                            expression.scope(),
+                                            path,
+                                        )? {
+                                            let call_owner = site.expression();
+                                            let call_source =
+                                                expression_span(module, call_owner)
+                                                    .map_err(AnalyzerExpressionError::fatal)?;
+                                            return Err(AnalyzerExpressionError::fatal(
+                                                FinalSemanticAnalysisError::UnknownCallTarget {
+                                                    owner: call_owner,
+                                                    kind: crate::callable::UnknownCallKind::Method,
+                                                    name: member.as_str().to_owned(),
+                                                    call_source,
+                                                },
+                                            ));
+                                        }
+                                        let line_context = path.lexical_name() == Some("line")
+                                            && scope_is_dialogue_line_plan(
+                                                module,
+                                                expression.scope(),
+                                            );
+                                        if line_context && owns_callee_expression_fact {
+                                            self.facts
+                                                .publish_new_expression(
+                                                    *value_receiver,
+                                                    CheckedExpression::value(
+                                                        TypeKind::LineContext,
+                                                        CheckedTypeSelection::Inferred,
+                                                        EffectSet::new(),
+                                                        CheckedExpressionResolution::Value(
+                                                            CheckedValueResolution::LineContext,
+                                                        ),
                                                     ),
-                                                ),
-                                            )
-                                            .map_err(|_| {
-                                                AnalyzerExpressionError::fatal(
+                                                )
+                                                .map_err(|_| {
+                                                    AnalyzerExpressionError::fatal(
                                                     FinalSemanticAnalysisError::WrongPayloadFamily,
                                                 )
-                                            })?;
-                                    } else if prepare_language_free_dot_path(
-                                        self.catalogs.world.environment().callable_catalog(),
-                                        *value_receiver,
-                                        expression,
-                                        member,
-                                        &self.catalogs.callable_limits,
-                                    )
-                                    .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
-                                        owner: *value_receiver,
-                                    })
-                                    .map_err(AnalyzerExpressionError::fatal)?
-                                    .is_none()
-                                    {
-                                        let receiver = nominal_receiver
+                                                })?;
+                                        } else if prepare_language_free_dot_path(
+                                            self.catalogs.world.environment().callable_catalog(),
+                                            *value_receiver,
+                                            expression,
+                                            member,
+                                            &self.catalogs.callable_limits,
+                                        )
+                                        .map_err(|_| {
+                                            FinalSemanticAnalysisError::CallResolutionFailed {
+                                                owner: *value_receiver,
+                                            }
+                                        })
+                                        .map_err(AnalyzerExpressionError::fatal)?
+                                        .is_none()
+                                        {
+                                            let receiver = nominal_receiver
                                             .type_id()
                                             .ok_or(
                                                 FinalSemanticAnalysisError::CallResolutionFailed {
@@ -4253,7 +4303,7 @@ impl Analyzer<'_, '_, '_> {
                                                 },
                                             )
                                             .map_err(AnalyzerExpressionError::fatal)?;
-                                        match self
+                                            match self
                                             .resolve_associated_receiver_type(receiver)
                                             .map_err(AnalyzerExpressionError::fatal)?
                                         {
@@ -4272,6 +4322,7 @@ impl Analyzer<'_, '_, '_> {
                                                     function_value_origin: None,
                                                 });
                                             }
+                                        }
                                         }
                                     }
                                 }

@@ -1,6 +1,6 @@
 use super::{
-    RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeRecordFieldId, RuntimeScope,
-    RuntimeValue, runtime_value_label,
+    RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeMutablePlace, RuntimeRecordFieldId,
+    RuntimeScope, RuntimeValue, runtime_value_label,
 };
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
@@ -127,15 +127,29 @@ impl RuntimeEnv {
     /// Vec locals and parameters.
     pub(crate) fn pop_sequence_front(
         &mut self,
-        local: RuntimeLocalDeclarationId,
+        place: RuntimeMutablePlace,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let local = match place {
+            RuntimeMutablePlace::Local(local) => local,
+            RuntimeMutablePlace::NominalField { base, .. } => base,
+        };
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.binding_mut(local) {
-                return match &mut binding.value {
-                    RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
-                    value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
-                        value,
-                    ))),
+                return match place {
+                    RuntimeMutablePlace::Local(_) => match &mut binding.value {
+                        RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
+                        value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
+                            value,
+                        ))),
+                    },
+                    RuntimeMutablePlace::NominalField { field, .. } => match &mut binding.value {
+                        RuntimeValue::NominalRecord(record) => {
+                            record.pop_sequence_front_field(field)
+                        }
+                        value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
+                            value,
+                        ))),
+                    },
                 };
             }
         }
@@ -446,7 +460,7 @@ mod tests {
         );
 
         assert_eq!(
-            env.pop_sequence_front(local),
+            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
             Ok(Some(RuntimeValue::String("first".to_owned())))
         );
         assert_eq!(
@@ -464,9 +478,48 @@ mod tests {
             ])))
         );
         assert_eq!(
-            env.pop_sequence_front(local),
+            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
             Ok(Some(RuntimeValue::String("outer".to_owned())))
         );
-        assert_eq!(env.pop_sequence_front(local), Ok(None));
+        assert_eq!(
+            env.pop_sequence_front(RuntimeMutablePlace::Local(local)),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn sequence_pop_front_mutates_a_nominal_vec_field_in_place() {
+        let local = local(10);
+        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set(
+            local,
+            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+                RuntimeNominalTypeId::try_new("game.Container").unwrap(),
+                crate::pattern::RuntimeSemanticTypeId::from_bytes([10; 32]),
+                TypeLayoutHash::from_bytes([10; 32]),
+                vec![RuntimeValue::Seq(RuntimeSeq::values(vec![
+                    RuntimeValue::String("first".to_owned()),
+                    RuntimeValue::String("second".to_owned()),
+                ]))],
+            )),
+        );
+
+        let place = RuntimeMutablePlace::NominalField { base: local, field };
+        assert_eq!(
+            env.pop_sequence_front(place),
+            Ok(Some(RuntimeValue::String("first".to_owned())))
+        );
+        let Some(RuntimeValue::NominalRecord(record)) = env.get(local) else {
+            panic!("nominal record remains bound after field mutation");
+        };
+        let Some(RuntimeValue::Seq(sequence)) = record.field(field) else {
+            panic!("Vec stays in its nominal field");
+        };
+        assert_eq!(sequence.len(), 1);
+        assert_eq!(
+            sequence.value_at(0),
+            RuntimeValue::String("second".to_owned())
+        );
     }
 }

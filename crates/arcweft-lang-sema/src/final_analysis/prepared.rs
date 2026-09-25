@@ -645,6 +645,7 @@ impl PreparedVariantExpression {
 pub(crate) struct PreparedProjectFieldExpression {
     shell: PreparedExpressionShell,
     nominal: CheckedProjectNominal,
+    mutable_base: Option<LocalId>,
     declaration_ordinal: u32,
     field_type: TypeKind,
     diagnostic_name: HirName,
@@ -654,6 +655,7 @@ impl PreparedProjectFieldExpression {
     pub(crate) const fn new(
         shell: PreparedExpressionShell,
         nominal: CheckedProjectNominal,
+        mutable_base: Option<LocalId>,
         declaration_ordinal: u32,
         field_type: TypeKind,
         diagnostic_name: HirName,
@@ -661,6 +663,7 @@ impl PreparedProjectFieldExpression {
         Self {
             shell,
             nominal,
+            mutable_base,
             declaration_ordinal,
             field_type,
             diagnostic_name,
@@ -682,6 +685,7 @@ impl PreparedProjectFieldExpression {
     ) -> (
         PreparedExpressionShell,
         CheckedProjectNominal,
+        Option<LocalId>,
         u32,
         TypeKind,
         HirName,
@@ -689,6 +693,7 @@ impl PreparedProjectFieldExpression {
         (
             self.shell,
             self.nominal,
+            self.mutable_base,
             self.declaration_ordinal,
             self.field_type,
             self.diagnostic_name,

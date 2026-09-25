@@ -862,6 +862,73 @@ flow main() -> i64 {
     "42"
 );
 
+callable_case!(
+    direct_nominal_vec_field_pop_front_drains_the_original_field,
+    r#"
+struct Queue { items: Vec<i64> }
+flow main() -> i64 {
+    let queue = Queue { items = [1i64, 2i64, 3i64] }
+    while let .Some(_) = queue.items.pop_front() {}
+    match queue.items.pop_front() {
+        .None => return 42i64
+        .Some(_) => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    local_vec_pop_front_drains_the_local,
+    r#"
+flow main() -> i64 {
+    let items = [1i64, 2i64, 3i64]
+    while let .Some(_) = items.pop_front() {}
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+#[test]
+fn vec_pop_front_rejects_nested_and_indexed_nominal_fields() {
+    for source in [
+        r#"
+struct Queue { items: Vec<i64> }
+struct Boxed { queue: Queue }
+flow main() -> i64 {
+    let boxed = Boxed { queue = Queue { items = [1i64] } }
+    let popped = boxed.queue.items.pop_front()
+    return 42i64
+}
+"#,
+        r#"
+struct Queue { items: Vec<i64> }
+flow main() -> i64 {
+    let queues = [Queue { items = [1i64] }]
+    let popped = queues[0i64].items.pop_front()
+    return 42i64
+}
+"#,
+    ] {
+        let error = compile_source(source)
+            .expect_err("computed and nested field paths are not writable receiver places");
+        assert!(
+            !error.project().diagnostics().is_empty(),
+            "unsupported receiver reports a source-backed compile diagnostic: {error:?}"
+        );
+        assert!(
+            error.project().diagnostics().iter().all(|diagnostic| {
+                diagnostic.diagnostic().code().map(|code| code.as_str())
+                    != Some("sema.final_analysis")
+            }),
+            "unsupported receiver must not fail a final-analysis invariant: {error:?}"
+        );
+    }
+}
+
 #[test]
 fn nominal_field_awbc_roundtrip_rejects_wrong_ordinals_and_replacement_types() {
     use arcweft_core::awbc::codec::AwbcDecodeBudget;

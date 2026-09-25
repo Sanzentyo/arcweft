@@ -11,11 +11,12 @@ use super::structure::{
 use crate::awbc::schema::{
     AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDeferOwner,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole,
-    AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcPattern, AwbcPatternId,
-    AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
-    AwbcProjectCallOrdinaryMaterialization, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
-    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcMutablePlace, AwbcPattern,
+    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence,
+    AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcRegisterId,
+    AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+    AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{
@@ -609,35 +610,65 @@ fn apply_instruction(
                 return invalid_type(&at, "sequence input");
             }
         }
-        AwbcInstruction::SequencePopFront { dst, sequence } => {
-            if dst == sequence {
-                return invalid_type(
-                    &at,
-                    "distinct Vec receiver and Option destination registers",
-                );
-            }
-            let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
-            let Some(AwbcRuntimeTypeShape::Sequence {
-                kind: RuntimePlanSequenceKind::Vec,
-                item,
-            }) = runtime_shape(program, sequence_ty)
-            else {
-                return invalid_type(&at, "Vec local receiver");
+        AwbcInstruction::SequencePopFront { dst, place } => {
+            let (base, item) = match place {
+                AwbcMutablePlace::Local(sequence) => {
+                    if dst == sequence {
+                        return invalid_type(
+                            &at,
+                            "distinct Vec receiver and Option destination registers",
+                        );
+                    }
+                    let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
+                    let Some(AwbcRuntimeTypeShape::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item,
+                    }) = runtime_shape(program, sequence_ty)
+                    else {
+                        return invalid_type(&at, "Vec local receiver");
+                    };
+                    (*sequence, *item)
+                }
+                AwbcMutablePlace::NominalField { base, field } => {
+                    if dst == base {
+                        return invalid_type(
+                            &at,
+                            "distinct nominal record receiver and Option destination registers",
+                        );
+                    }
+                    let record_ty = read_register(verifier, function, block, *base, state)?;
+                    let Some(AwbcRuntimeTypeShape::NominalRecord { fields, .. }) =
+                        runtime_shape(program, record_ty)
+                    else {
+                        return invalid_type(&at, "nominal record field receiver");
+                    };
+                    let Some(field_layout) = fields.get(*field as usize) else {
+                        return invalid_type(&at, "existing nominal Vec field");
+                    };
+                    let Some(AwbcRuntimeTypeShape::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item,
+                    }) = runtime_shape(program, field_layout.ty)
+                    else {
+                        return invalid_type(&at, "nominal record field of Vec type");
+                    };
+                    (*base, *item)
+                }
             };
             let receiver_role = function_layout(verifier, function)
                 .slots
-                .get(sequence.index())
+                .get(base.index())
                 .map(|slot| slot.role);
             if !matches!(
                 receiver_role,
                 Some(AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::Local)
             ) {
-                return invalid_type(&at, "writable Vec local or parameter receiver");
+                return invalid_type(&at, "writable local or parameter receiver place");
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             if program
                 .builtin_variant_payload_item(dst_ty, RuntimeBuiltinVariantCaseIdentity::OptionSome)
-                != Some(*item)
+                != Some(item)
             {
                 return invalid_type(&at, "Option result matching the Vec item type");
             }

@@ -1321,7 +1321,7 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
             RuntimeExprSeed::new(
                 option_type,
                 RuntimeExprSeedKind::SequencePopFront {
-                    receiver: sequence.clone(),
+                    place: crate::plan::RuntimeMutablePlaceSeed::Local(sequence.clone()),
                 },
             )
         };
@@ -1371,6 +1371,196 @@ fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
             .expect("pop_front flow admits");
         let mut engine = Engine::for_flow(builder.finish().expect("pop_front plan seals"), &entry)
             .expect("pop_front flow exists");
+
+        let mut output = crate::step::RuntimeStepOutput::default();
+        for _ in 0..64 {
+            let next = step(&mut engine);
+            output.flow_events.extend(next.flow_events);
+            output.diagnostics.extend(next.diagnostics);
+            if matches!(
+                engine.fiber().status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+            ) {
+                break;
+            }
+        }
+
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::Return {
+                value: "drained".to_owned(),
+            }],
+            "output: {output:?}; status: {:?}",
+            engine.fiber().status
+        );
+    }
+}
+
+#[test]
+fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
+    use crate::entry::{
+        RuntimeNominalRecordShape, RuntimeNominalSchemaBody, RuntimeNominalSchemaDefinition,
+        RuntimeNominalSchemaField, RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity,
+        RuntimeSchemaLimits, RuntimeTypeSchema,
+    };
+    use crate::value::{RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeSeq};
+
+    let item_type = RuntimeSemanticTypeId::from_bytes([0x41; 32]);
+    let payload_type = RuntimeSemanticTypeId::from_bytes([0x42; 32]);
+    let option_type = RuntimeSemanticTypeId::from_bytes([0x43; 32]);
+    let sequence_type = RuntimeSemanticTypeId::from_bytes([0x44; 32]);
+    let record_type = RuntimeSemanticTypeId::from_bytes([0x45; 32]);
+    let nominal = RuntimeNominalTypeId::try_new("game.Container").expect("nominal identity");
+    let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).expect("field identity");
+    let schema = RuntimeNominalSchemaGraph::try_new(
+        vec![RuntimeNominalSchemaDefinition::new(
+            RuntimeNominalSchemaIdentity::new(nominal.clone(), record_type),
+            vec![],
+            RuntimeNominalSchemaBody::Record {
+                shape: RuntimeNominalRecordShape::Tuple,
+                fields: vec![RuntimeNominalSchemaField::new(
+                    field,
+                    None,
+                    RuntimeTypeSchema::Seq(Box::new(RuntimeTypeSchema::I32)),
+                )]
+                .into_boxed_slice(),
+            },
+        )],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .expect("container schema graph admits");
+    let layout = schema
+        .try_layout_hash(record_type)
+        .expect("container layout hash exists");
+    let entry = flow_id("flow.nominal_field_pop_front");
+
+    for values in [vec![RuntimeValue::i32(1), RuntimeValue::i32(2)], Vec::new()] {
+        let mut builder = RuntimePlanBuilder::new();
+        let admission = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
+                    RuntimePlanTypeSeed::new(
+                        item_type,
+                        RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I32),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        payload_type,
+                        RuntimePlanTypeProjection::Tuple(Box::new([item_type])),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        option_type,
+                        RuntimePlanTypeProjection::Option {
+                            item: item_type,
+                            some_payload: payload_type,
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        sequence_type,
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item: item_type,
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        record_type,
+                        RuntimePlanTypeProjection::Nominal {
+                            nominal: nominal.clone(),
+                            layout,
+                            arguments: Box::new([]),
+                        },
+                    ),
+                ],
+                [
+                    RuntimeLocalDeclarationSeed::new(record_type),
+                    RuntimeLocalDeclarationSeed::new(item_type),
+                ],
+                [RuntimeNominalRecordDomainSeed::new(
+                    record_type,
+                    RuntimeNominalRecordShape::Tuple,
+                    [RuntimeNominalRecordDomainFieldSeed::new(
+                        field,
+                        None,
+                        sequence_type,
+                    )],
+                )],
+                [],
+                &schema,
+            )
+            .expect("typed nominal Vec field place admits");
+        let record = admission.local_ids()[0].clone();
+        let item = admission.local_ids()[1].clone();
+        let some_pattern = |payload| {
+            RuntimePatternSeed::new(
+                option_type,
+                RuntimePatternSeedKind::Variant {
+                    ordinal: 0,
+                    payload: Some(Box::new(RuntimePatternSeed::new(
+                        payload_type,
+                        RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                            item_type, payload,
+                        )])),
+                    ))),
+                },
+            )
+        };
+        let pop_front = || {
+            RuntimeExprSeed::new(
+                option_type,
+                RuntimeExprSeedKind::SequencePopFront {
+                    place: crate::plan::RuntimeMutablePlaceSeed::NominalField {
+                        base: record.clone(),
+                        field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                    },
+                },
+            )
+        };
+        let record_value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+            nominal.clone(),
+            record_type,
+            layout,
+            vec![RuntimeValue::Seq(RuntimeSeq::values(values))],
+        ));
+        builder
+            .push_flow_schema(flow_schema(&entry))
+            .expect("nominal field pop_front flow schema admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                entry.clone(),
+                [],
+                RuntimeEffectSet::empty(),
+                vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            record_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: record.clone(),
+                            },
+                        ),
+                        expr: RuntimeExprSeed::new(
+                            record_type,
+                            RuntimeExprSeedKind::Value(record_value),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::WhileLet {
+                        pattern: some_pattern(RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: item,
+                        }),
+                        expr: pop_front(),
+                        guard: None,
+                        body: vec![RuntimeFlowOpSeed::Noop],
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
+                ],
+            ))
+            .expect("nominal field pop_front flow admits");
+        let mut engine = Engine::for_flow(
+            builder.finish().expect("field pop_front plan seals"),
+            &entry,
+        )
+        .expect("field pop_front flow exists");
 
         let mut output = crate::step::RuntimeStepOutput::default();
         for _ in 0..64 {

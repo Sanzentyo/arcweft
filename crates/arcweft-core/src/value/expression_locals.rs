@@ -1,6 +1,9 @@
 //! Exact free-local projection for admitted runtime expressions.
 
-use super::{RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeStandardMapOperandOrder};
+use super::{
+    RuntimeCallArgument, RuntimeExpr, RuntimeExprKind, RuntimeMutablePlace,
+    RuntimeStandardMapOperandOrder,
+};
 use crate::pattern::{RuntimePattern, RuntimePatternKind};
 use crate::plan::RuntimePlan;
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
@@ -49,9 +52,12 @@ impl RuntimeExpr {
                 }
             }
             RuntimeExprKind::Local(local) => push_free_local(*local, bound, locals),
-            RuntimeExprKind::SequencePopFront { receiver } => {
-                push_free_local(*receiver, bound, locals)
-            }
+            RuntimeExprKind::SequencePopFront { place } => match place {
+                RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
+                RuntimeMutablePlace::NominalField { base, .. } => {
+                    push_free_local(*base, bound, locals)
+                }
+            },
             RuntimeExprKind::Let {
                 binding,
                 expr,
