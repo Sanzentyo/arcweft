@@ -14,7 +14,8 @@ fn build_only_checked_match(
     limits: CheckedMatchLimits,
 ) -> Result<CheckedMatch, SemanticTranscriptError> {
     let fixture = fixture(source, None);
-    let report = analyze(&fixture).expect("focused Match final analysis");
+    let report = analyze(&fixture)
+        .unwrap_or_else(|error| panic!("focused Match final analysis for {source}: {error:?}"));
     let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
@@ -193,6 +194,10 @@ fn root(value: Route) -> i64 { match value {} }
         (
             "named environment enum",
             "fn root(value: PresentationLifetime) -> i64 { match value {} }\n",
+        ),
+        (
+            "second named environment enum",
+            "fn root(value: DialogueVoice) -> i64 { match value {} }\n",
         ),
         (
             "agent builtin enum",

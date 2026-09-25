@@ -3,10 +3,11 @@ use super::{
     effects::EffectCapability,
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
     nominal::{
-        AcceptedEnvironmentRecordSemantics, AcceptedNominalCatalog, AcceptedNominalOrigin,
-        AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
-        standard_compile_time_scalar_record, standard_environment_record, standard_exact_record,
-        standard_nominal_id, standard_runtime_environment_record,
+        AcceptedEnvironmentRecordSemantics, AcceptedNominalCatalog, AcceptedNominalCatalogError,
+        AcceptedNominalOrigin, AcceptedNominalRecord, AcceptedNominalSemantics,
+        AcceptedOpaqueRuntimeCarrier, standard_compile_time_scalar_record,
+        standard_environment_record, standard_exact_record, standard_nominal_id,
+        standard_runtime_environment_record,
     },
 };
 use crate::callable::{
@@ -252,6 +253,8 @@ pub struct TypeCheckEnv {
 /// Invalid construction of a base semantic environment.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TypeCheckEnvBuildError {
+    #[error(transparent)]
+    NominalCatalog(#[from] AcceptedNominalCatalogError),
     #[error("character nominal inventories are owned by CharacterRegistrar: {nominal:?}")]
     ReservedCharacterNominal { nominal: CharacterNominalType },
     #[error(
@@ -1488,6 +1491,13 @@ impl TypeCheckEnv {
                 existing: Box::new(existing.clone()),
                 requested: Box::new(ty.clone()),
             });
+        }
+        if !self.closed_enums.contains_key(ty) && matches!(ty, TypeKind::Named(_)) {
+            self.try_insert_nominal_record(standard_exact_record(
+                owner.as_str(),
+                ty.clone(),
+                AcceptedNominalOrigin::Domain,
+            )?)?;
         }
         let schema = self
             .closed_enums

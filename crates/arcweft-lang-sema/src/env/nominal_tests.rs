@@ -12,14 +12,14 @@ use arcweft_lang_syntax::{
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
 use super::{
-    TypeCheckEnv,
+    TypeCheckEnv, TypeCheckEnvBuildError,
     identity::EnvironmentBindingId,
     nominal::{
         AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
         AcceptedNominalInstantiationError, AcceptedNominalOrigin, AcceptedNominalOwnerId,
         AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
         OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern, OpenNominalPatternError,
-        OpenNominalRule, OpenNominalRuleId, OpenNominalScope, RustPackageId,
+        OpenNominalRule, OpenNominalRuleId, OpenNominalScope, RustPackageId, standard_exact_record,
         standard_reduction_record,
     },
 };
@@ -638,13 +638,23 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ));
         assert_eq!(record.arity(), 0);
     }
-    assert!(
-        environment
+    for name in [
+        "PresentationLifetime",
+        "DialogueVoice",
+        "TextFlushMode",
+        "CueStopPolicy",
+        "DropPolicy",
+    ] {
+        let record = environment
             .nominal_catalog()
-            .exact(&path("PresentationLifetime"))
-            .is_none(),
-        "PresentationLifetime is the closed environment enum, not an opaque nominal"
-    );
+            .exact(&path(name))
+            .expect("closed environment enum has one accepted source type path");
+        assert_eq!(record.arity(), 0);
+        assert!(matches!(
+            record.semantics(),
+            AcceptedNominalSemantics::Exact(TypeKind::Named(actual)) if actual == name
+        ));
+    }
     assert!(
         environment
             .nominal_catalog()
@@ -1173,6 +1183,31 @@ fn world_only_scopes_are_validated_for_the_selected_environment() {
             scope: OpenNominalScope::AcceptedWorld,
             ..
         })
+    ));
+}
+
+#[test]
+fn named_closed_enum_rejects_a_preexisting_type_path() {
+    let environment = TypeCheckEnv::new()
+        .try_with_nominal_record(
+            standard_exact_record(
+                "Collision",
+                TypeKind::Named("Other".to_owned()),
+                AcceptedNominalOrigin::Domain,
+            )
+            .expect("preexisting exact record"),
+        )
+        .expect("preexisting path is accepted");
+    let result = environment.try_with_enum_variants(
+        EnvironmentBindingId::try_new("Collision").expect("enum owner"),
+        TypeKind::Named("Collision".to_owned()),
+        ["Only"],
+    );
+    assert!(matches!(
+        result,
+        Err(TypeCheckEnvBuildError::NominalCatalog(
+            AcceptedNominalCatalogError::DuplicateExactPath { .. }
+        ))
     ));
 }
 
