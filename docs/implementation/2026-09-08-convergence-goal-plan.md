@@ -1360,3 +1360,39 @@ closure body が親 line-plan の semantic scope からは見えず
 line-plan 失敗から派生する。profile fixture 合格、native/decoded AWBC 実行、
 workspace test recipe と最終 gate は未達であり、この checkpoint の合格証拠に
 含めない。
+
+## 045 callback / profile 受理と 049 境界 — 2026-09-26
+
+確認した `main`/`origin/main` は
+`ce3db75b4518548d12f83a3107ed3063bc8a9ad8` で一致し、working tree は clean。
+Supersedes: 直前の 045 timed callback が semantic scope で停止するという観測。
+
+- `cddddbfed15a733b1111e13fe2a02e3d55089ef5`: unresolved-dot の値 receiver が
+  type-path-shaped expression になる経路でも、typed path segment の source span
+  から外側の lexical local を HIR capture に記録する。source-index freeze と Sema
+  の checked capture をそろえ、focused Sema test 1/1 が通過。
+- `c00cf14ce992e2deffa4e84660ed5e4e7c06af73`: scheduled callback は閉じた
+  closure scope/frame で RuntimePlan を下げ、個別 capture packet で実行する。
+  activation 後に unscheduled task が使う copyable local だけを別の export として
+  native/AWBC の reveal、後続 command、codec、verifier、snapshot に接続する。
+  Core の export/custody、AWBC の codec/verifier/snapshot/lowering、native reveal の
+  focused tests が通過。affine StageActorHandle は共有 export せず scheduled packet
+  へ所有権を渡す。
+- `a1edaf1f1e793aa4b5d39ad60f99961785008145`: CLI `check --profile` が
+  profile topology の compilation context を使う。045 fixture と Character assets/
+  profile sidecar を同梱し、temp fixture runner も companion assets をコピーする。
+  045 の実 `arcw check --profile fixture` は 0 warning/obligation で通過。
+- `ce3db75b4518548d12f83a3107ed3063bc8a9ad8`: closed environment enum
+  の source type 名を exact nominal path として登録し、variant/domain の authority
+  は既存の enum schema に保つ。`PresentationLifetime` と `DialogueVoice` の Match、
+  既存 path 衝突拒否の focused tests が通過。
+
+workspace all-target/all-feature check、workspace Clippy、fmt、staged diff check は
+終了コード0。`RUST_MIN_STACK=16777216` での `just test-workspace` は非 CLI 群を
+通過し、CLI 7 件中 6 件が通過。最後の fixture 集約は 045–048 を越え、
+`049_await_context_option_boundaries.arcw` の
+`hir.lower.project_publish` source-index 検証で停止した。Windows 既定 stack の
+既知 `callable_origins_remain_distinct_across_a_branch` overflow も再現したが、
+上記 stack 設定下では通過。049 の最小再現では直接の
+`await ... with: pending` が HIR source-index で失敗し、plain await は HIR を通る。
+049 と 045 の実 native/decoded AWBC 再生、および goal 全体の最終 gate は未達。
