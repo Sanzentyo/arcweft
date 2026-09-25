@@ -56,6 +56,7 @@ pub enum AwbcRuntimeValueSnapshot {
     TensorF32(crate::math::DenseTensorF32),
     TensorF64(crate::math::DenseTensorF64),
     String(String),
+    Need(crate::task::NeedId),
     Char(char),
     Duration(crate::time::LogicalDuration),
     Progress {
@@ -230,6 +231,14 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::TensorF32(value) => Self::TensorF32(value.clone()),
             RuntimeValue::TensorF64(value) => Self::TensorF64(value.clone()),
             RuntimeValue::String(value) => Self::String(value.clone()),
+            RuntimeValue::Need(value) => {
+                if value.0.is_empty() {
+                    return Err(AwbcRuntimeValueSnapshotError::new(
+                        "Need handle has an empty identity",
+                    ));
+                }
+                Self::Need(value.clone())
+            }
             RuntimeValue::Char(value) => Self::Char(*value),
             RuntimeValue::Duration(value) => Self::Duration(*value),
             RuntimeValue::Progress(value) => Self::Progress {
@@ -301,6 +310,14 @@ impl AwbcRuntimeValueSnapshot {
             Self::TensorF32(value) => RuntimeValue::TensorF32(value),
             Self::TensorF64(value) => RuntimeValue::TensorF64(value),
             Self::String(value) => RuntimeValue::String(value),
+            Self::Need(value) => {
+                if value.0.is_empty() {
+                    return Err(AwbcRuntimeValueSnapshotError::new(
+                        "Need handle snapshot has an empty identity",
+                    ));
+                }
+                RuntimeValue::Need(value)
+            }
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
             Self::Progress { ratio, label } => {

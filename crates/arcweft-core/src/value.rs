@@ -216,6 +216,9 @@ pub enum RuntimeValue {
     TensorF32(DenseTensorF32),
     TensorF64(DenseTensorF64),
     String(String),
+    /// Opaque identity of a one-shot temporal value. The payload type is owned
+    /// by the enclosing runtime type, never inferred from this identity.
+    Need(crate::task::NeedId),
     Char(char),
     Duration(LogicalDuration),
     Progress(Progress),
@@ -338,6 +341,7 @@ impl RuntimeValue {
             | Self::TensorF32(_)
             | Self::TensorF64(_)
             | Self::String(_)
+            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -394,6 +398,7 @@ impl RuntimeValue {
             | Self::TensorF32(_)
             | Self::TensorF64(_)
             | Self::String(_)
+            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -3273,6 +3278,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             format!("tensor/f64/{:?}", value.shape().dims())
         }
         RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Need(value) => format!("need/{}", value.0),
         RuntimeValue::EntityRef(value) => value.runtime_label(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),

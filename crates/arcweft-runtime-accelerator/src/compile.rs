@@ -25,6 +25,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::TensorF32(_) => "tensor_f32",
         RuntimeValue::TensorF64(_) => "tensor_f64",
         RuntimeValue::String(_) => "string",
+        RuntimeValue::Need(_) => "need",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
         RuntimeValue::Progress(_) => "progress",

@@ -1131,6 +1131,9 @@ impl AwbcInventory {
             RuntimeValue::Reduction(_) => {
                 panic!("runtime reduction state cannot be encoded as an AWBC constant")
             }
+            RuntimeValue::Need(_) => {
+                panic!("runtime Need handle cannot be encoded as an AWBC constant")
+            }
             RuntimeValue::Progress(_) => {
                 panic!("runtime Progress publications cannot be encoded as AWBC constants")
             }

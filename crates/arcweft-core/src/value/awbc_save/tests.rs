@@ -21,6 +21,29 @@ use crate::{
 };
 
 #[test]
+fn need_snapshot_preserves_handle_identity_and_rejects_empty_ids() {
+    let value = RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned()));
+    let snapshot =
+        AwbcRuntimeValueSnapshot::from_runtime_value(&value).expect("typed Need handle snapshots");
+    let encoded = serde_json::to_vec(&snapshot).expect("Need snapshot serializes");
+    let decoded: AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&encoded).expect("Need snapshot decodes");
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+    assert_eq!(decoded.into_runtime_value_for_program(&owner), Ok(value));
+    assert!(
+        AwbcRuntimeValueSnapshot::from_runtime_value(&RuntimeValue::Need(crate::task::NeedId(
+            String::new()
+        )))
+        .is_err()
+    );
+    assert!(
+        AwbcRuntimeValueSnapshot::Need(crate::task::NeedId(String::new()))
+            .into_runtime_value_for_program(&owner)
+            .is_err()
+    );
+}
+
+#[test]
 fn awbc_snapshot_deserialize_rejects_empty_all_and_any_predicates() {
     for value in [
         serde_json::json!({ "All": { "predicates": [] } }),

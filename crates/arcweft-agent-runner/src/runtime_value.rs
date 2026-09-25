@@ -97,6 +97,10 @@ fn runtime_value_to_json_at(
             "kind": "runtime_internal",
             "value": "reduction",
         })),
+        RuntimeValue::Need(_) => Err(AgentRuntimeValueSerializationError::InvalidRuntimeState {
+            path: path.to_owned(),
+            detail: "affine runtime Need values cannot be serialized as Agent JSON".to_owned(),
+        }),
         RuntimeValue::Callable(callable) => callable
             .remaining_arity()
             .map(|arity| {
@@ -248,6 +252,7 @@ fn ensure_finite_runtime_value(
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Reduction(_)
+        | RuntimeValue::Need(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::Agent(_)

@@ -252,6 +252,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
             ..
         } => validate_config_strings(payload),
         RuntimeValue::Unit
+        | RuntimeValue::Need(_)
         | RuntimeValue::Bool(_)
         | RuntimeValue::Int(_)
         | RuntimeValue::UInt(_)
@@ -361,6 +362,7 @@ fn count_structured_leaves(
             ..
         } => count_structured_leaves(payload, depth, leaves)?,
         RuntimeValue::Callable(_)
+        | RuntimeValue::Need(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Reduction(_)

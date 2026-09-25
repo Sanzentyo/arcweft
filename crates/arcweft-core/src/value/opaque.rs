@@ -1362,6 +1362,7 @@ impl RuntimeContentValueBudget {
             | RuntimeValue::MatrixF64(_)
             | RuntimeValue::TensorF32(_)
             | RuntimeValue::TensorF64(_)
+            | RuntimeValue::Need(_)
             | RuntimeValue::Char(_)
             | RuntimeValue::Duration(_)
             | RuntimeValue::Progress(_)

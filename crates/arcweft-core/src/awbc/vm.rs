@@ -26,7 +26,7 @@ use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
 };
-use crate::task::{NeedId, RuntimeProgramOwner};
+use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeAgentValue, RuntimeCallableApplication, RuntimeCallableBodyReference,
@@ -2600,9 +2600,7 @@ fn await_target(
     let value = register(fiber, register_id)?.clone();
     match runtime_type.shape() {
         AwbcRuntimeTypeShape::Need(_) => match value {
-            RuntimeValue::String(need) if !need.is_empty() => {
-                Ok(FiberAwaitTarget::Need(NeedId(need)))
-            }
+            RuntimeValue::Need(need) if !need.0.is_empty() => Ok(FiberAwaitTarget::Need(need)),
             value => Err(VmError::Runtime(format!(
                 "NeedHandle register contained {}",
                 runtime_value_label(&value)

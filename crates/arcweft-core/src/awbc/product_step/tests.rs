@@ -2314,6 +2314,28 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
 }
 
 #[test]
+fn direct_need_parameter_rejects_string_surrogate_and_empty_identity() {
+    for value in [
+        RuntimeValue::String("need.profile".to_owned()),
+        RuntimeValue::Need(NeedId(String::new())),
+    ] {
+        assert!(
+            AwbcProductStepExecutor::for_function_invocation(
+                direct_need_program(),
+                AwbcEntryId(0),
+                AwbcFunctionId(0),
+                [RuntimeFlowParameterBinding {
+                    parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                    value,
+                }],
+                64,
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
 fn ready_result_error_payload_is_resumed_without_trapping() {
     let expected = RuntimeValue::result_err(RuntimeValue::String("profile-error".to_owned()));
     let (mut executor, input) = direct_need_executor_and_input(vec![runtime_need_state(
@@ -2925,7 +2947,7 @@ fn direct_need_executor_and_input(
         AwbcFunctionId(0),
         [RuntimeFlowParameterBinding {
             parameter: crate::entry::FlowParameterCoordinate::from_position(0),
-            value: RuntimeValue::String("need.profile".to_owned()),
+            value: RuntimeValue::Need(NeedId("need.profile".to_owned())),
         }],
         64,
     )

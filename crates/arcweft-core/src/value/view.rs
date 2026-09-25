@@ -168,6 +168,7 @@ impl RuntimeValue {
             | Self::TensorF64(_)
             | Self::Range(_)
             | Self::Iterator(_)
+            | Self::Need(_)
             | Self::Callable(_) => View::RuntimeOnly(self),
         }
     }

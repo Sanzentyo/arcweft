@@ -2381,6 +2381,12 @@ fn validate_nested_runtime_value(
         });
     }
     match value {
+        RuntimeValue::Need(need) if need.0.is_empty() => {
+            Err(FiberStateError::InvalidRuntimeValue {
+                path: "nested value".to_owned(),
+                reason: "Need handle has an empty identity".to_owned(),
+            })
+        }
         RuntimeValue::Callable(callable) => validate_runtime_callable(program, callable, depth),
         RuntimeValue::Tuple(items) => items
             .iter()
@@ -2442,6 +2448,7 @@ fn validate_nested_runtime_value(
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::String(_)
+        | RuntimeValue::Need(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
@@ -3401,13 +3408,9 @@ pub(crate) fn runtime_value_matches_type(
                     && arguments.len() == 1
                     && runtime_value_matches_type(program, value.state(), arguments[0], depth + 1)
             }),
+        (RuntimeValue::Need(need), AwbcRuntimeTypeShape::Need(_)) => !need.0.is_empty(),
         (_, AwbcRuntimeTypeShape::Dynamic)
-        | (
-            RuntimeValue::String(_),
-            AwbcRuntimeTypeShape::String
-                | AwbcRuntimeTypeShape::Task(_)
-                | AwbcRuntimeTypeShape::Need(_),
-        )
+        | (RuntimeValue::String(_), AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Task(_))
         | (RuntimeValue::Unit, AwbcRuntimeTypeShape::Unit)
         | (RuntimeValue::Bool(_), AwbcRuntimeTypeShape::Bool)
         | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
@@ -3596,6 +3599,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::TensorF32(_) => "tensor<f32>",
         RuntimeValue::TensorF64(_) => "tensor<f64>",
         RuntimeValue::String(_) => "string",
+        RuntimeValue::Need(_) => "need",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
         RuntimeValue::Progress(_) => "progress",

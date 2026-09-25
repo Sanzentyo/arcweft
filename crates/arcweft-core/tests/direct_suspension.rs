@@ -188,7 +188,7 @@ fn direct_return_restores_destination_and_drains_each_frame_lifo() {
             .expect("caller frame")
             .register(RETURN_REGISTER)
             .expect("callee return destination"),
-        &RuntimeValue::String("need.profile".to_owned())
+        &RuntimeValue::Need(NeedId("need.profile".to_owned()))
     );
     assert_eq!(
         fiber.frames[0]
@@ -419,7 +419,7 @@ fn direct_suspension_fiber(program: &AwbcProgram) -> FiberState {
         .expect("caller frame")
         .set_register(
             NEED_REGISTER,
-            RuntimeValue::String("need.profile".to_owned()),
+            RuntimeValue::Need(NeedId("need.profile".to_owned())),
         )
         .expect("bind typed Need handle");
     fiber
@@ -427,7 +427,7 @@ fn direct_suspension_fiber(program: &AwbcProgram) -> FiberState {
 
 fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
     let mut fiber = direct_suspension_fiber(program);
-    let need = [RuntimeValue::String("need.profile".to_owned())];
+    let need = [RuntimeValue::Need(NeedId("need.profile".to_owned()))];
     fiber
         .push_call_frame_with_args(program, CALLEE, CALL_RETURN, None, &need)
         .expect("caller enters first callee");
@@ -482,7 +482,7 @@ fn cleanup(key: String) -> FiberScopeCleanup {
     FiberScopeCleanup {
         key: key.clone(),
         effect: CLEANUP_EFFECT,
-        args: vec![RuntimeValue::String(key)],
+        args: vec![RuntimeValue::Need(NeedId(key))],
     }
 }
 
@@ -497,7 +497,7 @@ fn cleanup_observation_keys(observations: &[VmObservation]) -> Vec<&str> {
             else {
                 return None;
             };
-            let [RuntimeValue::String(key)] = args.as_slice() else {
+            let [RuntimeValue::Need(NeedId(key))] = args.as_slice() else {
                 panic!("cleanup observation has an unexpected payload: {args:?}");
             };
             Some(key.as_str())

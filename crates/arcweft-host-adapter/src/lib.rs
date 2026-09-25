@@ -724,6 +724,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::TensorF32(_) => "TensorF32",
         RuntimeValue::TensorF64(_) => "TensorF64",
         RuntimeValue::String(_) => "String",
+        RuntimeValue::Need(_) => "Need",
         RuntimeValue::Char(_) => "Char",
         RuntimeValue::Duration(_) => "Duration",
         RuntimeValue::Progress(_) => "Progress",

@@ -18,6 +18,7 @@ pub enum RuntimeValueShape {
     TensorF32,
     TensorF64,
     String,
+    Need,
     Char,
     Duration,
     Progress,
@@ -51,6 +52,7 @@ impl RuntimeValue {
             Self::TensorF32(_) => RuntimeValueShape::TensorF32,
             Self::TensorF64(_) => RuntimeValueShape::TensorF64,
             Self::String(_) => RuntimeValueShape::String,
+            Self::Need(_) => RuntimeValueShape::Need,
             Self::Char(_) => RuntimeValueShape::Char,
             Self::Duration(_) => RuntimeValueShape::Duration,
             Self::Progress(_) => RuntimeValueShape::Progress,
@@ -82,6 +84,10 @@ mod tests {
         assert_eq!(
             RuntimeValue::String(String::new()).shape(),
             RuntimeValueShape::String
+        );
+        assert_eq!(
+            RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned())).shape(),
+            RuntimeValueShape::Need
         );
         assert_eq!(
             RuntimeValue::Tuple(Vec::new()).shape(),

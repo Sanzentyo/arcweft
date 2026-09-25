@@ -1287,6 +1287,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
             .label()
             .map_or_else(|| value.ratio().to_string(), str::to_owned),
         RuntimeValue::Unit
+        | RuntimeValue::Need(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::MatrixF32(_)

@@ -109,6 +109,7 @@ impl RuntimeValue {
             | Self::Progress(_)
             | Self::Range(_)
             | Self::EntityRef(_) => RuntimeValueOwnership::Unrestricted,
+            Self::Need(_) => RuntimeValueOwnership::Affine,
             Self::Iterator(iterator) => iterator_ownership(iterator),
             Self::Tuple(values) => values_ownership(values),
             Self::Seq(sequence) => sequence.ownership(),
@@ -163,6 +164,7 @@ impl RuntimeValue {
             | Self::TensorF32(_)
             | Self::TensorF64(_)
             | Self::String(_)
+            | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
             | Self::Progress(_)
@@ -462,6 +464,16 @@ mod tests {
         ]);
 
         assert_eq!(value.ownership(), RuntimeValueOwnership::Unrestricted);
+    }
+
+    #[test]
+    fn need_handle_makes_its_entire_value_graph_affine() {
+        let handle = RuntimeValue::Need(crate::task::NeedId("need.profile".to_owned()));
+        assert_eq!(handle.ownership(), RuntimeValueOwnership::Affine);
+        assert_eq!(
+            RuntimeValue::Tuple(vec![RuntimeValue::Bool(true), handle]).ownership(),
+            RuntimeValueOwnership::Affine
+        );
     }
 
     #[test]
