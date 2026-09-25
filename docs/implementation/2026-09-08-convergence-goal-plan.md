@@ -1419,3 +1419,17 @@ typed Need 実行モデルを合わせて閉じる必要がある。
 expression type、052 は Sema fact/HIR family、053 は HIR arena coverage、
 056 は extern capability host-call contract で停止した。これは 049 以降の
 全体 fixture gate 合格を意味しない。
+
+Sol Max との Await owner 照合: 現在の Core `RuntimeAwaitTargetSeed` は host
+request template のみを持ち、RuntimePlan lowering は Await の直下にある
+checked host call を要求する。`Need<T>` は plan の operational type だが
+checked `RuntimeValue` には Need handle がない。AWBC は独立した NeedId
+待機経路を持つ一方、native の `NeedWaiting` は再開を完結しない。
+`Need<T>` local/parameter と pre-Await `.context` を受理するには、typed Need
+handle、host-request/existing-handle の Await source、context frame の一回だけの
+評価と失敗時付与、両 engine の待機・復帰、codec/verifier/snapshot を同じ契約で
+接続する必要がある。049 の fixture だけを弱めてこの境界の完了とはしない。
+また 051 の停止 owner は `[1i32, 2i32, 3i32]` で、Sema の compact numeric
+sequence が期待 `Array<i32, 3>` にかかわらず `Vec<i32>` を生成する。
+052 の `text_key=@super.super.intro_text` は HIR の text-key coordinate が
+絶対 `text.*` のみを解決する境界で止まる。これらは別の acceptance cluster。
