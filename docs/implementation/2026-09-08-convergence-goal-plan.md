@@ -932,3 +932,35 @@ native/AWBC LIFO 実行 1/1、`cargo fmt --all -- --check`、workspace
 all-target/all-feature check、Sema all-target/all-feature Clippy が終了コード 0（既存 warning
 あり）。compiler `evaluated_effects` target 全体の別テストにあった RuntimePlan 型グラフ
 失敗の受理証拠にはならない。Block 末尾の効果呼び出しはまだ効果として下りていない。
+
+**2026-09-25 expression-owned evaluated-effect checkpoint:**
+
+Supersedes: 直前 checkpoint の「Block 末尾の効果呼び出しは効果として下りていない」
+実装状態、および line-root executor checkpoint に記録した compiler
+`evaluated_effects` target の型グラフ失敗。nested/CurrentScope defer と取消側 `Out`
+の結果選択は引き続き未完了。
+
+inspected `main`/`origin/main` は
+`4ba649355b0e478e882323e78842a047d4665004` で一致し、working tree は clean。
+Sema の通常 evaluated effect は Call/Pipe の正確な expression root が一度だけ operation
+を所有し、expression statement は site/application digest の型付き参照だけを持つ。
+値位置の Block tail と文位置は同じ operation を実行する。Pipe の左辺と引数は source
+order で一度ずつ評価し、`Unit` は継続値、`Never` は非継続として下ろす。closed
+project-function instance でも expression payload が operation と必要な pipe fact を
+保持する。dialogue callback effect の line-plan 所有は維持した。
+
+`defer { log.info(message) }` と `defer { log.info(message); }` の両方で、自由ローカル
+capture を伴う行 root deferred body が native/decoded AWBC で LIFO 実行される。
+通常 Flow の Pipe tail と、通常 Project function の直接 Call/Pipe tail は、各 1 個の
+effect operation を持つ RuntimePlan と検証済み AWBC を生成する。閉じた base enum
+が選択 case からのみ到達する場合は、その typed variant owner の nominal identity/layout
+を type graph に登録する。これにより既存の `drop(.Cancel)` / `.Stop` の型グラフ失敗も解消した。
+
+検証: Sema lib 920/920、RuntimePlan lib 80/80、compiler lib 112/112、compiler
+`evaluated_effects` 23/23、compiler 全 integration tests は
+`RUST_MIN_STACK=16777216` で全 target 合格。workspace all-target/all-feature check、
+workspace Clippy、変更 crate all-target/all-feature Clippy、fmt は終了コード 0
+（既存 warning あり）。Windows の既定テストスレッド stack では compiler 全 integration
+tests の `callable_origins_remain_distinct_across_a_branch` が compilation 中に process
+exit `-1073741571`（stack overflow）で停止する。同じ単独テストと全 integration
+targets は上記 stack 設定で合格した。既定 stack の失敗を合格扱いしない。

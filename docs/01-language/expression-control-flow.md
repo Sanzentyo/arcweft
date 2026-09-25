@@ -36,6 +36,20 @@ let route = if ready {
 }
 ```
 
+## Evaluated-effect calls as block tails
+
+An evaluated-effect call executes at its expression site whether it is an
+expression statement or the final expression of a block. A call that returns
+`Unit` supplies the block's `Unit` value after its effect; a call that returns
+`Never` does not continue. A pipe into an evaluated-effect call evaluates its
+left side once before the effect.
+
+```arcw
+fn trace(message: String) -> Unit {
+    log.info(message)
+}
+```
+
 ## `if let`
 
 ```arcw
