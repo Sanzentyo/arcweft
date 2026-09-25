@@ -102,6 +102,26 @@ mod tests {
     }
 
     #[test]
+    fn explicit_with_braces_remains_a_dialogue_plan() {
+        let source = "flow opening {\n    alice()[本文。[p]] with { out () }\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("braced line plan parses");
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        let applications = applications(&built);
+        assert_eq!(applications.len(), 1);
+        assert!(applications[0].has_plan());
+        assert_eq!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .filter(|entry| entry.kind() == SyntaxKind::ScopeStatement)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn retained_ruby_is_a_typed_dialogue_node_surface() {
         let source = "flow opening {\n    alice[｜漢字《かんじ》|[base](reading)]\n}\n";
         let built = parse_document(&document(source), crate::parser::ParseOptions::default())
