@@ -970,3 +970,36 @@ targets は上記 stack 設定で合格した。既定 stack の失敗を合格�
 `main`/`origin/main` は同じ SHA、working tree は clean。通常 Flow の Pipe tail と
 Project function の直接 Call/Pipe tail は、各 backend で `piped` ログを正確に 1 回出す。
 compiler `evaluated_effects` target 23/23、同 test target の Clippy と fmt は終了コード0。
+
+**2026-09-25 dialogue cancellation result-selection checkpoint:**
+
+Supersedes: expression-owned evaluated-effect checkpoint の「取消側 `Out` の結果選択は未完了」
+という実装状態。`continue` による pending `R` 維持、cancel handler 内から親 Flow への
+`return`/`goto` 投影、nested/CurrentScope defer、保存用 DTO の完全な型到達性はなお未完了。
+
+inspected `main`/`origin/main` は
+`e824dbbd7f5d03aca0b749ae0bedc1a22882094b` で一致し、working tree は clean。
+sema の checked output target が正確な DialogueLine application を保持し、compiler は
+その application に属する cancel `out` だけを RuntimePlan へ投影する。通常結果を
+activation に一度 commit した後、join された正確な取消 action の handler が同じ型の
+値を返した場合だけ、公開前の結果を一度選び直す。native と AWBC は同じ activation
+result authority を使い、AWBC では取消 handler 専用 function kind と verifier-checked
+`R` signature で `Return(Some(R))` と fallthrough の `Return(None)` を区別する。
+affine handle の旧結果の drop と新結果の child custody からの移譲は同じ activation
+transaction に入り、選択 action は reducer/snapshot と照合する。native で handler 完了後に
+Closed reducer を親が公開せず待ち続ける経路も閉じた。作者の通常 `return` を AWBC で
+黙って pending 結果として扱わず、未接続の親制御移譲として拒否する。
+
+検証: `023_dialogue_cancel_defer_on.arcw` の CLI check/verify 合格。core lib 615/615、
+sema lib 920/920、RuntimePlan lib 81/81、compiler lib 112/112、compiler
+`evaluated_effects` 24/24。新しい実 source は通常/取消の native と decoded AWBC で
+実行され、AWBC の各ステップでメモリ上の snapshot/restore が通過した。workspace
+all-target/all-feature check、変更 crate all-target/all-feature Clippy、fmt、cached diff
+check は終了コード 0（既存 warning あり）。compiler 全 integration tests の既定 Windows
+stack overflow はこの checkpoint で再実行しておらず、以前の失敗を合格に読み替えない。
+
+保存用 `AwbcProductExecutorSaveSnapshot::from_live` から
+`into_live_for_program` まで同じ実 source で試すと、取消前の tick 2 に対話 target の
+semantic type が AWBC の型グラフにないとして失敗した。従ってメモリ上の復元成功を
+保存用 DTO の受理とは扱わない。次はその型到達性と cancel `continue`/親制御移譲を
+それぞれ所有境界で閉じる。
