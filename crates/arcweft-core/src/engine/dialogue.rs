@@ -1,15 +1,27 @@
+//! Native dialogue execution around one revisioned activation transaction.
+//!
+//! Pre-reveal operations, lexical cleanup, line-task progression, host-command
+//! outcomes, and result publication all mutate the same activation frame and
+//! line ledger. Keeping their transitions together lets each step stage a
+//! complete candidate before publishing requests or child fibers; the registry
+//! and shared ledger remain separate owners in `store` and `line_task`.
+
 mod store;
 
 pub(in crate::engine) use store::{
-    DialogueActivationFrame, DialogueActivationStore, DialogueActivationTransaction,
-    DialogueCommitDisposition, DialogueLineTaskState, DialogueRuntimePhase, PendingLineOperation,
+    DialogueActivationFrame, DialogueActivationScope, DialogueActivationStore,
+    DialogueActivationTransaction, DialogueCommitDisposition, DialogueLineTaskState,
+    DialogueRuntimePhase, PendingActivationHostCall, PendingLineOperation,
 };
 
 use super::{
     Engine, RuntimeCallableValue, RuntimeDiagnostic, RuntimeEvalError, RuntimeLocalBinding,
     RuntimeStepOutput, RuntimeValue,
 };
-use crate::effect::{RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr};
+use crate::effect::{
+    LineEffectRequest, RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr,
+    RuntimeEffectMaterializeError,
+};
 use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, LineTaskReadyEvents, MAX_LINE_SCHEDULED_CALLBACKS,
     RuntimeCueLease, RuntimeCueOrigin, RuntimeDeferUnwindStep, RuntimeDialogueActivationState,
@@ -43,6 +55,12 @@ pub(crate) enum DialogueExecutionError {
     LineTaskCompletion(#[from] crate::line_task::LineTaskCompletionError),
     #[error("line-task child failed: {message}")]
     ChildFailed { message: String },
+    #[error("dialogue activation host call failed: {message}")]
+    HostCallFailed { message: String },
+    #[error(transparent)]
+    EffectMaterialization(#[from] RuntimeEffectMaterializeError),
+    #[error("dialogue activation effect failed: {message}")]
+    ActivationEffectFailed { message: String },
 }
 
 pub(super) struct DialogueLineTaskStart {
@@ -55,6 +73,20 @@ pub(super) struct DialogueLineTaskStart {
         crate::runtime_id::RuntimeDialogueEffectSiteId,
         RuntimeCallableValue,
     )>,
+}
+
+pub(super) enum DialogueActivationStep {
+    Continue,
+    Reveal(DialogueLineTaskStart),
+    Deferred(super::NativeLineTaskExecutionBatch),
+    HostCall(crate::step::RuntimeHostCallRequest),
+    Effect(LineEffectRequest),
+}
+
+enum ActivationScopeStep {
+    Waiting,
+    Deferred(super::NativeLineTaskExecutionBatch),
+    Finished,
 }
 
 enum DialoguePublicationOutcome {
@@ -140,9 +172,16 @@ impl Engine {
         &mut self,
         transaction: DialogueActivationTransaction,
         output: &mut RuntimeStepOutput,
-        start: Option<DialogueLineTaskStart>,
+        step: DialogueActivationStep,
     ) {
         let activation = transaction.activation().clone();
+        let (start, deferred_batch, host_call, effect) = match step {
+            DialogueActivationStep::Continue => (None, None, None, None),
+            DialogueActivationStep::Reveal(start) => (Some(start), None, None, None),
+            DialogueActivationStep::Deferred(batch) => (None, Some(batch), None, None),
+            DialogueActivationStep::HostCall(request) => (None, None, Some(request), None),
+            DialogueActivationStep::Effect(effect) => (None, None, None, Some(effect)),
+        };
         let (transaction, batch, event) = match start {
             Some(start) => {
                 let mut candidate = transaction.clone();
@@ -180,6 +219,16 @@ impl Engine {
         }
         if let Some(batch) = batch {
             self.commit_line_task_execution_batch(batch);
+        }
+        if let Some(batch) = deferred_batch {
+            self.commit_line_task_execution_batch(batch);
+        }
+        if let Some(request) = host_call {
+            self.advance_host_call_sequence();
+            output.requests.host_calls.push(request);
+        }
+        if let Some(effect) = effect {
+            output.effects.line.push(effect);
         }
         if let Some(event) = event {
             output.flow_events.push(event);
@@ -261,6 +310,43 @@ impl Engine {
             return;
         }
         if !self.has_joined_work() {
+            while !transaction.frame().scopes.is_empty() {
+                let (frame, line) = transaction.parts_mut();
+                let step = match self.prepare_activation_scope_exit(
+                    &activation_id,
+                    frame,
+                    line,
+                    ScopeExit::Failed,
+                ) {
+                    Ok(step) => step,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                match step {
+                    ActivationScopeStep::Finished => {}
+                    ActivationScopeStep::Waiting => {
+                        match self.commit_dialogue_activation_transaction(transaction, output) {
+                            Ok(()) => {
+                                self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                            }
+                            Err(error) => self.fail_eval(error, output),
+                        }
+                        return;
+                    }
+                    ActivationScopeStep::Deferred(batch) => {
+                        match self.commit_dialogue_activation_transaction(transaction, output) {
+                            Ok(()) => {
+                                self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                                self.commit_line_task_execution_batch(batch);
+                            }
+                            Err(error) => self.fail_eval(error, output),
+                        }
+                        return;
+                    }
+                }
+            }
             let batch =
                 match self.prepare_dialogue_deferred_child(&mut transaction, ScopeExit::Failed) {
                     Ok(batch) => batch,
@@ -685,8 +771,9 @@ impl Engine {
         &mut self,
         transaction: &mut DialogueActivationTransaction,
         outcomes: &[RuntimeLineHostOutcome],
+        host_results: &[crate::step::RuntimeHostCallResult],
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<Option<DialogueLineTaskStart>, DialogueExecutionError> {
+    ) -> Result<DialogueActivationStep, DialogueExecutionError> {
         let activation_id = transaction.activation().clone();
         let (frame, activation) = transaction.parts_mut();
         if frame.pending_line_operation.is_some() {
@@ -695,7 +782,65 @@ impl Engine {
                 Ok(false) => {}
                 Err(error) => return Err(error),
             }
-            return Ok(None);
+            return Ok(DialogueActivationStep::Continue);
+        }
+        if let Some(pending) = frame.pending_host_call.clone() {
+            let Some(result) = host_results.iter().find(|result| result.id == pending.id) else {
+                return Ok(DialogueActivationStep::Continue);
+            };
+            let value = result
+                .outcome
+                .as_ref()
+                .map_err(|error| DialogueExecutionError::HostCallFailed {
+                    message: error.message.clone(),
+                })?
+                .value();
+            self.plan
+                .validate_live_value(
+                    pending.result,
+                    value,
+                    crate::entry::RuntimeSchemaLimits::engine_default(),
+                )
+                .map_err(|error| DialogueExecutionError::HostCallFailed {
+                    message: error.to_string(),
+                })?;
+            if !unique_affine_line_handles(value)?.is_empty() {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            if let Some(binding) = &pending.binding {
+                let bindings =
+                    match_runtime_pattern(&self.plan, binding, value)?.ok_or_else(|| {
+                        RuntimeEvalError::PatternMismatch(super::runtime_value_label(value))
+                    })?;
+                frame.locals.bind_all(bindings);
+            }
+            frame.pending_host_call = None;
+            advance_activation_pc(frame)?;
+            return Ok(DialogueActivationStep::Continue);
+        }
+        if frame.exiting_for_result {
+            if !frame.scopes.is_empty() {
+                let step = self.prepare_activation_scope_exit(
+                    &activation_id,
+                    frame,
+                    activation,
+                    ScopeExit::Completed,
+                )?;
+                return match step {
+                    ActivationScopeStep::Waiting | ActivationScopeStep::Finished => {
+                        Ok(DialogueActivationStep::Continue)
+                    }
+                    ActivationScopeStep::Deferred(batch) => {
+                        Ok(DialogueActivationStep::Deferred(batch))
+                    }
+                };
+            }
+            if activation.has_pending_commands() {
+                return Ok(DialogueActivationStep::Continue);
+            }
+            return self
+                .begin_dialogue_reveal(&activation_id, frame, activation)
+                .map(DialogueActivationStep::Reveal);
         }
         let group = self
             .plan
@@ -708,8 +853,82 @@ impl Engine {
             .get(frame.activation_pc)
             .cloned()
             .ok_or(LineRuntimeError::ResultNotCommitted)?;
-        let mut line_task_start = None;
         match operation {
+            FlowOp::EnterScope { identity } => {
+                frame.locals.push_scope_with_identity(identity);
+                frame.scopes.push(DialogueActivationScope::new());
+            }
+            FlowOp::ExitScope => {
+                let step = self.prepare_activation_scope_exit(
+                    &activation_id,
+                    frame,
+                    activation,
+                    ScopeExit::Completed,
+                )?;
+                return match step {
+                    ActivationScopeStep::Waiting => Ok(DialogueActivationStep::Continue),
+                    ActivationScopeStep::Deferred(batch) => {
+                        Ok(DialogueActivationStep::Deferred(batch))
+                    }
+                    ActivationScopeStep::Finished => {
+                        advance_activation_pc(frame)?;
+                        Ok(DialogueActivationStep::Continue)
+                    }
+                };
+            }
+            FlowOp::Let { pattern, expr } => {
+                self.bind_dialogue_let(
+                    &activation_id,
+                    frame,
+                    activation,
+                    &pattern,
+                    &expr,
+                    pure_backend,
+                )?;
+            }
+            FlowOp::HostCall { binding, target } => {
+                let (args, named_args) = {
+                    std::mem::swap(&mut self.fiber.env, &mut frame.locals);
+                    let evaluated = self.evaluate_host_call_arguments(&target.args, pure_backend);
+                    std::mem::swap(&mut self.fiber.env, &mut frame.locals);
+                    evaluated
+                        .map_err(|message| DialogueExecutionError::HostCallFailed { message })?
+                };
+                for value in args
+                    .iter()
+                    .chain(named_args.iter().map(|argument| &argument.value))
+                {
+                    if !unique_affine_line_handles(value.value())?.is_empty() {
+                        return Err(LineRuntimeError::InvalidActivationOperation.into());
+                    }
+                }
+                let result = self
+                    .plan
+                    .type_table()
+                    .get(target.result)
+                    .map(|declaration| declaration.semantic_identity())
+                    .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+                let id = self.preview_host_call_id(&target.public_id);
+                frame.pending_host_call = Some(PendingActivationHostCall {
+                    id: id.clone(),
+                    result: target.result,
+                    binding,
+                });
+                return Ok(DialogueActivationStep::HostCall(
+                    crate::step::RuntimeHostCallRequest {
+                        id,
+                        public_id: target.public_id,
+                        capability: target.capability,
+                        operation: target.operation,
+                        contract: target.contract,
+                        args,
+                        named_args,
+                        result,
+                        mode: target.mode,
+                        deterministic: target.deterministic,
+                    },
+                ));
+            }
             FlowOp::LineOperation { binding, operation } => {
                 self.execute_line_operation(
                     &activation_id,
@@ -722,45 +941,67 @@ impl Engine {
             }
             FlowOp::CommitDialogueResult { value } => {
                 let value = self.evaluate_dialogue_expr(frame, &value, pure_backend)?;
-                line_task_start =
-                    Some(self.commit_dialogue_result(&activation_id, frame, activation, value)?);
+                self.stage_dialogue_result(frame, activation, value)?;
+                frame.exiting_for_result = true;
             }
             FlowOp::EvaluatedEffect(effect) => {
-                self.execute_dialogue_evaluated_effect(
+                let request = self.execute_dialogue_evaluated_effect(
                     &activation_id,
                     frame,
                     activation,
                     &effect,
                     pure_backend,
                 )?;
+                if let Some(request) = request {
+                    let request = match request {
+                        LineEffectRequest::Panic(message)
+                        | LineEffectRequest::Fail(message)
+                        | LineEffectRequest::Bail(message) => {
+                            return Err(DialogueExecutionError::ActivationEffectFailed { message });
+                        }
+                        request => request,
+                    };
+                    advance_activation_pc(frame)?;
+                    return Ok(DialogueActivationStep::Effect(request));
+                }
             }
             FlowOp::RegisterDefer {
                 site,
                 outcome,
                 captures,
-                owner: RuntimeDeferOwner::LineRoot,
+                owner,
             } => {
-                self.register_line_root_defer(frame, activation, site, outcome, &captures)?;
+                self.register_dialogue_defer(frame, activation, site, outcome, &captures, owner)?;
             }
             _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
         }
         if frame.pending_line_operation.is_none() {
             advance_activation_pc(frame)?;
         }
-        Ok(line_task_start)
+        Ok(DialogueActivationStep::Continue)
     }
 
     /// Captures the exact reached defer site without executing its body.
     /// Affine locals move only after the complete capture/ledger preflight.
-    fn register_line_root_defer(
+    fn register_dialogue_defer(
         &mut self,
         frame: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
         site: RuntimeDeferSiteId,
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: &[crate::value::RuntimeExpr],
+        owner_kind: RuntimeDeferOwner,
     ) -> Result<(), DialogueExecutionError> {
         activation.can_register_deferred()?;
+        match owner_kind {
+            RuntimeDeferOwner::CurrentScope
+                if frame
+                    .scopes
+                    .last()
+                    .is_some_and(|scope| scope.exit.is_none()) => {}
+            RuntimeDeferOwner::LineRoot if frame.scopes.is_empty() => {}
+            _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
+        }
         let function_id = self
             .plan
             .defer_function_site(site)
@@ -777,6 +1018,7 @@ impl Engine {
         let mut ledger = activation.ledger().clone();
         let mut moved_locals = std::collections::BTreeSet::new();
         let mut captured_handles = std::collections::BTreeSet::new();
+        let mut scoped_transfers = Vec::new();
         for (capture, input) in captures.iter().zip(function.capture_inputs()) {
             let RuntimeExprKind::Local(local) = capture.kind() else {
                 return Err(LineRuntimeError::InvalidActivationOperation.into());
@@ -812,14 +1054,23 @@ impl Engine {
                     return Err(LineRuntimeError::WrongOpaqueProducer.into());
                 }
                 match lease.owner() {
-                    RuntimeHandleOwnerSlot::LineScope => {}
-                    owner @ RuntimeHandleOwnerSlot::ActivationLocal(_) => {
-                        let owner = owner.clone();
-                        ledger.transfer(
-                            handle.token(),
-                            &owner,
-                            RuntimeHandleOwnerSlot::LineScope,
-                        )?;
+                    RuntimeHandleOwnerSlot::LineScope => {
+                        if owner_kind == RuntimeDeferOwner::CurrentScope {
+                            scoped_transfers
+                                .push((handle.token().clone(), RuntimeHandleOwnerSlot::LineScope));
+                        }
+                    }
+                    source @ RuntimeHandleOwnerSlot::ActivationLocal(_) => {
+                        let source = source.clone();
+                        if owner_kind == RuntimeDeferOwner::CurrentScope {
+                            scoped_transfers.push((handle.token().clone(), source));
+                        } else {
+                            ledger.transfer(
+                                handle.token(),
+                                &source,
+                                RuntimeHandleOwnerSlot::LineScope,
+                            )?;
+                        }
                     }
                     _ => return Err(LineRuntimeError::WrongOwner.into()),
                 }
@@ -832,26 +1083,145 @@ impl Engine {
                 let RuntimeExprKind::Local(local) = capture.kind() else {
                     unreachable!("defer capture was checked as a local")
                 };
-                let value = frame
+                frame
                     .locals
                     .get(*local)
-                    .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
-                if value.ownership().permits_copy() {
-                    Ok(value.clone())
-                } else {
-                    frame
-                        .locals
-                        .take(*local)
-                        .ok_or(RuntimeEvalError::UnknownLocal(*local))
-                }
+                    .cloned()
+                    .ok_or(RuntimeEvalError::UnknownLocal(*local))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        // The preflight above established a live frame; no intervening code can
-        // release it before this registration is committed.
-        activation
-            .register_deferred(site, outcome, values)
-            .expect("line-root defer registration was admitted before moving captures");
-        activation.commit_ledger(ledger);
+        let mut candidate = activation.clone();
+        let scoped_registration = match owner_kind {
+            RuntimeDeferOwner::CurrentScope => {
+                let registration =
+                    candidate.allocate_deferred_registration(site, outcome, values)?;
+                for (token, source) in &scoped_transfers {
+                    ledger.transfer(
+                        token,
+                        source,
+                        RuntimeHandleOwnerSlot::ScopedDefer(registration.id()),
+                    )?;
+                }
+                Some(registration)
+            }
+            RuntimeDeferOwner::LineRoot => {
+                candidate.register_deferred(site, outcome, values)?;
+                None
+            }
+        };
+        candidate.commit_ledger(ledger);
+        for local in moved_locals {
+            let _ = frame
+                .locals
+                .take(local)
+                .expect("captured local was preflighted");
+        }
+        *activation = candidate;
+        if let Some(registration) = scoped_registration {
+            frame
+                .scopes
+                .last_mut()
+                .expect("current scope was checked")
+                .deferred
+                .push(registration);
+        }
+        Ok(())
+    }
+
+    /// Advances the top activation-owned lexical scope by at most one deferred
+    /// child. The fixed exit and any in-flight child remain in the cloned
+    /// activation frame until the whole transaction commits.
+    fn prepare_activation_scope_exit(
+        &self,
+        activation_id: &crate::runtime_id::DialogueActivationId,
+        frame: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+        exit: ScopeExit,
+    ) -> Result<ActivationScopeStep, DialogueExecutionError> {
+        let scope = frame
+            .scopes
+            .last_mut()
+            .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+        scope.freeze_exit(exit);
+        if scope.inflight.is_some() || activation.has_pending_commands() {
+            return Ok(ActivationScopeStep::Waiting);
+        }
+        let fixed_exit = scope.exit.expect("scope exit was frozen");
+        while let Some(registration) = scope.deferred.last().cloned() {
+            // Validate and construct the child before moving its capture packet.
+            let batch = registration
+                .outcome_filter()
+                .matches(fixed_exit)
+                .then(|| self.prepare_deferred_line_child(activation_id, registration.clone()))
+                .transpose()?;
+            let step = activation.prepare_scoped_deferred(
+                activation_id,
+                registration.clone(),
+                fixed_exit,
+            )?;
+            let popped = scope.deferred.pop().expect("checked pending registration");
+            if popped.id() != registration.id() {
+                return Err(LineRuntimeError::InvalidDeferredTransition.into());
+            }
+            match step {
+                RuntimeDeferUnwindStep::Run(registration) => {
+                    scope.inflight = Some((registration.id(), registration.site()));
+                    return Ok(ActivationScopeStep::Deferred(
+                        batch.expect("matching registration built a child"),
+                    ));
+                }
+                RuntimeDeferUnwindStep::Skipped(_) => {
+                    if activation.has_pending_commands() {
+                        return Ok(ActivationScopeStep::Waiting);
+                    }
+                }
+            }
+        }
+        self.release_activation_scope_locals(activation_id, frame, activation)?;
+        frame.scopes.pop();
+        Ok(ActivationScopeStep::Finished)
+    }
+
+    /// Releases lexical locals after all deferred callbacks have observed them.
+    /// A value already staged as the dialogue result has DialogueResult custody
+    /// and survives this scope exit; every remaining affine local is dropped
+    /// through the line command journal before reveal can start.
+    fn release_activation_scope_locals(
+        &self,
+        activation_id: &crate::runtime_id::DialogueActivationId,
+        frame: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+    ) -> Result<(), DialogueExecutionError> {
+        let mut candidate = activation.clone();
+        let mut ledger = candidate.ledger().clone();
+        let mut commands =
+            RuntimeCommandQueue::new(activation_id.clone(), candidate.command_sequence());
+        let mut seen = std::collections::BTreeSet::new();
+        for binding in frame.locals.current_scope_bindings() {
+            for handle in unique_affine_line_handles(&binding.value)? {
+                if handle.token().activation() != activation_id
+                    || !seen.insert(handle.token().clone())
+                {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+                let lease = ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if lease.resource().kind() != handle.kind() {
+                    return Err(LineRuntimeError::WrongOpaqueProducer.into());
+                }
+                if matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)) {
+                    continue;
+                }
+                let owner =
+                    RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(binding.local)?);
+                ledger.drop_owned(handle.token(), &owner, &mut commands)?;
+            }
+        }
+        candidate.commit_ledger(ledger);
+        flush_commands(activation_id, &mut candidate, commands)?;
+        *activation = candidate;
+        let _ = frame.locals.pop_scope_bindings();
         Ok(())
     }
 
@@ -865,6 +1235,97 @@ impl Engine {
         let result = self.evaluate_expr_with_backend(expression, pure_backend);
         std::mem::swap(&mut self.fiber.env, &mut state.locals);
         result
+    }
+
+    fn bind_dialogue_let(
+        &mut self,
+        activation_id: &crate::runtime_id::DialogueActivationId,
+        frame: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+        pattern: &RuntimePattern,
+        expression: &crate::value::RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<(), DialogueExecutionError> {
+        let value = self.evaluate_dialogue_expr(frame, expression, pure_backend)?;
+        let bindings = match_runtime_pattern(&self.plan, pattern, &value)?
+            .ok_or_else(|| RuntimeEvalError::PatternMismatch(super::runtime_value_label(&value)))?;
+        let handles = unique_affine_line_handles(&value)?;
+        let result_tokens = handles
+            .iter()
+            .map(|handle| handle.token().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut candidate = activation.clone();
+        let mut ledger = candidate.ledger().clone();
+        let mut commands =
+            RuntimeCommandQueue::new(activation_id.clone(), candidate.command_sequence());
+        let mut moved_sources = std::collections::BTreeSet::new();
+        for handle in handles {
+            if handle.token().activation() != activation_id {
+                return Err(LineRuntimeError::WrongActivation.into());
+            }
+            let lease = ledger
+                .lease(handle.token())
+                .ok_or(LineRuntimeError::UnknownHandle)?;
+            if lease.resource().kind() != handle.kind() {
+                return Err(LineRuntimeError::WrongOpaqueProducer.into());
+            }
+            let source = lease.owner().clone();
+            match &source {
+                RuntimeHandleOwnerSlot::LineScope => {}
+                RuntimeHandleOwnerSlot::ActivationLocal(slot) => {
+                    let mut source_local = None;
+                    for binding in frame.locals.bindings() {
+                        if &self.owned_slot(binding.local)? == slot
+                            && value_contains_token(&binding.value, handle.token())?
+                        {
+                            if source_local.replace(binding.local).is_some() {
+                                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                            }
+                        }
+                    }
+                    let local = source_local.ok_or(LineRuntimeError::WrongOwner)?;
+                    moved_sources.insert(local);
+                }
+                _ => return Err(LineRuntimeError::WrongOwner.into()),
+            }
+            if let Some(local) = binding_destination_local(&bindings, handle.token())? {
+                let destination = RuntimeHandleOwnerSlot::ActivationLocal(self.owned_slot(local)?);
+                if source != destination {
+                    ledger.transfer(handle.token(), &source, destination)?;
+                }
+            } else {
+                ledger.drop_owned(handle.token(), &source, &mut commands)?;
+            }
+        }
+        if !value.ownership().permits_copy() && result_tokens.is_empty() {
+            let RuntimeExprKind::Local(local) = expression.kind() else {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            };
+            moved_sources.insert(*local);
+        }
+        for local in &moved_sources {
+            let source = frame
+                .locals
+                .get(*local)
+                .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
+            if unique_affine_line_handles(source)?
+                .iter()
+                .any(|handle| !result_tokens.contains(handle.token()))
+            {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+        }
+        candidate.commit_ledger(ledger);
+        flush_commands(activation_id, &mut candidate, commands)?;
+        for local in moved_sources {
+            let _ = frame
+                .locals
+                .take(local)
+                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+        }
+        frame.locals.bind_all(bindings);
+        *activation = candidate;
+        Ok(())
     }
 
     fn execute_line_operation(
@@ -1375,13 +1836,12 @@ impl Engine {
         Ok(bindings)
     }
 
-    fn commit_dialogue_result(
+    fn stage_dialogue_result(
         &mut self,
-        activation_id: &crate::runtime_id::DialogueActivationId,
         state: &mut DialogueActivationFrame,
         activation: &mut NativeDialogueActivationState,
         value: RuntimeValue,
-    ) -> Result<DialogueLineTaskStart, DialogueExecutionError> {
+    ) -> Result<(), DialogueExecutionError> {
         if !matches!(activation.result(), RuntimeDialogueResultState::Uncommitted) {
             return Err(LineRuntimeError::ResultAlreadyCommitted.into());
         }
@@ -1417,6 +1877,23 @@ impl Engine {
         }
         activation.commit_ledger(ledger);
         activation.commit_result(state.result_target.ty(), value)?;
+        Ok(())
+    }
+
+    fn begin_dialogue_reveal(
+        &mut self,
+        activation_id: &crate::runtime_id::DialogueActivationId,
+        state: &mut DialogueActivationFrame,
+        activation: &mut NativeDialogueActivationState,
+    ) -> Result<DialogueLineTaskStart, DialogueExecutionError> {
+        if !matches!(
+            activation.result(),
+            RuntimeDialogueResultState::Committed { .. }
+        ) || !state.scopes.is_empty()
+            || activation.has_pending_commands()
+        {
+            return Err(LineRuntimeError::ResultNotCommitted.into());
+        }
         let group = self
             .plan
             .line_task_groups()
@@ -1581,9 +2058,17 @@ impl Engine {
         activation: &mut NativeDialogueActivationState,
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<(), DialogueExecutionError> {
+    ) -> Result<Option<LineEffectRequest>, DialogueExecutionError> {
+        if !matches!(effect, RuntimeEffectExpr::Drop { .. }) {
+            let values = effect
+                .argument_exprs()
+                .into_iter()
+                .map(|expression| self.evaluate_dialogue_expr(state, expression, pure_backend))
+                .collect::<Result<Vec<_>, _>>()?;
+            return effect.materialize(&values).map_err(Into::into);
+        }
         let RuntimeEffectExpr::Drop { target, policy } = effect else {
-            return Err(LineRuntimeError::InvalidActivationOperation.into());
+            unreachable!("non-drop effects were handled above");
         };
         let policy = match policy {
             RuntimeDropPolicyExpr::Default => RuntimeDropPolicy::Default,
@@ -1638,7 +2123,7 @@ impl Engine {
         {
             state.locals.set(local, target);
         }
-        result
+        result.map(|()| None)
     }
     fn owned_slot(
         &self,
@@ -1788,18 +2273,81 @@ fn fail_issued_command_lease(
 
 #[cfg(test)]
 mod tests {
-    use super::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase, Engine};
+    use super::{
+        ActivationScopeStep, DialogueActivationFrame, DialogueActivationScope,
+        DialogueLineTaskState, DialogueRuntimePhase, Engine,
+    };
     use crate::effect::{RuntimeDropPolicyExpr, RuntimeEffectExpr};
-    use crate::pattern::{RuntimePattern, RuntimePatternKind};
-    use crate::plan::{RuntimeDialogueResultTarget, RuntimePlanBuilder};
+    use crate::line_task::{
+        RuntimeDeferOutcomeFilter, RuntimeDialogueActivationState, RuntimeHandleLeaseState,
+        RuntimeHandleOwnerSlot, RuntimeHandleResource, RuntimeLineHandleLedger,
+        RuntimeLineHandleSite, RuntimeLineHandleSiteKind, RuntimeStageActorLease, ScopeExit,
+    };
+    use crate::pattern::{
+        RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
+        RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
+        RuntimePatternKind, RuntimeSemanticTypeId,
+    };
+    use crate::plan::{
+        RuntimeDialogueResultTarget, RuntimeEffectSet, RuntimeExecutableBodySeed,
+        RuntimeFlowOpSeed, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed, RuntimePlanBuilder,
+        RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    };
     use crate::pure::VmRuntimePureCallBackend;
     use crate::runtime_id::{
-        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineTaskGroupId,
-        RuntimeLocalDeclarationId, RuntimePersistentFiberId, RuntimePlanTypeId,
+        DialogueActivationId, RuntimeDialogueContentPlanId, RuntimeLineHandleSiteId,
+        RuntimeLineTaskGroupId, RuntimeLocalDeclarationId, RuntimePersistentFiberId,
+        RuntimePlanTypeId,
     };
     use crate::time::LogicalDuration;
     use crate::value::{RuntimeExpr, RuntimeExprKind, RuntimeValue};
     use std::num::NonZeroU32;
+
+    fn activation_id() -> DialogueActivationId {
+        DialogueActivationId::new(
+            crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x5e; 32])
+                .expect("artifact"),
+            RuntimePersistentFiberId::from_allocated(1),
+            RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
+            0,
+        )
+    }
+
+    fn scoped_defer_engine() -> (Engine, crate::runtime_id::RuntimeDeferSiteId) {
+        let unit = RuntimeSemanticTypeId::from_bytes([0x71; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .expect("unit type");
+        let function = builder
+            .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
+                inputs: Box::new([]),
+                result: unit,
+                body_kind: RuntimeFunctionSiteBodyKind::Executable,
+                effects: RuntimeEffectSet::empty(),
+            })
+            .expect("defer body");
+        builder
+            .define_function_site_seed(
+                &function,
+                RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                    effects: RuntimeEffectSet::empty(),
+                    ops: Box::new([RuntimeFlowOpSeed::Noop]),
+                }),
+            )
+            .expect("defer body definition");
+        let site = builder
+            .reserve_defer_site_seed(&function)
+            .expect("defer site");
+        (Engine::new(builder.finish().expect("plan")), site)
+    }
 
     fn activation_frame(local: RuntimeLocalDeclarationId) -> DialogueActivationFrame {
         let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
@@ -1831,7 +2379,10 @@ mod tests {
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             activation_pc: 0,
+            exiting_for_result: false,
+            scopes: Vec::new(),
             pending_line_operation: None,
+            pending_host_call: None,
             failure: None,
         }
     }
@@ -1869,6 +2420,11 @@ mod tests {
             .execute_dialogue_evaluated_effect(&activation, frame, line, &effect, &mut pure)
             .expect("drop candidate");
         assert!(stale.frame().locals.get(local).is_none());
+        stale.frame_mut().locals.push_scope();
+        stale
+            .frame_mut()
+            .scopes
+            .push(DialogueActivationScope::new());
 
         let fresh = engine
             .dialogue_activations
@@ -1882,16 +2438,365 @@ mod tests {
             engine.dialogue_activations.commit_transaction(stale),
             Err(crate::line_task::LineRuntimeError::StaleActivationTransaction)
         );
-        assert_eq!(
-            engine
-                .dialogue_activations
-                .begin_transaction(&activation)
-                .expect("live frame")
-                .frame()
-                .locals
-                .get(local),
-            Some(&RuntimeValue::Unit)
-        );
+        let live = engine
+            .dialogue_activations
+            .begin_transaction(&activation)
+            .expect("live frame");
+        assert_eq!(live.frame().locals.get(local), Some(&RuntimeValue::Unit));
+        assert!(live.frame().scopes.is_empty());
         assert!(engine.fiber.env.get(local).is_none());
+    }
+
+    #[test]
+    fn init_scope_deferred_children_run_lifo_with_frozen_completion_filter() {
+        let (engine, site) = scoped_defer_engine();
+        let id = activation_id();
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let mut frame = activation_frame(local);
+        frame.locals.push_scope();
+        frame.scopes.push(DialogueActivationScope::new());
+        let mut line = RuntimeDialogueActivationState::new();
+        let first = line
+            .allocate_deferred_registration(site, RuntimeDeferOutcomeFilter::Completed, vec![])
+            .expect("first reached defer");
+        let second = line
+            .allocate_deferred_registration(site, RuntimeDeferOutcomeFilter::Completed, vec![])
+            .expect("second reached defer");
+        let failed = line
+            .allocate_deferred_registration(site, RuntimeDeferOutcomeFilter::Failed, vec![])
+            .expect("failed-only defer");
+        frame.scopes[0]
+            .deferred
+            .extend([first.clone(), second.clone(), failed]);
+        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+        line.commit_result(ty, RuntimeValue::Unit)
+            .expect("result staged before scope exit");
+
+        let ActivationScopeStep::Deferred(_) = engine
+            .prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed)
+            .expect("first scope step")
+        else {
+            panic!("the last matching registration must run first");
+        };
+        assert_eq!(frame.scopes[0].inflight, Some((second.id(), site)));
+        assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
+        line.complete_scoped_deferred_child(&id, second.id(), &Default::default())
+            .expect("second child closes");
+        frame.scopes[0].inflight = None;
+
+        let ActivationScopeStep::Deferred(_) = engine
+            .prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Failed)
+            .expect("frozen scope step")
+        else {
+            panic!("earlier completion registration must run next");
+        };
+        assert_eq!(frame.scopes[0].inflight, Some((first.id(), site)));
+        assert_eq!(frame.scopes[0].exit, Some(ScopeExit::Completed));
+        line.complete_scoped_deferred_child(&id, first.id(), &Default::default())
+            .expect("first child closes");
+        frame.scopes[0].inflight = None;
+
+        assert!(matches!(
+            engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Failed),
+            Ok(ActivationScopeStep::Finished)
+        ));
+        assert!(frame.scopes.is_empty());
+        assert!(matches!(
+            line.result(),
+            crate::line_task::RuntimeDialogueResultState::Committed {
+                value: RuntimeValue::Unit,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn init_out_unwinds_scope_without_resuming_later_plan_ops() {
+        let plan = RuntimePlanBuilder::new().finish().expect("empty plan");
+        let mut engine = Engine::new(plan);
+        let id = activation_id();
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let mut frame = activation_frame(local);
+        frame.locals.push_scope();
+        frame.scopes.push(DialogueActivationScope::new());
+        frame.activation_pc = 3;
+        frame.exiting_for_result = true;
+        engine
+            .dialogue_activations
+            .begin(id.clone(), frame)
+            .expect("activation");
+        let mut transaction = engine
+            .dialogue_activations
+            .begin_transaction(&id)
+            .expect("transaction");
+        transaction
+            .line_mut()
+            .commit_result(
+                RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+                RuntimeValue::Unit,
+            )
+            .expect("staged result");
+
+        assert!(matches!(
+            engine.resume_dialogue_activation(
+                &mut transaction,
+                &[],
+                &[],
+                &mut VmRuntimePureCallBackend::default(),
+            ),
+            Ok(super::DialogueActivationStep::Continue)
+        ));
+        assert!(transaction.frame().scopes.is_empty());
+        assert_eq!(transaction.frame().activation_pc, 3);
+        assert!(matches!(
+            transaction.line().result(),
+            crate::line_task::RuntimeDialogueResultState::Committed { .. }
+        ));
+    }
+
+    #[test]
+    fn init_host_call_request_commits_before_reply_binds_continuation() {
+        let unit = RuntimeSemanticTypeId::from_bytes([0x74; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    unit,
+                    RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+            )
+            .expect("unit type");
+        let mut engine = Engine::new(builder.finish().expect("plan"));
+        let id = activation_id();
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let mut frame = activation_frame(local);
+        frame.activation_pc = 2;
+        let call_id = crate::step::RuntimeHostCallId("init.log".to_owned());
+        frame.pending_host_call = Some(super::PendingActivationHostCall {
+            id: call_id.clone(),
+            result: RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            binding: None,
+        });
+        engine
+            .dialogue_activations
+            .begin(id.clone(), frame)
+            .expect("activation");
+        let transaction = engine
+            .dialogue_activations
+            .begin_transaction(&id)
+            .expect("transaction");
+        let request = crate::step::RuntimeHostCallRequest {
+            id: call_id.clone(),
+            public_id: "log.info".to_owned(),
+            capability: "log".to_owned(),
+            operation: "info".to_owned(),
+            contract: None,
+            args: Vec::new(),
+            named_args: Vec::new(),
+            result: unit,
+            mode: crate::step::RuntimeHostCallMode::Suspend,
+            deterministic: true,
+        };
+        let mut output = crate::step::RuntimeStepOutput::default();
+        engine.commit_and_suspend_dialogue(
+            transaction,
+            &mut output,
+            super::DialogueActivationStep::HostCall(request.clone()),
+        );
+        assert_eq!(output.requests.host_calls, vec![request]);
+        let mut transaction = engine
+            .dialogue_activations
+            .begin_transaction(&id)
+            .expect("committed host call");
+        let reply = crate::step::RuntimeHostCallResult {
+            id: call_id,
+            outcome: Ok(crate::value::RuntimePayload::from(RuntimeValue::Unit)),
+        };
+        assert!(matches!(
+            engine.resume_dialogue_activation(
+                &mut transaction,
+                &[],
+                &[reply],
+                &mut VmRuntimePureCallBackend::default(),
+            ),
+            Ok(super::DialogueActivationStep::Continue)
+        ));
+        assert!(transaction.frame().pending_host_call.is_none());
+        assert_eq!(transaction.frame().activation_pc, 3);
+    }
+
+    #[test]
+    fn init_evaluated_log_effect_publishes_after_activation_commit() {
+        let plan = RuntimePlanBuilder::new().finish().expect("empty plan");
+        let mut engine = Engine::new(plan);
+        let id = activation_id();
+        let local = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        engine
+            .dialogue_activations
+            .begin(id.clone(), activation_frame(local))
+            .expect("activation");
+        let mut transaction = engine
+            .dialogue_activations
+            .begin_transaction(&id)
+            .expect("transaction");
+        let effect = RuntimeEffectExpr::Log {
+            level: "info".to_owned(),
+            message: RuntimeExpr::from_admitted_parts(
+                RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+                RuntimeExprKind::Value(RuntimeValue::String("line init".to_owned())),
+            ),
+            fields: Vec::new(),
+        };
+        let (frame, line) = transaction.parts_mut();
+        let request = engine
+            .execute_dialogue_evaluated_effect(
+                &id,
+                frame,
+                line,
+                &effect,
+                &mut VmRuntimePureCallBackend::default(),
+            )
+            .expect("evaluated effect")
+            .expect("log request");
+        assert!(matches!(request, crate::effect::LineEffectRequest::Log(_)));
+        let mut output = crate::step::RuntimeStepOutput::default();
+        engine.commit_and_suspend_dialogue(
+            transaction,
+            &mut output,
+            super::DialogueActivationStep::Effect(request.clone()),
+        );
+        assert_eq!(output.effects.line, vec![request]);
+        assert!(engine.dialogue_activations.begin_transaction(&id).is_ok());
+    }
+
+    #[test]
+    fn init_scope_let_moves_affine_custody_and_exit_journals_release() {
+        let actor_type = RuntimeSemanticTypeId::from_bytes([0x73; 32]);
+        let producer = crate::value::RuntimeHandleKind::StageActor
+            .try_producer()
+            .expect("producer");
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_type_batch(
+                [RuntimePlanTypeSeed::new(
+                    actor_type,
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: producer.clone(),
+                        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(
+                            crate::value::RuntimeHandleKind::StageActor,
+                        ),
+                        persistence: crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+                        arguments: Box::new([]),
+                    },
+                )],
+                [
+                    RuntimeLocalDeclarationSeed::new(actor_type),
+                    RuntimeLocalDeclarationSeed::new(actor_type),
+                ],
+            )
+            .expect("local declaration");
+        let mut engine = Engine::new(builder.finish().expect("plan"));
+        let id = activation_id();
+        let source = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let destination = RuntimeLocalDeclarationId::from_accepted_ordinal(
+            NonZeroU32::new(2).expect("second local"),
+        );
+        let mut frame = activation_frame(source);
+        frame.locals.push_scope();
+        frame.scopes.push(DialogueActivationScope::new());
+        let character =
+            arcweft_character::id::CharacterId::try_new("character.fixture").expect("character");
+        let site = RuntimeLineHandleSite::new(
+            RuntimeLineHandleSiteId::from_zero_based(0),
+            0,
+            RuntimeLineHandleSiteKind::StageActor,
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            Some(character.clone()),
+            None,
+            RuntimeOpaqueTypeOwner::exact_with(
+                producer,
+                actor_type,
+                crate::value::RuntimeOpaqueValueClass::AffineHandle(
+                    crate::value::RuntimeHandleKind::StageActor,
+                ),
+                crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+            ),
+        )
+        .expect("site");
+        let mut ledger = RuntimeLineHandleLedger::default();
+        let owner = RuntimeHandleOwnerSlot::ActivationLocal(
+            engine.owned_slot(source).expect("local owner"),
+        );
+        let actor = ledger
+            .issue(
+                &id,
+                &site,
+                RuntimeHandleResource::StageActor(RuntimeStageActorLease::new(character)),
+                owner,
+            )
+            .expect("actor issue");
+        let token = crate::runtime_id::RuntimeLineHandleToken::try_decode_payload(actor.payload())
+            .expect("actor token");
+        ledger
+            .set_state(
+                &token,
+                RuntimeHandleLeaseState::Allocating,
+                RuntimeHandleLeaseState::Active,
+            )
+            .expect("actor acquired");
+        frame.locals.set(source, RuntimeValue::Opaque(actor));
+        let mut line = RuntimeDialogueActivationState::new();
+        line.commit_ledger(ledger);
+        let path = RuntimePatternBindingPath::try_from_steps([RuntimePatternBindingStep::Whole])
+            .expect("whole binding");
+        let pattern = RuntimePattern::from_admitted_parts(
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            RuntimePatternKind::Bind {
+                mutable: false,
+                binding: RuntimePatternBindingCoordinate::from_admitted_parts(destination, path),
+            },
+        );
+        let expr = RuntimeExpr::from_admitted_parts(
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            RuntimeExprKind::Local(source),
+        );
+        engine
+            .bind_dialogue_let(
+                &id,
+                &mut frame,
+                &mut line,
+                &pattern,
+                &expr,
+                &mut VmRuntimePureCallBackend::default(),
+            )
+            .expect("affine let transfers owner");
+        assert_eq!(frame.locals.get(source), Some(&RuntimeValue::Unit));
+        assert!(matches!(
+            frame.locals.get(destination),
+            Some(RuntimeValue::Opaque(_))
+        ));
+        assert_eq!(
+            line.ledger().lease(&token).expect("lease").owner(),
+            &RuntimeHandleOwnerSlot::ActivationLocal(
+                engine.owned_slot(destination).expect("destination owner"),
+            )
+        );
+
+        assert!(matches!(
+            engine.prepare_activation_scope_exit(&id, &mut frame, &mut line, ScopeExit::Completed),
+            Ok(ActivationScopeStep::Finished)
+        ));
+        assert!(frame.scopes.is_empty());
+        assert_eq!(frame.locals.get(source), Some(&RuntimeValue::Unit));
+        assert!(frame.locals.get(destination).is_none());
+        assert!(line.has_pending_commands());
+        assert!(matches!(
+            line.take_commit_receipt().into_commands().as_slice(),
+            [crate::presentation::RuntimeLineHostCommand::Stage(
+                crate::presentation::RuntimeStageCommand::ReleaseActor { .. }
+            )]
+        ));
     }
 }

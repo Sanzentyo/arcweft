@@ -67,6 +67,7 @@ impl Engine {
                 self.resume_dialogue_state(
                     transaction,
                     input.dialogue_input_actions.as_slice(),
+                    input.host_call_results.as_slice(),
                     output,
                     pure_backend,
                 );
@@ -105,6 +106,7 @@ impl Engine {
         &mut self,
         mut transaction: super::dialogue::DialogueActivationTransaction,
         input_actions: &[crate::step::RuntimeDialogueInputActionEvent],
+        host_results: &[crate::step::RuntimeHostCallResult],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
@@ -133,8 +135,13 @@ impl Engine {
             return;
         }
         if transaction.frame().phase == DialogueRuntimePhase::Activating {
-            match self.resume_dialogue_activation(&mut transaction, &line_outcomes, pure_backend) {
-                Ok(start) => self.commit_and_suspend_dialogue(transaction, output, start),
+            match self.resume_dialogue_activation(
+                &mut transaction,
+                &line_outcomes,
+                host_results,
+                pure_backend,
+            ) {
+                Ok(step) => self.commit_and_suspend_dialogue(transaction, output, step),
                 Err(error) => self.begin_dialogue_failure(transaction, error, output),
             }
             return;
@@ -239,7 +246,14 @@ impl Engine {
                     callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
-                self.commit_and_suspend_dialogue(transaction, output, start);
+                self.commit_and_suspend_dialogue(
+                    transaction,
+                    output,
+                    start.map_or(
+                        super::dialogue::DialogueActivationStep::Continue,
+                        super::dialogue::DialogueActivationStep::Reveal,
+                    ),
+                );
                 return;
             }
             if line_task.is_closing() || line_task.is_closed() {
@@ -257,7 +271,14 @@ impl Engine {
                     callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
-                self.commit_and_suspend_dialogue(transaction, output, start);
+                self.commit_and_suspend_dialogue(
+                    transaction,
+                    output,
+                    start.map_or(
+                        super::dialogue::DialogueActivationStep::Continue,
+                        super::dialogue::DialogueActivationStep::Reveal,
+                    ),
+                );
                 return;
             }
             for token in due_tokens {
@@ -324,7 +345,14 @@ impl Engine {
             }
         }
         *transaction.frame_mut() = frame;
-        self.commit_and_suspend_dialogue(transaction, output, start);
+        self.commit_and_suspend_dialogue(
+            transaction,
+            output,
+            start.map_or(
+                super::dialogue::DialogueActivationStep::Continue,
+                super::dialogue::DialogueActivationStep::Reveal,
+            ),
+        );
     }
 
     pub(super) fn resume_await_state(

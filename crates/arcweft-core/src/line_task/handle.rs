@@ -157,6 +157,8 @@ impl RuntimeLineHandleSite {
 pub enum RuntimeHandleOwnerSlot {
     LineScope,
     ActivationLocal(RuntimeOwnedSlotId),
+    /// A reached lexical defer packet before its child body starts.
+    ScopedDefer(RuntimeDeferRegistrationId),
     ChildScope(LineTaskWorkTag),
     DialogueResult(RuntimeValuePath),
     ParentFiber(RuntimeOwnedSlotId),
@@ -537,19 +539,49 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Result<RuntimeDeferRegistrationId, LineRuntimeError> {
+        let registration = self.allocate_deferred_registration(site, outcome_filter, captures)?;
+        let id = registration.id();
+        self.deferred.push(registration);
+        Ok(id)
+    }
+
+    /// Allocates a distinct registration for an activation-local lexical scope.
+    /// Its owner retains the returned packet until that scope exits; the line
+    /// root stack remains reserved for registrations that survive reveal.
+    pub(crate) fn allocate_deferred_registration(
+        &mut self,
+        site: RuntimeDeferSiteId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeValue>,
+    ) -> Result<RuntimeLineDeferredRegistration, LineRuntimeError> {
         self.can_register_deferred()?;
+        for capture in &captures {
+            for handle in capture
+                .affine_line_handles()
+                .map_err(|_| LineRuntimeError::InvalidDeferredTransition)?
+            {
+                let lease = self
+                    .ledger
+                    .lease(handle.token())
+                    .ok_or(LineRuntimeError::UnknownHandle)?;
+                if matches!(lease.resource(), RuntimeHandleResource::StageActor(_))
+                    && lease.state() == RuntimeHandleLeaseState::Allocating
+                {
+                    return Err(LineRuntimeError::InvalidDeferredTransition);
+                }
+            }
+        }
         let id = RuntimeDeferRegistrationId::from_allocated(
             NonZeroU64::new(self.next_defer_registration)
                 .expect("checked defer registration ID is nonzero"),
         );
         self.next_defer_registration += 1;
-        self.deferred.push(RuntimeLineDeferredRegistration::new(
+        Ok(RuntimeLineDeferredRegistration::new(
             id,
             site,
             outcome_filter,
             captures,
-        ));
-        Ok(id)
+        ))
     }
 
     /// Freezes the exit reason before executing any deferred body. A body
@@ -594,6 +626,52 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             .deferred
             .pop()
             .expect("checked pending defer exists");
+        let step = candidate.prepare_deferred_registration(
+            activation,
+            registration,
+            unwind.exit,
+            RuntimeHandleOwnerSlot::LineScope,
+        )?;
+        if let RuntimeDeferUnwindStep::Run(registration) = &step {
+            candidate
+                .defer_unwind
+                .as_mut()
+                .expect("unwind exists")
+                .inflight = Some(RuntimeDeferInFlight {
+                id: registration.id(),
+                site: registration.site(),
+            });
+        }
+        *self = candidate;
+        Ok(Some(step))
+    }
+
+    /// Atomically transfers or drops one registration owned by an activation
+    /// lexical scope. The caller retains its scope stack and fixed exit reason.
+    pub(crate) fn prepare_scoped_deferred(
+        &mut self,
+        activation: &DialogueActivationId,
+        registration: RuntimeLineDeferredRegistration,
+        exit: ScopeExit,
+    ) -> Result<RuntimeDeferUnwindStep, LineRuntimeError> {
+        if self.frame_released || self.defer_unwind.is_some() {
+            return Err(LineRuntimeError::InvalidDeferredTransition);
+        }
+        let mut candidate = self.clone();
+        let owner = RuntimeHandleOwnerSlot::ScopedDefer(registration.id());
+        let step =
+            candidate.prepare_deferred_registration(activation, registration, exit, owner)?;
+        *self = candidate;
+        Ok(step)
+    }
+
+    fn prepare_deferred_registration(
+        &mut self,
+        activation: &DialogueActivationId,
+        registration: RuntimeLineDeferredRegistration,
+        exit: ScopeExit,
+        owner: RuntimeHandleOwnerSlot,
+    ) -> Result<RuntimeDeferUnwindStep, LineRuntimeError> {
         let mut tokens = std::collections::BTreeSet::new();
         for capture in registration.captures() {
             for handle in capture
@@ -605,53 +683,41 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 {
                     return Err(LineRuntimeError::InvalidDeferredTransition);
                 }
-                let lease = candidate
+                let lease = self
                     .ledger
                     .lease(handle.token())
                     .ok_or(LineRuntimeError::UnknownHandle)?;
-                if lease.owner() != &RuntimeHandleOwnerSlot::LineScope
-                    || lease.resource().kind() != handle.kind()
-                {
+                if lease.owner() != &owner || lease.resource().kind() != handle.kind() {
                     return Err(LineRuntimeError::WrongOwner);
                 }
             }
         }
-        let step = if registration.outcome_filter().matches(unwind.exit) {
+        let step = if registration.outcome_filter().matches(exit) {
             let tag = LineTaskWorkTag::activation(
                 activation.clone(),
                 super::LineTaskWork::Defer(registration.id()),
             );
-            let mut ledger = candidate.ledger.clone();
+            let mut ledger = self.ledger.clone();
             for token in &tokens {
                 ledger.transfer(
                     token,
-                    &RuntimeHandleOwnerSlot::LineScope,
+                    &owner,
                     RuntimeHandleOwnerSlot::ChildScope(tag.clone()),
                 )?;
             }
-            candidate.ledger = ledger;
-            candidate
-                .defer_unwind
-                .as_mut()
-                .expect("unwind exists")
-                .inflight = Some(RuntimeDeferInFlight {
-                id: registration.id(),
-                site: registration.site(),
-            });
+            self.ledger = ledger;
             RuntimeDeferUnwindStep::Run(registration)
         } else {
-            let mut ledger = candidate.ledger.clone();
-            let mut queue =
-                RuntimeCommandQueue::new(activation.clone(), candidate.command_sequence);
+            let mut ledger = self.ledger.clone();
+            let mut queue = RuntimeCommandQueue::new(activation.clone(), self.command_sequence);
             for token in &tokens {
-                ledger.drop_owned(token, &RuntimeHandleOwnerSlot::LineScope, &mut queue)?;
+                ledger.drop_owned(token, &owner, &mut queue)?;
             }
-            candidate.ledger = ledger;
-            candidate.record_commands(activation, queue)?;
+            self.ledger = ledger;
+            self.record_commands(activation, queue)?;
             RuntimeDeferUnwindStep::Skipped(registration.id())
         };
-        *self = candidate;
-        Ok(Some(step))
+        Ok(step)
     }
 
     /// Completes only the child named by the activation's in-flight record.
@@ -685,6 +751,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             .inflight = None;
         *self = candidate;
         Ok(())
+    }
+
+    /// Closes a lexical-scope defer child after its owning frame has verified
+    /// the exact in-flight registration and frozen exit reason. The shared
+    /// ledger handles capture drops; it does not invent a second scope stack.
+    pub(crate) fn complete_scoped_deferred_child(
+        &mut self,
+        activation: &DialogueActivationId,
+        id: RuntimeDeferRegistrationId,
+        live: &std::collections::BTreeSet<RuntimeLineHandleToken>,
+    ) -> Result<(), LineRuntimeError> {
+        let tag = LineTaskWorkTag::activation(activation.clone(), super::LineTaskWork::Defer(id));
+        self.finish_child_scope(
+            &tag,
+            live,
+            &std::collections::BTreeSet::new(),
+            RuntimeDropPolicy::Default,
+        )
     }
 
     /// Returns the currently pending line-root registrations in stack order.
@@ -771,6 +855,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 .any(|rows| rows[0].id() >= rows[1].id())
             || self.deferred.last().is_some_and(|registration| {
                 registration.id().get().get() >= self.next_defer_registration
+            })
+            || self.ledger.leases().values().any(|lease| {
+                matches!(
+                    lease.owner(),
+                    RuntimeHandleOwnerSlot::ScopedDefer(id)
+                        if id.get().get() >= self.next_defer_registration
+                )
             })
         {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
@@ -2654,6 +2745,7 @@ fn validate_restored_ledger(
             }
             RuntimeHandleOwnerSlot::LineScope
             | RuntimeHandleOwnerSlot::ActivationLocal(_)
+            | RuntimeHandleOwnerSlot::ScopedDefer(_)
             | RuntimeHandleOwnerSlot::DialogueResult(_)
             | RuntimeHandleOwnerSlot::ChildScope(_)
             | RuntimeHandleOwnerSlot::ParentFiber(_) => {}
@@ -3110,11 +3202,19 @@ fn owner_transition_is_legal(
     source: &RuntimeHandleOwnerSlot,
     destination: &RuntimeHandleOwnerSlot,
 ) -> bool {
+    if let RuntimeHandleOwnerSlot::ScopedDefer(id) = source {
+        return matches!(
+            destination,
+            RuntimeHandleOwnerSlot::ChildScope(tag)
+                if tag.work() == super::LineTaskWork::Defer(*id)
+        );
+    }
     matches!(
         (source, destination),
         (
             RuntimeHandleOwnerSlot::LineScope | RuntimeHandleOwnerSlot::ActivationLocal(_),
             RuntimeHandleOwnerSlot::ActivationLocal(_)
+                | RuntimeHandleOwnerSlot::ScopedDefer(_)
                 | RuntimeHandleOwnerSlot::ChildScope(_)
                 | RuntimeHandleOwnerSlot::DialogueResult(_)
         ) | (

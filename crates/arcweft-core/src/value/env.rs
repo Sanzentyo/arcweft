@@ -58,14 +58,32 @@ impl RuntimeEnv {
     }
 
     pub fn pop_scope(&mut self) {
+        let _ = self.pop_scope_bindings();
+    }
+
+    /// Removes one lexical scope while returning its bindings to the owner
+    /// that must reconcile affine resources before discarding them.
+    pub(crate) fn pop_scope_bindings(&mut self) -> Vec<RuntimeLocalBinding> {
         if self.scopes.len() > 1 {
             if let Some(mut scope) = self.scopes.pop() {
+                let bindings = std::mem::take(&mut scope.bindings);
                 scope.clear();
                 self.spare_scopes.push(scope);
+                return bindings;
             }
         } else if let Some(scope) = self.scopes.last_mut() {
+            let bindings = std::mem::take(&mut scope.bindings);
             scope.clear();
+            return bindings;
         }
+        Vec::new()
+    }
+
+    pub(crate) fn current_scope_bindings(&self) -> &[RuntimeLocalBinding] {
+        self.scopes
+            .last()
+            .map(|scope| scope.bindings.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn set(&mut self, local: RuntimeLocalDeclarationId, value: RuntimeValue) {

@@ -74,8 +74,47 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) effect_callbacks:
         Box<[crate::value::RuntimeDialogueContentEffectBinding]>,
     pub(in crate::engine) activation_pc: usize,
+    /// An `out` has staged the line result and exited the line-plan
+    /// continuation. Only active lexical scopes may still unwind before reveal.
+    pub(in crate::engine) exiting_for_result: bool,
+    /// Pre-reveal lexical scopes, retained with the activation transaction
+    /// across host commands and deferred-child suspension.
+    pub(in crate::engine) scopes: Vec<DialogueActivationScope>,
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation>,
+    pub(in crate::engine) pending_host_call: Option<PendingActivationHostCall>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PendingActivationHostCall {
+    pub(in crate::engine) id: crate::step::RuntimeHostCallId,
+    pub(in crate::engine) result: RuntimePlanTypeId,
+    pub(in crate::engine) binding: Option<RuntimePattern>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DialogueActivationScope {
+    pub(in crate::engine) deferred: Vec<crate::line_task::RuntimeLineDeferredRegistration>,
+    /// Frozen on first exit. A failing cleanup must not change its filter.
+    pub(in crate::engine) exit: Option<crate::line_task::ScopeExit>,
+    pub(in crate::engine) inflight: Option<(
+        crate::runtime_id::RuntimeDeferRegistrationId,
+        crate::runtime_id::RuntimeDeferSiteId,
+    )>,
+}
+
+impl DialogueActivationScope {
+    pub(in crate::engine) fn new() -> Self {
+        Self {
+            deferred: Vec::new(),
+            exit: None,
+            inflight: None,
+        }
+    }
+
+    pub(in crate::engine) fn freeze_exit(&mut self, exit: crate::line_task::ScopeExit) {
+        self.exit.get_or_insert(exit);
+    }
 }
 
 /// Durable step ingress owned by one activation until its executor phase can
@@ -521,7 +560,10 @@ mod tests {
             values: Box::default(),
             effect_callbacks: Box::default(),
             activation_pc: 0,
+            exiting_for_result: false,
+            scopes: Vec::new(),
             pending_line_operation: None,
+            pending_host_call: None,
             failure: None,
         }
     }

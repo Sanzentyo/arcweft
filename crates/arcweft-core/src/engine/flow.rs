@@ -277,7 +277,10 @@ impl Engine {
                     values: values.into_boxed_slice(),
                     effect_callbacks: effect_callbacks.into_boxed_slice(),
                     activation_pc: 0,
+                    exiting_for_result: false,
+                    scopes: Vec::new(),
                     pending_line_operation: None,
+                    pending_host_call: None,
                     failure: None,
                 };
                 if let Err(error) = self
@@ -909,7 +912,7 @@ impl Engine {
         }
     }
 
-    fn evaluate_host_call_arguments(
+    pub(super) fn evaluate_host_call_arguments(
         &mut self,
         arguments: &[RuntimeHostArgumentTemplate],
         pure_backend: &mut impl RuntimeCallBackend,
@@ -974,14 +977,23 @@ impl Engine {
         }
     }
 
-    fn next_host_call_id(&mut self, public_id: &str) -> RuntimeHostCallId {
+    pub(super) fn next_host_call_id(&mut self, public_id: &str) -> RuntimeHostCallId {
+        let id = self.preview_host_call_id(public_id);
+        self.advance_host_call_sequence();
+        id
+    }
+
+    pub(super) fn preview_host_call_id(&self, public_id: &str) -> RuntimeHostCallId {
         let sequence = self.next_host_call_sequence;
-        self.next_host_call_sequence = self.next_host_call_sequence.saturating_add(1);
         RuntimeHostCallId(if sequence == 0 {
             public_id.to_owned()
         } else {
             format!("{public_id}.{sequence}")
         })
+    }
+
+    pub(super) fn advance_host_call_sequence(&mut self) {
+        self.next_host_call_sequence = self.next_host_call_sequence.saturating_add(1);
     }
 
     fn resume_cursor(&self, next_op_index: Option<usize>) -> Option<FlowCursor> {

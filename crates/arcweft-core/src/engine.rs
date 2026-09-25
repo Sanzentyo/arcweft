@@ -1891,6 +1891,21 @@ impl Engine {
         let mut transaction = self
             .dialogue_activations
             .begin_transaction(tag.activation_id())?;
+        if transaction
+            .frame()
+            .scopes
+            .last()
+            .and_then(|scope| scope.inflight)
+            .is_some_and(|(inflight, _)| inflight == id)
+        {
+            let (frame, line) = transaction.parts_mut();
+            let scope = frame.scopes.last_mut().expect("checked scoped defer");
+            line.complete_scoped_deferred_child(tag.activation_id(), id, live_tokens)?;
+            scope.inflight = None;
+            let receipt = self.dialogue_activations.commit_transaction(transaction)?;
+            Self::publish_dialogue_line_receipt(receipt.into_line(), output);
+            return Ok(());
+        }
         let (_, site) = transaction
             .line()
             .deferred_inflight()
