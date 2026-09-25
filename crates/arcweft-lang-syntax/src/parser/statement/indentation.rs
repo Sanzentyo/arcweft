@@ -207,7 +207,7 @@ fn scan_owner_body_suffix(
     (body_token, braced_body)
 }
 
-pub(super) fn physical_line_end(
+pub(in crate::parser) fn physical_line_end(
     parser: &DocumentParser<'_, '_>,
     start: usize,
     limit: usize,

@@ -12,6 +12,7 @@ use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::parser::cursor::DocumentParser;
 use crate::parser::rich_text_grammar::emit_dialogue_content;
 use crate::parser::shadow_recovery::{bump_until, find_top_level_boundary};
+use crate::parser::statement::indentation::physical_line_end;
 
 pub(in crate::parser) fn emit_colon_dialogue_application(
     parser: &mut DocumentParser<'_, '_>,
@@ -19,8 +20,11 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
     role: SyntaxRole,
 ) -> Option<CompletedNode> {
     let start = parser.cursor();
-    let colon = find_top_level_boundary(parser, start, end, &[":"]);
-    if colon == end {
+    // A speaker colon belongs to the physical head. A later `with:` is the
+    // bracket call's line-plan suffix, not another dialogue application.
+    let head_end = physical_line_end(parser, start, end);
+    let colon = find_top_level_boundary(parser, start, head_end, &[":"]);
+    if colon == head_end {
         return None;
     }
     let plan_start = crate::parser::statement::dialogue_plan::colon_dialogue_plan_start(

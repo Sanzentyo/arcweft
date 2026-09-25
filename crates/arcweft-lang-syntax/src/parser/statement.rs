@@ -2,7 +2,7 @@
 
 pub(super) mod choice;
 pub(in crate::parser) mod dialogue_plan;
-mod indentation;
+pub(in crate::parser) mod indentation;
 pub(super) mod keyword;
 mod trigger;
 
