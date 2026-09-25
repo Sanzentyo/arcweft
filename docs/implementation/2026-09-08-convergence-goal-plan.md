@@ -1271,3 +1271,21 @@ assignment place が認める local/parameter を根にした直接 nominal fiel
 mutation は後続 cut で必須。index/deref/nested field は現行の checked writable
 place 自体が受け入れない。`For` の `break`/`continue` は native/AWBC とも
 未接続で、canonical `WhileNext`/`WhileLetNext` は sealed plan が拒否する。
+
+## Inline timed cue producer checkpoint — 2026-09-26
+
+確認した `main`/`origin/main` は
+`171632a6dc5522525b23a4628e63d78511af153b` で一致する。
+working tree は直接 field の `Vec.pop_front()` 移行中で dirty。
+維持仕様が等価とする `with:` 内の `at(...): action()` を、同一物理行の
+action でも typed callback block と Closure に投影した。後続の line-plan
+`out` は別項目として保持し、空または壊れた inline body は正確な source span
+で recovery する (`171632a6dc5522525b23a4628e63d78511af153b`)。
+Syntax package は unit 701、public API 1、parser authority 3、doctest 2 が通過。
+focused HIR projection と Syntax/HIR 対象 Clippy も終了コード0。
+
+045 fixture 全体の check 合格は未達。旧 `alice.face`、expected type のない
+`.Skipped`/`.Done`、CueHandle を返す callback に必要な Character manifest、
+および `defer on cancelled` と Unit Flow の Type fact 欠落は、この parser
+変更で解決したとは扱わない。これらを別の型付き consumer/fixture 境界として
+調べ、timed cue と取消の受理証拠を維持する。
