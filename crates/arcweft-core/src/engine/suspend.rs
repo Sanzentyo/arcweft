@@ -242,7 +242,7 @@ impl Engine {
                     request_cancellation: true,
                     group,
                     activation: cancelled,
-                    captures: frame.captures.clone(),
+                    captures: frame.task_inputs.clone(),
                     callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
@@ -267,7 +267,7 @@ impl Engine {
                     request_cancellation: false,
                     group,
                     activation,
-                    captures: frame.captures.clone(),
+                    captures: frame.task_inputs.clone(),
                     callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
@@ -302,7 +302,7 @@ impl Engine {
                 request_cancellation: false,
                 group,
                 activation,
-                captures: frame.captures.clone(),
+                captures: frame.task_inputs.clone(),
                 callbacks: callbacks.clone(),
             });
         } else if !content_events.is_empty() {
@@ -330,7 +330,7 @@ impl Engine {
                     request_cancellation: true,
                     group,
                     activation: cleanup,
-                    captures: frame.captures.clone(),
+                    captures: frame.task_inputs.clone(),
                     callbacks,
                 });
             }

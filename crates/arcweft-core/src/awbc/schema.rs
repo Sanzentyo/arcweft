@@ -2815,7 +2815,10 @@ pub struct AwbcDialogueMark {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcLineTaskGroup {
+    /// Caller-owned values supplied to the activation function before reveal.
     pub captures: Vec<RuntimeLocalDeclarationId>,
+    /// Root activation locals copied into unscheduled line-task work at reveal.
+    pub activation_exports: Vec<AwbcLineActivationExport>,
     pub activation: AwbcFunctionId,
     pub result_type: AwbcTypeId,
     pub handle_sites: Vec<AwbcLineHandleSite>,
@@ -2826,6 +2829,15 @@ pub struct AwbcLineTaskGroup {
     pub cleanup_cancelled: Option<AwbcFunctionId>,
     pub cleanup_failed: Option<AwbcFunctionId>,
     pub cleanup: AwbcLineCleanupPolicy,
+}
+
+/// Exact source register and child parameter coordinate for one activation
+/// local retained when the line task begins.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcLineActivationExport {
+    pub local: RuntimeLocalDeclarationId,
+    pub register: AwbcRegisterId,
+    pub ty: AwbcTypeId,
 }
 
 /// One dense typed handle-producing site owned by an AWBC line-task group.

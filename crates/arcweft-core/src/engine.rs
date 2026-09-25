@@ -1959,7 +1959,7 @@ impl Engine {
             let dialogue::DialogueLineTaskState::Live(live) = &frame.line_task else {
                 return Err(crate::line_task::LineRuntimeError::InvalidScheduledWorkState.into());
             };
-            (frame.captures.clone(), live.clone())
+            (frame.task_inputs.clone(), live.clone())
         };
         let mut selected_tokens = BTreeSet::new();
         if let Some(value) = selected_result {

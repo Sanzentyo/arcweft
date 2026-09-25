@@ -5,7 +5,7 @@ use crate::line_task::{
     RuntimeDialogueCommitReceipt, RuntimeHandleDropReceipt,
 };
 use crate::pattern::RuntimePattern;
-use crate::runtime_id::{DialogueActivationId, RuntimePlanTypeId};
+use crate::runtime_id::{DialogueActivationId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::step::{RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind};
 use crate::time::LogicalDuration;
 use crate::value::ownership::RuntimeOwnedSlotId;
@@ -58,6 +58,8 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) task_group: crate::runtime_id::RuntimeLineTaskGroupId,
     pub(in crate::engine) resume: Option<super::super::FlowCursor>,
     pub(in crate::engine) captures: Box<[RuntimeLocalBinding]>,
+    /// Copyable external and activation-local inputs for unscheduled line work.
+    pub(in crate::engine) task_inputs: Box<[RuntimeLocalBinding]>,
     /// Activation-local execution environment. The parent fiber never owns
     /// these bindings while the dialogue transaction is live.
     pub(in crate::engine) locals: crate::value::RuntimeEnv,
@@ -83,6 +85,29 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation>,
     pub(in crate::engine) pending_host_call: Option<PendingActivationHostCall>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
+}
+
+impl DialogueActivationFrame {
+    pub(in crate::engine) fn task_inputs_for_reveal(
+        &self,
+        exports: &[RuntimeLocalDeclarationId],
+    ) -> Result<Box<[RuntimeLocalBinding]>, LineRuntimeError> {
+        let mut inputs = self.captures.to_vec();
+        for local in exports {
+            let value = self
+                .locals
+                .get(*local)
+                .ok_or(LineRuntimeError::UnknownOwnedLocal { local: *local })?;
+            if !value.ownership().permits_copy() {
+                return Err(LineRuntimeError::AffineGroupCapture);
+            }
+            inputs.push(RuntimeLocalBinding {
+                local: *local,
+                value: value.clone(),
+            });
+        }
+        Ok(inputs.into_boxed_slice())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -548,6 +573,7 @@ mod tests {
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("task group"),
             resume: None,
             captures: Box::default(),
+            task_inputs: Box::default(),
             locals: crate::value::RuntimeEnv::default(),
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),
@@ -577,6 +603,41 @@ mod tests {
             RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor),
             RuntimeOpaquePersistence::SnapshotOnly,
         )
+    }
+
+    #[test]
+    fn reveal_task_inputs_keep_external_order_and_reject_affine_exports() {
+        let external = RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::MIN);
+        let export = RuntimeLocalDeclarationId::from_accepted_ordinal(
+            NonZeroU32::new(2).expect("nonzero local"),
+        );
+        let mut state = frame(DialogueRuntimePhase::Activating);
+        state.captures = vec![RuntimeLocalBinding {
+            local: external,
+            value: RuntimeValue::Unit,
+        }]
+        .into_boxed_slice();
+        state.locals.set(export, RuntimeValue::Bool(true));
+        let inputs = state
+            .task_inputs_for_reveal(&[export])
+            .expect("copyable activation local is available to line work");
+        assert_eq!(
+            inputs.iter().map(|row| row.local).collect::<Vec<_>>(),
+            [external, export]
+        );
+        assert_eq!(inputs[1].value, RuntimeValue::Bool(true));
+
+        state.locals.set(
+            export,
+            RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+                &stage_actor_owner(),
+                RuntimeValue::Unit,
+            )),
+        );
+        assert_eq!(
+            state.task_inputs_for_reveal(&[export]),
+            Err(LineRuntimeError::AffineGroupCapture),
+        );
     }
 
     fn publish_stage_actor(

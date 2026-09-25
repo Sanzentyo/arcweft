@@ -33,7 +33,9 @@ use arcweft_lang_hir::stmt::{
     HirStmtValuePlanKind,
 };
 
-use super::{FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id};
+use super::{
+    ClosureFrameLocals, FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id,
+};
 
 #[derive(Clone, Copy)]
 struct SiteDraftId(usize);
@@ -112,6 +114,10 @@ struct CancelRuleDraft {
 struct LinePlanLowerer<'a, 'project> {
     module: &'project arcweft_lang_hir::module::HirModule,
     flow: FinalFlowLowerer<'a>,
+    closure_locals: &'a std::collections::BTreeMap<
+        crate::semantic_facts::RuntimeClosureInstanceKey,
+        ClosureFrameLocals,
+    >,
     content_plan: &'a RuntimeDialogueContentPlanSeedId,
     template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
     owner: ExprId,
@@ -179,6 +185,7 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
             RuntimeAssertionOwner::Line(application.content().line().clone()),
         )
         .with_dialogue_scope(scope, control, locals, specialized_operand_locals),
+        closure_locals: context.closure_locals,
         content_plan,
         template,
         owner,
@@ -896,7 +903,49 @@ impl LinePlanLowerer<'_, '_> {
             HirExprKind::ComputationBlock(block) => {
                 self.lower_callback_body(block.statements(), block.tail())
             }
-            HirExprKind::Closure(closure) => self.lower_callback_body(&[], closure.body()),
+            HirExprKind::Closure(closure) => {
+                let fact = self
+                    .flow
+                    .semantic_facts
+                    .closure_instance(expression)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "scheduled callback {expression:?} has no closed closure instance"
+                        ))
+                    })?;
+                if fact.owner() != expression
+                    || fact.body() != closure.body()
+                    || !fact.parameters().is_empty()
+                {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "scheduled callback {expression:?} has an incompatible closure body"
+                    )));
+                }
+                let frame = self.closure_locals.get(fact.key()).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "scheduled callback {expression:?} has no admitted closure frame"
+                    ))
+                })?;
+                let parent = (
+                    self.flow.semantic_facts,
+                    self.flow.locals,
+                    self.flow.control,
+                    self.flow.specialized_operand_locals,
+                );
+                self.flow.semantic_facts =
+                    RuntimeScopedExecutableSemanticFactView::closure(fact.key(), fact.semantics());
+                self.flow.locals = &frame.hir;
+                self.flow.control = &frame.control;
+                self.flow.specialized_operand_locals = &frame.specialized_operands;
+                let actions = self.lower_callback_body(&[], closure.body());
+                (
+                    self.flow.semantic_facts,
+                    self.flow.locals,
+                    self.flow.control,
+                    self.flow.specialized_operand_locals,
+                ) = parent;
+                actions
+            }
             _ => Err(RuntimePlanLowerError::new(format!(
                 "scheduled callback {expression:?} has no typed line action body"
             ))),
@@ -936,6 +985,14 @@ impl LinePlanLowerer<'_, '_> {
         callback: ExprId,
         actions: &[FlowDraft],
     ) -> Result<Box<[RuntimeScheduledCaptureSeed]>, RuntimePlanLowerError> {
+        if let Some(closure) = self.flow.semantic_facts.closure_instance(callback) {
+            return closure
+                .captures()
+                .iter()
+                .map(|capture| self.scheduled_capture(capture.source()))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Vec::into_boxed_slice);
+        }
         let mut locals = Vec::new();
         if let Some(callable) = self.flow.semantic_facts.implicit_callable(callback) {
             locals.extend_from_slice(callable.captures());

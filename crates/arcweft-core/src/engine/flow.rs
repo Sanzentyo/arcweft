@@ -272,6 +272,7 @@ impl Engine {
                     task_group,
                     resume: self.fiber.cursor,
                     captures,
+                    task_inputs: Box::new([]),
                     locals,
                     line_task: DialogueLineTaskState::NotStarted,
                     elapsed: LogicalDuration::default(),

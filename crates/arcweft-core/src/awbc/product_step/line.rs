@@ -211,9 +211,9 @@ impl super::AwbcProductStepExecutor {
         while let Some(command) = pending.pop_front() {
             match command {
                 LineTaskCommand::Run { tag, policy } => {
-                    let (content, group_captures) = {
+                    let (content, task_inputs) = {
                         let frame = transaction.frame();
-                        (frame.content, frame.captures.clone())
+                        (frame.content, frame.task_inputs.clone())
                     };
                     let view = self
                         .line_task_view(content)
@@ -230,7 +230,7 @@ impl super::AwbcProductStepExecutor {
                             .map(|capture| capture.value)
                             .collect()
                     } else {
-                        group_captures.into_vec()
+                        task_inputs.into_vec()
                     };
                     if policy.join == ChildJoinPolicy::Detached {
                         for value in &args {
@@ -1121,13 +1121,17 @@ impl super::AwbcProductStepExecutor {
                         }
                         capture_transfers.push((handle.token().clone(), expected.clone()));
                     }
-                    let moved = fiber.active_frame_mut()?.take_register(*register)?;
-                    if &moved != value {
+                    let captured = if value.ownership().permits_copy() {
+                        value.clone()
+                    } else {
+                        fiber.active_frame_mut()?.take_register(*register)?
+                    };
+                    if &captured != value {
                         return Err(LineRuntimeError::InvalidScheduledCaptureGraph.into());
                     }
                     captured_values.push(RuntimeLocalBinding {
                         local: capture.local,
-                        value: moved,
+                        value: captured,
                     });
                 }
                 let value = RuntimeValue::Opaque(ledger.issue_exact(
@@ -2167,6 +2171,29 @@ impl super::AwbcProductStepExecutor {
             LineTaskReadyEvents::new(&BTreeSet::new()),
             &mut line_task,
         )?;
+        let exports = match &frame.phase {
+            ProductDialoguePhase::Activating {
+                fiber,
+                pending: None,
+            } => group
+                .activation_exports
+                .iter()
+                .map(|export| {
+                    let value = fiber.active_frame()?.register(export.register)?;
+                    if !value.ownership().permits_copy() {
+                        return Err(LineRuntimeError::AffineGroupCapture.into());
+                    }
+                    if !runtime_value_matches_type(&self.program, value, export.ty, 0) {
+                        return Err(LineRuntimeError::InvalidScheduledCaptureGraph.into());
+                    }
+                    Ok(value.clone())
+                })
+                .collect::<Result<Vec<_>, ProductStepError>>()?,
+            _ => return Err(LineRuntimeError::InvalidActivationOperation.into()),
+        };
+        let mut task_inputs = frame.captures.to_vec();
+        task_inputs.extend(exports);
+        frame.task_inputs = task_inputs.into_boxed_slice();
         frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
             progressed: true,

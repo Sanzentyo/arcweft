@@ -134,6 +134,7 @@ fn only_explicit_selector_terminal_selects_dialogue_result_for_its_owner() {
                 line: crate::plan::RuntimeLineId::from_runtime_line_value("line.cancel.result")
                     .expect("line identity"),
                 captures: Box::new([]),
+                task_inputs: Box::new([]),
                 values: Box::new([]),
                 effect_callbacks: Box::new([]),
                 voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -280,6 +281,7 @@ fn mark_action_selection_restores_and_cancellation_can_override_it() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.mark.result")
                 .expect("line identity"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -566,6 +568,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.defer")
                 .expect("line identity"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -656,6 +659,7 @@ fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.init.out.defer")
                 .expect("line identity"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Ready(
@@ -964,6 +968,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.defer.lifo")
                 .expect("line identity"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -1180,6 +1185,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("fixture line identity"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -1251,6 +1257,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         .line_task_groups
         .push(crate::awbc::schema::AwbcLineTaskGroup {
             captures: Vec::new(),
+            activation_exports: Vec::new(),
             activation: AwbcFunctionId(0),
             result_type: AwbcTypeId(0),
             handle_sites: Vec::new(),
@@ -1304,6 +1311,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
@@ -1628,6 +1636,7 @@ fn mark_selector_program(
     ];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
         captures: Vec::new(),
+        activation_exports: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(1),
         handle_sites: Vec::new(),
@@ -1914,6 +1923,7 @@ fn init_scope_defer_host_call_program() -> AwbcProgram {
     program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
         captures: Vec::new(),
+        activation_exports: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(0),
         handle_sites: vec![crate::awbc::schema::AwbcLineHandleSite {
@@ -2159,6 +2169,7 @@ fn defer_host_call_program() -> AwbcProgram {
     program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
     program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
         captures: Vec::new(),
+        activation_exports: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(0),
         handle_sites: Vec::new(),

@@ -58,6 +58,7 @@ fn cancellation_group(actions: &[&str]) -> LineTaskGroup {
     LineTaskGroup::new(
         Box::default(),
         Box::default(),
+        Box::default(),
         result_type(),
         Box::default(),
         RuntimeLineTaskNodeId::from_zero_based(0).expect("zero node id"),
@@ -74,6 +75,7 @@ fn cancellation_group(actions: &[&str]) -> LineTaskGroup {
 
 fn group(actions: Vec<FlowOp>, cleanup: Vec<FlowOp>) -> LineTaskGroup {
     LineTaskGroup::new(
+        Box::default(),
         Box::default(),
         Box::default(),
         result_type(),
@@ -199,6 +201,7 @@ fn start_keeps_nested_sequence_active_after_parent_completes() {
     let group = LineTaskGroup::new(
         Box::default(),
         Box::default(),
+        Box::default(),
         result_type(),
         Box::default(),
         node(0),
@@ -242,6 +245,7 @@ fn start_keeps_nested_sequence_active_after_parent_completes() {
 fn sequence_failure_immediately_cancels_later_siblings() {
     let node = |index| RuntimeLineTaskNodeId::from_zero_based(index).expect("node id");
     let group = LineTaskGroup::new(
+        Box::default(),
         Box::default(),
         Box::default(),
         result_type(),

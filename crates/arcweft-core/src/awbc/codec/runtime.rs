@@ -5,12 +5,13 @@ use crate::awbc::schema::{
     AwbcAwaitManyPolicy, AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice,
     AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectPlanId, AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode,
-    AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineHandleSite,
-    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
-    AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
-    AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
-    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTypeId,
+    AwbcIntrinsic, AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineCleanupPolicy,
+    AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcParallelPolicy, AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin,
+    AwbcReduceOp, AwbcRegisterId, AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId,
+    AwbcSignatureId, AwbcStreamPlan, AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan,
+    AwbcTaskPolicy, AwbcTypeId,
 };
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
@@ -717,6 +718,7 @@ impl Wire for AwbcChoiceOption {
 impl Wire for AwbcLineTaskGroup {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.captures.write_wire(writer)?;
+        self.activation_exports.write_wire(writer)?;
         self.activation.write_wire(writer)?;
         self.result_type.write_wire(writer)?;
         self.handle_sites.write_wire(writer)?;
@@ -732,6 +734,7 @@ impl Wire for AwbcLineTaskGroup {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             captures: Vec::<RuntimeLocalDeclarationId>::read_wire(reader)?,
+            activation_exports: Vec::<AwbcLineActivationExport>::read_wire(reader)?,
             activation: AwbcFunctionId::read_wire(reader)?,
             result_type: AwbcTypeId::read_wire(reader)?,
             handle_sites: Vec::<AwbcLineHandleSite>::read_wire(reader)?,
@@ -742,6 +745,22 @@ impl Wire for AwbcLineTaskGroup {
             cleanup_cancelled: Option::<AwbcFunctionId>::read_wire(reader)?,
             cleanup_failed: Option::<AwbcFunctionId>::read_wire(reader)?,
             cleanup: AwbcLineCleanupPolicy::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcLineActivationExport {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.local.write_wire(writer)?;
+        self.register.write_wire(writer)?;
+        self.ty.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            local: RuntimeLocalDeclarationId::read_wire(reader)?,
+            register: AwbcRegisterId::read_wire(reader)?,
+            ty: AwbcTypeId::read_wire(reader)?,
         })
     }
 }

@@ -12,15 +12,16 @@ use arcweft_core::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
     AwbcDialogueContentEffectBinding, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineHandleSite,
-    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcParallelPolicy, AwbcPatternId, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
-    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
-    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineActivationExport,
+    AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation,
+    AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId, AwbcLineTaskNode,
+    AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId, AwbcProjectCall,
+    AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
+    AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
+    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTrapCode,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use arcweft_core::entry::RuntimeEntryRoles;
@@ -515,12 +516,24 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             node_ids: node_ids.clone(),
         });
         debug_assert!(previous.is_none());
-        let activation = self.lower_line_task_activation(
+        let Some((activation, activation_exports)) = self.lower_line_task_activation(
             &captures,
+            group.activation_exports(),
             group.activation_ops(),
             "line_task.activation",
-        );
-        self.lower_line_task_nodes(group, &node_ids, &captures);
+        ) else {
+            self.line_group = previous;
+            return None;
+        };
+        let mut task_inputs = captures.clone();
+        task_inputs.extend(group.activation_exports());
+        let Some(scheduled_action_inputs) =
+            self.line_task_scheduled_action_inputs(group, &node_ids, id)
+        else {
+            self.line_group = previous;
+            return None;
+        };
+        self.lower_line_task_nodes(group, &node_ids, &task_inputs, &scheduled_action_inputs);
         let result_type = admitted_plan_type(self.inventory, self.plan, group.result_type());
         let cancel_handlers = group
             .cancel_rules()
@@ -529,7 +542,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .map(|(index, rule)| AwbcLineCancelHandler {
                 trigger: rule.trigger().clone(),
                 function: self.lower_line_task_cancel_handler(
-                    &captures,
+                    &task_inputs,
                     rule.action(),
                     &format!("line_task.cancel.{index}"),
                     group.result_type(),
@@ -541,7 +554,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Completed);
         let cleanup_completed = (!completed.is_empty()).then(|| {
             self.lower_line_function(
-                &captures,
+                &task_inputs,
                 completed,
                 "line_task.cleanup.completed",
                 AwbcFunctionKind::LineTask,
@@ -552,7 +565,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Cancelled);
         let cleanup_cancelled = (!cancelled.is_empty()).then(|| {
             self.lower_line_function(
-                &captures,
+                &task_inputs,
                 cancelled,
                 "line_task.cleanup.cancelled",
                 AwbcFunctionKind::LineTask,
@@ -563,7 +576,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Failed);
         let cleanup_failed = (!failed.is_empty()).then(|| {
             self.lower_line_function(
-                &captures,
+                &task_inputs,
                 failed,
                 "line_task.cleanup.failed",
                 AwbcFunctionKind::LineTask,
@@ -585,6 +598,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .line_task_groups
             .push(AwbcLineTaskGroup {
                 captures,
+                activation_exports,
                 activation,
                 result_type,
                 handle_sites,
@@ -603,76 +617,182 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         Some(id)
     }
 
+    fn line_task_scheduled_action_inputs(
+        &mut self,
+        group: &LineTaskGroup,
+        node_ids: &[AwbcLineTaskNodeId],
+        owner: AwbcLineTaskGroupId,
+    ) -> Option<
+        BTreeMap<AwbcLineTaskNodeId, Vec<arcweft_core::runtime_id::RuntimeLocalDeclarationId>>,
+    > {
+        let scheduled_inputs = self
+            .inventory
+            .program
+            .line_operations
+            .iter()
+            .filter_map(|operation| match operation {
+                AwbcLineOperation::Schedule {
+                    group,
+                    child,
+                    captures,
+                    ..
+                } if *group == owner => Some((
+                    *child,
+                    captures
+                        .iter()
+                        .map(|capture| capture.local)
+                        .collect::<Vec<_>>(),
+                )),
+                _ => None,
+            })
+            .collect::<BTreeMap<_, _>>();
+        let action_inputs = group
+            .nodes()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| match node {
+                LineTaskNode::Child {
+                    trigger: LineTaskTrigger::Scheduled(_),
+                    scope,
+                    ..
+                } => Some((node_ids[index], node_ids[scope.index()])),
+                _ => None,
+            })
+            .map(|(child, scope)| {
+                scheduled_inputs
+                    .get(&child)
+                    .cloned()
+                    .map(|inputs| (scope, inputs))
+            })
+            .collect::<Option<BTreeMap<_, _>>>();
+        if action_inputs.is_none() {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                "line_task.activation",
+                "scheduled child has no checked capture packet",
+            ));
+        }
+        action_inputs
+    }
+
     fn lower_line_task_activation(
         &mut self,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        exports: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
-    ) -> AwbcFunctionId {
-        self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineActivation)
+    ) -> Option<(AwbcFunctionId, Vec<AwbcLineActivationExport>)> {
+        let (function, slots) = self.lower_line_function_with_capture_slots(
+            captures,
+            ops,
+            path,
+            AwbcFunctionKind::LineActivation,
+        );
+        let layout = self
+            .inventory
+            .program
+            .functions
+            .get(function.index())
+            .and_then(|function| {
+                self.inventory
+                    .program
+                    .frame_layouts
+                    .get(function.frame_layout.index())
+            })?;
+        let exports = exports
+            .iter()
+            .map(|local| {
+                let register = slots.iter().find(|slot| slot.local == *local)?.register;
+                let slot = layout.slots.get(register.index())?;
+                (slot.scope_depth == 0 && slot.role == AwbcFrameSlotRole::Local).then_some(
+                    AwbcLineActivationExport {
+                        local: *local,
+                        register,
+                        ty: slot.ty,
+                    },
+                )
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(exports) = exports else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "activation export has no root-owned AWBC local register",
+            ));
+            return None;
+        };
+        Some((function, exports))
     }
 
     fn lower_line_task_nodes(
         &mut self,
         group: &LineTaskGroup,
         node_ids: &[AwbcLineTaskNodeId],
-        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        task_inputs: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        scheduled_action_inputs: &BTreeMap<
+            AwbcLineTaskNodeId,
+            Vec<arcweft_core::runtime_id::RuntimeLocalDeclarationId>,
+        >,
     ) {
         let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids[id.index()];
         for (index, node) in group.nodes().iter().enumerate() {
             let path = format!("line_task.{index}");
-            let lowered =
-                match node {
-                    LineTaskNode::Sequence(nodes) => {
-                        AwbcLineTaskNode::Sequence(nodes.iter().copied().map(node_id).collect())
-                    }
-                    LineTaskNode::Start(nodes) => {
-                        AwbcLineTaskNode::Start(nodes.iter().copied().map(node_id).collect())
-                    }
-                    LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
-                        policy: match policy {
-                            ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
-                        },
-                        children: children.iter().copied().map(node_id).collect(),
+            let lowered = match node {
+                LineTaskNode::Sequence(nodes) => {
+                    AwbcLineTaskNode::Sequence(nodes.iter().copied().map(node_id).collect())
+                }
+                LineTaskNode::Start(nodes) => {
+                    AwbcLineTaskNode::Start(nodes.iter().copied().map(node_id).collect())
+                }
+                LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
+                    policy: match policy {
+                        ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
                     },
-                    LineTaskNode::Child {
-                        trigger,
-                        join_policy,
-                        cancel_policy,
-                        scope,
-                    } => AwbcLineTaskNode::Child {
-                        trigger: match trigger {
-                            LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
-                            LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
-                            LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
-                                arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
-                            ),
-                        },
-                        join: match join_policy {
-                            ChildJoinPolicy::Join => {
-                                arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
-                            }
-                            ChildJoinPolicy::Detached => {
-                                arcweft_core::awbc::schema::AwbcChildJoinPolicy::Detached
-                            }
-                        },
-                        cancel: match cancel_policy {
-                            ChildCancelPolicy::CancelAndJoin => {
-                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin
-                            }
-                            ChildCancelPolicy::Finish => {
-                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::Finish
-                            }
-                            ChildCancelPolicy::Detach => {
-                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::Detach
-                            }
-                        },
-                        scope: node_id(*scope),
+                    children: children.iter().copied().map(node_id).collect(),
+                },
+                LineTaskNode::Child {
+                    trigger,
+                    join_policy,
+                    cancel_policy,
+                    scope,
+                } => AwbcLineTaskNode::Child {
+                    trigger: match trigger {
+                        LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
+                        LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
+                        LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
+                            arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
+                        ),
                     },
-                    LineTaskNode::Action(ops) => AwbcLineTaskNode::Action(
-                        self.lower_line_task_action(captures, ops, &path, group.result_type()),
+                    join: match join_policy {
+                        ChildJoinPolicy::Join => {
+                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
+                        }
+                        ChildJoinPolicy::Detached => {
+                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Detached
+                        }
+                    },
+                    cancel: match cancel_policy {
+                        ChildCancelPolicy::CancelAndJoin => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin
+                        }
+                        ChildCancelPolicy::Finish => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Finish
+                        }
+                        ChildCancelPolicy::Detach => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Detach
+                        }
+                    },
+                    scope: node_id(*scope),
+                },
+                LineTaskNode::Action(ops) => AwbcLineTaskNode::Action(
+                    self.lower_line_task_action(
+                        scheduled_action_inputs
+                            .get(&node_ids[index])
+                            .map_or(task_inputs, Vec::as_slice),
+                        ops,
+                        &path,
+                        group.result_type(),
                     ),
-                };
+                ),
+            };
             self.inventory.program.line_task_nodes.push(lowered);
         }
     }
@@ -725,6 +845,20 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
         kind: AwbcFunctionKind,
     ) -> AwbcFunctionId {
+        self.lower_line_function_with_capture_slots(captures, ops, path, kind)
+            .0
+    }
+
+    fn lower_line_function_with_capture_slots(
+        &mut self,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        ops: &[FlowOp],
+        path: &str,
+        kind: AwbcFunctionKind,
+    ) -> (
+        AwbcFunctionId,
+        Vec<crate::awbc_lower::frame::FrameCaptureSlot>,
+    ) {
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
         for capture in captures {
@@ -737,6 +871,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         if body.needs_value_fallthrough() && kind != AwbcFunctionKind::LineCancellationHandler {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
+        let capture_slots = frame.capture_slots();
         let body = body.finish(self.inventory);
         let layout = self
             .inventory
@@ -755,7 +890,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .inventory
             .intern_signature(params, result, AwbcEffectSetId(0));
         let public_id = Some(self.inventory.intern_string(path));
-        self.inventory.replace_function(
+        let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
                 public_id,
@@ -768,7 +903,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .with(AwbcFunctionFlag::Deterministic)
                     .with(AwbcFunctionFlag::MaySuspend),
             },
-        )
+        );
+        (function, capture_slots)
     }
 
     /// Lowers an executable structured function-site body through the normal

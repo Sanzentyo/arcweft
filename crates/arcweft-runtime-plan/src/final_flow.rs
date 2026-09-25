@@ -99,8 +99,8 @@ use crate::semantic_facts::{
     RuntimeDialogueValueCaptureKey, RuntimeDropFadeFact, RuntimeDropPolicyFact,
     RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
     RuntimeEvaluatedEffectOperandFact, RuntimeExecutableSemanticScope, RuntimeIteratorFact,
-    RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
-    RuntimeProjectCallable, RuntimeProjectFunctionExpressionPayload,
+    RuntimeIteratorWitnessExecutableFact, RuntimeLineCallable, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectFunctionExpressionPayload,
     RuntimeProjectFunctionInstanceFact, RuntimeProjectFunctionInstanceKey,
     RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterSource,
     RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
@@ -843,7 +843,7 @@ pub fn lower_runtime_plan_with_stats(
         })
         .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
         .map_err(|error| vec![error])?;
-    let (closure_instances, closure_parents) =
+    let (closure_instances, closure_parents, line_schedule_callbacks) =
         collect_closure_instances(facts).map_err(|error| vec![error])?;
     let closure_local_specs = closure_instances
         .iter()
@@ -1272,6 +1272,7 @@ pub fn lower_runtime_plan_with_stats(
         project,
         facts,
         &closure_instances,
+        &line_schedule_callbacks,
         &closure_locals,
         &mut builder,
         &mut errors,
@@ -1746,13 +1747,26 @@ fn collect_closure_instances<'facts>(
     (
         Vec<&'facts RuntimeClosureInstanceFact>,
         BTreeMap<RuntimeClosureInstanceKey, ClosureLexicalParent>,
+        BTreeSet<RuntimeClosureInstanceKey>,
     ),
     RuntimePlanLowerError,
 > {
     let mut instances =
         BTreeMap::<RuntimeClosureInstanceKey, &'facts RuntimeClosureInstanceFact>::new();
     let mut parents = BTreeMap::new();
+    let mut line_schedule_callbacks = BTreeSet::new();
     let mut order = Vec::new();
+    for (_, call) in facts.calls() {
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(
+            RuntimeLineCallable::Schedule { callback, .. },
+        )) = call.dispatch()
+        else {
+            continue;
+        };
+        if let Some(closure) = facts.root_closure(*callback) {
+            line_schedule_callbacks.insert(closure.key().clone());
+        }
+    }
     for closure in facts.root_closures() {
         let key = closure.key().clone();
         if instances.insert(key.clone(), closure).is_some() {
@@ -1768,6 +1782,7 @@ fn collect_closure_instances<'facts>(
             &mut order,
             ClosureLexicalParent::Closure(key),
             &mut parents,
+            &mut line_schedule_callbacks,
         )?;
     }
     for instance in facts.project_function_instances() {
@@ -1777,9 +1792,10 @@ fn collect_closure_instances<'facts>(
             &mut order,
             ClosureLexicalParent::ProjectFunction(instance.key().clone()),
             &mut parents,
+            &mut line_schedule_callbacks,
         )?;
     }
-    Ok((order, parents))
+    Ok((order, parents, line_schedule_callbacks))
 }
 
 fn collect_closure_instances_from_semantics<'facts>(
@@ -1788,8 +1804,17 @@ fn collect_closure_instances_from_semantics<'facts>(
     order: &mut Vec<&'facts RuntimeClosureInstanceFact>,
     parent: ClosureLexicalParent,
     parents: &mut BTreeMap<RuntimeClosureInstanceKey, ClosureLexicalParent>,
+    line_schedule_callbacks: &mut BTreeSet<RuntimeClosureInstanceKey>,
 ) -> Result<(), RuntimePlanLowerError> {
     for expression in semantics.expressions() {
+        if let Some(call) = semantics.call(expression.owner())
+            && let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(
+                RuntimeLineCallable::Schedule { callback, .. },
+            )) = call.dispatch()
+            && let Some(closure) = semantics.closure_instance(*callback)
+        {
+            line_schedule_callbacks.insert(closure.key().clone());
+        }
         let RuntimeProjectFunctionExpressionPayload::Closure(closure) = expression.payload() else {
             continue;
         };
@@ -1818,6 +1843,7 @@ fn collect_closure_instances_from_semantics<'facts>(
             order,
             ClosureLexicalParent::Closure(key),
             parents,
+            line_schedule_callbacks,
         )?;
     }
     Ok(())
@@ -1962,6 +1988,7 @@ fn reserve_closure_sites<'facts>(
     project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     closures: &[&'facts RuntimeClosureInstanceFact],
+    line_schedule_callbacks: &BTreeSet<RuntimeClosureInstanceKey>,
     closure_locals: &BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
@@ -1973,6 +2000,9 @@ fn reserve_closure_sites<'facts>(
     let mut definitions = Vec::new();
     for closure in closures {
         let key = closure.key().clone();
+        if line_schedule_callbacks.contains(&key) {
+            continue;
+        }
         let Some(locals) = closure_locals.get(&key) else {
             errors.push(RuntimePlanLowerError::new(format!(
                 "project closure {:?} has no admitted closed local frame",

@@ -1,7 +1,7 @@
 //! Sole mutable construction authority for a runtime plan.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ use crate::line_task::{
 use crate::pattern::{RuntimePatternBindingPathError, RuntimeSemanticTypeId};
 use crate::runtime_id::{
     RuntimeDeferSiteId, RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount,
-    RuntimeDialogueMarkId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
+    RuntimeDialogueMarkId, RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
     RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::stream::StreamPlan;
@@ -91,10 +91,11 @@ use super::variant_domains::{
     RuntimeVariantDomainTableBuilder,
 };
 use super::{
-    RuntimeDialogueContentEffectSlot, RuntimeDialogueContentPlan, RuntimeDialogueContentSlot,
-    RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite, RuntimeDialogueMark,
-    RuntimeDialogueValueRole, RuntimeDialogueValueSite, RuntimeEntrySpec, RuntimeFlow, RuntimePlan,
-    RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureProgramBinding, RuntimeTraitMethod,
+    FlowOp, RuntimeDialogueContentEffectSlot, RuntimeDialogueContentPlan,
+    RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite,
+    RuntimeDialogueMark, RuntimeDialogueValueRole, RuntimeDialogueValueSite, RuntimeEntrySpec,
+    RuntimeFlow, RuntimeLineOperation, RuntimePlan, RuntimePlanTypeProjection, RuntimePureHelper,
+    RuntimePureProgramBinding, RuntimeTraitMethod,
 };
 
 /// Result identities issued by one atomic semantic graph transaction.
@@ -1456,18 +1457,79 @@ impl RuntimePlanBuilder {
             self.lower_flow_ops(seed.cleanup_failed)?.into_boxed_slice(),
             seed.cleanup_policy,
         );
-        let mut action_sets = nodes
+        let mut scheduled_packets = BTreeMap::<
+            RuntimeLineHandleSiteId,
+            (RuntimeLineTaskNodeId, BTreeSet<RuntimeLocalDeclarationId>),
+        >::new();
+        for op in &activation_ops {
+            let FlowOp::LineOperation {
+                operation:
+                    RuntimeLineOperation::Schedule {
+                        site,
+                        child,
+                        captures,
+                        ..
+                    },
+                ..
+            } = op
+            else {
+                continue;
+            };
+            let packet = captures.iter().map(|capture| capture.local()).collect();
+            if scheduled_packets.insert(*site, (*child, packet)).is_some() {
+                return Err(RuntimePlanBuildError::InvalidScheduledLineTaskSite {
+                    site: *site,
+                    child: *child,
+                });
+            }
+        }
+        let scheduled_actions = nodes
             .iter()
             .filter_map(|node| match node {
-                LineTaskNode::Action(actions) => Some(actions.as_ref()),
+                LineTaskNode::Child {
+                    trigger: LineTaskTrigger::Scheduled(site),
+                    scope,
+                    ..
+                } => Some((*scope, *site)),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect::<BTreeMap<RuntimeLineTaskNodeId, RuntimeLineHandleSiteId>>();
+        let mut action_sets = Vec::new();
+        for (ordinal, node) in nodes.iter().enumerate() {
+            let LineTaskNode::Action(actions) = node else {
+                continue;
+            };
+            let id = RuntimeLineTaskNodeId::from_zero_based(ordinal)
+                .ok_or(RuntimePlanBuildError::InvalidLineTaskNodeOrdinal { ordinal })?;
+            if let Some(site) = scheduled_actions.get(&id) {
+                let child = handle_sites
+                    .get(site.index())
+                    .and_then(RuntimeLineHandleSite::scheduled_child)
+                    .ok_or(RuntimePlanBuildError::InvalidLineHandleType { site: *site })?;
+                let (packet_child, packet) = scheduled_packets.get(site).ok_or(
+                    RuntimePlanBuildError::InvalidScheduledLineTaskSite { site: *site, child },
+                )?;
+                if *packet_child != child {
+                    return Err(RuntimePlanBuildError::InvalidScheduledLineTaskSite {
+                        site: *site,
+                        child,
+                    });
+                }
+                self.validate_line_task_actions_locals(&[actions], packet)?;
+            } else {
+                action_sets.push(actions.as_ref());
+            }
+        }
         action_sets.extend(cancel_rules.iter().map(LineCancelRule::action));
         action_sets.push(cleanup.actions(crate::line_task::ScopeExit::Completed));
         action_sets.push(cleanup.actions(crate::line_task::ScopeExit::Cancelled));
         action_sets.push(cleanup.actions(crate::line_task::ScopeExit::Failed));
-        self.validate_line_task_actions_locals(&action_sets, &capture_scope)?;
+        let used = self.validate_line_task_actions_locals(&action_sets, &activation_scope)?;
+        let activation_exports = activation_scope
+            .difference(&capture_scope)
+            .filter(|local| used.contains(local))
+            .copied()
+            .collect::<Vec<_>>();
         let group = RuntimeLineTaskGroupId::from_zero_based(self.line_task_groups.len()).ok_or(
             RuntimePlanBuildError::TooManyRows {
                 table: RuntimePlanTable::LineTaskGroups,
@@ -1475,6 +1537,7 @@ impl RuntimePlanBuilder {
         )?;
         self.line_task_groups.push(LineTaskGroup::new(
             captures.into_boxed_slice(),
+            activation_exports.into_boxed_slice(),
             activation_ops.into_boxed_slice(),
             result_type,
             handle_sites,

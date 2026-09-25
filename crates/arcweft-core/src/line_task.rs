@@ -54,10 +54,12 @@ pub enum ScopeExit {
 ///
 /// The graph never carries host request spellings or raw effects. Its only
 /// executable leaves are typed flow operations, evaluated by the native flow
-/// executor in a child fiber with the exact declared capture set.
+/// executor in a child fiber with external captures and exact activation
+/// exports, or a scheduled child's explicit capture packet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LineTaskGroup {
     captures: Box<[RuntimeLocalDeclarationId]>,
+    activation_exports: Box<[RuntimeLocalDeclarationId]>,
     activation_ops: Box<[FlowOp]>,
     result_type: RuntimePlanTypeId,
     handle_sites: Box<[RuntimeLineHandleSite]>,
@@ -70,6 +72,7 @@ pub struct LineTaskGroup {
 impl LineTaskGroup {
     pub(crate) fn new(
         captures: Box<[RuntimeLocalDeclarationId]>,
+        activation_exports: Box<[RuntimeLocalDeclarationId]>,
         activation_ops: Box<[FlowOp]>,
         result_type: RuntimePlanTypeId,
         handle_sites: Box<[RuntimeLineHandleSite]>,
@@ -80,6 +83,7 @@ impl LineTaskGroup {
     ) -> Self {
         Self {
             captures,
+            activation_exports,
             activation_ops,
             result_type,
             handle_sites,
@@ -93,6 +97,11 @@ impl LineTaskGroup {
     #[must_use]
     pub const fn captures(&self) -> &[RuntimeLocalDeclarationId] {
         &self.captures
+    }
+
+    #[must_use]
+    pub const fn activation_exports(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.activation_exports
     }
 
     #[must_use]

@@ -586,6 +586,7 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     program.line_task_nodes = vec![AwbcLineTaskNode::Action(AwbcFunctionId(2))];
     program.line_task_groups = vec![AwbcLineTaskGroup {
         captures: Vec::new(),
+        activation_exports: Vec::new(),
         activation: AwbcFunctionId(1),
         result_type: AwbcTypeId(1),
         handle_sites: Vec::new(),
@@ -605,6 +606,22 @@ fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("selector is a verified line-action terminal");
+    let mut invalid_export = program.clone();
+    invalid_export.line_task_groups[0].activation_exports.push(
+        super::schema::AwbcLineActivationExport {
+            local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+                std::num::NonZeroU32::MIN,
+            ),
+            register: AwbcRegisterId(0),
+            ty: AwbcTypeId(0),
+        },
+    );
+    assert!(
+        invalid_export
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err(),
+        "activation exports must name actual copyable root locals"
+    );
     let encoded = program.encode_canonical().expect("encode selector");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
         .expect("decode selector");
@@ -3655,6 +3672,13 @@ fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
 fn line_cancel_input_action_roundtrips_in_schema_one_codec() {
     let group = AwbcLineTaskGroup {
         captures: Vec::new(),
+        activation_exports: vec![super::schema::AwbcLineActivationExport {
+            local: crate::runtime_id::RuntimeLocalDeclarationId::from_accepted_ordinal(
+                std::num::NonZeroU32::MIN,
+            ),
+            register: AwbcRegisterId(2),
+            ty: AwbcTypeId(3),
+        }],
         activation: AwbcFunctionId(0),
         result_type: AwbcTypeId(0),
         handle_sites: Vec::new(),

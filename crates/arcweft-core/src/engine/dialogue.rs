@@ -1906,6 +1906,7 @@ impl Engine {
             .get(state.task_group.index())
             .cloned()
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+        let task_inputs = state.task_inputs_for_reveal(group.activation_exports())?;
         let mut live = LineTaskLiveState::new(&group, activation_id.clone());
         for token in activation.arm_due_schedules(state.elapsed)? {
             live.mark_scheduled_ready(token)?;
@@ -1923,6 +1924,7 @@ impl Engine {
             .ok_or(crate::line_task::LineRuntimeError::UnknownContentPlan)?
             .template();
         state.line_task = DialogueLineTaskState::Live(live);
+        state.task_inputs = task_inputs.clone();
         state.phase = DialogueRuntimePhase::Ready;
         Ok(DialogueLineTaskStart {
             event: Some(FlowEvent::DialogueLine {
@@ -1935,7 +1937,7 @@ impl Engine {
             request_cancellation: false,
             group,
             activation: line_task_activation,
-            captures: state.captures.clone(),
+            captures: task_inputs,
             callbacks: Vec::new(),
         })
     }
@@ -2373,6 +2375,7 @@ mod tests {
             task_group: RuntimeLineTaskGroupId::from_zero_based(0).expect("group"),
             resume: None,
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             locals,
             line_task: DialogueLineTaskState::NotStarted,
             elapsed: LogicalDuration::default(),

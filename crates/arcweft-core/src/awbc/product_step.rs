@@ -285,7 +285,10 @@ struct ActiveDialogue {
     target: crate::value::RuntimeOpaqueValue,
     target_type: crate::awbc::schema::AwbcTypeId,
     line: crate::plan::RuntimeLineId,
+    /// External caller inputs, retained for the activation function ABI.
     captures: Box<[RuntimeValue]>,
+    /// Copyable line-task inputs after reveal: external inputs, then activation exports.
+    task_inputs: Box<[RuntimeValue]>,
     values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
     effect_callbacks: Box<[RuntimeDialogueContentEffectBinding]>,
     voice: crate::presentation::RuntimeDialogueVoiceState,
@@ -2517,6 +2520,7 @@ impl AwbcProductStepExecutor {
             target_type,
             line: line_id,
             captures,
+            task_inputs: Box::default(),
             values,
             effect_callbacks,
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,

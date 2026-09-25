@@ -8,8 +8,8 @@ use crate::awbc::schema::{
     AWBC_ABI_VERSION, AwbcAgentTypeShape, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId,
     AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId,
-    AwbcFunctionKind, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRoute,
-    AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcFunctionKind, AwbcLineOperation, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram,
+    AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
     AwbcTypeId,
 };
@@ -2172,6 +2172,33 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                     .to_owned(),
             });
         }
+        let activation_layout = program
+            .frame_layouts
+            .get(activation.frame_layout.index())
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task activation frame layout is absent".to_owned(),
+            })?;
+        let mut known_locals = group.captures.iter().copied().collect::<BTreeSet<_>>();
+        let mut task_types = capture_types.to_vec();
+        for export in &group.activation_exports {
+            let slot = activation_layout.slots.get(export.register.index());
+            if !known_locals.insert(export.local)
+                || slot.is_none_or(|slot| {
+                    slot.role != AwbcFrameSlotRole::Local
+                        || slot.scope_depth != 0
+                        || slot.ty != export.ty
+                })
+                || !super::code::runtime_type_permits_copy(program, export.ty, 0)
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line task activation export must be a distinct copyable root local"
+                        .to_owned(),
+                });
+            }
+            task_types.push(export.ty);
+        }
         check_index(
             program.line_task_nodes.len(),
             group.root.0,
@@ -2194,6 +2221,39 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 at: at.clone(),
                 message: "line task root is outside its dense node range".to_owned(),
             });
+        }
+        let mut scheduled_action_types = BTreeMap::new();
+        for operation in &program.line_operations {
+            let AwbcLineOperation::Schedule {
+                group: owner,
+                child,
+                captures,
+                ..
+            } = operation
+            else {
+                continue;
+            };
+            if owner.index() != index {
+                continue;
+            }
+            let Some(AwbcLineTaskNode::Child { scope, .. }) =
+                program.line_task_nodes.get(child.index())
+            else {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "scheduled capture schema has no child action".to_owned(),
+                });
+            };
+            let types = captures
+                .iter()
+                .map(|capture| capture.ty)
+                .collect::<Vec<_>>();
+            if scheduled_action_types.insert(*scope, types).is_some() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "scheduled action has multiple capture schemas".to_owned(),
+                });
+            }
         }
         let mut scheduled_children = BTreeSet::new();
         for (site_index, site) in group.handle_sites.iter().enumerate() {
@@ -2268,6 +2328,14 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         .to_owned(),
                 });
             }
+            if let AwbcLineTaskNode::Child { scope, .. } = node
+                && !scheduled_action_types.contains_key(scope)
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "scheduled action has no capture schema".to_owned(),
+                });
+            }
         }
         for handler in &group.cancel_handlers {
             check_index(
@@ -2301,7 +2369,7 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         .index(),
                 )
                 .is_none_or(|signature| {
-                    signature.params.as_slice() != capture_types || signature.result.is_some()
+                    signature.params != task_types || signature.result.is_some()
                 })
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
@@ -2311,7 +2379,11 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 });
             }
         }
-        for node in &program.line_task_nodes[group.nodes.start as usize..node_end as usize] {
+        for (node_offset, node) in program.line_task_nodes
+            [group.nodes.start as usize..node_end as usize]
+            .iter()
+            .enumerate()
+        {
             let contained = |node: crate::awbc::schema::AwbcLineTaskNodeId| {
                 group.nodes.start <= node.0 && node.0 < node_end
             };
@@ -2337,6 +2409,10 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                     message: "line node child escapes its dense group node range".to_owned(),
                 });
             }
+            let node_id = crate::awbc::schema::AwbcLineTaskNodeId(
+                group.nodes.start + u32::try_from(node_offset).unwrap_or(u32::MAX),
+            );
+            let expected_types = scheduled_action_types.get(&node_id).unwrap_or(&task_types);
             if let AwbcLineTaskNode::Action(function) = node
                 && program
                     .functions
@@ -2346,9 +2422,7 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                             || program
                                 .signatures
                                 .get(function.signature.index())
-                                .is_none_or(|signature| {
-                                    signature.params.as_slice() != capture_types
-                                })
+                                .is_none_or(|signature| signature.params != *expected_types)
                     })
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
@@ -2370,7 +2444,7 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 .get(cleanup.index())
                 .filter(|function| function.kind == AwbcFunctionKind::LineTask)
                 .and_then(|function| program.signatures.get(function.signature.index()));
-            if signature.is_none_or(|signature| signature.params.as_slice() != capture_types) {
+            if signature.is_none_or(|signature| signature.params != task_types) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "line cleanup capture signature disagrees with its group".to_owned(),

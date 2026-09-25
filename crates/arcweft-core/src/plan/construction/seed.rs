@@ -638,32 +638,55 @@ pub struct RuntimeScheduledCaptureSeed {
 }
 
 impl RuntimeLineTaskGroupSeed {
-    /// Derives captures from every executable action in deterministic
-    /// root/cancel/cleanup first-use order.
+    /// Derives external inputs in deterministic first-use order. Scheduled
+    /// children own separate capture packets and do not capture group inputs.
     pub(super) fn free_locals(&self) -> Box<[RuntimeLocalSeedId]> {
         let mut locals = Vec::new();
-        collect_flow_ops_free_locals(&self.activation_ops, &[], &mut locals);
-        self.root.collect_free_locals(&mut locals);
-        for rule in &self.cancel_rules {
-            collect_flow_ops_free_locals(&rule.action, &[], &mut locals);
+        let mut bound = Vec::new();
+        let mut scope_frames = Vec::new();
+        for op in &self.activation_ops {
+            match op {
+                RuntimeFlowOpSeed::EnterScope { .. } => scope_frames.push(bound.clone()),
+                RuntimeFlowOpSeed::ExitScope => {
+                    bound = scope_frames.pop().unwrap_or_default();
+                }
+                RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {
+                    expr.collect_free_locals(&bound, &mut locals);
+                    bound = scope_frames.pop().unwrap_or_default();
+                    pattern.collect_binding_locals(&mut bound);
+                }
+                _ => collect_flow_op_free_locals(op, &mut bound, &mut locals),
+            }
         }
-        collect_flow_ops_free_locals(&self.cleanup_completed, &[], &mut locals);
-        collect_flow_ops_free_locals(&self.cleanup_cancelled, &[], &mut locals);
-        collect_flow_ops_free_locals(&self.cleanup_failed, &[], &mut locals);
+        self.root.collect_free_locals(&bound, &mut locals);
+        for rule in &self.cancel_rules {
+            collect_flow_ops_free_locals(&rule.action, &bound, &mut locals);
+        }
+        collect_flow_ops_free_locals(&self.cleanup_completed, &bound, &mut locals);
+        collect_flow_ops_free_locals(&self.cleanup_cancelled, &bound, &mut locals);
+        collect_flow_ops_free_locals(&self.cleanup_failed, &bound, &mut locals);
         locals.into_boxed_slice()
     }
 }
 
 impl RuntimeLineTaskNodeSeed {
-    fn collect_free_locals(&self, locals: &mut Vec<RuntimeLocalSeedId>) {
+    fn collect_free_locals(
+        &self,
+        bound: &[RuntimeLocalSeedId],
+        locals: &mut Vec<RuntimeLocalSeedId>,
+    ) {
         match self {
             Self::Sequence(children) | Self::Start(children) | Self::Parallel { children, .. } => {
                 for child in children {
-                    child.collect_free_locals(locals);
+                    child.collect_free_locals(bound, locals);
                 }
             }
-            Self::Child { scope, .. } => scope.collect_free_locals(locals),
-            Self::Action(actions) => collect_flow_ops_free_locals(actions, &[], locals),
+            Self::Child {
+                trigger: RuntimeLineTaskTriggerSeed::Scheduled(_),
+                ..
+            } => {}
+            Self::Child { scope, .. } => scope.collect_free_locals(bound, locals),
+            Self::Action(actions) => collect_flow_ops_free_locals(actions, bound, locals),
         }
     }
 }

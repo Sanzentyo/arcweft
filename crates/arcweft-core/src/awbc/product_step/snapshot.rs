@@ -579,6 +579,7 @@ pub struct AwbcProductActiveDialogueSaveSnapshot {
     pub line: crate::plan::RuntimeLineId,
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
+    pub task_inputs: Vec<crate::value::AwbcRuntimeValueSnapshot>,
     pub values: Vec<AwbcProductDialogueValueSaveSnapshot>,
     pub effects: Vec<AwbcProductDialogueEffectSaveSnapshot>,
     pub voice: crate::presentation::RuntimeDialogueVoiceState,
@@ -1018,6 +1019,11 @@ fn snapshot_active_dialogue(
             .iter()
             .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
             .collect::<Result<_, _>>()?,
+        task_inputs: active
+            .task_inputs
+            .iter()
+            .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
+            .collect::<Result<_, _>>()?,
         values: active
             .values
             .iter()
@@ -1173,6 +1179,7 @@ pub struct AwbcProductActiveDialogueSnapshot {
     pub line: crate::plan::RuntimeLineId,
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<RuntimePayload>,
+    pub task_inputs: Vec<RuntimePayload>,
     pub values: Vec<crate::plan::RuntimeDialogueValueBinding>,
     pub effects: Vec<crate::value::RuntimeDialogueContentEffectBinding>,
     pub voice: crate::presentation::RuntimeDialogueVoiceState,
@@ -1697,6 +1704,11 @@ impl AwbcProductStepExecutor {
                 .into_iter()
                 .map(RuntimePayload::into_value)
                 .collect(),
+            task_inputs: active
+                .task_inputs
+                .into_iter()
+                .map(RuntimePayload::into_value)
+                .collect(),
             values: active.values.into_boxed_slice(),
             effect_callbacks: active.effects.into_boxed_slice(),
             voice: active.voice,
@@ -1763,6 +1775,20 @@ impl AwbcProductStepExecutor {
                             .into_iter()
                             .map(|capture| {
                                 capture
+                                    .into_runtime_value_for_program(&program_owner)
+                                    .map(RuntimePayload::from)
+                                    .map_err(|error| {
+                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                            message: error.to_string(),
+                                        }
+                                    })
+                            })
+                            .collect::<Result<_, _>>()?,
+                        task_inputs: active
+                            .task_inputs
+                            .into_iter()
+                            .map(|input| {
+                                input
                                     .into_runtime_value_for_program(&program_owner)
                                     .map(RuntimePayload::from)
                                     .map_err(|error| {
@@ -1919,15 +1945,45 @@ impl AwbcProductStepExecutor {
                 .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
                     message: "active dialogue snapshot references missing content".to_owned(),
                 })?;
-            let expected_captures = content
+            let group = content
                 .line_task_group
-                .and_then(|group| self.program.line_task_groups.get(group.index()))
-                .map_or(0, |group| group.captures.len());
+                .and_then(|group| self.program.line_task_groups.get(group.index()));
+            let expected_captures = group.map_or(0, |group| group.captures.len());
             if active.captures.len() != expected_captures {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message:
                         "active dialogue snapshot capture arity disagrees with its content group"
                             .to_owned(),
+                });
+            }
+            let expected_task_inputs = if active.line_task().is_some() {
+                group.map_or(0, |group| {
+                    group.captures.len() + group.activation_exports.len()
+                })
+            } else {
+                0
+            };
+            if active.task_inputs.len() != expected_task_inputs
+                || active.line_task().is_some()
+                    && active.task_inputs.get(..expected_captures) != Some(active.captures.as_ref())
+                || group.is_some_and(|group| {
+                    active
+                        .task_inputs
+                        .iter()
+                        .skip(expected_captures)
+                        .zip(&group.activation_exports)
+                        .any(|(value, export)| {
+                            !crate::awbc::fiber::runtime_value_matches_type(
+                                &self.program,
+                                value,
+                                export.ty,
+                                0,
+                            )
+                        })
+                })
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active dialogue snapshot line-task input ABI is invalid".to_owned(),
                 });
             }
             let pending = active
@@ -1962,6 +2018,7 @@ impl AwbcProductStepExecutor {
             if active
                 .captures
                 .iter()
+                .chain(active.task_inputs.iter())
                 .any(|capture| !capture.ownership().permits_copy())
             {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -1977,6 +2034,12 @@ impl AwbcProductStepExecutor {
                 result: active.result.clone(),
                 captures: active
                     .captures
+                    .iter()
+                    .cloned()
+                    .map(RuntimePayload::from)
+                    .collect(),
+                task_inputs: active
+                    .task_inputs
                     .iter()
                     .cloned()
                     .map(RuntimePayload::from)
@@ -2923,6 +2986,7 @@ mod tests {
             line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
                 .expect("line"),
             captures: Box::new([]),
+            task_inputs: Box::new([]),
             values: Box::new([]),
             effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,

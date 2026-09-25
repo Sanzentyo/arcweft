@@ -571,6 +571,109 @@ fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_
 }
 
 #[test]
+fn line_activation_local_is_exported_only_to_post_reveal_work() {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::String,
+            )],
+            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+        )
+        .expect("line result and activation local admit");
+    let local = admission.local_ids()[0].clone();
+    let content = builder
+        .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+            line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.export")
+                .expect("line identity"),
+            template: RuntimeDialogueContentTemplateManifestSeed {
+                id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                    .expect("template identity"),
+                digest: RuntimeDialogueContentTemplateDigest::ZERO,
+                slots: Box::default(),
+                effects: Box::default(),
+            },
+            values: Box::default(),
+            effect_sites: Box::default(),
+            marks: Box::default(),
+            effect_site_count: Default::default(),
+        })
+        .expect("content admits");
+    let group = builder
+        .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            activation_ops: vec![
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(
+                        type_id(1),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: local.clone(),
+                        },
+                    ),
+                    expr: string_expr("retained"),
+                },
+                RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: string_expr("normal"),
+                },
+            ],
+            result_type: type_id(1),
+            handle_sites: Box::default(),
+            root: RuntimeLineTaskNodeSeed::Action(Vec::new()),
+            cancel_rules: vec![RuntimeLineTaskCancelRuleSeed {
+                trigger: arcweft_interaction_model::input::InputActionId::new("dialogue.cancel")
+                    .expect("cancel action"),
+                action: vec![RuntimeFlowOpSeed::SelectDialogueResult {
+                    value: RuntimeExprSeed::new(type_id(1), RuntimeExprSeedKind::Local(local)),
+                }],
+            }]
+            .into_boxed_slice(),
+            cleanup_completed: Vec::new(),
+            cleanup_cancelled: Vec::new(),
+            cleanup_failed: Vec::new(),
+            cleanup_policy: arcweft_core::line_task::LineCleanupPolicy::default(),
+        })
+        .expect("activation export admits");
+    builder
+        .attach_line_task_group_seed(&content, &group)
+        .expect("content owns line task");
+    let plan = builder.finish().expect("line task plan seals");
+    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    inventory.intern_runtime_primitives();
+    super::pattern::preflight_plan_types(&mut inventory, &plan).expect("line type admits to AWBC");
+    let diagnostics = {
+        let mut lowerer = AwbcFlowLowerer::new(&mut inventory, &plan);
+        lowerer.lower_plan();
+        lowerer.into_diagnostics()
+    };
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let program = inventory.finish();
+    let group = &program.line_task_groups[0];
+    assert!(
+        group.captures.is_empty(),
+        "activation local is not a caller input"
+    );
+    let [export] = group.activation_exports.as_slice() else {
+        panic!("one retained activation local must reach line-task work")
+    };
+    let activation = &program.functions[group.activation.index()];
+    assert!(
+        program.signatures[activation.signature.index()]
+            .params
+            .is_empty()
+    );
+    let slot =
+        &program.frame_layouts[activation.frame_layout.index()].slots[export.register.index()];
+    assert_eq!(slot.ty, export.ty);
+    assert_eq!(slot.scope_depth, 0);
+    let handler = &program.functions[group.cancel_handlers[0].function.index()];
+    assert_eq!(
+        program.signatures[handler.signature.index()].params,
+        [export.ty]
+    );
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one regression fixture covers every builtin payload edge and pattern"

@@ -41,6 +41,7 @@ fn mark_group() -> (LineTaskGroup, RuntimeDialogueMarkId, RuntimePlanTypeId) {
     let group = LineTaskGroup::new(
         Box::new([]),
         Box::new([]),
+        Box::new([]),
         ty,
         Box::new([]),
         node(0),
@@ -241,6 +242,7 @@ fn cancellation_selection_restores_only_after_its_joined_handler_completes() {
     let activation = activation();
     let action = InputActionId::new("SkipLine").expect("action");
     let group = LineTaskGroup::new(
+        Box::new([]),
         Box::new([]),
         Box::new([]),
         ty,
