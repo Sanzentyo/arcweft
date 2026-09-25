@@ -382,6 +382,17 @@ impl ProductChildFiberOwner {
                     }
                 },
             },
+            Self::Deferred {
+                content,
+                activation,
+                registration,
+                site,
+            } => AwbcProductChildFiberOwnerSnapshot::Deferred {
+                content: *content,
+                activation: activation.clone(),
+                registration: *registration,
+                site: *site,
+            },
         }
     }
 
@@ -406,6 +417,17 @@ impl ProductChildFiberOwner {
                         ProductLineTaskFiberPhase::Closing
                     }
                 },
+            },
+            AwbcProductChildFiberOwnerSnapshot::Deferred {
+                content,
+                activation,
+                registration,
+                site,
+            } => Self::Deferred {
+                content: *content,
+                activation: activation.clone(),
+                registration: *registration,
+                site: *site,
             },
         }
     }
@@ -582,6 +604,7 @@ pub(super) enum AwbcProductDialogueSnapshotState {
 pub struct AwbcProductChildFiberSaveSnapshot {
     pub owner: AwbcProductChildFiberOwnerSnapshot,
     pub fiber: AwbcFiberStateSnapshot,
+    pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
 }
 
 fn snapshot_pending_line_operation(
@@ -971,6 +994,12 @@ impl AwbcProductExecutorSaveSnapshot {
                         owner: child.owner.clone(),
                         fiber: AwbcFiberStateSnapshot::from_live(&child.fiber)
                             .map_err(|error| error.to_string())?,
+                        pending_host_call: child.pending_host_call.as_ref().map(|pending| {
+                            AwbcProductPendingHostCallSnapshot {
+                                call: pending.call,
+                                id: pending.id.clone(),
+                            }
+                        }),
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -1021,6 +1050,7 @@ impl AwbcProductExecutorSaveSnapshot {
                             .fiber
                             .into_live_for_program(owner)
                             .map_err(|error| error.to_string())?,
+                        pending_host_call: child.pending_host_call,
                     })
                 })
                 .collect::<Result<_, String>>()?,
@@ -1257,6 +1287,12 @@ pub enum AwbcProductChildFiberOwnerSnapshot {
         policy: AwbcProductLineTaskExitPolicySnapshot,
         phase: AwbcProductLineTaskFiberPhaseSnapshot,
     },
+    Deferred {
+        content: AwbcContentUnitId,
+        activation: DialogueActivationId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, serde::Deserialize, Eq, PartialEq, serde::Serialize)]
@@ -1270,6 +1306,7 @@ pub enum AwbcProductLineTaskFiberPhaseSnapshot {
 pub struct AwbcProductChildFiberSnapshot {
     pub owner: AwbcProductChildFiberOwnerSnapshot,
     pub fiber: FiberState,
+    pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
@@ -1310,6 +1347,47 @@ fn validate_task_publications(
     Ok(())
 }
 
+fn expected_deferred_children(
+    snapshot: &AwbcProductExecutorSnapshot,
+) -> Result<
+    BTreeMap<
+        DialogueActivationId,
+        (
+            crate::runtime_id::RuntimeDeferRegistrationId,
+            crate::runtime_id::RuntimeDeferSiteId,
+        ),
+    >,
+    AwbcProductStepBuildError,
+> {
+    let mut expected = BTreeMap::new();
+    for child in &snapshot.child_fibers {
+        let AwbcProductChildFiberOwnerSnapshot::Deferred {
+            activation,
+            registration,
+            site,
+            ..
+        } = &child.owner
+        else {
+            continue;
+        };
+        if matches!(
+            child.fiber.status,
+            crate::awbc::fiber::FiberStatus::Returned
+                | crate::awbc::fiber::FiberStatus::Cancelled
+                | crate::awbc::fiber::FiberStatus::Trapped
+        ) || expected
+            .insert(activation.clone(), (*registration, *site))
+            .is_some()
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "deferred child snapshot is terminal or duplicates an activation inflight registration"
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(expected)
+}
+
 impl AwbcProductStepExecutor {
     #[must_use]
     pub fn snapshot(&self) -> AwbcProductExecutorSnapshot {
@@ -1321,6 +1399,12 @@ impl AwbcProductStepExecutor {
                 .map(|child| AwbcProductChildFiberSnapshot {
                     owner: child.owner.snapshot(),
                     fiber: child.fiber.clone(),
+                    pending_host_call: child.pending_host_call.as_ref().map(|pending| {
+                        AwbcProductPendingHostCallSnapshot {
+                            call: pending.call,
+                            id: pending.id.0.clone(),
+                        }
+                    }),
                 })
                 .collect(),
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
@@ -1371,6 +1455,7 @@ impl AwbcProductStepExecutor {
         snapshot: AwbcProductExecutorSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
         self.validate_snapshot(&snapshot)?;
+        let deferred_children = expected_deferred_children(&snapshot)?;
         self.fiber = snapshot.fiber;
         self.child_fibers = snapshot
             .child_fibers
@@ -1378,11 +1463,15 @@ impl AwbcProductStepExecutor {
             .map(|child| ProductChildFiber {
                 owner: ProductChildFiberOwner::restore(&child.owner),
                 fiber: child.fiber,
+                pending_host_call: child.pending_host_call.map(|pending| PendingHostCall {
+                    call: pending.call,
+                    id: RuntimeHostCallId(pending.id),
+                }),
             })
             .collect();
         self.dialogue_effect_callback_activations = snapshot.dialogue_effect_callback_activations;
         self.entry_bound = snapshot.entry_bound;
-        self.dialogues = self.restore_dialogue_store(snapshot.dialogues)?;
+        self.dialogues = self.restore_dialogue_store(snapshot.dialogues, &deferred_children)?;
         self.active_choice = snapshot
             .active_choice
             .map(|active| self.restore_active_choice(active))
@@ -1534,6 +1623,13 @@ impl AwbcProductStepExecutor {
     fn restore_dialogue_store(
         &self,
         snapshot: AwbcProductDialogueSnapshotState,
+        expected_deferred_children: &BTreeMap<
+            DialogueActivationId,
+            (
+                crate::runtime_id::RuntimeDeferRegistrationId,
+                crate::runtime_id::RuntimeDeferSiteId,
+            ),
+        >,
     ) -> Result<super::ProductDialogueStore, AwbcProductStepBuildError> {
         let program_owner =
             crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&self.program));
@@ -1543,6 +1639,7 @@ impl AwbcProductStepExecutor {
                 super::ProductDialogueStore::from_save_snapshot(
                     dialogues,
                     &program_owner,
+                    expected_deferred_children,
                     |activation, active, line| {
                     let active = AwbcProductActiveDialogueSnapshot {
                         activation: active.activation,
@@ -1670,9 +1767,44 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
             self.validate_child_owner(&child.owner)?;
+            let host_call =
+                child
+                    .fiber
+                    .suspension
+                    .as_ref()
+                    .and_then(|suspension| match &suspension.reason {
+                        crate::awbc::fiber::FiberSuspensionReason::HostCall { call, .. } => {
+                            Some(*call)
+                        }
+                        _ => None,
+                    });
+            match (&child.owner, &child.pending_host_call, host_call) {
+                (
+                    AwbcProductChildFiberOwnerSnapshot::Deferred { .. },
+                    Some(pending),
+                    Some(call),
+                ) if pending.call == call
+                    && self.program.host_calls.get(call.index()).is_some() => {}
+                (AwbcProductChildFiberOwnerSnapshot::Deferred { .. }, None, None) => {}
+                (AwbcProductChildFiberOwnerSnapshot::Deferred { .. }, _, _) => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "deferred child host-call suspension and pending request are not paired"
+                                .to_owned(),
+                    });
+                }
+                (_, None, _) => {}
+                _ => {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "non-deferred child carries a pending host call".to_owned(),
+                    });
+                }
+            }
         }
         self.validate_live_flow_bindings(snapshot)?;
-        let dialogues = self.restore_dialogue_store(snapshot.dialogues.clone())?;
+        let deferred_children = expected_deferred_children(snapshot)?;
+        let dialogues =
+            self.restore_dialogue_store(snapshot.dialogues.clone(), &deferred_children)?;
         if let Some(active) = dialogues.active_frame() {
             let content = self
                 .program
@@ -1915,6 +2047,72 @@ impl AwbcProductStepExecutor {
                         .to_owned(),
                 });
             }
+            let mut actual_deferred_pair = None;
+            for child in &snapshot.child_fibers {
+                let AwbcProductChildFiberOwnerSnapshot::Deferred {
+                    content,
+                    activation,
+                    registration,
+                    site,
+                } = &child.owner
+                else {
+                    continue;
+                };
+                let function = self
+                    .program
+                    .defer_sites
+                    .get(site.index())
+                    .copied()
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "deferred child references a missing defer site".to_owned(),
+                    })?;
+                if content != &active.content
+                    || activation != &active.activation
+                    || child.fiber.frames.first().map(|frame| frame.function) != Some(function)
+                    || actual_deferred_pair
+                        .replace((*registration, *site))
+                        .is_some()
+                {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message:
+                            "deferred child owner does not match one active dialogue registration"
+                                .to_owned(),
+                    });
+                }
+                let tag = LineTaskWorkTag::activation(
+                    active.activation.clone(),
+                    LineTaskWork::Defer(*registration),
+                );
+                let tokens = super::line::product_fiber_handle_owners(
+                    self.facade_fiber.execution,
+                    &child.fiber,
+                )
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: error.to_string(),
+                })?
+                .into_keys()
+                .map(|token| {
+                    if !all_child_tokens.insert(token.clone()) {
+                        return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                            message: "affine line handle occurs in more than one child fiber"
+                                .to_owned(),
+                        });
+                    }
+                    Ok(token)
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+                if actual_child_tokens.insert(tag, tokens).is_some() {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "deferred child duplicates another line child work tag".to_owned(),
+                    });
+                }
+            }
+            if actual_deferred_pair != shared_line.deferred_inflight() {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot is not paired with the activation inflight registration"
+                        .to_owned(),
+                });
+            }
             let mut ledger_child_tokens = BTreeMap::<_, BTreeSet<_>>::new();
             for (token, lease) in shared_line.ledger().leases() {
                 if let crate::line_task::RuntimeHandleOwnerSlot::ChildScope(tag) = lease.owner() {
@@ -1927,6 +2125,14 @@ impl AwbcProductStepExecutor {
             for tag in &expected_joined {
                 ledger_child_tokens.entry(tag.clone()).or_default();
             }
+            if let Some((registration, _)) = actual_deferred_pair {
+                ledger_child_tokens
+                    .entry(LineTaskWorkTag::activation(
+                        active.activation.clone(),
+                        LineTaskWork::Defer(registration),
+                    ))
+                    .or_default();
+            }
             if actual_child_tokens != ledger_child_tokens {
                 return Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message:
@@ -1934,6 +2140,11 @@ impl AwbcProductStepExecutor {
                             .to_owned(),
                 });
             }
+        } else if !deferred_children.is_empty() {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "deferred child snapshot has no active dialogue registration owner"
+                    .to_owned(),
+            });
         }
         if let Some(active) = &snapshot.active_choice {
             self.validate_active_choice(active)?;
@@ -1967,6 +2178,47 @@ impl AwbcProductStepExecutor {
         &self,
         owner: &AwbcProductChildFiberOwnerSnapshot,
     ) -> Result<(), AwbcProductStepBuildError> {
+        if let AwbcProductChildFiberOwnerSnapshot::Deferred { site, .. } = owner {
+            let function_id = self
+                .program
+                .defer_sites
+                .get(site.index())
+                .copied()
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing defer site".to_owned(),
+                })?;
+            let function = self
+                .program
+                .functions
+                .get(function_id.index())
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing function".to_owned(),
+                })?;
+            let signature = self
+                .program
+                .signatures
+                .get(function.signature.index())
+                .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot references a missing signature".to_owned(),
+                })?;
+            if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary
+                || !signature.result.is_some_and(|result| {
+                    matches!(
+                        self.program
+                            .runtime_types
+                            .get(result.index())
+                            .map(crate::awbc::schema::AwbcRuntimeType::shape),
+                        Some(crate::awbc::schema::AwbcRuntimeTypeShape::Unit)
+                    )
+                })
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "deferred child snapshot no longer matches its verified Unit function"
+                        .to_owned(),
+                });
+            }
+            return Ok(());
+        }
         let AwbcProductChildFiberOwnerSnapshot::LineTask {
             content,
             tag,

@@ -666,6 +666,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self.deferred
     }
 
+    /// The exact child whose capture packet has left the registration stack.
+    #[must_use]
+    pub(crate) fn deferred_inflight(
+        &self,
+    ) -> Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)> {
+        self.defer_unwind
+            .as_ref()
+            .and_then(|unwind| unwind.inflight)
+            .map(|inflight| (inflight.id, inflight.site))
+    }
+
+    /// Once the exit is frozen, a deferred-body failure cannot change which
+    /// outcome-filtered registrations run.
+    #[must_use]
+    pub(crate) fn deferred_exit(&self) -> Option<ScopeExit> {
+        self.defer_unwind.as_ref().map(|unwind| unwind.exit)
+    }
+
     fn has_pending_deferred_work(&self) -> bool {
         !self.deferred.is_empty()
             || self
@@ -703,9 +721,18 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn restore_admit(
         &self,
         activation: &DialogueActivationId,
+    ) -> Result<(), LineRuntimeError> {
+        self.restore_admit_with_deferred_child(activation, None)
+    }
+
+    pub(crate) fn restore_admit_with_deferred_child(
+        &self,
+        activation: &DialogueActivationId,
+        expected_child: Option<(RuntimeDeferRegistrationId, RuntimeDeferSiteId)>,
     ) -> Result<(), LineRuntimeError> {
         if self.frame_released && self.has_pending_deferred_work() {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
@@ -733,14 +760,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
-        // An activation-only snapshot cannot authenticate a running child.
-        // Product restore must pair its saved owner and packet before this
-        // in-flight state becomes admissible.
-        if self
-            .defer_unwind
-            .as_ref()
-            .is_some_and(|unwind| unwind.inflight.is_some())
-        {
+        // An activation-only snapshot supplies None. Product restore supplies
+        // the exact child owner it authenticated from its fiber snapshot.
+        if self.deferred_inflight() != expected_child {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         validate_restored_ledger(activation, &self.ledger)?;
@@ -3736,6 +3758,16 @@ mod tests {
             unpaired.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
+        assert_eq!(
+            unpaired.restore_admit_with_deferred_child(
+                &activation,
+                Some((newest.id(), defer_site(1))),
+            ),
+            Err(LineRuntimeError::InvalidRestoredDeferredState)
+        );
+        unpaired
+            .restore_admit_with_deferred_child(&activation, Some((newest.id(), newest.site())))
+            .expect("the exact saved child owner admits an in-flight activation");
         state
             .complete_deferred_child(
                 &activation,

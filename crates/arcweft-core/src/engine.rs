@@ -1630,6 +1630,101 @@ impl Engine {
         self.dialogue_effect_callback_activations = batch.dialogue_effect_callback_activations;
     }
 
+    /// Builds one dialogue-owned defer child before the activation transaction
+    /// that transferred its capture packet is committed.
+    fn prepare_deferred_line_child(
+        &self,
+        activation: &DialogueActivationId,
+        registration: crate::line_task::RuntimeLineDeferredRegistration,
+    ) -> Result<NativeLineTaskExecutionBatch, dialogue::DialogueExecutionError> {
+        let (id, defer_site, _, captures) = registration.into_parts();
+        let site_id = self
+            .plan
+            .defer_function_site(defer_site)
+            .ok_or(RuntimeEvalError::UnknownDeferredSite { site: defer_site })?;
+        let site = self
+            .plan
+            .validate_function_site_inputs(site_id, &captures, &[])
+            .map_err(RuntimeEvalError::from)?;
+        let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
+            return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+        };
+        let mut capture_tokens = BTreeSet::new();
+        for capture in &captures {
+            for handle in capture
+                .affine_line_handles()
+                .map_err(|_| crate::line_task::LineRuntimeError::InvalidDeferredTransition)?
+            {
+                if !capture_tokens.insert(handle.token().clone()) {
+                    return Err(
+                        crate::line_task::LineRuntimeError::DuplicateHandleOccurrence.into(),
+                    );
+                }
+            }
+        }
+        let mut env = RuntimeEnv::default();
+        for input in site.inputs() {
+            let RuntimeFunctionInputSource::Capture { position } = input.source() else {
+                return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+            };
+            let value = captures
+                .get(position as usize)
+                .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+            env.set_ref(input.input_local(), value);
+            let bindings = match_runtime_pattern(&self.plan, input.pattern(), value)?
+                .ok_or_else(|| RuntimeEvalError::PatternMismatch(runtime_value_label(value)))?;
+            env.bind_all(bindings);
+        }
+        let mut pending_ops = VecDeque::with_capacity(body.ops().len().saturating_add(2));
+        pending_ops.push_back(FlowOp::EnterScope {
+            identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+        });
+        pending_ops.extend(body.ops().iter().cloned());
+        pending_ops.push_back(FlowOp::ExitScope);
+        let ordinal = self.next_fiber_id;
+        let allocated = ordinal
+            .checked_add(1)
+            .and_then(std::num::NonZeroU64::new)
+            .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+        let mut batch = NativeLineTaskExecutionBatch {
+            child_fibers: self.child_fibers.clone(),
+            next_fiber_id: ordinal
+                .checked_add(1)
+                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?,
+            run_child_next: true,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
+        };
+        let child = FlowFiber {
+            line_cursor: 0,
+            cursor: None,
+            pending_ops,
+            control_stack: Vec::new(),
+            await_observer: None,
+            root_cleanups: Vec::new(),
+            env,
+            observations: RuntimeObservationState::default(),
+            stream_states: BTreeMap::new(),
+            id: FlowFiberId(ordinal),
+            persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
+            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
+            owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
+                tag: LineTaskWorkTag::activation(
+                    activation.clone(),
+                    crate::line_task::LineTaskWork::Defer(id),
+                ),
+                join_policy: ChildJoinPolicy::Join,
+                cancel_policy: ChildCancelPolicy::Finish,
+                closing: false,
+            }),
+            status: FlowFiberStatus::Running,
+        };
+        if flow_fiber_line_handle_tokens(&child)? != capture_tokens {
+            return Err(crate::line_task::LineRuntimeError::InvalidDeferredTransition.into());
+        }
+        batch.child_fibers.push_back(child);
+        Ok(batch)
+    }
+
     fn step_next_child_fiber(
         &mut self,
         input: &RuntimeStepInput,
@@ -1701,17 +1796,21 @@ impl Engine {
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
                         .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-                    let returned_bindings = std::mem::take(&mut child.env)
-                        .into_bindings()
-                        .into_boxed_slice();
-                    self.complete_line_task_work(
-                        &owner.tag,
-                        returned_bindings,
-                        &live_tokens,
-                        false,
-                        owner.closing,
-                        owner.join_policy == ChildJoinPolicy::Join,
-                    )?;
+                    if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Defer(_)) {
+                        self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
+                    } else {
+                        let returned_bindings = std::mem::take(&mut child.env)
+                            .into_bindings()
+                            .into_boxed_slice();
+                        self.complete_line_task_work(
+                            &owner.tag,
+                            returned_bindings,
+                            &live_tokens,
+                            false,
+                            owner.closing,
+                            owner.join_policy == ChildJoinPolicy::Join,
+                        )?;
+                    }
                 }
             }
             FlowFiberStatus::Failed(message) => {
@@ -1726,17 +1825,21 @@ impl Engine {
                 if let FlowFiberOwner::LineTask(owner) = owner {
                     let live_tokens = live_tokens
                         .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
-                    let returned_bindings = std::mem::take(&mut child.env)
-                        .into_bindings()
-                        .into_boxed_slice();
-                    self.complete_line_task_work(
-                        &owner.tag,
-                        returned_bindings,
-                        &live_tokens,
-                        true,
-                        false,
-                        owner.join_policy == ChildJoinPolicy::Join,
-                    )?;
+                    if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Defer(_)) {
+                        self.complete_deferred_line_child(&owner.tag, &live_tokens, output)?;
+                    } else {
+                        let returned_bindings = std::mem::take(&mut child.env)
+                            .into_bindings()
+                            .into_boxed_slice();
+                        self.complete_line_task_work(
+                            &owner.tag,
+                            returned_bindings,
+                            &live_tokens,
+                            true,
+                            false,
+                            owner.join_policy == ChildJoinPolicy::Join,
+                        )?;
+                    }
                 }
                 if let Some(activation) = failed_activation {
                     let transaction = self.dialogue_activations.begin_transaction(&activation)?;
@@ -1750,6 +1853,38 @@ impl Engine {
             _ => self.child_fibers.push_back(child),
         }
         Ok(true)
+    }
+
+    fn complete_deferred_line_child(
+        &mut self,
+        tag: &LineTaskWorkTag,
+        live_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        output: &mut RuntimeStepOutput,
+    ) -> Result<(), dialogue::DialogueExecutionError> {
+        let crate::line_task::LineTaskWork::Defer(id) = tag.work() else {
+            return Err(crate::line_task::LineRuntimeError::InvalidDeferredTransition.into());
+        };
+        match &self.fiber.status {
+            FlowFiberStatus::Dialogue(activation) if activation == tag.activation_id() => {}
+            _ => return Err(crate::line_task::LineRuntimeError::StaleCommandOutcome.into()),
+        }
+        let mut transaction = self
+            .dialogue_activations
+            .begin_transaction(tag.activation_id())?;
+        let (_, site) = transaction
+            .line()
+            .deferred_inflight()
+            .filter(|(inflight, _)| *inflight == id)
+            .ok_or(crate::line_task::LineRuntimeError::InvalidDeferredTransition)?;
+        transaction.line_mut().complete_deferred_child(
+            tag.activation_id(),
+            id,
+            site,
+            live_tokens,
+        )?;
+        let receipt = self.dialogue_activations.commit_transaction(transaction)?;
+        Self::publish_dialogue_line_receipt(receipt.into_line(), output);
+        Ok(())
     }
 
     fn complete_line_task_work(

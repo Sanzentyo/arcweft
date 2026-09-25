@@ -4,7 +4,9 @@ use super::{
     RuntimeDialogueTerminalKind, RuntimeHandleDropReceipt, RuntimePublishedDialogueHandles,
 };
 use crate::effect::RuntimeDropPolicy;
-use crate::runtime_id::{DialogueActivationId, ExecutionInstanceId};
+use crate::runtime_id::{
+    DialogueActivationId, ExecutionInstanceId, RuntimeDeferRegistrationId, RuntimeDeferSiteId,
+};
 use crate::task::RuntimeProgramOwner;
 use crate::value::ownership::RuntimeOwnedSlotId;
 use serde::{Deserialize, Serialize};
@@ -161,9 +163,13 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         Ok(RuntimeDialogueRegistrySaveSnapshot { entries })
     }
 
-    pub(crate) fn from_save_snapshot<S>(
+    pub(crate) fn from_save_snapshot_with_deferred_children<S>(
         snapshot: RuntimeDialogueRegistrySaveSnapshot<S, T>,
         owner: &RuntimeProgramOwner,
+        expected_children: &BTreeMap<
+            DialogueActivationId,
+            (RuntimeDeferRegistrationId, RuntimeDeferSiteId),
+        >,
         mut restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -171,6 +177,7 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
         ) -> Result<F, RuntimeDialogueRegistrySnapshotError>,
     ) -> Result<Self, RuntimeDialogueRegistrySnapshotError> {
         let mut entries = BTreeMap::new();
+        let mut unmatched_children = expected_children.clone();
         for entry in snapshot.entries {
             let (activation, entry) = match entry {
                 RuntimeDialogueRegistrySaveEntry::Active {
@@ -180,7 +187,10 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     line,
                 } => {
                     let line = line.into_live(owner)?;
-                    line.restore_admit(&activation)?;
+                    line.restore_admit_with_deferred_child(
+                        &activation,
+                        unmatched_children.remove(&activation),
+                    )?;
                     let frame = restore_frame(&activation, frame, &line)?;
                     (
                         activation,
@@ -217,6 +227,9 @@ impl<F: Clone, T: Clone> RuntimeDialogueActivationRegistry<F, T> {
                     });
                 }
             }
+        }
+        if !unmatched_children.is_empty() {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState.into());
         }
         Ok(Self { entries })
     }

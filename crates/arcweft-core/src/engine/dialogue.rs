@@ -12,10 +12,10 @@ use super::{
 use crate::effect::{RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, LineTaskReadyEvents, MAX_LINE_SCHEDULED_CALLBACKS,
-    RuntimeCueLease, RuntimeCueOrigin, RuntimeDialogueActivationState, RuntimeDialogueResultState,
-    RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
-    RuntimeLineHandleSiteKind, RuntimeScheduledLineTask, RuntimeStageActorLease, RuntimeVoiceLease,
-    progress_live_line_task_group,
+    RuntimeCueLease, RuntimeCueOrigin, RuntimeDeferUnwindStep, RuntimeDialogueActivationState,
+    RuntimeDialogueResultState, RuntimeHandleLeaseState, RuntimeHandleOwnerSlot,
+    RuntimeHandleResource, RuntimeLineHandleSiteKind, RuntimeScheduledLineTask,
+    RuntimeStageActorLease, RuntimeVoiceLease, ScopeExit, progress_live_line_task_group,
 };
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{FlowEvent, FlowOp, RuntimeDeferOwner, RuntimeLineOperation};
@@ -204,22 +204,94 @@ impl Engine {
         self.resume_dialogue_failure_close(transaction, output);
     }
 
+    fn prepare_dialogue_deferred_child(
+        &self,
+        transaction: &mut DialogueActivationTransaction,
+        exit: ScopeExit,
+    ) -> Result<Option<super::NativeLineTaskExecutionBatch>, DialogueExecutionError> {
+        if transaction.line().deferred_exit().is_none()
+            && transaction.line().deferred_registrations().is_empty()
+        {
+            return Ok(None);
+        }
+        let activation_id = transaction.activation().clone();
+        let fixed_exit = transaction.line().deferred_exit().unwrap_or(exit);
+        transaction.line_mut().begin_deferred_unwind(fixed_exit)?;
+        if transaction.line().deferred_inflight().is_some()
+            || transaction.line().has_pending_commands()
+        {
+            return Ok(None);
+        }
+        loop {
+            match transaction
+                .line_mut()
+                .prepare_next_deferred(&activation_id)?
+            {
+                Some(RuntimeDeferUnwindStep::Run(registration)) => {
+                    return self
+                        .prepare_deferred_line_child(&activation_id, registration)
+                        .map(Some);
+                }
+                Some(RuntimeDeferUnwindStep::Skipped(id)) => {
+                    if transaction
+                        .line()
+                        .deferred_registrations()
+                        .last()
+                        .is_some_and(|pending| pending.id() >= id)
+                    {
+                        return Err(LineRuntimeError::InvalidDeferredTransition.into());
+                    }
+                    if transaction.line().has_pending_commands() {
+                        return Ok(None);
+                    }
+                }
+                None => return Ok(None),
+            }
+        }
+    }
+
     pub(super) fn resume_dialogue_failure_close(
         &mut self,
         mut transaction: DialogueActivationTransaction,
         output: &mut RuntimeStepOutput,
     ) {
         let activation_id = transaction.activation().clone();
-        let (state, activation) = transaction.parts_mut();
-        if let Err(error) = activation.abandon() {
+        if let Err(error) = transaction.line_mut().abandon() {
             self.fail_eval(error, output);
             return;
         }
-        if let Err(cleanup) = Self::unwind_dialogue_handles(&activation_id, activation, false) {
-            output.diagnostics.push(RuntimeDiagnostic::new(format!(
-                "dialogue cleanup after primary failure also failed: {cleanup}"
-            )));
+        if !self.has_joined_work() {
+            let batch =
+                match self.prepare_dialogue_deferred_child(&mut transaction, ScopeExit::Failed) {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+            if let Some(batch) = batch {
+                match self.commit_dialogue_activation_transaction(transaction, output) {
+                    Ok(()) => {
+                        self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                        self.commit_line_task_execution_batch(batch);
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+                return;
+            }
+            let activation = transaction.line_mut();
+            if activation.deferred_inflight().is_none()
+                && activation.deferred_registrations().is_empty()
+                && !activation.has_pending_commands()
+                && let Err(cleanup) =
+                    Self::unwind_dialogue_handles(&activation_id, activation, false)
+            {
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "dialogue cleanup after primary failure also failed: {cleanup}"
+                )));
+            }
         }
+        let (state, activation) = transaction.parts_mut();
         let terminal = activation.failure_close_ready() && !self.has_joined_work();
         if terminal {
             if let Err(error) = activation.release_frame() {
@@ -257,12 +329,39 @@ impl Engine {
         output: &mut RuntimeStepOutput,
     ) {
         let activation_id = transaction.activation().clone();
-        let (state, activation) = transaction.parts_mut();
-        state.phase = DialogueRuntimePhase::Closing;
-        if let Err(error) = Self::unwind_dialogue_handles(&activation_id, activation, true) {
-            self.begin_dialogue_failure(transaction, error, output);
-            return;
+        transaction.frame_mut().phase = DialogueRuntimePhase::Closing;
+        if !self.has_joined_work() {
+            let mut candidate = transaction.clone();
+            let batch =
+                match self.prepare_dialogue_deferred_child(&mut candidate, ScopeExit::Completed) {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        self.begin_dialogue_failure(transaction, error, output);
+                        return;
+                    }
+                };
+            transaction = candidate;
+            if let Some(batch) = batch {
+                match self.commit_dialogue_activation_transaction(transaction, output) {
+                    Ok(()) => {
+                        self.fiber.status = super::FlowFiberStatus::Dialogue(activation_id);
+                        self.commit_line_task_execution_batch(batch);
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+                return;
+            }
+            let activation = transaction.line_mut();
+            if activation.deferred_inflight().is_none()
+                && activation.deferred_registrations().is_empty()
+                && !activation.has_pending_commands()
+                && let Err(error) = Self::unwind_dialogue_handles(&activation_id, activation, true)
+            {
+                self.begin_dialogue_failure(transaction, error, output);
+                return;
+            }
         }
+        let activation = transaction.line();
         let terminal = activation.successful_close_ready() && !self.has_joined_work();
         if terminal {
             self.resume_dialogue_publication_with_transaction(transaction, output);

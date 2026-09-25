@@ -285,6 +285,70 @@ impl super::AwbcProductStepExecutor {
         Ok(batch)
     }
 
+    pub(super) fn prepare_next_deferred_child(
+        &self,
+        transaction: &mut ProductDialogueTransaction,
+        exit: crate::line_task::ScopeExit,
+        batch: &mut super::ProductLineTaskExecutionBatch,
+    ) -> Result<bool, ProductStepError> {
+        let activation = transaction.activation().clone();
+        let mut candidate = transaction.clone();
+        let mut candidate_batch = batch.clone();
+        if candidate.line().deferred_exit().is_none()
+            && candidate.line().deferred_registrations().is_empty()
+        {
+            return Ok(false);
+        }
+        if candidate.line().has_pending_commands() {
+            return Ok(false);
+        }
+        if candidate.line().deferred_exit().is_none() {
+            candidate.line_mut().begin_deferred_unwind(exit)?;
+        }
+        if candidate.line().deferred_inflight().is_some() {
+            return Ok(false);
+        }
+        let Some(step) = candidate.line_mut().prepare_next_deferred(&activation)? else {
+            *transaction = candidate;
+            *batch = candidate_batch;
+            return Ok(false);
+        };
+        match step {
+            crate::line_task::RuntimeDeferUnwindStep::Skipped(_) => {
+                *transaction = candidate;
+                *batch = candidate_batch;
+                Ok(true)
+            }
+            crate::line_task::RuntimeDeferUnwindStep::Run(registration) => {
+                let (registration_id, site, _outcome, captures) = registration.into_parts();
+                if candidate.line().deferred_inflight() != Some((registration_id, site)) {
+                    return Err(LineRuntimeError::InvalidDeferredTransition.into());
+                }
+                let function = self
+                    .program
+                    .defer_sites
+                    .get(site.index())
+                    .copied()
+                    .ok_or(LineRuntimeError::UnknownDeferredSite { site })?;
+                let content = candidate.frame().content;
+                candidate_batch.spawn(
+                    self,
+                    super::ProductChildFiberOwner::Deferred {
+                        content,
+                        activation,
+                        registration: registration_id,
+                        site,
+                    },
+                    function,
+                    captures,
+                )?;
+                *transaction = candidate;
+                *batch = candidate_batch;
+                Ok(true)
+            }
+        }
+    }
+
     pub(super) fn commit_line_task_commands(
         &mut self,
         batch: super::ProductLineTaskExecutionBatch,
@@ -1284,6 +1348,7 @@ impl super::ProductLineTaskExecutionBatch {
         self.child_fibers.push_back(super::ProductChildFiber {
             owner,
             fiber: child,
+            pending_host_call: None,
         });
         Ok(())
     }

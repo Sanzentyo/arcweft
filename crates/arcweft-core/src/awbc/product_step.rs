@@ -465,6 +465,12 @@ enum ProductChildFiberOwner {
         policy: LineTaskExitPolicy,
         phase: ProductLineTaskFiberPhase,
     },
+    Deferred {
+        content: AwbcContentUnitId,
+        activation: crate::runtime_id::DialogueActivationId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -477,12 +483,14 @@ enum ProductLineTaskFiberPhase {
 struct ProductChildFiber {
     owner: ProductChildFiberOwner,
     fiber: FiberState,
+    pending_host_call: Option<PendingHostCall>,
 }
 
 /// Fallible realization of one reducer command batch. Child fibers and their
 /// identity cursors are prepared off to the side; the dialogue registry and
 /// this executor substate are committed only after every command has been
 /// validated and materialized.
+#[derive(Clone)]
 struct ProductLineTaskExecutionBatch {
     child_fibers: VecDeque<ProductChildFiber>,
     dialogue_effect_callback_activations:
@@ -504,6 +512,12 @@ impl ProductLineTaskExecutionBatch {
                 ProductChildFiberOwner::LineTask { tag, policy, .. }
                     if tag.activation_id() == activation
                         && policy.join == ChildJoinPolicy::Join
+            ) || matches!(
+                &child.owner,
+                ProductChildFiberOwner::Deferred {
+                    activation: owner_activation,
+                    ..
+                } if owner_activation == activation
             )
         })
     }
@@ -1030,6 +1044,7 @@ impl AwbcProductStepExecutor {
         Ok(ProductChildFiber {
             owner: ProductChildFiberOwner::Independent,
             fiber,
+            pending_host_call: None,
         })
     }
 
@@ -1252,7 +1267,14 @@ impl AwbcProductStepExecutor {
                     pure_backend,
                 );
                 executed_ops = executed_ops.saturating_add(usize::from(progressed));
-                if !progressed || self.should_return_to_host(options.mode, output, executed_ops) {
+                if !progressed {
+                    if !self.step_next_child(output, pure_backend, input, need_states, task_events)
+                    {
+                        break;
+                    }
+                    executed_ops = executed_ops.saturating_add(1);
+                }
+                if self.should_return_to_host(options.mode, output, executed_ops) {
                     break;
                 }
                 continue;
@@ -1264,7 +1286,7 @@ impl AwbcProductStepExecutor {
                     output,
                     pure_backend,
                 ));
-            } else if !self.step_next_child(output, pure_backend) {
+            } else if !self.step_next_child(output, pure_backend, input, need_states, task_events) {
                 break;
             } else {
                 executed_ops = executed_ops.saturating_add(1);
@@ -1509,11 +1531,17 @@ impl AwbcProductStepExecutor {
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
+        input: &RuntimeStepInput,
+        need_states: &[RuntimeNeedState],
+        _task_events: &[TaskEvent],
     ) -> bool {
         let Some(front) = self.child_fibers.front() else {
             return false;
         };
-        if front.fiber.status != FiberStatus::Running {
+        if front.fiber.status != FiberStatus::Running
+            && !(front.fiber.status == FiberStatus::Suspended
+                && matches!(&front.owner, ProductChildFiberOwner::Deferred { .. }))
+        {
             if let Some(child) = self.child_fibers.pop_front() {
                 self.child_fibers.push_back(child);
             }
@@ -1525,19 +1553,58 @@ impl AwbcProductStepExecutor {
         };
         let owner = child.owner.clone();
         let before_handles = match &owner {
-            ProductChildFiberOwner::LineTask { .. } => {
+            ProductChildFiberOwner::LineTask { .. } | ProductChildFiberOwner::Deferred { .. } => {
                 match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
                     Ok(handles) => Some(handles.into_keys().collect::<BTreeSet<_>>()),
                     Err(error) => {
-                        let ProductChildFiberOwner::LineTask { tag, .. } = &owner else {
-                            unreachable!("line-task handle scan has a line-task owner")
+                        return match &owner {
+                            ProductChildFiberOwner::LineTask { tag, .. } => {
+                                self.begin_product_line_task_child_failure(tag, error, output)
+                            }
+                            ProductChildFiberOwner::Deferred { .. } => {
+                                self.fail_with_error(error.into(), output);
+                                true
+                            }
+                            ProductChildFiberOwner::Independent => unreachable!(),
                         };
-                        return self.begin_product_line_task_child_failure(tag, error, output);
                     }
                 }
             }
             ProductChildFiberOwner::Independent => None,
         };
+        if child.fiber.status == FiberStatus::Suspended {
+            let request_count = output.requests.host_calls.len()
+                + output.requests.tasks.len()
+                + output.requests.ensure_content.len();
+            match self.resume_deferred_child_suspension(
+                &mut child,
+                need_states,
+                &input.host_call_results,
+                output,
+            ) {
+                Ok(true) if child.fiber.status == FiberStatus::Running => {}
+                Ok(true)
+                    if matches!(
+                        child.fiber.status,
+                        FiberStatus::Cancelled | FiberStatus::Trapped | FiberStatus::Returned
+                    ) => {}
+                Ok(_) => {
+                    remaining.push_back(child);
+                    self.child_fibers = remaining;
+                    return output.requests.host_calls.len()
+                        + output.requests.tasks.len()
+                        + output.requests.ensure_content.len()
+                        > request_count;
+                }
+                Err(error) => {
+                    child.fiber.mark_trapped(FiberTrap {
+                        code: error.trap_code(),
+                        message: Some(error.to_string()),
+                        source_map: None,
+                    });
+                }
+            }
+        }
         child.fiber.replenish_budget();
         let mut candidate_stats = self.compact_pure_stats;
         let mut host = ProductVmHost {
@@ -1551,37 +1618,95 @@ impl AwbcProductStepExecutor {
         };
         let context =
             VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
-        let vm_output = match step_with_host_context(
-            &self.program,
-            &mut child.fiber,
-            VmStepOptions {
-                max_instructions: 1,
+        let terminal_exit = match child.fiber.status {
+            FiberStatus::Returned => Some(VmExit::Returned(None)),
+            FiberStatus::Cancelled => Some(VmExit::Cancelled),
+            FiberStatus::Trapped => {
+                child
+                    .fiber
+                    .terminal
+                    .as_ref()
+                    .and_then(|terminal| match terminal {
+                        FiberTerminalValue::Trapped(trap) => Some(VmExit::Trapped(trap.clone())),
+                        FiberTerminalValue::Returned(_) | FiberTerminalValue::Cancelled => None,
+                    })
+            }
+            FiberStatus::Running | FiberStatus::Suspended => None,
+        };
+        let vm_result = terminal_exit.map_or_else(
+            || {
+                step_with_host_context(
+                    &self.program,
+                    &mut child.fiber,
+                    VmStepOptions {
+                        max_instructions: 1,
+                    },
+                    &context,
+                    &mut host,
+                )
             },
-            &context,
-            &mut host,
-        ) {
+            |exit| {
+                Ok(crate::awbc::vm::VmStepOutput {
+                    executed: 0,
+                    exit,
+                    observations: Vec::new(),
+                })
+            },
+        );
+        let vm_output = match vm_result {
             Ok(vm_output) => vm_output,
             Err(error) => {
-                if let ProductChildFiberOwner::LineTask { tag, .. } = &owner {
-                    return self.begin_product_line_task_child_failure(
-                        tag,
-                        ProductStepError::Internal(error.to_string()),
-                        output,
-                    );
+                let message = error.to_string();
+                match &owner {
+                    ProductChildFiberOwner::LineTask { tag, .. } => {
+                        return self.begin_product_line_task_child_failure(
+                            tag,
+                            ProductStepError::Internal(message),
+                            output,
+                        );
+                    }
+                    ProductChildFiberOwner::Deferred { .. } => {
+                        child.fiber.mark_trapped(FiberTrap {
+                            code: AwbcTrapCode::InternalInvariant,
+                            message: Some(message),
+                            source_map: None,
+                        });
+                        crate::awbc::vm::VmStepOutput {
+                            executed: 0,
+                            exit: VmExit::Trapped(FiberTrap {
+                                code: AwbcTrapCode::InternalInvariant,
+                                message: Some("deferred child VM step failed".to_owned()),
+                                source_map: None,
+                            }),
+                            observations: Vec::new(),
+                        }
+                    }
+                    ProductChildFiberOwner::Independent => {
+                        self.fail_with_error(ProductStepError::Internal(message), output);
+                        return true;
+                    }
                 }
-                self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
-                return true;
             }
         };
         let (drop_policy, observations) = match partition_drop_observation(vm_output.observations) {
             Ok(parts) => parts,
-            Err(error) => {
-                if let ProductChildFiberOwner::LineTask { tag, .. } = &owner {
+            Err(error) => match &owner {
+                ProductChildFiberOwner::LineTask { tag, .. } => {
                     return self.begin_product_line_task_child_failure(tag, error.into(), output);
                 }
-                self.fail_with_error(error.into(), output);
-                return true;
-            }
+                ProductChildFiberOwner::Deferred { .. } => {
+                    child.fiber.mark_trapped(FiberTrap {
+                        code: AwbcTrapCode::InternalInvariant,
+                        message: Some(error.to_string()),
+                        source_map: None,
+                    });
+                    (None, Vec::new())
+                }
+                ProductChildFiberOwner::Independent => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            },
         };
         if matches!(&owner, ProductChildFiberOwner::Independent) {
             if matches!(
@@ -1595,21 +1720,34 @@ impl AwbcProductStepExecutor {
             self.consume_observations(observations, output);
             return true;
         }
-        let ProductChildFiberOwner::LineTask {
-            content,
-            tag,
-            policy,
-            phase,
-            ..
-        } = owner
-        else {
-            self.fail_with_error(
-                crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
-                output,
-            );
-            return true;
+        let (content, tag, policy, phase, deferred) = match owner {
+            ProductChildFiberOwner::LineTask {
+                content,
+                tag,
+                policy,
+                phase,
+            } => (content, tag, policy, phase, None),
+            ProductChildFiberOwner::Deferred {
+                content,
+                activation,
+                registration,
+                site,
+            } => (
+                content,
+                LineTaskWorkTag::activation(activation.clone(), LineTaskWork::Defer(registration)),
+                LineTaskExitPolicy::default(),
+                ProductLineTaskFiberPhase::Active,
+                Some((activation, registration, site)),
+            ),
+            ProductChildFiberOwner::Independent => {
+                self.fail_with_error(
+                    crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
+                    output,
+                );
+                return true;
+            }
         };
-        if child.fiber.status == FiberStatus::Suspended {
+        if child.fiber.status == FiberStatus::Suspended && deferred.is_none() {
             return self.begin_product_line_task_child_failure(
                 &tag,
                 ProductStepError::Internal(
@@ -1648,7 +1786,19 @@ impl AwbcProductStepExecutor {
         ) {
             return self.begin_product_dialogue_failure(failure_transaction, error.into(), output);
         }
-        if child.fiber.status == FiberStatus::Running {
+        if child.fiber.status == FiberStatus::Suspended
+            && deferred.is_some()
+            && let Err(error) = self.initialize_deferred_child_suspension(&mut child, output)
+        {
+            child.fiber.mark_trapped(FiberTrap {
+                code: error.trap_code(),
+                message: Some(error.to_string()),
+                source_map: None,
+            });
+        }
+        if child.fiber.status == FiberStatus::Running
+            || (child.fiber.status == FiberStatus::Suspended && deferred.is_some())
+        {
             remaining.push_back(child);
             let receipt = match self.dialogues.commit(transaction) {
                 Ok(receipt) => receipt,
@@ -1675,6 +1825,59 @@ impl AwbcProductStepExecutor {
             observations,
             pure_stats: Some(candidate_stats),
         };
+        if let Some((deferred_activation, registration, site)) = deferred.clone() {
+            if let Err(error) = transaction.line_mut().complete_deferred_child(
+                &deferred_activation,
+                registration,
+                site,
+                &after_handles,
+            ) {
+                return self.begin_product_dialogue_failure(
+                    failure_transaction,
+                    error.into(),
+                    output,
+                );
+            }
+            let failure = match child.fiber.terminal.as_ref() {
+                Some(FiberTerminalValue::Trapped(trap)) => Some(trap.clone()),
+                Some(FiberTerminalValue::Cancelled) => Some(FiberTrap {
+                    code: AwbcTrapCode::InternalInvariant,
+                    message: Some("line-root defer child was cancelled".to_owned()),
+                    source_map: None,
+                }),
+                Some(FiberTerminalValue::Returned(_)) => None,
+                None => Some(FiberTrap {
+                    code: AwbcTrapCode::InternalInvariant,
+                    message: Some("line-root defer child terminated without a value".to_owned()),
+                    source_map: None,
+                }),
+            };
+            if let Some(trap) = failure {
+                self.record_trap(&trap, output);
+                let (transaction, batch) =
+                    match self.prepare_product_dialogue_failure(transaction, trap, batch) {
+                        Ok(prepared) => prepared,
+                        Err(error) => {
+                            self.fail_with_error(error, output);
+                            return true;
+                        }
+                    };
+                return self.commit_product_dialogue_failure_close(transaction, batch, output);
+            }
+            let receipt = match self.dialogues.commit(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            self.commit_line_task_commands(batch, output);
+            output
+                .requests
+                .line_commands
+                .extend(receipt.into_line().into_commands());
+            return true;
+        }
         let batch = match self.prepare_owned_line_task_completion(
             &mut transaction,
             content,
@@ -2318,6 +2521,69 @@ impl AwbcProductStepExecutor {
             .line_task()
             .is_some_and(LineTaskLiveState::is_closed)
         {
+            let exit = self
+                .closed_line_task_exit(transaction.frame())
+                .ok_or_else(|| {
+                    ProductStepError::Internal(
+                        "closed line-task frame has no fixed scope exit".to_owned(),
+                    )
+                });
+            let exit = match exit {
+                Ok(exit) => exit,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+            if let Err(error) =
+                self.prepare_next_deferred_child(&mut transaction, exit, &mut command_batch)
+            {
+                return self.begin_product_dialogue_failure(transaction, error, output);
+            }
+            if transaction.line().deferred_inflight().is_some() {
+                let Some((registration, site)) = transaction.line().deferred_inflight() else {
+                    unreachable!("checked in-flight deferred registration")
+                };
+                let child_is_present = command_batch.child_fibers.iter().any(|child| {
+                    matches!(
+                        &child.owner,
+                        ProductChildFiberOwner::Deferred {
+                            activation: child_activation,
+                            registration: child_registration,
+                            site: child_site,
+                            ..
+                        } if child_activation == &activation
+                            && *child_registration == registration
+                            && *child_site == site
+                    )
+                });
+                if !child_is_present {
+                    self.fail_with_error(
+                        ProductStepError::Internal(
+                            "inflight line-root defer has no executor child".to_owned(),
+                        ),
+                        output,
+                    );
+                    return true;
+                }
+            }
+            if transaction.line().deferred_inflight().is_some()
+                || !transaction.line().deferred_registrations().is_empty()
+            {
+                let progressed = transaction.line().deferred_inflight().is_none();
+                let receipt = match self.dialogues.commit(transaction) {
+                    Ok(receipt) => receipt,
+                    Err(error) => {
+                        self.fail_with_error(error.into(), output);
+                        return true;
+                    }
+                };
+                self.commit_line_task_commands(command_batch, output);
+                output
+                    .requests
+                    .line_commands
+                    .extend(receipt.into_line().into_commands());
+                return progressed;
+            }
             let publication = match self.prepare_dialogue_publication(&mut transaction, resume) {
                 Ok(publication) => publication,
                 Err(error) => {
@@ -2442,7 +2708,6 @@ impl AwbcProductStepExecutor {
         ),
         ProductStepError,
     > {
-        let activation = transaction.activation().clone();
         let mut reducer = crate::line_task::LineTaskActivation::default();
         let prior = transaction.frame().phase.clone();
         let closing_state = match prior {
@@ -2475,9 +2740,6 @@ impl AwbcProductStepExecutor {
         }
         transaction.line_mut().abandon()?;
         let batch = self.prepare_line_task_commands_from(&mut transaction, reducer, batch)?;
-        transaction
-            .line_mut()
-            .prepare_handle_unwind(&activation, false)?;
         Ok((transaction, batch))
     }
 
@@ -2521,14 +2783,6 @@ impl AwbcProductStepExecutor {
                 )));
             }
         }
-        if let Err(cleanup) = transaction
-            .line_mut()
-            .prepare_handle_unwind(&activation, false)
-        {
-            output.diagnostics.push(RuntimeDiagnostic::new(format!(
-                "dialogue cleanup after primary failure also failed: {cleanup}"
-            )));
-        }
         let batch = ProductLineTaskExecutionBatch {
             child_fibers: self.child_fibers.clone(),
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
@@ -2537,6 +2791,55 @@ impl AwbcProductStepExecutor {
             observations: Vec::new(),
             pure_stats: None,
         };
+        let reducer_closed = match &transaction.frame().phase {
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::Activation { .. },
+                ..
+            }) => true,
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::LineTask { line_task },
+                ..
+            }) => line_task.is_closed(),
+            ProductDialoguePhase::Activating { .. }
+            | ProductDialoguePhase::Reducing { .. }
+            | ProductDialoguePhase::Publishing { .. } => false,
+        };
+        if reducer_closed {
+            let exit = transaction
+                .line()
+                .deferred_exit()
+                .unwrap_or(ScopeExit::Failed);
+            let mut batch = batch;
+            let progressed =
+                match self.prepare_next_deferred_child(&mut transaction, exit, &mut batch) {
+                    Ok(progressed) => progressed,
+                    Err(cleanup) => {
+                        output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                            "dialogue cleanup after primary failure also failed: {cleanup}"
+                        )));
+                        self.fail_with_error(cleanup, output);
+                        return true;
+                    }
+                };
+            if transaction.line().deferred_inflight().is_some()
+                || !transaction.line().deferred_registrations().is_empty()
+            {
+                let waiting_for_child = transaction.line().deferred_inflight().is_some();
+                let completed =
+                    self.commit_product_dialogue_failure_close(transaction, batch, output);
+                return completed || (!waiting_for_child && progressed);
+            }
+            if let Err(cleanup) = transaction
+                .line_mut()
+                .prepare_handle_unwind(&activation, false)
+            {
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "dialogue cleanup after primary failure also failed: {cleanup}"
+                )));
+            }
+            return self.commit_product_dialogue_failure_close(transaction, batch, output);
+        }
+        let batch = batch;
         self.commit_product_dialogue_failure_close(transaction, batch, output)
     }
 
@@ -2660,6 +2963,15 @@ impl AwbcProductStepExecutor {
             finish_live_line_task_group(&view, state)
         };
         Ok(activation)
+    }
+
+    fn closed_line_task_exit(&self, active: &ActiveDialogue) -> Option<ScopeExit> {
+        let line_task = active.line_task()?;
+        match line_task.snapshot().phase() {
+            crate::line_task::LineTaskPhase::Closed { exit } => Some(exit),
+            crate::line_task::LineTaskPhase::Active
+            | crate::line_task::LineTaskPhase::Closing { .. } => None,
+        }
     }
 
     fn prepare_owned_line_task_completion(

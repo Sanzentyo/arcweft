@@ -14,6 +14,7 @@ mod activation;
 mod defer;
 mod handle;
 
+pub(crate) use defer::RuntimeDeferUnwindStep;
 pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
 
 pub(crate) use activation::{

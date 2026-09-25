@@ -194,6 +194,13 @@ impl ProductDialogueStore {
     pub(super) fn from_save_snapshot<S>(
         snapshot: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<S, AwbcTypeId>,
         owner: &crate::task::RuntimeProgramOwner,
+        expected_deferred_children: &BTreeMap<
+            DialogueActivationId,
+            (
+                crate::runtime_id::RuntimeDeferRegistrationId,
+                crate::runtime_id::RuntimeDeferSiteId,
+            ),
+        >,
         restore_frame: impl FnMut(
             &DialogueActivationId,
             S,
@@ -211,7 +218,12 @@ impl ProductDialogueStore {
             );
         };
         let registry =
-            RuntimeDialogueActivationRegistry::from_save_snapshot(snapshot, owner, restore_frame)?;
+            RuntimeDialogueActivationRegistry::from_save_snapshot_with_deferred_children(
+                snapshot,
+                owner,
+                expected_deferred_children,
+                restore_frame,
+            )?;
         for activation in registry.active_ids() {
             let Some(line) = registry.active_line(&activation) else {
                 continue;
