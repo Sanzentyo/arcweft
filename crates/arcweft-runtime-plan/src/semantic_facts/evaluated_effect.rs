@@ -2,13 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_hir::expr::HirExprKind;
-use arcweft_lang_hir::identity::{ExprId, HirModuleId, StmtId};
+use arcweft_lang_hir::identity::{ExprId, HirModuleId};
 use arcweft_lang_hir::module::HirModule;
-use arcweft_lang_hir::stmt::HirStmtKind;
 
 use super::{
     RuntimeNormalizedType, RuntimeResolvedCall, RuntimeResolvedCallOperandSource,
-    RuntimeSemanticFactsError, RuntimeSequenceKind, RuntimeTypeShape, resolve_expr, resolve_stmt,
+    RuntimeSemanticFactsError, RuntimeSequenceKind, RuntimeTypeShape, resolve_expr,
     validate_normalized_type,
 };
 
@@ -217,14 +216,20 @@ pub(super) fn validate_evaluated_effect(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
-    statement: StmtId,
+    expression: ExprId,
     fact: &RuntimeEvaluatedEffectFact,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    let HirStmtKind::Expression { expression } = resolve_stmt(modules, statement)? else {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
+    let expected_result = match fact.effect() {
+        RuntimeEvaluatedEffect::Panic { .. }
+        | RuntimeEvaluatedEffect::Fail { .. }
+        | RuntimeEvaluatedEffect::Bail { .. } => RuntimeTypeShape::Never,
+        _ => RuntimeTypeShape::Unit,
     };
-    if fact.site_root() != *expression || !validate_evaluated_effect_site(modules, fact) {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
+    if fact.site_root() != expression
+        || fact.result().shape() != &expected_result
+        || !validate_evaluated_effect_site(modules, fact)
+    {
+        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { expression });
     }
     validate_evaluated_effect_operation(
         modules,
@@ -234,7 +239,7 @@ pub(super) fn validate_evaluated_effect(
         fact.effect(),
     )
     .then_some(())
-    .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement })
+    .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { expression })
 }
 
 pub(super) fn validate_evaluated_effect_site(

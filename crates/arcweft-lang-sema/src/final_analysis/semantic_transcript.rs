@@ -1135,6 +1135,13 @@ fn expression_digest_at_with_state(
     )?;
     write_record_expression_fields(&mut hasher, edges)?;
     write_effects(&mut hasher, checked.effects())?;
+    match checked.evaluated_effect() {
+        Some(effect) => {
+            transcript_update!(hasher, &[1]);
+            write_evaluated_effect(&mut hasher, effect)?;
+        }
+        None => transcript_update!(hasher, &[0]),
+    }
     if matches!(hir.kind(), HirExprKind::Match(_)) {
         // Match patterns, arm bindings, coverage, witnesses, and unreachable
         // rows are not ordinary expression edges.  The complete accepted
@@ -1684,7 +1691,13 @@ fn write_statement_payload(
             }
         }
         CheckedStatementPayload::EvaluatedEffect(effect) => {
-            write_evaluated_effect(hasher, effect)?;
+            write_bytes(
+                hasher,
+                &coordinates
+                    .expression(effect.site_root())?
+                    .canonical_bytes()?,
+            )?;
+            transcript_update!(hasher, effect.application_digest().as_bytes());
         }
         CheckedStatementPayload::Iteration(iteration) => {
             write_iteration(hasher, iteration, analysis)?;

@@ -662,6 +662,38 @@ pub(super) fn validate_expressions(
         if call_backed != calls.contains_key(&owner) {
             return Err(FinalSemanticAnalysisError::CallFactMismatch);
         }
+        if let Some(effect) = fact.evaluated_effect() {
+            let terminal = match (expression.kind(), fact.resolution()) {
+                (HirExprKind::Call(_), _) => owner,
+                (HirExprKind::Pipe(pipe), CheckedExpressionResolution::Pipe(checked_pipe))
+                    if checked_pipe.lookup_left() == pipe.left()
+                        && checked_pipe.lookup_right() == pipe.right() =>
+                {
+                    checked_pipe.lookup_right()
+                }
+                _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+            };
+            let application = calls
+                .get(&terminal)
+                .and_then(CallTargetFacts::selected_application)
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let selected = application.core().candidates().selected();
+            if effect.site_root() != owner
+                || fact.value_type() != Some(effect.result())
+                || effect.application().raw() != crate::callable::CheckedCallSite::HirCall(terminal)
+                || application.core().site() != crate::callable::CheckedCallSite::HirCall(terminal)
+                || application.core().application_site() != effect.application()
+                || application.digest() != effect.application_digest()
+                || selected.schema().evaluated_effect() != Some(effect.disposition())
+                || selected
+                    .base()
+                    .next_group_for(application.core().current_group())
+                    .is_some()
+                || !matches!(application.result(), CheckedCallResult::Value(_))
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
     }
     Ok(())
 }
@@ -2085,8 +2117,8 @@ fn validate_project_item(
 pub(super) fn validate_statements(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     locals: &BTreeMap<LocalId, CheckedBinding>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
     statements: &BTreeMap<StmtId, CheckedStatement>,
-    calls: &BTreeMap<ExprId, CallTargetFacts>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     for (&owner, fact) in statements {
         let statement = resolve_module(modules, owner.module())?
@@ -2110,21 +2142,11 @@ pub(super) fn validate_statements(
                 else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                if *expression != effect.site_root() {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                let site = effect.application().raw();
-                let call = calls
-                    .get(&site.expression())
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                let Some(application) = call.selected_application() else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                let selected = application.core().candidates().selected();
-                if application.core().site() != site
-                    || application.core().application_site() != effect.application()
-                    || selected.schema().evaluated_effect() != Some(effect.disposition())
-                    || !matches!(application.result(), CheckedCallResult::Value(_))
+                if *expression != effect.site_root()
+                    || expressions
+                        .get(expression)
+                        .and_then(CheckedExpression::evaluated_effect)
+                        .is_none_or(|checked| checked.reference() != *effect)
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }

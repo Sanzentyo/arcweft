@@ -90,7 +90,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::Yield
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             }
         }
@@ -110,7 +110,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::Yield
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             }
         }
@@ -130,7 +130,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::Yield
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             }
         }
@@ -150,7 +150,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Yield
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             }
         }
@@ -168,7 +168,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::Suspension(_)
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {
                 Err(FinalSemanticAnalysisError::WrongPayloadFamily)
             }
         }
@@ -462,8 +462,8 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
     ) -> Result<CheckedStatementPayload, FinalSemanticAnalysisError> {
         match self.take_prepared(owner)? {
             PreparedStatementPayload::HirOwned => Ok(CheckedStatementPayload::Structural),
-            PreparedStatementPayload::SealedEvaluatedEffect(effect) => {
-                Ok(CheckedStatementPayload::EvaluatedEffect(effect))
+            PreparedStatementPayload::SealedEvaluatedEffectReference(reference) => {
+                Ok(CheckedStatementPayload::EvaluatedEffect(reference))
             }
             PreparedStatementPayload::Assignment(_)
             | PreparedStatementPayload::Assertion(_)

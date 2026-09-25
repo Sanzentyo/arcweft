@@ -1493,7 +1493,7 @@ fn evaluated_effect_rejects_an_application_that_is_not_a_call() {
         "evaluated-effect-non-call-application",
         "flow opening {\n    true\n}\n",
     );
-    let (statement, application) =
+    let (_, application) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Literal(_)));
     let operand = RuntimeEvaluatedEffectOperandFact::new(
         RuntimeResolvedCallOperandSource::Expression(application),
@@ -1501,7 +1501,7 @@ fn evaluated_effect_rejects_an_application_that_is_not_a_call() {
     );
     let mut input = complete_type_input(&project);
     input.push_evaluated_effect(
-        statement,
+        application,
         RuntimeEvaluatedEffectFact::new(
             application,
             application,
@@ -1517,17 +1517,20 @@ fn evaluated_effect_rejects_an_application_that_is_not_a_call() {
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("an evaluated effect application must be a HIR Call"),
-        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+        RuntimeSemanticFactsError::WrongExpressionFamily {
+            expression: application,
+            expected: RuntimeSemanticFactFamily::EvaluatedEffect,
+        }
     );
 }
 
 #[test]
-fn evaluated_effect_rejects_an_application_owned_by_another_statement() {
+fn evaluated_effect_rejects_a_site_root_different_from_its_expression_owner() {
     let project = project_fixture(
         "evaluated-effect-owner-mismatch",
         "flow opening {\n    true\n    __runtime_plan_test_probe()\n}\n",
     );
-    let (statement, _) =
+    let (_, literal) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Literal(_)));
     let (_, application) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
@@ -1537,9 +1540,9 @@ fn evaluated_effect_rejects_an_application_owned_by_another_statement() {
     );
     let mut input = complete_type_input(&project);
     input.push_evaluated_effect(
-        statement,
+        application,
         RuntimeEvaluatedEffectFact::new(
-            application,
+            literal,
             application,
             unit_type(),
             RuntimeEvaluatedEffect::Log {
@@ -1552,8 +1555,10 @@ fn evaluated_effect_rejects_an_application_owned_by_another_statement() {
 
     assert_eq!(
         runtime_facts(&project, input)
-            .expect_err("an evaluated effect must remain owned by its statement"),
-        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+            .expect_err("an evaluated effect must remain owned by its site root"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact {
+            expression: application,
+        }
     );
 }
 
@@ -1563,7 +1568,7 @@ fn evaluated_effect_rejects_an_ensure_condition_without_bool_type() {
         "evaluated-effect-ensure-non-bool",
         "flow opening {\n    __runtime_plan_test_probe()\n}\n",
     );
-    let (statement, application) =
+    let (_, application) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
     let condition = RuntimeEvaluatedEffectOperandFact::new(
         RuntimeResolvedCallOperandSource::Expression(application),
@@ -1575,7 +1580,7 @@ fn evaluated_effect_rejects_an_ensure_condition_without_bool_type() {
     );
     let mut input = complete_type_input(&project);
     input.push_evaluated_effect(
-        statement,
+        application,
         RuntimeEvaluatedEffectFact::new(
             application,
             application,
@@ -1587,7 +1592,9 @@ fn evaluated_effect_rejects_an_ensure_condition_without_bool_type() {
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("Ensure condition must carry the checked Bool type"),
-        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact {
+            expression: application,
+        }
     );
 }
 
@@ -1597,7 +1604,7 @@ fn evaluated_effect_rejects_a_stop_fade_without_duration_type() {
         "evaluated-effect-stop-non-duration",
         "flow opening {\n    __runtime_plan_test_probe()\n}\n",
     );
-    let (statement, application) =
+    let (_, application) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
     let target = RuntimeEvaluatedEffectOperandFact::new(
         RuntimeResolvedCallOperandSource::Expression(application),
@@ -1609,7 +1616,7 @@ fn evaluated_effect_rejects_a_stop_fade_without_duration_type() {
     );
     let mut input = complete_type_input(&project);
     input.push_evaluated_effect(
-        statement,
+        application,
         RuntimeEvaluatedEffectFact::new(
             application,
             application,
@@ -1625,7 +1632,9 @@ fn evaluated_effect_rejects_a_stop_fade_without_duration_type() {
 
     assert_eq!(
         runtime_facts(&project, input).expect_err("Stop fade must carry the checked Duration type"),
-        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact {
+            expression: application,
+        }
     );
 }
 
@@ -1635,7 +1644,7 @@ fn evaluated_effect_rejects_a_stop_fade_with_an_invalid_source() {
         "evaluated-effect-stop-invalid-source",
         "flow opening {\n    __runtime_plan_test_probe()\n}\n",
     );
-    let (statement, application) =
+    let (_, application) =
         expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
     let target = RuntimeEvaluatedEffectOperandFact::new(
         RuntimeResolvedCallOperandSource::Expression(application),
@@ -1650,7 +1659,7 @@ fn evaluated_effect_rejects_a_stop_fade_with_an_invalid_source() {
     );
     let mut input = complete_type_input(&project);
     input.push_evaluated_effect(
-        statement,
+        application,
         RuntimeEvaluatedEffectFact::new(
             application,
             application,
@@ -1667,7 +1676,9 @@ fn evaluated_effect_rejects_a_stop_fade_with_an_invalid_source() {
     assert_eq!(
         runtime_facts(&project, input)
             .expect_err("Stop fade must reference a valid checked operand source"),
-        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact {
+            expression: application,
+        }
     );
 }
 

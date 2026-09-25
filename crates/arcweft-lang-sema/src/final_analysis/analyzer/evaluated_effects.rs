@@ -1,4 +1,4 @@
-//! Post-call sealing for runtime-observable expression-statement effects.
+//! Post-call sealing for runtime-observable expression-root effects.
 //!
 //! Preparation retains only callable-owned identity. This pass runs after C1
 //! and projects operands exclusively from the final checked applications.
@@ -115,6 +115,8 @@ struct ContentSealTraversal {
     active: BTreeSet<ExprId>,
     visited: BTreeSet<ExprId>,
     ids: BTreeMap<CheckedContentApplicationId, ExprId>,
+    dialogue_effect_roots: BTreeSet<ExprId>,
+    dialogue_effect_calls: BTreeSet<ExprId>,
     fragments: Vec<ContentFragmentFrame>,
     next_fx_ordinal: u32,
 }
@@ -122,6 +124,35 @@ struct ContentSealTraversal {
 struct ContentFragmentFrame {
     coordinate: StableCheckedContentFragmentCoordinate,
     next_content_result_ordinal: usize,
+}
+
+fn retain_prepared_effect(
+    prepared_effects: &mut BTreeMap<ExprId, PreparedEvaluatedEffect>,
+    terminals: &mut BTreeMap<ExprId, ExprId>,
+    prepared: PreparedEvaluatedEffect,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let root = prepared.root();
+    let (_, site, _, _) = prepared.clone().into_parts();
+    let CheckedCallSite::HirCall(terminal) = site else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if terminals
+        .get(&terminal)
+        .is_some_and(|previous| *previous != root)
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    terminals.insert(terminal, root);
+    match prepared_effects.entry(root) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(prepared);
+        }
+        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &prepared => {}
+        std::collections::btree_map::Entry::Occupied(_) => {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+    }
+    Ok(())
 }
 
 impl ContentSealTraversal {
@@ -416,8 +447,8 @@ fn seal_proxy_application(
 
 impl Analyzer<'_, '_, '_> {
     /// Prepares one ordinary or RichText-hosted evaluated effect from the
-    /// selected callable graph. The authored Pipe remains the structural
-    /// owner while its terminal Call owns the final application identity.
+    /// selected callable graph. A Pipe remains the structural operation owner
+    /// while its terminal Call supplies the selected application identity.
     pub(super) fn prepare_evaluated_effect_expression(
         &self,
         module: &HirModule,
@@ -458,30 +489,61 @@ impl Analyzer<'_, '_, '_> {
             },
             _ => return Ok(None),
         };
-        let Some(node) = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?
-            .selected_nodes()
-            .find(|node| node.site() == CheckedCallSite::HirCall(call_owner))
-        else {
+        let (schema, disposition, has_remaining_group) =
+            if let Ok(prepared_calls) = self.facts.prepared_calls() {
+                let Some(node) = prepared_calls
+                    .selected_nodes()
+                    .find(|node| node.site() == CheckedCallSite::HirCall(call_owner))
+                else {
+                    return Ok(None);
+                };
+                let application = node.prefix().application();
+                let selected = application.selected();
+                let Some(disposition) = selected.schema().evaluated_effect() else {
+                    return Ok(None);
+                };
+                (
+                    selected.schema().semantic_digest(),
+                    disposition,
+                    selected
+                        .next_group_for(application.completed_group())
+                        .is_some(),
+                )
+            } else {
+                let Some(application) = self
+                    .facts
+                    .calls()
+                    .get(&call_owner)
+                    .and_then(crate::callable::CallTargetFacts::selected_application)
+                else {
+                    return Ok(None);
+                };
+                if application.core().site() != CheckedCallSite::HirCall(call_owner) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let selected = application.core().candidates().selected();
+                let Some(disposition) = selected.schema().evaluated_effect() else {
+                    return Ok(None);
+                };
+                (
+                    selected.schema().semantic_digest(),
+                    disposition,
+                    selected
+                        .base()
+                        .next_group_for(application.core().current_group())
+                        .is_some(),
+                )
+            };
+        if has_remaining_group {
+            // A partially applied effect schema still denotes a callable
+            // value. Only its completed terminal application owns an
+            // operation fact.
             return Ok(None);
-        };
-        let application = node.prefix().application();
-        let Some(disposition) = application.selected().schema().evaluated_effect() else {
-            return Ok(None);
-        };
-        if application
-            .selected()
-            .next_group_for(application.completed_group())
-            .is_some()
-        {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(Some(PreparedEvaluatedEffect::new(
             expression,
             CheckedCallSite::HirCall(call_owner),
-            application.selected().schema().semantic_digest(),
+            schema,
             disposition,
         )))
     }
@@ -542,20 +604,155 @@ impl Analyzer<'_, '_, '_> {
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let statements = std::mem::take(&mut input.statements)
-            .into_iter()
-            .map(|(owner, fact)| {
-                let fact = match fact {
-                    PreparedStatementPayload::EvaluatedEffect(prepared) => {
-                        let effect = self.seal_evaluated_effect(prepared)?;
-                        PreparedStatementPayload::SealedEvaluatedEffect(Box::new(effect))
+        let mut prepared_effects = BTreeMap::<ExprId, PreparedEvaluatedEffect>::new();
+        let mut effect_terminals = BTreeMap::<ExprId, ExprId>::new();
+        let mut statement_roots = BTreeMap::<_, _>::new();
+        let mut sealed_statement_references = BTreeMap::new();
+        for (statement, payload) in &input.statements {
+            let root = match payload {
+                PreparedStatementPayload::EvaluatedEffect(prepared) => {
+                    let root = prepared.root();
+                    if content_traversal.dialogue_effect_roots.contains(&root)
+                        || !self.facts.expressions().contains_key(&root)
+                        || statement_roots.insert(*statement, root).is_some()
+                    {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
-                    fact => fact,
+                    retain_prepared_effect(
+                        &mut prepared_effects,
+                        &mut effect_terminals,
+                        prepared.clone(),
+                    )?;
+                    continue;
+                }
+                PreparedStatementPayload::SealedEvaluatedEffectReference(reference) => {
+                    let root = reference.site_root();
+                    if content_traversal.dialogue_effect_roots.contains(&root)
+                        || !self.facts.expressions().contains_key(&root)
+                        || sealed_statement_references
+                            .insert(*statement, *reference)
+                            .is_some()
+                    {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                    root
+                }
+                _ => continue,
+            };
+            if statement_roots.insert(*statement, root).is_some() {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
+
+        let expression_owners = self.facts.expressions().keys().copied().collect::<Vec<_>>();
+        // A Pipe is the structural owner of its terminal application. Seal
+        // it first so the terminal Call does not acquire a second operation.
+        for owner in expression_owners.iter().copied() {
+            let module = self.module(owner.module())?;
+            let expression = module
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if !matches!(expression.kind(), HirExprKind::Pipe(_))
+                || content_traversal.dialogue_effect_roots.contains(&owner)
+                || content_traversal.dialogue_effect_calls.contains(&owner)
+            {
+                continue;
+            }
+            if let Some(prepared) = self.prepare_evaluated_effect_expression(module, owner)? {
+                let (_, site, _, _) = prepared.clone().into_parts();
+                let CheckedCallSite::HirCall(terminal) = site else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                Ok((owner, fact))
+                if content_traversal.dialogue_effect_roots.contains(&terminal)
+                    || content_traversal.dialogue_effect_calls.contains(&terminal)
+                {
+                    continue;
+                }
+                retain_prepared_effect(&mut prepared_effects, &mut effect_terminals, prepared)?;
+            }
+        }
+        for owner in expression_owners {
+            let module = self.module(owner.module())?;
+            let expression = module
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if !matches!(expression.kind(), HirExprKind::Call(_))
+                || effect_terminals.contains_key(&owner)
+                || content_traversal.dialogue_effect_roots.contains(&owner)
+                || content_traversal.dialogue_effect_calls.contains(&owner)
+            {
+                continue;
+            }
+            if let Some(prepared) = self.prepare_evaluated_effect_expression(module, owner)? {
+                retain_prepared_effect(&mut prepared_effects, &mut effect_terminals, prepared)?;
+            }
+        }
+
+        let mut sealed_effects = BTreeMap::new();
+        let mut expression_replacements = BTreeMap::new();
+        for (root, prepared) in prepared_effects {
+            let effect = self.seal_evaluated_effect(prepared)?;
+            if effect.site_root() != root {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            let fact = self
+                .facts
+                .expressions()
+                .get(&root)
+                .cloned()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let PreparedExpressionFact::Complete(checked) = fact else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let checked = match checked.evaluated_effect() {
+                Some(existing) if existing == &effect => checked,
+                Some(_) => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+                None => checked
+                    .with_evaluated_effect(root, effect.clone())
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            };
+            if sealed_effects.insert(root, effect).is_some()
+                || expression_replacements
+                    .insert(root, PreparedExpressionFact::Complete(checked))
+                    .is_some()
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
+        self.facts
+            .replace_existing_expressions(expression_replacements)
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+
+        input.statements = std::mem::take(&mut input.statements)
+            .into_iter()
+            .map(|(statement, payload)| {
+                let payload = match payload {
+                    PreparedStatementPayload::EvaluatedEffect(prepared) => {
+                        let root = prepared.root();
+                        if statement_roots.get(&statement) != Some(&root) {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
+                        let effect = sealed_effects
+                            .get(&root)
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        PreparedStatementPayload::SealedEvaluatedEffectReference(effect.reference())
+                    }
+                    PreparedStatementPayload::SealedEvaluatedEffectReference(reference) => {
+                        if statement_roots.get(&statement) != Some(&reference.site_root())
+                            || sealed_statement_references.get(&statement) != Some(&reference)
+                            || sealed_effects
+                                .get(&reference.site_root())
+                                .is_none_or(|effect| effect.reference() != reference)
+                        {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
+                        PreparedStatementPayload::SealedEvaluatedEffectReference(reference)
+                    }
+                    payload => payload,
+                };
+                Ok((statement, payload))
             })
-            .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?;
-        input.statements = statements;
+            .collect::<Result<_, FinalSemanticAnalysisError>>()?;
         Ok(())
     }
 
@@ -1229,6 +1426,15 @@ impl Analyzer<'_, '_, '_> {
                 )
             })
             .collect::<Result<Vec<_>, _>>()?;
+        for site in &effect_sites {
+            if !traversal.dialogue_effect_roots.insert(site.root())
+                || !traversal
+                    .dialogue_effect_calls
+                    .insert(site.effect().application().raw().expression())
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
         let effect_plan = CheckedDialogueEffectPlan::new(effect_sites);
         Ok(CheckedRichTextReport::new(
             admission,
@@ -1386,8 +1592,9 @@ impl Analyzer<'_, '_, '_> {
         )
     }
 
-    /// Seals one prepared evaluated effect for either an ordinary statement
-    /// or a dialogue line-plan site after final call applications exist.
+    /// Seals one prepared evaluated effect after final call applications
+    /// exist. Ordinary effects attach to their expression root; dialogue
+    /// callback sites retain the operation in their line-plan site.
     pub(crate) fn seal_evaluated_effect(
         &self,
         prepared: PreparedEvaluatedEffect,

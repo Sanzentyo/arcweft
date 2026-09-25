@@ -1389,80 +1389,144 @@ entry cli @entry.main { goto @flow.main }
 
 #[test]
 fn line_root_deferred_children_execute_in_native_and_awbc_lifo() {
-    let compiled = compile_attached_dialogue_project(
-        r#"
-pub character alice { display = "Alice" }
-flow main() -> Unit {
+    for terminal_separator in [";", ""] {
+        let compiled = compile_attached_dialogue_project(&format!(
+            r#"
+pub character alice {{ display = "Alice" }}
+flow main() -> Unit {{
     let message = "first"
     alice: hello[p]
     with:
-        defer { log.info(message); }
-        defer on failed { log.info("failed"); }
-        defer { log.info("last"); }
+        defer {{ log.info(message){terminal_separator} }}
+        defer on failed {{ log.info("failed"){terminal_separator} }}
+        defer {{ log.info("last"){terminal_separator} }}
+}}
+entry cli @entry.main {{ goto @flow.main }}
+"#
+        ))
+        .expect("checked line defer effects compile as executable bodies");
+        let runtime = compiled.runtime_plan();
+        let report = AwbcLowerer::new(
+            &runtime.plan,
+            &runtime.dialogue_content_catalog,
+            "line_defer_execution.arcw",
+        )
+        .lower()
+        .expect("defer bodies lower to verified AWBC");
+        let bytes = report.program.encode_canonical().expect("encode AWBC");
+        let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+            &bytes,
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .expect("decode AWBC");
+
+        let [flow] = runtime.plan.flows() else {
+            panic!("one flow")
+        };
+        let [template] = runtime.dialogue_content_catalog.templates() else {
+            panic!("one template")
+        };
+        let mut plan = runtime.plan.clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+        let native_schema = bind_test_character_dialogue_schema(
+            &compiled,
+            arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+        );
+        let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+            );
+        let (_, _, native_effects) = execute_single_dialogue_with_content(
+            |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+            template.id(),
+        );
+        assert_eq!(log_messages(&native_effects), ["last", "first"]);
+
+        let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+            decoded,
+            arcweft_core::awbc::schema::AwbcEntryId(0),
+        )
+        .unwrap();
+        let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+        let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+            );
+        let (_, _, awbc_effects) = execute_single_dialogue_with_content(
+            |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+            template.id(),
+        );
+        assert_eq!(log_messages(&awbc_effects), log_messages(&native_effects));
+    }
+}
+
+#[test]
+fn pipe_tail_effect_has_one_operation_and_verified_awbc() {
+    let compiled = compile_source(
+        r#"
+flow main() -> Unit {
+    let message = "piped"
+    message |> log.info(^)
 }
 entry cli @entry.main { goto @flow.main }
 "#,
     )
-    .expect("checked line defer effects compile as executable bodies");
-    let runtime = compiled.runtime_plan();
-    let report = AwbcLowerer::new(
-        &runtime.plan,
-        &runtime.dialogue_content_catalog,
-        "line_defer_execution.arcw",
+    .expect("pipe tail effect compiles from its expression-owned operation");
+    let effects = compiled
+        .plan
+        .flows()
+        .iter()
+        .flat_map(|flow| flow.body().ops())
+        .filter(|op| matches!(op, FlowOp::EvaluatedEffect(_)))
+        .count();
+    assert_eq!(effects, 1);
+    AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "pipe_tail_effect.arcw",
     )
     .lower()
-    .expect("defer bodies lower to verified AWBC");
-    let bytes = report.program.encode_canonical().expect("encode AWBC");
-    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
-        &bytes,
-        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
-    )
-    .expect("decode AWBC");
+    .expect("pipe tail effect lowers to verified AWBC");
+}
 
-    let [flow] = runtime.plan.flows() else {
-        panic!("one flow")
-    };
-    let [template] = runtime.dialogue_content_catalog.templates() else {
-        panic!("one template")
-    };
-    let mut plan = runtime.plan.clone();
-    plan.bind_artifact(
-        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
-            *blake3::hash(&bytes).as_bytes(),
+#[test]
+fn project_function_effect_tails_have_one_closed_operation() {
+    for tail in ["log.info(message)", "message |> log.info(^)"] {
+        let compiled = compile_source(&format!(
+            r#"
+fn emit(message: String) -> Unit {{ {tail} }}
+flow main() -> Unit {{ emit("piped"); }}
+entry cli @entry.main {{ goto @flow.main }}
+"#,
+        ))
+        .expect("project function effect tail has one closed operation");
+        let effects = compiled
+            .plan
+            .function_sites()
+            .iter()
+            .filter_map(|site| match site.body() {
+                RuntimeFunctionSiteBody::Executable(body) => Some(body.ops()),
+                RuntimeFunctionSiteBody::Expression(_) => None,
+            })
+            .flatten()
+            .filter(|op| matches!(op, FlowOp::EvaluatedEffect(_)))
+            .count();
+        assert_eq!(effects, 1, "{tail}");
+        AwbcLowerer::new(
+            &compiled.plan,
+            &compiled.dialogue_content,
+            "function_effect.arcw",
         )
-        .unwrap(),
-    )
-    .unwrap();
-    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
-    let native_schema = bind_test_character_dialogue_schema(
-        &compiled,
-        arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
-    );
-    let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
-        .with_external_calls(
-            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
-        );
-    let (_, _, native_effects) = execute_single_dialogue_with_content(
-        |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
-        template.id(),
-    );
-    assert_eq!(log_messages(&native_effects), ["last", "first"]);
-
-    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
-        decoded,
-        arcweft_core::awbc::schema::AwbcEntryId(0),
-    )
-    .unwrap();
-    let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
-    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
-        .with_external_calls(
-            arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
-        );
-    let (_, _, awbc_effects) = execute_single_dialogue_with_content(
-        |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
-        template.id(),
-    );
-    assert_eq!(log_messages(&awbc_effects), log_messages(&native_effects));
+        .lower()
+        .expect("closed function effect lowers to verified AWBC");
+    }
 }
 
 fn collect_mark_triggers(

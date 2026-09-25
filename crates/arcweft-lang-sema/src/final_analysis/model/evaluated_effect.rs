@@ -3,6 +3,35 @@ use arcweft_lang_hir::identity::ExprId;
 
 use super::{CallableEvaluatedEffect, CallableLogLevel, DropCallableId, OpenArgumentId, TypeKind};
 
+/// Typed statement-to-expression reference for a checked evaluated effect.
+/// The expression site owns the operation; statements retain only the exact
+/// site identity and selected application digest.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CheckedEvaluatedEffectReference {
+    site_root: ExprId,
+    application_digest: crate::callable::CheckedCallApplicationDigest,
+}
+
+impl CheckedEvaluatedEffectReference {
+    pub(crate) const fn new(
+        site_root: ExprId,
+        application_digest: crate::callable::CheckedCallApplicationDigest,
+    ) -> Self {
+        Self {
+            site_root,
+            application_digest,
+        }
+    }
+
+    pub const fn site_root(self) -> ExprId {
+        self.site_root
+    }
+
+    pub const fn application_digest(self) -> crate::callable::CheckedCallApplicationDigest {
+        self.application_digest
+    }
+}
+
 /// Checked operand retained by one evaluated-effect application.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedEvaluatedEffectOperand {
@@ -191,9 +220,13 @@ impl CheckedEvaluatedEffect {
         &self.result
     }
 
-    /// Root expression whose statement or line-plan site owns this effect.
+    /// Exact expression site that owns this evaluated effect.
     pub const fn site_root(&self) -> ExprId {
         self.site_root
+    }
+
+    pub const fn reference(&self) -> CheckedEvaluatedEffectReference {
+        CheckedEvaluatedEffectReference::new(self.site_root, self.application_digest)
     }
 
     pub const fn operation(&self) -> &CheckedEvaluatedEffectOperation {

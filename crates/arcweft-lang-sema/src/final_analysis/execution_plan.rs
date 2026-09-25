@@ -26,11 +26,36 @@ pub(super) fn seal(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let mut roles = BTreeMap::<ExprId, BTreeSet<super::CheckedEvaluatedEffectRole>>::new();
+    let mut statement_roots =
+        BTreeMap::<ExprId, (StmtId, super::CheckedEvaluatedEffectReference)>::new();
     for (statement, payload) in statements {
-        let super::PreparedStatementPayload::SealedEvaluatedEffect(effect) = payload else {
+        let super::PreparedStatementPayload::SealedEvaluatedEffectReference(reference) = payload
+        else {
             continue;
         };
-        add_effect_execution_roles(effect, Some(*statement), None, calls, &mut roles)?;
+        if statement_roots
+            .insert(reference.site_root(), (*statement, *reference))
+            .is_some()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+    }
+    for (owner, checked) in &expressions {
+        let Some(effect) = checked.evaluated_effect() else {
+            continue;
+        };
+        if effect.site_root() != *owner {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let statement = match statement_roots.remove(owner) {
+            Some((statement, reference)) if reference == effect.reference() => Some(statement),
+            Some(_) => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+            None => None,
+        };
+        add_effect_execution_roles(effect, statement, None, calls, &mut roles)?;
+    }
+    if !statement_roots.is_empty() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
     for (owner, checked) in &expressions {
         let super::CheckedExpressionResolution::DialogueApplication {
@@ -135,6 +160,12 @@ fn add_effect_execution_roles(
     roles: &mut BTreeMap<ExprId, BTreeSet<super::CheckedEvaluatedEffectRole>>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     let root = effect.site_root();
+    if dialogue_site.is_none() {
+        roles
+            .entry(root)
+            .or_default()
+            .insert(super::CheckedEvaluatedEffectRole::ExpressionRoot { root });
+    }
     if let Some(statement) = statement {
         roles
             .entry(root)

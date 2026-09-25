@@ -883,6 +883,10 @@ pub enum RuntimeProjectFunctionExpressionPayload {
     NominalRecord(RuntimeRecordExpressionFact),
     Variant(RuntimeResolvedVariant),
     Call(RuntimeResolvedCall),
+    EvaluatedEffect {
+        operation: RuntimeEvaluatedEffectFact,
+        pipe: Option<RuntimePipeFact>,
+    },
     PostfixCandidate(ExprId),
     Await(RuntimeAwaitFact),
     Choice(RuntimeChoiceFact),
@@ -915,6 +919,9 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::NominalRecord(_) => CheckedExecutableRuntimeExpressionFactFamily::NominalRecord,
             Self::Variant(_) => CheckedExecutableRuntimeExpressionFactFamily::Variant,
             Self::Call(_) => CheckedExecutableRuntimeExpressionFactFamily::Call,
+            Self::EvaluatedEffect { .. } => {
+                CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect
+            }
             Self::PostfixCandidate(_) => {
                 CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
             }
@@ -1035,7 +1042,7 @@ pub enum RuntimeProjectFunctionStatementPayload {
     Assignment(RuntimeAssignmentFact),
     Assertion(RuntimeAssertionAdmission),
     Defer(RuntimeDeferFact),
-    EvaluatedEffect(RuntimeEvaluatedEffectFact),
+    EvaluatedEffect(ExprId),
     Iteration(RuntimeIteratorFact),
     ControlTransfer,
     Trigger(RuntimeTriggerAdmission),
@@ -1719,6 +1726,9 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             RuntimeProjectFunctionExpressionPayload::Pipe(value)
             | RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
                 pipe: Some(value), ..
+            }
+            | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect {
+                pipe: Some(value), ..
             } => Some(value),
             _ => None,
         }
@@ -1820,9 +1830,18 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
     }
 
-    pub fn evaluated_effect(&self, owner: StmtId) -> Option<&RuntimeEvaluatedEffectFact> {
+    pub fn evaluated_effect(&self, owner: ExprId) -> Option<&RuntimeEvaluatedEffectFact> {
+        match self.expression(owner)?.payload() {
+            RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { operation, .. } => {
+                Some(operation)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn evaluated_effect_statement_site(&self, owner: StmtId) -> Option<ExprId> {
         match self.statement(owner)?.payload() {
-            RuntimeProjectFunctionStatementPayload::EvaluatedEffect(value) => Some(value),
+            RuntimeProjectFunctionStatementPayload::EvaluatedEffect(site) => Some(*site),
             _ => None,
         }
     }
@@ -1948,6 +1967,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
                 | RuntimeProjectFunctionExpressionPayload::Variant(_)
                 | RuntimeProjectFunctionExpressionPayload::Call(_)
+                | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)
@@ -1993,6 +2013,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
                 | RuntimeProjectFunctionExpressionPayload::Variant(_)
                 | RuntimeProjectFunctionExpressionPayload::Call(_)
+                | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)
@@ -2030,6 +2051,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
                 | RuntimeProjectFunctionExpressionPayload::Variant(_)
                 | RuntimeProjectFunctionExpressionPayload::Call(_)
+                | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
                 | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
                 | RuntimeProjectFunctionExpressionPayload::Await(_)
                 | RuntimeProjectFunctionExpressionPayload::Choice(_)

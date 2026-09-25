@@ -22,10 +22,13 @@ fn dispose(value: i64) {
     let drops = report
         .statements()
         .filter_map(|(_, statement)| match statement.payload() {
-            CheckedStatementPayload::EvaluatedEffect(effect) => match effect.operation() {
-                CheckedEvaluatedEffectOperation::Drop { invocation, .. } => Some(invocation),
-                _ => None,
-            },
+            CheckedStatementPayload::EvaluatedEffect(reference) => report
+                .expression(reference.site_root())
+                .and_then(|expression| expression.evaluated_effect()),
+            _ => None,
+        })
+        .filter_map(|effect| match effect.operation() {
+            CheckedEvaluatedEffectOperation::Drop { invocation, .. } => Some(invocation),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -64,12 +67,15 @@ flow main() -> Unit {
     let policies = report
         .statements()
         .filter_map(|(_, statement)| match statement.payload() {
-            CheckedStatementPayload::EvaluatedEffect(effect) => match effect.operation() {
-                CheckedEvaluatedEffectOperation::Drop { target, invocation } => {
-                    Some((target, invocation))
-                }
-                _ => None,
-            },
+            CheckedStatementPayload::EvaluatedEffect(reference) => report
+                .expression(reference.site_root())
+                .and_then(|expression| expression.evaluated_effect()),
+            _ => None,
+        })
+        .filter_map(|effect| match effect.operation() {
+            CheckedEvaluatedEffectOperation::Drop { target, invocation } => {
+                Some((target, invocation))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -238,11 +244,25 @@ fn effect_fields(zeta_value: String, alpha_value: String, payload_value: String)
     let effects = report
         .statements()
         .filter_map(|(_, statement)| match statement.payload() {
-            CheckedStatementPayload::EvaluatedEffect(effect) => Some(effect.as_ref()),
+            CheckedStatementPayload::EvaluatedEffect(reference) => report
+                .expression(reference.site_root())
+                .and_then(|expression| expression.evaluated_effect())
+                .map(|effect| {
+                    assert_eq!(effect.reference(), *reference);
+                    effect
+                }),
             _ => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(effects.len(), 2, "log and event effects are both retained");
+    assert_eq!(
+        report
+            .expressions()
+            .filter(|(_, expression)| expression.evaluated_effect().is_some())
+            .count(),
+        effects.len(),
+        "each statement references one unique expression-owned operation"
+    );
 
     for (effect, expected_bindings) in
         effects
@@ -301,6 +321,48 @@ fn effect_fields(zeta_value: String, alpha_value: String, payload_value: String)
                 .all(|field| !field.open_argument().binding().as_str().starts_with("arg"))
         );
     }
+}
+
+#[test]
+fn value_position_effect_is_owned_by_its_expression_site() {
+    let fixture = fixture(
+        r#"
+fn tail_log(message: String) -> Unit {
+    log.info(message)
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("value-position effect-call analysis");
+    let effects = report
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            expression.evaluated_effect().map(|effect| (owner, effect))
+        })
+        .collect::<Vec<_>>();
+    let [(owner, effect)] = effects.as_slice() else {
+        panic!("one operation is owned by one checked expression root")
+    };
+
+    assert_eq!(effect.site_root(), *owner);
+    assert_eq!(effect.result(), &TypeKind::Unit);
+    let projection = report.execution_projection();
+    let execution = projection
+        .plan(*owner)
+        .expect("effect expression execution plan");
+    assert!(!execution.executes_as_runtime_call());
+    assert!(execution.is_evaluated_effect_carrier());
+    assert!(execution.evaluated_effect_roles().iter().any(|role| {
+        matches!(
+            role,
+            crate::final_analysis::CheckedEvaluatedEffectRole::ExpressionRoot { root }
+                if root == owner
+        )
+    }));
+    assert!(report.statements().all(|(_, statement)| !matches!(
+        statement.payload(),
+        CheckedStatementPayload::EvaluatedEffect(_)
+    )));
 }
 
 #[test]

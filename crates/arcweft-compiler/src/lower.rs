@@ -803,6 +803,12 @@ fn project_runtime_semantic_fact_inventories(
         if let Some(specialization) = discovered_instances.root_value_specialization(owner)? {
             input.push_expression_specialization(owner, specialization);
         }
+        if let Some(effect) = expression.evaluated_effect() {
+            input.push_evaluated_effect(
+                owner,
+                runtime_evaluated_effect(effect, symbols, world, analysis)?,
+            );
+        }
         match expression.resolution() {
             CheckedExpressionResolution::Scope(identity) => {
                 let module = project
@@ -1127,12 +1133,6 @@ fn project_runtime_semantic_fact_inventories(
             CheckedStatementPayload::Assertion(disposition) => {
                 input.push_assertion(owner, runtime_assertion(owner, *disposition)?);
             }
-            CheckedStatementPayload::EvaluatedEffect(effect) => {
-                input.push_evaluated_effect(
-                    owner,
-                    runtime_evaluated_effect(effect, symbols, world, analysis)?,
-                );
-            }
             CheckedStatementPayload::Defer(defer) => {
                 input.push_defer(
                     owner,
@@ -1153,6 +1153,7 @@ fn project_runtime_semantic_fact_inventories(
                 );
             }
             CheckedStatementPayload::Structural
+            | CheckedStatementPayload::EvaluatedEffect(_)
             | CheckedStatementPayload::ControlTransfer(_)
             | CheckedStatementPayload::Trigger(_)
             | CheckedStatementPayload::UnsafeAudit(_)
@@ -6242,6 +6243,7 @@ fn discover_runtime_project_executable_dependencies(
                 | CheckedExecutableRuntimeExpressionFactFamily::Select
                 | CheckedExecutableRuntimeExpressionFactFamily::NominalRecord
                 | CheckedExecutableRuntimeExpressionFactFamily::Variant
+                | CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect
                 | CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate
                 | CheckedExecutableRuntimeExpressionFactFamily::Await
                 | CheckedExecutableRuntimeExpressionFactFamily::Choice
@@ -6806,6 +6808,34 @@ fn runtime_project_function_instance_semantic_facts(
                     instances,
                 )?)
             }
+            CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect => {
+                let effect = checked.evaluated_effect().ok_or_else(|| {
+                    error(
+                        owner,
+                        "instance evaluated effect has no checked expression operation",
+                    )
+                })?;
+                let pipe = if matches!(hir.kind(), HirExprKind::Pipe(_)) {
+                    let pipe = execution.pipe(owner)?;
+                    Some(RuntimePipeFact::new(
+                        pipe.left(),
+                        pipe.right(),
+                        pipe.placeholders().collect(),
+                    ))
+                } else {
+                    None
+                };
+                RuntimeProjectFunctionExpressionPayload::EvaluatedEffect {
+                    operation: runtime_evaluated_effect_under(
+                        effect,
+                        symbols,
+                        world,
+                        analysis,
+                        lexical.types(),
+                    )?,
+                    pipe,
+                }
+            }
             CheckedExecutableRuntimeExpressionFactFamily::PostfixCandidate => {
                 let CheckedExpressionResolution::PostfixBracket(resolution) = checked.resolution()
                 else {
@@ -7073,9 +7103,7 @@ fn runtime_project_function_instance_semantic_facts(
             (
                 CheckedExecutableRuntimeStatementFactFamily::EvaluatedEffect,
                 CheckedStatementPayload::EvaluatedEffect(effect),
-            ) => RuntimeProjectFunctionStatementPayload::EvaluatedEffect(
-                runtime_evaluated_effect_under(effect, symbols, world, analysis, lexical.types())?,
-            ),
+            ) => RuntimeProjectFunctionStatementPayload::EvaluatedEffect(effect.site_root()),
             (
                 CheckedExecutableRuntimeStatementFactFamily::Iteration,
                 CheckedStatementPayload::Iteration(iteration),

@@ -80,6 +80,18 @@ impl ControlLocals {
                 }
             }
         });
+        facts.visit_untyped_evaluated_effect_pipes(&mut |owner, pipe| {
+            if let Some(left) = facts.expression_type(pipe.left()) {
+                owners.push((owner, ControlLocal::Pipe));
+                seeds.push(RuntimeLocalDeclarationSeed::new(left.identity()));
+            } else {
+                error.get_or_insert_with(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "pipe {owner:?} has no closed left operand type"
+                    ))
+                });
+            }
+        });
         if let Some(error) = error {
             return Err(error);
         }

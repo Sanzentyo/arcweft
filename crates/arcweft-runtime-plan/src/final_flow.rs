@@ -4477,6 +4477,28 @@ impl<'a> FinalFlowLowerer<'a> {
         Ok(evaluated)
     }
 
+    fn evaluated_effect_children(
+        &self,
+        application: ExprId,
+    ) -> Result<Vec<ExprId>, RuntimePlanLowerError> {
+        let hir = self
+            .module
+            .resolve_expr(application)
+            .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+        let HirExprKind::Call(invocation) = hir.kind() else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "checked effect application {application:?} is not a Call expression"
+            )));
+        };
+        let static_callee = invocation.callee().value_expression();
+        Ok(self
+            .expression_children(application)?
+            .iter()
+            .copied()
+            .filter(|child| Some(*child) != static_callee)
+            .collect())
+    }
+
     fn value(&self, expression: ExprId) -> Option<&RuntimeResolvedValue> {
         self.semantic_facts.value(expression)
     }
@@ -4512,8 +4534,8 @@ impl<'a> FinalFlowLowerer<'a> {
         self.semantic_facts.tried(expression)
     }
 
-    fn evaluated_effect(&self, statement: StmtId) -> Option<&RuntimeEvaluatedEffectFact> {
-        self.semantic_facts.evaluated_effect(statement)
+    fn evaluated_effect(&self, expression: ExprId) -> Option<&RuntimeEvaluatedEffectFact> {
+        self.semantic_facts.evaluated_effect(expression)
     }
 
     fn iteration(&self, statement: StmtId) -> Option<&RuntimeIteratorFact> {
@@ -4770,11 +4792,6 @@ impl<'a> FinalFlowLowerer<'a> {
                 }
             }
             HirStmtKind::Expression { expression: thread } => {
-                if let Some(effect) = self.evaluated_effect(id) {
-                    return Ok(vec![RuntimeFlowOpSeed::EvaluatedEffect(
-                        lower_evaluated_effect(&self.expr_lowerer(), effect.effect())?,
-                    )]);
-                }
                 if self.contains_flow_value_expression(*thread)? {
                     return self.lower_flow_value(
                         *thread,
@@ -5040,6 +5057,9 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.implicit_callable(expression).is_some() {
             return Ok(false);
         }
+        if self.evaluated_effect(expression).is_some() {
+            return Ok(true);
+        }
         if self.call(expression).is_some_and(|call| {
             call.project_function().is_some()
                 || matches!(call.dispatch(), RuntimeResolvedCallDispatch::Value { .. })
@@ -5139,6 +5159,62 @@ impl<'a> FinalFlowLowerer<'a> {
                 )));
             }
             return self.lower_flow_value_with_overrides(selected, continuation, overrides);
+        }
+        if let Some(effect) = self.evaluated_effect(expression).cloned() {
+            if let HirExprKind::Pipe(pipe) = self
+                .module
+                .resolve_expr(expression)
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?
+                .kind()
+                && !overrides.contains_key(&pipe.left())
+            {
+                let inherited = overrides.clone();
+                return self.lower_flow_value_with_overrides(
+                    pipe.left(),
+                    RuntimeFlowValueContinuation::Pipe {
+                        owner: expression,
+                        right: expression,
+                        overrides: inherited,
+                        outer: Box::new(continuation),
+                    },
+                    overrides,
+                );
+            }
+            for child in self.evaluated_effect_children(effect.application_site())? {
+                if !overrides.contains_key(&child) && self.expression_literal(child).is_none() {
+                    return self.lower_flow_value_with_overrides(
+                        child,
+                        RuntimeFlowValueContinuation::Compose {
+                            owner: expression,
+                            child,
+                            overrides,
+                            outer: Box::new(continuation),
+                        },
+                        BTreeMap::new(),
+                    );
+                }
+            }
+            let operation = lower_evaluated_effect(
+                &self.expr_lowerer().with_overrides(overrides),
+                effect.effect(),
+            )?;
+            let mut ops = vec![RuntimeFlowOpSeed::EvaluatedEffect(operation)];
+            match effect.result().shape() {
+                RuntimeTypeShape::Unit => {
+                    let unit = RuntimeExprSeed::new(
+                        effect.result().identity(),
+                        arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                    );
+                    ops.extend(self.apply_value_continuation(unit, continuation)?);
+                }
+                RuntimeTypeShape::Never => {}
+                other => {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "checked evaluated effect {expression:?} has unsupported value result {other:?}"
+                    )));
+                }
+            }
+            return Ok(ops);
         }
         let resolved = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
@@ -6169,11 +6245,18 @@ impl<'a> FinalFlowLowerer<'a> {
                         .iter()
                         .map(|placeholder| (*placeholder, replacement.clone())),
                 );
+                if right == owner {
+                    overrides.insert(pipe.left(), replacement);
+                }
                 let mut ops = vec![RuntimeFlowOpSeed::Let {
                     pattern: bind_seed(local_type, local),
                     expr: value,
                 }];
-                ops.extend(self.lower_flow_value_with_overrides(right, *outer, overrides)?);
+                ops.extend(if right == owner {
+                    self.lower_flow_value_source_with_overrides(right, *outer, overrides)?
+                } else {
+                    self.lower_flow_value_with_overrides(right, *outer, overrides)?
+                });
                 return Ok(ops);
             }
         })

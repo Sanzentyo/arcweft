@@ -297,6 +297,12 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::NominalRecord(record) => record.append_normalized_types(roots),
             Self::Variant(variant) => variant.owner().append_normalized_types(roots),
             Self::Call(call) => call.append_normalized_types(roots),
+            Self::EvaluatedEffect { operation, .. } => {
+                roots.push(operation.result());
+                operation
+                    .effect()
+                    .visit_operand_types(&mut |ty| roots.push(ty));
+            }
             Self::Try(tried) => tried.append_normalized_types(roots),
             Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::ImplicitCallable {
@@ -350,9 +356,6 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::Assignment(assignment) => {
                 roots.extend([assignment.field_type(), assignment.value_type()]);
             }
-            Self::EvaluatedEffect(effect) => effect
-                .effect()
-                .visit_operand_types(&mut |ty| roots.push(ty)),
             Self::Defer(defer) => roots.extend(
                 defer
                     .captures()
@@ -362,6 +365,7 @@ impl RuntimeProjectFunctionStatementPayload {
             Self::Iteration(iteration) => iteration.append_normalized_types(roots),
             Self::Scope(scope) => scope.append_normalized_types(roots),
             Self::Structural
+            | Self::EvaluatedEffect(_)
             | Self::Assertion(_)
             | Self::ControlTransfer
             | Self::Trigger(_)

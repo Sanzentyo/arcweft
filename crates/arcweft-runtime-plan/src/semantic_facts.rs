@@ -4349,7 +4349,7 @@ pub struct RuntimePlanSemanticFactInput {
     assertions: Vec<(StmtId, RuntimeAssertionAdmission)>,
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
-    evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
+    evaluated_effects: Vec<(ExprId, RuntimeEvaluatedEffectFact)>,
     defers: Vec<(StmtId, RuntimeDeferFact)>,
     choices: Vec<(ExprId, RuntimeChoiceFact)>,
     awaits: Vec<(ExprId, RuntimeAwaitFact)>,
@@ -4610,7 +4610,7 @@ impl RuntimePlanSemanticFactInput {
         self.assignments.push((owner, assignment));
     }
 
-    pub fn push_evaluated_effect(&mut self, owner: StmtId, effect: RuntimeEvaluatedEffectFact) {
+    pub fn push_evaluated_effect(&mut self, owner: ExprId, effect: RuntimeEvaluatedEffectFact) {
         self.evaluated_effects.push((owner, effect));
     }
 
@@ -4740,7 +4740,7 @@ pub struct RuntimePlanSemanticFacts {
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
-    evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
+    evaluated_effects: BTreeMap<ExprId, RuntimeEvaluatedEffectFact>,
     defers: BTreeMap<StmtId, RuntimeDeferFact>,
     choices: BTreeMap<ExprId, RuntimeChoiceFact>,
     awaits: BTreeMap<ExprId, RuntimeAwaitFact>,
@@ -4916,7 +4916,7 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
         self.facts.assignment(owner)
     }
 
-    pub fn evaluated_effect(self, owner: StmtId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
+    pub fn evaluated_effect(self, owner: ExprId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
         self.facts.evaluated_effect(owner)
     }
 
@@ -5011,6 +5011,35 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
                     } = projection
                     {
                         visitor(*owner, ty);
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn visit_untyped_evaluated_effect_pipes(
+        self,
+        visitor: &mut impl FnMut(ExprId, &'facts RuntimePipeFact),
+    ) {
+        match self {
+            Self::Global(facts) => {
+                for owner in facts.evaluated_effects.keys() {
+                    if !facts.expression_types.contains_key(owner)
+                        && let Some(pipe) = facts.pipe(*owner)
+                    {
+                        visitor(*owner, pipe);
+                    }
+                }
+            }
+            Self::ProjectInstance(facts) => {
+                for row in facts.expressions() {
+                    if facts.expression_type(row.owner()).is_none()
+                        && let RuntimeProjectFunctionExpressionPayload::EvaluatedEffect {
+                            pipe: Some(pipe),
+                            ..
+                        } = row.payload()
+                    {
+                        visitor(row.owner(), pipe);
                     }
                 }
             }
@@ -5213,7 +5242,7 @@ impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
         }
     }
 
-    pub fn evaluated_effect(self, owner: StmtId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
+    pub fn evaluated_effect(self, owner: ExprId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
         match self {
             Self::Global(facts) => facts.evaluated_effect(owner),
             Self::ProjectInstance(facts) => facts.evaluated_effect(owner),
@@ -6868,25 +6897,40 @@ impl RuntimePlanSemanticFacts {
         )?;
         if evaluated_effects
             .keys()
-            .any(|owner| instance_statement_owners.contains(owner))
+            .any(|owner| instance_expression_owners.contains(owner))
         {
             return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
                 family: RuntimeSemanticFactFamily::EvaluatedEffect,
             });
         }
-        for (statement, effect) in &evaluated_effects {
-            require_stmt_family(
+        for (expression, effect) in &evaluated_effects {
+            require_expr_family(
                 &modules,
                 runtime_owners,
-                *statement,
+                *expression,
                 RuntimeSemanticFactFamily::EvaluatedEffect,
-                |kind| matches!(kind, HirStmtKind::Expression { .. }),
+                |kind| matches!(kind, HirExprKind::Call(_) | HirExprKind::Pipe(_)),
             )?;
+            if matches!(resolve_expr(&modules, *expression)?, HirExprKind::Pipe(_))
+                && !pipes.contains_key(expression)
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPipeFact {
+                    expression: *expression,
+                });
+            }
+            if expression_types
+                .get(expression)
+                .is_some_and(|ty| ty != effect.result())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact {
+                    expression: *expression,
+                });
+            }
             evaluated_effect::validate_evaluated_effect(
                 &modules,
                 &expression_types,
                 &calls,
-                *statement,
+                *expression,
                 effect,
             )?;
         }
@@ -7492,6 +7536,11 @@ impl RuntimePlanSemanticFacts {
         for ty in self.all_normalized_type_roots() {
             ty.append_runtime_plan_type_seeds(&mut seeds)?;
         }
+        seeds.extend(
+            self.nominal_definitions
+                .values()
+                .filter_map(RuntimeNominalDefinition::closed_owner_type_seed),
+        );
         Ok(seeds)
     }
 
@@ -7646,6 +7695,7 @@ impl RuntimePlanSemanticFacts {
             fragment.append_normalized_types(&mut roots);
         }
         for effect in self.evaluated_effects.values() {
+            roots.push(effect.result());
             effect
                 .effect()
                 .visit_operand_types(&mut |ty| roots.push(ty));
@@ -7842,8 +7892,8 @@ impl RuntimePlanSemanticFacts {
         self.assignments.get(&statement)
     }
 
-    pub fn evaluated_effect(&self, statement: StmtId) -> Option<&RuntimeEvaluatedEffectFact> {
-        self.evaluated_effects.get(&statement)
+    pub fn evaluated_effect(&self, expression: ExprId) -> Option<&RuntimeEvaluatedEffectFact> {
+        self.evaluated_effects.get(&expression)
     }
 
     pub fn defer(&self, statement: StmtId) -> Option<&RuntimeDeferFact> {
@@ -8165,8 +8215,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidTriggerFact { statement: StmtId },
     #[error("assignment fact for {statement:?} does not match its checked direct record field")]
     InvalidAssignmentFact { statement: StmtId },
-    #[error("evaluated-effect fact for {statement:?} does not match its selected call")]
-    InvalidEvaluatedEffectFact { statement: StmtId },
+    #[error("evaluated-effect fact for {expression:?} does not match its selected call")]
+    InvalidEvaluatedEffectFact { expression: ExprId },
     #[error("defer fact for {statement:?} does not match its checked body and captures")]
     InvalidDeferFact { statement: StmtId },
     #[error("Await fact for {expression:?} does not match its checked expression")]
@@ -9981,32 +10031,38 @@ fn validate_project_function_instance(
     // The authored TypeId remains a checked source projection, while the
     // selected instance's pattern binding owns the closed parameter ABI.
     // An inferred callback row can make those two normalized types differ.
-    if !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Expression(
+    let tail_has_type = projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Expression(
         instance.body().tail(),
-    )) || instance.parameters().iter().any(|parameter| {
-        let binding_matches_abi = match parameter.kind() {
-            arcweft_lang_hir::item::HirParameterKind::Fixed
-            | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => {
-                parameter.binding_ty() == parameter.abi_ty()
-            }
-            arcweft_lang_hir::item::HirParameterKind::RestPositional => {
-                matches!(
-                    parameter.binding_ty().shape(),
-                    RuntimeTypeShape::Sequence {
-                        kind: RuntimeSequenceKind::Vec,
-                        item,
-                    } if item.as_ref() == parameter.abi_ty()
-                )
-            }
-        };
-        projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(
-            parameter.pattern(),
-        )) != Some(&parameter.binding_ty())
-            || !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Type(
-                parameter.source_type(),
-            ))
-            || !binding_matches_abi
-    }) {
+    )) || instance
+        .semantics()
+        .evaluated_effect(instance.body().tail())
+        .is_some();
+    if !tail_has_type
+        || instance.parameters().iter().any(|parameter| {
+            let binding_matches_abi = match parameter.kind() {
+                arcweft_lang_hir::item::HirParameterKind::Fixed
+                | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => {
+                    parameter.binding_ty() == parameter.abi_ty()
+                }
+                arcweft_lang_hir::item::HirParameterKind::RestPositional => {
+                    matches!(
+                        parameter.binding_ty().shape(),
+                        RuntimeTypeShape::Sequence {
+                            kind: RuntimeSequenceKind::Vec,
+                            item,
+                        } if item.as_ref() == parameter.abi_ty()
+                    )
+                }
+            };
+            projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(
+                parameter.pattern(),
+            )) != Some(&parameter.binding_ty())
+                || !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Type(
+                    parameter.source_type(),
+                ))
+                || !binding_matches_abi
+        })
+    {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
     if let Some(default) = instance.attached_default()
@@ -10279,6 +10335,31 @@ fn validate_project_function_semantic_catalog(
                 )?;
                 validate_project_function_call_materialization(modules, call)?;
             }
+            RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { operation, pipe } => {
+                let valid_site = match (hir, pipe) {
+                    (HirExprKind::Call(_), None) => true,
+                    (HirExprKind::Pipe(hir), Some(pipe)) => {
+                        hir.left() == pipe.left()
+                            && hir.right() == pipe.right()
+                            && !pipe.placeholders().is_empty()
+                    }
+                    _ => false,
+                };
+                if !valid_site
+                    || expression_types
+                        .get(&owner)
+                        .is_some_and(|ty| ty != operation.result())
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                evaluated_effect::validate_evaluated_effect(
+                    modules,
+                    &expression_types,
+                    &calls,
+                    owner,
+                    operation,
+                )?;
+            }
             RuntimeProjectFunctionExpressionPayload::PostfixCandidate(candidate) => {
                 let HirExprKind::PostfixBracket(postfix) = hir else {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
@@ -10516,14 +10597,14 @@ fn validate_project_function_semantic_catalog(
                     fact,
                 )?;
             }
-            RuntimeProjectFunctionStatementPayload::EvaluatedEffect(fact) => {
-                evaluated_effect::validate_evaluated_effect(
-                    modules,
-                    &expression_types,
-                    &calls,
-                    row.owner(),
-                    fact,
-                )?;
+            RuntimeProjectFunctionStatementPayload::EvaluatedEffect(site) => {
+                if !matches!(
+                    resolve_stmt(modules, row.owner())?,
+                    HirStmtKind::Expression { expression } if expression == site
+                ) || semantics.evaluated_effect(*site).is_none()
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
             }
             RuntimeProjectFunctionStatementPayload::Defer(fact) => {
                 defer::validate_defer_payload(
@@ -10747,6 +10828,7 @@ fn validate_project_instance_dialogue_applications(
             | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
             | RuntimeProjectFunctionExpressionPayload::Variant(_)
             | RuntimeProjectFunctionExpressionPayload::Call(_)
+            | RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
             | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
             | RuntimeProjectFunctionExpressionPayload::Await(_)
             | RuntimeProjectFunctionExpressionPayload::Choice(_)

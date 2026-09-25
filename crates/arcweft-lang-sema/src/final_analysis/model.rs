@@ -2043,6 +2043,9 @@ pub enum CheckedExpressionCallCallee {
 /// Stable role occupied by one evaluated-effect expression in its owner.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedEvaluatedEffectRole {
+    ExpressionRoot {
+        root: ExprId,
+    },
     Application {
         application: CheckedCallApplicationDigest,
     },
@@ -2150,7 +2153,8 @@ impl CheckedExpressionExecutionPlan {
         self.evaluated_effect_roles().iter().any(|role| {
             matches!(
                 role,
-                CheckedEvaluatedEffectRole::Application { .. }
+                CheckedEvaluatedEffectRole::ExpressionRoot { .. }
+                    | CheckedEvaluatedEffectRole::Application { .. }
                     | CheckedEvaluatedEffectRole::StatementRoot { .. }
                     | CheckedEvaluatedEffectRole::DialogueEffectSite { .. }
             )
@@ -2209,6 +2213,7 @@ struct CheckedExpressionData {
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
     execution: Option<CheckedExpressionExecutionPlan>,
+    evaluated_effect: Option<Box<CheckedEvaluatedEffect>>,
     match_fact: Option<CheckedMatchFact>,
     nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
@@ -2221,6 +2226,7 @@ impl CheckedExpression {
                 effects: EffectSet::new(),
                 resolution: CheckedExpressionResolution::Call,
                 execution: None,
+                evaluated_effect: None,
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2254,6 +2260,7 @@ impl CheckedExpression {
                     CheckedRuntimeValueDisposition::Retain,
                     CheckedStructuralExecutionReason::Value,
                 )),
+                evaluated_effect: None,
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2276,6 +2283,7 @@ impl CheckedExpression {
                     CheckedRuntimeValueDisposition::Omit,
                     CheckedStructuralExecutionReason::ContentEmission,
                 )),
+                evaluated_effect: None,
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2384,6 +2392,30 @@ impl CheckedExpression {
     /// outcomes. Absence is not a structural instruction to omit the value.
     pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
         self.data.execution.as_ref()
+    }
+
+    /// Checked evaluated-effect operation owned by this expression site, if
+    /// the selected callable schema assigns one.
+    pub fn evaluated_effect(&self) -> Option<&CheckedEvaluatedEffect> {
+        self.data.evaluated_effect.as_deref()
+    }
+
+    /// Attaches one checked evaluated effect to its exact expression root.
+    /// The operation remains on this expression fact; statement and dialogue
+    /// site rows retain typed references or site metadata only.
+    pub(super) fn with_evaluated_effect(
+        mut self,
+        owner: ExprId,
+        effect: CheckedEvaluatedEffect,
+    ) -> Option<Self> {
+        if self.data.evaluated_effect.is_some()
+            || effect.site_root() != owner
+            || self.value_type() != Some(effect.result())
+        {
+            return None;
+        }
+        self.data.evaluated_effect = Some(Box::new(effect));
+        Some(self)
     }
 
     /// Replaces only the execution plan after all call/content/effect seals
@@ -2520,7 +2552,7 @@ mod evaluated_effect;
 pub use evaluated_effect::{
     CheckedDropFade, CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource,
     CheckedEffectField, CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand,
-    CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
+    CheckedEvaluatedEffectOperation, CheckedEvaluatedEffectReference, CheckedExplicitDropPolicy,
 };
 
 #[path = "model/statement.rs"]

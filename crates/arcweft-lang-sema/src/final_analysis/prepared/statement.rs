@@ -8,7 +8,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     final_analysis::{
-        CheckedAssertionDisposition, CheckedEvaluatedEffect, CheckedIteration,
+        CheckedAssertionDisposition, CheckedEvaluatedEffectReference, CheckedIteration,
         CheckedProjectNominal, CheckedSuspensionStatement,
     },
     types::{SemanticTypeDigest, TypeKind},
@@ -81,7 +81,7 @@ pub(crate) enum PreparedStatementPayload {
     Suspension(Box<CheckedSuspensionStatement>),
     Yield,
     EvaluatedEffect(PreparedEvaluatedEffect),
-    SealedEvaluatedEffect(Box<CheckedEvaluatedEffect>),
+    SealedEvaluatedEffectReference(CheckedEvaluatedEffectReference),
 }
 
 impl PreparedStatementPayload {
@@ -97,7 +97,7 @@ impl PreparedStatementPayload {
             | Self::Suspension(_)
             | Self::Yield
             | Self::EvaluatedEffect(_)
-            | Self::SealedEvaluatedEffect(_) => Ok(()),
+            | Self::SealedEvaluatedEffectReference(_) => Ok(()),
         }
     }
 }

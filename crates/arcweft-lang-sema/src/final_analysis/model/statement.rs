@@ -12,7 +12,8 @@ use crate::{
 };
 
 use super::{
-    CheckedEvaluatedEffect, CheckedExecutableCapture, CheckedFieldSelection, CheckedProjectNominal,
+    CheckedEvaluatedEffectReference, CheckedExecutableCapture, CheckedFieldSelection,
+    CheckedProjectNominal,
 };
 use crate::final_analysis::statement_effects::CompletedStatementEffectFold;
 use arcweft_lang_hir::{
@@ -553,7 +554,7 @@ pub enum CheckedStatementPayload {
     Assignment(Box<CheckedAssignment>),
     Assertion(CheckedAssertionDisposition),
     Defer(Box<CheckedDefer>),
-    EvaluatedEffect(Box<CheckedEvaluatedEffect>),
+    EvaluatedEffect(CheckedEvaluatedEffectReference),
     Iteration(Box<CheckedIteration>),
     ControlTransfer(CheckedControlTransferTarget),
     Trigger(CheckedTrigger),

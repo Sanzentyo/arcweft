@@ -775,7 +775,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             | PreparedStatementPayload::Assertion(_)
             | PreparedStatementPayload::Iteration(_)
             | PreparedStatementPayload::EvaluatedEffect(_)
-            | PreparedStatementPayload::SealedEvaluatedEffect(_) => {}
+            | PreparedStatementPayload::SealedEvaluatedEffectReference(_) => {}
         }
         if !self.active_statements.remove(&owner)
             || self.statement_rows.insert(owner, row.clone()).is_some()
@@ -799,7 +799,7 @@ enum CompletedStatementIntrinsicEffect {
     None,
     ControlSuspend,
     EvaluatedEffect {
-        application: crate::callable::CheckedCallApplicationSite,
+        application: crate::callable::CheckedCallApplicationDigest,
         effects: EffectSet,
     },
 }
@@ -821,7 +821,7 @@ impl CompletedStatementEffectFold {
 
     fn evaluated_effect(
         child_effects: EffectSet,
-        application: crate::callable::CheckedCallApplicationSite,
+        application: crate::callable::CheckedCallApplicationDigest,
         effects: EffectSet,
     ) -> Self {
         Self {
@@ -855,7 +855,7 @@ impl CompletedStatementEffectFold {
                     effects: application_effects,
                 },
                 CheckedStatementPayload::EvaluatedEffect(effect),
-            ) if effect.application() == &application => {
+            ) if effect.application_digest() == application => {
                 effects.union_with(&application_effects);
             }
             _ => return None,
@@ -1236,20 +1236,27 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 Ok(CompletedStatementEffectFold::control_suspend(child_effects))
             }
             CheckedStatementPayload::EvaluatedEffect(effect) => {
-                let site = effect.application().raw();
+                let checked_effect = self
+                    .expressions
+                    .get(&effect.site_root())
+                    .and_then(CheckedExpression::evaluated_effect)
+                    .filter(|checked| checked.reference() == *effect)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let site = checked_effect.application().raw();
                 let application = self
                     .calls
                     .get(&site.expression())
                     .and_then(CallTargetFacts::selected_application)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 if application.core().site() != site
-                    || application.core().application_site() != effect.application()
+                    || application.core().application_site() != checked_effect.application()
+                    || application.digest() != effect.application_digest()
                 {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 Ok(CompletedStatementEffectFold::evaluated_effect(
                     child_effects,
-                    effect.application().clone(),
+                    effect.application_digest(),
                     application.core().effects().constant_effects()?,
                 ))
             }

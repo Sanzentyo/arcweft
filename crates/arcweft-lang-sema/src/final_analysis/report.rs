@@ -202,6 +202,7 @@ pub enum CheckedExecutableRuntimeExpressionFactFamily {
     NominalRecord,
     Variant,
     Call,
+    EvaluatedEffect,
     PostfixCandidate,
     Await,
     Choice,
@@ -440,7 +441,15 @@ impl FinalAnalysisExecutionProjection<'_> {
             let hir = module(owner)
                 .and_then(|module| module.resolve_expr(owner).ok())
                 .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?;
-            let family = if self.plan(owner)?.executes_as_runtime_call() {
+            let plan = self.plan(owner)?;
+            let family = if expression.evaluated_effect().is_some() {
+                if !plan.is_evaluated_effect_carrier() {
+                    return Err(FinalAnalysisExecutionProjectionError::WrongExpressionKind {
+                        owner,
+                    });
+                }
+                CheckedExecutableRuntimeExpressionFactFamily::EvaluatedEffect
+            } else if plan.executes_as_runtime_call() {
                 if !self.analysis.calls.contains_key(&owner) {
                     return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
                 }
@@ -1171,7 +1180,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         control.check()?;
         validate_patterns(symbols, &modules, &types, &patterns)?;
         control.check()?;
-        validate_statements(&modules, &locals, &statements, &calls)?;
+        validate_statements(&modules, &locals, &expressions, &statements)?;
         control.check()?;
         validate_items(&modules, &items)?;
         control.check()?;

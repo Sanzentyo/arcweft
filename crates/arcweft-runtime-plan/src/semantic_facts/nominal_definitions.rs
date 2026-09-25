@@ -53,6 +53,37 @@ impl RuntimeNominalDefinition {
         }
     }
 
+    /// Closed source enums can be reached only through a selected case. In
+    /// that position no expression type row retains the owner, but the checked
+    /// variant owner still carries its exact nominal identity and layout.
+    pub(super) fn closed_owner_type_seed(&self) -> Option<RuntimePlanTypeSeed> {
+        let Self::Variant(
+            RuntimeVariantOwner::CharacterNominal {
+                identity,
+                nominal,
+                layout,
+                ..
+            }
+            | RuntimeVariantOwner::BuiltinClosed {
+                identity,
+                nominal,
+                layout,
+                ..
+            },
+        ) = self
+        else {
+            return None;
+        };
+        Some(RuntimePlanTypeSeed::new(
+            *identity,
+            RuntimePlanTypeProjection::Nominal {
+                nominal: nominal.clone(),
+                layout: *layout,
+                arguments: Box::new([]),
+            },
+        ))
+    }
+
     pub(super) fn record_seed(&self) -> Option<RuntimeNominalRecordDomainSeed> {
         let Self::Record(record) = self else {
             return None;

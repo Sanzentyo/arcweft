@@ -1863,7 +1863,7 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
                 PreparedStatementPayload::Assertion(*disposition)
             }
             CheckedStatementPayload::EvaluatedEffect(effect) => {
-                PreparedStatementPayload::SealedEvaluatedEffect(effect.clone())
+                PreparedStatementPayload::SealedEvaluatedEffectReference(*effect)
             }
             CheckedStatementPayload::Iteration(iteration) => {
                 PreparedStatementPayload::Iteration(iteration.clone())
