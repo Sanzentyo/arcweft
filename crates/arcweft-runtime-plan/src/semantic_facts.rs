@@ -3654,7 +3654,7 @@ pub enum RuntimeLineCallable {
         character: arcweft_character::id::CharacterId,
         actor: ExprId,
         look: ExprId,
-        crossfade: ExprId,
+        crossfade: Option<ExprId>,
     },
     VoiceHandle,
     Schedule {
@@ -10044,11 +10044,16 @@ fn runtime_line_callable_matches_operands(
                     Some(RuntimeCallParameterCoordinate::new(0, 0)),
                     false,
                 )
-                && exact_operand(
-                    *crossfade,
-                    Some(RuntimeCallParameterCoordinate::new(0, 1)),
-                    false,
-                )
+                && match crossfade {
+                    Some(crossfade) => exact_operand(
+                        *crossfade,
+                        Some(RuntimeCallParameterCoordinate::new(0, 1)),
+                        false,
+                    ),
+                    None => !call.operands().iter().any(|operand| {
+                        operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 1))
+                    }),
+                }
         }
         RuntimeLineCallable::Schedule { callback, .. } => exact_operand(
             *callback,

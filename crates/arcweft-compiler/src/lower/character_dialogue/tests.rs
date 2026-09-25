@@ -318,8 +318,67 @@ flow main() -> i64 { return 0i64 }
         panic!("presentation lifetime has a closed variant proof");
     };
     assert!(arguments.is_empty());
-    assert_eq!(proof.ty(), TypeKind::Named("PresentationLifetime".to_owned()));
+    assert_eq!(
+        proof.ty(),
+        TypeKind::Named("PresentationLifetime".to_owned())
+    );
     assert_eq!(proof.cases()[3].diagnostic_name(), Some("line"));
+}
+
+#[test]
+fn actor_look_omission_and_explicit_crossfade_keep_concrete_durations() {
+    use arcweft_core::{
+        plan::{FlowOp, RuntimeLineOperation},
+        value::{RuntimeExprKind, RuntimeValue},
+    };
+
+    let compiled = fixtures::compile_with_character_manifest(
+        r#"
+entry cli @entry.main { goto @flow.main }
+pub character alice { display = "Alice" }
+flow main() -> String {
+    alice(voice=auto):
+        Hello.[p]
+    with:
+        let actor = alice.stage.acquire(scope=line)
+        let no_fade = actor.look(.normal)
+        let faded = actor.look(.bright, crossfade=120ms)
+        out "done"
+    return "done"
+}
+"#,
+    );
+    let [content] = compiled.runtime_plan().plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan");
+    };
+    let group = compiled
+        .runtime_plan()
+        .plan
+        .line_task_groups()
+        .get(content.line_task_group().expect("line task group").index())
+        .expect("published line task group");
+    let fades = group
+        .activation_ops()
+        .iter()
+        .filter_map(|op| match op {
+            FlowOp::LineOperation {
+                operation: RuntimeLineOperation::ActorLook { crossfade, .. },
+                ..
+            } => Some(crossfade.kind()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fades,
+        [
+            &RuntimeExprKind::Value(RuntimeValue::Duration(
+                arcweft_core::time::LogicalDuration::default()
+            )),
+            &RuntimeExprKind::Value(RuntimeValue::Duration(
+                arcweft_core::time::LogicalDuration::from_nanos(120_000_000)
+            )),
+        ]
+    );
 }
 
 #[test]

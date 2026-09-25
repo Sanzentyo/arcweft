@@ -805,11 +805,20 @@ impl LinePlanLowerer<'_, '_> {
                     .expr_lowerer()
                     .lower(look)
                     .map_err(RuntimePlanLowerError::new)?;
-                let crossfade = self
-                    .flow
-                    .expr_lowerer()
-                    .lower(crossfade)
-                    .map_err(RuntimePlanLowerError::new)?;
+                let crossfade = match crossfade {
+                    Some(crossfade) => self
+                        .flow
+                        .expr_lowerer()
+                        .lower(crossfade)
+                        .map_err(RuntimePlanLowerError::new)?,
+                    None => RuntimeExprSeed::new(
+                        arcweft_core::pattern::RuntimeCheckedType::Duration
+                            .semantic_identity_digest(),
+                        RuntimeExprSeedKind::Value(RuntimeValue::Duration(
+                            arcweft_core::time::LogicalDuration::default(),
+                        )),
+                    ),
+                };
                 let site = self.push_site(
                     RuntimeLineHandleSiteKind::StageLookCue,
                     &result,

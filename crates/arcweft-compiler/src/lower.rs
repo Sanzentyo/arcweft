@@ -7845,6 +7845,22 @@ fn checked_call_parameter_expression(
     group: usize,
     parameter: usize,
 ) -> Result<ExprId, RuntimeSemanticProjectionError> {
+    checked_call_optional_parameter_expression(owner, application, group, parameter)?.ok_or_else(
+        || RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: format!(
+                "checked call has no operand for parameter coordinate ({group}, {parameter})"
+            ),
+        },
+    )
+}
+
+fn checked_call_optional_parameter_expression(
+    owner: ExprId,
+    application: &CheckedCallApplication,
+    group: usize,
+    parameter: usize,
+) -> Result<Option<ExprId>, RuntimeSemanticProjectionError> {
     let mut sources = application
         .core()
         .execution()
@@ -7861,14 +7877,9 @@ fn checked_call_parameter_expression(
             CheckedCallOperandDestination::Parameter(_)
             | CheckedCallOperandDestination::Open(_) => None,
         });
-    let slot = sources
-        .next()
-        .ok_or_else(|| RuntimeSemanticProjectionError::Call {
-            owner,
-            reason: format!(
-                "checked call has no operand for parameter coordinate ({group}, {parameter})"
-            ),
-        })?;
+    let Some(slot) = sources.next() else {
+        return Ok(None);
+    };
     if sources.next().is_some()
         || !matches!(
             slot.source_projection(),
@@ -7892,7 +7903,7 @@ fn checked_call_parameter_expression(
             ),
         });
     };
-    Ok(source)
+    Ok(Some(source))
 }
 
 fn checked_call_receiver_expression(
@@ -8222,7 +8233,7 @@ fn runtime_line_callable(
                 character,
                 actor: checked_call_receiver_expression(owner, application)?,
                 look: checked_call_parameter_expression(owner, application, 0, 0)?,
-                crossfade: checked_call_parameter_expression(owner, application, 0, 1)?,
+                crossfade: checked_call_optional_parameter_expression(owner, application, 0, 1)?,
             }
         }
         CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle) => {
