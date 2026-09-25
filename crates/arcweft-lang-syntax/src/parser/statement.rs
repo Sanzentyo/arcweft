@@ -466,6 +466,10 @@ fn bare_scope_after_postfix_bracket(
     start: usize,
     end: usize,
 ) -> Option<usize> {
+    let head = first_significant(parser, start, end)?;
+    if token_text(parser, head).is_some_and(is_statement_head) {
+        return None;
+    }
     let mut delimiters = Vec::new();
     for index in start..end {
         let text = token_text(parser, index)?;

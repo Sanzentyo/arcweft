@@ -102,6 +102,33 @@ mod tests {
     }
 
     #[test]
+    fn for_over_bracket_expression_keeps_its_braced_body() {
+        let source = "flow opening {\n    for value in [true, false] { log.info(value) }\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("for loop with a bracket iterable parses");
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert_eq!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .filter(|entry| entry.kind() == SyntaxKind::ForStatement)
+                .count(),
+            1
+        );
+        assert_eq!(
+            built
+                .index()
+                .entries()
+                .iter()
+                .filter(|entry| entry.kind() == SyntaxKind::ScopeStatement)
+                .count(),
+            0
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
     fn explicit_with_braces_remains_a_dialogue_plan() {
         let source = "flow opening {\n    alice()[本文。[p]] with { out () }\n}\n";
         let built = parse_document(&document(source), crate::parser::ParseOptions::default())
