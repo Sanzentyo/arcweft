@@ -8,6 +8,7 @@ use arcweft_compiler::{
         ProjectCompilationSession, ProjectCompileError, compile_project,
     },
     source::compile_source,
+    types::CompiledSource,
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeDropPolicyKind, RuntimeEffectExpr},
@@ -255,6 +256,74 @@ fn log_messages(effects: &[LineEffectRequest]) -> Vec<String> {
             _ => None,
         })
         .collect()
+}
+
+fn assert_simple_flow_logs_native_and_awbc(compiled: &CompiledSource, expected: &[&str]) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+
+    let report = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "value_effect_execution.arcw",
+    )
+    .lower()
+    .expect("effect plan lowers to verified AWBC");
+    let bytes = report
+        .program
+        .encode_canonical()
+        .expect("encode effect AWBC");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode effect AWBC");
+    let [flow] = compiled.plan.flows() else {
+        panic!("one executable flow")
+    };
+    let mut native = arcweft_core::engine::Engine::for_flow(compiled.plan.clone(), &flow.id)
+        .expect("native flow starts");
+    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .expect("decoded AWBC flow starts");
+    let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default();
+    let run = |step: &mut dyn FnMut(
+        RuntimeStepInput,
+        RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult| {
+        let mut effects = Vec::new();
+        for tick in 0..32 {
+            let result = step(
+                RuntimeStepInput {
+                    tick: TickId(tick),
+                    ..RuntimeStepInput::default()
+                },
+                RuntimeStepOptions::default(),
+            );
+            assert!(
+                result.output.diagnostics.is_empty(),
+                "{:?}",
+                result.output.diagnostics
+            );
+            effects.extend(result.output.effects.line);
+            match result.fiber_status {
+                FlowFiberStatus::Running => {}
+                FlowFiberStatus::Done(FlowExit::Done) => return log_messages(&effects),
+                status => panic!("effect flow stopped unexpectedly: {status:?}"),
+            }
+        }
+        panic!("effect flow exceeded its deterministic step limit")
+    };
+    let native_logs = run(&mut |input, options| native.step(input, options));
+    let awbc_logs =
+        run(&mut |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend));
+    assert_eq!(native_logs, expected);
+    assert_eq!(awbc_logs, native_logs);
 }
 
 fn bind_test_character_dialogue_schema(
@@ -1487,13 +1556,7 @@ entry cli @entry.main { goto @flow.main }
         .filter(|op| matches!(op, FlowOp::EvaluatedEffect(_)))
         .count();
     assert_eq!(effects, 1);
-    AwbcLowerer::new(
-        &compiled.plan,
-        &compiled.dialogue_content,
-        "pipe_tail_effect.arcw",
-    )
-    .lower()
-    .expect("pipe tail effect lowers to verified AWBC");
+    assert_simple_flow_logs_native_and_awbc(&compiled, &["piped"]);
 }
 
 #[test]
@@ -1519,13 +1582,7 @@ entry cli @entry.main {{ goto @flow.main }}
             .filter(|op| matches!(op, FlowOp::EvaluatedEffect(_)))
             .count();
         assert_eq!(effects, 1, "{tail}");
-        AwbcLowerer::new(
-            &compiled.plan,
-            &compiled.dialogue_content,
-            "function_effect.arcw",
-        )
-        .lower()
-        .expect("closed function effect lowers to verified AWBC");
+        assert_simple_flow_logs_native_and_awbc(&compiled, &["piped"]);
     }
 }
 
