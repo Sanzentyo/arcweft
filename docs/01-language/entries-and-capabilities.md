@@ -204,9 +204,11 @@ extern capability clock {
 ### Target availability
 
 Source declares what calling an operation means. It does not select the host.
-The resolved profile selects one adapter; that adapter declares target-provided
-effects and host calls. If a checked callable reaches an effect the selected
-target cannot provide, semantic analysis reports `AWF-EFX-007`. If the selected
+The resolved profile selects one adapter. The engine provides its own typed
+control, dialogue, and observation effects; the adapter declares external
+effects and host calls. If a checked callable reaches an effect neither the
+engine nor the selected adapter can provide, semantic analysis reports
+`AWF-EFX-007`. If the selected
 runtime runner does not implement a host call declared by the selected adapter,
 runtime-host conformance reports `MissingHostCallImplementation` before
 execution.

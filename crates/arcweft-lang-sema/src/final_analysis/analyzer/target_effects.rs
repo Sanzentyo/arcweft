@@ -1,7 +1,7 @@
 //! Target availability checks consume the final selected application rows.
 
 use super::statements::expression_span;
-use super::{Analyzer, CheckedCallableCatalog, EffectId, EffectSet, FinalSemanticAnalysisError};
+use super::{Analyzer, CheckedCallableCatalog, EffectSet, FinalSemanticAnalysisError};
 use crate::callable::CheckedCallResult;
 
 impl Analyzer<'_, '_, '_> {
@@ -13,12 +13,11 @@ impl Analyzer<'_, '_, '_> {
         let available_effects = environment
             .available_effects()
             .map(|effects| {
-                let mut effects =
-                    EffectSet::from_labels(effects.iter().map(|effect| effect.as_str()))
-                        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                // Suspension is supplied by the execution engine, not a host adapter.
-                effects.insert(EffectId::control_suspend());
-                Ok::<_, FinalSemanticAnalysisError>(effects)
+                let effects = EffectSet::from_labels(effects.iter().map(|effect| effect.as_str()))
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                Ok::<_, FinalSemanticAnalysisError>(
+                    effects.union(&crate::effects::engine_provided_effects()),
+                )
             })
             .transpose()?;
         let available_calls = environment.available_host_calls();

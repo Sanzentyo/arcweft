@@ -32,6 +32,35 @@ fn target_effects_use_selected_rows_and_scoped_coverage() {
 }
 
 #[test]
+fn selected_target_accepts_engine_line_effects_without_adapter_effects() {
+    let source = concat!(
+        "pub character akane {}\n",
+        "flow line_handles() -> String {\n",
+        "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let actor = akane.stage.acquire(scope=line)\n",
+        "        let cue = at(0.42s):\n",
+        "            actor.look(.normal)\n",
+        "        let voice = line.voice_handle()\n",
+        "        defer on cancelled:\n",
+        "            log.info(\"cancelled\")\n",
+        "        out (voice, cue)\n",
+        "    return \"done\"\n",
+        "}\n",
+    );
+    let (document, catalog, _) = super::akane_character_registration();
+    let fixture = super::fixture_with_all_registration_inputs_and_base(
+        source,
+        None,
+        Vec::new(),
+        vec![(document, catalog)],
+        Vec::new(),
+        TypeCheckEnv::standard().with_available_effects(Vec::<&str>::new()),
+    );
+    analyze(&fixture).expect("the engine provides line schedule, voice, and log effects");
+}
+
+#[test]
 fn target_effects_do_not_execute_a_nonterminal_prefix() {
     let source = r"
 fn staged(first: i64)(second: i64) -> i64 effects { fs.read } { first + second }

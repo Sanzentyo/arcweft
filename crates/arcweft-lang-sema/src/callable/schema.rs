@@ -992,22 +992,14 @@ impl CallableEvaluatedEffect {
     /// schema producers, dialogue callbacks, and ordinary effect accounting
     /// cannot diverge or infer capabilities from runtime variants.
     pub(crate) fn declared_effect_row(self) -> EffectRow {
-        let label = match self {
-            Self::Log(_) => Some("log.write"),
-            Self::SignalWrite => Some("signal.write"),
-            Self::MetricWrite => Some("metric.write"),
-            Self::EmitEvent => Some("event.emit"),
+        let effect = match self {
+            Self::Log(_) => Some(crate::effects::EffectId::log_write()),
+            Self::SignalWrite => Some(crate::effects::EffectId::signal_write()),
+            Self::MetricWrite => Some(crate::effects::EffectId::metric_write()),
+            Self::EmitEvent => Some(crate::effects::EffectId::event_emit()),
             Self::Panic | Self::Fail | Self::Bail | Self::Ensure | Self::Drop(_) => None,
         };
-        EffectRow::closed(
-            label
-                .into_iter()
-                .map(|label| {
-                    crate::effects::EffectId::parse(label)
-                        .expect("evaluated-effect identities are canonical static semantics")
-                })
-                .collect(),
-        )
+        EffectRow::closed(effect.into_iter().collect())
     }
 
     /// Resolves an exact schema coordinate to its closed effect operand role.

@@ -38,10 +38,59 @@ pub enum EffectIdError {
 }
 
 impl EffectId {
+    /// Canonical engine-owned line scheduling effect label.
+    pub const DIALOGUE_SCHEDULE_LABEL: &'static str = "dialogue.schedule";
+    /// Canonical engine-owned dialogue voice effect label.
+    pub const DIALOGUE_VOICE_LABEL: &'static str = "dialogue.voice";
+    /// Canonical engine-owned log observation effect label.
+    pub const LOG_WRITE_LABEL: &'static str = "log.write";
+    /// Canonical engine-owned signal observation effect label.
+    pub const SIGNAL_WRITE_LABEL: &'static str = "signal.write";
+    /// Canonical engine-owned metric observation effect label.
+    pub const METRIC_WRITE_LABEL: &'static str = "metric.write";
+    /// Canonical engine-owned event observation effect label.
+    pub const EVENT_EMIT_LABEL: &'static str = "event.emit";
+
     /// Canonical language-owned suspension capability.
     #[must_use]
     pub fn control_suspend() -> Self {
         Self(CONTROL_SUSPEND_EFFECT_ID.to_owned())
+    }
+
+    /// Canonical engine-owned line scheduling capability.
+    #[must_use]
+    pub fn dialogue_schedule() -> Self {
+        Self(Self::DIALOGUE_SCHEDULE_LABEL.to_owned())
+    }
+
+    /// Canonical engine-owned dialogue voice capability.
+    #[must_use]
+    pub fn dialogue_voice() -> Self {
+        Self(Self::DIALOGUE_VOICE_LABEL.to_owned())
+    }
+
+    /// Canonical engine-owned log observation capability.
+    #[must_use]
+    pub fn log_write() -> Self {
+        Self(Self::LOG_WRITE_LABEL.to_owned())
+    }
+
+    /// Canonical engine-owned signal observation capability.
+    #[must_use]
+    pub fn signal_write() -> Self {
+        Self(Self::SIGNAL_WRITE_LABEL.to_owned())
+    }
+
+    /// Canonical engine-owned metric observation capability.
+    #[must_use]
+    pub fn metric_write() -> Self {
+        Self(Self::METRIC_WRITE_LABEL.to_owned())
+    }
+
+    /// Canonical engine-owned event observation capability.
+    #[must_use]
+    pub fn event_emit() -> Self {
+        Self(Self::EVENT_EMIT_LABEL.to_owned())
     }
 
     pub fn parse(value: impl AsRef<str>) -> Result<Self, EffectIdError> {

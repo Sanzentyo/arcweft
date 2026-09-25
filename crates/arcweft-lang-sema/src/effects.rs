@@ -9,6 +9,21 @@ use arcweft_lang_hir::{
 };
 use thiserror::Error;
 
+/// Effects provided by the execution engine independently of the selected
+/// host adapter. This set is used only for target availability, not for the
+/// adapter's registered capability identity.
+pub(crate) fn engine_provided_effects() -> EffectSet {
+    let mut effects = EffectSet::new();
+    effects.insert(EffectId::control_suspend());
+    effects.insert(EffectId::dialogue_schedule());
+    effects.insert(EffectId::dialogue_voice());
+    effects.insert(EffectId::log_write());
+    effects.insert(EffectId::signal_write());
+    effects.insert(EffectId::metric_write());
+    effects.insert(EffectId::event_emit());
+    effects
+}
+
 /// Invalid final-HIR projection of one authored effect capability.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum HirEffectProjectionError {

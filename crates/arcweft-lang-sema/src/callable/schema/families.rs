@@ -4,7 +4,7 @@ use crate::{
     callable::CharacterDialoguePatchContext,
     character_dialogue::CharacterDialogueFieldCoordinate,
     effect_row::EffectRow,
-    effects::EffectSet,
+    effects::{EffectId, EffectSet},
     env::{
         RegisteredTypeCheckEnv,
         nominal::{
@@ -1120,7 +1120,7 @@ impl LineContextMethodId {
     pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
         empty(
             TypeKind::VoiceHandle,
-            &["dialogue.voice"],
+            &[EffectId::DIALOGUE_VOICE_LABEL],
             CallableValidator::LineContext(self),
         )
     }
@@ -1141,7 +1141,7 @@ impl LineScheduleCallableId {
                 TypeKind::CueHandle,
                 EffectRow::closed(EffectSet::new()),
             ),
-            &["dialogue.schedule"],
+            &[EffectId::DIALOGUE_SCHEDULE_LABEL],
             CallableValidator::Ordinary,
         )
     }
