@@ -1304,3 +1304,26 @@ HIR required recovery になっていた。文の emission は full plan interva
 focused parser/HIR 回帰、既存 nested cancel-body test、Syntax/HIR 対象 Clippy、
 cached diff check は終了コード0。045 の profile 登録、timed cue、native/AWBC
 実行、全体 fixture gate の合格はこの cut の証拠ではなく引き続き確認する。
+
+## Writable nominal Vec field checkpoint — 2026-09-26
+
+確認した `main`/`origin/main` は
+`30430f9a01e354dfa2650d1615630e79a97622de` で一致する。
+working tree は 045 CLI profile fixture とその受理側の作業中で dirty。
+`Vec<T>.pop_front()` の writable place を local/parameter と直接 nominal
+field にそろえた。Sema は exact project nominal schema と local-rooted field
+selection を使い、HIR Path の二要素 field receiver を typed value として準備する。
+compiler/RuntimePlan は sealed base local、nominal identity、field ID を投影・
+検証し、native/AWBC は record 内の Vec を直接更新する。clone した一時値の
+書き戻しは使わず、AWBC opcode と codec は version 1 のまま。
+完全 project path と associated lookup の既存解決順を保つ。
+
+検証: source-level compiler `pop_front` 5/5（native/decoded AWBC の反復取り出し、
+local 回帰、nested/indexed receiver の拒否）、core nominal-field 2/2
+（AWBC codec/verifier/VM/restore を含む）、変更 4 パッケージの all-target check、
+workspace all-target/all-feature check、workspace Clippy、fmt、structure audit gate
+（0 blockers）、cached diff check は終了コード0。`RUST_MIN_STACK=16777216` の
+`just test-workspace` は非 CLI 群を通過後、045 fixture の
+`AWF-EFX-007` (`dialogue.schedule` を選択 target が提供できない) で停止した。
+全 recipe の合格ではない。Sol Max の照合では schedule/voice は engine 提供の
+typed effect であり、adapter 固有の許可を fixture に足す問題ではない。
