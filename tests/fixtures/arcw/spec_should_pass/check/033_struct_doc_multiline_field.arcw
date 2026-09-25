@@ -1,3 +1,6 @@
+pub struct AudioConfig {}
+pub struct VisualConfig {}
+
 pub struct Settings {
     /// Volume configuration.
     audio: AudioConfig,

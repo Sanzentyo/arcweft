@@ -1,3 +1,8 @@
+struct RouteInfo {
+    enabled: bool,
+    label: String,
+}
+
 impl RouteInfo {
     fn label(self) -> String {
         if self.enabled {
