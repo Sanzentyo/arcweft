@@ -1433,3 +1433,38 @@ handle、host-request/existing-handle の Await source、context frame の一回
 sequence が期待 `Array<i32, 3>` にかかわらず `Vec<i32>` を生成する。
 052 の `text_key=@super.super.intro_text` は HIR の text-key coordinate が
 絶対 `text.*` のみを解決する境界で止まる。これらは別の acceptance cluster。
+
+## 053 rich-text / typed Need checkpoint — 2026-09-26
+
+確認した `main`/`origin/main` は
+`8ef222574b7f32030be0111617d4affbddc665fe` で一致する。working tree は
+053 fixture と対応する維持仕様例の修正中で dirty。次の三 cut を個別に push 済み。
+
+- `7a10931d8548738ecef572c8d2e9793b5fc541fe`: record field の `:` 後に
+  より深い indent の改行値を許し、dedent では欠損値として回復する。053 の
+  multiline `Transform2D.translate_y` を HIR に渡せるようにした。Syntax lib
+  703/703、Syntax Clippy、fmt、cached diff check が通過。
+- `c41081aa56f5c003b029949b2031c94153ee4d48`: Core の Need handle を
+  `RuntimeValue::Need(NeedId)` として保持し、AWBC の String 代用を拒否する。
+  affine ownership、snapshot/restore、外部利用側、direct suspension の入力を
+  同じ型へ移行。Core の Need focused tests と `direct_suspension` 8/8、
+  workspace all-target/all-feature check と Clippy、fmt、cached diff check が通過。
+  これは Await の既存 Need source / native 復帰を完成させた証拠ではない。
+- `8ef222574b7f32030be0111617d4affbddc665fe`: Fx sampler の body を
+  accepted standard `Transform2D` の型付き record として検証し、別 nominal と
+  project shadowing を拒否。`FxSampleContext` の closure pattern を seed。
+  Sema focused test 2/2、crate check/Clippy、workspace all-target/all-feature
+  check/Clippy、fmt、cached diff check が通過。
+
+`RUST_MIN_STACK=16777216` の `just test-workspace` は上記 Core の旧 String
+代用を使う `direct_suspension` 8件で一度停止した。テスト入力も型付き Need へ
+移行した再実行では非 CLI 群が通過し、CLI 7件中6件が通過、既知の未編集 049
+fixture の `sema.final_analysis` value resolution で停止した。レシピ全体の
+合格ではない。053 は HIR を越えたが、非空 `sample = |ctx| Transform2D { ... }`
+の式・call が通常の checked-expression facts を持たず Fx sealer で
+`InvalidBody` となる。Fx body に並列の通常 fact を公開せず、既存の
+`CheckedFxDefinitionCatalog` と value-program 命令/verifier に、一時的な
+型付き sampler 式証拠を接続することが次の直接作業。維持仕様と fixture の
+`Fx.text(weight = .strong)` は現在の numeric weight 契約と異なるため、
+`700` への訂正が working tree に残る。053、049、および goal 全体の最終
+受理は未達。
