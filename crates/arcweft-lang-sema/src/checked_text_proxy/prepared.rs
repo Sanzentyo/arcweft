@@ -11,7 +11,7 @@ use arcweft_lang_hir::{
     project::HirAnalysisProjectView,
     symbol::{
         ProjectSymbolTable,
-        nominal::{ProjectNominalBody, ProjectNominalDeclarationId},
+        nominal::{ProjectNominalBody, ProjectNominalDeclarationId, ProjectNominalVariantPayload},
     },
 };
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
@@ -1564,7 +1564,10 @@ fn classify_scalar(
     let ProjectNominalBody::Enum { variants } = declaration.body() else {
         return None;
     };
-    if variants.iter().any(|variant| variant.payload().is_some()) {
+    if variants
+        .iter()
+        .any(|variant| !matches!(variant.payload(), ProjectNominalVariantPayload::Unit))
+    {
         return None;
     }
     let semantic_type = ty.semantic_identity_digest().ok()?;

@@ -2088,6 +2088,264 @@ entry cli @entry.main {{ goto @flow.main }}
     }
 }
 
+#[test]
+fn statement_match_expression_effect_arms_preserve_native_awbc_effects() {
+    let compiled = compile_source(
+        r#"
+flow main() -> Unit {
+    let maybe: Option<i32> = .Some(7i32)
+    match maybe {
+        .Some(value) => log.info("some")
+        .None => log.info("none")
+    }
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("statement Match expression arms retain their checked effect disposition");
+
+    assert_simple_flow_logs_native_and_awbc(&compiled, &["some"]);
+}
+
+#[test]
+fn statement_match_pure_value_arms_are_discarded_in_native_and_awbc() {
+    let compiled = compile_source(
+        r#"
+flow main() -> Unit {
+    let maybe: Option<i32> = .Some(7i32)
+    match maybe {
+        .Some(value) => value + 1i32
+        .None => 0i32
+    }
+    log.info("after")
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("statement Match expression arms discard their pure values");
+
+    assert_simple_flow_logs_native_and_awbc(&compiled, &["after"]);
+}
+
+#[test]
+fn project_inline_record_enum_pattern_binds_fields_in_native_and_decoded_awbc() {
+    use arcweft_core::{
+        awbc::{
+            product_step::AwbcProductStepExecutor,
+            schema::{
+                AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcFlowExecutable,
+                AwbcProgram, AwbcStringId,
+            },
+        },
+        engine::{Engine, FlowExit, FlowFiberStatus},
+        entry::{
+            EntryBindingIdentity, FlowContractHash, FlowParameterCoordinate, RuntimeFlowExecutable,
+            RuntimeSchemaLimits,
+        },
+        plan::RuntimePlanTypeProjection,
+        program_types::RuntimeProgramTypes,
+        pure::VmRuntimePureCallBackend,
+        step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult},
+        time::TickId,
+        value::{RuntimeFlowParameterBinding, RuntimeValue},
+    };
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerOptions;
+
+    let compiled = compile_source(
+        r#"
+enum GameEvent {
+    ChoiceSelected { id: i32 },
+}
+
+flow main(event: GameEvent) -> Unit {
+    match event {
+        .ChoiceSelected { id } => log.info("selected", id = id)
+    }
+}
+"#,
+    )
+    .expect("inline-record enum pattern has an executable project Flow");
+    let [flow] = compiled.plan.flows() else {
+        panic!("one parameterized Flow")
+    };
+    let schema = compiled
+        .plan
+        .flow_schemas()
+        .iter()
+        .find(|schema| schema.flow == flow.id)
+        .expect("the Flow owns a checked positional input ABI");
+    assert_eq!(schema.parameters.len(), 1);
+    let event_semantic_type = schema.parameters[0].semantic_identity;
+    let event_type = compiled
+        .plan
+        .type_table()
+        .id_for_semantic(event_semantic_type)
+        .expect("the Flow input resolves to its exact project enum type row");
+    let event_declaration = compiled
+        .plan
+        .type_table()
+        .get(event_type)
+        .expect("the Flow input row belongs to the plan type table");
+    assert!(matches!(
+        event_declaration.projection(),
+        RuntimePlanTypeProjection::Nominal { .. }
+    ));
+    let domain = compiled
+        .plan
+        .variant_domains()
+        .get(event_type)
+        .expect("GameEvent retains its exact source-ordered variant domain");
+    let (ordinal, choice_case) = domain
+        .cases()
+        .iter()
+        .enumerate()
+        .find(|(_, case)| case.name() == "ChoiceSelected")
+        .expect("GameEvent includes ChoiceSelected");
+    let payload_type = choice_case
+        .payload()
+        .expect("ChoiceSelected has its authored inline record payload");
+    let payload_semantic_type = compiled
+        .plan
+        .type_table()
+        .get(payload_type)
+        .expect("the case payload is present in the selected type graph")
+        .semantic_identity();
+    let types = RuntimeProgramTypes::Plan(&compiled.plan);
+    let payload = types
+        .try_record_value(
+            payload_semantic_type,
+            vec![RuntimeValue::i32(42)],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("the project inline record is built under its accepted plan schema");
+    let event = types
+        .try_variant_value(
+            event_semantic_type,
+            u32::try_from(ordinal).expect("case ordinal fits the runtime domain"),
+            Some(payload),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("the supplied event is admitted by the exact project enum schema");
+    let parameter = RuntimeFlowParameterBinding {
+        parameter: FlowParameterCoordinate::from_position(0),
+        value: event,
+    };
+
+    let invocation = compiled
+        .plan
+        .clone()
+        .seal_flow_invocation(flow.id.clone(), [parameter.clone()])
+        .expect("the native input is sealed against the checked Flow ABI");
+    let mut native = Engine::for_flow_invocation(invocation).expect("native Flow starts");
+
+    // RuntimePlan deliberately has no direct launch target for parameterized
+    // Flows. Add a test entry to the decoded Product artifact so the same
+    // checked Flow ABI can be exercised without inventing a source constructor.
+    let mut product = AwbcLowerer::new(
+        &compiled.plan,
+        &compiled.dialogue_content,
+        "inline_record_enum_match.arcw",
+    )
+    .with_options(AwbcLowerOptions {
+        verify: false,
+        ..AwbcLowerOptions::default()
+    })
+    .lower()
+    .expect("the parameterized Flow lowers to Product AWBC")
+    .program;
+    let function = product
+        .flow_function(&flow.id)
+        .expect("the exact semantic Flow has a Product function binding");
+    product.flow_executables.push(AwbcFlowExecutable {
+        metadata: RuntimeFlowExecutable {
+            flow: flow.id.clone(),
+            contract: FlowContractHash::from_bytes([19; 32]),
+            controller: None,
+        },
+        function,
+    });
+    let entry_string = AwbcStringId(
+        u32::try_from(product.strings.len()).expect("Product string table fits its ID domain"),
+    );
+    product
+        .strings
+        .push("inline-record-direct-invocation".to_owned());
+    product.entries.push(AwbcEntry {
+        runtime_id: arcweft_core::plan::EntryRuntimeId::canonical("inline_record_test")
+            .expect("test entry identity is canonical"),
+        binding: EntryBindingIdentity::from_bytes([19; 32]),
+        public_id: entry_string,
+        kind: AwbcEntryKind::Cli,
+        target: AwbcEntryTarget::Function { function },
+        roles: arcweft_core::entry::RuntimeEntryRoles::None,
+    });
+    product.canonicalize_string_table();
+    let bytes = product
+        .encode_canonical()
+        .expect("the compiler's project enum code encodes canonically");
+    let decoded = AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("the project enum program decodes canonically");
+    let mut awbc = AwbcProductStepExecutor::for_function_invocation(
+        decoded,
+        AwbcEntryId(0),
+        function,
+        [parameter],
+        64,
+    )
+    .expect("decoded Product AWBC admits the same typed Flow input");
+
+    let run =
+        |mut step: Box<dyn FnMut(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult>| {
+            let mut logs = Vec::new();
+            for tick in 0..32 {
+                let result = step(
+                    RuntimeStepInput {
+                        tick: TickId(tick),
+                        ..RuntimeStepInput::default()
+                    },
+                    RuntimeStepOptions::default(),
+                );
+                assert!(
+                    result.output.diagnostics.is_empty(),
+                    "{:?}",
+                    result.output.diagnostics
+                );
+                logs.extend(result.output.effects.line.into_iter().filter_map(|effect| {
+                    match effect {
+                        LineEffectRequest::Log(log) => Some((
+                            log.message,
+                            log.fields
+                                .into_iter()
+                                .map(|field| (field.name, field.value))
+                                .collect::<Vec<_>>(),
+                        )),
+                        _ => None,
+                    }
+                }));
+                match result.fiber_status {
+                    FlowFiberStatus::Running => {}
+                    FlowFiberStatus::Done(FlowExit::Done) => return logs,
+                    status => panic!("inline-record match stopped unexpectedly: {status:?}"),
+                }
+            }
+            panic!("inline-record match exceeded its deterministic step bound")
+        };
+    let native_logs = run(Box::new(|input, options| native.step(input, options)));
+    let mut pure_backend = VmRuntimePureCallBackend::default();
+    let awbc_logs = run(Box::new(|input, options| {
+        awbc.step_with_pure_backend(input, options, &mut pure_backend)
+    }));
+    let expected = vec![(
+        "selected".to_owned(),
+        vec![("id".to_owned(), "42".to_owned())],
+    )];
+    assert_eq!(native_logs, expected);
+    assert_eq!(awbc_logs, native_logs);
+}
+
 fn collect_mark_triggers(
     group: &LineTaskGroup,
     node_id: RuntimeLineTaskNodeId,

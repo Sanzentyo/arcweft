@@ -17,13 +17,13 @@ use arcweft_lang_hir::{
 
 use super::{
     CheckedProjectNominal, CheckedTypeValue, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, nominal_schema::validate_checked_nominal,
+    FinalSemanticAnalysisError, PreparedVariantCaseSeed, nominal_schema::validate_checked_nominal,
 };
 use crate::{
     record_field::AcceptedRecordFieldSemanticId,
     types::{
         AcceptedVariantCaseSemanticId, SemanticTypeDigest, TypeKind, VariantPayloadOwnerFamily,
-        VariantPayloadShape,
+        VariantPayloadSealError, VariantPayloadShape, VariantPayloadType,
     },
 };
 
@@ -83,8 +83,22 @@ impl ProjectNominalSemanticCase {
         &self.payload
     }
 
-    pub(crate) const fn project_payload_field(&self) -> Option<&TypeKind> {
-        self.payload.single_tuple_field()
+    pub(crate) fn payload_type(
+        &self,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<Option<TypeKind>, VariantPayloadSealError> {
+        match &self.payload {
+            VariantPayloadShape::Unit => Ok(None),
+            shape => Ok(Some(TypeKind::VariantPayload(Box::new(
+                VariantPayloadType::try_new(
+                    VariantPayloadOwnerFamily::Project,
+                    nominal.ty(),
+                    self.ordinal,
+                    self.semantic_id,
+                    shape.clone(),
+                )?,
+            )))),
+        }
     }
 
     pub(crate) fn diagnostic_name(&self) -> &str {
@@ -286,24 +300,31 @@ fn build_semantic_variant_definition(
         control.check()?;
         let ordinal =
             u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        let payload = match variant.payload() {
-            Some(owner) => {
+        let prepared = PreparedVariantCaseSeed::from_project(
+            ordinal,
+            variant,
+            |owner| {
                 let declared = types
                     .get(&owner)
                     .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                let payload = nominal
+                nominal
                     .instantiate_declaration_type(declaration, declared)
-                    .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                VariantPayloadShape::try_tuple(
+                    .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
+            },
+            |_| FinalSemanticAnalysisError::InvalidNominalOwner,
+        )?;
+        let payload = prepared
+            .payload()
+            .map(|shape| {
+                shape.try_seal(
                     VariantPayloadOwnerFamily::Project,
                     nominal.identity(),
                     ordinal,
-                    [payload],
                 )
-                .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?
-            }
-            None => VariantPayloadShape::Unit,
-        };
+            })
+            .transpose()
+            .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?
+            .unwrap_or(VariantPayloadShape::Unit);
         accepted.push(ProjectNominalSemanticCase {
             ordinal,
             semantic_id: AcceptedVariantCaseSemanticId::issue(

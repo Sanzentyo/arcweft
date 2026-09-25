@@ -27,17 +27,23 @@ pub enum HirDeclarationSourceRole {
         variant: u32,
         part: HirNominalMemberSourcePart,
     },
+    EnumVariantField {
+        variant: u32,
+        field: u32,
+        part: HirNominalMemberSourcePart,
+    },
 }
 
-/// Exact source component of one ordered Struct field or Enum variant.
+/// Exact source component of one ordered nominal member.
 ///
-/// Payload types retain their own `TypeId` source owner. These roles retain
-/// only the nominal member container and required name so project symbols do
-/// not fabricate either span from the payload type.
+/// Payload types retain their own `TypeId` source owner. The `Payload` part is
+/// used for an inline enum record's braced payload container; source-ordered
+/// field roles retain each field's own exact whole/name spans.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirNominalMemberSourcePart {
     Whole,
     Name,
+    Payload,
 }
 
 /// Exact source component owned by one final Entry declaration.

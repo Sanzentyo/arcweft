@@ -1,11 +1,11 @@
 //! Source projection for ordinary named declaration items.
 
-use arcweft_lang_syntax::attachment::TypedItemNode;
+use arcweft_lang_syntax::attachment::{AttachedEnumVariantPayload, TypedItemNode};
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::SourceSpan;
 
 use crate::identity::{ItemId, SyntheticOwner};
-use crate::item::HirItemKind;
+use crate::item::{HirEnumVariantPayload, HirItemKind};
 use crate::source_index::{
     HirDeclarationSourceRole, HirItemSourceRole, HirNominalMemberSourcePart,
     HirSourceCommitInvariantError, HirSourceIndex, HirSourceQuery, HirSourceQueryError,
@@ -91,11 +91,62 @@ impl HirItemKind {
                 HirDeclarationSourceRole::ProofTrustAttribute
                 | HirDeclarationSourceRole::ProofTrustReason,
             ) if proof.trust().is_directly_trusted() => Ok(()),
-            (HirItemKind::Struct(item), HirDeclarationSourceRole::StructField { field, .. }) => {
+            (HirItemKind::Struct(item), HirDeclarationSourceRole::StructField { field, part }) => {
+                if !matches!(
+                    part,
+                    HirNominalMemberSourcePart::Whole | HirNominalMemberSourcePart::Name
+                ) {
+                    return Err(HirSourceQueryError::ItemRoleNotApplicable {
+                        owner,
+                        role: HirItemSourceRole::Declaration(role),
+                    });
+                }
                 validate_member_ordinal(owner, role, field, item.fields().len())
             }
-            (HirItemKind::Enum(item), HirDeclarationSourceRole::EnumVariant { variant, .. }) => {
-                validate_member_ordinal(owner, role, variant, item.variants().len())
+            (HirItemKind::Enum(item), HirDeclarationSourceRole::EnumVariant { variant, part }) => {
+                validate_member_ordinal(owner, role, variant, item.variants().len())?;
+                if part == HirNominalMemberSourcePart::Payload
+                    && !matches!(
+                        item.variants()[usize::try_from(variant)
+                            .expect("validated enum variant ordinal fits usize")]
+                        .payload(),
+                        HirEnumVariantPayload::Record(_)
+                    )
+                {
+                    return Err(HirSourceQueryError::ItemRoleNotApplicable {
+                        owner,
+                        role: HirItemSourceRole::Declaration(role),
+                    });
+                }
+                Ok(())
+            }
+            (
+                HirItemKind::Enum(item),
+                HirDeclarationSourceRole::EnumVariantField {
+                    variant,
+                    field,
+                    part,
+                },
+            ) => {
+                validate_member_ordinal(owner, role, variant, item.variants().len())?;
+                let variant = &item.variants()
+                    [usize::try_from(variant).expect("validated enum variant ordinal fits usize")];
+                if !matches!(
+                    part,
+                    HirNominalMemberSourcePart::Whole | HirNominalMemberSourcePart::Name
+                ) {
+                    return Err(HirSourceQueryError::ItemRoleNotApplicable {
+                        owner,
+                        role: HirItemSourceRole::Declaration(role),
+                    });
+                }
+                let HirEnumVariantPayload::Record(fields) = variant.payload() else {
+                    return Err(HirSourceQueryError::ItemRoleNotApplicable {
+                        owner,
+                        role: HirItemSourceRole::Declaration(role),
+                    });
+                };
+                validate_member_ordinal(owner, role, field, fields.len())
             }
             _ => Err(HirSourceQueryError::ItemRoleNotApplicable {
                 owner,
@@ -261,6 +312,34 @@ fn declaration_component_sources(
                     },
                     member.name().syntax().source_span(),
                 ));
+                if let AttachedEnumVariantPayload::Record(record) = member.payload() {
+                    components.push((
+                        HirDeclarationSourceRole::EnumVariant {
+                            variant,
+                            part: HirNominalMemberSourcePart::Payload,
+                        },
+                        record.source_span().clone(),
+                    ));
+                    for (field, member) in record.fields().iter().enumerate() {
+                        let field = u32::try_from(field).expect("nominal field limit fits u32");
+                        components.push((
+                            HirDeclarationSourceRole::EnumVariantField {
+                                variant,
+                                field,
+                                part: HirNominalMemberSourcePart::Whole,
+                            },
+                            member.syntax().source_span(),
+                        ));
+                        components.push((
+                            HirDeclarationSourceRole::EnumVariantField {
+                                variant,
+                                field,
+                                part: HirNominalMemberSourcePart::Name,
+                            },
+                            member.name().syntax().source_span(),
+                        ));
+                    }
+                }
             }
             components
         }),

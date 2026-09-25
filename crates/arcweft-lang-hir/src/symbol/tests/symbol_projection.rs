@@ -539,6 +539,8 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
         "}\n",
         "pub enum Choice<T> where T: Bound {\n",
         "    Value Result<T, Missing>,\n",
+        "    Record { id: T, label: Missing },\n",
+        "    EmptyRecord {},\n",
         "    Empty,\n",
         "}\n",
         "pub type Alias<T> = Result<T, Missing>\n",

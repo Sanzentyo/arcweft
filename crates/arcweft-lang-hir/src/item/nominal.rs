@@ -5,7 +5,7 @@ use arcweft_id::PublicId;
 use super::callable::{HirGenericParameter, HirWherePredicate};
 use super::{
     HirDocumentation, HirItemInvariantError, HirRequiredName, validate_expr,
-    validate_generic_parameters, validate_optional_type, validate_type, validate_where_predicates,
+    validate_generic_parameters, validate_type, validate_where_predicates,
 };
 use crate::identity::{ExprId, HirModuleId, TypeId};
 
@@ -55,24 +55,40 @@ impl HirEnumItem {
         validate_generic_parameters(expected, &self.generic_parameters)?;
         validate_where_predicates(expected, &self.where_predicates)?;
         for variant in &self.variants {
-            validate_optional_type(expected, variant.payload)?;
+            match variant.payload() {
+                HirEnumVariantPayload::Unit => {}
+                HirEnumVariantPayload::Tuple(payload) => validate_type(expected, *payload)?,
+                HirEnumVariantPayload::Record(fields) => {
+                    for field in fields.iter() {
+                        validate_type(expected, field.ty())?;
+                    }
+                }
+            }
         }
         Ok(())
     }
+}
+
+/// The typed payload shape of one enum variant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirEnumVariantPayload {
+    Unit,
+    Tuple(TypeId),
+    Record(Box<[HirEnumVariantField]>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirEnumVariant {
     documentation: Option<HirDocumentation>,
     name: HirRequiredName,
-    payload: Option<TypeId>,
+    payload: HirEnumVariantPayload,
 }
 
 impl HirEnumVariant {
     pub(crate) const fn new(
         documentation: Option<HirDocumentation>,
         name: HirRequiredName,
-        payload: Option<TypeId>,
+        payload: HirEnumVariantPayload,
     ) -> Self {
         Self {
             documentation,
@@ -89,8 +105,42 @@ impl HirEnumVariant {
         &self.name
     }
 
-    pub const fn payload(&self) -> Option<TypeId> {
-        self.payload
+    pub const fn payload(&self) -> &HirEnumVariantPayload {
+        &self.payload
+    }
+}
+
+/// One source-ordered field of an inline record enum payload.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirEnumVariantField {
+    documentation: Option<HirDocumentation>,
+    name: HirRequiredName,
+    ty: TypeId,
+}
+
+impl HirEnumVariantField {
+    pub(crate) const fn new(
+        documentation: Option<HirDocumentation>,
+        name: HirRequiredName,
+        ty: TypeId,
+    ) -> Self {
+        Self {
+            documentation,
+            name,
+            ty,
+        }
+    }
+
+    pub const fn documentation(&self) -> Option<&HirDocumentation> {
+        self.documentation.as_ref()
+    }
+
+    pub const fn name(&self) -> &HirRequiredName {
+        &self.name
+    }
+
+    pub const fn ty(&self) -> TypeId {
+        self.ty
     }
 }
 

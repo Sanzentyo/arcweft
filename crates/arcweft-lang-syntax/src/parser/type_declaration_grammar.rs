@@ -9,12 +9,12 @@ use super::declaration::{
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    emit_required_punctuation, expected, find_matching_close, find_top_level_boundary,
-    first_significant, token_count, token_text, trimmed_end,
+    emit_required_punctuation, expected, find_matching_close, find_matching_close_before,
+    find_top_level_boundary, first_significant, token_count, token_text, trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
-use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_declaration(
@@ -205,10 +205,46 @@ fn emit_enum_variant(parser: &mut DocumentParser<'_, '_>, end: usize, _ordinal: 
     }
     parser.bump_trivia();
 
-    if parser.cursor() < significant_end {
+    if parser.cursor() < significant_end && parser.at("{") {
+        emit_enum_variant_record_body(parser, significant_end);
+    } else if parser.cursor() < significant_end {
         emit_type(parser, significant_end, SyntaxRole::Type);
     }
     bump_until(parser, significant_end);
+}
+
+fn emit_enum_variant_record_body(parser: &mut DocumentParser<'_, '_>, end: usize) {
+    parser.start(SyntaxKind::DelimitedGroup, SyntaxRole::Body);
+    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
+    let closing = find_matching_close_before(parser, parser.cursor(), end, "{");
+    let fields_end = closing.unwrap_or(end);
+    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
+    emit_fields(parser, fields_end, SyntaxKind::StructItem);
+    parser.finish();
+    bump_until(parser, fields_end);
+    if closing.is_some() {
+        emit_close_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            "}",
+            "syntax.nominal.missing_variant_record_close",
+        );
+    } else {
+        let at = parser.current_offset();
+        parser.start(SyntaxKind::CloseBraceNode, SyntaxRole::CloseDelimiter);
+        parser.push(SyntaxEvent::MissingToken {
+            expected: ExpectedToken::try_with_spelling(SyntaxKind::PunctuationToken, "}")
+                .expect("record payload closing brace is a grammar token"),
+            at,
+        });
+        parser.finish();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.nominal.missing_variant_record_close",
+            SourceRange::new(at, at),
+            "missing closing `}` for enum variant record payload",
+        )));
+    }
+    parser.finish();
 }
 
 fn emit_named_field(parser: &mut DocumentParser<'_, '_>, end: usize, _ordinal: u16) {

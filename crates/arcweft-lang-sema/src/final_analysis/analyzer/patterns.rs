@@ -1145,21 +1145,18 @@ fn resolve_project_variant_pattern(
     for (ordinal, case) in variants.iter().enumerate() {
         let ordinal =
             u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-        let case_payload = case
-            .payload()
-            .map(|payload| {
+        cases.push(super::PreparedVariantCaseSeed::from_project(
+            ordinal,
+            case,
+            |payload| {
                 context
                     .types
                     .get(&payload)
                     .map(|payload| substitutions.apply(payload))
                     .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload })
-            })
-            .transpose()?;
-        cases.push(super::PreparedVariantCaseSeed::new(
-            ordinal,
-            case_payload,
-            Some(case.name().as_str().to_owned()),
-        ));
+            },
+            |_| FinalSemanticAnalysisError::InvalidNominalOwner,
+        )?);
     }
     let owner = super::PreparedVariantOwnerSeed::try_project(nominal.clone(), cases)
         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;

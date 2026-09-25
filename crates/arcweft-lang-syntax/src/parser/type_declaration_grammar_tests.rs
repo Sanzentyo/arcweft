@@ -1,9 +1,9 @@
 use arcweft_source::identity::SourceSnapshotId;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 use std::sync::Arc;
 
 use super::document::parse_document;
-use crate::attachment::{AttachedTypeFamily, TypedItemNode};
+use crate::attachment::{AttachedEnumVariantPayload, AttachedTypeFamily, TypedItemNode};
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
 use crate::incremental::SyntaxDatabase;
@@ -154,8 +154,160 @@ fn nominal_declarations_attach_their_exact_bodies_and_members() {
 
     let choice = choice.semantics().unwrap();
     assert_eq!(choice.body().variants().len(), 2);
-    assert!(choice.body().variants()[0].payload().is_none());
-    assert!(choice.body().variants()[1].payload().is_some());
+    assert!(matches!(
+        choice.body().variants()[0].payload(),
+        AttachedEnumVariantPayload::Unit
+    ));
+    assert!(matches!(
+        choice.body().variants()[1].payload(),
+        AttachedEnumVariantPayload::Tuple(_)
+    ));
+}
+
+#[test]
+fn enum_variant_payloads_preserve_unit_tuple_and_ordered_record_shapes() {
+    let source = concat!(
+        "enum GameEvent {\n",
+        "    ChoiceSelected { id: i32, label: String },\n",
+        "    EmptyRecord {},\n",
+        "    StartGame,\n",
+        "    Legacy (i32, String),\n",
+        "}\n",
+    );
+    let document = Arc::new(document(source));
+    let snapshot = SourceSnapshotId::initial(document.display_name().clone());
+    let mut database = SyntaxDatabase::try_new().unwrap();
+    let parsed = database
+        .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
+        .unwrap();
+
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let items = parsed.items().unwrap();
+    let [TypedItemNode::Enum(game_event)] = items.as_slice() else {
+        panic!("expected one enum declaration")
+    };
+    let declaration = game_event.semantics().unwrap();
+    let variants = declaration.body().variants();
+    assert_eq!(variants.len(), 4);
+
+    let AttachedEnumVariantPayload::Record(record) = variants[0].payload() else {
+        panic!("ChoiceSelected has an inline record payload")
+    };
+    let record_payload = "{ id: i32, label: String }";
+    let record_payload_start = source.find(record_payload).unwrap();
+    assert_eq!(
+        record.source_span().range(),
+        SourceRange::new(
+            record_payload_start,
+            record_payload_start + record_payload.len(),
+        )
+    );
+    assert_eq!(record.fields().len(), 2);
+    assert_eq!(
+        record
+            .fields()
+            .iter()
+            .map(|field| field.name().value().unwrap().as_str())
+            .collect::<Vec<_>>(),
+        ["id", "label"]
+    );
+    assert_eq!(record.fields()[0].syntax().source_text(), "id: i32,");
+    assert_eq!(record.fields()[0].name().syntax().source_text(), "id");
+    assert_eq!(record.fields()[1].syntax().source_text(), "label: String ");
+
+    let AttachedEnumVariantPayload::Record(empty_record) = variants[1].payload() else {
+        panic!("EmptyRecord retains Record distinctly from Unit")
+    };
+    assert!(empty_record.fields().is_empty());
+    let empty_record_start = source.find("{}").unwrap();
+    assert_eq!(
+        empty_record.source_span().range(),
+        SourceRange::new(empty_record_start, empty_record_start + 2)
+    );
+    assert!(matches!(
+        variants[2].payload(),
+        AttachedEnumVariantPayload::Unit
+    ));
+    assert!(matches!(
+        variants[3].payload(),
+        AttachedEnumVariantPayload::Tuple(_)
+    ));
+}
+
+#[test]
+fn malformed_enum_record_fields_recover_within_the_variant_body() {
+    let source = concat!(
+        "enum Broken { Record { id i32 }, Good }\n",
+        "proof following() = ()\n",
+    );
+    let document = Arc::new(document(source));
+    let snapshot = SourceSnapshotId::initial(document.display_name().clone());
+    let mut database = SyntaxDatabase::try_new().unwrap();
+    let parsed = database
+        .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
+        .unwrap();
+
+    assert_eq!(parsed.items().unwrap().len(), 2);
+    let items = parsed.items().unwrap();
+    let [TypedItemNode::Enum(broken), TypedItemNode::Proof(_)] = items.as_slice() else {
+        panic!("malformed record payload must not consume the following item")
+    };
+    let declaration = broken.semantics().unwrap();
+    let [record_variant, good_variant] = declaration.body().variants() else {
+        panic!("both enum variants survive field recovery")
+    };
+    assert!(record_variant.has_recovery());
+    assert_eq!(record_variant.syntax().source_text(), "Record { id i32 },");
+    let AttachedEnumVariantPayload::Record(record) = record_variant.payload() else {
+        panic!("malformed field remains inside a record payload")
+    };
+    assert_eq!(record.fields()[0].syntax().source_text(), "id i32 ");
+    let missing_type = source.find("i32").unwrap();
+    assert_eq!(good_variant.name().value().unwrap().as_str(), "Good");
+    assert!(parsed.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == "syntax.nominal.missing_field_type"
+            && diagnostic.primary().range() == SourceRange::new(missing_type, missing_type)
+    }));
+}
+
+#[test]
+fn missing_enum_record_close_recovers_before_the_following_item() {
+    let source = concat!(
+        "enum Broken { Record { id: i32\n",
+        "proof following() = ()\n",
+    );
+    let document = Arc::new(document(source));
+    let snapshot = SourceSnapshotId::initial(document.display_name().clone());
+    let mut database = SyntaxDatabase::try_new().unwrap();
+    let parsed = database
+        .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
+        .unwrap();
+
+    let items = parsed.items().unwrap();
+    let [TypedItemNode::Enum(broken), TypedItemNode::Proof(_)] = items.as_slice() else {
+        panic!("missing record close must not consume the following item")
+    };
+    let declaration = broken.semantics().unwrap();
+    let [record_variant] = declaration.body().variants() else {
+        panic!("one recovered enum variant")
+    };
+    let AttachedEnumVariantPayload::Record(record) = record_variant.payload() else {
+        panic!("record payload remains attached with its missing close")
+    };
+    assert!(record.has_recovery());
+    let following = source.find("\nproof following").unwrap();
+    assert!(
+        parsed.diagnostics().iter().any(|diagnostic| {
+            diagnostic.code() == "syntax.nominal.missing_variant_record_close"
+                && diagnostic.primary().range() == SourceRange::new(following, following)
+        }),
+        "{:?}",
+        parsed.diagnostics()
+    );
 }
 
 #[test]

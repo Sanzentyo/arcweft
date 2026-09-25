@@ -10,7 +10,7 @@ use arcweft_source::SourceSpan;
 
 use crate::identity::{ItemId, TypeId};
 use crate::item::{
-    HirEnumItem, HirEnumVariant, HirGenericParameter, HirRequiredName, HirStructField,
+    HirEnumItem, HirEnumVariantPayload, HirGenericParameter, HirRequiredName, HirStructField,
     HirStructItem, HirTypeAliasItem, HirWherePredicate,
 };
 use crate::module::HirModule;
@@ -25,8 +25,8 @@ use super::super::nominal::{
     ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationError,
     ProjectNominalDeclarationId, ProjectNominalDeclarationKind, ProjectNominalDeclarationSource,
     ProjectNominalField, ProjectNominalFieldSource, ProjectNominalTypeParameter,
-    ProjectNominalTypeParameterSource, ProjectNominalVariant, ProjectNominalVariantSource,
-    ProjectNominalWherePredicate,
+    ProjectNominalTypeParameterSource, ProjectNominalVariant, ProjectNominalVariantPayload,
+    ProjectNominalVariantSource, ProjectNominalWherePredicate,
 };
 use super::{
     ProjectSymbolLimitKind, ProjectSymbolLimits, ProjectSymbolRevision, ProjectSymbolWorldId,
@@ -151,7 +151,15 @@ impl<'a> NominalHir<'a> {
         match self {
             Self::Struct(item) => types.extend(item.fields().iter().map(HirStructField::ty)),
             Self::Enum(item) => {
-                types.extend(item.variants().iter().filter_map(HirEnumVariant::payload));
+                for variant in item.variants() {
+                    match variant.payload() {
+                        HirEnumVariantPayload::Unit => {}
+                        HirEnumVariantPayload::Tuple(payload) => types.push(*payload),
+                        HirEnumVariantPayload::Record(fields) => {
+                            types.extend(fields.iter().map(|field| field.ty()));
+                        }
+                    }
+                }
             }
             Self::TypeAlias(item) => types.push(item.target()),
         }
@@ -271,13 +279,72 @@ pub(super) fn build_nominal_declaration(
                             part: HirNominalMemberSourcePart::Name,
                         },
                     );
+                    let (payload, payload_source) = match variant.payload() {
+                        HirEnumVariantPayload::Unit => (ProjectNominalVariantPayload::Unit, None),
+                        HirEnumVariantPayload::Tuple(payload) => (
+                            ProjectNominalVariantPayload::Tuple(*payload),
+                            Some(type_span(module, *payload)),
+                        ),
+                        HirEnumVariantPayload::Record(fields) => {
+                            let payload_source = nominal_member_span(
+                                module,
+                                owner,
+                                HirDeclarationSourceRole::EnumVariant {
+                                    variant: ordinal,
+                                    part: HirNominalMemberSourcePart::Payload,
+                                },
+                            );
+                            let fields = fields
+                                .iter()
+                                .enumerate()
+                                .map(|(field, field_value)| {
+                                    let field = u32::try_from(field)
+                                        .expect("nominal member limit fits u32");
+                                    let whole = nominal_member_span(
+                                        module,
+                                        owner,
+                                        HirDeclarationSourceRole::EnumVariantField {
+                                            variant: ordinal,
+                                            field,
+                                            part: HirNominalMemberSourcePart::Whole,
+                                        },
+                                    );
+                                    let field_name_source = nominal_member_span(
+                                        module,
+                                        owner,
+                                        HirDeclarationSourceRole::EnumVariantField {
+                                            variant: ordinal,
+                                            field,
+                                            part: HirNominalMemberSourcePart::Name,
+                                        },
+                                    );
+                                    Ok(ProjectNominalField {
+                                        name: required_name(
+                                            field_value.name(),
+                                            &field_name_source,
+                                        )?,
+                                        ty: field_value.ty(),
+                                        source: ProjectNominalFieldSource {
+                                            whole,
+                                            name: field_name_source,
+                                        },
+                                    })
+                                })
+                                .collect::<Result<Vec<_>, ProjectNominalDeclarationError>>()?
+                                .into_boxed_slice();
+                            (
+                                ProjectNominalVariantPayload::Record(fields),
+                                Some(payload_source),
+                            )
+                        }
+                    };
                     Ok(ProjectNominalVariant {
                         name: required_name(variant.name(), &name_source)?,
-                        payload: variant.payload(),
+                        payload,
                         source: ProjectNominalVariantSource {
                             whole: variant_whole,
                             name: name_source,
-                            payload: variant.payload().map(|payload| type_span(module, payload)),
+                            payload: payload_source,
                         },
                     })
                 })

@@ -111,7 +111,8 @@ impl NominalGraphProjection<'_> {
                             self.schema(&ty, depth + 1).map_err(|error| match error {
                                 Error::Project(error) => Error::Project(error.within_step(
                                     super::super::NominalSchemaPathStep::Field {
-                                        ordinal: u32::try_from(ordinal).expect("fields were bounded"),
+                                        ordinal:
+                                            u32::try_from(ordinal).expect("fields were bounded"),
                                         name: field.name().clone(),
                                     },
                                 )),
@@ -122,38 +123,63 @@ impl NominalGraphProjection<'_> {
                     .collect::<Result<_, Error>>()?,
             },
             ProjectNominalBody::Enum { variants } => RuntimeNominalSchemaBody::Variant {
-                cases: variants
+                cases: {
+                    let accepted =
+                        self.project_nominals
+                            .get(semantic)
+                            .cloned()
+                            .ok_or_else(|| {
+                                ProjectError::new(
+                                    "project enum has no accepted semantic definition",
+                                )
+                            })?;
+                    let accepted_cases = accepted
+                        .cases()
+                        .filter(|cases| cases.len() == variants.len())
+                        .ok_or_else(|| {
+                            ProjectError::new("project enum semantic case inventory is incomplete")
+                        })?;
+                    variants
                     .iter()
+                    .zip(accepted_cases)
                     .enumerate()
-                    .map(|(ordinal, variant)| {
-                        let payload = variant
-                            .payload()
-                            .map(|payload| {
-                                self.budget.members(1)?;
-                                self.budget.type_node(depth + 1)?;
-                                let ty = self.project_declaration_type(payload, &substitutions)?;
-                                // A project case's authored payload is its single tuple
-                                // field, even when that field is itself a tuple or Unit.
-                                Ok::<_, Error>(Schema::Tuple(Box::new([
-                                    self.schema(&ty, depth + 2).map_err(|error| match error {
-                                        Error::Project(error) => Error::Project(error.within_step(
-                                            super::super::NominalSchemaPathStep::VariantPayload {
-                                                ordinal: u32::try_from(ordinal).expect("cases were bounded"),
-                                                name: variant.name().clone(),
-                                            },
-                                        )),
-                                        other => other,
-                                    })?
-                                ])))
+                    .map(|(ordinal, (variant, case))| {
+                        let ordinal = u32::try_from(ordinal).expect("cases were bounded");
+                        if case.ordinal() != ordinal
+                            || case.diagnostic_name() != variant.name().as_str()
+                        {
+                            return Err(ProjectError::new(
+                                "project enum case differs from its accepted semantic definition",
+                            )
+                            .into());
+                        }
+                        let payload = case
+                            .payload_type(accepted.nominal())
+                            .map_err(|_| {
+                                ProjectError::new(
+                                    "project enum payload cannot be projected from its accepted semantic case",
+                                )
+                            })?
+                            .map(|ty| {
+                                self.schema(&ty, depth + 1).map_err(|error| match error {
+                                    Error::Project(error) => Error::Project(error.within_step(
+                                        super::super::NominalSchemaPathStep::VariantPayload {
+                                            ordinal,
+                                            name: variant.name().clone(),
+                                        },
+                                    )),
+                                    other => other,
+                                })
                             })
                             .transpose()?;
                         Ok(RuntimeNominalSchemaCase::new(
-                            u32::try_from(ordinal).expect("cases were bounded"),
+                            ordinal,
                             variant.name().as_str().to_owned(),
                             payload,
                         ))
                     })
-                    .collect::<Result<_, Error>>()?,
+                    .collect::<Result<_, Error>>()?
+                },
             },
             ProjectNominalBody::TypeAlias { .. } => {
                 unreachable!("aliases were rejected before staging")

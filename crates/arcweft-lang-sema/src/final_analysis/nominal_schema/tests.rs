@@ -143,6 +143,7 @@ fn context<'a>(
     RuntimeNominalProjectionContext::new(
         Some(fixture.registered.environment()),
         Some(report.semantic_shapes()),
+        report.project_nominals(),
         fixture.symbols.as_ref(),
         report.accepted_types(),
         root,
@@ -538,13 +539,69 @@ fn sealed_catalog_retains_instantiated_fields_and_variant_payloads() {
     let choice_projection = catalog
         .get_semantic(choice.identity())
         .expect("borrowed ChoiceValue projection");
-    assert_eq!(
-        choice_projection
-            .variant_cases()
-            .iter()
-            .map(|case| (case.ordinal(), case.payload()))
-            .collect::<Vec<_>>(),
-        [(0, Some(&TypeKind::I64)), (1, Some(&TypeKind::Bool))]
+    assert!(choice_projection
+        .variant_cases()
+        .iter()
+        .zip([TypeKind::I64, TypeKind::Bool])
+        .enumerate()
+        .all(|(ordinal, (case, expected))| {
+            case.ordinal() == u32::try_from(ordinal).expect("two cases")
+                && matches!(case.payload(), Some(TypeKind::VariantPayload(payload))
+                    if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Tuple(fields)
+                        if fields.as_ref() == [expected]))
+        }));
+}
+
+#[test]
+fn project_record_variant_projection_preserves_ordered_payload_shape() {
+    let fixture = fixture(
+        r"
+enum Event {
+    Start,
+    ChoiceSelected { id: i64, active: bool },
+    Empty {},
+}
+fn event(value: Event) -> Event { value }
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("accepted project record variant");
+    let event = checked(&fixture, &report, "Event");
+    let projection = report
+        .runtime_nominal_projection(event.identity())
+        .expect("record case has one runtime projection");
+    let cases = projection.variant_cases();
+    assert_eq!(cases.len(), 3);
+    assert!(cases[0].payload().is_none());
+    assert!(
+        matches!(cases[1].payload(), Some(TypeKind::VariantPayload(payload))
+        if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Record(fields)
+            if matches!(fields.as_ref(), [id, active]
+                if id.diagnostic_name() == "id" && id.ty() == &TypeKind::I64
+                    && active.diagnostic_name() == "active" && active.ty() == &TypeKind::Bool)))
+    );
+    assert!(
+        matches!(cases[2].payload(), Some(TypeKind::VariantPayload(payload))
+        if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Record(fields)
+            if fields.is_empty()))
+    );
+
+    let definition = projection
+        .graph()
+        .definition(projection.semantic_identity())
+        .expect("record case source graph definition");
+    let RuntimeNominalSchemaBody::Variant { cases } = definition.body() else {
+        panic!("record case requires a variant schema")
+    };
+    assert!(cases[0].payload().is_none());
+    assert!(
+        matches!(cases[1].payload(), Some(RuntimeTypeSchema::RecordValue { fields })
+        if matches!(fields.as_ref(), [id, active]
+            if id.name() == "id" && active.name() == "active"))
+    );
+    assert!(
+        matches!(cases[2].payload(), Some(RuntimeTypeSchema::RecordValue { fields })
+        if fields.is_empty())
     );
 }
 

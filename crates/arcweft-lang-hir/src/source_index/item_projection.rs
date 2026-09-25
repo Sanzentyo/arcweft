@@ -10,8 +10,8 @@ use arcweft_lang_syntax::attachment::{
     AttachedActionDeclaration, AttachedAttributeValue, AttachedCharacterBody,
     AttachedCharacterDeclaration, AttachedCharacterDisplayMember, AttachedCharacterInitializer,
     AttachedCharacterMember, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
-    AttachedEnumBody, AttachedExpressionNode, AttachedGenericParameter, AttachedItemPrefix,
-    AttachedNominalDeclaration, AttachedOuterAttribute, AttachedRequiredName,
+    AttachedEnumBody, AttachedEnumVariantPayload, AttachedExpressionNode, AttachedGenericParameter,
+    AttachedItemPrefix, AttachedNominalDeclaration, AttachedOuterAttribute, AttachedRequiredName,
     AttachedRetainedHeader, AttachedRetainedName, AttachedSignalDeclaration, AttachedStructBody,
     AttachedTypeAliasDeclaration, AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
 };
@@ -40,8 +40,8 @@ use crate::item::{
     HirActionDeclaration, HirCharacterAssignmentState, HirDeclarationMember,
     HirDeclarationMemberArena, HirDeclarationMemberId, HirDeclarationMemberIndex,
     HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState,
-    HirEnumItem, HirGenericParameter, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState,
-    HirPublicIdOrigin, HirRequiredName, HirRetainedName, HirRetainedPublicId,
+    HirEnumItem, HirEnumVariantPayload, HirGenericParameter, HirItem, HirItemIssue, HirItemKind,
+    HirItemPoisonState, HirPublicIdOrigin, HirRequiredName, HirRetainedName, HirRetainedPublicId,
     HirRetainedPublicIdIssue, HirStructItem, HirTypeAliasItem, HirWherePredicate,
 };
 use crate::leaf::HirName;
@@ -455,15 +455,36 @@ fn enum_matches(
             .all(|(retained, attached)| {
                 documentation_matches(retained.documentation(), attached.prefix().documentation())
                     && required_name_matches(retained.name(), attached.name())
-                    && match (retained.payload(), attached.payload()) {
-                        (Some(retained), Some(attached)) => {
-                            type_owner_matches(retained, attached, slots)
-                        }
-                        (None, None) => true,
-                        _ => false,
-                    }
+                    && enum_variant_payload_matches(retained.payload(), attached.payload(), slots)
             })
         && item.state() == &expected_enum_state(attached, retained, item.prefix(), slots)
+}
+
+fn enum_variant_payload_matches(
+    retained: &HirEnumVariantPayload,
+    attached: &AttachedEnumVariantPayload,
+    slots: &SlotSnapshot,
+) -> bool {
+    match (retained, attached) {
+        (HirEnumVariantPayload::Unit, AttachedEnumVariantPayload::Unit) => true,
+        (HirEnumVariantPayload::Tuple(retained), AttachedEnumVariantPayload::Tuple(attached)) => {
+            type_owner_matches(*retained, attached, slots)
+        }
+        (HirEnumVariantPayload::Record(retained), AttachedEnumVariantPayload::Record(attached)) => {
+            retained.len() == attached.fields().len()
+                && retained
+                    .iter()
+                    .zip(attached.fields())
+                    .all(|(retained, attached)| {
+                        documentation_matches(
+                            retained.documentation(),
+                            attached.prefix().documentation(),
+                        ) && required_name_matches(retained.name(), attached.name())
+                            && type_owner_matches(retained.ty(), attached.ty(), slots)
+                    })
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn item_prefix_matches(
@@ -793,9 +814,14 @@ fn expected_enum_state(
         .any(|(attached, retained)| {
             !attached.prefix().attributes().is_empty()
                 || attached.name().is_missing()
-                || retained
-                    .payload()
-                    .is_some_and(|payload| type_is_poisoned(payload, slots))
+                || attached.payload().has_recovery()
+                || match retained.payload() {
+                    HirEnumVariantPayload::Unit => false,
+                    HirEnumVariantPayload::Tuple(payload) => type_is_poisoned(*payload, slots),
+                    HirEnumVariantPayload::Record(fields) => fields
+                        .iter()
+                        .any(|field| type_is_poisoned(field.ty(), slots)),
+                }
         })
         .then_some(HirItemIssue::InvalidMember);
     item_state(

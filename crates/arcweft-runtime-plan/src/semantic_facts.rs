@@ -22,9 +22,9 @@ pub use nominal_definitions::RuntimeNominalDefinition;
 
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::entry::{
-    RuntimeCallableId, RuntimeMapKind as RuntimePlanMapKind, RuntimeNominalRecordShape,
-    RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError, RuntimeNominalTypeId,
-    RuntimeSchemaLimits, TypeLayoutHash,
+    RuntimeBytesFormat, RuntimeCallableId, RuntimeMapKind as RuntimePlanMapKind,
+    RuntimeNominalRecordShape, RuntimeNominalSchemaGraph, RuntimeNominalSchemaGraphError,
+    RuntimeNominalTypeId, RuntimeSchemaLimits, RuntimeTypeSchema, TypeLayoutHash,
 };
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
@@ -55,7 +55,9 @@ use arcweft_lang_hir::expr::{
 use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
 };
-use arcweft_lang_hir::item::{HirEntryMember, HirImplMember, HirItemFamily, HirItemKind};
+use arcweft_lang_hir::item::{
+    HirEntryMember, HirEnumVariantPayload, HirImplMember, HirItemFamily, HirItemKind,
+};
 use arcweft_lang_hir::leaf::HirName;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
@@ -8866,24 +8868,39 @@ fn validate_variant(
                 validate_normalized_type(modules, argument)?;
             }
             validate_normalized_variant_payloads(modules, cases)?;
+            let graph = nominal.source_graph();
+            let definition = graph
+                .definition(nominal.identity())
+                .ok_or(RuntimeSemanticFactsError::WrongVariantIdentity)?;
+            let arcweft_core::entry::RuntimeNominalSchemaBody::Variant { cases: source } =
+                definition.body()
+            else {
+                return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
+            };
+            if definition.identity().nominal() != &nominal.runtime_nominal_id()
+                || graph.try_layout_hash(nominal.identity()).ok() != Some(nominal.layout())
+                || definition.arguments().len() != arguments.len()
+                || !definition
+                    .arguments()
+                    .iter()
+                    .zip(arguments)
+                    .all(|(schema, normalized)| {
+                        normalized_type_matches_schema(normalized, schema, graph)
+                    })
+                || source.len() != cases.len()
+                || source.iter().zip(cases.iter()).any(|(schema, normalized)| {
+                    schema.name() != normalized.name()
+                        || !normalized_payload_matches_schema(
+                            normalized.payload(),
+                            schema.payload(),
+                            graph,
+                        )
+                })
+            {
+                return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
+            }
             let RuntimeResolvedNominalSource::Project { owner, .. } = nominal.source() else {
-                let Some(arcweft_core::entry::RuntimeNominalSchemaBody::Variant { cases: source }) =
-                    nominal
-                        .source_graph()
-                        .definition(nominal.identity())
-                        .map(|definition| definition.body())
-                else {
-                    return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
-                };
-                return if source.len() == cases.len()
-                    && source.iter().zip(cases.iter()).all(|(source, case)| {
-                        source.name() == case.name()
-                            && source.payload().is_some() == case.payload().is_some()
-                    }) {
-                    Ok(())
-                } else {
-                    Err(RuntimeSemanticFactsError::WrongVariantIdentity)
-                };
+                return Ok(());
             };
             let HirItemKind::Enum(declaration) = resolve_item(modules, *owner)?.kind() else {
                 return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
@@ -8893,7 +8910,10 @@ fn validate_variant(
                     |(declaration, normalized)| {
                         declaration.name().resolved().map(HirName::as_str)
                             != Some(normalized.name())
-                            || declaration.payload().is_some() != normalized.payload().is_some()
+                            || !hir_variant_payload_matches_normalized(
+                                declaration.payload(),
+                                normalized.payload(),
+                            )
                     },
                 )
             {
@@ -8991,6 +9011,230 @@ fn validate_variant(
             }
         }
     }
+}
+
+fn hir_variant_payload_matches_normalized(
+    authored: &HirEnumVariantPayload,
+    normalized: Option<&RuntimeNormalizedType>,
+) -> bool {
+    match (authored, normalized.map(RuntimeNormalizedType::shape)) {
+        (HirEnumVariantPayload::Unit, None) => true,
+        (HirEnumVariantPayload::Tuple(_), Some(RuntimeTypeShape::Tuple(fields))) => {
+            fields.len() == 1
+        }
+        (HirEnumVariantPayload::Record(authored), Some(RuntimeTypeShape::Record(fields))) => {
+            authored.len() == fields.len()
+                && authored.iter().zip(fields).all(|(authored, normalized)| {
+                    authored.name().resolved().map(HirName::as_str)
+                        == Some(normalized.diagnostic_name())
+                })
+        }
+        _ => false,
+    }
+}
+
+fn normalized_payload_matches_schema(
+    normalized: Option<&RuntimeNormalizedType>,
+    schema: Option<&RuntimeTypeSchema>,
+    graph: &RuntimeNominalSchemaGraph,
+) -> bool {
+    match (normalized, schema) {
+        (None, None) => true,
+        (Some(normalized), Some(schema)) => {
+            normalized_type_matches_schema(normalized, schema, graph)
+        }
+        _ => false,
+    }
+}
+
+/// Correlates the complete normalized payload with the sealed source graph.
+/// Nominal references terminate recursive schemas at their exact instance ID.
+fn normalized_type_matches_schema(
+    normalized: &RuntimeNormalizedType,
+    schema: &RuntimeTypeSchema,
+    graph: &RuntimeNominalSchemaGraph,
+) -> bool {
+    let mut pending = vec![(normalized, schema)];
+    while let Some((normalized, schema)) = pending.pop() {
+        match (normalized.shape(), schema) {
+            (RuntimeTypeShape::Unit, RuntimeTypeSchema::Unit)
+            | (RuntimeTypeShape::Never, RuntimeTypeSchema::Never)
+            | (RuntimeTypeShape::Bool, RuntimeTypeSchema::Bool)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I8), RuntimeTypeSchema::I8)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I16), RuntimeTypeSchema::I16)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I32), RuntimeTypeSchema::I32)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I64), RuntimeTypeSchema::I64)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I128), RuntimeTypeSchema::I128)
+            | (RuntimeTypeShape::Signed(RuntimeSignedIntWidth::ISize), RuntimeTypeSchema::ISize)
+            | (RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U8), RuntimeTypeSchema::U8)
+            | (RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U16), RuntimeTypeSchema::U16)
+            | (RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U32), RuntimeTypeSchema::U32)
+            | (RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U64), RuntimeTypeSchema::U64)
+            | (
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U128),
+                RuntimeTypeSchema::U128,
+            )
+            | (
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::USize),
+                RuntimeTypeSchema::USize,
+            )
+            | (RuntimeTypeShape::F32, RuntimeTypeSchema::F32)
+            | (RuntimeTypeShape::F64, RuntimeTypeSchema::F64)
+            | (RuntimeTypeShape::String, RuntimeTypeSchema::String)
+            | (RuntimeTypeShape::Char, RuntimeTypeSchema::Char)
+            | (RuntimeTypeShape::Duration, RuntimeTypeSchema::Duration)
+            | (RuntimeTypeShape::Progress, RuntimeTypeSchema::Progress)
+            | (RuntimeTypeShape::EntityReference, RuntimeTypeSchema::EntityReference)
+            | (RuntimeTypeShape::AgentValue, RuntimeTypeSchema::AgentValue)
+            | (
+                RuntimeTypeShape::Bytes,
+                RuntimeTypeSchema::Bytes {
+                    format: RuntimeBytesFormat::Binary,
+                },
+            ) => {}
+            (RuntimeTypeShape::Sequence { kind, item }, RuntimeTypeSchema::Seq(schema))
+                if !matches!(kind, RuntimeSequenceKind::Array) =>
+            {
+                pending.push((item, schema));
+            }
+            (
+                RuntimeTypeShape::Array { item, length },
+                RuntimeTypeSchema::Array {
+                    item: schema,
+                    length: expected,
+                },
+            ) if length.constant() == Some(*expected) => {
+                pending.push((item, schema));
+            }
+            (
+                RuntimeTypeShape::Map { kind, key, value },
+                RuntimeTypeSchema::Map {
+                    kind: expected,
+                    key: schema_key,
+                    value: schema_value,
+                },
+            ) if kind == expected => {
+                pending.push((key, schema_key));
+                pending.push((value, schema_value));
+            }
+            (
+                RuntimeTypeShape::Option { item, some_payload },
+                RuntimeTypeSchema::Builtin(schema),
+            ) if schema.owner() == RuntimeBuiltinVariantIdentity::Option
+                && matches!(some_payload.shape(), RuntimeTypeShape::Tuple(fields)
+                    if matches!(fields.as_ref(), [wrapped] if wrapped == item.as_ref())) =>
+            {
+                let [expected] = schema.payloads() else {
+                    return false;
+                };
+                pending.push((item, expected));
+            }
+            (
+                RuntimeTypeShape::Result {
+                    value,
+                    error,
+                    value_payload,
+                    error_payload,
+                },
+                RuntimeTypeSchema::Builtin(schema),
+            ) if schema.owner() == RuntimeBuiltinVariantIdentity::Result
+                && matches!(value_payload.shape(), RuntimeTypeShape::Tuple(fields)
+                    if matches!(fields.as_ref(), [wrapped] if wrapped == value.as_ref()))
+                && matches!(error_payload.shape(), RuntimeTypeShape::Tuple(fields)
+                    if matches!(fields.as_ref(), [wrapped] if wrapped == error.as_ref())) =>
+            {
+                let [expected_value, expected_error] = schema.payloads() else {
+                    return false;
+                };
+                pending.push((value, expected_value));
+                pending.push((error, expected_error));
+            }
+            (
+                RuntimeTypeShape::BuiltinVariant { owner, cases },
+                RuntimeTypeSchema::Builtin(schema),
+            ) if *owner == schema.owner() && cases.len() == owner.cases().len() => {
+                for (ordinal, case) in cases.iter().enumerate() {
+                    let Some((_, expected)) = schema.case(ordinal) else {
+                        return false;
+                    };
+                    match (case, expected) {
+                        (None, None) => {}
+                        (Some(payload), Some(expected)) => {
+                            let RuntimeTypeShape::Tuple(fields) = payload.shape() else {
+                                return false;
+                            };
+                            let [field] = fields.as_ref() else {
+                                return false;
+                            };
+                            pending.push((field, expected));
+                        }
+                        _ => return false,
+                    }
+                }
+            }
+            (RuntimeTypeShape::Tuple(items), RuntimeTypeSchema::Tuple(expected))
+            | (RuntimeTypeShape::Choice(items), RuntimeTypeSchema::Choice(expected))
+                if items.len() == expected.len() =>
+            {
+                pending.extend(items.iter().zip(expected.iter()));
+            }
+            (
+                RuntimeTypeShape::Record(fields),
+                RuntimeTypeSchema::RecordValue { fields: expected },
+            ) if fields.len() == expected.len() => {
+                for (ordinal, (field, expected)) in fields.iter().zip(expected.iter()).enumerate() {
+                    if u32::try_from(ordinal).ok() != Some(expected.field().zero_based())
+                        || field.diagnostic_name() != expected.name()
+                    {
+                        return false;
+                    }
+                    pending.push((field.ty(), expected.schema()));
+                }
+            }
+            (
+                RuntimeTypeShape::Nominal { nominal, arguments },
+                RuntimeTypeSchema::NominalRef(expected),
+            ) if nominal.identity() == expected.semantic_identity()
+                && nominal.runtime_nominal_id() == expected.nominal().clone() =>
+            {
+                let Some(definition) = graph.definition(expected.semantic_identity()) else {
+                    return false;
+                };
+                if definition.identity() != expected
+                    || definition.arguments().len() != arguments.len()
+                {
+                    return false;
+                }
+                pending.extend(arguments.iter().zip(definition.arguments()));
+            }
+            (
+                RuntimeTypeShape::Opaque {
+                    producer,
+                    admission,
+                    value_class,
+                    persistence,
+                    arguments,
+                },
+                RuntimeTypeSchema::ExactOpaque {
+                    owner,
+                    arguments: expected,
+                },
+            ) if owner
+                == &RuntimeOpaqueTypeOwner::with_admission(
+                    producer.clone(),
+                    normalized.identity(),
+                    *admission,
+                    *value_class,
+                    *persistence,
+                )
+                && arguments.len() == expected.len() =>
+            {
+                pending.extend(arguments.iter().zip(expected.iter()));
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 fn validate_normalized_variant_payloads(

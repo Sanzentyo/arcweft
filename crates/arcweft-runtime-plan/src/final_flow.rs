@@ -4899,11 +4899,10 @@ impl<'a> FinalFlowLowerer<'a> {
                 for arm in matched.arms() {
                     let ops = match arm.body() {
                         HirStmtMatchArmBody::Body(body) => self.lower_contextual_body(body)?,
-                        HirStmtMatchArmBody::Expression(expression) => {
-                            return Err(RuntimePlanLowerError::new(format!(
-                                "flow match expression arm {expression:?} requires an explicit effect/value disposition"
-                            )));
-                        }
+                        HirStmtMatchArmBody::Expression(expression) => self.lower_flow_value(
+                            *expression,
+                            RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+                        )?,
                     };
                     arms.push(RuntimeFlowMatchArmSeed {
                         pattern: self

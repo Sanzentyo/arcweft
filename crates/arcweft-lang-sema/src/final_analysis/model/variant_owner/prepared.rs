@@ -6,10 +6,14 @@ use super::{
 };
 use crate::env::{EnumVariantPayload, EnvironmentEnumSchema};
 use crate::types::{
-    CharacterNominalType, ProjectNominalType, TypeKind, VariantPayloadShape, VariantPayloadType,
-    VariantPayloadTypeShape,
+    CharacterNominalType, ProjectNominalType, TypeKind, VariantPayloadSealError,
+    VariantPayloadShape, VariantPayloadType, VariantPayloadTypeShape,
 };
 use arcweft_core::pattern::RuntimeBuiltinVariantIdentity;
+use arcweft_lang_hir::{
+    identity::TypeId,
+    symbol::nominal::{ProjectNominalVariant, ProjectNominalVariantPayload},
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedVariantCaseSeed {
@@ -31,6 +35,32 @@ impl PreparedVariantCaseSeed {
         }
     }
 
+    pub(crate) fn from_project<E>(
+        ordinal: u32,
+        variant: &ProjectNominalVariant,
+        mut resolve_type: impl FnMut(TypeId) -> Result<TypeKind, E>,
+        invalid_shape: impl FnOnce(VariantPayloadSealError) -> E,
+    ) -> Result<Self, E> {
+        let payload = match variant.payload() {
+            ProjectNominalVariantPayload::Unit => None,
+            ProjectNominalVariantPayload::Tuple(owner) => Some(VariantPayloadTypeShape::Tuple(
+                Box::new([resolve_type(*owner)?]),
+            )),
+            ProjectNominalVariantPayload::Record(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|field| Ok((field.name().as_str().to_owned(), resolve_type(field.ty())?)))
+                    .collect::<Result<Vec<_>, E>>()?;
+                Some(VariantPayloadTypeShape::try_record(fields).map_err(invalid_shape)?)
+            }
+        };
+        Ok(Self {
+            ordinal,
+            payload,
+            diagnostic_name: Some(variant.name().as_str().to_owned()),
+        })
+    }
+
     pub(crate) const fn ordinal(&self) -> u32 {
         self.ordinal
     }
@@ -39,11 +69,6 @@ impl PreparedVariantCaseSeed {
     }
     pub(crate) fn diagnostic_name(&self) -> Option<&str> {
         self.diagnostic_name.as_deref()
-    }
-    pub(crate) fn project_payload_field(&self) -> Option<&TypeKind> {
-        self.payload
-            .as_ref()
-            .and_then(VariantPayloadTypeShape::single_tuple_field)
     }
 }
 
@@ -65,8 +90,10 @@ impl PreparedVariantOwnerSeed {
             u32::try_from(ordinal).is_ok_and(|ordinal| ordinal == case.ordinal)
                 && case.payload.as_ref().is_none_or(|payload| {
                     payload
-                        .single_tuple_field()
-                        .is_some_and(|ty| !ty.contains_nominal_poison())
+                        .visit_types(&mut |ty| {
+                            (!ty.contains_nominal_poison()).then_some(()).ok_or(())
+                        })
+                        .is_ok()
                 })
         }) {
             return None;

@@ -1,5 +1,7 @@
 //! Statement roles, effect contracts, scopes, and source evidence.
 
+use arcweft_lang_hir::item::HirEnumVariantPayload;
+
 use super::{
     Analyzer, AssertionContext, BTreeMap, BTreeSet, CallableDeclarationKey, CallableEffectContract,
     CheckedAssertionDisposition, CheckedExpression, CheckedExpressionResolution, CheckedIteration,
@@ -797,11 +799,17 @@ fn nominal_item_type_roots(item: &HirItem) -> Vec<TypeId> {
     match item.kind() {
         HirItemKind::TypeAlias(alias) => roots.push(alias.target()),
         HirItemKind::Struct(item) => roots.extend(item.fields().iter().map(|field| field.ty())),
-        HirItemKind::Enum(item) => roots.extend(
-            item.variants()
-                .iter()
-                .filter_map(|variant| variant.payload()),
-        ),
+        HirItemKind::Enum(item) => {
+            for variant in item.variants() {
+                match variant.payload() {
+                    HirEnumVariantPayload::Unit => {}
+                    HirEnumVariantPayload::Tuple(payload) => roots.push(*payload),
+                    HirEnumVariantPayload::Record(fields) => {
+                        roots.extend(fields.iter().map(|field| field.ty()));
+                    }
+                }
+            }
+        }
         _ => return roots,
     }
     for parameter in item_generic_parameters(item) {

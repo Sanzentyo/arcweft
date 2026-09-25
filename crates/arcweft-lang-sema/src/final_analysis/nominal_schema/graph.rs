@@ -58,6 +58,7 @@ pub(super) struct NominalGraphProjection<'a> {
     symbols: &'a ProjectSymbolTable,
     types: &'a BTreeMap<TypeId, TypeKind>,
     semantic_shapes: Option<&'a super::super::AcceptedSemanticShapeCatalog>,
+    project_nominals: &'a super::super::nominal_semantic::ProjectNominalSemanticCatalog,
     budget: ProjectionBudget,
     states: BTreeMap<SemanticTypeDigest, VisitState>,
     definitions: Vec<RuntimeNominalSchemaDefinition>,
@@ -79,6 +80,7 @@ impl<'a> NominalGraphProjection<'a> {
         symbols: &'a ProjectSymbolTable,
         types: &'a BTreeMap<TypeId, TypeKind>,
         semantic_shapes: Option<&'a super::super::AcceptedSemanticShapeCatalog>,
+        project_nominals: &'a super::super::nominal_semantic::ProjectNominalSemanticCatalog,
         budget: ProjectionBudget,
     ) -> Self {
         Self {
@@ -86,6 +88,7 @@ impl<'a> NominalGraphProjection<'a> {
             symbols,
             types,
             semantic_shapes,
+            project_nominals,
             budget,
             states: BTreeMap::new(),
             definitions: Vec::new(),
@@ -705,6 +708,7 @@ pub(super) fn project_checked_nominal<'a>(
         crate::types::TypeKind,
     >,
     semantic_shapes: Option<&'a super::super::AcceptedSemanticShapeCatalog>,
+    project_nominals: &'a super::super::nominal_semantic::ProjectNominalSemanticCatalog,
     checked: &crate::final_analysis::CheckedProjectNominal,
     budget: super::ProjectionBudget,
     control: crate::final_analysis::FinalSemanticAnalysisControl<'a>,
@@ -712,10 +716,17 @@ pub(super) fn project_checked_nominal<'a>(
     let budget_graph =
         limits::ProjectionBudget::new(RuntimeNominalGraphProjectionLimits::PRODUCTION)
             .expect("production projection limits are valid");
-    NominalGraphProjection::new(environment, symbols, types, semantic_shapes, budget_graph)
-        .project_checked(checked, budget, control)
-        .map_err(|error| match error {
-            RuntimeNominalGraphProjectionError::Project(error) => error,
-            other => super::NominalSchemaProjectionError::SourceGraph(Box::new(other)),
-        })
+    NominalGraphProjection::new(
+        environment,
+        symbols,
+        types,
+        semantic_shapes,
+        project_nominals,
+        budget_graph,
+    )
+    .project_checked(checked, budget, control)
+    .map_err(|error| match error {
+        RuntimeNominalGraphProjectionError::Project(error) => error,
+        other => super::NominalSchemaProjectionError::SourceGraph(Box::new(other)),
+    })
 }

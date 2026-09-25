@@ -1283,7 +1283,11 @@ fn validate_executable_record_projections(
         let CheckedPatternResolution::Record(record) = pattern.resolution() else {
             continue;
         };
-        if record.owner().project_nominal().is_some() {
+        if matches!(
+            record.owner(),
+            CheckedRecordPatternOwner::Project { .. }
+                | CheckedRecordPatternOwner::VariantPayload { .. }
+        ) {
             continue;
         }
         return Err(record.fields().first().map_or(

@@ -199,6 +199,7 @@ impl FinalSemanticAnalysis {
             world.symbols(),
             self.accepted_types(),
             Some(self.semantic_shapes()),
+            self.project_nominals(),
             budget,
         )
         .project(nominal)?;

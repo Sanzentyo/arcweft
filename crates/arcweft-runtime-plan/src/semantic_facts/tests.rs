@@ -11,7 +11,7 @@ use arcweft_core::entry::{
     RuntimeCallableId, RuntimeMapKind, RuntimeNominalRecordShape, RuntimeNominalSchemaBody,
     RuntimeNominalSchemaCase, RuntimeNominalSchemaDefinition, RuntimeNominalSchemaField,
     RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
-    RuntimeSchemaLimits, RuntimeTypeSchema,
+    RuntimeSchemaLimits, RuntimeSchemaValueField, RuntimeTypeSchema,
 };
 use arcweft_core::line_task::RuntimeDeferOutcomeFilter;
 use arcweft_core::pattern::{
@@ -58,9 +58,9 @@ use super::{
     RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact,
     RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase,
     RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedAttachedContent,
-    RuntimeProjectCallable, RuntimeRegisteredValueId, RuntimeResolvedAttachedContent,
-    RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallError,
-    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeProjectCallable, RuntimeRecordTypeField, RuntimeRegisteredValueId,
+    RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedCallError, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedNominal, RuntimeResolvedSelect,
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
@@ -2749,6 +2749,148 @@ fn operational_variant_payload_is_not_admitted_through_raw_facts() {
         super::validate_variant(&BTreeMap::new(), &variant),
         Err(RuntimeSemanticFactsError::WrongVariantIdentity)
     );
+}
+
+#[test]
+fn project_record_variant_admission_rejects_swapped_field_types_and_order() {
+    let project = project_fixture(
+        "record-variant-admission",
+        "enum Event { ChoiceSelected { id: i64, active: bool } }\n",
+    );
+    let executable = project.analysis_view().expect("record variant HIR");
+    let (_, module) = executable.modules().next().expect("root module");
+    let document = Arc::clone(module.provenance().document());
+    let world = ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        document.identity().id().clone(),
+        "record-variant-admission",
+    )
+    .expect("project symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents([document.identity()])
+        .expect("project symbol revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+        .expect("empty project externals");
+    let symbols = ProjectSymbolTable::link(project.view(), &externals)
+        .expect("project symbols link")
+        .into_table();
+    let event = symbols
+        .nominal_symbols()
+        .find(|nominal| nominal.id().name().as_str() == "Event")
+        .expect("Event nominal");
+    let identity = RuntimeSemanticTypeId::from_bytes([0x84; 32]);
+    let runtime_nominal =
+        RuntimeNominalTypeId::try_new("test::variant::Event").expect("runtime Event nominal");
+    let graph = variant_source_graph(
+        0x84,
+        "test::variant::Event",
+        &[(
+            "ChoiceSelected",
+            Some(RuntimeTypeSchema::RecordValue {
+                fields: [
+                    RuntimeSchemaValueField::new(
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                        "id".to_owned(),
+                        RuntimeTypeSchema::I64,
+                    ),
+                    RuntimeSchemaValueField::new(
+                        RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap(),
+                        "active".to_owned(),
+                        RuntimeTypeSchema::Bool,
+                    ),
+                ]
+                .into(),
+            }),
+        )],
+    );
+    let nominal = RuntimeResolvedNominal::project(
+        event.id().clone(),
+        event.owner(),
+        runtime_nominal,
+        identity,
+        graph
+            .try_layout_hash(identity)
+            .expect("sealed source layout"),
+        graph,
+    );
+    let modules = executable
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let scalar = |marker, shape| {
+        super::RuntimeNormalizedType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
+    };
+    let record = |fields: [(&str, RuntimeTypeShape); 2]| {
+        super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes([0x85; 32]),
+            RuntimeTypeShape::Record(
+                fields
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (name, shape))| {
+                        RuntimeRecordTypeField::new(name, scalar(0x86 + index as u8, shape))
+                    })
+                    .collect(),
+            ),
+        )
+    };
+    for (label, fields, admitted) in [
+        (
+            "declared",
+            [
+                (
+                    "id",
+                    RuntimeTypeShape::Signed(arcweft_core::value::RuntimeSignedIntWidth::I64),
+                ),
+                ("active", RuntimeTypeShape::Bool),
+            ],
+            true,
+        ),
+        (
+            "swapped types",
+            [
+                ("id", RuntimeTypeShape::Bool),
+                (
+                    "active",
+                    RuntimeTypeShape::Signed(arcweft_core::value::RuntimeSignedIntWidth::I64),
+                ),
+            ],
+            false,
+        ),
+        (
+            "swapped order",
+            [
+                ("active", RuntimeTypeShape::Bool),
+                (
+                    "id",
+                    RuntimeTypeShape::Signed(arcweft_core::value::RuntimeSignedIntWidth::I64),
+                ),
+            ],
+            false,
+        ),
+    ] {
+        let variant = RuntimeResolvedVariant::project(
+            nominal.clone(),
+            Box::new([]),
+            0,
+            "ChoiceSelected",
+            [RuntimeNormalizedVariantCase::new(
+                "ChoiceSelected",
+                Some(record(fields)),
+            )]
+            .into(),
+        )
+        .expect("normalized case has a coherent checked shape");
+        let result = super::validate_variant(&modules, &variant);
+        if admitted {
+            assert_eq!(result, Ok(()), "{label}");
+        } else {
+            assert_eq!(
+                result,
+                Err(RuntimeSemanticFactsError::WrongVariantIdentity),
+                "{label}"
+            );
+        }
+    }
 }
 
 #[derive(Clone)]

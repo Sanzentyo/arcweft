@@ -1,15 +1,16 @@
 //! Final nominal item lowering.
 
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedEnumBody, AttachedResourceBody, AttachedResourceInitializer,
-    AttachedResourcePublicId, AttachedStructBody,
+    AstNode, AttachedEnumBody, AttachedEnumVariantPayload, AttachedResourceBody,
+    AttachedResourceInitializer, AttachedResourcePublicId, AttachedStructBody,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::identity::{HirLimit, ItemId, ScopeId};
 use crate::item::{
-    HirEnumItem, HirEnumVariant, HirItem, HirItemIssue, HirItemKind, HirResourceDeclaration,
-    HirResourceField, HirStructField, HirStructItem, HirTypeAliasItem,
+    HirEnumItem, HirEnumVariant, HirEnumVariantField, HirEnumVariantPayload, HirItem, HirItemIssue,
+    HirItemKind, HirResourceDeclaration, HirResourceField, HirStructField, HirStructItem,
+    HirTypeAliasItem,
 };
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
@@ -237,7 +238,16 @@ impl StagedHirModuleTransaction<'_> {
         let attached = node
             .semantics()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        preflight_nominal_members(attached.body().variants().len())?;
+        let member_count = attached.body().variants().iter().fold(
+            attached.body().variants().len(),
+            |count, variant| {
+                count.saturating_add(match variant.payload() {
+                    AttachedEnumVariantPayload::Record(record) => record.fields().len(),
+                    AttachedEnumVariantPayload::Unit | AttachedEnumVariantPayload::Tuple(_) => 0,
+                })
+            },
+        );
+        preflight_nominal_members(member_count)?;
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
         let (generic_parameters, generic_recovery) =
@@ -251,16 +261,31 @@ impl StagedHirModuleTransaction<'_> {
             .iter()
             .map(|variant| {
                 let name = project_required_name(variant.name())?;
-                let payload = variant
-                    .payload()
-                    .map(|payload| self.lower_attached_type(payload, scope))
-                    .transpose()?;
-                let payload_recovery = payload
-                    .map(|payload| self.staged_type_is_poisoned(payload))
-                    .transpose()?
-                    .unwrap_or(false);
-                variant_recovery |=
-                    name.issue.is_some() || variant.has_recovery() || payload_recovery;
+                let payload = match variant.payload() {
+                    AttachedEnumVariantPayload::Unit => HirEnumVariantPayload::Unit,
+                    AttachedEnumVariantPayload::Tuple(payload) => {
+                        let payload = self.lower_attached_type(payload, scope)?;
+                        variant_recovery |= self.staged_type_is_poisoned(payload)?;
+                        HirEnumVariantPayload::Tuple(payload)
+                    }
+                    AttachedEnumVariantPayload::Record(record) => {
+                        let mut fields = Vec::with_capacity(record.fields().len());
+                        for field in record.fields() {
+                            let name = project_required_name(field.name())?;
+                            let ty = self.lower_attached_type(field.ty(), scope)?;
+                            variant_recovery |= field.has_recovery()
+                                || name.issue.is_some()
+                                || self.staged_type_is_poisoned(ty)?;
+                            fields.push(HirEnumVariantField::new(
+                                field.prefix().documentation().map(project_documentation),
+                                name.value,
+                                ty,
+                            ));
+                        }
+                        HirEnumVariantPayload::Record(fields.into_boxed_slice())
+                    }
+                };
+                variant_recovery |= name.issue.is_some() || variant.has_recovery();
                 Ok(HirEnumVariant::new(
                     variant.prefix().documentation().map(project_documentation),
                     name.value,

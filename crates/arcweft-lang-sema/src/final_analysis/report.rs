@@ -1954,6 +1954,10 @@ impl FinalSemanticAnalysis {
         &self.runtime_nominals
     }
 
+    pub(crate) const fn project_nominals(&self) -> &ProjectNominalSemanticCatalog {
+        &self.project_nominals
+    }
+
     /// Layout-free accepted semantics for one exact project nominal type.
     pub(crate) fn project_nominal_semantic(
         &self,

@@ -80,8 +80,8 @@ pub use self::host::{
     HirTestKindIssue,
 };
 pub use self::nominal::{
-    HirEnumItem, HirEnumVariant, HirResourceDeclaration, HirResourceField, HirStructField,
-    HirStructItem, HirTypeAliasItem,
+    HirEnumItem, HirEnumVariant, HirEnumVariantField, HirEnumVariantPayload,
+    HirResourceDeclaration, HirResourceField, HirStructField, HirStructItem, HirTypeAliasItem,
 };
 /// Exact source-backed top-level item inventory.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -36,7 +36,7 @@ use super::{
     ProjectValueLookupError, ProofArtifactId, ResolvedProjectSymbol,
     nominal::{
         ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
-        ProjectNominalDeclarationKind,
+        ProjectNominalDeclarationKind, ProjectNominalVariantPayload,
     },
 };
 
@@ -380,11 +380,66 @@ fn assert_nominal_source_records(
     let ProjectNominalBody::Enum { variants } = choice.body() else {
         panic!("Choice body must retain source-backed variants")
     };
-    assert_eq!(variants.len(), 2);
+    assert_eq!(variants.len(), 4);
     assert_eq!(variants[0].name().as_str(), "Value");
-    assert!(variants[0].payload().is_some());
-    assert_eq!(variants[1].name().as_str(), "Empty");
-    assert!(variants[1].payload().is_none());
+    assert!(matches!(
+        variants[0].payload(),
+        ProjectNominalVariantPayload::Tuple(_)
+    ));
+    assert_eq!(variants[1].name().as_str(), "Record");
+    let ProjectNominalVariantPayload::Record(fields) = variants[1].payload() else {
+        panic!("Record variant retains its inline field schema")
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| field.name().as_str())
+            .collect::<Vec<_>>(),
+        ["id", "label"]
+    );
+    assert_eq!(
+        &model_source[fields[0].source().whole().range().as_range()],
+        "id: T,"
+    );
+    assert_eq!(
+        &model_source[fields[0].source().name().range().as_range()],
+        "id"
+    );
+    assert_eq!(
+        &model_source[type_span(fields[0].ty()).range().as_range()],
+        "T"
+    );
+    let record_payload = "{ id: T, label: Missing }";
+    let record_payload_start = model_source
+        .find(record_payload)
+        .expect("record payload source");
+    assert_eq!(
+        variants[1]
+            .source()
+            .payload()
+            .expect("record payload source")
+            .range(),
+        SourceRange::new(
+            record_payload_start,
+            record_payload_start + record_payload.len()
+        )
+    );
+    assert_eq!(variants[2].name().as_str(), "EmptyRecord");
+    let ProjectNominalVariantPayload::Record(empty_fields) = variants[2].payload() else {
+        panic!("empty record payload remains distinct from unit")
+    };
+    assert!(empty_fields.is_empty());
+    assert_eq!(
+        &model_source[variants[2]
+            .source()
+            .payload()
+            .expect("empty record payload source")
+            .range()
+            .as_range()],
+        "{}"
+    );
+    assert_eq!(variants[3].name().as_str(), "Empty");
+    assert_eq!(variants[3].payload(), &ProjectNominalVariantPayload::Unit);
 
     let record_name = model_source.find("Record").expect("record name");
     assert_eq!(

@@ -389,6 +389,114 @@ fn checked_drop_policy_record_payload_rejects_unknown_missing_and_tuple_shapes()
 }
 
 #[test]
+fn checked_project_record_variant_patterns_keep_direct_record_payloads() {
+    let source = r"
+enum Event {
+    Start,
+    Empty {},
+    ChoiceSelected { id: i64 },
+}
+fn root(event: Event) -> i64 {
+    match event {
+        .Start => 0i64
+        .Empty {} => 1i64
+        .ChoiceSelected { id } => id
+    }
+}
+";
+    let fixture = fixture(source, None);
+    let report = analyze(&fixture).expect("project record variant pattern analysis");
+    let mut payloads = report
+        .patterns()
+        .filter_map(|(_, pattern)| match pattern.resolution() {
+            CheckedPatternResolution::Record(record)
+                if matches!(
+                    record.owner(),
+                    CheckedRecordPatternOwner::VariantPayload { .. }
+                ) =>
+            {
+                Some(pattern.ty())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    payloads.sort_by_key(|ty| match ty {
+        TypeKind::VariantPayload(payload) => payload.shape().field_count(),
+        _ => usize::MAX,
+    });
+    assert!(matches!(payloads.as_slice(), [empty, selected]
+        if matches!(empty, TypeKind::VariantPayload(payload)
+            if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Record(fields)
+                if fields.is_empty()))
+        && matches!(selected, TypeKind::VariantPayload(payload)
+            if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Record(fields)
+                if matches!(fields.as_ref(), [field]
+                    if field.diagnostic_name() == "id" && field.ty() == &TypeKind::I64)))));
+    assert!(
+        build_only_checked_match(source, CheckedMatchLimits::PRODUCTION)
+            .expect("all project enum cases are covered")
+            .coverage()
+            .exhaustive()
+    );
+}
+
+#[test]
+fn checked_project_tuple_variant_rejects_record_payload_pattern() {
+    let fixture = fixture(
+        r"
+struct ChoiceSelectedEvent { id: i64 }
+enum Event { ChoiceSelected ChoiceSelectedEvent }
+fn root(event: Event) -> i64 {
+    match event {
+        .ChoiceSelected { id } => id
+    }
+}
+",
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::PatternTypeUnavailable { .. })
+    ));
+}
+
+#[test]
+fn checked_pattern_binding_combo_keeps_inline_variant_record_owner() {
+    let fixture = fixture(
+        r#"
+enum GameEvent { ChoiceSelected { id: i32 } }
+flow pattern_edge(opt: Option<i32>, events: Vec<GameEvent>) -> i32 {
+    let .Some(first) = opt else { return 0 }
+    if let .Some(next) = opt when next > first {
+        return next
+    } else {
+        return first
+    }
+    while let .Some(event) = events.pop_front() {
+        match event {
+            .ChoiceSelected { id } => log.info("choice")
+            _ => continue
+        }
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("pattern-binding combination semantic analysis");
+    let record_owners = report
+        .patterns()
+        .filter_map(|(_, pattern)| match pattern.resolution() {
+            CheckedPatternResolution::Record(record) => Some(record.owner()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        record_owners.as_slice(),
+        [CheckedRecordPatternOwner::VariantPayload { .. }]
+    ));
+}
+
+#[test]
 fn checked_match_never_domain_is_exhaustive_without_a_witness() {
     let product = build_only_checked_match(
         "fn root(value: Never) -> i64 { match value {} }\n",

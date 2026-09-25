@@ -14,6 +14,7 @@ use super::{
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::name::SyntaxName;
+use arcweft_source::{SourceRange, SourceSpan};
 
 /// Required declaration/member name without a fabricated recovery spelling.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -279,13 +280,65 @@ impl AttachedStructField {
     }
 }
 
-/// One ordered Enum variant with an optional payload type.
+/// One ordered Enum variant with its typed payload shape.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedEnumVariant {
     syntax: AstNode<RecordFieldKind>,
     prefix: AttachedNominalFieldPrefix,
     name: AttachedRequiredName,
-    payload: Option<AttachedTypeRefNode>,
+    payload: AttachedEnumVariantPayload,
+}
+
+/// The source-ordered payload form of one enum variant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedEnumVariantPayload {
+    Unit,
+    Tuple(AttachedTypeRefNode),
+    Record(AttachedEnumVariantRecord),
+}
+
+/// Braced record payload with its exact delimiters and ordered fields.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedEnumVariantRecord {
+    source: SourceSpan,
+    open: AstNode<OpenBraceKind>,
+    close: AstNode<CloseBraceKind>,
+    fields: Box<[AttachedStructField]>,
+}
+
+impl AttachedEnumVariantRecord {
+    pub const fn source_span(&self) -> &SourceSpan {
+        &self.source
+    }
+
+    pub const fn open(&self) -> &AstNode<OpenBraceKind> {
+        &self.open
+    }
+
+    pub const fn close(&self) -> &AstNode<CloseBraceKind> {
+        &self.close
+    }
+
+    pub const fn fields(&self) -> &[AttachedStructField] {
+        &self.fields
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        matches!(
+            delimiter_state(&self.close),
+            AttachedDelimiterState::Missing(_)
+        ) || self.fields.iter().any(AttachedStructField::has_recovery)
+    }
+}
+
+impl AttachedEnumVariantPayload {
+    pub fn has_recovery(&self) -> bool {
+        match self {
+            Self::Unit => false,
+            Self::Tuple(payload) => payload.family() == AttachedTypeFamily::Recovery,
+            Self::Record(record) => record.has_recovery(),
+        }
+    }
 }
 
 impl AttachedEnumVariant {
@@ -301,17 +354,12 @@ impl AttachedEnumVariant {
         &self.name
     }
 
-    pub const fn payload(&self) -> Option<&AttachedTypeRefNode> {
-        self.payload.as_ref()
+    pub const fn payload(&self) -> &AttachedEnumVariantPayload {
+        &self.payload
     }
 
     pub fn has_recovery(&self) -> bool {
-        self.name.is_missing()
-            || self
-                .payload
-                .as_ref()
-                .is_some_and(|payload| payload.family() == AttachedTypeFamily::Recovery)
-            || !self.prefix.attributes.is_empty()
+        self.name.is_missing() || self.payload.has_recovery() || !self.prefix.attributes.is_empty()
     }
 }
 
@@ -713,10 +761,31 @@ fn attach_struct_field(
 fn attach_enum_variant(
     syntax: AstNode<RecordFieldKind>,
 ) -> Result<AttachedEnumVariant, SyntaxAccessError> {
-    let payload = syntax
-        .optional_family_child::<TypeFamily>(SyntaxRole::Type)?
-        .map(|payload| payload.semantic())
-        .transpose()?;
+    let syntax_handle = syntax.syntax();
+    let payload = if let Some(open_syntax) =
+        syntax_handle.optional_unique_child(SyntaxRole::OpenDelimiter)?
+    {
+        let open = open_syntax.cast()?;
+        let close = required_child(&syntax_handle, SyntaxRole::CloseDelimiter)?.cast()?;
+        let fields = syntax_handle
+            .ordered_children(SyntaxRoleClass::Field)?
+            .into_iter()
+            .map(|field| attach_struct_field(field.cast()?))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        let source = syntax_handle
+            .source_span_for_range(SourceRange::new(open.range().start(), close.range().end()));
+        AttachedEnumVariantPayload::Record(AttachedEnumVariantRecord {
+            source,
+            open,
+            close,
+            fields,
+        })
+    } else if let Some(payload) = syntax.optional_family_child::<TypeFamily>(SyntaxRole::Type)? {
+        AttachedEnumVariantPayload::Tuple(payload.semantic()?)
+    } else {
+        AttachedEnumVariantPayload::Unit
+    };
     Ok(AttachedEnumVariant {
         prefix: field_prefix(&syntax)?,
         name: required_name(&syntax.syntax(), false)?,

@@ -1295,9 +1295,10 @@ impl Analyzer<'_, '_, '_> {
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
             })?;
-            let payload = variant
-                .payload()
-                .map(|payload| {
+            cases.push(super::PreparedVariantCaseSeed::from_project(
+                ordinal,
+                variant,
+                |payload| {
                     self.types
                         .get(&payload)
                         .map(|payload| substitutions.apply(payload))
@@ -1306,13 +1307,9 @@ impl Analyzer<'_, '_, '_> {
                                 FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload },
                             )
                         })
-                })
-                .transpose()?;
-            cases.push(super::PreparedVariantCaseSeed::new(
-                ordinal,
-                payload,
-                Some(variant.name().as_str().to_owned()),
-            ));
+                },
+                |_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner),
+            )?);
         }
         let seed = super::PreparedVariantOwnerSeed::try_project(expected_nominal.clone(), cases)
             .ok_or_else(|| {

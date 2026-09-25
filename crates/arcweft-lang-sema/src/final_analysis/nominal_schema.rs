@@ -28,6 +28,7 @@ impl crate::final_analysis::FinalSemanticAnalysis {
             world.symbols(),
             self.accepted_types(),
             Some(self.semantic_shapes()),
+            self.project_nominals(),
             budget,
         )
         .project_type(ty)
@@ -125,6 +126,7 @@ impl NominalSchemaPath {
 pub(crate) struct RuntimeNominalProjectionContext<'a> {
     environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
     semantic_shapes: Option<&'a super::AcceptedSemanticShapeCatalog>,
+    project_nominals: &'a super::nominal_semantic::ProjectNominalSemanticCatalog,
     symbols: &'a ProjectSymbolTable,
     types: &'a BTreeMap<TypeId, TypeKind>,
     root_limits: NominalResolutionLimits,
@@ -940,6 +942,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
     pub(crate) const fn new(
         environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
         semantic_shapes: Option<&'a super::AcceptedSemanticShapeCatalog>,
+        project_nominals: &'a super::nominal_semantic::ProjectNominalSemanticCatalog,
         symbols: &'a ProjectSymbolTable,
         types: &'a BTreeMap<TypeId, TypeKind>,
         root_limits: NominalResolutionLimits,
@@ -949,6 +952,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
         Self {
             environment,
             semantic_shapes,
+            project_nominals,
             symbols,
             types,
             root_limits,
@@ -1091,27 +1095,35 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
                 )
             }
             ProjectNominalBody::Enum { variants } => {
+                let accepted = self
+                    .project_nominals
+                    .get(checked.identity())
+                    .and_then(|definition| definition.cases())
+                    .filter(|cases| cases.len() == variants.len())
+                    .ok_or_else(|| {
+                        NominalSchemaProjectionError::new(
+                            "enum cases have no complete accepted semantic definition",
+                        )
+                    })?;
                 let cases = variants
                     .iter()
+                    .zip(accepted)
                     .enumerate()
-                    .map(|(ordinal, variant)| {
+                    .map(|(ordinal, (variant, accepted))| {
                         let ordinal = u32::try_from(ordinal)
                             .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                        let payload = variant
-                            .payload()
-                            .map(|payload| {
-                                let declared = self.types.get(&payload).ok_or(
-                                    NominalSchemaProjectionError::MissingTypeFact { ty: payload },
-                                )?;
-                                checked
-                                    .instantiate_declaration_type(declaration, declared)
-                                    .ok_or_else(|| {
-                                        NominalSchemaProjectionError::new(
-                                            "enum payload cannot be instantiated by its checked nominal owner",
-                                        )
-                                    })
-                            })
-                            .transpose()?;
+                        if accepted.ordinal() != ordinal
+                            || accepted.diagnostic_name() != variant.name().as_str()
+                        {
+                            return Err(NominalSchemaProjectionError::new(
+                                "enum case differs from its accepted semantic definition",
+                            ));
+                        }
+                        let payload = accepted.payload_type(checked).map_err(|_| {
+                            NominalSchemaProjectionError::new(
+                                "enum payload cannot be projected from its accepted semantic case",
+                            )
+                        })?;
                         Ok::<_, NominalSchemaProjectionError>(RuntimeProjectVariantCaseProjection {
                             ordinal,
                             diagnostic_name: variant.name().clone(),
@@ -1138,6 +1150,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
             self.symbols,
             self.types,
             self.semantic_shapes,
+            self.project_nominals,
             checked,
             budget,
             self.control,
@@ -1322,6 +1335,7 @@ pub(super) fn seal_nominal_draft(
             super::report::FinalSemanticAnalysisAuthority::Fixture => None,
         },
         Some(&semantic_shapes),
+        &project_nominals,
         symbols,
         &parts.types,
         NominalResolutionLimits::PRODUCTION,
@@ -2060,17 +2074,32 @@ fn seal_variant_owner(
         let cases = definition
             .cases()
             .ok_or(super::CheckedVariantOwnerError::MissingProjectDefinition)?;
-        if cases.len() != prepared_cases.len()
-            || cases
-                .iter()
-                .zip(prepared_cases)
-                .any(|(accepted, prepared)| {
-                    accepted.ordinal() != prepared.ordinal()
-                        || accepted.project_payload_field() != prepared.project_payload_field()
-                        || prepared.diagnostic_name() != Some(accepted.diagnostic_name())
-                })
-        {
+        if cases.len() != prepared_cases.len() {
             return Err(super::CheckedVariantOwnerError::MissingProjectDefinition);
+        }
+        for (accepted, prepared) in cases.iter().zip(prepared_cases) {
+            let payload = prepared
+                .payload()
+                .map(|shape| {
+                    shape
+                        .try_seal(
+                            crate::types::VariantPayloadOwnerFamily::Project,
+                            definition.nominal().identity(),
+                            prepared.ordinal(),
+                        )
+                        .map_err(|reason| super::CheckedVariantOwnerError::Payload {
+                            ordinal: prepared.ordinal(),
+                            reason,
+                        })
+                })
+                .transpose()?
+                .unwrap_or(crate::types::VariantPayloadShape::Unit);
+            if accepted.ordinal() != prepared.ordinal()
+                || !accepted.payload().has_same_diagnostic_schema(&payload)
+                || prepared.diagnostic_name() != Some(accepted.diagnostic_name())
+            {
+                return Err(super::CheckedVariantOwnerError::MissingProjectDefinition);
+            }
         }
         Ok(definition.nominal().clone())
     })?)

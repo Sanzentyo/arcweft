@@ -68,14 +68,23 @@ pub struct ProjectNominalFieldSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectNominalVariant {
     pub(super) name: ModuleSegment,
-    pub(super) payload: Option<TypeId>,
+    pub(super) payload: ProjectNominalVariantPayload,
     pub(super) source: ProjectNominalVariantSource,
+}
+
+/// Typed unit, tuple, or inline record payload of an enum variant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProjectNominalVariantPayload {
+    Unit,
+    Tuple(TypeId),
+    Record(Box<[ProjectNominalField]>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectNominalVariantSource {
     pub(super) whole: SourceSpan,
     pub(super) name: SourceSpan,
+    /// Tuple type or inline record body; unit payloads have no source.
     pub(super) payload: Option<SourceSpan>,
 }
 
@@ -228,8 +237,8 @@ impl ProjectNominalVariant {
     pub const fn name(&self) -> &ModuleSegment {
         &self.name
     }
-    pub const fn payload(&self) -> Option<TypeId> {
-        self.payload
+    pub const fn payload(&self) -> &ProjectNominalVariantPayload {
+        &self.payload
     }
     pub const fn source(&self) -> &ProjectNominalVariantSource {
         &self.source

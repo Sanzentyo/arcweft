@@ -165,11 +165,11 @@ pub use node::{
 #[cfg(test)]
 pub(crate) use node::{PredicateItemKind, ProofItemKind};
 pub use nominal::{
-    AttachedEnumBody, AttachedEnumDeclaration, AttachedEnumVariant, AttachedGenericParameter,
-    AttachedGenericParameterGroup, AttachedNominalDeclaration, AttachedNominalFieldPrefix,
-    AttachedRequiredName, AttachedRequiredPunctuation, AttachedStructBody,
-    AttachedStructDeclaration, AttachedStructField, AttachedTypeAliasDeclaration,
-    AttachedWhereClause, AttachedWherePredicate,
+    AttachedEnumBody, AttachedEnumDeclaration, AttachedEnumVariant, AttachedEnumVariantPayload,
+    AttachedEnumVariantRecord, AttachedGenericParameter, AttachedGenericParameterGroup,
+    AttachedNominalDeclaration, AttachedNominalFieldPrefix, AttachedRequiredName,
+    AttachedRequiredPunctuation, AttachedStructBody, AttachedStructDeclaration,
+    AttachedStructField, AttachedTypeAliasDeclaration, AttachedWhereClause, AttachedWherePredicate,
 };
 pub use pattern::{AttachedPatternChild, AttachedPatternComponent, AttachedPatternNode};
 pub use resource::{

@@ -19,9 +19,9 @@ use crate::identity::{
 };
 use crate::item::{
     HirActionDeclaration, HirCharacterAssignmentState, HirDeclarationMemberKind,
-    HirDeclarationMemberPoisonState, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState,
-    HirItemPrefix, HirModuleDeclaration, HirParameterKind, HirPublicIdOrigin, HirRequiredName,
-    HirRetainedName, HirRetainedPublicId,
+    HirDeclarationMemberPoisonState, HirEnumVariantPayload, HirItem, HirItemIssue, HirItemKind,
+    HirItemPoisonState, HirItemPrefix, HirModuleDeclaration, HirParameterKind, HirPublicIdOrigin,
+    HirRequiredName, HirRetainedName, HirRetainedPublicId,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
@@ -443,6 +443,11 @@ fn clean_nominal_items_publish_typed_payloads_inline_members_and_exact_sources()
             "    /// No value\n",
             "    Empty,\n",
             "    Value T,\n",
+            "    ChoiceSelected {\n",
+            "        /// Selected identifier\n",
+            "        id: T,\n",
+            "    },\n",
+            "    EmptyRecord {},\n",
             "}\n",
         ),
     );
@@ -522,9 +527,34 @@ fn clean_nominal_items_publish_typed_payloads_inline_members_and_exact_sources()
     let HirItemKind::Enum(choice) = choice_item.kind() else {
         panic!("final Enum item")
     };
-    assert_eq!(choice.variants().len(), 2);
-    assert!(choice.variants()[0].payload().is_none());
-    assert!(choice.variants()[1].payload().is_some());
+    assert_eq!(choice.variants().len(), 4);
+    assert_eq!(choice.variants()[0].payload(), &HirEnumVariantPayload::Unit);
+    let HirEnumVariantPayload::Tuple(tuple_payload) = choice.variants()[1].payload() else {
+        panic!("Value retains a tuple payload")
+    };
+    let HirEnumVariantPayload::Record(record_fields) = choice.variants()[2].payload() else {
+        panic!("ChoiceSelected retains an inline record payload")
+    };
+    assert_eq!(record_fields.len(), 1);
+    assert_eq!(
+        record_fields[0]
+            .name()
+            .resolved()
+            .expect("record payload field name")
+            .as_str(),
+        "id"
+    );
+    assert_eq!(
+        record_fields[0]
+            .documentation()
+            .expect("record payload field documentation")
+            .markdown(),
+        "Selected identifier"
+    );
+    let HirEnumVariantPayload::Record(empty_record_fields) = choice.variants()[3].payload() else {
+        panic!("EmptyRecord remains distinct from Unit")
+    };
+    assert!(empty_record_fields.is_empty());
     assert_eq!(
         choice.variants()[0]
             .documentation()
@@ -535,10 +565,8 @@ fn clean_nominal_items_publish_typed_payloads_inline_members_and_exact_sources()
     assert!(choice_item.members().is_empty());
     assert!(module.declaration_members().arena(choice_owner).is_none());
     assert_item_slot_whole(&module, &parsed, choice_owner);
-    assert_source_backed_child(
-        &module,
-        choice.variants()[1].payload().expect("typed enum payload"),
-    );
+    assert_source_backed_child(&module, *tuple_payload);
+    assert_source_backed_child(&module, record_fields[0].ty());
 }
 
 #[test]
