@@ -2,7 +2,7 @@ fn piyo(input: i32) -> Result<i32, String> {
     if input > 0 {
         Ok(input)
     } else {
-        bail("Input must be greater than 0")
+        Err("Input must be greater than 0")
     }
 }
 
