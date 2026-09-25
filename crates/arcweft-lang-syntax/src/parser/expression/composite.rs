@@ -15,13 +15,14 @@ use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::literal::{SyntaxLiteralIssue, SyntaxLiteralValue};
 use crate::name::{SyntaxName, SyntaxNameIssue};
-use crate::parser::cursor::DocumentParser;
+use crate::parser::cursor::{DocumentParser, is_trivia_kind};
 use crate::parser::lexer::{LiteralLexemePart, typed_literal};
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_open_delimiter, emit_required_punctuation,
     find_matching_close, find_top_level_boundary, first_significant, token_text, trimmed_end,
 };
+use crate::parser::statement::indentation::token_indent;
 use crate::parser::type_ref::emit_type;
 
 pub(super) fn emit_parenthesized(
@@ -751,13 +752,29 @@ fn emit_record_fields(
 
 fn record_field_boundary(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
+    let field_indent = token_indent(parser, start);
+    let mut separator_without_value = false;
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
             return index;
         };
         let text = parser.text_of(token);
-        if depth == 0 && (text == "," || token.kind() == SyntaxKind::NewlineToken) {
+        if depth == 0 && text == "," {
             return index;
+        }
+        if depth == 0 && token.kind() == SyntaxKind::NewlineToken {
+            if separator_without_value
+                && first_significant(parser, index.saturating_add(1), end)
+                    .is_some_and(|next| token_indent(parser, next) > field_indent)
+            {
+                continue;
+            }
+            return index;
+        }
+        if depth == 0 && matches!(text, ":" | "=") {
+            separator_without_value = true;
+        } else if separator_without_value && !is_trivia_kind(token.kind()) {
+            separator_without_value = false;
         }
         match text {
             "(" | "[" | "{" | "<" => depth += 1,

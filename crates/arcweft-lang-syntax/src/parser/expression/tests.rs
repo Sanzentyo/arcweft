@@ -970,6 +970,54 @@ fn records_e20_e21_project_authored_fields_and_exact_source_parts() {
 }
 
 #[test]
+fn record_field_value_may_start_on_a_more_indented_line() {
+    let source = "Transform2D {\n    translate_y:\n        sin(time),\n    opacity: 1.0\n}";
+    let events = expression_events(source);
+    let record = projection(&events, SyntaxKind::RecordExpression);
+    let ExpressionProjection::Record(fields) = record.projection() else {
+        panic!("nominal record projection")
+    };
+    assert!(matches!(
+        fields.as_ref(),
+        [
+            SyntaxRecordField::Explicit {
+                value: SyntaxExpressionSlot::Authored,
+                ..
+            },
+            SyntaxRecordField::Explicit {
+                value: SyntaxExpressionSlot::Authored,
+                ..
+            }
+        ]
+    ));
+    let start = source.find("sin(time)").unwrap();
+    assert!(record.components().iter().any(|component| {
+        component.role()
+            == ExpressionComponentRole::RecordField {
+                field: 0,
+                part: ExpressionRecordFieldPart::Value,
+            }
+            && component.range() == SourceRange::new(start, start + "sin(time)".len())
+    }));
+
+    let dedented = expression_events("Transform2D {\n    translate_y:\n    opacity: 1.0\n}");
+    assert!(matches!(
+        projection(&dedented, SyntaxKind::RecordExpression).projection(),
+        ExpressionProjection::Record(fields)
+            if matches!(fields.as_ref(), [
+                SyntaxRecordField::Explicit {
+                    value: SyntaxExpressionSlot::Missing,
+                    ..
+                },
+                SyntaxRecordField::Explicit {
+                    value: SyntaxExpressionSlot::Authored,
+                    ..
+                }
+            ])
+    ));
+}
+
+#[test]
 fn e35_generic_error_projects_only_the_unclassified_recovery_source() {
     let standalone = expression_events(":");
     let standalone = projection(&standalone, SyntaxKind::ErrorExpression);

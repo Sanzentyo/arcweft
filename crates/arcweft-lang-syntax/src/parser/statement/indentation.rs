@@ -483,7 +483,7 @@ fn next_content_line(
     })
 }
 
-pub(super) fn token_indent(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
+pub(in crate::parser) fn token_indent(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
     let offset = parser
         .token_at(index)
         .expect("indentation anchor token exists")
