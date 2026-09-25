@@ -851,3 +851,12 @@ collection `collect` は Sema が Vec/Seq receiver item と destination `Vec<Ite
 `spec_should_pass/check/030_closure_pipeline_value_position.arcw` の `arcw check` は
 exit 0、0 warning、0 obligation。`arcw run` はこの check fixture に公開 entrypoint
 がないため bundle entrypoint 検証で停止し、実行受理の証拠ではない。
+
+**2026-09-25 HEAD workspace gate:** 記録 commit
+`4a98a5f8eea728f987a772b3c31560efa941cc8e` を含む clean main/
+`origin/main` で `cargo check --workspace --all-targets --all-features --quiet` は
+終了コード0（既存 warning あり）。`arcw compile --emit plan` で 019 の plan に
+`RegisterDefer { owner: LineRoot }` があることも確認した。自由ローカル
+`message: String` を捕捉する独立した line defer source の `arcw check` も
+exit 0、0 warning、0 obligation。検証用の一時 source/plan 出力は削除し、
+working tree は clean。defer body の runtime unwind と取消側 `out` は未完了。
