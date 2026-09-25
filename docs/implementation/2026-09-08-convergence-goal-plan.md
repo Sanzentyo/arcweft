@@ -860,3 +860,30 @@ exit 0、0 warning、0 obligation。`arcw run` はこの check fixture に公開
 `message: String` を捕捉する独立した line defer source の `arcw check` も
 exit 0、0 warning、0 obligation。検証用の一時 source/plan 出力は削除し、
 working tree は clean。defer body の runtime unwind と取消側 `out` は未完了。
+
+**2026-09-25 dynamic defer child-work checkpoint:**
+
+Sol Max に現行 native/AWBC state と save/restore の境界を照合してもらい、行 root
+defer の実行は中断中の親 Flow の `FunctionCallFrame` に混ぜず、dialogue activation
+が所有する子 work にする判断を採った。各登録の単調 ID、固定した exit filter、
+1件ずつの LIFO dispatch、捕捉 affine 値の `LineScope`→`ChildScope` 移管、
+filter 不一致時の明示 drop を一つの共有 state に置く。取消側 `out` は既に commit
+した通常 `R` との結果選択が必要なため、別の型付き disposition 境界で閉じる。
+
+`2bd7aded482b9ad19c7c5cd4d2e4b33b35a9a37c` は実 source の行 defer 2件を
+RuntimePlan と検証済み AWBC へ下ろし、capture 数・outcome・codec 往復を確認する
+compiler integration test を追加した（focused 1/1）。
+`31b1514d6b214d2ea89d137d06f61cdb8781c825` は共有 activation が登録 ID を
+発行し、snapshot の ID 順序と次 ID を検証する。`f7dde83d9d3b2c8aa88dbca4e5acdab68476222a`
+は固定 exit の LIFO 選択・inflight ID・捕捉値の子 owner 移管と skip 時 release を
+transactional な候補状態で実装した。Core lib 612/612、Core all-target/all-feature
+Clippy、workspace all-target/all-feature check は exit 0（既存 warning あり）。
+固定 exit の snapshot 往復、未対応の単独 inflight restore 拒否、affine skip release
+の focused tests も通過した。inspected main/`origin/main` は後者の完全 SHA で
+一致し、working tree は clean。
+
+これらは共有状態遷移の証拠であり、native/AWBC が子 body を起動・再開・完了報告
+する経路はまだ未接続。特に AWBC の既存 line-task child は suspend を受理しない。
+inflight を含む activation-only snapshot は、子 fiber との厳密な照合が未接続の間
+fail closed にしている。終了時の handle unwind は deferred stack/inflight が
+空になるまで拒否する。nested/CurrentScope の登録と取消結果選択も未完了。
