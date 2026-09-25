@@ -14,6 +14,7 @@ arcweft-adapter-metadata = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
+arcweft-id = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }

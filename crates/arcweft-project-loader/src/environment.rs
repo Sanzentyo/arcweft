@@ -12,16 +12,19 @@ use arcweft_adapter_sema::registration::{
     AdapterRegistrationFactsError, AdapterSemanticRegistration,
 };
 use arcweft_character::{
+    id::{CharacterId, CharacterIdError},
     manifest::registration::{
         CharacterManifestRootField, CharacterManifestTokenPath, SourceBackedCharacterManifest,
     },
     registration_catalog::{SourceBackedCharacterCatalog, SourceBackedCharacterCatalogError},
 };
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, CallablePackageIdError, ExternalDeclarationSeed,
     ExternalDeclarationSeedError, ProjectDirectBinding, ProjectDirectBindingError,
     ProjectSymbolWorldId, ProjectSymbolWorldIdError,
 };
+use arcweft_lang_hir::{item::HirRetainedHeader, lowering::HirLowerFailure};
 use arcweft_lang_sema::registration::{
     CharacterRegistrationReport, ExternalRegistrationFact, ProjectRegistrationFacts,
     RegisteredExternalOwner, SourceBackedEnvironmentRegistrationInput,
@@ -34,6 +37,7 @@ use arcweft_lang_syntax::ast::{
         SymbolPathError,
     },
 };
+use arcweft_lang_syntax::attachment::{SyntaxAccessError, TypedItemNode};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceDocumentIdentity};
 use thiserror::Error;
 
@@ -92,6 +96,12 @@ pub enum ProjectRegistrationLoadError {
     ExternalDeclaration(#[from] ExternalDeclarationSeedError),
     #[error(transparent)]
     Catalog(#[from] SourceBackedCharacterCatalogError),
+    #[error(transparent)]
+    Syntax(#[from] SyntaxAccessError),
+    #[error(transparent)]
+    CharacterIdentity(#[from] CharacterIdError),
+    #[error(transparent)]
+    CharacterProjection(#[from] HirLowerFailure),
     #[error(transparent)]
     AdapterFacts(#[from] AdapterRegistrationFactsError),
     #[error("adapter registration-fact ordinal exceeds u64::MAX")]
@@ -320,11 +330,6 @@ struct RegistrationSources {
     environment_inputs: Vec<SourceBackedEnvironmentRegistrationInput>,
 }
 
-struct CharacterRegistrationSource {
-    external_fact: ExternalRegistrationFact,
-    manifest: SourceBackedCharacterManifest,
-}
-
 fn collect_overlays(
     documents: &[Arc<SourceDocument>],
 ) -> Result<OverlayDocuments, ProjectRegistrationLoadError> {
@@ -417,21 +422,46 @@ fn append_topology_character_sources(
     sources: &mut RegistrationSources,
     topology: &LoadedProfileTopology,
 ) -> Result<(), ProjectRegistrationLoadError> {
+    let source_characters = accepted_source_character_ids(topology.loaded_project())?;
     for (_, package) in topology.character_packages() {
-        let source = character_registration_source(
-            package.manifest_path(),
-            package.source_manifest().as_ref().clone(),
-        )?;
-        sources.external_facts.push(source.external_fact);
-        sources.character_manifests.push(source.manifest);
+        let manifest = package.source_manifest().as_ref().clone();
+        if !source_characters.contains(manifest.manifest().character()) {
+            sources.external_facts.push(character_registration_source(
+                package.manifest_path(),
+                &manifest,
+            )?);
+        }
+        sources.character_manifests.push(manifest);
     }
     Ok(())
 }
 
+fn accepted_source_character_ids(
+    loaded: &LoadedProject,
+) -> Result<BTreeSet<CharacterId>, ProjectRegistrationLoadError> {
+    let mut characters = BTreeSet::new();
+    for (_, parsed) in loaded.module_parsed_sources() {
+        for item in parsed.items()? {
+            let TypedItemNode::Character(character) = item else {
+                continue;
+            };
+            let attached = character.semantics()?;
+            let header = HirRetainedHeader::try_project_attached(
+                attached.header(),
+                DeclarationIdentityFamily::Character,
+            )?;
+            if let Some(id) = header.public_id().resolved() {
+                characters.insert(CharacterId::try_new(id.as_str().to_owned())?);
+            }
+        }
+    }
+    Ok(characters)
+}
+
 fn character_registration_source(
     path: &Path,
-    manifest: SourceBackedCharacterManifest,
-) -> Result<CharacterRegistrationSource, ProjectRegistrationLoadError> {
+    manifest: &SourceBackedCharacterManifest,
+) -> Result<ExternalRegistrationFact, ProjectRegistrationLoadError> {
     let owner = manifest.manifest().character().clone();
     let declaration = manifest
         .source_map()
@@ -476,10 +506,7 @@ fn character_registration_source(
     )?;
     let external_fact =
         ExternalRegistrationFact::new(seed, RegisteredExternalOwner::Character(owner), declaration);
-    Ok(CharacterRegistrationSource {
-        external_fact,
-        manifest,
-    })
+    Ok(external_fact)
 }
 
 fn character_publication_paths(
@@ -643,6 +670,86 @@ compression = "none"
             fs::canonicalize(fixture.path("assets/zundamon.awchar/character.awchar.json"))
                 .expect("fixture manifest path canonicalizes")
         );
+    }
+
+    #[test]
+    fn profile_character_manifest_uses_source_logical_owner_when_ids_match() {
+        for (case, source, expected_externals) in [
+            (
+                "derived",
+                "pub character zundamon { display = \"Zundamon\" }\n",
+                0,
+            ),
+            (
+                "explicit",
+                "pub character @character.zundamon { display = \"Zundamon\" }\n",
+                0,
+            ),
+            (
+                "different",
+                "pub character other { display = \"Other\" }\n",
+                1,
+            ),
+        ] {
+            let fixture = TestProject::new(&format!("registration-character-{case}"));
+            fixture.write(
+                "arcw.toml",
+                r#"
+schema = 1
+[package]
+id = "org.arcweft.test.character-owner"
+version = "0.1.0"
+[content-units.characters]
+roots = ["@character.zundamon"]
+visibility = "package"
+demand = "required"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+[profiles.dev.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"
+"#,
+            );
+            fixture.write("src/main.arcw", source);
+            fixture.write(
+                "assets/zundamon.awchar/character.awchar.json",
+                include_str!(
+                    "../../arcweft-character/tests/fixtures/zundamon.awchar/character.awchar.json"
+                ),
+            );
+            fixture.write_character_layers("assets/zundamon.awchar");
+            let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+            let topology = load_profile_topology(
+                &mut syntax,
+                ProfileTopologyLoadRequest::new(
+                    &fixture.path("arcw.toml"),
+                    ProfileTopologyOwnerId::workspace(
+                        format!("file:///{}", slash(fixture.root())),
+                        format!("file:///{}", slash(&fixture.path("arcw.toml"))),
+                    )
+                    .expect("workspace owner"),
+                    LaunchProfileSelection::Explicit("dev"),
+                    &[],
+                    standard_registry(),
+                    std::sync::Arc::new(
+                        arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+                    ),
+                ),
+            )
+            .expect("topology loads");
+            let registration =
+                load_profile_registration(&ProfileRegistrationLoadRequest::new(&topology))
+                    .expect("registration facts");
+            let (facts, _) = registration.into_parts();
+            assert_eq!(
+                facts.external_declarations().declarations().len(),
+                expected_externals,
+                "{case} source owner",
+            );
+            assert_eq!(facts.catalogs().next().unwrap().manifests().count(), 1);
+        }
     }
 
     #[test]
