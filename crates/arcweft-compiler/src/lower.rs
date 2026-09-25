@@ -2140,12 +2140,11 @@ fn project_dialogue_application(
             analysis
                 .statements()
                 .filter_map(|(statement, checked)| match checked.payload() {
-                    CheckedStatementPayload::ControlTransfer(target)
-                        if target
-                            .output()
-                            .is_some_and(|output| output.application() == owner) =>
-                    {
-                        Some(statement)
+                    CheckedStatementPayload::ControlTransfer(target) => {
+                        target.output().and_then(|output| {
+                            (output.application() == owner)
+                                .then_some((statement, output.application()))
+                        })
                     }
                     _ => None,
                 })

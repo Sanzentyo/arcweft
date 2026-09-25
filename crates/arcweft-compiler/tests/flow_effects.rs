@@ -111,6 +111,9 @@ fn assert_returns_42(compiled: CompiledSource, program: AwbcProgram) {
                 assert_eq!(value, Some(RuntimeValue::i64(42)));
                 return;
             }
+            VmExit::DialogueResultSelected(value) => {
+                panic!("ordinary Flow selected a DialogueLine result: {value:?}")
+            }
             exit => panic!("unexpected AWBC exit: {exit:?}"),
         }
     }

@@ -818,7 +818,13 @@ impl Engine {
             advance_activation_pc(frame)?;
             return Ok(DialogueActivationStep::Continue);
         }
-        if frame.exiting_for_result {
+        let activation_exhausted = !frame.exiting_for_result
+            && self
+                .plan
+                .line_task_groups()
+                .get(frame.task_group.index())
+                .is_some_and(|group| frame.activation_pc == group.activation_ops().len());
+        if frame.exiting_for_result || activation_exhausted {
             if !frame.scopes.is_empty() {
                 let step = self.prepare_activation_scope_exit(
                     &activation_id,
@@ -1888,7 +1894,7 @@ impl Engine {
     ) -> Result<DialogueLineTaskStart, DialogueExecutionError> {
         if !matches!(
             activation.result(),
-            RuntimeDialogueResultState::Committed { .. }
+            RuntimeDialogueResultState::Uncommitted | RuntimeDialogueResultState::Committed { .. }
         ) || !state.scopes.is_empty()
             || activation.has_pending_commands()
         {

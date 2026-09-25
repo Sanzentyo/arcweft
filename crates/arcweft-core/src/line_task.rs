@@ -13,6 +13,8 @@ use thiserror::Error;
 mod activation;
 mod defer;
 mod handle;
+#[cfg(test)]
+mod result_selection_tests;
 
 pub(crate) use defer::RuntimeDeferUnwindStep;
 pub use defer::{RuntimeDeferOutcomeFilter, RuntimeLineDeferredRegistration};
@@ -1059,29 +1061,57 @@ impl LineTaskLiveState {
         matches!(self.phase, LineTaskPhase::Closed { .. })
     }
 
-    pub(crate) fn accepts_cancellation_selection(&self, tag: &LineTaskWorkTag) -> bool {
-        let LineTaskWorkInstance::Activation(activation) = tag.instance() else {
+    pub(crate) fn accepts_result_selection<P: LineTaskPlanView>(
+        &self,
+        plan: &P,
+        tag: &LineTaskWorkTag,
+    ) -> bool {
+        if tag.activation_id() != &self.activation || !tag.is_well_formed() {
             return false;
-        };
-        let LineTaskWork::Cancellation(action) = tag.work() else {
-            return false;
-        };
-        activation == &self.activation
-            && self.cancellation_action.as_ref() == Some(&action)
-            && matches!(
-                self.phase,
-                LineTaskPhase::Closing {
-                    exit: ScopeExit::Cancelled
+        }
+        match (tag.instance(), tag.work()) {
+            (LineTaskWorkInstance::Activation(_), LineTaskWork::Cancellation(action)) => {
+                self.cancellation_action.as_ref() == Some(&action)
+                    && matches!(
+                        self.phase,
+                        LineTaskPhase::Closing {
+                            exit: ScopeExit::Cancelled
+                        }
+                    )
+                    && self
+                        .activation_lane
+                        .outstanding
+                        .contains(&LineTaskWork::Cancellation(action))
+            }
+            (instance, LineTaskWork::Node(action)) => {
+                if !matches!(
+                    self.phase,
+                    LineTaskPhase::Active
+                        | LineTaskPhase::Closing {
+                            exit: ScopeExit::Completed
+                        }
+                ) || !matches!(plan.node_view(action), Some(LineTaskNodeView::Action))
+                {
+                    return false;
                 }
-            )
-            && self
-                .activation_lane
-                .outstanding
-                .contains(&LineTaskWork::Cancellation(action))
-    }
-
-    pub(crate) const fn cancellation_action(&self) -> Option<&InputActionId> {
-        self.cancellation_action.as_ref()
+                let lane = match instance {
+                    LineTaskWorkInstance::Activation(_) => Some(&self.activation_lane),
+                    LineTaskWorkInstance::Scheduled(token) => self.scheduled_lanes.get(token),
+                };
+                let Some(lane) = lane else {
+                    return false;
+                };
+                lane.outstanding.contains(&LineTaskWork::Node(action))
+                    && mark_result_source(plan, action).is_some_and(|mark| {
+                        self.consumed_content_events
+                            .contains(&RuntimeDialogueContentEventKind::Mark(mark))
+                    })
+            }
+            (
+                _,
+                LineTaskWork::Cancellation(_) | LineTaskWork::Cleanup(_) | LineTaskWork::Defer(_),
+            ) => false,
+        }
     }
 
     #[must_use]
@@ -1236,6 +1266,34 @@ impl LineTaskLiveState {
                 .values()
                 .any(|lane| !lane.outstanding.is_empty())
     }
+}
+
+fn mark_result_source<P: LineTaskPlanView>(
+    plan: &P,
+    action: RuntimeLineTaskNodeId,
+) -> Option<RuntimeDialogueMarkId> {
+    if !matches!(plan.node_view(action), Some(LineTaskNodeView::Action)) {
+        return None;
+    }
+    let mut source = None;
+    for child in (0..plan.node_count()).filter_map(RuntimeLineTaskNodeId::from_zero_based) {
+        let Some(LineTaskNodeView::Child {
+            trigger: LineTaskTrigger::Mark(mark),
+            policy:
+                LineTaskExitPolicy {
+                    join: ChildJoinPolicy::Join,
+                    cancel: ChildCancelPolicy::CancelAndJoin,
+                },
+            scope,
+        }) = plan.node_view(child)
+        else {
+            continue;
+        };
+        if scope == action && source.replace(mark).is_some() {
+            return None;
+        }
+    }
+    source
 }
 
 fn validate_snapshot<P: LineTaskPlanView>(

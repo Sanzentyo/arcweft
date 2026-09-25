@@ -1524,8 +1524,10 @@ impl Analyzer<'_, '_, '_> {
                             exited_by = check_statement(*statement, Some(*scope))?;
                         }
                     }
+                    HirLinePlanItem::On(statement) => {
+                        exited_by = check_statement(*statement, None)?;
+                    }
                     HirLinePlanItem::Thread(statement)
-                    | HirLinePlanItem::On(statement)
                     | HirLinePlanItem::Statement(statement)
                     | HirLinePlanItem::Error(statement) => {
                         exited_by = check_statement(*statement, None)?;

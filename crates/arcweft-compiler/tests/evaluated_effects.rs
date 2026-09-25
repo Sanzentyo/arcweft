@@ -1731,6 +1731,246 @@ entry cli @entry.main { goto @flow.main }
     }
 }
 
+#[test]
+fn mark_out_selects_an_on_only_non_unit_result_in_native_and_decoded_awbc() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    let result = alice()[本文。[mark @.release][p]] with {
+        on mark(@.release) {
+            log.info("mark-handler-enter")
+            out "Released"
+        }
+    }
+    log.info(result)
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("one mark handler supplies the non-Unit DialogueLine result");
+    let runtime = compiled.runtime_plan();
+    let [content] = runtime.plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan")
+    };
+    let group = runtime
+        .plan
+        .line_task_groups()
+        .get(
+            content
+                .line_task_group()
+                .expect("mark line-task group")
+                .index(),
+        )
+        .expect("accepted mark line-task group");
+    assert!(
+        group
+            .activation_ops()
+            .iter()
+            .all(|operation| !matches!(operation, FlowOp::CommitDialogueResult { .. }))
+    );
+    let selectors = group
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Action(operations) => Some(
+                operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        FlowOp::SelectDialogueResult { value } => Some(value),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+    let [selected] = selectors.as_slice() else {
+        panic!("the mark Action owns one typed line-result selector")
+    };
+    assert_eq!(selected.ty(), group.result_type());
+    let mut triggers = Vec::new();
+    collect_mark_triggers(group, group.root(), &mut triggers);
+    assert_eq!(
+        triggers,
+        [RuntimeDialogueMarkId::from_zero_based(0).unwrap()]
+    );
+
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "mark_out_on_only_execution.arcw",
+    )
+    .lower()
+    .expect("mark result selection lowers to verified AWBC");
+    let bytes = report.program.encode_canonical().expect("encode AWBC");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode AWBC");
+    let [flow] = runtime.plan.flows() else {
+        panic!("one flow")
+    };
+
+    for deliver_mark in [true, false] {
+        let mut plan = runtime.plan.clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+        let native_schema = bind_test_character_dialogue_schema(
+            &compiled,
+            arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+        );
+        let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+            );
+        let (native_logs, native_succeeded) = execute_dialogue_result_with_mark(
+            |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+            deliver_mark,
+            "native",
+        );
+
+        let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+            decoded.clone(),
+            arcweft_core::awbc::schema::AwbcEntryId(0),
+        )
+        .unwrap();
+        let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+        let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+            );
+        let (awbc_logs, awbc_succeeded) = execute_dialogue_result_with_mark(
+            |input, options| awbc.step_with_pure_backend(input, options, &mut awbc_backend),
+            deliver_mark,
+            "awbc",
+        );
+        if deliver_mark {
+            assert!(native_succeeded && awbc_succeeded);
+            assert_eq!(native_logs, ["mark-handler-enter", "Released"]);
+        } else {
+            assert!(!native_succeeded && !awbc_succeeded);
+            assert!(native_logs.is_empty());
+        }
+        assert_eq!(awbc_logs, native_logs);
+        assert_eq!(awbc_succeeded, native_succeeded);
+    }
+}
+
+fn execute_dialogue_result_with_mark(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+    deliver_mark: bool,
+    backend: &str,
+) -> (Vec<String>, bool) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{
+            RuntimeDialogueContentEvent, RuntimeDialogueContentEventKind, RuntimeStepInput,
+            RuntimeStepOptions,
+        },
+        time::TickId,
+    };
+
+    let mark = RuntimeDialogueMarkId::from_zero_based(0).unwrap();
+    let mut activation: Option<arcweft_core::runtime_id::DialogueActivationId> = None;
+    let mut mark_delivered = false;
+    let mut mark_handler_child_seen = false;
+    let mut mark_handler_completed = false;
+    let mut effects = Vec::new();
+    let mut seen = 0;
+    let mut last_status = None;
+    for tick in 0..512 {
+        let mut input = RuntimeStepInput {
+            tick: TickId(tick),
+            ..RuntimeStepInput::default()
+        };
+        if let Some(current) = activation.as_ref() {
+            if deliver_mark && !mark_delivered {
+                input
+                    .dialogue_content_events
+                    .push(RuntimeDialogueContentEvent::new(
+                        current.clone(),
+                        RuntimeDialogueContentEventKind::Mark(mark),
+                    ));
+                mark_delivered = true;
+            } else if deliver_mark && !mark_handler_completed {
+                // Wait until the selected handler child finishes before advancing.
+            } else {
+                input.dialogue_advances.push(current.clone());
+                activation = None;
+            }
+        }
+
+        let result = step(input, RuntimeStepOptions::default());
+        effects.extend(result.output.effects.line);
+        if deliver_mark && mark_delivered && result.stats.child_fibers > 0 {
+            mark_handler_child_seen = true;
+        }
+        if deliver_mark
+            && mark_handler_child_seen
+            && result.stats.child_fibers == 0
+            && log_messages(&effects)
+                .iter()
+                .any(|message| message == "mark-handler-enter")
+        {
+            mark_handler_completed = true;
+        }
+        if !result.output.diagnostics.is_empty() {
+            assert!(!deliver_mark, "{backend}: {:?}", result.output.diagnostics);
+            assert_eq!(seen, 1, "{backend}: one line was revealed before failure");
+            return (log_messages(&effects), false);
+        }
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine {
+                activation: revealed,
+                ..
+            } = event
+            {
+                seen += 1;
+                activation = Some(revealed);
+                mark_delivered = false;
+            }
+        }
+        last_status = Some(result.fiber_status.clone());
+        match result.fiber_status {
+            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Done(exit) => {
+                assert!(
+                    deliver_mark,
+                    "{backend}: an unselected non-Unit result must fail"
+                );
+                assert_eq!(exit, FlowExit::Done);
+                assert_eq!(seen, 1);
+                return (log_messages(&effects), true);
+            }
+            FlowFiberStatus::Failed(_) => {
+                assert!(
+                    !deliver_mark,
+                    "{backend}: selected result failed unexpectedly"
+                );
+                assert_eq!(seen, 1, "{backend}: one line was revealed before failure");
+                return (log_messages(&effects), false);
+            }
+            status => panic!("{backend}: dialogue result stopped unexpectedly: {status:?}"),
+        }
+    }
+    panic!(
+        "dialogue mark result execution exceeded its step bound: backend={backend}, seen={seen}, deliver_mark={deliver_mark}, last_status={last_status:?}"
+    );
+}
+
 fn execute_dialogue_result_with_action(
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,

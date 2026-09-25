@@ -208,6 +208,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::GotoStatic
         | AwbcOpcode::GotoDynamic
         | AwbcOpcode::Return
+        | AwbcOpcode::SelectDialogueResult
         | AwbcOpcode::ProjectCall
         | AwbcOpcode::HostCall
         | AwbcOpcode::Await
@@ -233,6 +234,7 @@ fn terminator_eligible(terminator: &AwbcTerminator, options: &AwbcRegionLowerOpt
         | AwbcTerminator::CallFunction { .. }
         | AwbcTerminator::ProjectCall { .. }
         | AwbcTerminator::GotoStatic { .. } => true,
+        AwbcTerminator::SelectDialogueResult { .. } => false,
         AwbcTerminator::GotoDynamic { .. }
         | AwbcTerminator::Dialogue { .. }
         | AwbcTerminator::Choice { .. }
@@ -347,6 +349,10 @@ fn map_vm_exit(
             CompiledStepExit::Suspended,
         ),
         VmExit::Returned(value) => CompiledStepExit::Returned(value),
+        VmExit::DialogueResultSelected(_) => failed(
+            AwbcTrapCode::InternalInvariant,
+            "dialogue result selection escaped the product AWBC executor".to_owned(),
+        ),
         VmExit::Cancelled => failed(
             AwbcTrapCode::InternalInvariant,
             "running effect-free compiled region observed cancellation".to_owned(),

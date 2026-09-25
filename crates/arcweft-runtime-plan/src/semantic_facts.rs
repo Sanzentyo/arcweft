@@ -4059,7 +4059,7 @@ pub struct RuntimeDialogueApplication {
     target: RuntimeDialogueApplicationTarget,
     content: DialogueContentSpec,
     line_result: RuntimeNormalizedType,
-    cancel_outputs: BTreeSet<StmtId>,
+    result_outputs: BTreeMap<StmtId, ExprId>,
 }
 
 impl RuntimeDialogueApplication {
@@ -4067,13 +4067,13 @@ impl RuntimeDialogueApplication {
         target: RuntimeDialogueApplicationTarget,
         content: DialogueContentSpec,
         line_result: RuntimeNormalizedType,
-        cancel_outputs: BTreeSet<StmtId>,
+        result_outputs: BTreeMap<StmtId, ExprId>,
     ) -> Self {
         Self {
             target,
             content,
             line_result,
-            cancel_outputs,
+            result_outputs,
         }
     }
 
@@ -4089,12 +4089,12 @@ impl RuntimeDialogueApplication {
         &self.line_result
     }
 
-    pub fn admits_cancel_output(&self, statement: StmtId) -> bool {
-        self.cancel_outputs.contains(&statement)
+    pub fn result_output_application(&self, statement: StmtId) -> Option<ExprId> {
+        self.result_outputs.get(&statement).copied()
     }
 
-    pub fn cancel_outputs(&self) -> &BTreeSet<StmtId> {
-        &self.cancel_outputs
+    pub fn result_outputs(&self) -> &BTreeMap<StmtId, ExprId> {
+        &self.result_outputs
     }
 }
 
@@ -7362,7 +7362,10 @@ impl RuntimePlanSemanticFacts {
             self.expression_type(application.target().expression()),
         )?;
         validate_normalized_type(modules, application.line_result())?;
-        for statement in application.cancel_outputs() {
+        for (statement, output_application) in application.result_outputs() {
+            if *output_application != owner {
+                return Err(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner });
+            }
             require_runtime_statement_owner(
                 runtime_owners,
                 *statement,

@@ -99,6 +99,147 @@ fn minimal_program() -> AwbcProgram {
 }
 
 #[test]
+fn explicit_dialogue_selector_roundtrips_executes_and_restores_distinctly() {
+    let mut program = minimal_program();
+    program.strings.push("selected-result".to_owned());
+    program.runtime_types = vec![
+        AwbcRuntimeType::unit(),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::String.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::String,
+        ),
+    ];
+    program.constants = vec![AwbcConstant::String(AwbcStringId(1))];
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(1),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    program.functions.extend([
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::LineActivation,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(1, 1),
+            entry_block: AwbcBlockId(1),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::LineTask,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(2, 1),
+            entry_block: AwbcBlockId(2),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+    ]);
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(0),
+    });
+    program.blocks.extend([
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(2),
+            instructions: AwbcTableRange::new(0, 1),
+            terminator: AwbcTerminator::SelectDialogueResult {
+                value: AwbcRegisterId(0),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ]);
+    program.line_task_nodes = vec![AwbcLineTaskNode::Action(AwbcFunctionId(2))];
+    program.line_task_groups = vec![AwbcLineTaskGroup {
+        captures: Vec::new(),
+        activation: AwbcFunctionId(1),
+        result_type: AwbcTypeId(1),
+        handle_sites: Vec::new(),
+        root: AwbcLineTaskNodeId(0),
+        nodes: AwbcTableRange::new(0, 1),
+        cancel_handlers: Vec::new(),
+        cleanup_completed: None,
+        cleanup_cancelled: None,
+        cleanup_failed: None,
+        cleanup: AwbcLineCleanupPolicy {
+            child_tasks: AwbcChildCleanup::Finish,
+            presentation: AwbcPresentationCleanup::KeepRegistered,
+            audio: AwbcAudioCleanup::KeepRegistered,
+        },
+    }];
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("selector is a verified line-action terminal");
+    let encoded = program.encode_canonical().expect("encode selector");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode selector");
+    assert_eq!(
+        decoded.encode_canonical().expect("re-encode selector"),
+        encoded
+    );
+
+    let mut fiber = FiberState::for_function(&decoded, AwbcEntryId(0), AwbcFunctionId(2), 1, 64)
+        .expect("line action fiber starts");
+    let output = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8,
+        },
+    )
+    .expect("line action selects its result");
+    assert_eq!(
+        output.exit,
+        super::vm::VmExit::DialogueResultSelected(RuntimeValue::String(
+            "selected-result".to_owned(),
+        ))
+    );
+    assert_eq!(
+        crate::awbc::parity::ParityTrace::from_compact(&output)
+            .events
+            .last(),
+        Some(&crate::awbc::parity::ParityEvent::Stop {
+            reason: "dialogue_result_selected".to_owned(),
+        })
+    );
+    fiber
+        .validate_for_program(&decoded)
+        .expect("terminal validates");
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot selector terminal");
+    let serialized = serde_json::to_vec(&snapshot).expect("serialize selector terminal");
+    let snapshot: AwbcFiberStateSnapshot =
+        serde_json::from_slice(&serialized).expect("decode selector terminal snapshot");
+    let restored = snapshot
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            decoded.clone(),
+        )))
+        .expect("restore selector terminal");
+    restored
+        .validate_for_program(&decoded)
+        .expect("restored selector terminal validates");
+    assert_eq!(
+        restored.terminal,
+        Some(super::fiber::FiberTerminalValue::DialogueResultSelected(
+            RuntimeValue::String("selected-result".to_owned()),
+        ))
+    );
+}
+
+#[test]
 fn named_scope_layout_roundtrip_and_snapshot_admission_preserve_static_identity() {
     let mut program = minimal_program();
     let named = |name| {
@@ -1351,6 +1492,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::Await, 0x89, Terminator),
         (AwbcOpcode::AwaitMany, 0x8a, Terminator),
         (AwbcOpcode::BudgetYield, 0x8b, Terminator),
+        (AwbcOpcode::SelectDialogueResult, 0x8c, Terminator),
         (AwbcOpcode::Dialogue, 0x98, Terminator),
         (AwbcOpcode::Choice, 0x99, Terminator),
         (AwbcOpcode::Trap, 0xa0, Terminator),

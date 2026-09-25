@@ -124,6 +124,7 @@ struct LinePlanLowerer<'a, 'project> {
     cleanup_failed: Vec<FlowDraft>,
     next_child: usize,
     committed_result: bool,
+    selected_result: bool,
 }
 
 enum LinePlanStatementProjection {
@@ -190,24 +191,28 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
         cleanup_failed: Vec::new(),
         next_child: 0,
         committed_result: false,
+        selected_result: false,
     };
     if let Some(plan) = plan {
         lowerer.lower_items(plan.items())?;
     }
     if !lowerer.committed_result {
-        if !matches!(application.line_result().shape(), RuntimeTypeShape::Unit) {
+        let unit_result = matches!(application.line_result().shape(), RuntimeTypeShape::Unit);
+        if !unit_result && !lowerer.selected_result {
             return Err(RuntimePlanLowerError::new(format!(
-                "dialogue application {owner:?} has a non-Unit line result without an out commit"
+                "dialogue application {owner:?} has a non-Unit line result without a normal or mark-handler out"
             )));
         }
-        lowerer
-            .activation_ops
-            .push(FlowDraft::Flow(RuntimeFlowOpSeed::CommitDialogueResult {
-                value: RuntimeExprSeed::new(
-                    application.line_result().identity(),
-                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
-                ),
-            }));
+        if unit_result {
+            lowerer
+                .activation_ops
+                .push(FlowDraft::Flow(RuntimeFlowOpSeed::CommitDialogueResult {
+                    value: RuntimeExprSeed::new(
+                        application.line_result().identity(),
+                        RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                    ),
+                }));
+        }
     }
     lowerer.finish(application.line_result())
 }
@@ -553,27 +558,34 @@ impl LinePlanLowerer<'_, '_> {
         scope: arcweft_lang_hir::identity::ScopeId,
         statements: &[StmtId],
     ) -> Result<Vec<FlowDraft>, RuntimePlanLowerError> {
+        self.flow.begin_dialogue_result_selection(self.owner)?;
         let mut actions = vec![FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
             identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
         })];
-        for statement in statements {
-            let payload = self.resolve_statement(*statement)?;
-            if payload.scope() != scope {
-                return Err(RuntimePlanLowerError::new(format!(
-                    "On handler statement {statement:?} is outside its retained scope {scope:?}"
-                )));
+        let lowered = (|| {
+            for statement in statements {
+                let payload = self.resolve_statement(*statement)?;
+                if payload.scope() != scope {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "On handler statement {statement:?} is outside its retained scope {scope:?}"
+                    )));
+                }
+                let kind = payload.kind().clone();
+                if matches!(kind, HirStmtKind::Defer { .. }) {
+                    actions.push(FlowDraft::Flow(self.flow.lower_defer_registration(
+                        *statement,
+                        arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
+                    )?));
+                } else {
+                    actions.extend(self.lower_statement_action(*statement, &kind)?);
+                }
             }
-            let kind = payload.kind().clone();
-            if matches!(kind, HirStmtKind::Defer { .. }) {
-                actions.push(FlowDraft::Flow(self.flow.lower_defer_registration(
-                    *statement,
-                    arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
-                )?));
-            } else {
-                actions.extend(self.lower_statement_action(*statement, &kind)?);
-            }
-        }
+            Ok(())
+        })();
+        let selected_result = self.flow.finish_dialogue_result_selection(self.owner)?;
+        lowered?;
         actions.push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
+        self.selected_result |= selected_result;
         Ok(actions)
     }
 
@@ -598,11 +610,9 @@ impl LinePlanLowerer<'_, '_> {
             HirStmtKind::Expression { expression } if self.line_call(*expression)?.is_some() => {
                 Ok(vec![self.lower_line_call(*expression, None)?])
             }
-            HirStmtKind::On { .. } | HirStmtKind::Defer { .. } | HirStmtKind::Out { .. } => {
-                Err(RuntimePlanLowerError::new(format!(
-                    "line-plan statement {statement:?} requires a scope-owned disposition"
-                )))
-            }
+            HirStmtKind::On { .. } | HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(
+                format!("line-plan statement {statement:?} requires a scope-owned disposition"),
+            )),
             _ => self
                 .flow
                 .lower_statement(statement, kind)

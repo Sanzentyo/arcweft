@@ -3,7 +3,7 @@ use super::{
     ActiveDialogue, AwbcLineTaskPlanView, ProductDialogueClosing, ProductDialogueClosingState,
     ProductDialoguePhase, ProductPendingLineOperation, ProductStepError,
 };
-use crate::awbc::fiber::{FiberCursor, FiberState, runtime_value_matches_type};
+use crate::awbc::fiber::{FiberCursor, FiberState, FiberTerminalValue, runtime_value_matches_type};
 use crate::awbc::schema::{
     AwbcChildJoinPolicy, AwbcLineHandleSite, AwbcLineOperation, AwbcLineTaskGroupId,
     AwbcLineTaskNode, AwbcRuntimeTypeShape, AwbcTypeId,
@@ -433,10 +433,21 @@ impl super::AwbcProductStepExecutor {
         if let Some(pending) = transaction.frame().pending_activation_host_call.clone() {
             return self.resume_activation_host_call(transaction, pending, host_results);
         }
+        let activation_returned_unit = matches!(
+            &transaction.frame().phase,
+            ProductDialoguePhase::Activating {
+                fiber,
+                pending: None,
+            } if matches!(
+                fiber.terminal.as_ref(),
+                Some(FiberTerminalValue::Returned(None))
+            )
+        );
         if matches!(
             transaction.line().result(),
             RuntimeDialogueResultState::Committed { .. }
-        ) {
+        ) || activation_returned_unit
+        {
             return self.resume_activation_out(transaction);
         }
         let (frame, line) = transaction.parts_mut();
@@ -693,7 +704,31 @@ impl super::AwbcProductStepExecutor {
                         host_calls: Vec::new(),
                     })
                 }
-                VmExit::Returned(_) => Err(LineRuntimeError::ResultNotCommitted.into()),
+                VmExit::Returned(None) => {
+                    frame.phase = ProductDialoguePhase::Activating {
+                        fiber: candidate,
+                        pending: None,
+                    };
+                    Ok(ProductActivationProgress {
+                        progressed: true,
+                        presented: None,
+                        reducer: LineTaskActivation::default(),
+                        pure_stats: Some(candidate_stats),
+                        execution,
+                        host_calls: Vec::new(),
+                    })
+                }
+                VmExit::Returned(Some(_)) => Err(LineRuntimeError::ResultNotCommitted.into()),
+                VmExit::DialogueResultSelected(_) => Err(ProductStepError::ActivationTrap(
+                    crate::awbc::fiber::FiberTrap {
+                        code: crate::awbc::schema::AwbcTrapCode::InternalInvariant,
+                        message: Some(
+                            "line activation selected a result outside its line-task child"
+                                .to_owned(),
+                        ),
+                        source_map: None,
+                    },
+                )),
                 VmExit::Cancelled => Err(ProductStepError::ActivationTrap(
                     crate::awbc::fiber::FiberTrap {
                         code: crate::awbc::schema::AwbcTrapCode::InternalInvariant,
@@ -2095,18 +2130,32 @@ impl super::AwbcProductStepExecutor {
             .line_task_groups
             .get(group_id.index())
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
-        let (result_type, result_value) = match line.result() {
-            RuntimeDialogueResultState::Committed { ty, value } => (*ty, value),
-            _ => return Err(LineRuntimeError::ResultNotCommitted.into()),
-        };
-        if result_type != group.result_type
-            || result_type != frame.result.ty
-            || !runtime_value_matches_type(&self.program, result_value, result_type, 0)
-        {
-            return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
-        }
         let view = AwbcLineTaskPlanView::new(&self.program, group)
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+        match line.result() {
+            RuntimeDialogueResultState::Committed { ty, value } => {
+                if *ty != group.result_type
+                    || *ty != frame.result.ty
+                    || !runtime_value_matches_type(&self.program, value, *ty, 0)
+                {
+                    return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
+                }
+            }
+            RuntimeDialogueResultState::Uncommitted => {
+                if group.result_type != frame.result.ty {
+                    return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
+                }
+                if !view.has_mark_result_selector() {
+                    return Err(LineRuntimeError::ResultNotCommitted.into());
+                }
+            }
+            RuntimeDialogueResultState::Selected { .. }
+            | RuntimeDialogueResultState::Publishing { .. }
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => {
+                return Err(LineRuntimeError::ResultNotCommitted.into());
+            }
+        }
         let mut line_task = LineTaskLiveState::new(&view, activation.clone());
         let elapsed = LogicalDuration::from_nanos(frame.elapsed_nanos);
         for token in line.arm_due_schedules(elapsed)? {
@@ -2588,6 +2637,23 @@ pub(super) fn product_fiber_handle_owners(
         }
     }
     Ok(owners)
+}
+
+pub(super) fn product_fiber_handle_tokens(
+    execution: crate::runtime_id::ExecutionInstanceId,
+    fiber: &FiberState,
+) -> Result<BTreeSet<RuntimeLineHandleToken>, ProductStepError> {
+    let mut tokens = product_fiber_handle_owners(execution, fiber)?
+        .into_keys()
+        .collect::<BTreeSet<_>>();
+    if let Some(FiberTerminalValue::DialogueResultSelected(value)) = fiber.terminal.as_ref() {
+        for handle in unique_line_handles(value)? {
+            if !tokens.insert(handle.token().clone()) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+            }
+        }
+    }
+    Ok(tokens)
 }
 
 pub(super) fn unique_line_handles(

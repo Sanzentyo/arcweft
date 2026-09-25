@@ -274,6 +274,7 @@ pub struct FiberStreamState {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum FiberTerminalValue {
     Returned(Option<RuntimeValue>),
+    DialogueResultSelected(RuntimeValue),
     Cancelled,
     Trapped(FiberTrap),
 }
@@ -461,6 +462,7 @@ pub struct AwbcFiberStreamSnapshot {
 #[serde(deny_unknown_fields)]
 pub enum AwbcFiberTerminalSnapshot {
     Returned(Option<AwbcRuntimeValueSnapshot>),
+    DialogueResultSelected(AwbcRuntimeValueSnapshot),
     Cancelled,
     Trapped(FiberTrap),
 }
@@ -1035,6 +1037,9 @@ impl AwbcFiberTerminalSnapshot {
                     .map(AwbcRuntimeValueSnapshot::from_runtime_value)
                     .transpose()?,
             ),
+            FiberTerminalValue::DialogueResultSelected(value) => {
+                Self::DialogueResultSelected(AwbcRuntimeValueSnapshot::from_runtime_value(value)?)
+            }
             FiberTerminalValue::Cancelled => Self::Cancelled,
             FiberTerminalValue::Trapped(trap) => Self::Trapped(trap.clone()),
         })
@@ -1046,6 +1051,9 @@ impl AwbcFiberTerminalSnapshot {
                 value
                     .map(|value| value.into_runtime_value_for_program(owner))
                     .transpose()?,
+            ),
+            Self::DialogueResultSelected(value) => FiberTerminalValue::DialogueResultSelected(
+                value.into_runtime_value_for_program(owner)?,
             ),
             Self::Cancelled => FiberTerminalValue::Cancelled,
             Self::Trapped(trap) => FiberTerminalValue::Trapped(trap),
@@ -1608,7 +1616,7 @@ impl FiberState {
             validate_suspension(program, self, suspension)?;
         }
         if let Some(terminal) = &self.terminal {
-            validate_terminal(program, terminal)?;
+            validate_terminal(program, self, terminal)?;
         }
         for (index, stream) in self.streams.iter().enumerate() {
             validate_stream(program, stream, &format!("streams[{index}]"))?;
@@ -2021,6 +2029,17 @@ impl FiberState {
         Ok(())
     }
 
+    pub fn mark_dialogue_result_selected(
+        &mut self,
+        value: RuntimeValue,
+    ) -> Result<(), FiberStateError> {
+        self.require_status(FiberStatus::Running)?;
+        self.status = FiberStatus::Returned;
+        self.suspension = None;
+        self.terminal = Some(FiberTerminalValue::DialogueResultSelected(value));
+        Ok(())
+    }
+
     pub(super) fn mark_cancelled(&mut self) {
         self.status = FiberStatus::Cancelled;
         self.suspension = None;
@@ -2110,7 +2129,10 @@ fn validate_fiber_terminal_shape(state: &FiberState) -> Result<(), FiberStateErr
             if state.suspension.is_some()
                 || !matches!(
                     state.terminal.as_ref(),
-                    Some(FiberTerminalValue::Returned(_))
+                    Some(
+                        FiberTerminalValue::Returned(_)
+                            | FiberTerminalValue::DialogueResultSelected(_)
+                    )
                 )
             {
                 return Err(FiberStateError::InvalidStatus {
@@ -3066,11 +3088,35 @@ fn validate_host_call_suspension(
 
 fn validate_terminal(
     program: &AwbcProgram,
+    state: &FiberState,
     terminal: &FiberTerminalValue,
 ) -> Result<(), FiberStateError> {
     match terminal {
         FiberTerminalValue::Returned(Some(value)) => {
             validate_runtime_value_at(program, value, None, "terminal.returned".to_owned())
+        }
+        FiberTerminalValue::DialogueResultSelected(value) => {
+            if state.frames.len() != 1 {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            let function = state
+                .frames
+                .last()
+                .and_then(|frame| program.functions.get(frame.function.index()))
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if !matches!(
+                function.kind,
+                crate::awbc::schema::AwbcFunctionKind::LineTask
+                    | crate::awbc::schema::AwbcFunctionKind::LineCancellationHandler
+            ) {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            validate_runtime_value_at(
+                program,
+                value,
+                None,
+                "terminal.dialogue_result_selected".to_owned(),
+            )
         }
         FiberTerminalValue::Returned(None) | FiberTerminalValue::Cancelled => Ok(()),
         FiberTerminalValue::Trapped(trap) => {

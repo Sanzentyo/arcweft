@@ -1961,9 +1961,25 @@ impl Engine {
             };
             (frame.captures.clone(), live.clone())
         };
+        let mut selected_tokens = BTreeSet::new();
         if let Some(value) = selected_result {
-            if failed || !joined || !live.accepts_cancellation_selection(tag) {
+            if failed || !joined || !live.accepts_result_selection(&group, tag) {
                 return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+            }
+            for handle in value
+                .affine_line_handles()
+                .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
+            {
+                if !selected_tokens.insert(handle.token().clone()) {
+                    return Err(
+                        crate::line_task::LineRuntimeError::DuplicateHandleOccurrence.into(),
+                    );
+                }
+            }
+            if !selected_tokens.is_subset(live_tokens) {
+                return Err(
+                    crate::line_task::LineRuntimeError::UnexpectedChildHandleOccurrence.into(),
+                );
             }
             let ty = transaction.frame().result_target.ty();
             let checked = self
@@ -1974,9 +1990,7 @@ impl Engine {
             if !checked.accepts_value(&value) {
                 return Err(crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch.into());
             }
-            transaction
-                .line_mut()
-                .select_cancellation_result(tag, ty, value)?;
+            transaction.line_mut().select_result(tag, ty, value)?;
         }
         let next = if joined {
             crate::line_task::complete_live_line_task_work(&group, &mut live, tag.clone(), failed)?
@@ -1992,28 +2006,39 @@ impl Engine {
                 crate::line_task::RuntimeScheduledState::Completed
             };
             let mut returned_tokens = BTreeSet::new();
-            for binding in &returned_bindings {
-                for handle in binding
-                    .value
-                    .affine_line_handles()
-                    .map_err(|_| crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph)?
+            let mut surviving_bindings = Vec::new();
+            for binding in returned_bindings {
+                let handles = binding.value.affine_line_handles().map_err(|_| {
+                    crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph
+                })?;
+                if handles
+                    .iter()
+                    .any(|handle| selected_tokens.contains(handle.token()))
                 {
+                    continue;
+                }
+                for handle in handles {
                     if !returned_tokens.insert(handle.token().clone()) {
                         return Err(
                             crate::line_task::LineRuntimeError::DuplicateHandleOccurrence.into(),
                         );
                     }
                 }
+                surviving_bindings.push(binding);
             }
+            let remaining_live_tokens = live_tokens
+                .difference(&selected_tokens)
+                .cloned()
+                .collect::<BTreeSet<_>>();
             transaction.line_mut().finish_child_scope(
                 tag,
-                live_tokens,
+                &remaining_live_tokens,
                 &returned_tokens,
                 crate::effect::RuntimeDropPolicy::Default,
             )?;
             transaction.line_mut().admit_scheduled_child_bindings(
                 &token,
-                returned_bindings,
+                surviving_bindings.into_boxed_slice(),
                 terminal,
             )?;
             transaction

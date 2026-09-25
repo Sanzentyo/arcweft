@@ -904,6 +904,7 @@ impl Wire for AwbcInstruction {
             | AwbcOpcode::AwaitMany
             | AwbcOpcode::HostCall
             | AwbcOpcode::Return
+            | AwbcOpcode::SelectDialogueResult
             | AwbcOpcode::ProjectCall
             | AwbcOpcode::Trap
             | AwbcOpcode::BudgetYield
@@ -1202,6 +1203,7 @@ impl Wire for AwbcTerminator {
             }
             Self::ProjectCall { call } => call.write_wire(writer)?,
             Self::Return { value } => value.write_wire(writer)?,
+            Self::SelectDialogueResult { value } => value.write_wire(writer)?,
             Self::Trap { code, message } => {
                 code.write_wire(writer)?;
                 message.write_wire(writer)?;
@@ -1294,6 +1296,9 @@ impl Wire for AwbcTerminator {
             },
             AwbcOpcode::Return => Self::Return {
                 value: Option::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::SelectDialogueResult => Self::SelectDialogueResult {
+                value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::Trap => Self::Trap {
                 code: AwbcTrapCode::read_wire(reader)?,

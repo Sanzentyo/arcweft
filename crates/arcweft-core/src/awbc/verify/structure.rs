@@ -2301,13 +2301,12 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         .index(),
                 )
                 .is_none_or(|signature| {
-                    signature.params.as_slice() != capture_types
-                        || signature.result != Some(group.result_type)
+                    signature.params.as_slice() != capture_types || signature.result.is_some()
                 })
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
-                    message: "line cancellation handler capture or selected-result signature disagrees with its group"
+                    message: "line cancellation handler capture or Unit result signature disagrees with its group"
                         .to_owned(),
                 });
             }

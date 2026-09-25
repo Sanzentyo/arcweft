@@ -166,7 +166,7 @@ fn run_entry(program: &AwbcProgram) -> VmExit {
 }
 
 #[test]
-fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pending() {
+fn awbc_cancellation_result_selection_uses_typed_terminal_and_fallthrough_keeps_pending() {
     let flow = flow_id("cancel.result");
     let selected_action =
         arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.out")
@@ -273,7 +273,7 @@ fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pe
             .expect("line cancellation handler is present");
         &program.functions[handler.function.index()]
     };
-    let return_values = |function: &arcweft_core::awbc::schema::AwbcFunction| {
+    let function_terminators = |function: &arcweft_core::awbc::schema::AwbcFunction| {
         let start = function.blocks.start as usize;
         let end = function
             .blocks
@@ -281,10 +281,7 @@ fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pe
             .expect("checked function block range") as usize;
         program.blocks[start..end]
             .iter()
-            .filter_map(|block| match block.terminator {
-                AwbcTerminator::Return { value } => Some(value),
-                _ => None,
-            })
+            .map(|block| block.terminator.clone())
             .collect::<Vec<_>>()
     };
 
@@ -293,12 +290,21 @@ fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pe
         selected.kind,
         arcweft_core::awbc::schema::AwbcFunctionKind::LineCancellationHandler
     );
-    assert_eq!(
-        program.signatures[selected.signature.index()].result,
-        Some(group.result_type)
+    assert_eq!(program.signatures[selected.signature.index()].result, None);
+    let selected_value = function_terminators(selected)
+        .into_iter()
+        .find_map(|terminator| match terminator {
+            AwbcTerminator::SelectDialogueResult { value } => Some(value),
+            _ => None,
+        })
+        .expect("selected cancellation result has a distinct terminator");
+    let layout = &program.frame_layouts[selected.frame_layout.index()];
+    assert_eq!(layout.slots[selected_value.index()].ty, group.result_type);
+    assert!(
+        function_terminators(selected)
+            .iter()
+            .all(|terminator| !matches!(terminator, AwbcTerminator::Return { .. }))
     );
-    assert_eq!(return_values(selected).len(), 1);
-    assert!(return_values(selected)[0].is_some());
 
     let keep_pending = function(&pending_action);
     assert_eq!(
@@ -307,9 +313,19 @@ fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pe
     );
     assert_eq!(
         program.signatures[keep_pending.signature.index()].result,
-        Some(group.result_type)
+        None
     );
-    assert_eq!(return_values(keep_pending), [None]);
+    let keep_terminators = function_terminators(keep_pending);
+    assert!(
+        keep_terminators
+            .iter()
+            .any(|terminator| matches!(terminator, AwbcTerminator::Return { value: None }))
+    );
+    assert!(
+        keep_terminators
+            .iter()
+            .all(|terminator| !matches!(terminator, AwbcTerminator::SelectDialogueResult { .. }))
+    );
 }
 
 #[test]

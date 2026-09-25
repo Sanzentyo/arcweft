@@ -1,7 +1,7 @@
 use super::{
-    ActiveChoice, ActiveDialogue, AwbcProductStepBuildError, AwbcProductStepExecutor,
-    PendingHostCall, ProductChildFiber, ProductChildFiberOwner, ProductLineTaskFiberPhase,
-    stream_id_for,
+    ActiveChoice, ActiveDialogue, AwbcLineTaskPlanView, AwbcProductStepBuildError,
+    AwbcProductStepExecutor, PendingHostCall, ProductChildFiber, ProductChildFiberOwner,
+    ProductLineTaskFiberPhase, stream_id_for,
 };
 mod task_publication;
 use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberState, FiberStatus};
@@ -48,6 +48,7 @@ fn restore_exit(exit: AwbcProductLineTaskExitSnapshot) -> ScopeExit {
 }
 
 fn validate_product_dialogue_phase(
+    program: &crate::awbc::schema::AwbcProgram,
     activation: &DialogueActivationId,
     frame: &super::ActiveDialogue,
     line: &crate::line_task::RuntimeDialogueActivationState<AwbcTypeId>,
@@ -73,13 +74,22 @@ fn validate_product_dialogue_phase(
                 RuntimeDialogueResultState::Committed { ty, .. },
             ) => *ty == frame.result.ty,
             (
-                super::ProductDialoguePhase::Reducing { line_task },
-                RuntimeDialogueResultState::Selected { ty, action, .. },
-            ) => {
-                (line_task.is_closing() || line_task.is_closed())
-                    && *ty == frame.result.ty
-                    && line_task.cancellation_action() == Some(action)
-            }
+                super::ProductDialoguePhase::Reducing { .. },
+                RuntimeDialogueResultState::Uncommitted,
+            ) => program
+                .content_units
+                .get(frame.content.index())
+                .and_then(|content| content.line_task_group)
+                .and_then(|group_id| program.line_task_groups.get(group_id.index()))
+                .is_some_and(|group| {
+                    group.result_type == frame.result.ty
+                        && super::AwbcLineTaskPlanView::new(program, group)
+                            .is_some_and(|view| view.has_mark_result_selector())
+                }),
+            (
+                super::ProductDialoguePhase::Reducing { .. },
+                RuntimeDialogueResultState::Selected { ty, .. },
+            ) => *ty == frame.result.ty,
             (
                 super::ProductDialoguePhase::Publishing { line_task },
                 RuntimeDialogueResultState::Publishing { ty, .. },
@@ -1823,7 +1833,7 @@ impl AwbcProductStepExecutor {
                             message: error.to_string(),
                         }
                     })?;
-                    validate_product_dialogue_phase(activation, &active, line)?;
+                    validate_product_dialogue_phase(&self.program, activation, &active, line)?;
                     Ok(active)
                     },
                 )
@@ -1993,14 +2003,24 @@ impl AwbcProductStepExecutor {
                     message: "active dialogue snapshot is missing its command authority".to_owned(),
                 }
             })?;
-            validate_product_dialogue_phase(&active.activation, active, shared_line).map_err(
-                |error| AwbcProductStepBuildError::RestoreSnapshot {
+            validate_product_dialogue_phase(&self.program, &active.activation, active, shared_line)
+                .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
-                },
-            )?;
+                })?;
             if let Some(reducer) = dialogues.active_frame().and_then(ActiveDialogue::line_task) {
+                let group = self
+                    .dialogue_group(active.content)
+                    .and_then(|group| self.program.line_task_groups.get(group.index()))
+                    .ok_or_else(|| AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "active dialogue is missing its line task graph".to_owned(),
+                    })?;
+                let view = AwbcLineTaskPlanView::new(&self.program, group).ok_or_else(|| {
+                    AwbcProductStepBuildError::RestoreSnapshot {
+                        message: "active dialogue line task graph is malformed".to_owned(),
+                    }
+                })?;
                 shared_line
-                    .restore_admit_reducer(&active.activation, &reducer.snapshot())
+                    .restore_admit_reducer(&active.activation, &view, &reducer.snapshot())
                     .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                         message: format!(
                             "line reducer is not isomorphic to scheduled handle authority: {error}"
@@ -2167,14 +2187,14 @@ impl AwbcProductStepExecutor {
                         message: "joined line-task work has more than one child fiber".to_owned(),
                     });
                 }
-                let tokens = super::line::product_fiber_handle_owners(
+                let tokens = super::line::product_fiber_handle_tokens(
                     self.facade_fiber.execution,
                     &child.fiber,
                 )
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })?
-                .into_keys()
+                .into_iter()
                 .map(|token| {
                     if !all_child_tokens.insert(token.clone()) {
                         return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2229,14 +2249,14 @@ impl AwbcProductStepExecutor {
                     active.activation.clone(),
                     LineTaskWork::Defer(*registration),
                 );
-                let tokens = super::line::product_fiber_handle_owners(
+                let tokens = super::line::product_fiber_handle_tokens(
                     self.facade_fiber.execution,
                     &child.fiber,
                 )
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })?
-                .into_keys()
+                .into_iter()
                 .map(|token| {
                     if !all_child_tokens.insert(token.clone()) {
                         return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2304,14 +2324,14 @@ impl AwbcProductStepExecutor {
                     active.activation.clone(),
                     LineTaskWork::Defer(*registration),
                 );
-                let tokens = super::line::product_fiber_handle_owners(
+                let tokens = super::line::product_fiber_handle_tokens(
                     self.facade_fiber.execution,
                     &child.fiber,
                 )
                 .map_err(|error| AwbcProductStepBuildError::RestoreSnapshot {
                     message: error.to_string(),
                 })?
-                .into_keys()
+                .into_iter()
                 .map(|token| {
                     if !all_child_tokens.insert(token.clone()) {
                         return Err(AwbcProductStepBuildError::RestoreSnapshot {
@@ -2931,8 +2951,9 @@ mod tests {
             pending_activation_host_call: None,
         };
         let mut line = crate::line_task::RuntimeDialogueActivationState::<AwbcTypeId>::new();
-        assert!(validate_product_dialogue_phase(&activation, &frame, &line).is_err());
+        let program = crate::awbc::schema::AwbcProgram::default();
+        assert!(validate_product_dialogue_phase(&program, &activation, &frame, &line).is_err());
         line.abandon().expect("abandon result");
-        assert!(validate_product_dialogue_phase(&activation, &frame, &line).is_ok());
+        assert!(validate_product_dialogue_phase(&program, &activation, &frame, &line).is_ok());
     }
 }

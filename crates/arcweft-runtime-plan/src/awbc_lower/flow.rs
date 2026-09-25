@@ -262,6 +262,10 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
         arcweft_core::runtime_id::RuntimePlanTypeId,
         arcweft_core::awbc::schema::AwbcTypeId,
     )>,
+    line_result_selector: Option<(
+        arcweft_core::runtime_id::RuntimePlanTypeId,
+        arcweft_core::awbc::schema::AwbcTypeId,
+    )>,
     active_effect_set: Option<RuntimeEffectSet>,
 }
 
@@ -274,6 +278,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             loop_targets: Vec::new(),
             line_group: None,
             cancellation_handler_result: None,
+            line_result_selector: None,
             active_effect_set: None,
         }
     }
@@ -515,19 +520,35 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .cleanup()
             .actions(arcweft_core::line_task::ScopeExit::Completed);
         let cleanup_completed = (!completed.is_empty()).then(|| {
-            self.lower_line_task_action(&captures, completed, "line_task.cleanup.completed")
+            self.lower_line_function(
+                &captures,
+                completed,
+                "line_task.cleanup.completed",
+                AwbcFunctionKind::LineTask,
+            )
         });
         let cancelled = group
             .cleanup()
             .actions(arcweft_core::line_task::ScopeExit::Cancelled);
         let cleanup_cancelled = (!cancelled.is_empty()).then(|| {
-            self.lower_line_task_action(&captures, cancelled, "line_task.cleanup.cancelled")
+            self.lower_line_function(
+                &captures,
+                cancelled,
+                "line_task.cleanup.cancelled",
+                AwbcFunctionKind::LineTask,
+            )
         });
         let failed = group
             .cleanup()
             .actions(arcweft_core::line_task::ScopeExit::Failed);
-        let cleanup_failed = (!failed.is_empty())
-            .then(|| self.lower_line_task_action(&captures, failed, "line_task.cleanup.failed"));
+        let cleanup_failed = (!failed.is_empty()).then(|| {
+            self.lower_line_function(
+                &captures,
+                failed,
+                "line_task.cleanup.failed",
+                AwbcFunctionKind::LineTask,
+            )
+        });
         let handle_sites = group
             .handle_sites()
             .iter()
@@ -580,57 +601,58 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids[id.index()];
         for (index, node) in group.nodes().iter().enumerate() {
             let path = format!("line_task.{index}");
-            let lowered = match node {
-                LineTaskNode::Sequence(nodes) => {
-                    AwbcLineTaskNode::Sequence(nodes.iter().copied().map(node_id).collect())
-                }
-                LineTaskNode::Start(nodes) => {
-                    AwbcLineTaskNode::Start(nodes.iter().copied().map(node_id).collect())
-                }
-                LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
-                    policy: match policy {
-                        ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
+            let lowered =
+                match node {
+                    LineTaskNode::Sequence(nodes) => {
+                        AwbcLineTaskNode::Sequence(nodes.iter().copied().map(node_id).collect())
+                    }
+                    LineTaskNode::Start(nodes) => {
+                        AwbcLineTaskNode::Start(nodes.iter().copied().map(node_id).collect())
+                    }
+                    LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
+                        policy: match policy {
+                            ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
+                        },
+                        children: children.iter().copied().map(node_id).collect(),
                     },
-                    children: children.iter().copied().map(node_id).collect(),
-                },
-                LineTaskNode::Child {
-                    trigger,
-                    join_policy,
-                    cancel_policy,
-                    scope,
-                } => AwbcLineTaskNode::Child {
-                    trigger: match trigger {
-                        LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
-                        LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
-                        LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
-                            arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
-                        ),
+                    LineTaskNode::Child {
+                        trigger,
+                        join_policy,
+                        cancel_policy,
+                        scope,
+                    } => AwbcLineTaskNode::Child {
+                        trigger: match trigger {
+                            LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
+                            LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
+                            LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
+                                arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
+                            ),
+                        },
+                        join: match join_policy {
+                            ChildJoinPolicy::Join => {
+                                arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
+                            }
+                            ChildJoinPolicy::Detached => {
+                                arcweft_core::awbc::schema::AwbcChildJoinPolicy::Detached
+                            }
+                        },
+                        cancel: match cancel_policy {
+                            ChildCancelPolicy::CancelAndJoin => {
+                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin
+                            }
+                            ChildCancelPolicy::Finish => {
+                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::Finish
+                            }
+                            ChildCancelPolicy::Detach => {
+                                arcweft_core::awbc::schema::AwbcChildCancelPolicy::Detach
+                            }
+                        },
+                        scope: node_id(*scope),
                     },
-                    join: match join_policy {
-                        ChildJoinPolicy::Join => {
-                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
-                        }
-                        ChildJoinPolicy::Detached => {
-                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Detached
-                        }
-                    },
-                    cancel: match cancel_policy {
-                        ChildCancelPolicy::CancelAndJoin => {
-                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin
-                        }
-                        ChildCancelPolicy::Finish => {
-                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Finish
-                        }
-                        ChildCancelPolicy::Detach => {
-                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Detach
-                        }
-                    },
-                    scope: node_id(*scope),
-                },
-                LineTaskNode::Action(ops) => {
-                    AwbcLineTaskNode::Action(self.lower_line_task_action(captures, ops, &path))
-                }
-            };
+                    LineTaskNode::Action(ops) => AwbcLineTaskNode::Action(
+                        self.lower_line_task_action(captures, ops, &path, group.result_type()),
+                    ),
+                };
             self.inventory.program.line_task_nodes.push(lowered);
         }
     }
@@ -640,8 +662,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
         ops: &[FlowOp],
         path: &str,
+        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
     ) -> AwbcFunctionId {
-        self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineTask)
+        let result_type_awbc = admitted_plan_type(self.inventory, self.plan, result_type);
+        let previous = self
+            .line_result_selector
+            .replace((result_type, result_type_awbc));
+        let function = self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineTask);
+        self.line_result_selector = previous;
+        function
     }
 
     fn lower_line_task_cancel_handler(
@@ -655,6 +684,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let previous = self
             .cancellation_handler_result
             .replace((result_type, result_type_awbc));
+        let previous_selector = self
+            .line_result_selector
+            .replace((result_type, result_type_awbc));
         let function = self.lower_line_function(
             captures,
             ops,
@@ -662,6 +694,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcFunctionKind::LineCancellationHandler,
         );
         self.cancellation_handler_result = previous;
+        self.line_result_selector = previous_selector;
         function
     }
 
@@ -697,12 +730,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .map(|capture| self.local_type(*capture))
             .collect();
-        let result = if kind == AwbcFunctionKind::LineCancellationHandler {
-            self.cancellation_handler_result
-                .map(|(_, result_type)| result_type)
-        } else {
-            body.returns_value.then(|| self.inventory.dynamic_ty())
-        };
+        let result = body.returns_value.then(|| self.inventory.dynamic_ty());
         let signature = self
             .inventory
             .intern_signature(params, result, AwbcEffectSetId(0));
@@ -1012,10 +1040,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     .push_instruction(AwbcInstruction::CommitDialogueResult { source });
             }
             FlowOp::SelectDialogueResult { value } => {
-                let Some((result_type, result_type_awbc)) = self.cancellation_handler_result else {
+                let Some((result_type, result_type_awbc)) = self.line_result_selector else {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path,
-                        "dialogue result selection is outside a line cancellation handler",
+                        "dialogue result selection is outside a line-task action or cancellation handler",
                     ));
                     return;
                 };
@@ -1028,18 +1056,16 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
                 let source =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
-                let result = frame.return_value(result_type_awbc);
+                let selected = frame.root_temp(result_type_awbc);
                 self.inventory.push_instruction(AwbcInstruction::Move {
-                    dst: result,
+                    dst: selected,
                     src: source,
                 });
                 self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
-                    AwbcTerminator::Return {
-                        value: Some(result),
-                    },
-                    AwbcSafePointKind::Return,
+                    AwbcTerminator::SelectDialogueResult { value: selected },
+                    AwbcSafePointKind::None,
                 );
             }
             FlowOp::Dialogue {

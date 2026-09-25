@@ -647,6 +647,66 @@ impl<'a> AwbcLineTaskPlanView<'a> {
             LineTaskWork::Defer(_) => None,
         }
     }
+
+    fn has_mark_result_selector(&self) -> bool {
+        let Some(end) = self.group.nodes.checked_end() else {
+            return false;
+        };
+        (self.group.nodes.start..end).any(|index| {
+            let Some(AwbcLineTaskNode::Child {
+                trigger: AwbcLineTaskTrigger::Mark(_),
+                scope,
+                ..
+            }) = self.program.line_task_nodes.get(index as usize)
+            else {
+                return false;
+            };
+            self.subtree_has_result_selector(*scope)
+        })
+    }
+
+    fn subtree_has_result_selector(&self, root: AwbcLineTaskNodeId) -> bool {
+        let mut pending = vec![root];
+        let mut visited = BTreeSet::new();
+        while let Some(node_id) = pending.pop() {
+            if !visited.insert(node_id) {
+                continue;
+            }
+            let Some(node) = self.program.line_task_nodes.get(node_id.index()) else {
+                continue;
+            };
+            match node {
+                AwbcLineTaskNode::Sequence(children)
+                | AwbcLineTaskNode::Start(children)
+                | AwbcLineTaskNode::Parallel { children, .. } => {
+                    pending.extend(children.iter().copied());
+                }
+                AwbcLineTaskNode::Child { scope, .. } => pending.push(*scope),
+                AwbcLineTaskNode::Action(function) => {
+                    let Some(function) = self.program.functions.get(function.index()) else {
+                        continue;
+                    };
+                    let Some(end) = function.blocks.checked_end() else {
+                        continue;
+                    };
+                    if (function.blocks.start..end).any(|block| {
+                        self.program
+                            .blocks
+                            .get(block as usize)
+                            .is_some_and(|block| {
+                                matches!(
+                                    block.terminator,
+                                    crate::awbc::schema::AwbcTerminator::SelectDialogueResult { .. }
+                                )
+                            })
+                    }) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
@@ -1445,6 +1505,12 @@ impl AwbcProductStepExecutor {
                         self.initialize_suspension(need_states, output, pure_backend);
                     }
                     VmExit::Returned(value) => Self::record_return(value.as_ref(), output),
+                    VmExit::DialogueResultSelected(_) => self.fail_with_error(
+                        ProductStepError::Internal(
+                            "dialogue result selection escaped its line-task child".to_owned(),
+                        ),
+                        output,
+                    ),
                     VmExit::Running
                     | VmExit::Cancelled
                     | VmExit::Trapped(_)
@@ -1521,7 +1587,9 @@ impl AwbcProductStepExecutor {
                     self.consume_observations(vm_output.observations, output);
                     match vm_output.exit {
                         VmExit::Running => {}
-                        VmExit::Returned(_) | VmExit::Cancelled => return,
+                        VmExit::Returned(_)
+                        | VmExit::DialogueResultSelected(_)
+                        | VmExit::Cancelled => return,
                         VmExit::Trapped(trap) => {
                             self.record_trap(&trap, output);
                             return;
@@ -1596,8 +1664,8 @@ impl AwbcProductStepExecutor {
             ProductChildFiberOwner::LineTask { .. }
             | ProductChildFiberOwner::Deferred { .. }
             | ProductChildFiberOwner::ScopedDeferred { .. } => {
-                match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
-                    Ok(handles) => Some(handles.into_keys().collect::<BTreeSet<_>>()),
+                match line::product_fiber_handle_tokens(self.facade_fiber.execution, &child.fiber) {
+                    Ok(handles) => Some(handles),
                     Err(error) => {
                         return match &owner {
                             ProductChildFiberOwner::LineTask { tag, .. } => {
@@ -1665,7 +1733,13 @@ impl AwbcProductStepExecutor {
         let context =
             VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
         let terminal_exit = match child.fiber.status {
-            FiberStatus::Returned => Some(VmExit::Returned(None)),
+            FiberStatus::Returned => match child.fiber.terminal.as_ref() {
+                Some(FiberTerminalValue::DialogueResultSelected(value)) => {
+                    Some(VmExit::DialogueResultSelected(value.clone()))
+                }
+                Some(FiberTerminalValue::Returned(_)) => Some(VmExit::Returned(None)),
+                _ => None,
+            },
             FiberStatus::Cancelled => Some(VmExit::Cancelled),
             FiberStatus::Trapped => {
                 child
@@ -1674,7 +1748,9 @@ impl AwbcProductStepExecutor {
                     .as_ref()
                     .and_then(|terminal| match terminal {
                         FiberTerminalValue::Trapped(trap) => Some(VmExit::Trapped(trap.clone())),
-                        FiberTerminalValue::Returned(_) | FiberTerminalValue::Cancelled => None,
+                        FiberTerminalValue::Returned(_)
+                        | FiberTerminalValue::DialogueResultSelected(_)
+                        | FiberTerminalValue::Cancelled => None,
                     })
             }
             FiberStatus::Running | FiberStatus::Suspended => None,
@@ -1837,8 +1913,8 @@ impl AwbcProductStepExecutor {
         };
         let failure_transaction = transaction.clone();
         let after_handles =
-            match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
-                Ok(handles) => handles.into_keys().collect::<BTreeSet<_>>(),
+            match line::product_fiber_handle_tokens(self.facade_fiber.execution, &child.fiber) {
+                Ok(handles) => handles,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(failure_transaction, error, output);
                 }
@@ -1906,6 +1982,11 @@ impl AwbcProductStepExecutor {
                     source_map: None,
                 }),
                 Some(FiberTerminalValue::Returned(_)) => None,
+                Some(FiberTerminalValue::DialogueResultSelected(_)) => Some(FiberTrap {
+                    code: AwbcTrapCode::InternalInvariant,
+                    message: Some("defer child selected a dialogue result".to_owned()),
+                    source_map: None,
+                }),
                 None => Some(FiberTrap {
                     code: AwbcTrapCode::InternalInvariant,
                     message: Some("line-root defer child terminated without a value".to_owned()),
@@ -3195,10 +3276,61 @@ impl AwbcProductStepExecutor {
                 actual: content,
             });
         }
-        if let Some(token) = tag.scheduled_token().cloned() {
-            let live = line::product_fiber_handle_owners(self.facade_fiber.execution, child)?
-                .into_keys()
+        let (selected_tokens, selected_live) = if let Some(
+            FiberTerminalValue::DialogueResultSelected(value),
+        ) = child.terminal.as_ref()
+        {
+            if !joined {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            let group_id = self
+                .dialogue_group(content)
+                .ok_or(LineRuntimeError::MissingTaskGroup)?;
+            let group = self
+                .program
+                .line_task_groups
+                .get(group_id.index())
+                .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+            if transaction.frame().result.ty != group.result_type
+                || !runtime_value_matches_type(&self.program, value, group.result_type, 0)
+            {
+                return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
+            }
+            let selected_tokens = line::unique_line_handles(value)?
+                .into_iter()
+                .map(|handle| handle.token().clone())
                 .collect::<BTreeSet<_>>();
+            let selected_live =
+                line::product_fiber_handle_tokens(self.facade_fiber.execution, child)?;
+            if selected_tokens
+                .iter()
+                .any(|token| !selected_live.contains(token))
+            {
+                return Err(LineRuntimeError::WrongOwner.into());
+            }
+            let view = self
+                .line_task_view(content)
+                .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+            let reducer = transaction
+                .frame_mut()
+                .line_task_mut()
+                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            if !reducer.accepts_result_selection(&view, &tag) {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            transaction
+                .line_mut()
+                .select_result(&tag, group.result_type, value.clone())?;
+            (selected_tokens, Some(selected_live))
+        } else {
+            (BTreeSet::new(), None)
+        };
+        if let Some(token) = tag.scheduled_token().cloned() {
+            let live = if let Some(live) = selected_live.as_ref() {
+                live.clone()
+            } else {
+                line::product_fiber_handle_tokens(self.facade_fiber.execution, child)?
+            };
             let locals = transaction.line().scheduled_child_locals(&token)?;
             let values = child.take_function_argument_values(&self.program)?;
             if values.len() != locals.len() {
@@ -3206,20 +3338,31 @@ impl AwbcProductStepExecutor {
                     crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph.into(),
                 );
             }
-            let returned_bindings = locals
-                .into_vec()
-                .into_iter()
-                .zip(values)
-                .filter_map(|(local, value)| {
-                    value.map(|value| RuntimeLocalBinding { local, value })
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
+            let mut returned_bindings = Vec::new();
             let mut returned = BTreeSet::new();
-            for binding in &returned_bindings {
-                let handles = line::unique_line_handles(&binding.value)?;
+            for (local, value) in locals.into_vec().into_iter().zip(values) {
+                let Some(value) = value else {
+                    continue;
+                };
+                let handles = line::unique_line_handles(&value)?;
+                if handles
+                    .iter()
+                    .any(|handle| selected_tokens.contains(handle.token()))
+                {
+                    // A selected affine result has moved to DialogueResult.
+                    // Do not return another binding that still names the same
+                    // token; any other handles in this discarded aggregate
+                    // remain in `live` and are released by finish_child_scope.
+                    continue;
+                }
                 returned.extend(handles.into_iter().map(|handle| handle.token().clone()));
+                returned_bindings.push(RuntimeLocalBinding { local, value });
             }
+            let returned_bindings = returned_bindings.into_boxed_slice();
+            let live = live
+                .difference(&selected_tokens)
+                .cloned()
+                .collect::<BTreeSet<_>>();
             let terminal = if failed {
                 crate::line_task::RuntimeScheduledState::Failed
             } else if cancelled {
@@ -3244,33 +3387,6 @@ impl AwbcProductStepExecutor {
         }
         if !joined {
             return Ok(batch);
-        }
-        if matches!(tag.work(), LineTaskWork::Cancellation(_))
-            && let Some(FiberTerminalValue::Returned(Some(value))) = child.terminal.as_ref()
-        {
-            let group_id = self
-                .dialogue_group(content)
-                .ok_or(LineRuntimeError::MissingTaskGroup)?;
-            let group = self
-                .program
-                .line_task_groups
-                .get(group_id.index())
-                .ok_or(LineRuntimeError::UnknownTaskGroup)?;
-            if !runtime_value_matches_type(&self.program, value, group.result_type, 0) {
-                return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
-            }
-            let reducer = transaction
-                .frame_mut()
-                .line_task_mut()
-                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
-            if !reducer.accepts_cancellation_selection(&tag) {
-                return Err(LineRuntimeError::InvalidActivationOperation.into());
-            }
-            transaction.line_mut().select_cancellation_result(
-                &tag,
-                group.result_type,
-                value.clone(),
-            )?;
         }
         let completion = {
             let view = self

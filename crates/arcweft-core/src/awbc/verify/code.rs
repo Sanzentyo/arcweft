@@ -2125,9 +2125,6 @@ fn apply_terminator(
                         require_compatible(program, expected, actual, &at)?;
                     }
                 }
-                (Some(_), None)
-                    if program.functions[function].kind
-                        == AwbcFunctionKind::LineCancellationHandler => {}
                 _ => {
                     return Err(AwbcVerifyError::ResultShapeMismatch { at });
                 }
@@ -2137,6 +2134,29 @@ fn apply_terminator(
                     function,
                     block,
                     message: "return leaves lexical scopes open".to_owned(),
+                });
+            }
+        }
+        AwbcTerminator::SelectDialogueResult { value } => {
+            if !matches!(
+                program.functions[function].kind,
+                AwbcFunctionKind::LineTask | AwbcFunctionKind::LineCancellationHandler
+            ) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message:
+                        "SelectDialogueResult is outside an owning line task action or cancellation handler"
+                            .to_owned(),
+                });
+            }
+            let group = line_group_for_function(program, function, &at)?;
+            let actual = read_register(verifier, function, block, *value, state)?;
+            require_compatible(program, group.result_type, actual, &at)?;
+            if !state.scopes.is_empty() {
+                return Err(AwbcVerifyError::ScopeDiscipline {
+                    function,
+                    block,
+                    message: "dialogue result selection leaves lexical scopes open".to_owned(),
                 });
             }
         }

@@ -915,6 +915,9 @@ entry agent @entry.agent.controller {
                 host_call = Some((call, args));
                 break;
             }
+            arcweft_core::awbc::vm::VmExit::DialogueResultSelected(value) => {
+                panic!("Agent AWBC selected a DialogueLine result: {value:?}")
+            }
             exit => panic!("Agent AWBC must suspend for its observe call: {exit:?}"),
         }
     }

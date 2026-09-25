@@ -111,7 +111,11 @@ impl Engine {
                 if !matches!(
                     &self.fiber.owner,
                     super::FlowFiberOwner::LineTask(owner)
-                        if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Cancellation(_))
+                        if matches!(
+                            owner.tag.work(),
+                            crate::line_task::LineTaskWork::Cancellation(_)
+                                | crate::line_task::LineTaskWork::Node(_)
+                        )
                 ) || self.fiber.selected_dialogue_result.is_some()
                 {
                     self.fail_eval(

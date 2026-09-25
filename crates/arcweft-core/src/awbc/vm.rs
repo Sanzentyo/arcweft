@@ -294,6 +294,7 @@ pub enum VmExit {
     Running,
     Suspended(FiberSuspensionReason),
     Returned(Option<RuntimeValue>),
+    DialogueResultSelected(RuntimeValue),
     Cancelled,
     Trapped(FiberTrap),
     BudgetYield(FiberSafePoint),
@@ -1737,6 +1738,11 @@ fn execute_trait_method_call(
                     "trait method returned unit where a value was required".to_owned(),
                 ));
             }
+            VmExit::DialogueResultSelected(_) => {
+                return Err(VmError::Runtime(
+                    "trait method selected a dialogue result".to_owned(),
+                ));
+            }
             VmExit::Trapped(trap) => {
                 return Err(VmError::Runtime(format!("trait method trapped: {trap:?}")));
             }
@@ -2039,6 +2045,17 @@ fn execute_terminator(
                 }
                 Ok(VmExit::Running)
             }
+        }
+        AwbcTerminator::SelectDialogueResult { value } => {
+            if fiber.frames.len() != 1 {
+                return Err(VmError::Runtime(
+                    "dialogue result selection cannot terminate a nested call frame".to_owned(),
+                ));
+            }
+            let value = fiber.active_frame_mut()?.take_register(*value)?;
+            drain_active_frame_cleanups(fiber, observations)?;
+            fiber.mark_dialogue_result_selected(value.clone())?;
+            Ok(VmExit::DialogueResultSelected(value))
         }
         AwbcTerminator::Trap { code, message } => {
             let message = message
@@ -2560,6 +2577,9 @@ fn jump(fiber: &mut FiberState, block: AwbcBlockId) {
 fn terminal_exit(fiber: &FiberState) -> VmExit {
     match fiber.terminal.as_ref() {
         Some(FiberTerminalValue::Returned(value)) => VmExit::Returned(value.clone()),
+        Some(FiberTerminalValue::DialogueResultSelected(value)) => {
+            VmExit::DialogueResultSelected(value.clone())
+        }
         Some(FiberTerminalValue::Cancelled) => VmExit::Cancelled,
         Some(FiberTerminalValue::Trapped(trap)) => VmExit::Trapped(trap.clone()),
         None if matches!(fiber.status, FiberStatus::Suspended) => fiber

@@ -3,7 +3,9 @@ use super::defer::{
     RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration,
 };
 use super::{
-    LineTaskLiveSnapshot, LineTaskScheduledCompletion, LineTaskWork, LineTaskWorkTag, ScopeExit,
+    LineTaskLiveSnapshot, LineTaskNodeState, LineTaskPlanView, LineTaskScheduledCompletion,
+    LineTaskWork, LineTaskWorkInstance, LineTaskWorkTag, RuntimeDialogueContentEventKind,
+    ScopeExit,
 };
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
@@ -428,7 +430,7 @@ enum AwbcRuntimeDialogueResultSnapshot<T> {
     Selected {
         ty: T,
         value: crate::value::AwbcRuntimeValueSnapshot,
-        action: arcweft_interaction_model::input::InputActionId,
+        source: LineTaskWorkTag,
     },
     Publishing {
         ty: T,
@@ -476,7 +478,7 @@ pub enum RuntimeDialogueResultState<T> {
     Selected {
         ty: T,
         value: RuntimeValue,
-        action: arcweft_interaction_model::input::InputActionId,
+        source: LineTaskWorkTag,
     },
     Publishing {
         ty: T,
@@ -1132,26 +1134,98 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         &self.ledger
     }
 
-    pub(crate) fn restore_admit_reducer(
+    pub(crate) fn restore_admit_reducer<P: LineTaskPlanView>(
         &self,
         activation: &DialogueActivationId,
+        plan: &P,
         reducer: &LineTaskLiveSnapshot,
     ) -> Result<(), LineRuntimeError> {
         if reducer.activation() != activation {
             return Err(LineRuntimeError::InvalidRestoredScheduledState);
         }
-        if let RuntimeDialogueResultState::Selected { action, .. } = &self.result {
-            if reducer.cancellation_action() != Some(action)
-                || !matches!(
-                    reducer.phase(),
-                    super::LineTaskPhase::Closing {
-                        exit: ScopeExit::Cancelled
-                    } | super::LineTaskPhase::Closed {
-                        exit: ScopeExit::Cancelled
-                    }
-                )
-            {
+        if let RuntimeDialogueResultState::Selected { source, .. } = &self.result {
+            if source.activation_id() != activation || !source.is_well_formed() {
                 return Err(LineRuntimeError::InvalidRestoredResultState);
+            }
+            match source.work() {
+                LineTaskWork::Cancellation(action)
+                    if reducer.cancellation_action() == Some(&action)
+                        && plan.has_cancellation_work(&action)
+                        && !reducer
+                            .outstanding()
+                            .contains(&LineTaskWork::Cancellation(action.clone()))
+                        && matches!(
+                            reducer.phase(),
+                            super::LineTaskPhase::Closing {
+                                exit: ScopeExit::Cancelled
+                            } | super::LineTaskPhase::Closed {
+                                exit: ScopeExit::Cancelled
+                            }
+                        ) => {}
+                LineTaskWork::Node(action) => {
+                    let mark = super::mark_result_source(plan, action)
+                        .ok_or(LineRuntimeError::InvalidRestoredResultState)?;
+                    if !reducer
+                        .consumed_content_events()
+                        .contains(&RuntimeDialogueContentEventKind::Mark(mark))
+                        || matches!(
+                            reducer.phase(),
+                            super::LineTaskPhase::Closing {
+                                exit: ScopeExit::Failed
+                            } | super::LineTaskPhase::Closed {
+                                exit: ScopeExit::Failed
+                            }
+                        )
+                    {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                    let completed = match source.instance() {
+                        LineTaskWorkInstance::Activation(_) => reducer
+                            .node_states()
+                            .get(action.index())
+                            .is_some_and(|state| *state == LineTaskNodeState::Completed),
+                        LineTaskWorkInstance::Scheduled(token) => {
+                            let scheduled = self.scheduled.iter().find(|scheduled| {
+                                scheduled.token() == token
+                                    && plan.scheduled_child(token.site()) == Some(scheduled.child())
+                            });
+                            let Some(scheduled) = scheduled else {
+                                return Err(LineRuntimeError::InvalidRestoredResultState);
+                            };
+                            let mut subtree = std::collections::BTreeSet::new();
+                            if super::collect_line_task_subtree(
+                                plan,
+                                scheduled.child(),
+                                &mut subtree,
+                            )
+                            .is_err()
+                                || !subtree.contains(&action)
+                            {
+                                return Err(LineRuntimeError::InvalidRestoredResultState);
+                            }
+                            reducer
+                                .scheduled_lanes()
+                                .iter()
+                                .find(|lane| lane.token() == token)
+                                .map_or_else(
+                                    || scheduled.state() == RuntimeScheduledState::Completed,
+                                    |lane| {
+                                        lane.lane().node_states().get(action.index()).is_some_and(
+                                            |state| *state == LineTaskNodeState::Completed,
+                                        )
+                                    },
+                                )
+                        }
+                    };
+                    if !completed {
+                        return Err(LineRuntimeError::InvalidRestoredResultState);
+                    }
+                }
+                LineTaskWork::Cancellation(_)
+                | LineTaskWork::Cleanup(_)
+                | LineTaskWork::Defer(_) => {
+                    return Err(LineRuntimeError::InvalidRestoredResultState);
+                }
             }
         }
         let ready = reducer
@@ -1897,9 +1971,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
-    /// Replaces the pending normal result only at the exact joined cancellation
-    /// handler completion. The value and every affine lease advance together.
-    pub(crate) fn select_cancellation_result(
+    /// Selects the line result at one joined mark or cancellation handler
+    /// completion. The value and every affine lease advance together.
+    pub(crate) fn select_result(
         &mut self,
         tag: &LineTaskWorkTag,
         ty: T,
@@ -1908,42 +1982,66 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     where
         T: PartialEq,
     {
-        let LineTaskWork::Cancellation(action) = tag.work() else {
-            return Err(LineRuntimeError::InvalidActivationOperation);
-        };
-        if tag.scheduled_token().is_some() {
+        if !tag.is_well_formed()
+            || !matches!(
+                tag.work(),
+                LineTaskWork::Cancellation(_) | LineTaskWork::Node(_)
+            )
+        {
             return Err(LineRuntimeError::InvalidActivationOperation);
         }
-        let RuntimeDialogueResultState::Committed {
-            ty: pending_ty,
-            value: pending_value,
-        } = &self.result
-        else {
-            return Err(LineRuntimeError::InvalidResultTransition);
+        let pending_value = match (&self.result, tag.work()) {
+            (RuntimeDialogueResultState::Uncommitted, _) => None,
+            (
+                RuntimeDialogueResultState::Committed {
+                    ty: pending_ty,
+                    value,
+                },
+                _,
+            ) if pending_ty == &ty => Some(value),
+            (
+                RuntimeDialogueResultState::Selected {
+                    ty: pending_ty,
+                    value,
+                    source,
+                },
+                LineTaskWork::Cancellation(_),
+            ) if pending_ty == &ty && matches!(source.work(), LineTaskWork::Node(_)) => Some(value),
+            (RuntimeDialogueResultState::Committed { .. }, _) => {
+                return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
+            }
+            (RuntimeDialogueResultState::Selected { ty: pending_ty, .. }, _)
+                if pending_ty != &ty =>
+            {
+                return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
+            }
+            (RuntimeDialogueResultState::Selected { .. }, _) => {
+                return Err(LineRuntimeError::InvalidResultTransition);
+            }
+            _ => return Err(LineRuntimeError::InvalidResultTransition),
         };
-        if pending_ty != &ty {
-            return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
-        }
         let mut candidate = self.clone();
         let mut ledger = candidate.ledger.clone();
         let mut commands =
             RuntimeCommandQueue::new(tag.activation_id().clone(), candidate.command_sequence);
         let mut old_tokens = std::collections::BTreeSet::new();
-        for handle in pending_value
-            .affine_line_handles()
-            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
-        {
-            if !old_tokens.insert(handle.token().clone()) {
-                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+        if let Some(pending_value) = pending_value {
+            for handle in pending_value
+                .affine_line_handles()
+                .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+            {
+                if !old_tokens.insert(handle.token().clone()) {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence);
+                }
+                if handle.token().activation() != tag.activation_id() {
+                    return Err(LineRuntimeError::WrongActivation);
+                }
+                ledger.drop_owned(
+                    handle.token(),
+                    &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
+                    &mut commands,
+                )?;
             }
-            if handle.token().activation() != tag.activation_id() {
-                return Err(LineRuntimeError::WrongActivation);
-            }
-            ledger.drop_owned(
-                handle.token(),
-                &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
-                &mut commands,
-            )?;
         }
         let mut selected_tokens = std::collections::BTreeSet::new();
         for handle in value
@@ -1973,7 +2071,11 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         }
         candidate.ledger = ledger;
         candidate.record_commands(tag.activation_id(), commands)?;
-        candidate.result = RuntimeDialogueResultState::Selected { ty, value, action };
+        candidate.result = RuntimeDialogueResultState::Selected {
+            ty,
+            value,
+            source: tag.clone(),
+        };
         *self = candidate;
         Ok(())
     }
@@ -2390,10 +2492,10 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
                 ty: ty.clone(),
                 value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
             },
-            RuntimeDialogueResultState::Selected { ty, value, action } => Self::Selected {
+            RuntimeDialogueResultState::Selected { ty, value, source } => Self::Selected {
                 ty: ty.clone(),
                 value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
-                action: action.clone(),
+                source: source.clone(),
             },
             RuntimeDialogueResultState::Publishing { ty, value } => Self::Publishing {
                 ty: ty.clone(),
@@ -2414,10 +2516,10 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
                 ty,
                 value: value.into_runtime_value_for_program(owner)?,
             },
-            Self::Selected { ty, value, action } => RuntimeDialogueResultState::Selected {
+            Self::Selected { ty, value, source } => RuntimeDialogueResultState::Selected {
                 ty,
                 value: value.into_runtime_value_for_program(owner)?,
-                action,
+                source,
             },
             Self::Publishing { ty, value } => RuntimeDialogueResultState::Publishing {
                 ty,
@@ -3222,7 +3324,7 @@ fn owner_transition_is_legal(
             RuntimeHandleOwnerSlot::LineScope
         ) | (
             RuntimeHandleOwnerSlot::ChildScope(_),
-            RuntimeHandleOwnerSlot::LineScope
+            RuntimeHandleOwnerSlot::LineScope | RuntimeHandleOwnerSlot::DialogueResult(_)
         ) | (
             RuntimeHandleOwnerSlot::DialogueResult(_) | RuntimeHandleOwnerSlot::ParentFiber(_),
             RuntimeHandleOwnerSlot::ParentFiber(_)
@@ -3928,18 +4030,18 @@ mod tests {
             LineTaskWork::Cancellation(action.clone()),
         );
         state
-            .select_cancellation_result(&tag, ty, RuntimeValue::String("cancelled".to_owned()))
+            .select_result(&tag, ty, RuntimeValue::String("cancelled".to_owned()))
             .expect("one selected cancellation result");
         assert_eq!(
             state.result(),
             &RuntimeDialogueResultState::Selected {
                 ty,
                 value: RuntimeValue::String("cancelled".to_owned()),
-                action,
+                source: tag.clone(),
             }
         );
         assert_eq!(
-            state.select_cancellation_result(&tag, ty, RuntimeValue::Unit),
+            state.select_result(&tag, ty, RuntimeValue::Unit),
             Err(LineRuntimeError::InvalidResultTransition)
         );
         state.begin_result_publication().expect("publish selection");

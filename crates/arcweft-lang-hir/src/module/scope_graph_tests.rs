@@ -7,7 +7,7 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use crate::database::HirDatabase;
-use crate::expr::{HirExpr, HirExprKind, HirPoisonState};
+use crate::expr::HirThreadFlowItem;
 use crate::final_lowering::{
     StagedHirModuleTransaction, stage_unpublished_module_for_invariant_test,
 };
@@ -19,7 +19,7 @@ use crate::item::HirItemKind;
 use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
-use crate::stmt::{HirStmt, HirStmtKind};
+use crate::stmt::HirStmtKind;
 use crate::symbol::CallablePackageId;
 
 fn parsed(document_id: &str, source: &str) -> ParsedSource {
@@ -74,12 +74,17 @@ fn assert_graph_rejected(
     let items = transaction.staged_source_ordered_items().to_vec();
     tamper(&parsed, &mut transaction, root, &items);
 
-    assert!(matches!(
-        transaction.finish(&mut database),
-        Err(HirLowerFailure::Invariant(
-            HirInvariantFailure::InvalidModuleArenaSnapshot
-        ))
-    ));
+    let result = transaction.finish(&mut database);
+    assert!(
+        matches!(
+            &result,
+            Err(HirLowerFailure::Invariant(
+                HirInvariantFailure::InvalidModuleArenaSnapshot
+            ))
+        ),
+        "unexpected scope-graph validation result: {:?}",
+        result.as_ref().err()
+    );
     assert!(database.current(&key).is_none());
 }
 
@@ -394,35 +399,28 @@ fn expression_and_statement_owned_scopes_require_the_owner_lexical_parent() {
     ] {
         assert_graph_rejected(
             document_id,
-            action_source(),
+            "action First(value: Value)\nflow donor() -> Unit { log.info(\"x\") }\n",
             move |parsed, transaction, root, items| {
                 let callable = action_scope(transaction, items[0]);
                 let site = HirSourceSite::Span(parsed.root_syntax().source_span().clone());
                 let (slots, arenas) = transaction.storage_mut();
-                let expression = arenas
-                    .expressions()
-                    .allocate_source(
-                        slots,
-                        parsed.root_syntax().id(),
-                        site.clone(),
-                        HirExpr::try_new(root, HirExprKind::Unit, HirPoisonState::Clean).unwrap(),
-                    )
+                let donor = arenas.items().resolve_staged(slots, items[1]).unwrap();
+                let HirItemKind::Flow(donor) = donor.kind() else {
+                    panic!("scope graph fixture requires a donor Flow");
+                };
+                let HirThreadFlowItem::Statement(statement) = donor.body().items()[0] else {
+                    panic!("donor Flow requires an expression statement");
+                };
+                let donor_statement = arenas
+                    .statements()
+                    .resolve_staged(slots, statement)
                     .unwrap();
+                let HirStmtKind::Expression { expression } = donor_statement.kind() else {
+                    panic!("donor Flow requires an expression statement");
+                };
                 let owner = match owner_case {
-                    LexicalOwnerCase::Expression => HirScopeOwner::Expr(expression),
-                    LexicalOwnerCase::Statement => {
-                        let statement = arenas
-                            .statements()
-                            .allocate_source(
-                                slots,
-                                parsed.root_syntax().id(),
-                                site.clone(),
-                                HirStmt::try_new(root, HirStmtKind::Expression { expression })
-                                    .unwrap(),
-                            )
-                            .unwrap();
-                        HirScopeOwner::Stmt(statement)
-                    }
+                    LexicalOwnerCase::Expression => HirScopeOwner::Expr(*expression),
+                    LexicalOwnerCase::Statement => HirScopeOwner::Stmt(statement),
                 };
                 let key = match owner {
                     HirScopeOwner::Expr(owner) => SyntheticKey::try_new(

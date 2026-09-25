@@ -210,6 +210,15 @@ with:
 
 The type is inferred from the `out` expression.
 
+A marked line handler may be the only path that supplies a non-Unit result, as
+in the `.Released` [line-local mark example](dialogue-calls-scopes-cancellation.md#line-plan-block).
+That `out` selects the result of its exact `DialogueLine` application, and all
+normal and mark-handler outputs must agree on one result type. An On-only
+result stays pending until a mark selects it; a normal close without a
+selection, or a second effective mark selection, fails. Distinct mark handlers
+may provide alternative selectors, and a later cancellation `out` may replace a
+pending mark-selected result before publication.
+
 ```text
 alice(...)[...] with: out (voice, look)
   -> (VoiceHandle, StageCueHandle)

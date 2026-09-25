@@ -1550,6 +1550,7 @@ pub enum AwbcOpcode {
     Await = 0x89,
     AwaitMany = 0x8a,
     BudgetYield = 0x8b,
+    SelectDialogueResult = 0x8c,
     Dialogue = 0x98,
     Choice = 0x99,
     Trap = 0xa0,
@@ -1616,6 +1617,7 @@ impl AwbcOpcode {
         Self::Await,
         Self::AwaitMany,
         Self::BudgetYield,
+        Self::SelectDialogueResult,
         Self::Dialogue,
         Self::Choice,
         Self::Trap,
@@ -1711,6 +1713,7 @@ impl AwbcOpcode {
             | Self::Await
             | Self::AwaitMany
             | Self::BudgetYield
+            | Self::SelectDialogueResult
             | Self::Dialogue
             | Self::Choice
             | Self::Trap
@@ -2228,6 +2231,9 @@ pub enum AwbcTerminator {
     Return {
         value: Option<AwbcRegisterId>,
     },
+    SelectDialogueResult {
+        value: AwbcRegisterId,
+    },
     ProjectCall {
         call: AwbcProjectCall,
     },
@@ -2263,6 +2269,7 @@ impl AwbcTerminator {
             Self::AwaitMany { .. } => AwbcOpcode::AwaitMany,
             Self::HostCall { .. } => AwbcOpcode::HostCall,
             Self::Return { .. } => AwbcOpcode::Return,
+            Self::SelectDialogueResult { .. } => AwbcOpcode::SelectDialogueResult,
             Self::ProjectCall { .. } => AwbcOpcode::ProjectCall,
             Self::Trap { .. } => AwbcOpcode::Trap,
             Self::BudgetYield { .. } => AwbcOpcode::BudgetYield,
@@ -2286,6 +2293,7 @@ impl AwbcTerminator {
             | Self::GotoStatic { .. }
             | Self::GotoDynamic { .. }
             | Self::Return { .. }
+            | Self::SelectDialogueResult { .. }
             | Self::Trap { .. }
             | Self::Unreachable => None,
         }

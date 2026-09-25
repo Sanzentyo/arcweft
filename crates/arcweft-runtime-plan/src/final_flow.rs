@@ -4215,7 +4215,8 @@ struct FinalFlowLowerer<'a> {
     control: &'a ControlLocals,
     specialized_operand_locals: &'a BTreeMap<(ExprId, u32), RuntimeLocalSeedId>,
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
-    cancel_output_application: Option<ExprId>,
+    result_selection_application: Option<ExprId>,
+    result_selection_emitted: bool,
     scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -4318,7 +4319,8 @@ impl<'a> FinalFlowLowerer<'a> {
             control: context.control,
             specialized_operand_locals: context.specialized_operand_locals,
             carrier_continuations: BTreeMap::new(),
-            cancel_output_application: None,
+            result_selection_application: None,
+            result_selection_emitted: false,
             scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -4707,9 +4709,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 "defer {id:?} requires scope-owned runtime registration"
             ))),
             HirStmtKind::Out { value, .. } => {
-                let application = self.cancel_output_application.ok_or_else(|| {
+                let application = self.result_selection_application.ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
-                        "out {id:?} has no cancellation-handler owner"
+                        "out {id:?} has no line-result selection owner"
                     ))
                 })?;
                 let admitted = self
@@ -4717,16 +4719,17 @@ impl<'a> FinalFlowLowerer<'a> {
                     .dialogue_application(application)
                     .ok_or_else(|| {
                         RuntimePlanLowerError::new(format!(
-                            "cancel out {id:?} has no checked dialogue application"
+                            "out {id:?} has no checked dialogue application"
                         ))
                     })?;
-                if !admitted.admits_cancel_output(id)
+                if admitted.result_output_application(id) != Some(application)
                     || self.semantic_facts.expression_type(*value) != Some(admitted.line_result())
                 {
                     return Err(RuntimePlanLowerError::new(format!(
-                        "cancel out {id:?} does not select its checked dialogue result"
+                        "out {id:?} does not select its checked dialogue result"
                     )));
                 }
+                self.result_selection_emitted = true;
                 Ok(vec![RuntimeFlowOpSeed::SelectDialogueResult {
                     value: self
                         .expr_lowerer()
@@ -6807,15 +6810,36 @@ impl<'a> FinalFlowLowerer<'a> {
         application: ExprId,
         body: &HirThreadBody,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        if self.cancel_output_application.is_some() {
+        self.begin_dialogue_result_selection(application)?;
+        let lowered = self.lower_body_as_one_error(body);
+        self.finish_dialogue_result_selection(application)?;
+        lowered
+    }
+
+    fn begin_dialogue_result_selection(
+        &mut self,
+        application: ExprId,
+    ) -> Result<(), RuntimePlanLowerError> {
+        if self.result_selection_application.is_some() {
             return Err(RuntimePlanLowerError::new(
-                "nested cancellation result owner is ambiguous",
+                "nested dialogue result selection owner is ambiguous",
             ));
         }
-        self.cancel_output_application = Some(application);
-        let lowered = self.lower_body_as_one_error(body);
-        self.cancel_output_application = None;
-        lowered
+        self.result_selection_application = Some(application);
+        self.result_selection_emitted = false;
+        Ok(())
+    }
+
+    fn finish_dialogue_result_selection(
+        &mut self,
+        application: ExprId,
+    ) -> Result<bool, RuntimePlanLowerError> {
+        if self.result_selection_application.take() != Some(application) {
+            return Err(RuntimePlanLowerError::new(
+                "dialogue result selection owner changed while lowering its body",
+            ));
+        }
+        Ok(std::mem::take(&mut self.result_selection_emitted))
     }
 }
 

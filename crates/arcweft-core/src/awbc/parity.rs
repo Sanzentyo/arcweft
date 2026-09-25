@@ -102,6 +102,9 @@ impl ParityTrace {
             VmExit::Returned(_) => ParityEvent::Stop {
                 reason: "returned".to_owned(),
             },
+            VmExit::DialogueResultSelected(_) => ParityEvent::Stop {
+                reason: "dialogue_result_selected".to_owned(),
+            },
             VmExit::Cancelled => ParityEvent::Stop {
                 reason: "cancelled".to_owned(),
             },

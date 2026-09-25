@@ -321,6 +321,98 @@ flow row() -> Unit {{
 }
 
 #[test]
+fn one_mark_handler_can_select_an_on_only_non_unit_line_result() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice[before [mark @.release] after[p]] with {
+        on mark(@.release) { out "Released" }
+    }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed mark-handler result HIR"
+    );
+    let report = analyze(&fixture).expect("one mark handler supplies the line result");
+    let application = report
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::DialogueApplication {
+                    line_result: TypeKind::String,
+                    ..
+                }
+            )
+            .then_some(owner)
+        })
+        .expect("the On-only DialogueLine has a String result");
+    let output = report
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(
+                statement.payload(),
+                CheckedStatementPayload::ControlTransfer(target)
+                    if target.output().is_some_and(|output| output.application() == application)
+            )
+            .then_some(owner)
+        })
+        .expect("the handler Out targets this exact dialogue application");
+    assert!(matches!(
+        report.statement(output).map(|statement| statement.payload()),
+        Some(CheckedStatementPayload::ControlTransfer(target))
+            if target.output().is_some_and(|target| target.application() == application)
+    ));
+}
+
+#[test]
+fn distinct_mark_handlers_are_typed_alternatives_for_one_line_result() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice[first [mark @.first] second [mark @.second] after[p]] with {
+        on mark(@.first) { out "First" }
+        on mark(@.second) { out "Second" }
+    }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(fixture.project.analysis_view().is_ok(), "typed mark HIR");
+    let report = analyze(&fixture).expect("both mark outputs select one String result");
+    let application = report
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::DialogueApplication {
+                    line_result: TypeKind::String,
+                    ..
+                }
+            )
+            .then_some(owner)
+        })
+        .expect("the On-only DialogueLine has a String result");
+    let output_applications = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::ControlTransfer(target) => {
+                target.output().map(|output| output.application())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(output_applications, [application, application]);
+}
+
+#[test]
 fn dialogue_init_rejects_a_child_that_would_escape_pre_reveal_scope() {
     let fixture = fixture(
         r#"

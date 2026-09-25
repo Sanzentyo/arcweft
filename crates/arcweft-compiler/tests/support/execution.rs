@@ -203,6 +203,9 @@ pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
                 assert_eq!(value, Some(expected));
                 return;
             }
+            VmExit::DialogueResultSelected(value) => {
+                panic!("ordinary callable selected a DialogueLine result: {value:?}")
+            }
             exit => panic!("AWBC callable execution stopped unexpectedly: {exit:?}"),
         }
     }
@@ -260,6 +263,9 @@ pub(super) fn execute_decoded_awbc_character_dialogue_calls(
             VmExit::Returned(value) => {
                 assert_eq!(value, None);
                 return host.produced;
+            }
+            VmExit::DialogueResultSelected(value) => {
+                panic!("CharacterDialogue factory selected a DialogueLine result: {value:?}")
             }
             exit => panic!("CharacterDialogue AWBC stopped unexpectedly: {exit:?}"),
         }

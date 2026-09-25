@@ -172,6 +172,11 @@ fn run_function_with_host(
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
+            VmExit::DialogueResultSelected(_) => {
+                return Err(VmError::Runtime(
+                    "pure helper selected a dialogue result".to_owned(),
+                ));
+            }
             VmExit::Cancelled => {
                 return Err(VmError::Runtime(
                     "pure helper execution was cancelled".to_owned(),
