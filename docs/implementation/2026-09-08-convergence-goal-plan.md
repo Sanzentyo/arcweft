@@ -1113,3 +1113,29 @@ compiler-pass の成功とは主張しない。025 単独 CLI check は終了コ
 `on mark(...):` と bracket call に続く裸 lexical scope の一般接続は別の
 producer/consumer 境界として未完了であり、fixture は未編集で維持した。
 CLI `current_check_fixtures_pass` の全体合格、workspace test の合格証拠はまだない。
+
+**2026-09-25 Dialogue 裸 scope / `on` 本文 checkpoint:**
+
+確認した `main`/`origin/main` は
+`eb27cf0136211825d7a075e9c191de935f3a9edc`。この時点の working tree は
+`init` 全層移行中と 027 fixture の `out ()` 訂正が未コミットであり、clean ではない。
+bracket dialogue の直後の裸 `{ ... }` を、添付 line plan ではなく次の Flow
+Scope item に分割した (`219c51f9f7d889b503bdda389e29732d01342072`)。
+`with { ... }` が添付 plan のまま残るテストを追加した
+(`b7a8021896f247e7258c90e9dc81912324275557`)。CLI で単独検証を通した
+`028_dialogue_bare_scope_after_call.arcw` も current-pass fixture に追加した
+(`1c26791e10e91837377b32f97b9512adaea6ab5c`)。
+
+`on mark(...):` と波括弧本文は、既存の `HirStmtKind::On` の順序付き本文・
+scope に接続し、source-index の本文順序と回復を検証する
+(`eb27cf0136211825d7a075e9c191de935f3a9edc`)。ハンドラ内 `defer` は
+`CurrentScope` 登録に投影する。On focused syntax/HIR と、marker、入れ子の
+`defer on failed:`、行レベル `out ()` を含む単独 CLI check/verify は終了コード0。
+ただし compile-only の証拠であり、defer 本体の native/AWBC unwind は未確認。
+
+027 の集約 current-pass check はこの時点では HIR staged arena validation で失敗。
+`init:` の独立スコープ付き pre-reveal 実行は作業中で、当該 gate は未合格。
+さらに維持仕様の `on mark` 本文内 `out` は、現行 Sema が nested output を
+結果型へ集めず、core/native/AWBC と保存復元が取消 `InputActionId` 専用の選択状態を
+持つため未接続。マーク起因の結果選択はハンドラ scope を終了させ、行そのものは
+子処理と cleanup を待ってから一度だけ公開する契約として、後続 cut で閉じる。
