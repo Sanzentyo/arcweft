@@ -112,6 +112,7 @@ runtime_u64_identity!(RuntimeMailboxInstanceId);
 runtime_u64_identity!(RuntimeChildInstanceId);
 runtime_u64_identity!(RuntimeTransferInstanceId);
 runtime_u64_identity!(RuntimeCleanupScopeId);
+runtime_u64_identity!(RuntimeDeferRegistrationId);
 runtime_u64_identity!(RuntimeLocalSlotId);
 
 runtime_u32_identity!(RuntimeLocalDeclarationId);

@@ -415,6 +415,9 @@ thread scopes, and event-handler scopes each have a cleanup stack. A bare
 early control transfer, line cancellation, and child-task cancellation.
 Outcome-guarded forms `defer on completed`, `defer on cancelled`, and
 `defer on failed` retain their place in the scope's registration order. The
+shared activation assigns each reached registration a monotonic identity distinct
+from the source defer site; the identity and capture packet survive save/restore
+so repeated visits to one site remain separate work items. The
 unwinder visits registrations in reverse order, runs bodies whose filter
 matches the current exit, and releases captured resources for every skipped
 registration.

@@ -14,8 +14,8 @@ use crate::line_task::{
     LineRuntimeError, LineTaskLiveState, LineTaskReadyEvents, MAX_LINE_SCHEDULED_CALLBACKS,
     RuntimeCueLease, RuntimeCueOrigin, RuntimeDialogueActivationState, RuntimeDialogueResultState,
     RuntimeHandleLeaseState, RuntimeHandleOwnerSlot, RuntimeHandleResource,
-    RuntimeLineDeferredRegistration, RuntimeLineHandleSiteKind, RuntimeScheduledLineTask,
-    RuntimeStageActorLease, RuntimeVoiceLease, progress_live_line_task_group,
+    RuntimeLineHandleSiteKind, RuntimeScheduledLineTask, RuntimeStageActorLease, RuntimeVoiceLease,
+    progress_live_line_task_group,
 };
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{FlowEvent, FlowOp, RuntimeDeferOwner, RuntimeLineOperation};
@@ -750,7 +750,7 @@ impl Engine {
         // The preflight above established a live frame; no intervening code can
         // release it before this registration is committed.
         activation
-            .register_deferred(RuntimeLineDeferredRegistration::new(site, outcome, values))
+            .register_deferred(site, outcome, values)
             .expect("line-root defer registration was admitted before moving captures");
         activation.commit_ledger(ledger);
         Ok(())

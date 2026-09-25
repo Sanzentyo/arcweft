@@ -857,11 +857,7 @@ impl super::AwbcProductStepExecutor {
             }
             captured_values.push(value.clone());
         }
-        line.register_deferred(crate::line_task::RuntimeLineDeferredRegistration::new(
-            site,
-            outcome,
-            captured_values,
-        ))?;
+        line.register_deferred(site, outcome, captured_values)?;
         fiber.active_frame_mut()?.registers = registers;
         fiber.commit_yielded_instruction(cursor)?;
         Ok(deferred_tokens)

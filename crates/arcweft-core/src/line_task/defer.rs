@@ -1,5 +1,5 @@
 use super::ScopeExit;
-use crate::runtime_id::RuntimeDeferSiteId;
+use crate::runtime_id::{RuntimeDeferRegistrationId, RuntimeDeferSiteId};
 use crate::value::RuntimeValue;
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +32,7 @@ impl RuntimeDeferOutcomeFilter {
 /// the same site remain distinct stack entries with their own captured values.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeLineDeferredRegistration {
+    id: RuntimeDeferRegistrationId,
     site: RuntimeDeferSiteId,
     outcome_filter: RuntimeDeferOutcomeFilter,
     captures: Vec<RuntimeValue>,
@@ -39,16 +40,23 @@ pub struct RuntimeLineDeferredRegistration {
 
 impl RuntimeLineDeferredRegistration {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
+        id: RuntimeDeferRegistrationId,
         site: RuntimeDeferSiteId,
         outcome_filter: RuntimeDeferOutcomeFilter,
         captures: Vec<RuntimeValue>,
     ) -> Self {
         Self {
+            id,
             site,
             outcome_filter,
             captures,
         }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> RuntimeDeferRegistrationId {
+        self.id
     }
 
     #[must_use]
@@ -70,17 +78,19 @@ impl RuntimeLineDeferredRegistration {
     pub fn into_parts(
         self,
     ) -> (
+        RuntimeDeferRegistrationId,
         RuntimeDeferSiteId,
         RuntimeDeferOutcomeFilter,
         Vec<RuntimeValue>,
     ) {
-        (self.site, self.outcome_filter, self.captures)
+        (self.id, self.site, self.outcome_filter, self.captures)
     }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AwbcRuntimeDeferredRegistrationSnapshot {
+    id: RuntimeDeferRegistrationId,
     site: RuntimeDeferSiteId,
     outcome_filter: RuntimeDeferOutcomeFilter,
     captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
@@ -91,6 +101,7 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         registration: &RuntimeLineDeferredRegistration,
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(Self {
+            id: registration.id,
             site: registration.site,
             outcome_filter: registration.outcome_filter,
             captures: registration
@@ -106,6 +117,7 @@ impl AwbcRuntimeDeferredRegistrationSnapshot {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<RuntimeLineDeferredRegistration, crate::value::AwbcRuntimeValueSnapshotError> {
         Ok(RuntimeLineDeferredRegistration::new(
+            self.id,
             self.site,
             self.outcome_filter,
             self.captures

@@ -4,8 +4,8 @@ use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
 use crate::presentation::{RuntimeCommandQueue, RuntimeStageRejectCode, RuntimeVoiceSessionId};
 use crate::runtime_id::{
-    DialogueActivationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId, RuntimeLineHandleToken,
-    RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
+    DialogueActivationId, RuntimeDeferRegistrationId, RuntimeDeferSiteId, RuntimeLineHandleSiteId,
+    RuntimeLineHandleToken, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId,
 };
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -17,6 +17,7 @@ use crate::value::{
 use arcweft_character::id::CharacterId;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 use thiserror::Error;
 
 pub const MAX_LINE_HANDLE_SITES: usize = 128;
@@ -319,6 +320,7 @@ pub struct RuntimeDialogueActivationState<T> {
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     scheduled: Vec<RuntimeScheduledLineTask>,
     deferred: Vec<RuntimeLineDeferredRegistration>,
+    next_defer_registration: u64,
     result: RuntimeDialogueResultState<T>,
     frame_released: bool,
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
@@ -353,8 +355,8 @@ pub(crate) struct AwbcRuntimeDialogueActivationSnapshot<T> {
     >,
     resolved_commands: std::collections::BTreeSet<crate::presentation::RuntimeLineCommandId>,
     scheduled: Vec<AwbcRuntimeScheduledLineTaskSnapshot>,
-    #[serde(default)]
     deferred: Vec<AwbcRuntimeDeferredRegistrationSnapshot>,
+    next_defer_registration: u64,
     result: AwbcRuntimeDialogueResultSnapshot<T>,
     frame_released: bool,
 }
@@ -473,6 +475,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             resolved_commands: std::collections::BTreeSet::new(),
             scheduled: Vec::new(),
             deferred: Vec::new(),
+            next_defer_registration: 1,
             result: RuntimeDialogueResultState::Uncommitted,
             frame_released: false,
             prepared_commands: Vec::new(),
@@ -484,6 +487,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         if self.frame_released {
             return Err(LineRuntimeError::ActivationFrameReleased);
         }
+        if self.next_defer_registration == 0 || self.next_defer_registration == u64::MAX {
+            return Err(LineRuntimeError::DeferRegistrationIdentityExhausted);
+        }
         Ok(())
     }
 
@@ -491,11 +497,23 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     /// Repeated registrations of the same site are retained independently.
     pub fn register_deferred(
         &mut self,
-        registration: RuntimeLineDeferredRegistration,
-    ) -> Result<(), LineRuntimeError> {
+        site: RuntimeDeferSiteId,
+        outcome_filter: super::defer::RuntimeDeferOutcomeFilter,
+        captures: Vec<RuntimeValue>,
+    ) -> Result<RuntimeDeferRegistrationId, LineRuntimeError> {
         self.can_register_deferred()?;
-        self.deferred.push(registration);
-        Ok(())
+        let id = RuntimeDeferRegistrationId::from_allocated(
+            NonZeroU64::new(self.next_defer_registration)
+                .expect("checked defer registration ID is nonzero"),
+        );
+        self.next_defer_registration += 1;
+        self.deferred.push(RuntimeLineDeferredRegistration::new(
+            id,
+            site,
+            outcome_filter,
+            captures,
+        ));
+        Ok(id)
     }
 
     /// Pops the next registration in LIFO order. The unwinder must inspect
@@ -535,6 +553,17 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         activation: &DialogueActivationId,
     ) -> Result<(), LineRuntimeError> {
         if self.frame_released && !self.deferred.is_empty() {
+            return Err(LineRuntimeError::InvalidRestoredDeferredState);
+        }
+        if self.next_defer_registration == 0
+            || self
+                .deferred
+                .windows(2)
+                .any(|rows| rows[0].id() >= rows[1].id())
+            || self.deferred.last().is_some_and(|registration| {
+                registration.id().get().get() >= self.next_defer_registration
+            })
+        {
             return Err(LineRuntimeError::InvalidRestoredDeferredState);
         }
         validate_restored_ledger(activation, &self.ledger)?;
@@ -1756,6 +1785,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .iter()
                 .map(AwbcRuntimeDeferredRegistrationSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
+            next_defer_registration: state.next_defer_registration,
             result: AwbcRuntimeDialogueResultSnapshot::from_live(&state.result)?,
             frame_released: state.frame_released,
         })
@@ -1782,6 +1812,7 @@ impl<T: Clone> AwbcRuntimeDialogueActivationSnapshot<T> {
                 .into_iter()
                 .map(|registration| registration.into_live(owner))
                 .collect::<Result<_, _>>()?,
+            next_defer_registration: self.next_defer_registration,
             result: self.result.into_live(owner)?,
             frame_released: self.frame_released,
             prepared_commands: Vec::new(),
@@ -3233,6 +3264,8 @@ pub enum LineRuntimeError {
     ScheduledCallbackLimitExceeded,
     #[error("line-root frame cannot be released while deferred registrations remain")]
     DeferredRegistrationsRemain,
+    #[error("defer registration identity domain is exhausted")]
+    DeferRegistrationIdentityExhausted,
     #[error("deferred registration site is absent from the executable table: {site}")]
     UnknownDeferredSite { site: RuntimeDeferSiteId },
     #[error("scheduled callback does not have one exact child-scope capture owner")]
@@ -3435,16 +3468,8 @@ mod tests {
         RuntimeDeferSiteId::from_zero_based(index).expect("defer site")
     }
 
-    fn deferred(
-        site: RuntimeDeferSiteId,
-        outcome_filter: RuntimeDeferOutcomeFilter,
-        capture: &str,
-    ) -> RuntimeLineDeferredRegistration {
-        RuntimeLineDeferredRegistration::new(
-            site,
-            outcome_filter,
-            vec![RuntimeValue::String(capture.to_owned())],
-        )
+    fn deferred(capture: &str) -> Vec<RuntimeValue> {
+        vec![RuntimeValue::String(capture.to_owned())]
     }
 
     #[test]
@@ -3452,25 +3477,25 @@ mod tests {
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
         let repeated_site = defer_site(0);
         state
-            .register_deferred(deferred(
+            .register_deferred(
                 repeated_site,
                 RuntimeDeferOutcomeFilter::Always,
-                "oldest",
-            ))
+                deferred("oldest"),
+            )
             .expect("register first occurrence");
         state
-            .register_deferred(deferred(
+            .register_deferred(
                 defer_site(1),
                 RuntimeDeferOutcomeFilter::Completed,
-                "skip on failure",
-            ))
+                deferred("skip on failure"),
+            )
             .expect("register completion-only callback");
         state
-            .register_deferred(deferred(
+            .register_deferred(
                 repeated_site,
                 RuntimeDeferOutcomeFilter::Failed,
-                "newest",
-            ))
+                deferred("newest"),
+            )
             .expect("register repeated site");
 
         assert_eq!(
@@ -3511,23 +3536,26 @@ mod tests {
     fn line_root_defer_stack_round_trips_in_activation_snapshot_order() {
         let activation = scheduled_activation();
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
-        state
-            .register_deferred(deferred(
+        let first = state
+            .register_deferred(
                 defer_site(0),
                 RuntimeDeferOutcomeFilter::Always,
-                "first capture",
-            ))
+                deferred("first capture"),
+            )
             .expect("register first callback");
-        state
-            .register_deferred(RuntimeLineDeferredRegistration::new(
+        let second = state
+            .register_deferred(
                 defer_site(0),
                 RuntimeDeferOutcomeFilter::Cancelled,
                 vec![RuntimeValue::Tuple(vec![
                     RuntimeValue::Bool(true),
                     RuntimeValue::String("nested".to_owned()),
                 ])],
-            ))
+            )
             .expect("register same site with a distinct capture");
+        assert_eq!(first.get().get(), 1);
+        assert_eq!(second.get().get(), 2);
+        assert_eq!(state.next_defer_registration, 3);
         state
             .restore_admit(&activation)
             .expect("admit pending defer stack");
@@ -3546,6 +3574,7 @@ mod tests {
             .expect("admit restored defer stack");
 
         assert_eq!(restored.deferred, state.deferred);
+        assert_eq!(restored.next_defer_registration, 3);
         assert_eq!(
             restored
                 .pop_deferred()
@@ -3564,6 +3593,14 @@ mod tests {
             [RuntimeValue::String("first capture".to_owned())]
         );
         assert!(restored.pop_deferred().is_none());
+        let third = restored
+            .register_deferred(
+                defer_site(0),
+                RuntimeDeferOutcomeFilter::Always,
+                deferred("after restore"),
+            )
+            .expect("restored activation continues issuing distinct IDs");
+        assert_eq!(third.get().get(), 3);
     }
 
     #[test]
@@ -3571,11 +3608,11 @@ mod tests {
         let activation = scheduled_activation();
         let mut state = RuntimeDialogueActivationState::<AwbcTypeId>::new();
         state
-            .register_deferred(deferred(
+            .register_deferred(
                 defer_site(0),
                 RuntimeDeferOutcomeFilter::Always,
-                "capture",
-            ))
+                deferred("capture"),
+            )
             .expect("register callback");
         assert_eq!(
             state.validate_deferred_sites(|_| false),
@@ -3591,6 +3628,20 @@ mod tests {
         let restored = snapshot.into_live(&owner).expect("restore snapshot values");
         assert_eq!(
             restored.restore_admit(&activation),
+            Err(LineRuntimeError::InvalidRestoredDeferredState)
+        );
+
+        let mut bad_sequence = state.clone();
+        let first = bad_sequence.deferred[0].clone();
+        bad_sequence.deferred.push(first);
+        assert_eq!(
+            bad_sequence.restore_admit(&activation),
+            Err(LineRuntimeError::InvalidRestoredDeferredState)
+        );
+        let mut bad_counter = state;
+        bad_counter.next_defer_registration = 1;
+        assert_eq!(
+            bad_counter.restore_admit(&activation),
             Err(LineRuntimeError::InvalidRestoredDeferredState)
         );
     }
