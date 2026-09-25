@@ -87,6 +87,23 @@ fn ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc() {
     }
 }
 
+#[test]
+fn raw_content_uses_the_checked_literal_without_interpreting_braces_or_page_marks() {
+    let source = "pub character alice { display = \"Alice\" }\nflow main() -> Unit { alice()[#raw()[literal { braces } [p]]] }\nentry cli @entry.main { goto @flow.main }\n";
+    let compiled = compile_attached_dialogue_project(source)
+        .expect("raw Content compiles from the accepted literal argument");
+    let [template] = compiled.runtime_plan().dialogue_content_catalog.templates() else {
+        panic!("fixture publishes one dialogue template");
+    };
+    assert_eq!(
+        template.content().nodes,
+        vec![RichTextNode::Raw {
+            text: "literal { braces } [p]".into(),
+        }]
+    );
+    assert_candidate_program_executes_in_native_and_awbc(&compiled);
+}
+
 fn assert_single_dialogue_execution(
     mut step: impl FnMut(
         arcweft_core::step::RuntimeStepInput,

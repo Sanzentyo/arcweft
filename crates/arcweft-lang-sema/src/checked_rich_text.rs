@@ -21,7 +21,7 @@ pub use model::{
     CheckedContentEmission, CheckedContentInsertion, CheckedContentModifier,
     CheckedContentParameter, CheckedContentRuby, CheckedContentValueSource, CheckedDialogueContent,
     CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueMark, CheckedDialogueToken,
-    CheckedField, CheckedFieldOrigin, CheckedObjectDepth, CheckedOwnerFields, CheckedRawLiteral,
+    CheckedField, CheckedFieldOrigin, CheckedObjectDepth, CheckedOwnerFields,
     CheckedRichTextAction, CheckedRichTextOwner, CheckedRichTextProperty, CheckedRichTextReport,
     CheckedVoiceSource, RichTextDefaultId,
 };

@@ -171,10 +171,17 @@ fn opening() {
     };
     assert_eq!(ruby.reading(), "reading");
 
-    let CheckedContentEmission::Raw(raw) = raw.emission() else {
+    let CheckedContentEmission::Raw = raw.emission() else {
         panic!("raw must publish a raw emission");
     };
-    assert_eq!(raw.body(), "raw[p]literal");
+    let checked = raw
+        .argument()
+        .checked_content()
+        .expect("raw owns a checked literal argument");
+    assert!(matches!(
+        checked.content().tokens(),
+        [CheckedDialogueToken::RawLiteral(body)] if body.as_ref() == "raw[p]literal"
+    ));
 }
 
 #[test]

@@ -1191,13 +1191,11 @@ impl Analyzer<'_, '_, '_> {
                             {
                                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                             }
-                            let body = hir_application
+                            hir_application
                                 .content()
                                 .raw_literal()
                                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                            CheckedContentEmission::Raw(
-                                crate::checked_rich_text::CheckedRawLiteral::new(body.as_str()),
-                            )
+                            CheckedContentEmission::Raw
                         }
                         }
                     }

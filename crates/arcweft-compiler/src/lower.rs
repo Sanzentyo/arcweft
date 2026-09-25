@@ -129,15 +129,15 @@ use arcweft_lang_sema::{
     callable::{
         AgentIntrinsicSignatureId, BuiltinCallableId, CallTargetFacts, CallableCandidateId,
         CallableFamily, CallableLogLevel, CallableParameterPresence, CallableValidator,
-        CheckedCallApplication, CheckedCallArgumentPassing, CheckedCallCalleeExecution,
-        CheckedCallOperandDestination, CheckedCallReceiverProjection, CheckedCallRuntimeOperand,
-        CheckedCallableExecution, CheckedProjectFunctionInstanceSolution,
-        CheckedProjectFunctionRuntimeInput, CheckedProjectFunctionRuntimeOutcome,
-        CheckedProjectFunctionRuntimeSelection, CollectionMethodId, DomainMethodId,
-        LineContextMethodId, LineScheduleCallableId, MathCallableId, ProbeComparisonOperator,
-        ReductionConstructorKind, ResolvedCallableOrigin, ResolvedCallableState, StageMethodId,
-        StandardMapFamily, StdFloatOperation, select_project_function_root_runtime,
-        select_project_function_runtime,
+        CheckedAttachedContentAdmission, CheckedCallApplication, CheckedCallArgumentPassing,
+        CheckedCallCalleeExecution, CheckedCallOperandDestination, CheckedCallReceiverProjection,
+        CheckedCallRuntimeOperand, CheckedCallableExecution,
+        CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeInput,
+        CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
+        CollectionMethodId, DomainMethodId, LineContextMethodId, LineScheduleCallableId,
+        MathCallableId, ProbeComparisonOperator, ReductionConstructorKind, ResolvedCallableOrigin,
+        ResolvedCallableState, StageMethodId, StandardMapFamily, StdFloatOperation,
+        select_project_function_root_runtime, select_project_function_runtime,
     },
     checked_rich_text::{
         CheckedContentEmission, CheckedContentModifier, CheckedContentParameter,
@@ -2679,22 +2679,32 @@ fn lower_checked_rich_text(
                         });
                         nested_fragments.extend(child_nested);
                     }
-                    CheckedContentEmission::Raw(raw) => {
-                        // Raw is an opaque typed literal.  Its checked body is
-                        // deliberately not a dialogue report: reparsing it
-                        // (or lowering it as ordinary content) would restore
-                        // the removed source-delimiter authority.  A generic
-                        // attached body is therefore an invalid sealed shape,
-                        // rather than a candidate for best-effort lowering.
-                        if body.is_some() {
+                    CheckedContentEmission::Raw => {
+                        let Some(checked) = body else {
                             return Err(RuntimeSemanticProjectionError::Dialogue {
                                 owner: Some(owner),
-                                reason: "raw Content emission cannot carry a checked attached body"
+                                reason: "raw Content emission has no checked literal body"
+                                    .to_owned(),
+                            });
+                        };
+                        if checked.admission() != CheckedAttachedContentAdmission::Literal {
+                            return Err(RuntimeSemanticProjectionError::Dialogue {
+                                owner: Some(owner),
+                                reason: "raw Content emission has a non-literal checked body"
                                     .to_owned(),
                             });
                         }
+                        let [CheckedDialogueToken::RawLiteral(text)] = checked.content().tokens()
+                        else {
+                            return Err(RuntimeSemanticProjectionError::Dialogue {
+                                owner: Some(owner),
+                                reason:
+                                    "raw Content emission requires exactly one checked raw literal"
+                                        .to_owned(),
+                            });
+                        };
                         nodes.push(RichTextNode::Raw {
-                            text: raw.body().to_owned(),
+                            text: text.to_string(),
                         });
                     }
                     CheckedContentEmission::ObjectSpan(_) => {

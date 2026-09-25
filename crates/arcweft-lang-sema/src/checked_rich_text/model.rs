@@ -340,29 +340,13 @@ impl std::hash::Hash for CheckedDialogueMark {
     }
 }
 
-/// Raw literal text retained as a typed Content emission.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedRawLiteral {
-    body: Box<str>,
-}
-
-impl CheckedRawLiteral {
-    pub(crate) fn new(body: impl Into<Box<str>>) -> Self {
-        Self { body: body.into() }
-    }
-
-    pub const fn body(&self) -> &str {
-        &self.body
-    }
-}
-
 /// Closed emission family for one checked attached-content application.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedContentEmission {
     Modifier(CheckedContentModifier),
     Fx(crate::final_analysis::CheckedContentFxApplication),
     Ruby(CheckedContentRuby),
-    Raw(CheckedRawLiteral),
+    Raw,
     ObjectSpan(crate::checked_text_proxy::CheckedTextProxyApplication),
     ContentResult,
 }

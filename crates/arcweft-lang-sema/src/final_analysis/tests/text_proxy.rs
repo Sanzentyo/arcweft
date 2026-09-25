@@ -55,7 +55,7 @@ fn object_applications(report: &FinalSemanticAnalysis) -> Vec<&CheckedTextProxyA
             CheckedContentEmission::Modifier(_)
             | CheckedContentEmission::Fx(_)
             | CheckedContentEmission::Ruby(_)
-            | CheckedContentEmission::Raw(_)
+            | CheckedContentEmission::Raw
             | CheckedContentEmission::ContentResult => None,
         })
         .collect()
