@@ -49,6 +49,9 @@ impl RuntimeExpr {
                 }
             }
             RuntimeExprKind::Local(local) => push_free_local(*local, bound, locals),
+            RuntimeExprKind::SequencePopFront { receiver } => {
+                push_free_local(*receiver, bound, locals)
+            }
             RuntimeExprKind::Let {
                 binding,
                 expr,

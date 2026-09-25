@@ -221,15 +221,16 @@ use arcweft_runtime_plan::{
         RuntimeRecordPatternField, RuntimeRecordPatternRest, RuntimeRecordPatternSource,
         RuntimeRecordPlanError, RuntimeRecordTypeField, RuntimeReductionConstructor,
         RuntimeRegisteredValueId, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-        RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
-        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-        RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
-        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmission,
-        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
+        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
+        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
+        RuntimeResolvedHostCall, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
+        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
+        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
+        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
+        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
+        RuntimeTraitMethodFact, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -5653,8 +5654,11 @@ fn runtime_call(
         }
     };
     let selected = application.core().candidates().selected();
+    let is_vec_pop_front = selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront);
     let mut operands = Vec::new();
     let mut positioned_attached_content = None;
+    let mut mutation = None;
     for operand in application.core().runtime_operands() {
         match operand {
             CheckedCallRuntimeOperand::Receiver {
@@ -5662,15 +5666,62 @@ fn runtime_call(
                 source,
                 abi_position,
                 ..
-            } => operands.push(RuntimeResolvedCallOperand::new(
-                abi_position,
-                RuntimeResolvedCallOperandOrigin::Receiver,
-                runtime_call_operand_source(source.raw()),
-                runtime_type_under(ty, enclosing, symbols, world, analysis)?,
-                RuntimeResolvedCallOperandBinding::Positional,
-                RuntimeResolvedCallOperandProjection::Scalar,
-                None,
-            )),
+            } => {
+                if is_vec_pop_front {
+                    let receiver = match source.raw() {
+                        arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(
+                            receiver,
+                        ) => receiver,
+                        arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::CompactNumericElement {
+                            ..
+                        } => {
+                            return Err(RuntimeSemanticProjectionError::Call {
+                                owner,
+                                reason: "Vec.pop_front receiver is not a writable local place"
+                                    .to_owned(),
+                            });
+                        }
+                    };
+                    let checked_receiver = analysis.expression(receiver).ok_or_else(|| {
+                        RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "Vec.pop_front receiver has no checked expression fact"
+                                .to_owned(),
+                        }
+                    })?;
+                    let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
+                        checked_receiver.resolution()
+                    else {
+                        return Err(RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "Vec.pop_front receiver must be a local or parameter"
+                                .to_owned(),
+                        });
+                    };
+                    if !matches!(
+                        checked_expression_type(checked_receiver, receiver)?,
+                        TypeKind::Vec(_)
+                    ) {
+                        return Err(RuntimeSemanticProjectionError::Call {
+                            owner,
+                            reason: "Vec.pop_front checked receiver is not a Vec local".to_owned(),
+                        });
+                    }
+                    mutation = Some(RuntimeResolvedCallMutation::VecPopFront {
+                        source: receiver,
+                        receiver: *local,
+                    });
+                }
+                operands.push(RuntimeResolvedCallOperand::new(
+                    abi_position,
+                    RuntimeResolvedCallOperandOrigin::Receiver,
+                    runtime_call_operand_source(source.raw()),
+                    runtime_type_under(ty, enclosing, symbols, world, analysis)?,
+                    RuntimeResolvedCallOperandBinding::Positional,
+                    RuntimeResolvedCallOperandProjection::Scalar,
+                    None,
+                ));
+            }
             CheckedCallRuntimeOperand::Argument {
                 argument,
                 passing,
@@ -5811,6 +5862,15 @@ fn runtime_call(
         owner,
         reason: error.to_string(),
     })?;
+    let call = if let Some(mutation) = mutation {
+        call.try_with_mutation(mutation)
+            .map_err(|error| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: error.to_string(),
+            })?
+    } else {
+        call
+    };
     Ok(call)
 }
 
@@ -7884,6 +7944,11 @@ fn runtime_call_target(
     let selected = application.core().candidates().selected();
     let selected_id = selected.id();
     let selected_family = selected.family();
+    if selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront)
+    {
+        return Ok(RuntimeResolvedStaticCallTarget::VecPopFront);
+    }
     if let arcweft_lang_sema::callable::CallableCandidateId::Presentation(presentation) =
         selected_id
     {

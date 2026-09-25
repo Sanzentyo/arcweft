@@ -71,6 +71,26 @@ struct LetScopeLoweringInput<'a> {
     path: &'a str,
 }
 
+#[derive(Clone, Copy)]
+struct WhileLetLoweringInput<'a> {
+    pattern: &'a RuntimePattern,
+    expr: &'a RuntimeExpr,
+    guard: Option<&'a RuntimeExpr>,
+    ops: &'a [FlowOp],
+    path: &'a str,
+}
+
+struct WhileLetBodyInput<'a> {
+    header: AwbcBlockId,
+    pattern: AwbcPatternId,
+    value: AwbcRegisterId,
+    guard: Option<&'a RuntimeExpr>,
+    ops: &'a [FlowOp],
+    path: &'a str,
+    outer_scope_depth: u32,
+    outer_scopes: &'a [AwbcScopeId],
+}
+
 struct BranchJoin {
     fallthroughs: Vec<AwbcBlockId>,
 }
@@ -1421,32 +1441,24 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 condition,
                 body: ops,
             } => {
-                let _ =
-                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(condition);
-                self.lower_ops(frame, body, ops, &format!("{path}.body"));
+                self.lower_while(frame, body, condition, ops, path);
             }
             FlowOp::WhileLet {
                 pattern,
                 expr,
                 guard,
                 body: ops,
-            } => {
-                let value =
-                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
-                let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
-                let matched = frame.temp(self.inventory.bool_ty());
-                self.inventory
-                    .push_instruction(AwbcInstruction::TestPattern {
-                        dst: matched,
-                        pattern,
-                        value,
-                    });
-                if let Some(guard) = guard {
-                    let _ =
-                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(guard);
-                }
-                self.lower_ops(frame, body, ops, &format!("{path}.body"));
-            }
+            } => self.lower_while_let(
+                frame,
+                body,
+                &WhileLetLoweringInput {
+                    pattern,
+                    expr,
+                    guard: guard.as_ref(),
+                    ops,
+                    path,
+                },
+            ),
             FlowOp::For {
                 pattern,
                 source,
@@ -2507,6 +2519,247 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     mode: AwbcBindMode::Declare,
                 });
         }
+    }
+
+    fn lower_while(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        condition: &RuntimeExpr,
+        ops: &[FlowOp],
+        path: &str,
+    ) {
+        let header = self.begin_condition_loop_header(body);
+        let condition =
+            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(condition);
+        let body_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let condition_branch = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition,
+                then_block: body_block,
+                else_block: body_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let outer_scope_depth = frame.scope_depth();
+        let outer_scopes = frame.scope_checkpoint();
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        self.loop_targets.push(LoopLoweringTarget {
+            header,
+            exit_jumps: Vec::new(),
+            outer_scope_depth,
+            outer_scopes,
+            result: None,
+        });
+        self.lower_ops(frame, body, ops, &format!("{path}.body"));
+        if !body.terminated {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            frame.exit_scope();
+            body.close_block(
+                self.inventory,
+                AwbcTerminator::Jump { target: header },
+                AwbcSafePointKind::LoopBackedge,
+            );
+            body.terminated = true;
+        }
+
+        let target = self
+            .loop_targets
+            .pop()
+            .expect("while lowering target is balanced with its loop body");
+        frame.restore_scopes_after_branch(target.outer_scopes);
+        let exit = body.reopen_after_terminated_branch(self.inventory);
+        patch_branch_else_block(self.inventory, condition_branch, exit);
+        for jump in target.exit_jumps {
+            patch_jump_target(self.inventory, jump, exit);
+        }
+    }
+
+    fn lower_while_let(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: &WhileLetLoweringInput<'_>,
+    ) {
+        let WhileLetLoweringInput {
+            pattern,
+            expr,
+            guard,
+            ops,
+            path,
+        } = *input;
+        let header = self.begin_condition_loop_header(body);
+        let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+        let pattern = self.lower_branch_pattern(frame, pattern);
+        let matched = frame.temp(self.inventory.bool_ty());
+        self.inventory
+            .push_instruction(AwbcInstruction::TestPattern {
+                dst: matched,
+                pattern,
+                value,
+            });
+        let candidate_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        let condition_branch = body.close_block(
+            self.inventory,
+            AwbcTerminator::Branch {
+                condition: matched,
+                then_block: candidate_block,
+                else_block: candidate_block,
+            },
+            AwbcSafePointKind::None,
+        );
+
+        let outer_scope_depth = frame.scope_depth();
+        let outer_scopes = frame.scope_checkpoint();
+        let guard_false_jump = self.lower_while_let_body(
+            frame,
+            body,
+            &WhileLetBodyInput {
+                header,
+                pattern,
+                value,
+                guard,
+                ops,
+                path,
+                outer_scope_depth,
+                outer_scopes: &outer_scopes,
+            },
+        );
+
+        let target = self
+            .loop_targets
+            .pop()
+            .expect("while-let lowering target is balanced with its loop body");
+        frame.restore_scopes_after_branch(target.outer_scopes);
+        let exit = body.reopen_after_terminated_branch(self.inventory);
+        patch_branch_else_block(self.inventory, condition_branch, exit);
+        if let Some(jump) = guard_false_jump {
+            patch_jump_target(self.inventory, jump, exit);
+        }
+        for jump in target.exit_jumps {
+            patch_jump_target(self.inventory, jump, exit);
+        }
+    }
+
+    fn lower_while_let_body(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        input: &WhileLetBodyInput<'_>,
+    ) -> Option<AwbcBlockId> {
+        let WhileLetBodyInput {
+            header,
+            pattern,
+            value,
+            guard,
+            ops,
+            path,
+            outer_scope_depth,
+            outer_scopes,
+        } = input;
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        self.inventory
+            .push_instruction(AwbcInstruction::BindPattern {
+                pattern: *pattern,
+                value: *value,
+                mode: AwbcBindMode::Declare,
+            });
+        self.loop_targets.push(LoopLoweringTarget {
+            header: *header,
+            exit_jumps: Vec::new(),
+            outer_scope_depth: *outer_scope_depth,
+            outer_scopes: outer_scopes.to_vec(),
+            result: None,
+        });
+
+        if let Some(guard) = *guard {
+            let guard =
+                AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard"), self.plan)
+                    .lower(guard);
+            let body_block = AwbcBlockId(table_index(
+                self.inventory.program.blocks.len().saturating_add(1),
+            ));
+            let guard_branch = body.close_block(
+                self.inventory,
+                AwbcTerminator::Branch {
+                    condition: guard,
+                    then_block: body_block,
+                    else_block: body_block,
+                },
+                AwbcSafePointKind::None,
+            );
+
+            self.lower_ops(frame, body, ops, &format!("{path}.body"));
+            if !body.terminated {
+                self.inventory
+                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                frame.exit_scope();
+                body.close_block(
+                    self.inventory,
+                    AwbcTerminator::Jump { target: *header },
+                    AwbcSafePointKind::LoopBackedge,
+                );
+                body.terminated = true;
+            }
+            frame.restore_scopes_after_branch(outer_scopes.to_vec());
+
+            let guard_false_block = body.reopen_after_terminated_branch(self.inventory);
+            patch_branch_else_block(self.inventory, guard_branch, guard_false_block);
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            let jump = body.close_block(
+                self.inventory,
+                AwbcTerminator::Jump {
+                    target: AwbcBlockId::default(),
+                },
+                AwbcSafePointKind::None,
+            );
+            body.terminated = true;
+            Some(jump)
+        } else {
+            self.lower_ops(frame, body, ops, &format!("{path}.body"));
+            if !body.terminated {
+                self.inventory
+                    .push_instruction(AwbcInstruction::ExitScope { scope });
+                frame.exit_scope();
+                body.close_block(
+                    self.inventory,
+                    AwbcTerminator::Jump { target: *header },
+                    AwbcSafePointKind::LoopBackedge,
+                );
+                body.terminated = true;
+            }
+            None
+        }
+    }
+
+    fn begin_condition_loop_header(&mut self, body: &mut FlowBodyBuilder) -> AwbcBlockId {
+        let header = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump { target: header },
+            AwbcSafePointKind::None,
+        );
+        let condition = AwbcBlockId(header.0.saturating_add(1));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump { target: condition },
+            AwbcSafePointKind::LoopBackedge,
+        );
+        header
     }
 
     fn lower_break(

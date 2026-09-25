@@ -119,6 +119,7 @@ impl RuntimeResolvedStaticCallTarget {
                 RuntimeResolvedHostCallOwner::Agent(_) => {}
             },
             Self::Intrinsic(_)
+            | Self::VecPopFront
             | Self::Agent(_)
             | Self::AgentProbeComparison(_)
             | Self::AgentDiagnosticsHasError

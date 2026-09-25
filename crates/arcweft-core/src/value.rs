@@ -1373,6 +1373,10 @@ pub enum RuntimeExprKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExpr),
     Local(RuntimeLocalDeclarationId),
+    /// Removes the first item from an exact Vec local and returns `Option<T>`.
+    SequencePopFront {
+        receiver: RuntimeLocalDeclarationId,
+    },
     EntityRef(RuntimeEntityReference),
     Let {
         binding: RuntimeLocalDeclarationId,
@@ -1635,6 +1639,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::StandardMap { .. }
             | RuntimeExprKind::Filter { .. }
             | RuntimeExprKind::Sum { .. }
+            | RuntimeExprKind::SequencePopFront { .. }
             | RuntimeExprKind::IfLet { .. }
             | RuntimeExprKind::Match { .. }
             | RuntimeExprKind::ReductionUnchanged { .. } => false,
@@ -1648,6 +1653,9 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Value(value) => f.write_str(&runtime_value_label(value)),
             RuntimeExprKind::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
             RuntimeExprKind::Local(local) => write!(f, "local#{local}"),
+            RuntimeExprKind::SequencePopFront { receiver } => {
+                write!(f, "vec_pop_front/local#{receiver}")
+            }
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),
             RuntimeExprKind::Let { binding, .. } => write!(f, "let local#{binding}"),
             RuntimeExprKind::Scope { identity, .. } => match identity.name() {
@@ -1934,6 +1942,8 @@ pub enum RuntimeEvalError {
     InvalidEntityTarget { target: String, reason: String },
     #[error("expected bracket sequence expression, found {0}")]
     ExpectedBracketSeq(String),
+    #[error("expected a mutable runtime sequence, found {0}")]
+    ExpectedSequence(String),
     #[error("standard map received a value outside its selected {family:?} family")]
     InvalidStandardMapSource { family: RuntimeStandardMapFamily },
     #[error("runtime range is invalid: {reason}")]

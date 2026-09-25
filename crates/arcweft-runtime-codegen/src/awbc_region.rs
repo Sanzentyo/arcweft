@@ -211,6 +211,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::SelectDialogueResult
         | AwbcOpcode::ProjectCall
         | AwbcOpcode::HostCall
+        | AwbcOpcode::SequencePopFront
         | AwbcOpcode::Await
         | AwbcOpcode::AwaitMany
         | AwbcOpcode::BudgetYield

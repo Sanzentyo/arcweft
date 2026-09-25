@@ -31,7 +31,7 @@ use crate::{
         HostCapabilityId, LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId,
         TaskOutcomeContract, TaskSequence,
     },
-    value::{RuntimeBinaryOp, RuntimeUnsignedIntWidth, RuntimeValue},
+    value::{RuntimeBinaryOp, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue},
 };
 use arcweft_id::DeclarationName;
 use arcweft_need::Progress;
@@ -1256,6 +1256,144 @@ fn native_if_uses_the_admitted_bool_condition() {
             value: "then".to_owned(),
         }]
     );
+}
+
+#[test]
+fn native_while_let_pop_front_drains_a_vec_and_handles_an_empty_vec() {
+    let item_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
+    let payload_type = RuntimeSemanticTypeId::from_bytes([5; 32]);
+    let option_type = RuntimeSemanticTypeId::from_bytes([6; 32]);
+    let sequence_type = RuntimeSemanticTypeId::from_bytes([7; 32]);
+    let entry = flow_id("flow.pop_front");
+
+    for values in [vec![RuntimeValue::i32(1), RuntimeValue::i32(2)], Vec::new()] {
+        let mut builder = RuntimePlanBuilder::new();
+        let admission = builder
+            .admit_type_batch(
+                [
+                    RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
+                    RuntimePlanTypeSeed::new(
+                        item_type,
+                        RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I32),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        payload_type,
+                        RuntimePlanTypeProjection::Tuple(Box::new([item_type])),
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        option_type,
+                        RuntimePlanTypeProjection::Option {
+                            item: item_type,
+                            some_payload: payload_type,
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(
+                        sequence_type,
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item: item_type,
+                        },
+                    ),
+                ],
+                [
+                    RuntimeLocalDeclarationSeed::new(sequence_type),
+                    RuntimeLocalDeclarationSeed::new(item_type),
+                ],
+            )
+            .expect("typed Vec.pop_front plan types admit");
+        let sequence = admission.local_ids()[0].clone();
+        let item = admission.local_ids()[1].clone();
+        let some_pattern = |payload| {
+            RuntimePatternSeed::new(
+                option_type,
+                RuntimePatternSeedKind::Variant {
+                    ordinal: 0,
+                    payload: Some(Box::new(RuntimePatternSeed::new(
+                        payload_type,
+                        RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                            item_type, payload,
+                        )])),
+                    ))),
+                },
+            )
+        };
+        let pop_front = || {
+            RuntimeExprSeed::new(
+                option_type,
+                RuntimeExprSeedKind::SequencePopFront {
+                    receiver: sequence.clone(),
+                },
+            )
+        };
+        builder
+            .push_flow_schema(flow_schema(&entry))
+            .expect("pop_front flow schema admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                entry.clone(),
+                [],
+                RuntimeEffectSet::empty(),
+                vec![
+                    RuntimeFlowOpSeed::Let {
+                        pattern: RuntimePatternSeed::new(
+                            sequence_type,
+                            RuntimePatternSeedKind::Bind {
+                                mutable: true,
+                                local: sequence.clone(),
+                            },
+                        ),
+                        expr: RuntimeExprSeed::new(
+                            sequence_type,
+                            RuntimeExprSeedKind::Value(RuntimeValue::Seq(
+                                crate::value::RuntimeSeq::values(values),
+                            )),
+                        ),
+                    },
+                    RuntimeFlowOpSeed::WhileLet {
+                        pattern: some_pattern(RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: item,
+                        }),
+                        expr: pop_front(),
+                        guard: None,
+                        body: vec![RuntimeFlowOpSeed::Noop],
+                    },
+                    RuntimeFlowOpSeed::IfLet {
+                        pattern: some_pattern(RuntimePatternSeedKind::Discard),
+                        expr: pop_front(),
+                        guard: None,
+                        then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_value("leftover"))],
+                        else_ops: Vec::new(),
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(string_value("drained")),
+                ],
+            ))
+            .expect("pop_front flow admits");
+        let mut engine = Engine::for_flow(builder.finish().expect("pop_front plan seals"), &entry)
+            .expect("pop_front flow exists");
+
+        let mut output = crate::step::RuntimeStepOutput::default();
+        for _ in 0..64 {
+            let next = step(&mut engine);
+            output.flow_events.extend(next.flow_events);
+            output.diagnostics.extend(next.diagnostics);
+            if matches!(
+                engine.fiber().status,
+                FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+            ) {
+                break;
+            }
+        }
+
+        assert_eq!(
+            output.flow_events,
+            vec![FlowEvent::Return {
+                value: "drained".to_owned(),
+            }],
+            "output: {output:?}; status: {:?}",
+            engine.fiber().status
+        );
+    }
 }
 
 #[test]

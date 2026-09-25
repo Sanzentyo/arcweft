@@ -929,6 +929,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                     .sum::<usize>()
         }
         RuntimeExprKind::ReductionUnchanged { state } => 2 + runtime_expr_work_units(state),
+        RuntimeExprKind::SequencePopFront { .. } => 4,
     }
 }
 

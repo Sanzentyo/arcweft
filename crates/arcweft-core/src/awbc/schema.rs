@@ -1514,6 +1514,7 @@ pub enum AwbcOpcode {
     Unary = 0x13,
     Binary = 0x14,
     SpecializeCallable = 0x15,
+    SequencePopFront = 0x16,
     CallPureHelper = 0x20,
     CallIntrinsic = 0x21,
     CallTraitMethod = 0x22,
@@ -1581,6 +1582,7 @@ impl AwbcOpcode {
         Self::Unary,
         Self::Binary,
         Self::SpecializeCallable,
+        Self::SequencePopFront,
         Self::CallPureHelper,
         Self::CallIntrinsic,
         Self::CallTraitMethod,
@@ -1669,6 +1671,7 @@ impl AwbcOpcode {
             | Self::SequenceGet
             | Self::SequenceSlice
             | Self::SequencePush
+            | Self::SequencePopFront
             | Self::ProjectTuple
             | Self::ProjectRecord
             | Self::ProjectField
@@ -1813,6 +1816,10 @@ pub enum AwbcInstruction {
     SequencePush {
         sequence: AwbcRegisterId,
         value: AwbcRegisterId,
+    },
+    SequencePopFront {
+        dst: AwbcRegisterId,
+        sequence: AwbcRegisterId,
     },
     MakeRecord {
         dst: AwbcRegisterId,
@@ -2013,6 +2020,7 @@ impl AwbcInstruction {
             Self::SequenceGet { .. } => AwbcOpcode::SequenceGet,
             Self::SequenceSlice { .. } => AwbcOpcode::SequenceSlice,
             Self::SequencePush { .. } => AwbcOpcode::SequencePush,
+            Self::SequencePopFront { .. } => AwbcOpcode::SequencePopFront,
             Self::MakeRecord { .. } => AwbcOpcode::MakeRecord,
             Self::MakeVariant { .. } => AwbcOpcode::MakeVariant,
             Self::ProjectTuple { .. } => AwbcOpcode::ProjectTuple,

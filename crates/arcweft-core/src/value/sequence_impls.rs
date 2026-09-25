@@ -103,6 +103,23 @@ impl TupleSeq {
                 .collect(),
         )
     }
+
+    fn pop_front(&mut self) -> Option<RuntimeValue> {
+        if self.is_empty() {
+            return None;
+        }
+        let values = self
+            .columns
+            .iter_mut()
+            .map(|column| {
+                column
+                    .pop_front()
+                    .expect("admitted tuple columns have the same nonzero length")
+            })
+            .collect();
+        self.len -= 1;
+        Some(RuntimeValue::Tuple(values))
+    }
 }
 
 impl RecordSeq {
@@ -168,6 +185,31 @@ impl RecordSeq {
 
     fn value_at(&self, index: usize) -> RuntimeValue {
         RuntimeValue::Record(RuntimeRecordValue::from_sequence_row(self, index))
+    }
+
+    fn pop_front(&mut self) -> Option<RuntimeValue> {
+        if self.is_empty() {
+            return None;
+        }
+        let fields = self
+            .fields
+            .iter_mut()
+            .map(|field| {
+                super::RuntimeFieldValue::new_accepted(
+                    field.field,
+                    field.name.clone(),
+                    field
+                        .values
+                        .pop_front()
+                        .expect("admitted record columns have the same nonzero length"),
+                )
+            })
+            .collect();
+        self.len -= 1;
+        Some(RuntimeValue::Record(
+            RuntimeRecordValue::try_from_fields(fields)
+                .expect("admitted record column layout remains valid after removing a row"),
+        ))
     }
 
     pub(super) fn try_from_fields(
@@ -721,6 +763,17 @@ impl RuntimeSeq {
         self.len() == 0
     }
 
+    /// Removes and returns the first sequence value without cloning it.
+    /// Columnar values are reconstructed by moving one item from each column.
+    pub fn pop_front(&mut self) -> Option<RuntimeValue> {
+        match self {
+            Self::Values(values) => (!values.is_empty()).then(|| values.remove(0)),
+            Self::Dense(values) => values.pop_front(),
+            Self::TupleColumns(values) => values.pop_front(),
+            Self::RecordColumns(values) => values.pop_front(),
+        }
+    }
+
     pub fn as_values(&self) -> Option<&[RuntimeValue]> {
         match self {
             Self::Values(values) => Some(values),
@@ -1111,6 +1164,37 @@ impl DenseSeq {
 
     pub fn i64(values: Vec<i64>) -> Self {
         Self::I64(DenseSeqStorage::new(values))
+    }
+
+    fn pop_front(&mut self) -> Option<RuntimeValue> {
+        Some(match self {
+            Self::Units(len) => {
+                if *len == 0 {
+                    return None;
+                }
+                *len -= 1;
+                RuntimeValue::Unit
+            }
+            Self::I8(values) => RuntimeValue::i8(values.pop_front()?),
+            Self::I16(values) => RuntimeValue::i16(values.pop_front()?),
+            Self::I32(values) => RuntimeValue::i32(values.pop_front()?),
+            Self::I64(values) => RuntimeValue::i64(values.pop_front()?),
+            Self::I128(values) => RuntimeValue::i128(values.pop_front()?),
+            Self::ISize(values) => RuntimeValue::isize(values.pop_front()?.get()),
+            Self::U8(values) | Self::Bytes(values) => RuntimeValue::u8(values.pop_front()?),
+            Self::U16(values) => RuntimeValue::u16(values.pop_front()?),
+            Self::U32(values) => RuntimeValue::u32(values.pop_front()?),
+            Self::U64(values) => RuntimeValue::u64(values.pop_front()?),
+            Self::U128(values) => RuntimeValue::u128(values.pop_front()?),
+            Self::USize(values) => RuntimeValue::usize(values.pop_front()?.get()),
+            Self::F32(values) => RuntimeValue::F32(values.pop_front()?),
+            Self::F64(values) => RuntimeValue::F64(values.pop_front()?),
+            Self::Bool(values) => RuntimeValue::Bool(values.pop_front()?),
+            Self::Chars(values) => RuntimeValue::Char(values.pop_front()?),
+            Self::Durations(values) => RuntimeValue::Duration(values.pop_front()?),
+            Self::Strings(values) => RuntimeValue::String(values.pop_front()?),
+            Self::EntityRefs(values) => RuntimeValue::EntityRef(values.pop_front()?),
+        })
     }
 
     pub fn i128(values: Vec<i128>) -> Self {
@@ -1743,6 +1827,10 @@ impl<T> DenseSeqStorage<T> {
         self.values
     }
 
+    fn pop_front(&mut self) -> Option<T> {
+        (!self.values.is_empty()).then(|| self.values.remove(0))
+    }
+
     pub fn len(&self) -> usize {
         self.values.len()
     }
@@ -1756,5 +1844,112 @@ impl<T: Clone> DenseSeqStorage<T> {
     #[must_use]
     pub fn tail_from(&self, index: usize) -> Self {
         Self::new(self.values[index..].to_vec())
+    }
+}
+
+#[cfg(test)]
+mod pop_front_tests {
+    use super::*;
+
+    #[test]
+    fn pop_front_moves_values_from_each_storage_form_and_handles_empty_sequences() {
+        let mut values = RuntimeSeq::values(vec![
+            RuntimeValue::String("first".to_owned()),
+            RuntimeValue::String("second".to_owned()),
+        ]);
+        assert_eq!(
+            values.pop_front(),
+            Some(RuntimeValue::String("first".to_owned()))
+        );
+        assert_eq!(
+            values.pop_front(),
+            Some(RuntimeValue::String("second".to_owned()))
+        );
+        assert_eq!(values.pop_front(), None);
+
+        let mut dense = RuntimeSeq::Dense(DenseSeq::strings(vec![
+            "dense-first".to_owned(),
+            "dense-second".to_owned(),
+        ]));
+        assert_eq!(
+            dense.pop_front(),
+            Some(RuntimeValue::String("dense-first".to_owned()))
+        );
+        assert_eq!(
+            dense.pop_front(),
+            Some(RuntimeValue::String("dense-second".to_owned()))
+        );
+        assert_eq!(dense.pop_front(), None);
+
+        let mut tuples = RuntimeSeq::tuple_columns(
+            2,
+            vec![
+                RuntimeSeq::values(vec![
+                    RuntimeValue::String("tuple-first".to_owned()),
+                    RuntimeValue::String("tuple-second".to_owned()),
+                ]),
+                RuntimeSeq::dense_bool(vec![true, false]),
+            ],
+        )
+        .expect("tuple columns have the same row count");
+        assert_eq!(
+            tuples.pop_front(),
+            Some(RuntimeValue::Tuple(vec![
+                RuntimeValue::String("tuple-first".to_owned()),
+                RuntimeValue::Bool(true),
+            ]))
+        );
+        assert_eq!(
+            tuples.pop_front(),
+            Some(RuntimeValue::Tuple(vec![
+                RuntimeValue::String("tuple-second".to_owned()),
+                RuntimeValue::Bool(false),
+            ]))
+        );
+        assert_eq!(tuples.pop_front(), None);
+
+        let mut records = RuntimeSeq::record_columns(
+            2,
+            vec![
+                (
+                    "name".to_owned(),
+                    RuntimeSeq::values(vec![
+                        RuntimeValue::String("record-first".to_owned()),
+                        RuntimeValue::String("record-second".to_owned()),
+                    ]),
+                ),
+                (
+                    "active".to_owned(),
+                    RuntimeSeq::dense_bool(vec![true, false]),
+                ),
+            ],
+        )
+        .expect("record columns have the same row count");
+        let Some(RuntimeValue::Record(first)) = records.pop_front() else {
+            panic!("record column front materializes one record row");
+        };
+        assert_eq!(
+            first.get(0).map(|field| field.value()),
+            Some(&RuntimeValue::String("record-first".to_owned()))
+        );
+        assert_eq!(
+            first.get(1).map(|field| field.value()),
+            Some(&RuntimeValue::Bool(true))
+        );
+        let Some(RuntimeValue::Record(second)) = records.pop_front() else {
+            panic!("second record column front materializes one record row");
+        };
+        assert_eq!(
+            second.get(0).map(|field| field.value()),
+            Some(&RuntimeValue::String("record-second".to_owned()))
+        );
+        assert_eq!(
+            second.get(1).map(|field| field.value()),
+            Some(&RuntimeValue::Bool(false))
+        );
+        assert_eq!(records.pop_front(), None);
+
+        let mut empty_units = RuntimeSeq::Dense(DenseSeq::units(0));
+        assert_eq!(empty_units.pop_front(), None);
     }
 }

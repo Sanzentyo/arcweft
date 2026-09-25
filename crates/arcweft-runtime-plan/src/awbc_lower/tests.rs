@@ -1,9 +1,9 @@
 use super::*;
 
-use arcweft_core::awbc::fiber::FiberState;
+use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, FiberState};
 use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcPattern, AwbcProgram, AwbcRuntimeTypeShape,
-    AwbcSafePointKind, AwbcTerminator,
+    AwbcBlockId, AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcPattern, AwbcProgram,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcTerminator,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{
@@ -27,6 +27,7 @@ use arcweft_core::plan::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::RuntimeValue;
+use std::sync::Arc;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
@@ -129,6 +130,247 @@ fn build_plan(
         builder.push_entry(entry).expect("test entry admits");
     }
     builder.finish().expect("test runtime plan seals")
+}
+
+fn build_bool_flow_plan(flow: FlowRuntimeId, ops: Vec<RuntimeFlowOpSeed>) -> RuntimePlan {
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(type_id(3), RuntimePlanTypeProjection::Bool),
+            ],
+            [],
+        )
+        .expect("boolean loop test types admit");
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("boolean loop test flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("boolean loop test flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            ops,
+        ))
+        .expect("boolean loop test flow admits");
+    builder
+        .push_entry(flow_entry("loop", flow))
+        .expect("boolean loop test entry admits");
+    builder.finish().expect("boolean loop test plan seals")
+}
+
+fn option_bool_pattern(
+    option_type: RuntimeSemanticTypeId,
+    payload_type: RuntimeSemanticTypeId,
+    bool_type: RuntimeSemanticTypeId,
+    kind: RuntimePatternSeedKind,
+) -> RuntimePatternSeed {
+    RuntimePatternSeed::new(
+        option_type,
+        RuntimePatternSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(RuntimePatternSeed::new(
+                payload_type,
+                RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(bool_type, kind)])),
+            ))),
+        },
+    )
+}
+
+fn build_while_let_plan(
+    value: RuntimeValue,
+    include_guard: bool,
+    body: Vec<RuntimeFlowOpSeed>,
+) -> RuntimePlan {
+    let flow = flow_id("while_let");
+    let bool_type = type_id(3);
+    let payload_type = type_id(4);
+    let option_type = type_id(5);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    payload_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([bool_type])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_type,
+                    RuntimePlanTypeProjection::Option {
+                        item: bool_type,
+                        some_payload: payload_type,
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(bool_type)],
+        )
+        .expect("while-let test types and binding admit");
+    let binding = admission.local_ids()[0].clone();
+    let pattern = option_bool_pattern(
+        option_type,
+        payload_type,
+        bool_type,
+        RuntimePatternSeedKind::Bind {
+            mutable: false,
+            local: binding.clone(),
+        },
+    );
+    let guard =
+        include_guard.then(|| RuntimeExprSeed::new(bool_type, RuntimeExprSeedKind::Local(binding)));
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("while-let test flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("while-let test flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::WhileLet {
+                    pattern,
+                    expr: RuntimeExprSeed::new(option_type, RuntimeExprSeedKind::Value(value)),
+                    guard,
+                    body,
+                },
+                RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+            ],
+        ))
+        .expect("while-let test flow admits");
+    builder
+        .push_entry(flow_entry("while_let", flow))
+        .expect("while-let test entry admits");
+    builder.finish().expect("while-let test plan seals")
+}
+
+fn two_bool_vec_expr(sequence_type: RuntimeSemanticTypeId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        sequence_type,
+        RuntimeExprSeedKind::Value(arcweft_core::value::runtime_sequence_values(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::Bool(false),
+        ])),
+    )
+}
+
+fn sequence_pop_front_expr(
+    option_type: RuntimeSemanticTypeId,
+    receiver: &RuntimeLocalSeedId,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        option_type,
+        RuntimeExprSeedKind::SequencePopFront {
+            receiver: receiver.clone(),
+        },
+    )
+}
+
+fn build_while_let_pop_front_plan() -> RuntimePlan {
+    let flow = flow_id("while_let.pop_front");
+    let bool_type = type_id(3);
+    let sequence_type = type_id(4);
+    let payload_type = type_id(5);
+    let option_type = type_id(6);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    sequence_type,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+                        item: bool_type,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    payload_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([bool_type])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_type,
+                    RuntimePlanTypeProjection::Option {
+                        item: bool_type,
+                        some_payload: payload_type,
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(sequence_type),
+                RuntimeLocalDeclarationSeed::new(bool_type),
+            ],
+        )
+        .expect("while-let pop_front types and locals admit");
+    let sequence = admission.local_ids()[0].clone();
+    let item = admission.local_ids()[1].clone();
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("while-let pop_front flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("while-let pop_front flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(
+                        sequence_type,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: true,
+                            local: sequence.clone(),
+                        },
+                    ),
+                    expr: two_bool_vec_expr(sequence_type),
+                },
+                RuntimeFlowOpSeed::WhileLet {
+                    pattern: option_bool_pattern(
+                        option_type,
+                        payload_type,
+                        bool_type,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: item,
+                        },
+                    ),
+                    expr: sequence_pop_front_expr(option_type, &sequence),
+                    guard: None,
+                    body: vec![RuntimeFlowOpSeed::Noop],
+                },
+                RuntimeFlowOpSeed::IfLet {
+                    pattern: option_bool_pattern(
+                        option_type,
+                        payload_type,
+                        bool_type,
+                        RuntimePatternSeedKind::Discard,
+                    ),
+                    expr: sequence_pop_front_expr(option_type, &sequence),
+                    guard: None,
+                    then_ops: vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("leftover"))],
+                    else_ops: Vec::new(),
+                },
+                RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+            ],
+        ))
+        .expect("while-let pop_front flow admits");
+    builder
+        .push_entry(flow_entry("while_let.pop_front", flow))
+        .expect("while-let pop_front entry admits");
+    builder.finish().expect("while-let pop_front plan seals")
 }
 
 fn flow_entry(id: &str, flow: FlowRuntimeId) -> RuntimeEntrySpec {
@@ -1179,6 +1421,251 @@ fn loop_continue_targets_the_verified_backedge_header() {
                                 == AwbcSafePointKind::LoopBackedge
                 )
             })
+    );
+}
+
+#[test]
+fn while_false_condition_skips_body_and_canonical_roundtrip_preserves_execution() {
+    let main = flow_id("while.zero");
+    let plan = build_bool_flow_plan(
+        main,
+        vec![
+            RuntimeFlowOpSeed::While {
+                condition: bool_expr(false),
+                body: vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("entered"))],
+            },
+            RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+        ],
+    );
+    let report = lower_plan(&plan);
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let encoded = report
+        .program
+        .encode_canonical()
+        .expect("while AWBC encodes canonically");
+    let decoded = AwbcProgram::decode_canonical(
+        &encoded,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("while AWBC decodes canonically");
+    assert_eq!(
+        run_entry(&decoded),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+}
+
+#[test]
+fn while_break_exits_after_one_positive_iteration() {
+    let main = flow_id("while.break");
+    let plan = build_bool_flow_plan(
+        main,
+        vec![
+            RuntimeFlowOpSeed::While {
+                condition: bool_expr(true),
+                body: vec![RuntimeFlowOpSeed::Break(None)],
+            },
+            RuntimeFlowOpSeed::ReturnExpr(string_expr("after")),
+        ],
+    );
+    let report = lower_plan(&plan);
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+    assert!(report.program.blocks.iter().any(|block| {
+        block.safe_point == AwbcSafePointKind::LoopBackedge
+            && matches!(block.terminator, AwbcTerminator::Jump { .. })
+    }));
+    assert!(
+        !report
+            .program
+            .intrinsics
+            .iter()
+            .any(|intrinsic| { intrinsic.identity.as_label() == "flow.break" })
+    );
+}
+
+#[test]
+fn while_continue_targets_its_condition_header() {
+    let main = flow_id("while.continue");
+    let plan = build_bool_flow_plan(
+        main,
+        vec![
+            RuntimeFlowOpSeed::While {
+                condition: bool_expr(true),
+                body: vec![RuntimeFlowOpSeed::Continue],
+            },
+            RuntimeFlowOpSeed::ReturnExpr(unit_expr()),
+        ],
+    );
+    let report = lower_plan(&plan);
+    assert!(
+        report
+            .program
+            .blocks
+            .iter()
+            .enumerate()
+            .any(|(index, block)| {
+                matches!(
+                    block.terminator,
+                    AwbcTerminator::Jump { target }
+                        if target.index() < index
+                            && report.program.blocks[target.index()].safe_point
+                                == AwbcSafePointKind::LoopBackedge
+                )
+            })
+    );
+    assert!(
+        !report
+            .program
+            .intrinsics
+            .iter()
+            .any(|intrinsic| { intrinsic.identity.as_label() == "flow.continue" })
+    );
+}
+
+#[test]
+fn while_let_tests_pattern_and_guard_before_entering_its_body() {
+    let false_match = build_while_let_plan(
+        RuntimeValue::option_none(),
+        false,
+        vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("entered"))],
+    );
+    let false_match_report = lower_plan(&false_match);
+    assert_eq!(
+        run_entry(&false_match_report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let false_guard = build_while_let_plan(
+        RuntimeValue::option_some(RuntimeValue::Bool(false)),
+        true,
+        vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("entered"))],
+    );
+    let false_guard_report = lower_plan(&false_guard);
+    assert_eq!(
+        run_entry(&false_guard_report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let matched = build_while_let_plan(
+        RuntimeValue::option_some(RuntimeValue::Bool(true)),
+        true,
+        vec![RuntimeFlowOpSeed::Break(None)],
+    );
+    let matched_report = lower_plan(&matched);
+    assert_eq!(
+        run_entry(&matched_report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let guard_true = build_while_let_plan(
+        RuntimeValue::option_some(RuntimeValue::Bool(true)),
+        true,
+        vec![RuntimeFlowOpSeed::ReturnExpr(string_expr("entered"))],
+    );
+    let guard_true_report = lower_plan(&guard_true);
+    assert_eq!(
+        run_entry(&guard_true_report.program),
+        VmExit::Returned(Some(RuntimeValue::String("entered".to_owned())))
+    );
+}
+
+#[test]
+fn while_let_reevaluates_its_mutating_scrutinee_until_exhausted() {
+    let report = lower_plan(&build_while_let_pop_front_plan());
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let loop_header = report
+        .program
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(index, block)| {
+            (block.safe_point == AwbcSafePointKind::LoopBackedge
+                && matches!(
+                    block.terminator,
+                    AwbcTerminator::Jump { target }
+                        if target.index() == index.saturating_add(1)
+                ))
+            .then_some(AwbcBlockId(
+                u32::try_from(index).expect("test block index fits u32"),
+            ))
+        })
+        .expect("while-let owns a dedicated loop header safe point");
+    let mut fiber = FiberState::for_entry(&report.program, AwbcEntryId(0), 256, 256)
+        .expect("fiber initializes");
+    let mut at_between_iterations = false;
+    for _ in 0..64 {
+        let sequence_has_one_item = fiber
+            .active_frame()
+            .expect("active loop frame")
+            .registers
+            .iter()
+            .flatten()
+            .any(|value| matches!(value, RuntimeValue::Seq(sequence) if sequence.len() == 1));
+        if fiber.cursor.block == loop_header && sequence_has_one_item {
+            at_between_iterations = true;
+            break;
+        }
+        assert_eq!(
+            vm::step(
+                &report.program,
+                &mut fiber,
+                VmStepOptions {
+                    max_instructions: 1,
+                },
+            )
+            .expect("single-instruction VM slice executes")
+            .exit,
+            VmExit::Running,
+            "loop remains running before its second condition check"
+        );
+    }
+    assert!(
+        at_between_iterations,
+        "the first condition pop and body complete before snapshot"
+    );
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("mid-loop snapshot saves");
+    let owner = arcweft_core::task::RuntimeProgramOwner::Awbc(Arc::new(report.program.clone()));
+    let mut restored = snapshot
+        .into_live_for_program(&owner)
+        .expect("mid-loop snapshot restores to the same program");
+    restored
+        .validate_for_program(&report.program)
+        .expect("restored loop state validates");
+    assert_eq!(
+        vm::step(
+            &report.program,
+            &mut restored,
+            VmStepOptions {
+                max_instructions: 128,
+            },
+        )
+        .expect("restored while-let completes")
+        .exit,
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+
+    let encoded = report
+        .program
+        .encode_canonical()
+        .expect("mutating while-let AWBC encodes canonically");
+    let decoded = AwbcProgram::decode_canonical(
+        &encoded,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("mutating while-let AWBC decodes canonically");
+    assert_eq!(
+        run_entry(&decoded),
+        VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
     );
 }
 

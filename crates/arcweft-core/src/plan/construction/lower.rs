@@ -163,6 +163,23 @@ impl RuntimePlanBuilder {
                 require_same("local expression", ty, local_ty)?;
                 RuntimeExprKind::Local(local)
             }
+            RuntimeExprSeedKind::SequencePopFront { receiver } => {
+                let (receiver, receiver_ty) = self.resolve_local(&receiver)?;
+                let item = match self.projection(receiver_ty)? {
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                        item,
+                    } => *item,
+                    _ => return invalid_projection("Vec.pop_front receiver", receiver_ty),
+                };
+                self.require_projection("Vec.pop_front result", ty, |projection| {
+                    matches!(
+                        projection,
+                        RuntimePlanTypeProjection::Option { item: result, .. } if *result == item
+                    )
+                })?;
+                RuntimeExprKind::SequencePopFront { receiver }
+            }
             RuntimeExprSeedKind::EntityRef(entity) => {
                 self.require_projection("entity-reference expression", ty, |projection| {
                     matches!(projection, RuntimePlanTypeProjection::EntityReference)
@@ -2284,6 +2301,11 @@ impl RuntimePlanBuilder {
             RuntimeExprKind::Local(local) => {
                 require_local_in_scope(*local, scope)?;
                 used.insert(*local);
+                Ok(())
+            }
+            RuntimeExprKind::SequencePopFront { receiver } => {
+                require_local_in_scope(*receiver, scope)?;
+                used.insert(*receiver);
                 Ok(())
             }
             RuntimeExprKind::Let {

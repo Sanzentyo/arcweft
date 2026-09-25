@@ -795,6 +795,15 @@ impl ResolvedCallable {
     pub fn family(&self) -> CallableFamily {
         self.base.authority().family()
     }
+    /// Returns the sealed operation for one language-owned capacity method.
+    pub fn capacity_operation(&self) -> Option<CheckedCapacityOperation> {
+        match self.base.authority.stable() {
+            ResolvedCallableStableIdentity::Language(
+                CheckedLanguageCallableIdentity::Capacity(method),
+            ) => Some(method.operation()),
+            _ => None,
+        }
+    }
     pub fn origin(&self) -> &ResolvedCallableOrigin {
         self.base.authority().issuer().origin()
     }

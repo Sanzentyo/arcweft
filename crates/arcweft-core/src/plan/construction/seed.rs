@@ -1859,6 +1859,10 @@ pub enum RuntimeExprSeedKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExprSeed),
     Local(RuntimeLocalSeedId),
+    /// Removes the first item from an exact Vec local and returns `Option<T>`.
+    SequencePopFront {
+        receiver: RuntimeLocalSeedId,
+    },
     EntityRef(RuntimeEntityReference),
     Let {
         binding: RuntimeLocalSeedId,
@@ -2261,6 +2265,9 @@ impl RuntimeExprSeed {
             }
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),
             RuntimeExprSeedKind::Local(local) => push_free_local(local, bound, locals),
+            RuntimeExprSeedKind::SequencePopFront { receiver } => {
+                push_free_local(receiver, bound, locals)
+            }
             RuntimeExprSeedKind::Let {
                 binding,
                 expr,

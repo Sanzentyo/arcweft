@@ -1,4 +1,7 @@
-use super::{RuntimeEnv, RuntimeLocalBinding, RuntimeRecordFieldId, RuntimeScope, RuntimeValue};
+use super::{
+    RuntimeEnv, RuntimeEvalError, RuntimeLocalBinding, RuntimeRecordFieldId, RuntimeScope,
+    RuntimeValue, runtime_value_label,
+};
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::scope::RuntimeScopeIdentity;
 
@@ -117,6 +120,26 @@ impl RuntimeEnv {
             .iter_mut()
             .rev()
             .find_map(|scope| scope.take(local))
+    }
+
+    /// Pops from the nearest binding without moving or cloning the sequence
+    /// value itself. Checked expression admission restricts this operation to
+    /// Vec locals and parameters.
+    pub(crate) fn pop_sequence_front(
+        &mut self,
+        local: RuntimeLocalDeclarationId,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        for scope in self.scopes.iter_mut().rev() {
+            if let Some(binding) = scope.binding_mut(local) {
+                return match &mut binding.value {
+                    RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
+                    value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
+                        value,
+                    ))),
+                };
+            }
+        }
+        Err(RuntimeEvalError::UnknownLocal(local))
     }
 
     pub(crate) fn get_cloned(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
@@ -316,7 +339,7 @@ impl RuntimeScope {
 mod tests {
     use super::*;
     use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
-    use crate::value::RuntimeNominalRecordValue;
+    use crate::value::{RuntimeNominalRecordValue, RuntimeSeq};
     use std::num::NonZeroU32;
 
     fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
@@ -401,5 +424,49 @@ mod tests {
             record.field(field),
             Some(&RuntimeValue::String("new".to_owned()))
         );
+    }
+
+    #[test]
+    fn sequence_pop_front_mutates_the_nearest_binding_and_moves_values() {
+        let local = local(9);
+        let mut env = RuntimeEnv::default();
+        env.set_root(
+            local,
+            RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::String(
+                "outer".to_owned(),
+            )])),
+        );
+        env.push_scope();
+        env.set(
+            local,
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::String("first".to_owned()),
+                RuntimeValue::String("second".to_owned()),
+            ])),
+        );
+
+        assert_eq!(
+            env.pop_sequence_front(local),
+            Ok(Some(RuntimeValue::String("first".to_owned())))
+        );
+        assert_eq!(
+            env.get(local),
+            Some(&RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::String("second".to_owned(),)
+            ])))
+        );
+
+        env.pop_scope();
+        assert_eq!(
+            env.get(local),
+            Some(&RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::String("outer".to_owned(),)
+            ])))
+        );
+        assert_eq!(
+            env.pop_sequence_front(local),
+            Ok(Some(RuntimeValue::String("outer".to_owned())))
+        );
+        assert_eq!(env.pop_sequence_front(local), Ok(None));
     }
 }

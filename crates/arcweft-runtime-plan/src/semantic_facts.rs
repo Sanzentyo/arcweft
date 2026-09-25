@@ -3112,6 +3112,8 @@ impl RuntimeResolvedVariant {
 pub enum RuntimeResolvedCallError {
     #[error("CharacterDialogue operation does not consume its complete source-ordered operand row")]
     CharacterDialogueSourceRow,
+    #[error("Vec.pop_front mutation does not have one receiver-only value call shape")]
+    VecPopFrontCallShape,
     #[error("runtime call ABI position {position} is outside operand count {operand_count}")]
     AbiPositionOutOfRange { position: u32, operand_count: u32 },
     #[error("runtime call repeats ABI position {position}")]
@@ -3229,7 +3231,14 @@ pub struct RuntimeResolvedCall {
     operands: Box<[RuntimeResolvedCallOperand]>,
     attached_content: Option<RuntimePositionedAttachedContent>,
     project_function: Option<RuntimeProjectFunctionCallPlan>,
+    mutation: Option<RuntimeResolvedCallMutation>,
     result: RuntimeCallResultShape,
+}
+
+/// Checked mutation owned by one final call fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedCallMutation {
+    VecPopFront { source: ExprId, receiver: LocalId },
 }
 
 impl RuntimeResolvedCall {
@@ -3446,8 +3455,41 @@ impl RuntimeResolvedCall {
             operands: operands.into_boxed_slice(),
             attached_content: positioned_attached_content,
             project_function,
+            mutation: None,
             result,
         })
+    }
+
+    /// Attaches a checked in-place operation after validating the complete
+    /// call row that this operation consumes.
+    pub fn try_with_mutation(
+        mut self,
+        mutation: RuntimeResolvedCallMutation,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        let valid_shape = self.operands.len() == 1
+            && matches!(
+                (self.operands.first(), mutation),
+                (
+                    Some(RuntimeResolvedCallOperand {
+                        origin: RuntimeResolvedCallOperandOrigin::Receiver,
+                        source: RuntimeResolvedCallOperandSource::Expression(source),
+                        ..
+                    }),
+                    RuntimeResolvedCallMutation::VecPopFront { source: expected, .. }
+                ) if *source == expected
+            )
+            && matches!(
+                self.dispatch,
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
+            )
+            && self.attached_content.is_none()
+            && self.project_function.is_none()
+            && self.result == RuntimeCallResultShape::Value;
+        if !valid_shape || self.mutation.is_some() {
+            return Err(RuntimeResolvedCallError::VecPopFrontCallShape);
+        }
+        self.mutation = Some(mutation);
+        Ok(self)
     }
 
     pub const fn dispatch(&self) -> &RuntimeResolvedCallDispatch {
@@ -3496,6 +3538,10 @@ impl RuntimeResolvedCall {
 
     pub const fn project_function(&self) -> Option<&RuntimeProjectFunctionCallPlan> {
         self.project_function.as_ref()
+    }
+
+    pub const fn mutation(&self) -> Option<RuntimeResolvedCallMutation> {
+        self.mutation
     }
 
     pub const fn result(&self) -> RuntimeCallResultShape {
@@ -3563,6 +3609,7 @@ impl RuntimeResolvedCallDispatch {
             },
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::Agent(_)
                 | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                 | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
@@ -3606,6 +3653,8 @@ pub enum RuntimeLineCallable {
 )]
 pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
+    /// Checked in-place `Vec.pop_front()` consumed by expression lowering.
+    VecPopFront,
     Agent(crate::agent::RuntimeAgentIntrinsic),
     AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
     AgentDiagnosticsHasError,
@@ -6277,6 +6326,7 @@ impl RuntimePlanSemanticFacts {
                 ) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                    | RuntimeResolvedStaticCallTarget::VecPopFront
                     | RuntimeResolvedStaticCallTarget::Agent(_)
                     | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
@@ -9505,6 +9555,7 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
             | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
             | RuntimeResolvedStaticCallTarget::Reduction(_)
+            | RuntimeResolvedStaticCallTarget::VecPopFront
             | RuntimeResolvedStaticCallTarget::Intrinsic(_)
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
@@ -9674,6 +9725,44 @@ fn validate_call(
                 }
             }
         }
+    }
+    if let Some(RuntimeResolvedCallMutation::VecPopFront { source, .. }) = call.mutation() {
+        let receiver_matches = matches!(
+            call.operands(),
+            [RuntimeResolvedCallOperand {
+                origin: RuntimeResolvedCallOperandOrigin::Receiver,
+                source: RuntimeResolvedCallOperandSource::Expression(actual),
+                ty,
+                ..
+            }] if *actual == source
+                && matches!(
+                    ty.shape(),
+                    RuntimeTypeShape::Sequence {
+                        kind: RuntimeSequenceKind::Vec,
+                        item,
+                    } if expression_source_type.is_some_and(|result| {
+                        matches!(
+                            result.shape(),
+                            RuntimeTypeShape::Option { item: result_item, .. }
+                                if result_item.as_ref() == item.as_ref()
+                        )
+                    })
+                )
+        );
+        if !receiver_matches
+            || call.result() != RuntimeCallResultShape::Value
+            || !matches!(
+                call.dispatch(),
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
+            )
+        {
+            return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
+        }
+    } else if matches!(
+        call.dispatch(),
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
+    ) {
+        return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
     }
     match call.dispatch() {
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_))
@@ -10294,6 +10383,7 @@ fn validate_project_function_instance(
             }) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::Agent(_)
                 | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
                 | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError

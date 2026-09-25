@@ -163,6 +163,11 @@ Array<T, N>
 `Vec<T>` is the default growable ordered sequence. It preserves authored order
 and is the normal target for bracket sequence literals when no fixed-size context exists.
 
+`pop_front()` removes the first item from a `Vec<T>` in place and returns
+`Option<T>`: an empty vector returns `None`, while a nonempty vector moves its
+first item into `Some`. The receiver must be a checked writable `Vec<T>` place,
+and the operation moves from the existing sequence storage.
+
 `Array<T, N>` is a fixed-length sequence. A literal such as `[a, b, c]` can be
 typed as `Array<T, 3>` when the expected type requires exactly three elements.
 Without an expected fixed-length type, the same literal defaults to `Vec<T>`.

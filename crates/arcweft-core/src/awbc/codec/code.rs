@@ -466,6 +466,10 @@ impl Wire for AwbcInstruction {
                 sequence.write_wire(writer)?;
                 value.write_wire(writer)?;
             }
+            Self::SequencePopFront { dst, sequence } => {
+                dst.write_wire(writer)?;
+                sequence.write_wire(writer)?;
+            }
             Self::MakeRecord { dst, ty, fields } => {
                 dst.write_wire(writer)?;
                 ty.write_wire(writer)?;
@@ -744,6 +748,10 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::SequencePush => Self::SequencePush {
                 sequence: AwbcRegisterId::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
+            },
+            AwbcOpcode::SequencePopFront => Self::SequencePopFront {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                sequence: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::MakeRecord => Self::MakeRecord {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -1324,6 +1332,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::SequenceGet
             | AwbcOpcode::SequenceSlice
             | AwbcOpcode::SequencePush
+            | AwbcOpcode::SequencePopFront
             | AwbcOpcode::MakeRecord
             | AwbcOpcode::MakeVariant
             | AwbcOpcode::ProjectTuple

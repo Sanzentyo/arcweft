@@ -1,3 +1,7 @@
+enum GameEvent {
+    ChoiceSelected { id: i32 }
+}
+
 flow pattern_edge(opt: Option<i32>, events: Vec<GameEvent>) -> i32 {
     let .Some(first) = opt else {
         return 0

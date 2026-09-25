@@ -75,6 +75,20 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     self.path
                 )
             }),
+            RuntimeExprKind::SequencePopFront { receiver } => {
+                let sequence = self.frame.register_for_local(*receiver).unwrap_or_else(|| {
+                    panic!(
+                        "admitted Vec.pop_front receiver local `{receiver}` is not in the AWBC frame at {}",
+                        self.path
+                    )
+                });
+                let dst = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::SequencePopFront { dst, sequence });
+                dst
+            }
             RuntimeExprKind::EntityRef(value) => {
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);

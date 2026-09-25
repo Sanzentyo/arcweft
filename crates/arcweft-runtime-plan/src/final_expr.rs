@@ -37,13 +37,13 @@ use crate::semantic_facts::{
     RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
     RuntimeProjectCallableValueTarget, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-    RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
-    RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-    RuntimeResolvedCallOperandSource, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
-    RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
-    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
-    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
+    RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
+    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedSelect,
+    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+    RuntimeScopeContinuation, RuntimeScopeOwner, RuntimeScopedExecutableSemanticFactView,
+    RuntimeStandardMapCall, RuntimeStandardMapFamily as SemanticStandardMapFamily,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -1610,6 +1610,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
+        if let Some(RuntimeResolvedCallMutation::VecPopFront { receiver, .. }) = selected.mutation()
+        {
+            return Ok(RuntimeExprSeedKind::SequencePopFront {
+                receiver: self.local(receiver)?,
+            });
+        }
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
             map,
         )) = selected.dispatch()
@@ -1640,6 +1646,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
             | RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::AgentProbeComparison(_),
             )

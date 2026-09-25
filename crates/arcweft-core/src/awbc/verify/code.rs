@@ -609,6 +609,40 @@ fn apply_instruction(
                 return invalid_type(&at, "sequence input");
             }
         }
+        AwbcInstruction::SequencePopFront { dst, sequence } => {
+            if dst == sequence {
+                return invalid_type(
+                    &at,
+                    "distinct Vec receiver and Option destination registers",
+                );
+            }
+            let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
+            let Some(AwbcRuntimeTypeShape::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item,
+            }) = runtime_shape(program, sequence_ty)
+            else {
+                return invalid_type(&at, "Vec local receiver");
+            };
+            let receiver_role = function_layout(verifier, function)
+                .slots
+                .get(sequence.index())
+                .map(|slot| slot.role);
+            if !matches!(
+                receiver_role,
+                Some(AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::Local)
+            ) {
+                return invalid_type(&at, "writable Vec local or parameter receiver");
+            }
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            if program
+                .builtin_variant_payload_item(dst_ty, RuntimeBuiltinVariantCaseIdentity::OptionSome)
+                != Some(*item)
+            {
+                return invalid_type(&at, "Option result matching the Vec item type");
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::MakeRecord { dst, ty, fields } => {
             check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;

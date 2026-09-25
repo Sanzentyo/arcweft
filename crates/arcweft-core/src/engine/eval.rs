@@ -126,6 +126,11 @@ impl Engine {
                 .get(*local)
                 .cloned()
                 .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+            RuntimeExprKind::SequencePopFront { receiver } => {
+                self.fiber.env.pop_sequence_front(*receiver).map(|value| {
+                    value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
+                })
+            }
             RuntimeExprKind::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExprKind::Let {
                 binding,

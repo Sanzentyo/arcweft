@@ -13,8 +13,8 @@ use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
-    RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeOpaqueTypeAdmission,
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeCallableAttachedContract,
@@ -96,6 +96,194 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+fn sequence_pop_front_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    program
+        .strings
+        .extend(["Some".to_owned(), "None".to_owned()]);
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Bool),
+        runtime_type(2, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)])),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                arguments: Vec::new(),
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(1),
+                        payload: Some(AwbcTypeId(1)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: None,
+                    },
+                ],
+            },
+        ),
+        runtime_type(
+            4,
+            AwbcRuntimeTypeShape::Sequence {
+                kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                item: AwbcTypeId(0),
+            },
+        ),
+    ];
+    program.signatures[0].result = Some(AwbcTypeId(2));
+    program.frame_layouts[0].slots = vec![
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(3),
+            role: AwbcFrameSlotRole::Local,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(2),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(2),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(2),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+    ];
+    program.constants = vec![AwbcConstant::Bool(true), AwbcConstant::Bool(false)];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::MakeSequence {
+            dst: AwbcRegisterId(2),
+            items: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+        },
+        AwbcInstruction::SequencePopFront {
+            dst: AwbcRegisterId(3),
+            sequence: AwbcRegisterId(2),
+        },
+        AwbcInstruction::SequencePopFront {
+            dst: AwbcRegisterId(4),
+            sequence: AwbcRegisterId(2),
+        },
+        AwbcInstruction::SequencePopFront {
+            dst: AwbcRegisterId(5),
+            sequence: AwbcRegisterId(2),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 6);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(5)),
+    };
+    program.canonicalize_string_table();
+    program
+}
+
+#[test]
+fn sequence_pop_front_roundtrips_verifies_moves_rows_and_survives_restore() {
+    let program = sequence_pop_front_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("typed Vec.pop_front instruction verifies");
+    let encoded = program.encode_canonical().expect("encode Vec.pop_front");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode Vec.pop_front");
+    assert_eq!(decoded, program);
+
+    let mut temporary_receiver = program.clone();
+    temporary_receiver.frame_layouts[0].slots[2].role = AwbcFrameSlotRole::Temporary;
+    assert!(
+        temporary_receiver
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut non_vec_receiver = program.clone();
+    non_vec_receiver.runtime_types[3] = runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Seq,
+            item: AwbcTypeId(0),
+        },
+    );
+    assert!(
+        non_vec_receiver
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64)
+        .expect("Vec.pop_front fiber initializes");
+    let first = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 4,
+        },
+    )
+    .expect("first pop executes");
+    assert_eq!(first.exit, super::vm::VmExit::Running);
+    let Some(RuntimeValue::Seq(sequence)) = fiber.frames[0].registers[2].as_ref() else {
+        panic!("mutated local remains a Vec register");
+    };
+    assert_eq!(sequence.len(), 1);
+    assert_eq!(sequence.value_at(0), RuntimeValue::Bool(false));
+
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot mutated Vec");
+    let serialized = serde_json::to_vec(&snapshot).expect("serialize mutated Vec snapshot");
+    let snapshot: AwbcFiberStateSnapshot =
+        serde_json::from_slice(&serialized).expect("decode mutated Vec snapshot");
+    let mut restored = snapshot
+        .into_live_for_program(&RuntimeProgramOwner::Awbc(std::sync::Arc::new(
+            decoded.clone(),
+        )))
+        .expect("restore mutated Vec snapshot");
+    restored
+        .validate_for_program(&decoded)
+        .expect("restored Vec registers validate");
+    assert_eq!(
+        restored.frames[0].registers[2],
+        fiber.frames[0].registers[2]
+    );
+
+    let rest = super::vm::step(
+        &decoded,
+        &mut restored,
+        super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .expect("remaining repeated pops execute after restore");
+    assert_eq!(
+        rest.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::option_none()))
+    );
 }
 
 #[test]
@@ -1456,6 +1644,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::Unary, 0x13, Value),
         (AwbcOpcode::Binary, 0x14, Value),
         (AwbcOpcode::SpecializeCallable, 0x15, Value),
+        (AwbcOpcode::SequencePopFront, 0x16, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),

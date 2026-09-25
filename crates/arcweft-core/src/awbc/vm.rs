@@ -884,6 +884,37 @@ fn execute_instruction(
                 }
             }
         }
+        AwbcInstruction::SequencePopFront { dst, sequence } => {
+            if dst == sequence {
+                return Err(VmError::Runtime(
+                    "Vec.pop_front destination aliases its receiver".to_owned(),
+                ));
+            }
+            let popped = {
+                let frame = fiber.active_frame_mut()?;
+                match frame
+                    .registers
+                    .get_mut(sequence.index())
+                    .and_then(Option::as_mut)
+                {
+                    Some(RuntimeValue::Seq(sequence)) => sequence.pop_front(),
+                    Some(_) => {
+                        return Err(VmError::Runtime(
+                            "Vec.pop_front expected a sequence value".to_owned(),
+                        ));
+                    }
+                    None => {
+                        return Err(FiberStateError::RegisterOutOfBounds {
+                            register: sequence.0,
+                            layout: frame.layout.0,
+                        }
+                        .into());
+                    }
+                }
+            };
+            let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
+            fiber.active_frame_mut()?.set_register(*dst, result)?;
+        }
         AwbcInstruction::MakeRecord { dst, ty, fields } => {
             let fields = fields
                 .iter()
