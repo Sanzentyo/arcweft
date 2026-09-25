@@ -1327,3 +1327,36 @@ workspace all-target/all-feature check、workspace Clippy、fmt、structure audi
 `AWF-EFX-007` (`dialogue.schedule` を選択 target が提供できない) で停止した。
 全 recipe の合格ではない。Sol Max の照合では schedule/voice は engine 提供の
 typed effect であり、adapter 固有の許可を fixture に足す問題ではない。
+
+## 045 Dialogue profile 接続 checkpoint — 2026-09-26
+
+確認した `main`/`origin/main` は
+`75e347c2448cf5f157cceb795122c9af5ef96dcd` で一致する。working tree は
+045 の CLI profile fixture と harness の統合中で dirty。次の 5 cut は個別に
+commit/push 済み。
+
+- `ce7af979391ac5ecdae9ccf78c3d926bc5bcea92`: target availability に
+  engine 提供の control/dialogue/observation effect inventory を加え、adapter
+  提供 effect と区別した。focused Sema test 1/1 と Sema all-target check が通過。
+- `4434adf3dda0e10e42efabaea4fbebcae1cac559`: 重複していた
+  `PresentationLifetime` opaque 登録を削除し、既存の閉じた enum を唯一の owner
+  とした。focused Sema catalog と compiler projection test は各 1/1 通過。
+- `fe27db1c56c7f5cf33c97162492d6b99fb07ad4d`: `at(anchor)(callback)`
+  を二段の checked callable として保持し、terminal と exact prefix continuation
+  を結合した。直接消費される prefix は Call 事実を残した fused disposition で
+  二重実行を避ける。focused Sema line-plan test 1/1 通過。
+- `a9873c59ffdac269d9fee943b39505d10f8f54ea`: profile loader は
+  source の論理 Character と同じ公開 ID の visual manifest を読み込むとき、
+  重複する外部 symbol だけを生成しない。manifest/look 登録は保持する。
+  派生/明示/異なる ID の focused loader test 1/1 と HIR header test 1/1 通過。
+- `75e347c2448cf5f157cceb795122c9af5ef96dcd`: `actor.look` の省略可能な
+  `crossfade` を checked optional operand として保持し、省略時は RuntimePlan で
+  typed 0ms Duration を生成。直接 line-plan の省略/120ms の compiler test 1/1、
+  compiler/RuntimePlan all-target check が通過。
+
+045 の実 profile check は display-name owner の接続を越えたが、timed callback の
+closure body が親 line-plan の semantic scope からは見えず
+`compiler.runtime_plan_lower` で停止した。後続の content handle 不在はその
+line-plan 失敗から派生する。profile fixture 合格、native/decoded AWBC 実行、
+workspace test recipe と最終 gate は未達であり、この checkpoint の合格証拠に
+含めない。
