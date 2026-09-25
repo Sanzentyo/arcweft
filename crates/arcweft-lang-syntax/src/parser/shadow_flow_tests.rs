@@ -38,16 +38,21 @@ fn on_handler_blocks_preserve_statement_bodies_and_recovery_sites() {
         assert_eq!(built.green().to_string(), source);
     }
 
-    let arrow_with_block =
-        "flow arrow() -> String {\n    on event(event) => if true { log.info(\"inside\") }\n    return \"done\"\n}\n";
+    let arrow_with_block = "flow arrow() -> String {\n    on event(event) => if true { log.info(\"inside\") }\n    return \"done\"\n}\n";
     let built = parse_document(
         &document(arrow_with_block),
         crate::parser::ParseOptions::default(),
     )
     .unwrap();
     assert!(built.diagnostics().is_empty(), "{:#?}", built.diagnostics());
-    assert_eq!(kind_count(built.index().entries(), SyntaxKind::OnStatement), 1);
-    assert_eq!(kind_count(built.index().entries(), SyntaxKind::IfStatement), 1);
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::OnStatement),
+        1
+    );
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::IfStatement),
+        1
+    );
     assert_eq!(built.green().to_string(), arrow_with_block);
 
     let missing = "flow missing() -> String {\n    on event(event):\n    return \"done\"\n}\n";
