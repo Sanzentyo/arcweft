@@ -1139,3 +1139,39 @@ scope に接続し、source-index の本文順序と回復を検証する
 結果型へ集めず、core/native/AWBC と保存復元が取消 `InputActionId` 専用の選択状態を
 持つため未接続。マーク起因の結果選択はハンドラ scope を終了させ、行そのものは
 子処理と cleanup を待ってから一度だけ公開する契約として、後続 cut で閉じる。
+
+## Dialogue Init / AWBC 実行 checkpoint — 2026-09-25
+
+Supersedes: 直前の「027 は HIR staged arena validation で失敗」「Init は作業中」
+という状態記述。確認した `main` と `origin/main` は
+`386707b71d798348428c249685e52a576be12594` で一致し、この確認時点の
+working tree は clean。後続の `on mark` 結果選択は別 cut として作業中。
+
+bracket dialogue 後の裸 scope 分割が `for value in [true, false] { ... }` にまで
+及んだ回帰を statement head の境界で修正した
+(`bdc2910d7582111a36e507cb75de11dc3e7331b0`)。Syntax lib 696/696 と
+Sema statement producer matrix 4/4 を確認した。型付き Init は独立の pre-reveal
+scope、source-index、nested line `out` の結果型、後続項目の到達性、および
+RuntimePlan の EnterScope → CommitDialogueResult → ExitScope に接続した
+(`5242a0bfb2df3e6a3c3f2b6da83bd75176f6017d`)。focused Syntax 6/6、HIR
+4/4、compiler 1/1（AWBC verification を含む）、Sema lib 923/923 が通過。
+
+native Init は scoped defer の LIFO cleanup、affine handle/drop、早期 `out`、
+EvaluatedEffect と HostCall continuation を接続済み
+(`0d2c04bad4c7e7c00e9353a405767aed666ed924`)。core check、Init 5/5、defer
+9/9、transaction rollback 1/1 と structure audit gate が通過。AWBC product は
+HostCall の保存復元・再発行、activation effect の実行バッチ、CurrentScope の
+defer と affine VoiceHandle capture/drop/release、`out` 後の tail skip、cleanup
+後の reveal を接続した (`a6e435371641e4100bcf954a880c64684d055a49`)。
+新規 acceptance 1/1、AWBC defer 10/10、core check、direct suspension 8/8 が
+通過した。027 fixture の未定義 `.Completed` を Unit result `out ()` に訂正し
+(`71152e7d43fee81e6e56551281dc221cb6d2bf7a`)、単独 CLI check/verify と
+current-pass check 30件の直接 CLI 実行がすべて通過。全体 fmt check の残る
+syntax test 書式差分も整えた (`386707b71d798348428c249685e52a576be12594`)
+後、`cargo fmt --all -- --check` は終了コード0。
+
+この checkpoint は Init と 027 の受理であり、維持仕様の `on mark` 本文内
+`out` の実行選択、特に通常の `out` がない非 Unit 行、native/AWBC の mark
+選択と保存復元は未完。generic child-fiber の nested defer も未接続。
+workspace all-target/all-feature check、workspace test、Clippy と goal の後続工程は
+この cut では未実施・未完了であり、局所通過を全体合格とは扱わない。
