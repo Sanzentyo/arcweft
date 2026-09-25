@@ -1037,3 +1037,33 @@ CLI の先行 named tests が通過したが、最後の CLI `arcw_fixtures_chec
 この 2 件を workspace test 合格とは扱わない。維持仕様と owner を照合した結果、
 通常関数の `for` の HIR/source freeze と、checked RawLiteral を消費する compiler
 projection のそれぞれに不足がある。次の独立した cut で修正する。
+
+**2026-09-25 Raw Content / ordinary `for` integration checkpoint:**
+
+前 checkpoint の `032_raw_dialogue_braces.arcw` と `024_stream_for_yield.arcw` は、
+それぞれ独立した owner の修正で CLI `compile --emit check` を通過した。Raw Content は
+checked attached literal body を compiler が一度だけ読み、重複した checked text
+authority を除去した (`b2b4702b0c3049c9933833ddc634a7a09db74794`)。通常関数の
+`for` は source-backed Block を普通の statement scope として HIR/source freeze まで
+保持し、Sema の candidate が反復情報を再計算する際は ledger の rollback/projection
+を使って既存の公開事実を上書きできるようにした。公開文脈での重複事実拒否は維持する
+(`cb7c7077cf611a5bc672270a71da63fe9c8f5dc1`)。
+
+通常 `for` の検証は Syntax lib 685/685、HIR lib 912/912（既存 ignored 8）、
+Sema lib 920/920、024 CLI check、workspace fmt check、cached diff check が終了コード0。
+`026_headless_observation_calls.arcw` の実際に使う effect 上限と、spec 033〜035 の
+未宣言の型を fixture に補い、4件それぞれを CLI check で確認した
+(`f02cc464b262304ad8b7db907155f7ee09172af5`)。この時点の `main` と
+`origin/main` は同 SHA、working tree は clean。
+
+全体テスト合格は未達。CLI `current_check_fixtures_pass` は次の 025 で停止する。
+`proof` の現行 grammar は固定 parameter group を要求し、本文の `check` は recovery。
+`promote_unchecked` は Sema で placeholder の `Promoted` 型に留まり、compiler の
+runtime intrinsic を持たない。Sol Max と照合し、この fixture を単に空の unsafe
+block に置換することは受理証拠を損なうと判断した。30件の current-pass check
+fixture の直接棚卸しでは 27件が通過し、025 のほか 027 の dialogue line plan が
+syntax/HIR で失敗する。026 は上記修正で通過済み。CLI `spec_should_pass_check` は
+042 の `bail` 呼出しに checked call fact がなく RuntimePlan lower で停止し、044 は
+未定義型を補っても pattern の最終型付けで失敗する。これらを既存 warning や未実行の
+workspace gate と混同しない。次は goal 本体の Content/Fx・call と取消継続の owner
+接続を優先し、最終 gate の前に 025/027/042/044 を個別の契約として処理する。
