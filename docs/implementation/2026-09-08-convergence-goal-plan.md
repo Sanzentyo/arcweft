@@ -1175,3 +1175,40 @@ syntax test 書式差分も整えた (`386707b71d798348428c249685e52a576be12594`
 選択と保存復元は未完。generic child-fiber の nested defer も未接続。
 workspace all-target/all-feature check、workspace test、Clippy と goal の後続工程は
 この cut では未実施・未完了であり、局所通過を全体合格とは扱わない。
+
+## `on mark` 行結果選択 checkpoint — 2026-09-25
+
+Supersedes: 直前 checkpoint の「`on mark` 本文内 `out` は未完」という状態記述。
+確認した `main`/`origin/main` は
+`ebfd683fcca56a16e8dce4a39952687e8ba9ada2` で一致し、working tree は clean。
+維持仕様にある通常 `out` を持たない非 Unit 行を受け入れ、到達した mark handler
+の `out` が行結果を選ぶ。通常の行閉鎖時に結果が未選択なら公開せず失敗する。
+複数の mark handler は静的な候補として認め、実行経路で二度目の mark 選択を
+拒否する。取消 handler の `out` は公開前の mark 選択を置換できる。
+
+共有 result state の source は exact `LineTaskWorkTag` であり、reducer graph、
+consumed Mark、joined Action、実行 instance と restore を照合する。
+native/AWBC は同じ選択 authority と affine `ChildScope → DialogueResult` 移譲を使い、
+子 scope の cleanup 前に値を保持し、release を重複させない。AWBC は通常の
+`Return` と別の selector terminator を schema-1 codec・verifier・VM・product・
+snapshot に接続した。Sema は全 nested `out` の対象 application と結果型を
+一致させ、RuntimePlan は Mark Action と取消 action にだけ selector を投影する。
+HIR scope-graph テストの古い架空 source-backed owner は source-index 検査が
+先に拒否していたため、実ソースの donor Flow owner を使う fixture に訂正した。
+
+検証: native と decoded AWBC の On-only 実行 1/1（Mark で `Released`、
+Mark 不在では結果公開なし）、core lib 627/627、AWBC focused 211/211、
+Sema lib 925/925、RuntimePlan package 全 target、compiler package 全 target
+（Windows では `RUST_MIN_STACK=16777216` を指定）、HIR lib 918/918
+（既存 ignored 8）、
+workspace `cargo check --all-targets --all-features`、workspace Clippy、fmt、
+structure audit gate（0 blockers）、cached diff check は終了コード0。
+Windows 既定 stack の `callable_origins_remain_distinct_across_a_branch` overflow は
+以前と同じ単独テストで再現し、スタック設定下の合格と混同しない。
+
+`RUST_MIN_STACK=16777216` での `just test-workspace` は HIR fixture 訂正後、
+CLI `spec_should_pass_check_fixtures_pass_after_refactor` の
+`044_pattern_binding_combo.arcw` で停止した。診断は nominal TypeId に完全な型が
+ないという既知の Match/fixture 境界で、全 recipe の合格ではない。
+generic child-fiber nested defer、残る callable/Match/View/task-plan/nominal/
+scheduler・restore 工程と最終 workspace gate は引き続き必須。
