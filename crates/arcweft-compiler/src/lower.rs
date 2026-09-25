@@ -2137,6 +2137,19 @@ fn project_dialogue_application(
             )?,
             spec,
             runtime_type_under(line_result, instance, symbols, world, analysis)?,
+            analysis
+                .statements()
+                .filter_map(|(statement, checked)| match checked.payload() {
+                    CheckedStatementPayload::ControlTransfer(target)
+                        if target
+                            .output()
+                            .is_some_and(|output| output.application() == owner) =>
+                    {
+                        Some(statement)
+                    }
+                    _ => None,
+                })
+                .collect(),
         ),
         fragments,
     ))

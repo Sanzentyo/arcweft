@@ -921,6 +921,7 @@ impl RuntimePlan {
                 | FlowOp::AssignNominalField { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }
+                | FlowOp::SelectDialogueResult { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }

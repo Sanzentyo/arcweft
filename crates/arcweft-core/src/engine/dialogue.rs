@@ -1500,6 +1500,7 @@ impl Engine {
         let (state, activation) = transaction.parts_mut();
         let (ty, value, begin_publication) = match activation.result().clone() {
             RuntimeDialogueResultState::Committed { ty, value } => (ty, value, true),
+            RuntimeDialogueResultState::Selected { ty, value, .. } => (ty, value, true),
             RuntimeDialogueResultState::Publishing { ty, value } => (ty, value, false),
             RuntimeDialogueResultState::Uncommitted
             | RuntimeDialogueResultState::Published

@@ -976,6 +976,7 @@ impl CheckedBodyCoordinateEvidence {
 )]
 pub struct CheckedOutputTarget {
     coordinate: StableCheckedOutputTargetCoordinate,
+    application: ExprId,
 }
 
 #[allow(
@@ -983,12 +984,19 @@ pub struct CheckedOutputTarget {
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
 impl CheckedOutputTarget {
-    fn new(coordinate: StableCheckedOutputTargetCoordinate) -> Self {
-        Self { coordinate }
+    fn new(coordinate: StableCheckedOutputTargetCoordinate, application: ExprId) -> Self {
+        Self {
+            coordinate,
+            application,
+        }
     }
 
     pub const fn coordinate(&self) -> &StableCheckedOutputTargetCoordinate {
         &self.coordinate
+    }
+
+    pub const fn application(&self) -> ExprId {
+        self.application
     }
 }
 

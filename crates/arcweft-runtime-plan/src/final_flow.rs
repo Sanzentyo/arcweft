@@ -4215,6 +4215,7 @@ struct FinalFlowLowerer<'a> {
     control: &'a ControlLocals,
     specialized_operand_locals: &'a BTreeMap<(ExprId, u32), RuntimeLocalSeedId>,
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
+    cancel_output_application: Option<ExprId>,
     scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -4317,6 +4318,7 @@ impl<'a> FinalFlowLowerer<'a> {
             control: context.control,
             specialized_operand_locals: context.specialized_operand_locals,
             carrier_continuations: BTreeMap::new(),
+            cancel_output_application: None,
             scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -4704,6 +4706,34 @@ impl<'a> FinalFlowLowerer<'a> {
             HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
                 "defer {id:?} requires scope-owned runtime registration"
             ))),
+            HirStmtKind::Out { value, .. } => {
+                let application = self.cancel_output_application.ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "out {id:?} has no cancellation-handler owner"
+                    ))
+                })?;
+                let admitted = self
+                    .semantic_facts
+                    .dialogue_application(application)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "cancel out {id:?} has no checked dialogue application"
+                        ))
+                    })?;
+                if !admitted.admits_cancel_output(id)
+                    || self.semantic_facts.expression_type(*value) != Some(admitted.line_result())
+                {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "cancel out {id:?} does not select its checked dialogue result"
+                    )));
+                }
+                Ok(vec![RuntimeFlowOpSeed::SelectDialogueResult {
+                    value: self
+                        .expr_lowerer()
+                        .lower(*value)
+                        .map_err(RuntimePlanLowerError::new)?,
+                }])
+            }
             HirStmtKind::Assertion { mode, conditions } => {
                 self.lower_assertion(id, *mode, conditions)
             }
@@ -6770,6 +6800,22 @@ impl<'a> FinalFlowLowerer<'a> {
                     .join("; "),
             )
         })
+    }
+
+    fn lower_cancel_body(
+        &mut self,
+        application: ExprId,
+        body: &HirThreadBody,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        if self.cancel_output_application.is_some() {
+            return Err(RuntimePlanLowerError::new(
+                "nested cancellation result owner is ambiguous",
+            ));
+        }
+        self.cancel_output_application = Some(application);
+        let lowered = self.lower_body_as_one_error(body);
+        self.cancel_output_application = None;
+        lowered
     }
 }
 

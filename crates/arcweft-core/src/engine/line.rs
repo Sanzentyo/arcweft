@@ -84,7 +84,7 @@ impl Engine {
         self.fiber.status = FlowFiberStatus::Done(FlowExit::Return(value));
     }
 
-    fn unwind_control_stack(
+    pub(super) fn unwind_control_stack(
         &mut self,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,

@@ -7,14 +7,17 @@ use arcweft_core::awbc::schema::{
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{
-    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+    EntryBindingIdentity, FlowContractHash, RuntimeDialogueContentTemplateDigest,
+    RuntimeEntryRoles, RuntimeFlowExecutable,
 };
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
-    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeHttpMethod, RuntimeLocalDeclarationSeed,
+    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentTemplateManifestSeed, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
+    RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeHttpMethod, RuntimeLineTaskCancelRuleSeed,
+    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLocalDeclarationSeed,
     RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
@@ -160,6 +163,153 @@ fn run_entry(program: &AwbcProgram) -> VmExit {
     )
     .expect("AWBC VM executes entry")
     .exit
+}
+
+#[test]
+fn awbc_cancellation_result_selection_is_typed_return_and_fallthrough_is_keep_pending() {
+    let flow = flow_id("cancel.result");
+    let selected_action =
+        arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.out")
+            .expect("valid cancellation action");
+    let pending_action =
+        arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.keep")
+            .expect("valid cancellation action");
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::String,
+            )],
+            [],
+        )
+        .expect("selected dialogue result type admits");
+    let content = builder
+        .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+            line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.cancel.result")
+                .expect("valid line identity"),
+            template: RuntimeDialogueContentTemplateManifestSeed {
+                id: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                    .expect("first content template identity"),
+                digest: RuntimeDialogueContentTemplateDigest::ZERO,
+                slots: Box::default(),
+                effects: Box::default(),
+            },
+            values: Box::default(),
+            effect_sites: Box::default(),
+            marks: Box::default(),
+            effect_site_count: Default::default(),
+        })
+        .expect("dialogue content seed admits");
+    let group = builder
+        .push_line_task_group_seed(RuntimeLineTaskGroupSeed {
+            activation_ops: vec![RuntimeFlowOpSeed::CommitDialogueResult {
+                value: string_expr("normal"),
+            }],
+            result_type: type_id(1),
+            handle_sites: Box::default(),
+            root: RuntimeLineTaskNodeSeed::Action(Vec::new()),
+            cancel_rules: vec![
+                RuntimeLineTaskCancelRuleSeed {
+                    trigger: selected_action.clone(),
+                    action: vec![RuntimeFlowOpSeed::SelectDialogueResult {
+                        value: string_expr("selected"),
+                    }],
+                },
+                RuntimeLineTaskCancelRuleSeed {
+                    trigger: pending_action.clone(),
+                    action: vec![RuntimeFlowOpSeed::Noop],
+                },
+            ]
+            .into_boxed_slice(),
+            cleanup_completed: Vec::new(),
+            cleanup_cancelled: Vec::new(),
+            cleanup_failed: Vec::new(),
+            cleanup_policy: arcweft_core::line_task::LineCleanupPolicy::default(),
+        })
+        .expect("line-task cancellation result selection admits");
+    builder
+        .attach_line_task_group_seed(&content, &group)
+        .expect("line-task group attaches to its content");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+        ))
+        .expect("entry flow admits");
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("flow executable admits");
+    builder
+        .push_entry(flow_entry("cancel.result", flow))
+        .expect("entry admits");
+
+    let plan = builder.finish().expect("runtime plan seals");
+    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    inventory.intern_runtime_primitives();
+    super::pattern::preflight_plan_types(&mut inventory, &plan)
+        .expect("line-task result type admits in the AWBC type table");
+    let diagnostics = {
+        let mut lowerer = AwbcFlowLowerer::new(&mut inventory, &plan);
+        lowerer.lower_plan();
+        lowerer.into_diagnostics()
+    };
+    assert!(
+        diagnostics.is_empty(),
+        "unexpected lowering diagnostics: {diagnostics:?}"
+    );
+    let program = inventory.finish();
+    let group = &program.line_task_groups[0];
+    let function = |trigger: &arcweft_interaction_model::input::InputActionId| {
+        let handler = group
+            .cancel_handlers
+            .iter()
+            .find(|handler| &handler.trigger == trigger)
+            .expect("line cancellation handler is present");
+        &program.functions[handler.function.index()]
+    };
+    let return_values = |function: &arcweft_core::awbc::schema::AwbcFunction| {
+        let start = function.blocks.start as usize;
+        let end = function
+            .blocks
+            .checked_end()
+            .expect("checked function block range") as usize;
+        program.blocks[start..end]
+            .iter()
+            .filter_map(|block| match block.terminator {
+                AwbcTerminator::Return { value } => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let selected = function(&selected_action);
+    assert_eq!(
+        selected.kind,
+        arcweft_core::awbc::schema::AwbcFunctionKind::LineCancellationHandler
+    );
+    assert_eq!(
+        program.signatures[selected.signature.index()].result,
+        Some(group.result_type)
+    );
+    assert_eq!(return_values(selected).len(), 1);
+    assert!(return_values(selected)[0].is_some());
+
+    let keep_pending = function(&pending_action);
+    assert_eq!(
+        keep_pending.kind,
+        arcweft_core::awbc::schema::AwbcFunctionKind::LineCancellationHandler
+    );
+    assert_eq!(
+        program.signatures[keep_pending.signature.index()].result,
+        Some(group.result_type)
+    );
+    assert_eq!(return_values(keep_pending), [None]);
 }
 
 #[test]

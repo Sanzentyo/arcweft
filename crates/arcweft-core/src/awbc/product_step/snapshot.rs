@@ -25,6 +25,7 @@ use crate::step::{
 use crate::stream::StreamRuntimeState;
 use crate::task::{TaskEvent, TaskId, TaskPublicationCursor};
 use crate::value::RuntimePayload;
+use arcweft_interaction_model::input::InputActionId;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 pub use task_publication::{
     AwbcProductTaskEventKindSaveSnapshot, AwbcProductTaskEventSaveSnapshot,
@@ -60,9 +61,17 @@ fn validate_product_dialogue_phase(
                 RuntimeDialogueResultState::Uncommitted,
             ) => frame.pending_content_events.is_empty() && !frame.pending_advance,
             (
-                super::ProductDialoguePhase::Reducing { line_task },
+                super::ProductDialoguePhase::Reducing { .. },
                 RuntimeDialogueResultState::Committed { ty, .. },
-            ) => !line_task.is_closing() && !line_task.is_closed() && *ty == frame.result.ty,
+            ) => *ty == frame.result.ty,
+            (
+                super::ProductDialoguePhase::Reducing { line_task },
+                RuntimeDialogueResultState::Selected { ty, action, .. },
+            ) => {
+                (line_task.is_closing() || line_task.is_closed())
+                    && *ty == frame.result.ty
+                    && line_task.cancellation_action() == Some(action)
+            }
             (
                 super::ProductDialoguePhase::Publishing { line_task },
                 RuntimeDialogueResultState::Publishing { ty, .. },
@@ -82,6 +91,7 @@ fn validate_product_dialogue_phase(
                 | super::ProductDialoguePhase::Closing(_),
                 RuntimeDialogueResultState::Uncommitted
                 | RuntimeDialogueResultState::Committed { .. }
+                | RuntimeDialogueResultState::Selected { .. }
                 | RuntimeDialogueResultState::Publishing { .. }
                 | RuntimeDialogueResultState::Published
                 | RuntimeDialogueResultState::Abandoned,
@@ -246,6 +256,7 @@ fn snapshot_live_state(state: &LineTaskLiveState) -> AwbcProductLineTaskLiveSnap
         consumed_content_events: state.consumed_content_events().to_vec(),
         consumed_input_actions: state.consumed_input_actions().to_vec(),
         cleanup_started: state.cleanup_started(),
+        cancellation_action: state.cancellation_action().cloned(),
     }
 }
 
@@ -351,6 +362,7 @@ fn restore_live_snapshot(
                 exit: restore_exit(exit),
             },
         },
+        snapshot.cancellation_action,
         activation_lane,
         scheduled_lanes.into_boxed_slice(),
         snapshot.scheduled_ready.into_boxed_slice(),
@@ -1169,6 +1181,7 @@ pub struct AwbcProductDialogueOccurrenceSnapshot {
 pub struct AwbcProductLineTaskLiveSnapshot {
     pub activation: DialogueActivationId,
     pub phase: AwbcProductLineTaskPhaseSnapshot,
+    pub cancellation_action: Option<InputActionId>,
     pub activation_lane: AwbcProductLineTaskExecutionLaneSnapshot,
     pub scheduled_lanes: Vec<AwbcProductLineTaskScheduledLaneSnapshot>,
     pub scheduled_ready: Vec<RuntimeLineHandleToken>,
@@ -1555,11 +1568,6 @@ impl AwbcProductStepExecutor {
             }
             AwbcProductDialoguePhaseSnapshot::Reducing { line_task } => {
                 let line_task = restore_line_task(line_task)?;
-                if line_task.is_closed() {
-                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                        message: "reducing dialogue phase cannot own a closed reducer".to_owned(),
-                    });
-                }
                 super::ProductDialoguePhase::Reducing { line_task }
             }
             AwbcProductDialoguePhaseSnapshot::Publishing { line_task } => {

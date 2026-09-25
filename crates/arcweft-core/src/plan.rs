@@ -1128,6 +1128,10 @@ pub enum FlowOp {
     CommitDialogueResult {
         value: RuntimeExpr,
     },
+    /// Selects the alternate result from the owning cancellation handler.
+    SelectDialogueResult {
+        value: RuntimeExpr,
+    },
     Dialogue {
         target: RuntimeExpr,
         content: crate::runtime_id::RuntimeDialogueContentPlanId,

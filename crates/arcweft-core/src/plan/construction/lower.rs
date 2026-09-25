@@ -2751,6 +2751,9 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::CommitDialogueResult { value } => FlowOp::CommitDialogueResult {
                 value: self.lower_expression(value)?,
             },
+            RuntimeFlowOpSeed::SelectDialogueResult { value } => FlowOp::SelectDialogueResult {
+                value: self.lower_expression(value)?,
+            },
             RuntimeFlowOpSeed::Choice { id, options } => FlowOp::Choice {
                 id,
                 options: options
@@ -4153,7 +4156,7 @@ impl RuntimePlanBuilder {
                         *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                     }
                 }
-                FlowOp::CommitDialogueResult { value } => {
+                FlowOp::CommitDialogueResult { value } | FlowOp::SelectDialogueResult { value } => {
                     self.validate_expression_locals(value, scope, used)?;
                 }
                 FlowOp::Choice { options, .. } => {

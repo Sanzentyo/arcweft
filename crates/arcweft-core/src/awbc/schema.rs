@@ -1212,6 +1212,7 @@ pub enum AwbcFunctionKind {
     StreamTransform = 6,
     LineActivation = 7,
     LineTask = 8,
+    LineCancellationHandler = 9,
 }
 
 impl AwbcFunctionKind {
@@ -1225,6 +1226,7 @@ impl AwbcFunctionKind {
         Self::StreamTransform,
         Self::LineActivation,
         Self::LineTask,
+        Self::LineCancellationHandler,
     ];
 
     const DECODE: [Option<Self>; 256] = {

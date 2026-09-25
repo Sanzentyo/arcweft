@@ -2130,8 +2130,15 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
             check_index(program.resources.len(), resource.0, "resources", &at)?;
         }
     }
+    let mut cancellation_handler_functions = BTreeSet::new();
     for (index, group) in program.line_task_groups.iter().enumerate() {
         let at = format!("line task group {index}");
+        check_index(
+            program.runtime_types.len(),
+            group.result_type.0,
+            "runtime_types",
+            &at,
+        )?;
         let activation = program
             .functions
             .get(group.activation.index())
@@ -2269,10 +2276,21 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 "functions",
                 &at,
             )?;
-            if program.functions[handler.function.index()].kind != AwbcFunctionKind::LineTask {
+            if program.functions[handler.function.index()].kind
+                != AwbcFunctionKind::LineCancellationHandler
+            {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
-                    message: "line cancellation handler must target a LineTask function".to_owned(),
+                    message:
+                        "line cancellation handler must target a LineCancellationHandler function"
+                            .to_owned(),
+                });
+            }
+            if !cancellation_handler_functions.insert(handler.function) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line cancellation handler function is shared by multiple groups or triggers"
+                        .to_owned(),
                 });
             }
             if program
@@ -2282,11 +2300,14 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         .signature
                         .index(),
                 )
-                .is_none_or(|signature| signature.params.as_slice() != capture_types)
+                .is_none_or(|signature| {
+                    signature.params.as_slice() != capture_types
+                        || signature.result != Some(group.result_type)
+                })
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
-                    message: "line cancellation handler capture signature disagrees with its group"
+                    message: "line cancellation handler capture or selected-result signature disagrees with its group"
                         .to_owned(),
                 });
             }
@@ -2321,8 +2342,15 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 && program
                     .functions
                     .get(function.index())
-                    .and_then(|function| program.signatures.get(function.signature.index()))
-                    .is_none_or(|signature| signature.params.as_slice() != capture_types)
+                    .is_none_or(|function| {
+                        function.kind != AwbcFunctionKind::LineTask
+                            || program
+                                .signatures
+                                .get(function.signature.index())
+                                .is_none_or(|signature| {
+                                    signature.params.as_slice() != capture_types
+                                })
+                    })
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
@@ -2341,6 +2369,7 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
             let signature = program
                 .functions
                 .get(cleanup.index())
+                .filter(|function| function.kind == AwbcFunctionKind::LineTask)
                 .and_then(|function| program.signatures.get(function.signature.index()));
             if signature.is_none_or(|signature| signature.params.as_slice() != capture_types) {
                 return Err(AwbcVerifyError::InvalidInvariant {
@@ -2348,6 +2377,18 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                     message: "line cleanup capture signature disagrees with its group".to_owned(),
                 });
             }
+        }
+    }
+    for (index, function) in program.functions.iter().enumerate() {
+        if function.kind == AwbcFunctionKind::LineCancellationHandler
+            && !cancellation_handler_functions
+                .contains(&AwbcFunctionId(u32::try_from(index).unwrap_or(u32::MAX)))
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: format!("function {index}"),
+                message: "LineCancellationHandler function has no exact owning group handler row"
+                    .to_owned(),
+            });
         }
     }
     for (index, node) in program.line_task_nodes.iter().enumerate() {

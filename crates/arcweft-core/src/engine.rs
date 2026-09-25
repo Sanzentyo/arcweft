@@ -98,6 +98,8 @@ pub struct FlowFiber {
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
+    /// Terminal cancellation selection awaiting the owning activation transaction.
+    pub(crate) selected_dialogue_result: Option<RuntimeValue>,
     pub id: FlowFiberId,
     pub persistent_id: RuntimePersistentFiberId,
     pub execution: crate::runtime_id::ExecutionInstanceId,
@@ -163,6 +165,14 @@ fn flow_fiber_line_handle_tokens(
             if !tokens.insert(handle.token().clone()) {
                 return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
             }
+        }
+    }
+    if let Some(selected) = &fiber.selected_dialogue_result {
+        for handle in selected
+            .affine_line_handles()
+            .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
+        {
+            tokens.insert(handle.token().clone());
         }
     }
     Ok(tokens)
@@ -540,6 +550,7 @@ impl Default for FlowFiber {
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
+            selected_dialogue_result: None,
             id: FlowFiberId::default(),
             persistent_id: RuntimePersistentFiberId::default(),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
@@ -628,6 +639,7 @@ impl Engine {
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),
                 stream_states,
+                selected_dialogue_result: None,
                 id: FlowFiberId::default(),
                 persistent_id: RuntimePersistentFiberId::from_allocated(1),
                 execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
@@ -1318,6 +1330,7 @@ impl Engine {
             env,
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
+            selected_dialogue_result: None,
             id,
             persistent_id,
             execution,
@@ -1415,6 +1428,7 @@ impl Engine {
             env,
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
+            selected_dialogue_result: None,
             id,
             persistent_id,
             execution,
@@ -1587,6 +1601,7 @@ impl Engine {
                         env,
                         observations: RuntimeObservationState::default(),
                         stream_states: BTreeMap::new(),
+                        selected_dialogue_result: None,
                         id: FlowFiberId(ordinal),
                         persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
                         execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
@@ -1704,6 +1719,7 @@ impl Engine {
             env,
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
+            selected_dialogue_result: None,
             id: FlowFiberId(ordinal),
             persistent_id: RuntimePersistentFiberId::from_allocated(allocated.get()),
             execution: crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
@@ -1806,9 +1822,11 @@ impl Engine {
                             &owner.tag,
                             returned_bindings,
                             &live_tokens,
+                            child.selected_dialogue_result.take(),
                             false,
                             owner.closing,
                             owner.join_policy == ChildJoinPolicy::Join,
+                            output,
                         )?;
                     }
                 }
@@ -1835,9 +1853,11 @@ impl Engine {
                             &owner.tag,
                             returned_bindings,
                             &live_tokens,
+                            None,
                             true,
                             false,
                             owner.join_policy == ChildJoinPolicy::Join,
+                            output,
                         )?;
                     }
                 }
@@ -1892,9 +1912,11 @@ impl Engine {
         tag: &LineTaskWorkTag,
         returned_bindings: Box<[RuntimeLocalBinding]>,
         live_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        selected_result: Option<RuntimeValue>,
         failed: bool,
         cancelled: bool,
         joined: bool,
+        output: &mut RuntimeStepOutput,
     ) -> Result<(), dialogue::DialogueExecutionError> {
         let content = self
             .plan
@@ -1924,6 +1946,23 @@ impl Engine {
             };
             (frame.captures.clone(), live.clone())
         };
+        if let Some(value) = selected_result {
+            if failed || !joined || !live.accepts_cancellation_selection(tag) {
+                return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation.into());
+            }
+            let ty = transaction.frame().result_target.ty();
+            let checked = self
+                .plan
+                .checked_type(ty)
+                .map_err(|_| crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?
+                .ok_or(crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch)?;
+            if !checked.accepts_value(&value) {
+                return Err(crate::line_task::LineRuntimeError::ResultPatternOrTypeMismatch.into());
+            }
+            transaction
+                .line_mut()
+                .select_cancellation_result(tag, ty, value)?;
+        }
         let next = if joined {
             crate::line_task::complete_live_line_task_work(&group, &mut live, tag.clone(), failed)?
         } else {
@@ -1972,9 +2011,7 @@ impl Engine {
         let batch =
             self.prepare_line_task_commands(&mut transaction, &group, next, &captures, false)?;
         let receipt = self.dialogue_activations.commit_transaction(transaction)?;
-        if !receipt.into_line().into_commands().is_empty() {
-            return Err(crate::line_task::LineRuntimeError::UnexpectedPreparedCommands.into());
-        }
+        Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         self.commit_line_task_execution_batch(batch);
         Ok(())
     }

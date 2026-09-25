@@ -83,6 +83,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::AssignNominalField { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
+            | FlowOp::SelectDialogueResult { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::AwaitMany { .. }

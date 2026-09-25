@@ -428,6 +428,9 @@ pub enum RuntimeFlowOpSeed {
     CommitDialogueResult {
         value: RuntimeExprSeed,
     },
+    SelectDialogueResult {
+        value: RuntimeExprSeed,
+    },
     Choice {
         id: Option<String>,
         options: Vec<RuntimeChoiceOptionSeed>,
@@ -892,7 +895,8 @@ fn collect_terminal_or_effect_free_locals(
         }
         RuntimeFlowOpSeed::GotoExpr(value)
         | RuntimeFlowOpSeed::ReturnExpr(value)
-        | RuntimeFlowOpSeed::CommitDialogueResult { value } => {
+        | RuntimeFlowOpSeed::CommitDialogueResult { value }
+        | RuntimeFlowOpSeed::SelectDialogueResult { value } => {
             value.collect_free_locals(bound, locals);
         }
         RuntimeFlowOpSeed::ExitScopeBind { pattern, expr } => {

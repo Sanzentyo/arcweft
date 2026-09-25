@@ -117,6 +117,7 @@ impl AotLinearOp {
             FlowOp::LetElse { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
+            | FlowOp::SelectDialogueResult { .. }
             | FlowOp::RegisterDefer { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
@@ -251,6 +252,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         FlowOp::LetElse { .. }
         | FlowOp::LineOperation { .. }
         | FlowOp::CommitDialogueResult { .. }
+        | FlowOp::SelectDialogueResult { .. }
         | FlowOp::RegisterDefer { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
@@ -329,6 +331,7 @@ impl AotOpClass {
             | FlowOp::EvaluatedEffect(_)
             | FlowOp::RegisterDefer { .. }
             | FlowOp::CommitDialogueResult { .. } => Self::Effect,
+            FlowOp::SelectDialogueResult { .. } => Self::Effect,
             FlowOp::LineOperation { .. } => Self::Await,
             FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
@@ -385,6 +388,7 @@ impl AotProgramStats {
                 | FlowOp::AssignNominalField { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }
+                | FlowOp::SelectDialogueResult { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }

@@ -306,7 +306,8 @@ fn verify_entry_safe_point(
         | AwbcFunctionKind::GeneratorProducer
         | AwbcFunctionKind::StreamTransform
         | AwbcFunctionKind::LineActivation
-        | AwbcFunctionKind::LineTask => AwbcSafePointKind::CallableBoundary,
+        | AwbcFunctionKind::LineTask
+        | AwbcFunctionKind::LineCancellationHandler => AwbcSafePointKind::CallableBoundary,
     };
     let actual = verifier.program.blocks[block_index].safe_point;
     if actual != expected {
@@ -2111,8 +2112,22 @@ fn apply_terminator(
                 (None, None) => {}
                 (Some(expected), Some(register)) => {
                     let actual = read_register(verifier, function, block, *register, state)?;
-                    require_compatible(program, expected, actual, &at)?;
+                    if program.functions[function].kind == AwbcFunctionKind::LineCancellationHandler
+                    {
+                        if expected != actual {
+                            return Err(AwbcVerifyError::TypeMismatch {
+                                at: at.clone(),
+                                expected: expected.0,
+                                actual: actual.0,
+                            });
+                        }
+                    } else {
+                        require_compatible(program, expected, actual, &at)?;
+                    }
                 }
+                (Some(_), None)
+                    if program.functions[function].kind
+                        == AwbcFunctionKind::LineCancellationHandler => {}
                 _ => {
                     return Err(AwbcVerifyError::ResultShapeMismatch { at });
                 }

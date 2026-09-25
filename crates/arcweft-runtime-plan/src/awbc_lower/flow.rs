@@ -258,6 +258,10 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     diagnostics: Vec<AwbcLowerDiagnostic>,
     loop_targets: Vec<LoopLoweringTarget>,
     line_group: Option<LineGroupLoweringContext>,
+    cancellation_handler_result: Option<(
+        arcweft_core::runtime_id::RuntimePlanTypeId,
+        arcweft_core::awbc::schema::AwbcTypeId,
+    )>,
     active_effect_set: Option<RuntimeEffectSet>,
 }
 
@@ -269,6 +273,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             diagnostics: Vec::new(),
             loop_targets: Vec::new(),
             line_group: None,
+            cancellation_handler_result: None,
             active_effect_set: None,
         }
     }
@@ -491,16 +496,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             "line_task.activation",
         );
         self.lower_line_task_nodes(group, &node_ids, &captures);
+        let result_type = admitted_plan_type(self.inventory, self.plan, group.result_type());
         let cancel_handlers = group
             .cancel_rules()
             .iter()
             .enumerate()
             .map(|(index, rule)| AwbcLineCancelHandler {
                 trigger: rule.trigger().clone(),
-                function: self.lower_line_task_action(
+                function: self.lower_line_task_cancel_handler(
                     &captures,
                     rule.action(),
                     &format!("line_task.cancel.{index}"),
+                    group.result_type(),
                 ),
             })
             .collect();
@@ -521,7 +528,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Failed);
         let cleanup_failed = (!failed.is_empty())
             .then(|| self.lower_line_task_action(&captures, failed, "line_task.cleanup.failed"));
-        let result_type = admitted_plan_type(self.inventory, self.plan, group.result_type());
         let handle_sites = group
             .handle_sites()
             .iter()
@@ -638,6 +644,27 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineTask)
     }
 
+    fn lower_line_task_cancel_handler(
+        &mut self,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        ops: &[FlowOp],
+        path: &str,
+        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
+    ) -> AwbcFunctionId {
+        let result_type_awbc = admitted_plan_type(self.inventory, self.plan, result_type);
+        let previous = self
+            .cancellation_handler_result
+            .replace((result_type, result_type_awbc));
+        let function = self.lower_line_function(
+            captures,
+            ops,
+            path,
+            AwbcFunctionKind::LineCancellationHandler,
+        );
+        self.cancellation_handler_result = previous;
+        function
+    }
+
     fn lower_line_function(
         &mut self,
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
@@ -654,7 +681,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let mut body =
             FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
         self.lower_ops(&mut frame, &mut body, ops, path);
-        if body.needs_value_fallthrough() {
+        if body.needs_value_fallthrough() && kind != AwbcFunctionKind::LineCancellationHandler {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
         let body = body.finish(self.inventory);
@@ -670,11 +697,15 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .map(|capture| self.local_type(*capture))
             .collect();
-        let signature = self.inventory.intern_signature(
-            params,
-            body.returns_value.then(|| self.inventory.dynamic_ty()),
-            AwbcEffectSetId(0),
-        );
+        let result = if kind == AwbcFunctionKind::LineCancellationHandler {
+            self.cancellation_handler_result
+                .map(|(_, result_type)| result_type)
+        } else {
+            body.returns_value.then(|| self.inventory.dynamic_ty())
+        };
+        let signature = self
+            .inventory
+            .intern_signature(params, result, AwbcEffectSetId(0));
         let public_id = Some(self.inventory.intern_string(path));
         self.inventory.replace_function(
             owner,
@@ -979,6 +1010,37 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
                 self.inventory
                     .push_instruction(AwbcInstruction::CommitDialogueResult { source });
+            }
+            FlowOp::SelectDialogueResult { value } => {
+                let Some((result_type, result_type_awbc)) = self.cancellation_handler_result else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "dialogue result selection is outside a line cancellation handler",
+                    ));
+                    return;
+                };
+                if value.ty() != result_type {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "dialogue result selection type disagrees with its line task group",
+                    ));
+                    return;
+                }
+                let source =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
+                let result = frame.return_value(result_type_awbc);
+                self.inventory.push_instruction(AwbcInstruction::Move {
+                    dst: result,
+                    src: source,
+                });
+                self.close_active_scopes_for_terminator(frame);
+                body.terminate(
+                    self.inventory,
+                    AwbcTerminator::Return {
+                        value: Some(result),
+                    },
+                    AwbcSafePointKind::Return,
+                );
             }
             FlowOp::Dialogue {
                 target,
@@ -1411,6 +1473,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_break(frame, body, value.as_ref(), path);
             }
             FlowOp::ReturnExpr(value) => {
+                if self.cancellation_handler_result.is_some() {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "flow return inside a cancellation handler has no parent control-transfer projection",
+                    ));
+                    return;
+                }
                 let value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
                 let result = frame.return_value(self.inventory.dynamic_ty());
@@ -1480,6 +1549,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 );
             }
             FlowOp::Return(value) => {
+                if self.cancellation_handler_result.is_some() {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "flow return inside a cancellation handler has no parent control-transfer projection",
+                    ));
+                    return;
+                }
                 let value = self.inventory.constant_string(value);
                 let dst = frame.return_value(self.inventory.string_ty());
                 self.inventory.push_instruction(AwbcInstruction::LoadConst {
@@ -3224,7 +3300,7 @@ fn collect_flow_dependencies(
                 }
                 false
             }
-            FlowOp::Return(_) | FlowOp::ReturnExpr(_) => true,
+            FlowOp::Return(_) | FlowOp::ReturnExpr(_) | FlowOp::SelectDialogueResult { .. } => true,
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::AssignNominalField { .. }

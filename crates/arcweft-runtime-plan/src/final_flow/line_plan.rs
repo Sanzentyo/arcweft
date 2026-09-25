@@ -645,7 +645,7 @@ impl LinePlanLowerer<'_, '_> {
         let trigger = self.admitted_input_action(statement)?;
         let action = self
             .flow
-            .lower_body_as_one_error(&body)?
+            .lower_cancel_body(self.owner, &body)?
             .into_iter()
             .map(FlowDraft::Flow)
             .collect();

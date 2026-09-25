@@ -107,6 +107,31 @@ impl Engine {
                     "line operation escaped its dialogue activation authority".to_owned(),
                 );
             }
+            FlowOp::SelectDialogueResult { value } => {
+                if !matches!(
+                    &self.fiber.owner,
+                    super::FlowFiberOwner::LineTask(owner)
+                        if matches!(owner.tag.work(), crate::line_task::LineTaskWork::Cancellation(_))
+                ) || self.fiber.selected_dialogue_result.is_some()
+                {
+                    self.fail_eval(
+                        crate::line_task::LineRuntimeError::InvalidActivationOperation,
+                        output,
+                    );
+                    return;
+                }
+                match self.evaluate_expr_with_backend(&value, pure_backend) {
+                    Ok(selected) => {
+                        self.fiber.selected_dialogue_result = Some(selected);
+                        *drop_policy = Some(crate::effect::RuntimeDropPolicy::Default);
+                        self.fiber.pending_ops.clear();
+                        self.fiber.cursor = None;
+                        self.unwind_control_stack(output, pure_backend);
+                        self.fiber.status = FlowFiberStatus::Done(super::FlowExit::Done);
+                    }
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
             FlowOp::Dialogue {
                 target,
                 content,

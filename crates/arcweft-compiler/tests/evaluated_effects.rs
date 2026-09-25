@@ -1537,6 +1537,160 @@ entry cli @entry.main {{ goto @flow.main }}
 }
 
 #[test]
+fn cancellation_out_selects_the_dialogue_result_in_native_and_decoded_awbc() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice: hello[p]
+    with:
+        cancel on input(.SkipLine):
+            log.info("cancelled")
+            out "Skipped"
+        out "Normal"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("checked cancel out and normal result compile");
+    let runtime = compiled.runtime_plan();
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "cancel_out_execution.arcw",
+    )
+    .lower()
+    .expect("cancel selection lowers to verified AWBC");
+    let bytes = report.program.encode_canonical().expect("encode AWBC");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode AWBC");
+    let [flow] = runtime.plan.flows() else {
+        panic!("one flow")
+    };
+    for (cancelled, expected) in [(false, &[][..]), (true, &["cancelled"][..])] {
+        let mut plan = runtime.plan.clone();
+        plan.bind_artifact(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+        let native_schema = bind_test_character_dialogue_schema(
+            &compiled,
+            arcweft_core::task::RuntimeProgramOwner::Plan(native.program_plan()),
+        );
+        let mut native_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&native_schema),
+            );
+        assert_eq!(
+            execute_dialogue_result_with_action(
+                |input, options| native.step_with_pure_backend(input, options, &mut native_backend),
+                cancelled,
+                "native",
+            ),
+            expected,
+        );
+        let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+            decoded.clone(),
+            arcweft_core::awbc::schema::AwbcEntryId(0),
+        )
+        .unwrap();
+        let awbc_schema = bind_test_character_dialogue_schema(&compiled, awbc.program_owner());
+        let mut awbc_backend = arcweft_core::pure::VmRuntimePureCallBackend::default()
+            .with_external_calls(
+                arcweft_dialogue::CharacterDialogueRuntimeExternalCallBackend::new(&awbc_schema),
+            );
+        assert_eq!(
+            execute_dialogue_result_with_action(
+                |input, options| {
+                    let result = awbc.step_with_pure_backend(input, options, &mut awbc_backend);
+                    let snapshot = awbc.snapshot().expect("AWBC cancellation step snapshots");
+                    awbc.restore_snapshot(snapshot)
+                        .expect("AWBC cancellation step restores with exact owner");
+                    result
+                },
+                cancelled,
+                "awbc",
+            ),
+            expected,
+        );
+    }
+}
+
+fn execute_dialogue_result_with_action(
+    mut step: impl FnMut(
+        arcweft_core::step::RuntimeStepInput,
+        arcweft_core::step::RuntimeStepOptions,
+    ) -> arcweft_core::step::RuntimeStepResult,
+    cancelled: bool,
+    backend: &str,
+) -> Vec<String> {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{RuntimeDialogueInputActionEvent, RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+    use arcweft_interaction_model::input::{InputActionId, InputEpoch, InputSequence};
+    let mut pending = None;
+    let mut effects = Vec::new();
+    let mut seen = 0;
+    let mut last_status = None;
+    for tick in 0..512 {
+        let mut input = RuntimeStepInput {
+            tick: TickId(tick),
+            ..RuntimeStepInput::default()
+        };
+        if let Some(activation) = pending.take() {
+            if cancelled {
+                input
+                    .dialogue_input_actions
+                    .push(RuntimeDialogueInputActionEvent::new(
+                        activation,
+                        InputActionId::new("SkipLine").expect("valid input action"),
+                        InputEpoch::new(1),
+                        InputSequence::new(1),
+                    ));
+            } else {
+                input.dialogue_advances.push(activation);
+            }
+        }
+        let result = step(input, RuntimeStepOptions::default());
+        assert!(
+            result.output.diagnostics.is_empty(),
+            "{:?}",
+            result.output.diagnostics
+        );
+        effects.extend(result.output.effects.line);
+        for event in result.output.flow_events {
+            if let FlowEvent::DialogueLine { activation, .. } = event {
+                seen += 1;
+                pending = Some(activation);
+            }
+        }
+        last_status = Some(result.fiber_status.clone());
+        match result.fiber_status {
+            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(exit, FlowExit::Done);
+                assert_eq!(seen, 1);
+                return log_messages(&effects);
+            }
+            status => panic!("dialogue result execution stopped unexpectedly: {status:?}"),
+        }
+    }
+    panic!(
+        "dialogue result execution exceeded its step bound: backend={backend}, seen={seen}, cancelled={cancelled}, last_status={last_status:?}"
+    );
+}
+
+#[test]
 fn pipe_tail_effect_has_one_operation_and_verified_awbc() {
     let compiled = compile_source(
         r#"

@@ -72,7 +72,8 @@ impl super::AwbcProductStepExecutor {
             return Err(LineRuntimeError::ResultNotCommitted.into());
         }
         let (ty, value, begin) = match line.result().clone() {
-            RuntimeDialogueResultState::Committed { ty, value } => (ty, value, true),
+            RuntimeDialogueResultState::Committed { ty, value }
+            | RuntimeDialogueResultState::Selected { ty, value, .. } => (ty, value, true),
             RuntimeDialogueResultState::Publishing { ty, value } => (ty, value, false),
             RuntimeDialogueResultState::Uncommitted
             | RuntimeDialogueResultState::Published

@@ -12,10 +12,10 @@ use crate::awbc::schema::{
     AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding, AwbcFlowExecutable,
     AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
     AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcLineCancelHandler, AwbcPattern,
+    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
@@ -55,6 +55,168 @@ fn minimal_return_program_finishes_without_diagnostics() {
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert!(result.output.diagnostics.is_empty());
     assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn cancellation_handler_terminal_value_selects_dialogue_result_only_for_its_action() {
+    let action = arcweft_interaction_model::input::InputActionId::new("dialogue.cancel.result")
+        .expect("valid cancellation action");
+
+    for (terminal_value, selected) in [(Some(RuntimeValue::Unit), true), (None, false)] {
+        let mut executor = AwbcProductStepExecutor::for_entry(
+            return_program(),
+            crate::awbc::schema::AwbcEntryId(0),
+            64,
+        )
+        .expect("product executor starts");
+        let program = std::sync::Arc::make_mut(&mut executor.program);
+        program.content_units.push(AwbcContentUnit {
+            public_id: AwbcStringId(0),
+            template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("content template identity"),
+            marks: Vec::new(),
+            effect_site_count: 0,
+            line_task_group: Some(crate::awbc::schema::AwbcLineTaskGroupId(0)),
+            display: None,
+            source: None,
+            resources: Vec::new(),
+        });
+        program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
+        program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
+            captures: Vec::new(),
+            activation: AwbcFunctionId(0),
+            result_type: AwbcTypeId(0),
+            handle_sites: Vec::new(),
+            root: crate::awbc::schema::AwbcLineTaskNodeId(0),
+            nodes: AwbcTableRange::new(0, 1),
+            cancel_handlers: vec![AwbcLineCancelHandler {
+                trigger: action.clone(),
+                function: AwbcFunctionId(0),
+            }],
+            cleanup_completed: None,
+            cleanup_cancelled: None,
+            cleanup_failed: None,
+            cleanup: crate::awbc::schema::AwbcLineCleanupPolicy {
+                child_tasks: crate::awbc::schema::AwbcChildCleanup::Finish,
+                presentation: crate::awbc::schema::AwbcPresentationCleanup::KeepRegistered,
+                audio: crate::awbc::schema::AwbcAudioCleanup::KeepRegistered,
+            },
+        }];
+        let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        );
+        let activation = crate::runtime_id::DialogueActivationId::new(
+            executor.artifact_fingerprint,
+            executor.facade_fiber.persistent_id,
+            content,
+            0,
+        );
+        let view = executor
+            .line_task_view(AwbcContentUnitId(0))
+            .expect("line-task group view");
+        let mut reducer = crate::line_task::LineTaskLiveState::new(&view, activation.clone());
+        let actions = [action.clone()];
+        let cancellation = crate::line_task::cancel_live_line_task_group(
+            &view,
+            crate::line_task::LineTaskReadyEvents::new(&std::collections::BTreeSet::new())
+                .with_input_actions(&actions),
+            &mut reducer,
+        )
+        .expect("matching cancellation action begins close");
+        let tag = cancellation
+            .1
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                crate::line_task::LineTaskCommand::Run { tag, .. } => Some(tag.clone()),
+                crate::line_task::LineTaskCommand::Cancel { .. } => None,
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "cancellation handler is scheduled as joined work: {:?}",
+                    cancellation.1.commands
+                )
+            });
+        executor
+            .dialogues
+            .begin(ActiveDialogue {
+                activation: activation.clone(),
+                content: AwbcContentUnitId(0),
+                target: fixture_dialogue_target(),
+                target_type: AwbcTypeId(0),
+                line: crate::plan::RuntimeLineId::from_runtime_line_value("line.cancel.result")
+                    .expect("line identity"),
+                captures: Box::new([]),
+                values: Box::new([]),
+                effect_callbacks: Box::new([]),
+                voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+                result: crate::awbc::schema::AwbcDialogueResultTarget {
+                    ty: AwbcTypeId(0),
+                    pattern: AwbcPatternId(0),
+                    destination: AwbcRegisterId(0),
+                },
+                phase: ProductDialoguePhase::Reducing { line_task: reducer },
+                elapsed_nanos: 0,
+                pending_content_events: Vec::new(),
+                pending_advance: false,
+                pending_line_outcomes: Vec::new(),
+            })
+            .expect("active dialogue begins");
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("active dialogue transaction");
+        transaction
+            .line_mut()
+            .commit_result(AwbcTypeId(0), RuntimeValue::Unit)
+            .expect("normal dialogue result commits");
+        let mut child = executor.fiber.clone();
+        child.status = FiberStatus::Returned;
+        child.terminal = Some(FiberTerminalValue::Returned(terminal_value));
+        let batch = super::ProductLineTaskExecutionBatch {
+            child_fibers: std::collections::VecDeque::new(),
+            dialogue_effect_callback_activations: std::collections::BTreeSet::new(),
+            next_generation: executor.next_generation,
+            next_fiber_instance: executor.next_fiber_instance,
+            observations: Vec::new(),
+            pure_stats: None,
+        };
+
+        executor
+            .prepare_owned_line_task_completion(
+                &mut transaction,
+                AwbcContentUnitId(0),
+                tag,
+                &mut child,
+                false,
+                true,
+                true,
+                batch,
+            )
+            .expect("joined cancellation work completes");
+
+        match (selected, transaction.line().result()) {
+            (
+                true,
+                crate::line_task::RuntimeDialogueResultState::Selected {
+                    ty,
+                    value: RuntimeValue::Unit,
+                    action: selected_action,
+                },
+            ) => {
+                assert_eq!(*ty, AwbcTypeId(0));
+                assert_eq!(selected_action, &action);
+            }
+            (
+                false,
+                crate::line_task::RuntimeDialogueResultState::Committed {
+                    ty,
+                    value: RuntimeValue::Unit,
+                },
+            ) => assert_eq!(*ty, AwbcTypeId(0)),
+            other => panic!("unexpected result disposition: {other:?}"),
+        }
+    }
 }
 
 #[test]

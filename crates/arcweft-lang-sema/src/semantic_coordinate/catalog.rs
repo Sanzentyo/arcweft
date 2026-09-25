@@ -521,14 +521,15 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
                     return Err(SemanticCoordinateIndexError::InvalidRootPath);
                 }
                 let accepted = *self.catalog.root_for_hir(location.root())?;
-                let application = checked_path_from_owner_path(
+                let checked_application = checked_path_from_owner_path(
                     accepted,
                     location.root(),
                     application_location.path(),
                     self.edges,
                 )?;
                 CheckedControlTransferTarget::Output(CheckedOutputTarget::new(
-                    StableCheckedOutputTargetCoordinate::new(application),
+                    StableCheckedOutputTargetCoordinate::new(checked_application),
+                    *application,
                 ))
             }
             (

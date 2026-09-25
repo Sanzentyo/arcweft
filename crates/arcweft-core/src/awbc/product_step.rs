@@ -956,6 +956,7 @@ impl AwbcProductStepExecutor {
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
             await_observer: None,
+            selected_dialogue_result: None,
             root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
@@ -3040,6 +3041,33 @@ impl AwbcProductStepExecutor {
         }
         if !joined {
             return Ok(batch);
+        }
+        if matches!(tag.work(), LineTaskWork::Cancellation(_))
+            && let Some(FiberTerminalValue::Returned(Some(value))) = child.terminal.as_ref()
+        {
+            let group_id = self
+                .dialogue_group(content)
+                .ok_or(LineRuntimeError::MissingTaskGroup)?;
+            let group = self
+                .program
+                .line_task_groups
+                .get(group_id.index())
+                .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+            if !runtime_value_matches_type(&self.program, value, group.result_type, 0) {
+                return Err(LineRuntimeError::ResultPatternOrTypeMismatch.into());
+            }
+            let reducer = transaction
+                .frame_mut()
+                .line_task_mut()
+                .ok_or(LineRuntimeError::InvalidActivationOperation)?;
+            if !reducer.accepts_cancellation_selection(&tag) {
+                return Err(LineRuntimeError::InvalidActivationOperation.into());
+            }
+            transaction.line_mut().select_cancellation_result(
+                &tag,
+                group.result_type,
+                value.clone(),
+            )?;
         }
         let completion = {
             let view = self

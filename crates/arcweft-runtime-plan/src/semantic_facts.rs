@@ -4059,6 +4059,7 @@ pub struct RuntimeDialogueApplication {
     target: RuntimeDialogueApplicationTarget,
     content: DialogueContentSpec,
     line_result: RuntimeNormalizedType,
+    cancel_outputs: BTreeSet<StmtId>,
 }
 
 impl RuntimeDialogueApplication {
@@ -4066,11 +4067,13 @@ impl RuntimeDialogueApplication {
         target: RuntimeDialogueApplicationTarget,
         content: DialogueContentSpec,
         line_result: RuntimeNormalizedType,
+        cancel_outputs: BTreeSet<StmtId>,
     ) -> Self {
         Self {
             target,
             content,
             line_result,
+            cancel_outputs,
         }
     }
 
@@ -4084,6 +4087,14 @@ impl RuntimeDialogueApplication {
 
     pub const fn line_result(&self) -> &RuntimeNormalizedType {
         &self.line_result
+    }
+
+    pub fn admits_cancel_output(&self, statement: StmtId) -> bool {
+        self.cancel_outputs.contains(&statement)
+    }
+
+    pub fn cancel_outputs(&self) -> &BTreeSet<StmtId> {
+        &self.cancel_outputs
     }
 }
 
@@ -7351,6 +7362,22 @@ impl RuntimePlanSemanticFacts {
             self.expression_type(application.target().expression()),
         )?;
         validate_normalized_type(modules, application.line_result())?;
+        for statement in application.cancel_outputs() {
+            require_runtime_statement_owner(
+                runtime_owners,
+                *statement,
+                RuntimeSemanticFactFamily::DialogueApplication,
+            )?;
+            let HirStmtKind::Out { value, .. } = resolve_stmt(modules, *statement)? else {
+                return Err(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner });
+            };
+            if self.expression_type(*value) != Some(application.line_result()) {
+                return Err(RuntimeSemanticFactsError::MissingDialogueValueType {
+                    dialogue: owner,
+                    value: *value,
+                });
+            }
+        }
         if application.content().character().semantic_digest() != catalog.semantic_digest()
             || application.content().character().locale_policy_digest()
                 != catalog.locale_policy_digest()

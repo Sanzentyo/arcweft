@@ -2,7 +2,9 @@ use super::defer::{
     AwbcRuntimeDeferredRegistrationSnapshot, RuntimeDeferInFlight, RuntimeDeferUnwindState,
     RuntimeDeferUnwindStep, RuntimeLineDeferredRegistration,
 };
-use super::{LineTaskLiveSnapshot, LineTaskScheduledCompletion, LineTaskWorkTag, ScopeExit};
+use super::{
+    LineTaskLiveSnapshot, LineTaskScheduledCompletion, LineTaskWork, LineTaskWorkTag, ScopeExit,
+};
 use crate::effect::RuntimeDropPolicy;
 use crate::pattern::RuntimeOpaqueTypeOwner;
 use crate::presentation::{RuntimeCommandQueue, RuntimeStageRejectCode, RuntimeVoiceSessionId};
@@ -172,6 +174,15 @@ pub enum RuntimeHandleLeaseState {
     Cancelled,
     Failed,
     Released,
+}
+
+const fn result_lease_was_retired(state: RuntimeHandleLeaseState) -> bool {
+    matches!(
+        state,
+        RuntimeHandleLeaseState::Cancelling
+            | RuntimeHandleLeaseState::Cancelled
+            | RuntimeHandleLeaseState::Released
+    )
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -412,6 +423,11 @@ enum AwbcRuntimeDialogueResultSnapshot<T> {
         ty: T,
         value: crate::value::AwbcRuntimeValueSnapshot,
     },
+    Selected {
+        ty: T,
+        value: crate::value::AwbcRuntimeValueSnapshot,
+        action: arcweft_interaction_model::input::InputActionId,
+    },
     Publishing {
         ty: T,
         value: crate::value::AwbcRuntimeValueSnapshot,
@@ -451,8 +467,19 @@ impl RuntimeDialogueCommitReceipt {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeDialogueResultState<T> {
     Uncommitted,
-    Committed { ty: T, value: RuntimeValue },
-    Publishing { ty: T, value: RuntimeValue },
+    Committed {
+        ty: T,
+        value: RuntimeValue,
+    },
+    Selected {
+        ty: T,
+        value: RuntimeValue,
+        action: arcweft_interaction_model::input::InputActionId,
+    },
+    Publishing {
+        ty: T,
+        value: RuntimeValue,
+    },
     Published,
     Abandoned,
 }
@@ -934,16 +961,15 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         match &self.result {
             RuntimeDialogueResultState::Uncommitted => {
                 if self.ledger.leases().values().any(|lease| {
-                    matches!(
-                        lease.owner(),
-                        RuntimeHandleOwnerSlot::DialogueResult(_)
-                            | RuntimeHandleOwnerSlot::ParentFiber(_)
-                    )
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                            && !result_lease_was_retired(lease.state()))
                 }) {
                     return Err(LineRuntimeError::InvalidRestoredResultState);
                 }
             }
             RuntimeDialogueResultState::Committed { value, .. }
+            | RuntimeDialogueResultState::Selected { value, .. }
             | RuntimeDialogueResultState::Publishing { value, .. } => {
                 for handle in value
                     .affine_line_handles()
@@ -966,21 +992,24 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                         return Err(LineRuntimeError::InvalidRestoredResultState);
                     }
                 }
-                if matches!(&self.result, RuntimeDialogueResultState::Committed { .. })
-                    && self.ledger.leases().values().any(|lease| {
-                        matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
-                    })
+                if matches!(
+                    &self.result,
+                    RuntimeDialogueResultState::Committed { .. }
+                        | RuntimeDialogueResultState::Selected { .. }
+                ) && self
+                    .ledger
+                    .leases()
+                    .values()
+                    .any(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_)))
                 {
                     return Err(LineRuntimeError::InvalidRestoredResultState);
                 }
             }
             RuntimeDialogueResultState::Abandoned => {
                 if self.ledger.leases().values().any(|lease| {
-                    matches!(
-                        lease.owner(),
-                        RuntimeHandleOwnerSlot::DialogueResult(_)
-                            | RuntimeHandleOwnerSlot::ParentFiber(_)
-                    )
+                    matches!(lease.owner(), RuntimeHandleOwnerSlot::ParentFiber(_))
+                        || (matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                            && !result_lease_was_retired(lease.state()))
                 }) {
                     return Err(LineRuntimeError::InvalidRestoredResultState);
                 }
@@ -993,7 +1022,10 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             .ledger
             .leases()
             .values()
-            .filter(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)))
+            .filter(|lease| {
+                matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
+                    && !result_lease_was_retired(lease.state())
+            })
             .map(|lease| lease.token().clone())
             .collect::<std::collections::BTreeSet<_>>();
         if ledger_result_tokens != result_tokens {
@@ -1016,6 +1048,20 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     ) -> Result<(), LineRuntimeError> {
         if reducer.activation() != activation {
             return Err(LineRuntimeError::InvalidRestoredScheduledState);
+        }
+        if let RuntimeDialogueResultState::Selected { action, .. } = &self.result {
+            if reducer.cancellation_action() != Some(action)
+                || !matches!(
+                    reducer.phase(),
+                    super::LineTaskPhase::Closing {
+                        exit: ScopeExit::Cancelled
+                    } | super::LineTaskPhase::Closed {
+                        exit: ScopeExit::Cancelled
+                    }
+                )
+            {
+                return Err(LineRuntimeError::InvalidRestoredResultState);
+            }
         }
         let ready = reducer
             .scheduled_ready()
@@ -1760,9 +1806,92 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         Ok(())
     }
 
-    pub(crate) fn begin_result_publication(&mut self) -> Result<(), LineRuntimeError> {
-        let RuntimeDialogueResultState::Committed { ty, value } = &self.result else {
+    /// Replaces the pending normal result only at the exact joined cancellation
+    /// handler completion. The value and every affine lease advance together.
+    pub(crate) fn select_cancellation_result(
+        &mut self,
+        tag: &LineTaskWorkTag,
+        ty: T,
+        value: RuntimeValue,
+    ) -> Result<(), LineRuntimeError>
+    where
+        T: PartialEq,
+    {
+        let LineTaskWork::Cancellation(action) = tag.work() else {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        };
+        if tag.scheduled_token().is_some() {
+            return Err(LineRuntimeError::InvalidActivationOperation);
+        }
+        let RuntimeDialogueResultState::Committed {
+            ty: pending_ty,
+            value: pending_value,
+        } = &self.result
+        else {
             return Err(LineRuntimeError::InvalidResultTransition);
+        };
+        if pending_ty != &ty {
+            return Err(LineRuntimeError::ResultPatternOrTypeMismatch);
+        }
+        let mut candidate = self.clone();
+        let mut ledger = candidate.ledger.clone();
+        let mut commands =
+            RuntimeCommandQueue::new(tag.activation_id().clone(), candidate.command_sequence);
+        let mut old_tokens = std::collections::BTreeSet::new();
+        for handle in pending_value
+            .affine_line_handles()
+            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+        {
+            if !old_tokens.insert(handle.token().clone()) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+            if handle.token().activation() != tag.activation_id() {
+                return Err(LineRuntimeError::WrongActivation);
+            }
+            ledger.drop_owned(
+                handle.token(),
+                &RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
+                &mut commands,
+            )?;
+        }
+        let mut selected_tokens = std::collections::BTreeSet::new();
+        for handle in value
+            .affine_line_handles()
+            .map_err(|_| LineRuntimeError::InvalidHandlePayload)?
+        {
+            if !selected_tokens.insert(handle.token().clone()) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+            if old_tokens.contains(handle.token()) {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence);
+            }
+            if handle.token().activation() != tag.activation_id() {
+                return Err(LineRuntimeError::WrongActivation);
+            }
+            let lease = ledger
+                .lease(handle.token())
+                .ok_or(LineRuntimeError::UnknownHandle)?;
+            if lease.resource().kind() != handle.kind() {
+                return Err(LineRuntimeError::WrongOpaqueProducer);
+            }
+            ledger.transfer(
+                handle.token(),
+                &RuntimeHandleOwnerSlot::ChildScope(tag.clone()),
+                RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone()),
+            )?;
+        }
+        candidate.ledger = ledger;
+        candidate.record_commands(tag.activation_id(), commands)?;
+        candidate.result = RuntimeDialogueResultState::Selected { ty, value, action };
+        *self = candidate;
+        Ok(())
+    }
+
+    pub(crate) fn begin_result_publication(&mut self) -> Result<(), LineRuntimeError> {
+        let (ty, value) = match &self.result {
+            RuntimeDialogueResultState::Committed { ty, value }
+            | RuntimeDialogueResultState::Selected { ty, value, .. } => (ty, value),
+            _ => return Err(LineRuntimeError::InvalidResultTransition),
         };
         self.result = RuntimeDialogueResultState::Publishing {
             ty: ty.clone(),
@@ -1783,6 +1912,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         match self.result {
             RuntimeDialogueResultState::Uncommitted
             | RuntimeDialogueResultState::Committed { .. }
+            | RuntimeDialogueResultState::Selected { .. }
             | RuntimeDialogueResultState::Publishing { .. } => {
                 self.result = RuntimeDialogueResultState::Abandoned;
                 Ok(())
@@ -1930,6 +2060,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             RuntimeDialogueResultState::Abandoned => Some(RuntimeDialogueTerminalKind::Abandoned),
             RuntimeDialogueResultState::Uncommitted
             | RuntimeDialogueResultState::Committed { .. }
+            | RuntimeDialogueResultState::Selected { .. }
             | RuntimeDialogueResultState::Publishing { .. } => None,
         }
     }
@@ -2168,6 +2299,11 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
                 ty: ty.clone(),
                 value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
             },
+            RuntimeDialogueResultState::Selected { ty, value, action } => Self::Selected {
+                ty: ty.clone(),
+                value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
+                action: action.clone(),
+            },
             RuntimeDialogueResultState::Publishing { ty, value } => Self::Publishing {
                 ty: ty.clone(),
                 value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(value)?,
@@ -2186,6 +2322,11 @@ impl<T: Clone> AwbcRuntimeDialogueResultSnapshot<T> {
             Self::Committed { ty, value } => RuntimeDialogueResultState::Committed {
                 ty,
                 value: value.into_runtime_value_for_program(owner)?,
+            },
+            Self::Selected { ty, value, action } => RuntimeDialogueResultState::Selected {
+                ty,
+                value: value.into_runtime_value_for_program(owner)?,
+                action,
             },
             Self::Publishing { ty, value } => RuntimeDialogueResultState::Publishing {
                 ty,
@@ -3619,7 +3760,9 @@ mod tests {
     use crate::awbc::schema::{
         AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcTypeId,
     };
-    use crate::line_task::{LineTaskWorkTag, RuntimeDeferOutcomeFilter, RuntimeScheduledState};
+    use crate::line_task::{
+        LineTaskWork, LineTaskWorkTag, RuntimeDeferOutcomeFilter, RuntimeScheduledState,
+    };
     use crate::runtime_id::{
         DialogueActivationId, RuntimeDeferSiteId, RuntimeDialogueContentPlanId,
         RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
@@ -3669,6 +3812,44 @@ mod tests {
             RuntimeDialogueContentPlanId::from_accepted_ordinal(NonZeroU32::MIN),
             9,
         )
+    }
+
+    #[test]
+    fn cancellation_selection_replaces_only_the_unpublished_result_once() {
+        let mut state = RuntimeDialogueActivationState::<RuntimePlanTypeId>::new();
+        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+        state
+            .commit_result(ty, RuntimeValue::String("normal".to_owned()))
+            .expect("initial result");
+        let action =
+            arcweft_interaction_model::input::InputActionId::new("SkipLine").expect("input action");
+        let tag = LineTaskWorkTag::activation(
+            scheduled_activation(),
+            LineTaskWork::Cancellation(action.clone()),
+        );
+        state
+            .select_cancellation_result(&tag, ty, RuntimeValue::String("cancelled".to_owned()))
+            .expect("one selected cancellation result");
+        assert_eq!(
+            state.result(),
+            &RuntimeDialogueResultState::Selected {
+                ty,
+                value: RuntimeValue::String("cancelled".to_owned()),
+                action,
+            }
+        );
+        assert_eq!(
+            state.select_cancellation_result(&tag, ty, RuntimeValue::Unit),
+            Err(LineRuntimeError::InvalidResultTransition)
+        );
+        state.begin_result_publication().expect("publish selection");
+        assert_eq!(
+            state.result(),
+            &RuntimeDialogueResultState::Publishing {
+                ty,
+                value: RuntimeValue::String("cancelled".to_owned()),
+            }
+        );
     }
 
     fn defer_site(index: usize) -> RuntimeDeferSiteId {

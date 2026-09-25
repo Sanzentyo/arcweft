@@ -242,7 +242,7 @@ impl Engine {
                 self.commit_and_suspend_dialogue(transaction, output, start);
                 return;
             }
-            if line_task.is_closing() {
+            if line_task.is_closing() || line_task.is_closed() {
                 let activation = finalize_live_line_task_close(&group, line_task);
                 if line_task.is_closed() {
                     frame.line_task = DialogueLineTaskState::Closed;

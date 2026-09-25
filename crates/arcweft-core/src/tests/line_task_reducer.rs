@@ -302,6 +302,7 @@ fn reducer_restore_rejects_tampered_node_state_count() {
     let snapshot = crate::line_task::LineTaskLiveSnapshot::new(
         activation(1),
         crate::line_task::LineTaskPhase::Active,
+        None,
         crate::line_task::LineTaskExecutionLaneSnapshot::new(
             Box::default(),
             Box::default(),
@@ -602,6 +603,7 @@ fn scheduled_lane_restore_rejects_state_outside_its_static_subtree() {
     let tampered = crate::line_task::LineTaskLiveSnapshot::new(
         id,
         live.phase(),
+        live.cancellation_action().cloned(),
         crate::line_task::LineTaskExecutionLaneSnapshot::new(
             live.node_states().to_vec().into_boxed_slice(),
             live.outstanding().to_vec().into_boxed_slice(),

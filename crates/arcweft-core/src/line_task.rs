@@ -667,6 +667,7 @@ pub(crate) enum LineTaskPhase {
 pub(crate) struct LineTaskLiveSnapshot {
     activation: DialogueActivationId,
     phase: LineTaskPhase,
+    cancellation_action: Option<InputActionId>,
     activation_lane: LineTaskExecutionLaneSnapshot,
     scheduled_lanes: Box<[LineTaskScheduledLaneSnapshot]>,
     scheduled_ready: Box<[RuntimeLineHandleToken]>,
@@ -743,6 +744,7 @@ impl LineTaskLiveSnapshot {
     pub(crate) fn new(
         activation: DialogueActivationId,
         phase: LineTaskPhase,
+        cancellation_action: Option<InputActionId>,
         activation_lane: LineTaskExecutionLaneSnapshot,
         scheduled_lanes: Box<[LineTaskScheduledLaneSnapshot]>,
         scheduled_ready: Box<[RuntimeLineHandleToken]>,
@@ -753,6 +755,7 @@ impl LineTaskLiveSnapshot {
         Self {
             activation,
             phase,
+            cancellation_action,
             activation_lane,
             scheduled_lanes,
             scheduled_ready,
@@ -770,6 +773,10 @@ impl LineTaskLiveSnapshot {
     #[must_use]
     pub(crate) const fn phase(&self) -> LineTaskPhase {
         self.phase
+    }
+
+    pub(crate) const fn cancellation_action(&self) -> Option<&InputActionId> {
+        self.cancellation_action.as_ref()
     }
 
     #[must_use]
@@ -881,6 +888,8 @@ pub(crate) enum LineTaskSnapshotError {
     WorkPhase { work: LineTaskWork },
     #[error("line-task snapshot cleanup flag is incompatible with its phase")]
     CleanupPhase,
+    #[error("line-task snapshot cancellation action is incompatible with its phase or plan")]
+    CancellationAction,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -956,6 +965,7 @@ impl LineTaskExecutionLane {
 pub struct LineTaskLiveState {
     activation: DialogueActivationId,
     phase: LineTaskPhase,
+    cancellation_action: Option<InputActionId>,
     activation_lane: LineTaskExecutionLane,
     scheduled_lanes: BTreeMap<RuntimeLineHandleToken, LineTaskExecutionLane>,
     scheduled_ready: BTreeSet<RuntimeLineHandleToken>,
@@ -970,6 +980,7 @@ impl LineTaskLiveState {
         Self {
             activation,
             phase: LineTaskPhase::Active,
+            cancellation_action: None,
             activation_lane: LineTaskExecutionLane::new(group.node_count()),
             scheduled_lanes: BTreeMap::new(),
             scheduled_ready: BTreeSet::new(),
@@ -985,6 +996,7 @@ impl LineTaskLiveState {
         LineTaskLiveSnapshot::new(
             self.activation.clone(),
             self.phase,
+            self.cancellation_action.clone(),
             self.activation_lane.snapshot(),
             self.scheduled_lanes
                 .iter()
@@ -1009,6 +1021,7 @@ impl LineTaskLiveState {
         Ok(Self {
             activation: snapshot.activation,
             phase: snapshot.phase,
+            cancellation_action: snapshot.cancellation_action,
             activation_lane: LineTaskExecutionLane::from_snapshot(snapshot.activation_lane),
             scheduled_lanes: snapshot
                 .scheduled_lanes
@@ -1044,6 +1057,31 @@ impl LineTaskLiveState {
     #[must_use]
     pub(crate) fn is_closed(&self) -> bool {
         matches!(self.phase, LineTaskPhase::Closed { .. })
+    }
+
+    pub(crate) fn accepts_cancellation_selection(&self, tag: &LineTaskWorkTag) -> bool {
+        let LineTaskWorkInstance::Activation(activation) = tag.instance() else {
+            return false;
+        };
+        let LineTaskWork::Cancellation(action) = tag.work() else {
+            return false;
+        };
+        activation == &self.activation
+            && self.cancellation_action.as_ref() == Some(&action)
+            && matches!(
+                self.phase,
+                LineTaskPhase::Closing {
+                    exit: ScopeExit::Cancelled
+                }
+            )
+            && self
+                .activation_lane
+                .outstanding
+                .contains(&LineTaskWork::Cancellation(action))
+    }
+
+    pub(crate) const fn cancellation_action(&self) -> Option<&InputActionId> {
+        self.cancellation_action.as_ref()
     }
 
     #[must_use]
@@ -1265,6 +1303,31 @@ fn validate_snapshot<P: LineTaskPlanView>(
     }
     if snapshot.cleanup_started && matches!(snapshot.phase, LineTaskPhase::Active) {
         return Err(LineTaskSnapshotError::CleanupPhase);
+    }
+    match (snapshot.phase, snapshot.cancellation_action.as_ref()) {
+        (
+            LineTaskPhase::Closing {
+                exit: ScopeExit::Cancelled,
+            }
+            | LineTaskPhase::Closed {
+                exit: ScopeExit::Cancelled,
+            },
+            Some(action),
+        ) if plan.cancellation_action(std::slice::from_ref(action)) == Some(action.clone()) => {}
+        (LineTaskPhase::Active, None)
+        | (
+            LineTaskPhase::Closing {
+                exit: ScopeExit::Completed | ScopeExit::Failed,
+            },
+            None,
+        )
+        | (
+            LineTaskPhase::Closed {
+                exit: ScopeExit::Completed | ScopeExit::Failed,
+            },
+            None,
+        ) => {}
+        _ => return Err(LineTaskSnapshotError::CancellationAction),
     }
     Ok(())
 }
@@ -1488,6 +1551,7 @@ pub(crate) fn cancel_live_line_task_group<P: LineTaskPlanView>(
     if !state.begin_close(ScopeExit::Cancelled) {
         return None;
     }
+    state.cancellation_action = Some(action.clone());
     let mut activation = LineTaskActivation::default();
     if group.has_cancellation_work(&action) {
         activation.commands.push(LineTaskCommand::Run {
