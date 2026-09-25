@@ -1396,3 +1396,26 @@ workspace all-target/all-feature check、workspace Clippy、fmt、staged diff ch
 上記 stack 設定下では通過。049 の最小再現では直接の
 `await ... with: pending` が HIR source-index で失敗し、plain await は HIR を通る。
 049 と 045 の実 native/decoded AWBC 再生、および goal 全体の最終 gate は未達。
+
+## 049 Await `with` 境界 checkpoint — 2026-09-26
+
+`74930aabd4b93a3257f9b214bff844b07bedf9b2` を main へ push 済み。
+Flow 文の Dialogue plan 区間検出が、同じ head にある `await ... with:` を
+Dialogue 継続として先取りし、Await の `pending` body を式の範囲から除外していた。
+top-level Await の `with` は Await 文境界に委ねるよう修正した。同行と次行の
+`with:` の双方で、HIR Await が Pending branch、branch-local、nested body を
+保持し、後続 Return と分離される focused test が通過。Syntax lib 702/702、
+HIR lib 921 pass/8 ignored、fmt、cached diff check も通過した。
+
+049 の fixture は HIR を越えた後、未宣言の `@asset:.bg.room` の Sema
+値解決で停止する。fixture には asset/voice/state の宣言・manifest がなく、
+entity reference の拒否自体は現行契約に沿う。型付き `Need` parameter への
+単純な置換は Sema を越えるが、RuntimePlan Await が immediate host call を
+要求して停止する。一般 extern capability call も manifest-owned host-call
+contract がなく実行 plan を公開できない。fixture の受理内容と Await の
+typed Need 実行モデルを合わせて閉じる必要がある。
+
+個別の `compile --emit check` では 050、054、055 は通過。051 は Sema
+expression type、052 は Sema fact/HIR family、053 は HIR arena coverage、
+056 は extern capability host-call contract で停止した。これは 049 以降の
+全体 fixture gate 合格を意味しない。
