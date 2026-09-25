@@ -39,7 +39,8 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchOperation,
 };
 use arcweft_view::{ViewId, ViewRegistry};
-use policies::{DialoguePolicyTypes, DialogueRuntimeVariantOwner};
+use policies::CharacterDialoguePolicyCase;
+pub use policies::{CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyVariantOwner};
 pub use role_payload::{
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
     CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,
@@ -169,7 +170,7 @@ pub struct CharacterDialogueRuntimeSchema {
     look_source_authority: Arc<RuntimeCharacterLookSourceAuthority>,
     program_owner: RuntimeProgramOwner,
     view_contracts: RuntimeValueDigest,
-    policies: DialoguePolicyTypes,
+    policies: CharacterDialoguePolicyTypeGraph,
 }
 
 impl std::fmt::Debug for CharacterDialogueRuntimeSchema {
@@ -357,7 +358,7 @@ pub(super) fn effective_default_config_digest<T: CharacterDialogueTypeReference>
         RuntimeOpaqueValueClass::Plain,
         RuntimeOpaquePersistence::ConstantAndSnapshot,
     );
-    let policies = DialoguePolicyTypes::try_new(
+    let policies = CharacterDialoguePolicyTypeGraph::try_new(
         rich_text_owner,
         PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
     )?;
@@ -471,10 +472,11 @@ impl CharacterDialogueRuntimeSchema {
             program.require_type(descriptor.semantic_type)?;
         }
         let view_contracts = generation.presentation().view_registry_digest();
-        let policies = DialoguePolicyTypes::try_new(
+        let policies = CharacterDialoguePolicyTypeGraph::try_new(
             rich_text,
             PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
         )?;
+        policies.validate_program_types(program)?;
         let schema = Self {
             generation_digest: generation.digest(),
             view_catalog,
@@ -1298,7 +1300,7 @@ impl CharacterDialogueRuntimeSchema {
 
     fn encode_config_fields(
         config: &CharacterDialogueConfig,
-        policies: &DialoguePolicyTypes,
+        policies: &CharacterDialoguePolicyTypeGraph,
     ) -> Vec<RuntimeValue> {
         vec![
             Self::encode_option(
@@ -1470,21 +1472,15 @@ impl CharacterDialogueRuntimeSchema {
 
     fn encode_voice(
         voice: &CharacterDialogueVoice,
-        policies: &DialoguePolicyTypes,
+        policies: &CharacterDialoguePolicyTypeGraph,
     ) -> RuntimeValue {
         match voice {
-            CharacterDialogueVoice::Auto => Self::dialogue_variant(
-                policies,
-                DialogueRuntimeVariantOwner::Voice,
-                0,
-                "Auto",
-                None,
-            ),
+            CharacterDialogueVoice::Auto => {
+                Self::dialogue_variant(policies, CharacterDialoguePolicyCase::VoiceAuto, None)
+            }
             CharacterDialogueVoice::Id(id) => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::Voice,
-                1,
-                "Id",
+                CharacterDialoguePolicyCase::VoiceId,
                 Some(RuntimeValue::String(id.as_str().to_owned())),
             ),
         }
@@ -1503,10 +1499,23 @@ impl CharacterDialogueRuntimeSchema {
         else {
             return Err(field_shape("voice", "expected DialogueVoice variant"));
         };
-        self.expect_dialogue_variant_owner(owner, DialogueRuntimeVariantOwner::Voice, "voice")?;
-        match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "Auto", None) => Ok(CharacterDialogueVoice::Auto),
-            (1, "Id", Some(RuntimeValue::String(id))) => {
+        self.expect_dialogue_variant_owner(
+            owner,
+            CharacterDialoguePolicyVariantOwner::Voice,
+            "voice",
+        )?;
+        match (
+            CharacterDialoguePolicyTypeGraph::case_for_value(
+                CharacterDialoguePolicyVariantOwner::Voice,
+                *ordinal,
+                name,
+            ),
+            payload.as_deref(),
+        ) {
+            (Some(CharacterDialoguePolicyCase::VoiceAuto), None) => {
+                Ok(CharacterDialogueVoice::Auto)
+            }
+            (Some(CharacterDialoguePolicyCase::VoiceId), Some(RuntimeValue::String(id))) => {
                 CharacterDialogueVoiceId::try_new(id.clone()).map(CharacterDialogueVoice::Id)
             }
             _ => Err(field_shape("voice", "invalid DialogueVoice variant")),
@@ -1591,28 +1600,22 @@ impl CharacterDialogueRuntimeSchema {
     }
     fn encode_inline_failure(
         policy: &InlineFailurePolicy,
-        policies: &DialoguePolicyTypes,
+        policies: &CharacterDialoguePolicyTypeGraph,
     ) -> RuntimeValue {
         match policy {
             InlineFailurePolicy::FailLine => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFailure,
-                0,
-                "FailLine",
+                CharacterDialoguePolicyCase::InlineFailureFailLine,
                 None,
             ),
             InlineFailurePolicy::Discard => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFailure,
-                1,
-                "Discard",
+                CharacterDialoguePolicyCase::InlineFailureDiscard,
                 None,
             ),
             InlineFailurePolicy::Fallback { fallback } => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFailure,
-                2,
-                "Fallback",
+                CharacterDialoguePolicyCase::InlineFailureFallback,
                 Some(Self::encode_fallback(fallback, policies)),
             ),
         }
@@ -1633,26 +1636,40 @@ impl CharacterDialogueRuntimeSchema {
         };
         self.expect_dialogue_variant_owner(
             owner,
-            DialogueRuntimeVariantOwner::InlineFailure,
+            CharacterDialoguePolicyVariantOwner::InlineFailure,
             "inline_failure",
         )?;
-        match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "FailLine", None) => Ok(InlineFailurePolicy::FailLine),
-            (1, "Discard", None) => Ok(InlineFailurePolicy::Discard),
-            (2, "Fallback", Some(value)) => Ok(InlineFailurePolicy::Fallback {
-                fallback: self.decode_fallback(value)?,
-            }),
+        match (
+            CharacterDialoguePolicyTypeGraph::case_for_value(
+                CharacterDialoguePolicyVariantOwner::InlineFailure,
+                *ordinal,
+                name,
+            ),
+            payload.as_deref(),
+        ) {
+            (Some(CharacterDialoguePolicyCase::InlineFailureFailLine), None) => {
+                Ok(InlineFailurePolicy::FailLine)
+            }
+            (Some(CharacterDialoguePolicyCase::InlineFailureDiscard), None) => {
+                Ok(InlineFailurePolicy::Discard)
+            }
+            (Some(CharacterDialoguePolicyCase::InlineFailureFallback), Some(value)) => {
+                Ok(InlineFailurePolicy::Fallback {
+                    fallback: self.decode_fallback(value)?,
+                })
+            }
             _ => Err(field_shape("inline_failure", "invalid policy variant")),
         }
     }
 
-    fn encode_fallback(fallback: &InlineFallback, policies: &DialoguePolicyTypes) -> RuntimeValue {
+    fn encode_fallback(
+        fallback: &InlineFallback,
+        policies: &CharacterDialoguePolicyTypeGraph,
+    ) -> RuntimeValue {
         match fallback {
             InlineFallback::Text { text, style } => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFallback,
-                0,
-                "Text",
+                CharacterDialoguePolicyCase::InlineFallbackText,
                 Some(RuntimeValue::Tuple(vec![
                     RuntimeValue::String(text.clone()),
                     Self::encode_fallback_style(style, policies),
@@ -1660,23 +1677,17 @@ impl CharacterDialogueRuntimeSchema {
             ),
             InlineFallback::ExprSource { style } => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFallback,
-                1,
-                "ExprSource",
+                CharacterDialoguePolicyCase::InlineFallbackExprSource,
                 Some(Self::encode_fallback_style(style, policies)),
             ),
             InlineFallback::CallSource { style } => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFallback,
-                2,
-                "CallSource",
+                CharacterDialoguePolicyCase::InlineFallbackCallSource,
                 Some(Self::encode_fallback_style(style, policies)),
             ),
             InlineFallback::ValuePlain => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::InlineFallback,
-                3,
-                "ValuePlain",
+                CharacterDialoguePolicyCase::InlineFallbackValuePlain,
                 None,
             ),
         }
@@ -1697,11 +1708,21 @@ impl CharacterDialogueRuntimeSchema {
         };
         self.expect_dialogue_variant_owner(
             owner,
-            DialogueRuntimeVariantOwner::InlineFallback,
+            CharacterDialoguePolicyVariantOwner::InlineFallback,
             "inline_failure",
         )?;
-        match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "Text", Some(RuntimeValue::Tuple(values))) if values.len() == 2 => {
+        match (
+            CharacterDialoguePolicyTypeGraph::case_for_value(
+                CharacterDialoguePolicyVariantOwner::InlineFallback,
+                *ordinal,
+                name,
+            ),
+            payload.as_deref(),
+        ) {
+            (
+                Some(CharacterDialoguePolicyCase::InlineFallbackText),
+                Some(RuntimeValue::Tuple(values)),
+            ) if values.len() == 2 => {
                 let RuntimeValue::String(text) = &values[0] else {
                     return Err(field_shape(
                         "inline_failure",
@@ -1713,41 +1734,41 @@ impl CharacterDialogueRuntimeSchema {
                     style: self.decode_fallback_style(&values[1])?,
                 })
             }
-            (1, "ExprSource", Some(style)) => Ok(InlineFallback::ExprSource {
-                style: self.decode_fallback_style(style)?,
-            }),
-            (2, "CallSource", Some(style)) => Ok(InlineFallback::CallSource {
-                style: self.decode_fallback_style(style)?,
-            }),
-            (3, "ValuePlain", None) => Ok(InlineFallback::ValuePlain),
+            (Some(CharacterDialoguePolicyCase::InlineFallbackExprSource), Some(style)) => {
+                Ok(InlineFallback::ExprSource {
+                    style: self.decode_fallback_style(style)?,
+                })
+            }
+            (Some(CharacterDialoguePolicyCase::InlineFallbackCallSource), Some(style)) => {
+                Ok(InlineFallback::CallSource {
+                    style: self.decode_fallback_style(style)?,
+                })
+            }
+            (Some(CharacterDialoguePolicyCase::InlineFallbackValuePlain), None) => {
+                Ok(InlineFallback::ValuePlain)
+            }
             _ => Err(field_shape("inline_failure", "invalid fallback variant")),
         }
     }
 
     fn encode_fallback_style(
         style: &FallbackStylePolicy,
-        policies: &DialoguePolicyTypes,
+        policies: &CharacterDialoguePolicyTypeGraph,
     ) -> RuntimeValue {
         match style {
             FallbackStylePolicy::Plain => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::FallbackStyle,
-                0,
-                "Plain",
+                CharacterDialoguePolicyCase::FallbackStylePlain,
                 None,
             ),
             FallbackStylePolicy::InheritSurrounding => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::FallbackStyle,
-                1,
-                "InheritSurrounding",
+                CharacterDialoguePolicyCase::FallbackStyleInheritSurrounding,
                 None,
             ),
             FallbackStylePolicy::Apply { styles } => Self::dialogue_variant(
                 policies,
-                DialogueRuntimeVariantOwner::FallbackStyle,
-                2,
-                "Apply",
+                CharacterDialoguePolicyCase::FallbackStyleApply,
                 Some(RuntimeValue::Seq(RuntimeSeq::values(
                     styles
                         .iter()
@@ -1776,13 +1797,27 @@ impl CharacterDialogueRuntimeSchema {
         };
         self.expect_dialogue_variant_owner(
             owner,
-            DialogueRuntimeVariantOwner::FallbackStyle,
+            CharacterDialoguePolicyVariantOwner::FallbackStyle,
             "inline_failure",
         )?;
-        match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "Plain", None) => Ok(FallbackStylePolicy::Plain),
-            (1, "InheritSurrounding", None) => Ok(FallbackStylePolicy::InheritSurrounding),
-            (2, "Apply", Some(RuntimeValue::Seq(styles))) => Ok(FallbackStylePolicy::Apply {
+        match (
+            CharacterDialoguePolicyTypeGraph::case_for_value(
+                CharacterDialoguePolicyVariantOwner::FallbackStyle,
+                *ordinal,
+                name,
+            ),
+            payload.as_deref(),
+        ) {
+            (Some(CharacterDialoguePolicyCase::FallbackStylePlain), None) => {
+                Ok(FallbackStylePolicy::Plain)
+            }
+            (Some(CharacterDialoguePolicyCase::FallbackStyleInheritSurrounding), None) => {
+                Ok(FallbackStylePolicy::InheritSurrounding)
+            }
+            (
+                Some(CharacterDialoguePolicyCase::FallbackStyleApply),
+                Some(RuntimeValue::Seq(styles)),
+            ) => Ok(FallbackStylePolicy::Apply {
                 styles: styles
                     .clone()
                     .into_values()
@@ -1801,12 +1836,11 @@ impl CharacterDialogueRuntimeSchema {
     }
 
     fn dialogue_variant(
-        policies: &DialoguePolicyTypes,
-        owner: DialogueRuntimeVariantOwner,
-        ordinal: u32,
-        name: &str,
+        policies: &CharacterDialoguePolicyTypeGraph,
+        case: CharacterDialoguePolicyCase,
         payload: Option<RuntimeValue>,
     ) -> RuntimeValue {
+        let (owner, ordinal, name) = CharacterDialoguePolicyTypeGraph::case_spec(case);
         RuntimeValue::Variant {
             owner: policies.identity(owner).clone(),
             ordinal,
@@ -1818,7 +1852,7 @@ impl CharacterDialogueRuntimeSchema {
     fn expect_dialogue_variant_owner(
         &self,
         actual: &RuntimeVariantIdentity,
-        expected: DialogueRuntimeVariantOwner,
+        expected: CharacterDialoguePolicyVariantOwner,
         field: &'static str,
     ) -> Result<(), CharacterDialogueValueError> {
         if actual == self.policies.identity(expected) {

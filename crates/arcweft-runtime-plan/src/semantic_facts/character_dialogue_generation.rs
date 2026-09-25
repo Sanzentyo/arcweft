@@ -4,10 +4,12 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_character::{id::CharacterId, presentation_name::CharacterPresentationCatalogData};
 use arcweft_core::entry::RuntimeValueDigest;
+use arcweft_core::pattern::RuntimeCheckedType;
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
 use arcweft_dialogue::{
-    CharacterDialogueGenerationDeclaration, CharacterDialogueTypeReference,
-    CharacterDialogueVisualType,
+    CharacterDialogueGenerationDeclaration, CharacterDialoguePolicyTypeGraph,
+    CharacterDialogueRuntimeRole, CharacterDialogueTypeReference, CharacterDialogueVisualType,
+    PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
 };
 use arcweft_lang_hir::{
     identity::{ExprId, HirModuleId},
@@ -36,6 +38,7 @@ impl CharacterDialogueTypeReference for RuntimeNormalizedType {
 #[derive(Clone, Debug)]
 pub(super) struct RuntimeCharacterDialogueGenerationFact {
     pub(super) declaration: Arc<CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>>,
+    pub(super) policy_types: Arc<CharacterDialoguePolicyTypeGraph>,
     inventory: CharacterInventoryDescriptorV1,
 }
 
@@ -52,8 +55,37 @@ impl RuntimePlanSemanticFactInput {
                 family: RuntimeSemanticFactFamily::CharacterDialogueGeneration,
             });
         }
+        let rich_text_index = CharacterDialogueRuntimeRole::AUTHORED_BASE
+            .iter()
+            .position(|role| *role == CharacterDialogueRuntimeRole::RichText)
+            .expect("RichText is an authored CharacterDialogue role");
+        let rich_text = declaration.roles().authored_refs()[rich_text_index]
+            .value_ref()
+            .checked_type()
+            .map_err(
+                |_| RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
+                    reason: "RichText role has no checked runtime type",
+                },
+            )?;
+        let RuntimeCheckedType::Opaque { owner: rich_text } = rich_text else {
+            return Err(
+                RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
+                    reason: "RichText role is not an opaque runtime type",
+                },
+            );
+        };
+        let policy_types = CharacterDialoguePolicyTypeGraph::try_new(
+            rich_text,
+            PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
+        )
+        .map_err(
+            |_| RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
+                reason: "CharacterDialogue policy nominal graph is invalid",
+            },
+        )?;
         self.character_dialogue_generation = Some(RuntimeCharacterDialogueGenerationFact {
             declaration,
+            policy_types: Arc::new(policy_types),
             inventory,
         });
         Ok(())

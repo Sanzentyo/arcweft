@@ -1186,12 +1186,13 @@ mod dynamic_character_dialogue_context_tests {
     };
     use arcweft_dialogue::{
         CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
-        CharacterDialogueGenerationDeclaration, CharacterDialoguePresentationContract,
-        CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldCatalog,
-        CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
-        CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
-        CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
-        CharacterDialogueVisualType, DialoguePresentationProfile, DialogueProfileRevision,
+        CharacterDialogueGenerationDeclaration, CharacterDialoguePolicyTypeGraph,
+        CharacterDialoguePresentationContract, CharacterDialogueRolePayloadCodec,
+        CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeDefault,
+        CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
+        CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
+        CharacterDialogueRuntimeSchema, CharacterDialogueType, CharacterDialogueVisualType,
+        DialoguePresentationProfile, DialogueProfileRevision,
         character_presentation::{
             CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
         },
@@ -1278,6 +1279,17 @@ mod dynamic_character_dialogue_context_tests {
                 .iter()
                 .cloned(),
         );
+        let policy_graph = CharacterDialoguePolicyTypeGraph::try_new(
+            RuntimeOpaqueTypeOwner::exact_with(
+                producer.clone(),
+                role_semantic(Role::RichText),
+                RuntimeOpaqueValueClass::Plain,
+                RuntimeOpaquePersistence::ConstantAndSnapshot,
+            ),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("accepted CharacterDialogue policy graph");
+        seeds.extend(policy_graph.type_seeds());
 
         let style_entity_type = semantic(51);
         let style_type = *roles.style_ref();
@@ -1337,21 +1349,22 @@ mod dynamic_character_dialogue_context_tests {
                 arguments: Box::new([]),
             },
         ));
+        let graph = RuntimeNominalSchemaGraph::try_merge(
+            [&voice_graph, policy_graph.schema_graph().as_ref()],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .expect("merged CharacterDialogue and voice schemas");
+        let mut variant_domains = vec![RuntimeVariantDomainSeed::new(
+            voice_type,
+            voice_nominal,
+            voice_layout,
+            [RuntimeVariantCaseSeed::new("auto", None)],
+        )];
+        variant_domains.extend(policy_graph.variant_domain_seeds());
 
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .admit_semantic_batch(
-                seeds,
-                [],
-                [],
-                [RuntimeVariantDomainSeed::new(
-                    voice_type,
-                    voice_nominal,
-                    voice_layout,
-                    [RuntimeVariantCaseSeed::new("auto", None)],
-                )],
-                &voice_graph,
-            )
+            .admit_semantic_batch(seeds, [], [], variant_domains, &graph)
             .expect("runtime schema types are admitted");
         (builder.finish().expect("runtime plan"), any_type)
     }

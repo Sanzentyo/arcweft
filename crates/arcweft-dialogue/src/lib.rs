@@ -12,6 +12,7 @@ pub use character_dialogue::{
     CharacterDialogueGenerationBindingError, CharacterDialogueGenerationDeclaration,
     CharacterDialogueGenerationDeclarationCodecError, CharacterDialogueGenerationDeclarationError,
     CharacterDialogueHookValue, CharacterDialogueLimits, CharacterDialoguePatch,
+    CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyVariantOwner,
     CharacterDialoguePortraitValue, CharacterDialoguePresentationContract,
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
     CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,

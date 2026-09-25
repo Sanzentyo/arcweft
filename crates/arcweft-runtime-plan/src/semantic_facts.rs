@@ -7568,6 +7568,9 @@ impl RuntimePlanSemanticFacts {
                 .values()
                 .filter_map(RuntimeNominalDefinition::closed_owner_type_seed),
         );
+        if let Some(generation) = &self.character_dialogue_generation {
+            seeds.extend(generation.policy_types.type_seeds());
+        }
         Ok(seeds)
     }
 
@@ -7606,6 +7609,9 @@ impl RuntimePlanSemanticFacts {
             | RuntimeVariantOwner::Option { .. }
             | RuntimeVariantOwner::Result { .. } => {}
         });
+        if let Some(generation) = &self.character_dialogue_generation {
+            graphs.push(Arc::clone(generation.policy_types.schema_graph()));
+        }
         RuntimeNominalSchemaGraph::try_merge(
             graphs.iter().map(Arc::as_ref),
             RuntimeSchemaLimits::engine_default(),
@@ -7622,10 +7628,15 @@ impl RuntimePlanSemanticFacts {
     /// Complete non-Option/Result variant schemas. Repeated owners remain in
     /// the batch for exact builder-level conflict validation.
     pub fn runtime_plan_variant_domain_seeds(&self) -> Vec<RuntimeVariantDomainSeed> {
-        self.nominal_definitions
+        let mut seeds = self
+            .nominal_definitions
             .values()
             .filter_map(RuntimeNominalDefinition::variant_seed)
-            .collect()
+            .collect::<Vec<_>>();
+        if let Some(generation) = &self.character_dialogue_generation {
+            seeds.extend(generation.policy_types.variant_domain_seeds());
+        }
+        seeds
     }
 
     fn visit_variant_owners(&self, visit: &mut impl FnMut(&RuntimeVariantOwner)) {

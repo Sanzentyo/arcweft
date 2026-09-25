@@ -1611,8 +1611,26 @@ entry cli @entry.main { goto @flow.main }
                 |input, options| {
                     let result = awbc.step_with_pure_backend(input, options, &mut awbc_backend);
                     let snapshot = awbc.snapshot().expect("AWBC cancellation step snapshots");
-                    awbc.restore_snapshot(snapshot)
-                        .expect("AWBC cancellation step restores with exact owner");
+                    let arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                        product,
+                    ) = snapshot;
+                    let saved = arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot::from_live(&product)
+                        .expect("AWBC cancellation state admits the save DTO");
+                    let bytes = serde_json::to_vec(&saved).expect("encode cancellation save DTO");
+                    let decoded = serde_json::from_slice::<
+                        arcweft_core::awbc::product_step::AwbcProductExecutorSaveSnapshot,
+                    >(&bytes)
+                    .expect("decode cancellation save DTO");
+                    assert_eq!(decoded, saved);
+                    let restored = decoded
+                        .into_live_for_program(&awbc.program_owner())
+                        .expect("AWBC cancellation value graph restores for its program");
+                    awbc.restore_snapshot(
+                        arcweft_core::executor::ArcweftRuntimeExecutorSnapshot::AwbcProduct(
+                            restored,
+                        ),
+                    )
+                    .expect("AWBC cancellation step restores with exact owner");
                     result
                 },
                 cancelled,

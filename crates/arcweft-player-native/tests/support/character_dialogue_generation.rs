@@ -20,12 +20,13 @@ use arcweft_core::{
 };
 use arcweft_dialogue::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
-    CharacterDialogueGenerationDeclaration, CharacterDialoguePresentationContract,
-    CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldCatalog,
-    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeRole as Role,
-    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
-    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
-    CharacterDialogueVisualType, DialoguePresentationProfile, DialogueProfileRevision,
+    CharacterDialogueGenerationDeclaration, CharacterDialoguePolicyTypeGraph,
+    CharacterDialoguePresentationContract, CharacterDialogueRolePayloadCodec,
+    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeDefault,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
+    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
+    CharacterDialogueRuntimeSchema, CharacterDialogueType, CharacterDialogueVisualType,
+    DialoguePresentationProfile, DialogueProfileRevision,
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
@@ -92,7 +93,7 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
     let exact_owner = exact.runtime_opaque_owner();
     let any_owner = any.runtime_opaque_owner();
     let producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
-    let graph = RuntimeNominalSchemaGraph::try_new(
+    let voice_graph = RuntimeNominalSchemaGraph::try_new(
         vec![RuntimeNominalSchemaDefinition::new(
             RuntimeNominalSchemaIdentity::new(voice_nominal(), voice_type()),
             vec![],
@@ -104,6 +105,17 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
         RuntimeSchemaLimits::engine_default(),
     )
     .expect("Voice schema graph");
+    let rich_text_identity = semantic(20 + Role::RichText.canonical_tag());
+    let policy_graph = CharacterDialoguePolicyTypeGraph::try_new(
+        RuntimeOpaqueTypeOwner::exact(producer.clone(), rich_text_identity),
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .expect("CharacterDialogue policy graph");
+    let graph = RuntimeNominalSchemaGraph::try_merge(
+        [&voice_graph, policy_graph.schema_graph().as_ref()],
+        RuntimeSchemaLimits::engine_default(),
+    )
+    .expect("Voice and policy schema graphs merge");
     let voice_layout = graph.try_layout_hash(voice_type()).expect("Voice layout");
     let mut types = Role::AUTHORED_BASE
         .into_iter()
@@ -130,6 +142,7 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
             .iter()
             .cloned(),
     );
+    types.extend(policy_graph.type_seeds().into_vec());
     types.extend([
         RuntimePlanTypeSeed::new(
             semantic(50),
@@ -167,19 +180,15 @@ pub(crate) fn admit_generation_types(builder: &mut RuntimePlanBuilder, character
             },
         ),
     ]);
+    let mut variant_domains = vec![RuntimeVariantDomainSeed::new(
+        voice_type(),
+        voice_nominal(),
+        voice_layout,
+        [RuntimeVariantCaseSeed::new("auto", None)],
+    )];
+    variant_domains.extend(policy_graph.variant_domain_seeds());
     builder
-        .admit_semantic_batch(
-            types,
-            [],
-            [],
-            [RuntimeVariantDomainSeed::new(
-                voice_type(),
-                voice_nominal(),
-                voice_layout,
-                [RuntimeVariantCaseSeed::new("auto", None)],
-            )],
-            &graph,
-        )
+        .admit_semantic_batch(types, [], [], variant_domains, &graph)
         .expect("CharacterDialogue runtime types admit");
 }
 

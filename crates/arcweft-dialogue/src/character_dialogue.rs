@@ -41,6 +41,7 @@ pub use limits::{CharacterDialogueLimits, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, StructuredPatch};
 pub use runtime_type::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use schema::{
+    CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyVariantOwner,
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
     CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,
     CharacterDialogueRolePayloadCodec, CharacterDialogueRolePayloadSchema,

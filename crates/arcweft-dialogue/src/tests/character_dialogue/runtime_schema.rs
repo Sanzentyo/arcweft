@@ -2,12 +2,12 @@ use super::*;
 use crate::{
     CharacterDialogueCharacterDeclaration, CharacterDialogueConfig,
     CharacterDialogueGenerationBindingError, CharacterDialogueGenerationDeclaration,
-    CharacterDialogueGenerationDeclarationError, CharacterDialogueRolePayloadCodec,
-    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeDefault,
-    CharacterDialogueRuntimeExternalCallBackend, CharacterDialogueRuntimeRole as Role,
-    CharacterDialogueRuntimeRoleBody, CharacterDialogueRuntimeRoleType,
-    CharacterDialogueRuntimeRoleTypes, CharacterDialogueRuntimeSchema, CharacterDialogueType,
-    CharacterDialogueVisualType,
+    CharacterDialogueGenerationDeclarationError, CharacterDialoguePolicyTypeGraph,
+    CharacterDialogueRolePayloadCodec, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeDefault, CharacterDialogueRuntimeExternalCallBackend,
+    CharacterDialogueRuntimeRole as Role, CharacterDialogueRuntimeRoleBody,
+    CharacterDialogueRuntimeRoleType, CharacterDialogueRuntimeRoleTypes,
+    CharacterDialogueRuntimeSchema, CharacterDialogueType, CharacterDialogueVisualType,
 };
 use arcweft_character::catalog::CharacterVisualManifestEvidence;
 use arcweft_core::{
@@ -46,7 +46,10 @@ use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation as Operation,
 };
 use arcweft_view::{ViewId, ViewStyleSheetId};
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 mod binding;
 
@@ -145,6 +148,121 @@ fn append_rich_text_awbc_types(runtime_types: &mut Vec<AwbcRuntimeType>) {
             _ => panic!("RichText codec emitted a non-structural plan seed"),
         };
         runtime_types.push(AwbcRuntimeType::new(seed.semantic_identity(), shape));
+    }
+}
+
+fn append_policy_awbc_types(
+    runtime_types: &mut Vec<AwbcRuntimeType>,
+    strings: &mut Vec<String>,
+    policies: &CharacterDialoguePolicyTypeGraph,
+) {
+    let seeds = policies.type_seeds();
+    let domains = policies.variant_domain_seeds();
+    let base_len = runtime_types.len();
+    let mut ids = BTreeMap::new();
+    for (index, ty) in runtime_types.iter().enumerate() {
+        let id = AwbcTypeId(u32::try_from(index).expect("bounded runtime type table"));
+        assert!(
+            ids.insert(ty.semantic_identity(), id).is_none(),
+            "fixture AWBC rows have unique semantic identities"
+        );
+    }
+    let mut next_index = base_len;
+    for seed in &seeds {
+        if ids.contains_key(&seed.semantic_identity()) {
+            continue;
+        }
+        let id = AwbcTypeId(u32::try_from(next_index).expect("bounded runtime type table"));
+        ids.insert(seed.semantic_identity(), id);
+        next_index += 1;
+    }
+
+    let id = |identity: RuntimeSemanticTypeId| {
+        *ids.get(&identity)
+            .expect("policy seed graph contains every referenced type identity")
+    };
+    let intern_string = |strings: &mut Vec<String>, value: &str| {
+        let index = strings
+            .iter()
+            .position(|existing| existing == value)
+            .unwrap_or_else(|| {
+                strings.push(value.to_owned());
+                strings.len() - 1
+            });
+        AwbcStringId(u32::try_from(index).expect("bounded fixture string table"))
+    };
+    let domain_by_owner = domains
+        .iter()
+        .map(|domain| (domain.owner(), domain))
+        .collect::<BTreeMap<_, _>>();
+
+    for seed in &seeds {
+        let shape = match seed.projection() {
+            Type::String => AwbcType::String,
+            Type::EntityReference => AwbcType::EntityRef,
+            Type::Sequence { kind, item } => AwbcType::Sequence {
+                kind: *kind,
+                item: id(*item),
+            },
+            Type::Tuple(items) => AwbcType::Tuple(items.iter().map(|item| id(*item)).collect()),
+            Type::Choice(items) => AwbcType::Choice(items.iter().map(|item| id(*item)).collect()),
+            Type::Opaque {
+                producer,
+                admission,
+                value_class,
+                persistence,
+                arguments,
+            } => AwbcType::Opaque {
+                producer: intern_string(strings, producer.as_str()),
+                admission: *admission,
+                value_class: *value_class,
+                persistence: *persistence,
+                arguments: arguments.iter().map(|argument| id(*argument)).collect(),
+            },
+            Type::Nominal {
+                nominal,
+                layout,
+                arguments,
+            } => {
+                let domain = domain_by_owner
+                    .get(&seed.semantic_identity())
+                    .expect("policy nominal owners have variant domains");
+                assert_eq!(domain.nominal(), nominal);
+                assert_eq!(domain.layout(), *layout);
+                AwbcType::Variant {
+                    owner: AwbcVariantIdentity::Nominal {
+                        public_id: intern_string(strings, nominal.as_str()),
+                        layout: *layout.as_bytes(),
+                    },
+                    arguments: arguments.iter().map(|argument| id(*argument)).collect(),
+                    cases: domain
+                        .cases()
+                        .iter()
+                        .map(|case| AwbcVariantCase {
+                            name: intern_string(strings, case.name()),
+                            payload: case.payload().map(id),
+                        })
+                        .collect(),
+                }
+            }
+            _ => panic!("policy graph contains an unsupported fixture projection"),
+        };
+
+        let type_id = id(seed.semantic_identity());
+        if type_id.index() < base_len {
+            assert_eq!(
+                runtime_types[type_id.index()].shape(),
+                &shape,
+                "an existing fixture row exactly matches a shared policy seed"
+            );
+        } else {
+            assert_eq!(
+                type_id.index(),
+                runtime_types.len(),
+                "policy fixture rows are appended in their assigned ID order"
+            );
+            runtime_types.push(AwbcRuntimeType::new(seed.semantic_identity(), shape));
+        }
     }
 }
 fn voice_source_type() -> RuntimeSemanticTypeId {
@@ -258,11 +376,21 @@ struct Types {
 impl Types {
     fn new() -> Self {
         let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
-        let (nominal, nominal_identity, graph) = test_payload_graph();
-        let layout = graph.try_layout_hash(nominal_identity).unwrap();
-        let voice_layout = graph.try_layout_hash(voice_source_type()).unwrap();
-        let look_layout = graph.try_layout_hash(look_source_type()).unwrap();
+        let (nominal, nominal_identity, source_graph) = test_payload_graph();
+        let layout = source_graph.try_layout_hash(nominal_identity).unwrap();
+        let voice_layout = source_graph.try_layout_hash(voice_source_type()).unwrap();
+        let look_layout = source_graph.try_layout_hash(look_source_type()).unwrap();
         let producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
+        let policy_graph = CharacterDialoguePolicyTypeGraph::try_new(
+            RuntimeOpaqueTypeOwner::exact(producer.clone(), role_semantic(Role::RichText)),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let graph = RuntimeNominalSchemaGraph::try_merge(
+            [&source_graph, policy_graph.schema_graph().as_ref()],
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
         let character = sample_manifest().character().clone();
         let character_dialogue = CharacterDialogueType::exact(character);
         let any_dialogue = CharacterDialogueType::any();
@@ -289,6 +417,7 @@ impl Types {
             .payload_schema()
             .expect("RichText payload schema");
         seeds.extend(rich_text_schema.types().iter().cloned());
+        seeds.extend(policy_graph.type_seeds().into_vec());
         seeds.extend([
             RuntimePlanTypeSeed::new(
                 semantic(50),
@@ -342,6 +471,21 @@ impl Types {
                 },
             ),
         ]);
+        let mut variant_domains = vec![
+            RuntimeVariantDomainSeed::new(
+                voice_source_type(),
+                voice_source_nominal(),
+                voice_layout,
+                [RuntimeVariantCaseSeed::new("auto", None)],
+            ),
+            RuntimeVariantDomainSeed::new(
+                look_source_type(),
+                look_source_nominal(),
+                look_layout,
+                [RuntimeVariantCaseSeed::new("normal", None)],
+            ),
+        ];
+        variant_domains.extend(policy_graph.variant_domain_seeds());
         let mut builder = RuntimePlanBuilder::new();
         builder
             .admit_semantic_batch(
@@ -356,20 +500,7 @@ impl Types {
                         semantic(55),
                     )],
                 )],
-                [
-                    RuntimeVariantDomainSeed::new(
-                        voice_source_type(),
-                        voice_source_nominal(),
-                        voice_layout,
-                        [RuntimeVariantCaseSeed::new("auto", None)],
-                    ),
-                    RuntimeVariantDomainSeed::new(
-                        look_source_type(),
-                        look_source_nominal(),
-                        look_layout,
-                        [RuntimeVariantCaseSeed::new("normal", None)],
-                    ),
-                ],
+                variant_domains,
                 &graph,
             )
             .unwrap();
@@ -455,18 +586,20 @@ impl Types {
             ),
         ]);
         append_rich_text_awbc_types(&mut runtime_types);
+        let mut strings = vec![
+            producer.as_str().to_owned(),
+            nominal.as_str().to_owned(),
+            "flag".into(),
+            voice_source_nominal().as_str().to_owned(),
+            "auto".into(),
+            look_source_nominal().as_str().to_owned(),
+            "normal".into(),
+            "Some".into(),
+            "None".into(),
+        ];
+        append_policy_awbc_types(&mut runtime_types, &mut strings, &policy_graph);
         let awbc = AwbcProgram {
-            strings: vec![
-                producer.as_str().to_owned(),
-                nominal.as_str().to_owned(),
-                "flag".into(),
-                voice_source_nominal().as_str().to_owned(),
-                "auto".into(),
-                look_source_nominal().as_str().to_owned(),
-                "normal".into(),
-                "Some".into(),
-                "None".into(),
-            ],
+            strings,
             runtime_types,
             ..AwbcProgram::default()
         };

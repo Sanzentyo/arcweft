@@ -1,4 +1,4 @@
-//! Complete producer-owned policy schemas; layouts depend on active `RichText`.
+//! Complete producer-owned type graph for CharacterDialogue policies.
 
 use super::super::CharacterDialogueValueError;
 use arcweft_core::{
@@ -7,17 +7,37 @@ use arcweft_core::{
         RuntimeNominalSchemaGraph, RuntimeNominalSchemaIdentity, RuntimeNominalTypeId,
         RuntimeSchemaLimits, RuntimeTypeSchema,
     },
-    pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    pattern::{
+        RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner,
+        RuntimeSemanticTypeId, RuntimeVariantIdentity,
+    },
+    plan::{
+        RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
+    },
 };
-#[derive(Clone, Copy)]
-pub(super) enum DialogueRuntimeVariantOwner {
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
+
+const POLICY_VARIANT_COUNT: usize = 4;
+
+/// One of the closed nominal policy owners emitted by the CharacterDialogue
+/// producer.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CharacterDialoguePolicyVariantOwner {
+    /// CharacterDialogue's stored voice policy.
     Voice,
+    /// The action taken when inline text evaluation fails.
     InlineFailure,
+    /// The source used to recover from inline text evaluation failure.
     InlineFallback,
+    /// The style applied to fallback text.
     FallbackStyle,
 }
 
-impl DialogueRuntimeVariantOwner {
+impl CharacterDialoguePolicyVariantOwner {
     const fn public_id(self) -> &'static str {
         match self {
             Self::Voice => "arcweft.dialogue.CharacterDialogueVoice",
@@ -29,7 +49,7 @@ impl DialogueRuntimeVariantOwner {
 
     const fn semantic_digest(self) -> [u8; 32] {
         match self {
-            // SHA-256 of the versioned canonical owner labels. The bytes are
+            // SHA-256 of the versioned canonical owner labels. These bytes are
             // frozen schema identity, not source or display spellings.
             Self::Voice => [
                 0x76, 0x53, 0x13, 0x17, 0x90, 0x11, 0xc8, 0xe7, 0x34, 0x93, 0xbe, 0xbe, 0x4e, 0xc0,
@@ -54,114 +74,793 @@ impl DialogueRuntimeVariantOwner {
         }
     }
 
+    const fn index(self) -> usize {
+        match self {
+            Self::Voice => 0,
+            Self::InlineFailure => 1,
+            Self::InlineFallback => 2,
+            Self::FallbackStyle => 3,
+        }
+    }
+
     fn schema_identity(self) -> RuntimeNominalSchemaIdentity {
         RuntimeNominalSchemaIdentity::new(
             RuntimeNominalTypeId::try_new(self.public_id()).expect("valid fixed policy ID"),
             RuntimeSemanticTypeId::from_bytes(self.semantic_digest()),
         )
     }
-}
-/// Derived policy headers, with no duplicate executable type catalog.
-pub(super) struct DialoguePolicyTypes {
-    owners: [RuntimeVariantIdentity; 4],
+
+    const fn error_field(self) -> &'static str {
+        match self {
+            Self::Voice => "voice_policy",
+            Self::InlineFailure => "inline_failure_policy",
+            Self::InlineFallback => "inline_fallback_policy",
+            Self::FallbackStyle => "fallback_style_policy",
+        }
+    }
 }
 
-impl DialoguePolicyTypes {
-    pub(super) fn try_new(
+/// The complete dialogue-owned nominal proof and its runtime-plan projection.
+///
+/// The same case specification emits the persistent nominal graph, type seeds,
+/// variant-domain seeds, checked owner identities, and the runtime validation
+/// contract. Runtime-plan can admit these batches directly without rebuilding
+/// policy schemas from case names or display values.
+#[derive(Clone, Debug)]
+pub struct CharacterDialoguePolicyTypeGraph {
+    schema_graph: Arc<RuntimeNominalSchemaGraph>,
+    type_seeds: Box<[RuntimePlanTypeSeed]>,
+    variant_domain_seeds: Box<[RuntimeVariantDomainSeed]>,
+    identities: [RuntimeVariantIdentity; POLICY_VARIANT_COUNT],
+    checked_variants: [RuntimeCheckedType; POLICY_VARIANT_COUNT],
+}
+
+impl CharacterDialoguePolicyTypeGraph {
+    /// Builds the complete bounded graph for the exact active RichText owner.
+    pub fn try_new(
         rich_text: RuntimeOpaqueTypeOwner,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, CharacterDialogueValueError> {
-        use DialogueRuntimeVariantOwner as Owner;
-        use RuntimeTypeSchema as Schema;
-        let reference = |owner: Owner| Schema::NominalRef(owner.schema_identity());
-        let style = Schema::Choice(
-            vec![
-                Schema::EntityReference,
-                Schema::ExactOpaque {
-                    owner: rich_text,
-                    arguments: Box::new([]),
-                },
-            ]
-            .into(),
-        );
-        let case = |ordinal, name: &str, payload| {
-            RuntimeNominalSchemaCase::new(ordinal, name.to_owned(), payload)
-        };
-        let definitions = [
-            (
-                Owner::Voice,
-                vec![case(0, "Auto", None), case(1, "Id", Some(Schema::String))],
-            ),
-            (
-                Owner::InlineFailure,
-                vec![
-                    case(0, "FailLine", None),
-                    case(1, "Discard", None),
-                    case(2, "Fallback", Some(reference(Owner::InlineFallback))),
-                ],
-            ),
-            (
-                Owner::InlineFallback,
-                vec![
-                    case(
-                        0,
-                        "Text",
-                        Some(Schema::Tuple(
-                            vec![Schema::String, reference(Owner::FallbackStyle)].into(),
-                        )),
-                    ),
-                    case(1, "ExprSource", Some(reference(Owner::FallbackStyle))),
-                    case(2, "CallSource", Some(reference(Owner::FallbackStyle))),
-                    case(3, "ValuePlain", None),
-                ],
-            ),
-            (
-                Owner::FallbackStyle,
-                vec![
-                    case(0, "Plain", None),
-                    case(1, "InheritSurrounding", None),
-                    case(2, "Apply", Some(Schema::Seq(Box::new(style)))),
-                ],
-            ),
-        ]
-        .map(|(owner, cases)| {
-            RuntimeNominalSchemaDefinition::new(
-                owner.schema_identity(),
-                Box::<[Schema]>::default(),
-                RuntimeNominalSchemaBody::Variant {
-                    cases: cases.into(),
-                },
-            )
-        });
-        let graph = RuntimeNominalSchemaGraph::try_new(Vec::from(definitions), limits)?;
-        let owners = [
-            Owner::Voice,
-            Owner::InlineFailure,
-            Owner::InlineFallback,
-            Owner::FallbackStyle,
-        ]
-        .into_iter()
-        .map(|owner| {
-            let identity = owner.schema_identity();
-            Ok(RuntimeVariantIdentity::Nominal {
-                nominal: identity.nominal().clone(),
-                semantic_identity: identity.semantic_identity(),
-                layout: graph.try_layout_hash(identity.semantic_identity())?,
+        let definitions = POLICY_VARIANTS
+            .iter()
+            .map(|variant| {
+                RuntimeNominalSchemaDefinition::new(
+                    variant.owner.schema_identity(),
+                    Box::<[RuntimeTypeSchema]>::default(),
+                    RuntimeNominalSchemaBody::Variant {
+                        cases: variant
+                            .cases
+                            .iter()
+                            .map(|case| {
+                                RuntimeNominalSchemaCase::new(
+                                    case.ordinal,
+                                    case.name.to_owned(),
+                                    case.payload.map(|payload| schema_for(payload, &rich_text)),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                    },
+                )
             })
-        })
-        .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?;
+            .collect::<Vec<_>>();
+        let schema_graph = Arc::new(RuntimeNominalSchemaGraph::try_new(definitions, limits)?);
+
+        let identities = POLICY_VARIANTS
+            .iter()
+            .map(|variant| {
+                let schema_identity = variant.owner.schema_identity();
+                Ok(RuntimeVariantIdentity::Nominal {
+                    nominal: schema_identity.nominal().clone(),
+                    semantic_identity: schema_identity.semantic_identity(),
+                    layout: schema_graph.try_layout_hash(schema_identity.semantic_identity())?,
+                })
+            })
+            .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?
+            .try_into()
+            .expect("four complete policy definitions");
+
+        let mut types = BTreeMap::new();
+        for variant in &POLICY_VARIANTS {
+            let identity = variant.owner.schema_identity();
+            append_type_graph(
+                RuntimeCheckedType::Nominal {
+                    nominal: identity.nominal().clone(),
+                    semantic_identity: identity.semantic_identity(),
+                    layout: schema_graph.try_layout_hash(identity.semantic_identity())?,
+                    arguments: Vec::new(),
+                },
+                &mut types,
+            )?;
+            for case in variant.cases {
+                if let Some(payload) = case.payload {
+                    append_type_graph(
+                        checked_type_for_seed(payload, &rich_text, &schema_graph)?,
+                        &mut types,
+                    )?;
+                }
+            }
+        }
+        let type_seeds = types.into_values().collect::<Vec<_>>().into_boxed_slice();
+
+        let variant_domain_seeds = POLICY_VARIANTS
+            .iter()
+            .map(|variant| {
+                let identity = variant.owner.schema_identity();
+                Ok(RuntimeVariantDomainSeed::new(
+                    identity.semantic_identity(),
+                    identity.nominal().clone(),
+                    schema_graph.try_layout_hash(identity.semantic_identity())?,
+                    variant
+                        .cases
+                        .iter()
+                        .map(|case| {
+                            let payload = case.payload.map(|payload| {
+                                checked_type_for_seed(payload, &rich_text, &schema_graph)
+                                    .map(|checked| seed_identity(&checked))
+                            });
+                            Ok(RuntimeVariantCaseSeed::new(case.name, payload.transpose()?))
+                        })
+                        .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?,
+                ))
+            })
+            .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?
+            .into_boxed_slice();
+
+        let checked_variants = POLICY_VARIANTS
+            .iter()
+            .map(|variant| {
+                checked_variant_for_program(
+                    variant.owner,
+                    &identities,
+                    &rich_text,
+                    &mut BTreeSet::new(),
+                )
+            })
+            .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?
+            .try_into()
+            .expect("four complete policy definitions");
+
         Ok(Self {
-            owners: owners.try_into().expect("four complete policy definitions"),
+            schema_graph,
+            type_seeds,
+            variant_domain_seeds,
+            identities,
+            checked_variants,
         })
     }
 
-    pub(super) fn identity(&self, owner: DialogueRuntimeVariantOwner) -> &RuntimeVariantIdentity {
-        let index = match owner {
-            DialogueRuntimeVariantOwner::Voice => 0,
-            DialogueRuntimeVariantOwner::InlineFailure => 1,
-            DialogueRuntimeVariantOwner::InlineFallback => 2,
-            DialogueRuntimeVariantOwner::FallbackStyle => 3,
+    /// Returns the retained source schema graph for merging into a plan.
+    #[must_use]
+    pub const fn schema_graph(&self) -> &Arc<RuntimeNominalSchemaGraph> {
+        &self.schema_graph
+    }
+
+    /// Clones the complete canonical type-seed batch for plan admission.
+    #[must_use]
+    pub fn type_seeds(&self) -> Box<[RuntimePlanTypeSeed]> {
+        self.type_seeds.clone()
+    }
+
+    /// Clones the four nominal variant-domain seeds for plan admission.
+    #[must_use]
+    pub fn variant_domain_seeds(&self) -> Box<[RuntimeVariantDomainSeed]> {
+        self.variant_domain_seeds.clone()
+    }
+
+    /// Returns the exact identity retained by this graph and used by the
+    /// CharacterDialogue value encoder.
+    #[must_use]
+    pub fn identity(&self, owner: CharacterDialoguePolicyVariantOwner) -> &RuntimeVariantIdentity {
+        &self.identities[owner.index()]
+    }
+
+    pub(super) fn case_spec(
+        case: CharacterDialoguePolicyCase,
+    ) -> (CharacterDialoguePolicyVariantOwner, u32, &'static str) {
+        let owner = case.owner();
+        let spec = variant_spec(owner)
+            .cases
+            .iter()
+            .find(|spec| spec.case == case)
+            .expect("policy case has a fixed source specification");
+        (owner, spec.ordinal, spec.name)
+    }
+
+    pub(super) fn case_for_value(
+        owner: CharacterDialoguePolicyVariantOwner,
+        ordinal: u32,
+        name: &str,
+    ) -> Option<CharacterDialoguePolicyCase> {
+        variant_spec(owner)
+            .cases
+            .iter()
+            .find(|case| case.ordinal == ordinal && case.name == name)
+            .map(|case| case.case)
+    }
+
+    pub(super) fn validate_program_types(
+        &self,
+        program: arcweft_core::program_types::RuntimeProgramTypes<'_>,
+    ) -> Result<(), CharacterDialogueValueError> {
+        for variant in &POLICY_VARIANTS {
+            let actual =
+                program.checked_type(variant.owner.schema_identity().semantic_identity())?;
+            if actual != self.checked_variants[variant.owner.index()] {
+                return Err(CharacterDialogueValueError::Field {
+                    field: variant.owner.error_field(),
+                    reason: "active program policy owner, layout, or cases differ from the producer schema"
+                        .to_owned(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CharacterDialoguePolicyCase {
+    VoiceAuto,
+    VoiceId,
+    InlineFailureFailLine,
+    InlineFailureDiscard,
+    InlineFailureFallback,
+    InlineFallbackText,
+    InlineFallbackExprSource,
+    InlineFallbackCallSource,
+    InlineFallbackValuePlain,
+    FallbackStylePlain,
+    FallbackStyleInheritSurrounding,
+    FallbackStyleApply,
+}
+
+impl CharacterDialoguePolicyCase {
+    const fn owner(self) -> CharacterDialoguePolicyVariantOwner {
+        match self {
+            Self::VoiceAuto | Self::VoiceId => CharacterDialoguePolicyVariantOwner::Voice,
+            Self::InlineFailureFailLine
+            | Self::InlineFailureDiscard
+            | Self::InlineFailureFallback => CharacterDialoguePolicyVariantOwner::InlineFailure,
+            Self::InlineFallbackText
+            | Self::InlineFallbackExprSource
+            | Self::InlineFallbackCallSource
+            | Self::InlineFallbackValuePlain => CharacterDialoguePolicyVariantOwner::InlineFallback,
+            Self::FallbackStylePlain
+            | Self::FallbackStyleInheritSurrounding
+            | Self::FallbackStyleApply => CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PolicySchemaType {
+    String,
+    EntityReference,
+    RichText,
+    Nominal(CharacterDialoguePolicyVariantOwner),
+    Sequence(&'static PolicySchemaType),
+    Tuple(&'static [PolicySchemaType]),
+    Choice(&'static [PolicySchemaType]),
+}
+
+#[derive(Clone, Copy)]
+struct PolicyCaseSpec {
+    case: CharacterDialoguePolicyCase,
+    ordinal: u32,
+    name: &'static str,
+    payload: Option<PolicySchemaType>,
+}
+
+struct PolicyVariantSpec {
+    owner: CharacterDialoguePolicyVariantOwner,
+    cases: &'static [PolicyCaseSpec],
+}
+
+static INLINE_TEXT_TUPLE_ITEMS: [PolicySchemaType; 2] = [
+    PolicySchemaType::String,
+    PolicySchemaType::Nominal(CharacterDialoguePolicyVariantOwner::FallbackStyle),
+];
+static STYLE_CHOICE_ITEMS: [PolicySchemaType; 2] = [
+    PolicySchemaType::EntityReference,
+    PolicySchemaType::RichText,
+];
+static STYLE_CHOICE: PolicySchemaType = PolicySchemaType::Choice(&STYLE_CHOICE_ITEMS);
+static INLINE_TEXT_PAYLOAD: PolicySchemaType = PolicySchemaType::Tuple(&INLINE_TEXT_TUPLE_ITEMS);
+static FALLBACK_STYLE_SEQUENCE: PolicySchemaType = PolicySchemaType::Sequence(&STYLE_CHOICE);
+
+static VOICE_CASES: [PolicyCaseSpec; 2] = [
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::VoiceAuto,
+        ordinal: 0,
+        name: "Auto",
+        payload: None,
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::VoiceId,
+        ordinal: 1,
+        name: "Id",
+        payload: Some(PolicySchemaType::String),
+    },
+];
+static INLINE_FAILURE_CASES: [PolicyCaseSpec; 3] = [
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFailureFailLine,
+        ordinal: 0,
+        name: "FailLine",
+        payload: None,
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFailureDiscard,
+        ordinal: 1,
+        name: "Discard",
+        payload: None,
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFailureFallback,
+        ordinal: 2,
+        name: "Fallback",
+        payload: Some(PolicySchemaType::Nominal(
+            CharacterDialoguePolicyVariantOwner::InlineFallback,
+        )),
+    },
+];
+static INLINE_FALLBACK_CASES: [PolicyCaseSpec; 4] = [
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFallbackText,
+        ordinal: 0,
+        name: "Text",
+        payload: Some(INLINE_TEXT_PAYLOAD),
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFallbackExprSource,
+        ordinal: 1,
+        name: "ExprSource",
+        payload: Some(PolicySchemaType::Nominal(
+            CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        )),
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFallbackCallSource,
+        ordinal: 2,
+        name: "CallSource",
+        payload: Some(PolicySchemaType::Nominal(
+            CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        )),
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::InlineFallbackValuePlain,
+        ordinal: 3,
+        name: "ValuePlain",
+        payload: None,
+    },
+];
+static FALLBACK_STYLE_CASES: [PolicyCaseSpec; 3] = [
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::FallbackStylePlain,
+        ordinal: 0,
+        name: "Plain",
+        payload: None,
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::FallbackStyleInheritSurrounding,
+        ordinal: 1,
+        name: "InheritSurrounding",
+        payload: None,
+    },
+    PolicyCaseSpec {
+        case: CharacterDialoguePolicyCase::FallbackStyleApply,
+        ordinal: 2,
+        name: "Apply",
+        payload: Some(FALLBACK_STYLE_SEQUENCE),
+    },
+];
+
+static POLICY_VARIANTS: [PolicyVariantSpec; POLICY_VARIANT_COUNT] = [
+    PolicyVariantSpec {
+        owner: CharacterDialoguePolicyVariantOwner::Voice,
+        cases: &VOICE_CASES,
+    },
+    PolicyVariantSpec {
+        owner: CharacterDialoguePolicyVariantOwner::InlineFailure,
+        cases: &INLINE_FAILURE_CASES,
+    },
+    PolicyVariantSpec {
+        owner: CharacterDialoguePolicyVariantOwner::InlineFallback,
+        cases: &INLINE_FALLBACK_CASES,
+    },
+    PolicyVariantSpec {
+        owner: CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        cases: &FALLBACK_STYLE_CASES,
+    },
+];
+
+fn schema_for(
+    schema_type: PolicySchemaType,
+    rich_text: &RuntimeOpaqueTypeOwner,
+) -> RuntimeTypeSchema {
+    match schema_type {
+        PolicySchemaType::String => RuntimeTypeSchema::String,
+        PolicySchemaType::EntityReference => RuntimeTypeSchema::EntityReference,
+        PolicySchemaType::RichText => RuntimeTypeSchema::ExactOpaque {
+            owner: rich_text.clone(),
+            arguments: Box::new([]),
+        },
+        PolicySchemaType::Nominal(owner) => RuntimeTypeSchema::NominalRef(owner.schema_identity()),
+        PolicySchemaType::Sequence(item) => {
+            RuntimeTypeSchema::Seq(Box::new(schema_for(*item, rich_text)))
+        }
+        PolicySchemaType::Tuple(items) => RuntimeTypeSchema::Tuple(
+            items
+                .iter()
+                .copied()
+                .map(|item| schema_for(item, rich_text))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        ),
+        PolicySchemaType::Choice(items) => RuntimeTypeSchema::Choice(
+            items
+                .iter()
+                .copied()
+                .map(|item| schema_for(item, rich_text))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        ),
+    }
+}
+
+fn checked_type_for_seed(
+    schema_type: PolicySchemaType,
+    rich_text: &RuntimeOpaqueTypeOwner,
+    graph: &RuntimeNominalSchemaGraph,
+) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
+    Ok(match schema_type {
+        PolicySchemaType::String => RuntimeCheckedType::String,
+        PolicySchemaType::EntityReference => RuntimeCheckedType::EntityReference,
+        PolicySchemaType::RichText => RuntimeCheckedType::Opaque {
+            owner: rich_text.clone(),
+        },
+        PolicySchemaType::Nominal(owner) => {
+            let identity = owner.schema_identity();
+            RuntimeCheckedType::Nominal {
+                nominal: identity.nominal().clone(),
+                semantic_identity: identity.semantic_identity(),
+                layout: graph.try_layout_hash(identity.semantic_identity())?,
+                arguments: Vec::new(),
+            }
+        }
+        PolicySchemaType::Sequence(item) => {
+            RuntimeCheckedType::Sequence(Box::new(checked_type_for_seed(*item, rich_text, graph)?))
+        }
+        PolicySchemaType::Tuple(items) => RuntimeCheckedType::Tuple(
+            items
+                .iter()
+                .copied()
+                .map(|item| checked_type_for_seed(item, rich_text, graph))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        PolicySchemaType::Choice(items) => RuntimeCheckedType::Choice(
+            items
+                .iter()
+                .copied()
+                .map(|item| checked_type_for_seed(item, rich_text, graph))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+    })
+}
+
+fn checked_variant_for_program(
+    owner: CharacterDialoguePolicyVariantOwner,
+    identities: &[RuntimeVariantIdentity; POLICY_VARIANT_COUNT],
+    rich_text: &RuntimeOpaqueTypeOwner,
+    visiting: &mut BTreeSet<CharacterDialoguePolicyVariantOwner>,
+) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
+    if !visiting.insert(owner) {
+        return Err(policy_error(
+            "policy case payload graph contains a recursive nominal cycle",
+        ));
+    }
+    let variant = variant_spec(owner);
+    let cases = variant
+        .cases
+        .iter()
+        .map(|case| {
+            let payload = case
+                .payload
+                .map(|payload| {
+                    checked_type_for_program(payload, identities, rich_text, visiting).map(Box::new)
+                })
+                .transpose()?;
+            Ok(RuntimeCheckedVariantCase {
+                name: case.name.to_owned(),
+                payload,
+            })
+        })
+        .collect::<Result<Vec<_>, CharacterDialogueValueError>>()?;
+    visiting.remove(&owner);
+    Ok(RuntimeCheckedType::Variant {
+        owner: identities[owner.index()].clone(),
+        arguments: Vec::new(),
+        cases,
+    })
+}
+
+fn checked_type_for_program(
+    schema_type: PolicySchemaType,
+    identities: &[RuntimeVariantIdentity; POLICY_VARIANT_COUNT],
+    rich_text: &RuntimeOpaqueTypeOwner,
+    visiting: &mut BTreeSet<CharacterDialoguePolicyVariantOwner>,
+) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
+    Ok(match schema_type {
+        PolicySchemaType::String => RuntimeCheckedType::String,
+        PolicySchemaType::EntityReference => RuntimeCheckedType::EntityReference,
+        PolicySchemaType::RichText => RuntimeCheckedType::Opaque {
+            owner: rich_text.clone(),
+        },
+        PolicySchemaType::Nominal(owner) => {
+            return checked_variant_for_program(owner, identities, rich_text, visiting);
+        }
+        PolicySchemaType::Sequence(item) => RuntimeCheckedType::Sequence(Box::new(
+            checked_type_for_program(*item, identities, rich_text, visiting)?,
+        )),
+        PolicySchemaType::Tuple(items) => RuntimeCheckedType::Tuple(
+            items
+                .iter()
+                .copied()
+                .map(|item| checked_type_for_program(item, identities, rich_text, visiting))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        PolicySchemaType::Choice(items) => RuntimeCheckedType::Choice(
+            items
+                .iter()
+                .copied()
+                .map(|item| checked_type_for_program(item, identities, rich_text, visiting))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+    })
+}
+
+fn append_type_graph(
+    root: RuntimeCheckedType,
+    seeds: &mut BTreeMap<RuntimeSemanticTypeId, RuntimePlanTypeSeed>,
+) -> Result<(), CharacterDialogueValueError> {
+    let mut pending = vec![root];
+    while let Some(checked) = pending.pop() {
+        let semantic_identity = seed_identity(&checked);
+        let seed = RuntimePlanTypeSeed::new(semantic_identity, plan_projection(&checked)?);
+        if let Some(previous) = seeds.get(&semantic_identity) {
+            if previous != &seed {
+                return Err(policy_error(
+                    "two policy payload shapes share a conflicting semantic identity",
+                ));
+            }
+        } else {
+            seeds.insert(semantic_identity, seed);
+        }
+        pending.extend(seed_children(&checked));
+    }
+    Ok(())
+}
+
+fn seed_children(checked: &RuntimeCheckedType) -> Vec<RuntimeCheckedType> {
+    match checked {
+        RuntimeCheckedType::Sequence(item) => vec![(**item).clone()],
+        RuntimeCheckedType::Tuple(items) | RuntimeCheckedType::Choice(items) => items.clone(),
+        RuntimeCheckedType::Nominal { arguments, .. } => arguments.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// Preserves source-issued semantic identities at leaf owners; only structural
+/// carriers derive their identity from the checked-type transcript.
+fn seed_identity(checked: &RuntimeCheckedType) -> RuntimeSemanticTypeId {
+    match checked {
+        RuntimeCheckedType::Nominal {
+            semantic_identity, ..
+        } => *semantic_identity,
+        RuntimeCheckedType::Opaque { owner } => owner.semantic_identity(),
+        _ => checked.semantic_identity_digest(),
+    }
+}
+
+fn plan_projection(
+    checked: &RuntimeCheckedType,
+) -> Result<RuntimePlanTypeProjection<RuntimeSemanticTypeId>, CharacterDialogueValueError> {
+    use RuntimePlanTypeProjection as Projection;
+    Ok(match checked {
+        RuntimeCheckedType::String => Projection::String,
+        RuntimeCheckedType::EntityReference => Projection::EntityReference,
+        RuntimeCheckedType::Sequence(item) => Projection::Sequence {
+            kind: RuntimePlanSequenceKind::Seq,
+            item: seed_identity(item),
+        },
+        RuntimeCheckedType::Tuple(items) => Projection::Tuple(
+            items
+                .iter()
+                .map(seed_identity)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        ),
+        RuntimeCheckedType::Choice(items) => Projection::Choice(
+            items
+                .iter()
+                .map(seed_identity)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        ),
+        RuntimeCheckedType::Nominal {
+            nominal,
+            layout,
+            arguments,
+            ..
+        } => Projection::Nominal {
+            nominal: nominal.clone(),
+            layout: *layout,
+            arguments: arguments
+                .iter()
+                .map(seed_identity)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+        },
+        RuntimeCheckedType::Opaque { owner } => Projection::Opaque {
+            producer: owner.producer().clone(),
+            admission: owner.admission(),
+            value_class: owner.value_class(),
+            persistence: owner.persistence(),
+            arguments: Box::new([]),
+        },
+        _ => {
+            return Err(policy_error(
+                "policy case specification contains an unsupported plan type",
+            ));
+        }
+    })
+}
+
+fn variant_spec(owner: CharacterDialoguePolicyVariantOwner) -> &'static PolicyVariantSpec {
+    POLICY_VARIANTS
+        .get(owner.index())
+        .expect("policy owner has a fixed case specification")
+}
+
+fn policy_error(reason: &'static str) -> CharacterDialogueValueError {
+    CharacterDialogueValueError::Field {
+        field: "policy_type_graph",
+        reason: reason.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::plan::RuntimePlanTypeProjection as Projection;
+
+    fn rich_text_owner() -> RuntimeOpaqueTypeOwner {
+        RuntimeOpaqueTypeOwner::exact(
+            super::super::CharacterDialogueRuntimeSchema::opaque_type_producer(),
+            RuntimeSemanticTypeId::from_bytes([0x5a; 32]),
+        )
+    }
+
+    #[test]
+    fn policy_graph_retains_all_owner_domains_and_structural_payload_types() {
+        let rich_text = rich_text_owner();
+        let policies = CharacterDialoguePolicyTypeGraph::try_new(
+            rich_text.clone(),
+            RuntimeSchemaLimits::engine_default(),
+        )
+        .unwrap();
+        let graph = policies.schema_graph();
+        assert_eq!(graph.definitions().len(), POLICY_VARIANT_COUNT);
+
+        let type_seeds = policies.type_seeds();
+        let domain_seeds = policies.variant_domain_seeds();
+        assert_eq!(domain_seeds.len(), POLICY_VARIANT_COUNT);
+
+        for variant in &POLICY_VARIANTS {
+            let identity = variant.owner.schema_identity();
+            let RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity,
+                layout,
+            } = policies.identity(variant.owner)
+            else {
+                panic!("CharacterDialogue policies use nominal variants");
+            };
+            assert_eq!(nominal, identity.nominal());
+            assert_eq!(*semantic_identity, identity.semantic_identity());
+            assert_eq!(
+                *layout,
+                graph.try_layout_hash(identity.semantic_identity()).unwrap()
+            );
+            assert!(type_seeds.iter().any(|seed| {
+                seed.semantic_identity() == identity.semantic_identity()
+                    && matches!(seed.projection(), Projection::Nominal { nominal, layout: seed_layout, .. }
+                        if nominal == identity.nominal() && seed_layout == layout)
+            }));
+
+            let domain = domain_seeds
+                .iter()
+                .find(|domain| domain.owner() == identity.semantic_identity())
+                .expect("every policy owner has a domain seed");
+            assert_eq!(domain.nominal(), identity.nominal());
+            assert_eq!(domain.layout(), *layout);
+            assert_eq!(
+                domain
+                    .cases()
+                    .iter()
+                    .map(RuntimeVariantCaseSeed::name)
+                    .collect::<Vec<_>>(),
+                variant
+                    .cases
+                    .iter()
+                    .map(|case| case.name)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                domain
+                    .cases()
+                    .iter()
+                    .map(RuntimeVariantCaseSeed::payload)
+                    .collect::<Vec<_>>(),
+                variant
+                    .cases
+                    .iter()
+                    .map(|case| {
+                        case.payload.map(|payload| {
+                            let checked =
+                                checked_type_for_seed(payload, &rich_text, graph).unwrap();
+                            seed_identity(&checked)
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            );
+        }
+
+        let fallback_style = CharacterDialoguePolicyVariantOwner::FallbackStyle.schema_identity();
+        let fallback_layout = graph
+            .try_layout_hash(fallback_style.semantic_identity())
+            .unwrap();
+        let fallback_style_type = RuntimeCheckedType::Nominal {
+            nominal: fallback_style.nominal().clone(),
+            semantic_identity: fallback_style.semantic_identity(),
+            layout: fallback_layout,
+            arguments: Vec::new(),
         };
-        &self.owners[index]
+        let text_payload =
+            RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String, fallback_style_type]);
+        assert!(type_seeds.iter().any(|seed| {
+            seed.semantic_identity() == seed_identity(&text_payload)
+                && matches!(seed.projection(), Projection::Tuple(items)
+                if items.as_ref() == [
+                    RuntimeCheckedType::String.semantic_identity_digest(),
+                    fallback_style.semantic_identity(),
+                ])
+        }));
+
+        let style_choice = RuntimeCheckedType::Choice(vec![
+            RuntimeCheckedType::EntityReference,
+            RuntimeCheckedType::Opaque {
+                owner: rich_text.clone(),
+            },
+        ]);
+        let style_sequence = RuntimeCheckedType::Sequence(Box::new(style_choice.clone()));
+        assert!(type_seeds.iter().any(|seed| {
+            seed.semantic_identity() == style_choice.semantic_identity_digest()
+                && matches!(seed.projection(), Projection::Choice(items)
+                if items.as_ref() == &[
+                    RuntimeCheckedType::EntityReference.semantic_identity_digest(),
+                    rich_text.semantic_identity(),
+                ])
+        }));
+        assert!(type_seeds.iter().any(|seed| {
+            seed.semantic_identity() == rich_text.semantic_identity()
+                && matches!(seed.projection(), Projection::Opaque { producer, .. }
+                    if producer == rich_text.producer())
+        }));
+        assert!(type_seeds.iter().any(|seed| {
+            seed.semantic_identity() == style_sequence.semantic_identity_digest()
+                && matches!(seed.projection(), Projection::Sequence { item, .. }
+                    if *item == style_choice.semantic_identity_digest())
+        }));
     }
 }
