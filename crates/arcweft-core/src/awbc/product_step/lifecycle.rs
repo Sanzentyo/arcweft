@@ -50,6 +50,12 @@ impl AwbcProductStepExecutor {
                 AwbcTrapCode::InternalInvariant,
                 message,
             ),
+            ProductStepError::ActivationTrap(trap) => (
+                RuntimeDiagnosticCategory::Internal,
+                trap.code,
+                trap.message
+                    .unwrap_or_else(|| format!("activation trap {:?}", trap.code)),
+            ),
             ProductStepError::Line(error) => (
                 RuntimeDiagnosticCategory::Internal,
                 AwbcTrapCode::InternalInvariant,
@@ -128,6 +134,12 @@ impl AwbcProductStepExecutor {
             ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
             ProductStepError::Host(message) => (RuntimeDiagnosticCategory::Host, message),
             ProductStepError::Internal(message) => (RuntimeDiagnosticCategory::Internal, message),
+            ProductStepError::ActivationTrap(trap) => (
+                RuntimeDiagnosticCategory::Internal,
+                trap.message
+                    .clone()
+                    .unwrap_or_else(|| format!("activation trap {:?}", trap.code)),
+            ),
             ProductStepError::Line(error) => {
                 (RuntimeDiagnosticCategory::Internal, error.to_string())
             }

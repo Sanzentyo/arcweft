@@ -204,6 +204,16 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         VmObservation::LineDeferRegistration { site, .. } => ParityEvent::Effect {
             id: format!("line-defer#{}", site.get().get()),
         },
+        VmObservation::ScopedDeferRegistration { site, .. } => ParityEvent::Effect {
+            id: format!("scoped-defer#{}", site.get().get()),
+        },
+        VmObservation::ScopedDeferUnwind { scope, .. } => ParityEvent::Effect {
+            id: format!("scoped-defer-unwind#{}", scope.0),
+        },
+        VmObservation::ScopedDeferFailure(trap) => ParityEvent::Trap {
+            code: trap_code(trap.code).to_owned(),
+            message: trap.message.clone(),
+        },
         VmObservation::Drop { policy } => ParityEvent::Effect {
             id: match policy {
                 crate::effect::RuntimeDropPolicy::Stop { fade } => {

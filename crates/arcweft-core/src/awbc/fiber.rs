@@ -123,11 +123,34 @@ pub struct FiberScope {
     pub depth: u32,
     pub cleanups: Vec<FiberScopeCleanup>,
     pub defers: Vec<FiberDeferredRegistration>,
+    /// Captures skipped by their fixed outcome filter while host releases are
+    /// outstanding. Only typed token identities remain after the packet drops.
+    pub defer_releasing: Vec<FiberDeferredRelease>,
+    /// The lexical exit is fixed before the first deferred body starts.
+    pub defer_exit: Option<crate::line_task::ScopeExit>,
+    /// Exact defer child currently borrowing this scope's top registration.
+    pub defer_inflight: Option<FiberDeferredInFlight>,
+    /// First cleanup failure; remaining registrations still use `defer_exit`.
+    pub defer_failure: Option<FiberTrap>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FiberDeferredInFlight {
+    pub registration: crate::runtime_id::RuntimeDeferRegistrationId,
+    pub site: crate::runtime_id::RuntimeDeferSiteId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FiberDeferredRelease {
+    pub registration: crate::runtime_id::RuntimeDeferRegistrationId,
+    pub site: crate::runtime_id::RuntimeDeferSiteId,
+    pub tokens: Vec<crate::runtime_id::RuntimeLineHandleToken>,
 }
 
 /// Captured values retained at one reached executable defer statement.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FiberDeferredRegistration {
+    pub id: crate::runtime_id::RuntimeDeferRegistrationId,
     pub site: crate::runtime_id::RuntimeDeferSiteId,
     pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
     pub capture_registers: Vec<AwbcRegisterId>,
@@ -346,11 +369,16 @@ pub struct AwbcFiberScopeSnapshot {
     pub depth: u32,
     pub cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
     pub defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
+    pub defer_releasing: Vec<FiberDeferredRelease>,
+    pub defer_exit: Option<crate::line_task::ScopeExit>,
+    pub defer_inflight: Option<FiberDeferredInFlight>,
+    pub defer_failure: Option<FiberTrap>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcFiberDeferredRegistrationSnapshot {
+    pub id: crate::runtime_id::RuntimeDeferRegistrationId,
     pub site: crate::runtime_id::RuntimeDeferSiteId,
     pub outcome: crate::line_task::RuntimeDeferOutcomeFilter,
     pub capture_registers: Vec<AwbcRegisterId>,
@@ -674,6 +702,10 @@ impl AwbcFiberScopeSnapshot {
                 .iter()
                 .map(AwbcFiberDeferredRegistrationSnapshot::from_live)
                 .collect::<Result<_, _>>()?,
+            defer_releasing: scope.defer_releasing.clone(),
+            defer_exit: scope.defer_exit,
+            defer_inflight: scope.defer_inflight,
+            defer_failure: scope.defer_failure.clone(),
         })
     }
 
@@ -691,6 +723,10 @@ impl AwbcFiberScopeSnapshot {
                 .into_iter()
                 .map(|value| value.into_live(owner))
                 .collect::<Result<_, _>>()?,
+            defer_releasing: self.defer_releasing,
+            defer_exit: self.defer_exit,
+            defer_inflight: self.defer_inflight,
+            defer_failure: self.defer_failure,
         })
     }
 }
@@ -724,6 +760,7 @@ impl AwbcFiberScopeCleanupSnapshot {
 impl AwbcFiberDeferredRegistrationSnapshot {
     fn from_live(registration: &FiberDeferredRegistration) -> AwbcSaveResult<Self> {
         Ok(Self {
+            id: registration.id,
             site: registration.site,
             outcome: registration.outcome,
             capture_registers: registration.capture_registers.clone(),
@@ -737,6 +774,7 @@ impl AwbcFiberDeferredRegistrationSnapshot {
 
     fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberDeferredRegistration> {
         Ok(FiberDeferredRegistration {
+            id: self.id,
             site: self.site,
             outcome: self.outcome,
             capture_registers: self.capture_registers,
@@ -2163,7 +2201,11 @@ fn validate_frame(
     for (index, cleanup) in frame.root_cleanups.iter().enumerate() {
         validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
     }
+    let mut defer_ids = BTreeSet::new();
     for (index, deferred) in frame.root_defers.iter().enumerate() {
+        if !defer_ids.insert(deferred.id) {
+            return Err(FiberStateError::InvalidFrame);
+        }
         validate_deferred(
             program,
             deferred,
@@ -2182,6 +2224,9 @@ fn validate_frame(
         if scope.depth as usize != scope_index
             || scope_index >= layout.max_scope_depth as usize
             || definition.parent != expected_parent
+            || (scope.defer_inflight.is_some() && scope.defer_exit.is_none())
+            || (scope.defer_failure.is_some() && scope.defer_exit.is_none())
+            || (!scope.defer_releasing.is_empty() && scope.defer_exit.is_none())
         {
             return Err(FiberStateError::InvalidFrame);
         }
@@ -2193,12 +2238,28 @@ fn validate_frame(
             )?;
         }
         for (defer_index, deferred) in scope.defers.iter().enumerate() {
+            if !defer_ids.insert(deferred.id) {
+                return Err(FiberStateError::InvalidFrame);
+            }
             validate_deferred(
                 program,
                 deferred,
                 layout.slots.len(),
                 &format!("{path}.scopes[{scope_index}].defers[{defer_index}]"),
             )?;
+        }
+        if let Some(inflight) = scope.defer_inflight
+            && !defer_ids.insert(inflight.registration)
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        for release in &scope.defer_releasing {
+            if !defer_ids.insert(release.registration)
+                || release.tokens.is_empty()
+                || release.tokens.iter().collect::<BTreeSet<_>>().len() != release.tokens.len()
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
         }
     }
     Ok(())

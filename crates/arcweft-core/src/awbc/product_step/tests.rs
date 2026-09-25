@@ -160,6 +160,7 @@ fn cancellation_handler_terminal_value_selects_dialogue_result_only_for_its_acti
                 pending_content_events: Vec::new(),
                 pending_advance: false,
                 pending_line_outcomes: Vec::new(),
+                pending_activation_host_call: None,
             })
             .expect("active dialogue begins");
         let mut transaction = executor
@@ -382,6 +383,7 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
             pending_content_events: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
         })
         .expect("line activation begins");
     let mut transaction = executor
@@ -417,6 +419,322 @@ fn line_activation_register_defer_commits_captures_and_cursor() {
         registration.captures(),
         [RuntimeValue::String("captured at defer".to_owned())]
     );
+}
+
+#[test]
+fn init_out_unwinds_reached_scope_defer_before_reveal_and_skips_tail() {
+    let program = init_scope_defer_host_call_program();
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
+        .expect("Init scope-defer executor starts");
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+            std::num::NonZeroU32::MIN,
+        ),
+        0,
+    );
+    let activation_fiber = crate::awbc::fiber::FiberState::for_function(
+        &executor.program,
+        AwbcEntryId(0),
+        AwbcFunctionId(1),
+        1,
+        64,
+    )
+    .expect("Init activation fiber initializes");
+    let target_owner = executor
+        .program
+        .opaque_owner(AwbcTypeId(2))
+        .expect("dialogue target owner resolves")
+        .expect("dialogue target type is opaque");
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation: activation.clone(),
+            content: AwbcContentUnitId(0),
+            target: crate::value::RuntimeOpaqueValue::new_exact(&target_owner, RuntimeValue::Unit),
+            target_type: AwbcTypeId(2),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.init.out.defer")
+                .expect("line identity"),
+            captures: Box::new([]),
+            values: Box::new([]),
+            effect_callbacks: Box::new([]),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Ready(
+                crate::presentation::RuntimeVoiceSessionId::try_new("init.voice")
+                    .expect("voice session identity"),
+            ),
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(0),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            phase: ProductDialoguePhase::Activating {
+                fiber: activation_fiber,
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
+        })
+        .expect("Init activation begins");
+
+    fn activation_step(
+        executor: &mut AwbcProductStepExecutor,
+        activation: &crate::runtime_id::DialogueActivationId,
+        host_results: &[RuntimeHostCallResult],
+        backend: &mut crate::pure::VmRuntimePureCallBackend,
+    ) -> (
+        crate::awbc::product_step::line::ProductActivationProgress,
+        crate::step::RuntimeStepOutput,
+    ) {
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(activation)
+            .expect("activation transaction");
+        let progress = executor
+            .step_dialogue_activation_with_host_results(&mut transaction, host_results, backend)
+            .expect("one activation instruction progresses");
+        let receipt = executor
+            .dialogues
+            .commit(transaction)
+            .expect("activation progress commits");
+        let mut output = crate::step::RuntimeStepOutput::default();
+        if let Some(batch) = progress.execution.clone() {
+            executor.commit_line_task_commands(batch, &mut output);
+        }
+        output
+            .requests
+            .host_calls
+            .extend(progress.host_calls.clone());
+        output
+            .requests
+            .line_commands
+            .extend(receipt.into_line().into_commands());
+        (progress, output)
+    }
+
+    let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+    let (host_progress, host_output) =
+        activation_step(&mut executor, &activation, &[], &mut backend);
+    assert_eq!(host_output.requests.host_calls.len(), 1);
+    assert!(!host_progress.progressed);
+    let host_id = host_output.requests.host_calls[0].id.clone();
+
+    let snapshot = executor.snapshot();
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&snapshot)
+        .expect("suspended activation host call is saveable");
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let restored_snapshot = save
+        .into_live_for_program(&owner)
+        .expect("suspended activation host call decodes");
+    executor
+        .restore_snapshot(restored_snapshot)
+        .expect("activation host call restores with its suspended fiber");
+
+    let (_, repeated_output) = activation_step(&mut executor, &activation, &[], &mut backend);
+    assert_eq!(repeated_output.requests.host_calls[0].id, host_id);
+
+    let (resumed, resumed_output) = activation_step(
+        &mut executor,
+        &activation,
+        &[RuntimeHostCallResult {
+            id: host_id,
+            outcome: Ok(RuntimePayload(RuntimeValue::String(
+                "captured from Init".to_owned(),
+            ))),
+        }],
+        &mut backend,
+    );
+    assert!(resumed.progressed);
+    assert!(resumed_output.requests.host_calls.is_empty());
+
+    activation_step(&mut executor, &activation, &[], &mut backend); // EnterScope
+    let (effect_progress, effect_output) =
+        activation_step(&mut executor, &activation, &[], &mut backend); // EvaluatedEffect
+    assert!(effect_progress.execution.is_some());
+    assert_eq!(
+        effect_output.effects.line,
+        [crate::effect::LineEffectRequest::Log(
+            crate::effect::RuntimeLog {
+                level: "info".to_owned(),
+                message: "captured from Init".to_owned(),
+                fields: vec![crate::effect::RuntimeField {
+                    name: "source".to_owned(),
+                    value: "captured from Init".to_owned(),
+                }],
+            }
+        )]
+    );
+    activation_step(&mut executor, &activation, &[], &mut backend); // VoiceHandle
+    activation_step(&mut executor, &activation, &[], &mut backend); // RegisterDefer
+    let (deferred_id, voice_token) = {
+        let transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("registered scope transaction");
+        let ProductDialoguePhase::Activating { fiber, .. } = &transaction.frame().phase else {
+            panic!("Init remains in activation before out");
+        };
+        let scope = fiber
+            .active_frame()
+            .expect("activation frame")
+            .scopes
+            .last()
+            .expect("lexical Init scope is active");
+        let [registration] = scope.defers.as_slice() else {
+            panic!("one reached CurrentScope statement registers one defer");
+        };
+        assert_eq!(registration.site.index(), 0);
+        assert_eq!(
+            registration.captures[0],
+            RuntimeValue::String("captured from Init".to_owned())
+        );
+        let voice_value = &registration.captures[1];
+        assert!(matches!(voice_value, RuntimeValue::Opaque(_)));
+        let token = crate::line_task::RuntimeLineHandleLedger::token_from_value(voice_value)
+            .expect("captured voice handle token");
+        assert!(fiber.active_frame().expect("activation frame").registers[2].is_none());
+        assert_eq!(
+            transaction
+                .line()
+                .ledger()
+                .lease(&token)
+                .expect("captured voice lease")
+                .owner(),
+            &crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(registration.id)
+        );
+        (registration.id, token)
+    };
+
+    let save = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
+        .expect("reached lexical defer packet is saveable");
+    let owner = crate::task::RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&executor.program));
+    let restored_snapshot = save
+        .into_live_for_program(&owner)
+        .expect("reached lexical defer packet decodes");
+    executor
+        .restore_snapshot(restored_snapshot)
+        .expect("lexical scope and defer packet restore together");
+    {
+        let transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("restored affine capture transaction");
+        assert_eq!(
+            transaction
+                .line()
+                .ledger()
+                .lease(&voice_token)
+                .expect("restored voice lease")
+                .owner(),
+            &crate::line_task::RuntimeHandleOwnerSlot::ScopedDefer(deferred_id)
+        );
+    }
+
+    activation_step(&mut executor, &activation, &[], &mut backend); // LoadConst Unit
+    activation_step(&mut executor, &activation, &[], &mut backend); // CommitDialogueResult
+    {
+        let transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("staged result transaction");
+        assert!(matches!(
+            transaction.line().result(),
+            crate::line_task::RuntimeDialogueResultState::Committed {
+                ty: AwbcTypeId(0),
+                value: RuntimeValue::Unit,
+            }
+        ));
+        assert!(matches!(
+            transaction.frame().phase,
+            ProductDialoguePhase::Activating { .. }
+        ));
+    }
+
+    let (cleanup, cleanup_output) = activation_step(&mut executor, &activation, &[], &mut backend);
+    assert!(cleanup.progressed);
+    assert!(cleanup.presented.is_none());
+    assert!(cleanup_output.requests.line_commands.is_empty());
+    assert_eq!(executor.child_fibers.len(), 1);
+    {
+        let transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("cleanup is waiting for its defer child");
+        assert!(matches!(
+            transaction.line().result(),
+            crate::line_task::RuntimeDialogueResultState::Committed { .. }
+        ));
+        assert!(matches!(
+            transaction.frame().phase,
+            ProductDialoguePhase::Activating { .. }
+        ));
+    }
+
+    let mut release = None;
+    for _ in 0..4 {
+        if executor.child_fibers.is_empty() {
+            break;
+        }
+        let mut child_output = crate::step::RuntimeStepOutput::default();
+        assert!(executor.step_next_child(
+            &mut child_output,
+            &mut backend,
+            &RuntimeStepInput::default(),
+            &[],
+            &[],
+        ));
+        for command in child_output.requests.line_commands {
+            if let crate::presentation::RuntimeLineHostCommand::Voice(
+                crate::presentation::RuntimeVoiceCommand::ReleaseDialogueVoice {
+                    command,
+                    handle,
+                    ..
+                },
+            ) = command
+            {
+                release = Some((command, handle));
+            }
+        }
+    }
+    assert!(executor.child_fibers.is_empty());
+    let (command, handle) = release.expect("defer child drop requests voice release");
+    assert_eq!(handle, voice_token);
+    {
+        let mut transaction = executor
+            .dialogues
+            .begin_transaction(&activation)
+            .expect("voice release outcome transaction");
+        transaction.frame_mut().pending_line_outcomes.push(
+            crate::presentation::RuntimeLineHostOutcome::Voice(
+                crate::presentation::RuntimeVoiceCommandOutcome::Released { command, handle },
+            ),
+        );
+        executor
+            .dialogues
+            .commit(transaction)
+            .expect("queue accepted affine release outcome");
+    }
+    let (released, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    assert!(released.progressed);
+
+    let (popped, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    assert!(popped.progressed);
+    assert!(popped.presented.is_none());
+    let (revealed, _) = activation_step(&mut executor, &activation, &[], &mut backend);
+    assert!(revealed.progressed);
+    assert!(revealed.presented.is_some());
+    let transaction = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("revealed dialogue transaction");
+    assert!(matches!(
+        transaction.frame().phase,
+        ProductDialoguePhase::Reducing { .. }
+    ));
+    assert!(transaction.line().deferred_registrations().is_empty());
 }
 
 #[test]
@@ -470,6 +788,7 @@ fn line_root_defer_children_run_lifo_filter_outcomes_and_resume_host_calls() {
             pending_content_events: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
         })
         .expect("dialogue activation begins");
 
@@ -678,6 +997,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
             pending_content_events: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
         })
         .expect("fixture activation begins");
     let transaction = executor
@@ -798,6 +1118,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             pending_content_events: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
         })
         .expect("activation begins");
     executor.child_fibers.push_back(ProductChildFiber {
@@ -963,6 +1284,299 @@ fn snapshot_restore_rejects_same_label_choice_target_substitution() {
 fn return_program() -> AwbcProgram {
     let mut program = trap_program(AwbcTrapCode::InternalInvariant, "unused");
     program.blocks[0].terminator = AwbcTerminator::Return { value: None };
+    program
+}
+
+fn init_scope_defer_host_call_program() -> AwbcProgram {
+    let mut program = return_program();
+    program.strings = vec![
+        "entry.main".to_owned(),
+        "host.init".to_owned(),
+        "init".to_owned(),
+        "read".to_owned(),
+        "post-out tail must be skipped".to_owned(),
+        "std.character_dialogue".to_owned(),
+        "std.line.voice_handle".to_owned(),
+    ];
+    program.runtime_types = vec![
+        AwbcRuntimeType::unit(),
+        AwbcRuntimeType::new(
+            crate::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::String,
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x24; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(5),
+                admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: Vec::new(),
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([0x34; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(6),
+                admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(
+                    crate::value::RuntimeHandleKind::Voice,
+                ),
+                persistence: crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: Vec::new(),
+            },
+        ),
+    ];
+    program.signatures.extend([
+        AwbcSignature {
+            params: Vec::new(),
+            result: Some(AwbcTypeId(1)),
+            effects: AwbcEffectSetId(0),
+        },
+        AwbcSignature {
+            params: vec![AwbcTypeId(1), AwbcTypeId(3)],
+            result: Some(AwbcTypeId(0)),
+            effects: AwbcEffectSetId(0),
+        },
+        AwbcSignature {
+            params: vec![AwbcTypeId(1), AwbcTypeId(1)],
+            result: None,
+            effects: AwbcEffectSetId(0),
+        },
+    ]);
+    program.constants = vec![AwbcConstant::Unit];
+    let log_level = constant_string(&mut program, "info");
+    let log_fallback_message = constant_string(&mut program, "fallback message");
+    let log_field_name = constant_string(&mut program, "source");
+    let log_field_value = constant_string(&mut program, "init");
+    program.effect_plans = vec![AwbcEffectPlan {
+        kind: AwbcEffectKind::Log,
+        signature: AwbcSignatureId(3),
+        capability: None,
+        audio: None,
+        static_args: vec![
+            log_level,
+            log_fallback_message,
+            log_field_name,
+            log_field_value,
+        ],
+        resources: Vec::new(),
+    }];
+    program.frame_layouts.extend([
+        AwbcFrameLayout {
+            scopes: vec![crate::awbc::schema::AwbcScopeDefinition {
+                parent: None,
+                identity: crate::scope::RuntimeScopeIdentity::Anonymous,
+            }],
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(1),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 1,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 1,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(3),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 1,
+                },
+            ],
+            max_scope_depth: 1,
+        },
+        AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(1),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(3),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::ReturnValue,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        },
+    ]);
+    program.host_calls = vec![AwbcHostCall {
+        public_id: AwbcStringId(1),
+        capability: AwbcStringId(2),
+        operation: AwbcStringId(3),
+        contract: None,
+        signature: AwbcSignatureId(1),
+        mode: AwbcHostCallMode::Suspend,
+        deterministic: true,
+        arguments: Vec::new(),
+    }];
+    program.resume_points = vec![AwbcResumePoint {
+        function: AwbcFunctionId(1),
+        block: AwbcBlockId(2),
+        frame_layout: AwbcFrameLayoutId(1),
+        kind: AwbcSafePointKind::HostCall,
+    }];
+    program.instructions = vec![
+        AwbcInstruction::EnterScope {
+            scope: crate::awbc::schema::AwbcScopeId(0),
+        },
+        AwbcInstruction::EmitEffect {
+            effect: AwbcEffectPlanId(0),
+            args: vec![AwbcRegisterId(0), AwbcRegisterId(0)],
+        },
+        AwbcInstruction::ExecuteLineOperation {
+            dst: AwbcRegisterId(2),
+            operation: crate::awbc::schema::AwbcLineOperationId(0),
+            args: Vec::new(),
+        },
+        AwbcInstruction::RegisterDefer {
+            site: crate::runtime_id::RuntimeDeferSiteId::from_zero_based(0)
+                .expect("first defer site"),
+            outcome: crate::line_task::RuntimeDeferOutcomeFilter::Always,
+            owner: crate::awbc::schema::AwbcDeferOwner::CurrentScope,
+            captures: vec![AwbcRegisterId(0), AwbcRegisterId(2)],
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::CommitDialogueResult {
+            source: AwbcRegisterId(1),
+        },
+        AwbcInstruction::Nop,
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(2),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    program.line_operations = vec![crate::awbc::schema::AwbcLineOperation::VoiceHandle {
+        group: crate::awbc::schema::AwbcLineTaskGroupId(0),
+        site: crate::awbc::schema::AwbcLineHandleSiteId(0),
+        result_type: AwbcTypeId(3),
+    }];
+    program.functions.extend([
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::LineActivation,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(1, 2),
+            entry_block: AwbcBlockId(1),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::MaySuspend),
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(2),
+            frame_layout: AwbcFrameLayoutId(2),
+            blocks: AwbcTableRange::new(3, 1),
+            entry_block: AwbcBlockId(3),
+            flags: AwbcFunctionFlags::default(),
+        },
+    ]);
+    program.blocks.extend([
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::HostCall {
+                call: AwbcHostCallId(0),
+                args: Vec::new(),
+                dst: Some(AwbcRegisterId(0)),
+                resume: AwbcResumePointId(0),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 7),
+            terminator: AwbcTerminator::Trap {
+                code: AwbcTrapCode::InternalInvariant,
+                message: Some(AwbcStringId(4)),
+            },
+            safe_point: AwbcSafePointKind::Trap,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(2),
+            instructions: AwbcTableRange::new(7, 2),
+            terminator: AwbcTerminator::Return {
+                value: Some(AwbcRegisterId(2)),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ]);
+    program.defer_sites = vec![AwbcFunctionId(2)];
+    program.instructions[7] = AwbcInstruction::Drop {
+        register: AwbcRegisterId(1),
+        policy: crate::awbc::schema::AwbcDropPolicy::Default,
+    };
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(2),
+        constant: AwbcConstantId(0),
+    });
+    let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+        .expect("template identity");
+    program.content_templates = vec![AwbcDialogueContentTemplate {
+        id: template,
+        digest: crate::entry::RuntimeDialogueContentTemplateDigest::ZERO,
+        slots: Vec::new(),
+        effects: Vec::new(),
+    }];
+    program.content_units = vec![AwbcContentUnit {
+        public_id: AwbcStringId(0),
+        template,
+        marks: Vec::new(),
+        effect_site_count: 0,
+        line_task_group: Some(crate::awbc::schema::AwbcLineTaskGroupId(0)),
+        display: None,
+        source: None,
+        resources: Vec::new(),
+    }];
+    program.line_task_nodes = vec![crate::awbc::schema::AwbcLineTaskNode::Sequence(Vec::new())];
+    program.line_task_groups = vec![crate::awbc::schema::AwbcLineTaskGroup {
+        captures: Vec::new(),
+        activation: AwbcFunctionId(1),
+        result_type: AwbcTypeId(0),
+        handle_sites: vec![crate::awbc::schema::AwbcLineHandleSite {
+            source_ordinal: 0,
+            kind: crate::value::RuntimeHandleKind::Voice,
+            result_type: AwbcTypeId(3),
+            character: None,
+            scheduled_child: None,
+        }],
+        root: crate::awbc::schema::AwbcLineTaskNodeId(0),
+        nodes: AwbcTableRange::new(0, 1),
+        cancel_handlers: Vec::new(),
+        cleanup_completed: None,
+        cleanup_cancelled: None,
+        cleanup_failed: None,
+        cleanup: crate::awbc::schema::AwbcLineCleanupPolicy {
+            child_tasks: crate::awbc::schema::AwbcChildCleanup::Finish,
+            presentation: crate::awbc::schema::AwbcPresentationCleanup::KeepRegistered,
+            audio: crate::awbc::schema::AwbcAudioCleanup::KeepRegistered,
+        },
+    }];
+    program.canonicalize_string_table();
+    program
+        .verify(Default::default(), Default::default())
+        .expect("Init scope-defer host-call program verifies");
     program
 }
 

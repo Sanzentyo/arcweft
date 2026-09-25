@@ -261,6 +261,25 @@ pub enum VmObservation {
         outcome: crate::line_task::RuntimeDeferOutcomeFilter,
         captures: Vec<(AwbcRegisterId, RuntimeValue)>,
     },
+    /// A reached CurrentScope registration awaiting the activation owner.
+    /// The owner assigns the shared registration identity and moves affine
+    /// captures before advancing this exact cursor.
+    ScopedDeferRegistration {
+        cursor: FiberCursor,
+        scope: crate::awbc::schema::AwbcScopeId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+        outcome: crate::line_task::RuntimeDeferOutcomeFilter,
+        captures: Vec<(AwbcRegisterId, RuntimeValue)>,
+    },
+    /// A lexical scope exit is held at its instruction until its dynamic
+    /// registrations have been drained in LIFO order.
+    ScopedDeferUnwind {
+        cursor: FiberCursor,
+        scope: crate::awbc::schema::AwbcScopeId,
+    },
+    /// The scope was closed after all defers ran; the activation owner must
+    /// now fail the activation while preserving that completed exit filter.
+    ScopedDeferFailure(crate::awbc::fiber::FiberTrap),
     /// Internal affine graph transaction evidence. This never becomes a
     /// host-facing effect; the owning executor reconciles the before/after
     /// register graph with its dialogue handle registry exactly once.
@@ -685,6 +704,10 @@ fn execute_instruction(
                     depth,
                     cleanups: Vec::new(),
                     defers: Vec::new(),
+                    defer_releasing: Vec::new(),
+                    defer_exit: None,
+                    defer_inflight: None,
+                    defer_failure: None,
                 });
         }
         AwbcInstruction::ExitScope { scope } => {
@@ -693,15 +716,22 @@ fn execute_instruction(
                     "scope exit does not match the active scope".to_owned(),
                 ));
             }
-            if fiber
+            let active = fiber
                 .active_frame()?
                 .scopes
                 .last()
-                .is_some_and(|active| !active.defers.is_empty())
-            {
+                .ok_or_else(|| VmError::Runtime("scope stack is empty".to_owned()))?;
+            if active.defer_inflight.is_some() {
                 return Err(VmError::Runtime(
-                    "scope exit requires an executable defer unwinder".to_owned(),
+                    "scope exit reached while a defer child is still active".to_owned(),
                 ));
+            }
+            if !active.defers.is_empty() || !active.defer_releasing.is_empty() {
+                observations.push(VmObservation::ScopedDeferUnwind {
+                    cursor: fiber.cursor,
+                    scope: *scope,
+                });
+                return Ok(InstructionControl::Yield);
             }
             let layout_id = fiber.active_frame()?.layout;
             let layout = program
@@ -709,9 +739,10 @@ fn execute_instruction(
                 .get(layout_id.index())
                 .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
             let frame = fiber.active_frame_mut()?;
-            if let Some(scope) = frame.scopes.pop() {
+            let defer_failure = frame.scopes.pop().and_then(|scope| {
                 emit_cleanup_observations(scope.cleanups, observations);
-            }
+                scope.defer_failure
+            });
             let active_scope_depth = u32::try_from(frame.scopes.len())
                 .map_err(|_| VmError::Runtime("scope depth exceeds u32".to_owned()))?;
             for (register, slot) in frame.registers.iter_mut().zip(&layout.slots) {
@@ -724,6 +755,10 @@ fn execute_instruction(
                 {
                     *register = None;
                 }
+            }
+            if let Some(trap) = defer_failure {
+                observations.push(VmObservation::ScopedDeferFailure(trap));
+                return Ok(InstructionControl::YieldAdvanced);
             }
         }
         AwbcInstruction::BindPattern { pattern, value, .. } => {
@@ -1332,26 +1367,24 @@ fn execute_instruction(
                 });
                 return Ok(InstructionControl::Yield);
             }
-            if captured
-                .iter()
-                .any(|(_, value)| !value.ownership().permits_copy())
-            {
-                return Err(VmError::Runtime(
-                    "CurrentScope defer cannot yet retain affine captures".to_owned(),
-                ));
-            }
-            let deferred = super::fiber::FiberDeferredRegistration {
+            let scope = fiber
+                .active_frame()?
+                .scopes
+                .last()
+                .map(|scope| scope.id)
+                .ok_or_else(|| {
+                    VmError::Runtime(
+                        "CurrentScope defer requires an active lexical scope".to_owned(),
+                    )
+                })?;
+            observations.push(VmObservation::ScopedDeferRegistration {
+                cursor: fiber.cursor,
+                scope,
                 site: *site,
                 outcome: *outcome,
-                capture_registers: captures.clone(),
-                captures: captured.into_iter().map(|(_, value)| value).collect(),
-            };
-            let frame = fiber.active_frame_mut()?;
-            if let Some(scope) = frame.scopes.last_mut() {
-                scope.defers.push(deferred);
-            } else {
-                frame.root_defers.push(deferred);
-            }
+                captures: captured,
+            });
+            return Ok(InstructionControl::Yield);
         }
         AwbcInstruction::CancelCleanup { key } => {
             let key = string(program, *key)?;

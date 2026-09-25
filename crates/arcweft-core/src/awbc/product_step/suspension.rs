@@ -1302,6 +1302,9 @@ impl AwbcProductStepExecutor {
                 VmObservation::LineOperation { .. }
                 | VmObservation::DialogueResult { .. }
                 | VmObservation::LineDeferRegistration { .. }
+                | VmObservation::ScopedDeferRegistration { .. }
+                | VmObservation::ScopedDeferUnwind { .. }
+                | VmObservation::ScopedDeferFailure(_)
                 | VmObservation::Drop { .. } => self.fail_with_error(
                     crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
                     output,

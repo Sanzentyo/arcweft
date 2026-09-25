@@ -471,6 +471,10 @@ fn install_frame_cleanups(
             cleanup(format!("{owner}.scope.2")),
         ],
         defers: Vec::new(),
+        defer_releasing: Vec::new(),
+        defer_exit: None,
+        defer_inflight: None,
+        defer_failure: None,
     });
 }
 

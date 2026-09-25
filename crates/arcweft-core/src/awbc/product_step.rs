@@ -184,6 +184,8 @@ pub(super) enum ProductStepError {
     Host(String),
     #[error("{0}")]
     Internal(String),
+    #[error("AWBC activation trapped: {0:?}")]
+    ActivationTrap(FiberTrap),
     #[error(transparent)]
     Line(#[from] crate::line_task::LineRuntimeError),
     #[error(transparent)]
@@ -222,6 +224,7 @@ impl ProductStepError {
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
             Self::Internal(_)
+            | Self::ActivationTrap(_)
             | Self::Line(_)
             | Self::LineTaskCompletion(_)
             | Self::DialogueContentIdentityOverflow
@@ -249,6 +252,7 @@ impl ProductStepError {
             | Self::StaleLineTaskChildContent { .. }
             | Self::RuntimeIdentity(_)
             | Self::Fiber(_) => AwbcTrapCode::InternalInvariant,
+            Self::ActivationTrap(trap) => trap.code,
         }
     }
 }
@@ -291,6 +295,7 @@ struct ActiveDialogue {
     pending_content_events: Vec<crate::step::RuntimeDialogueContentEventKind>,
     pending_advance: bool,
     pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
+    pending_activation_host_call: Option<PendingHostCall>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -471,6 +476,30 @@ enum ProductChildFiberOwner {
         registration: crate::runtime_id::RuntimeDeferRegistrationId,
         site: crate::runtime_id::RuntimeDeferSiteId,
     },
+    ScopedDeferred {
+        content: AwbcContentUnitId,
+        activation: crate::runtime_id::DialogueActivationId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: crate::awbc::schema::AwbcScopeId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ProductDeferredChildKind {
+    LineRoot {
+        activation: crate::runtime_id::DialogueActivationId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
+    Scoped {
+        activation: crate::runtime_id::DialogueActivationId,
+        frame: crate::runtime_id::RuntimeFrameInstanceId,
+        scope: crate::awbc::schema::AwbcScopeId,
+        registration: crate::runtime_id::RuntimeDeferRegistrationId,
+        site: crate::runtime_id::RuntimeDeferSiteId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -515,6 +544,12 @@ impl ProductLineTaskExecutionBatch {
             ) || matches!(
                 &child.owner,
                 ProductChildFiberOwner::Deferred {
+                    activation: owner_activation,
+                    ..
+                } if owner_activation == activation
+            ) || matches!(
+                &child.owner,
+                ProductChildFiberOwner::ScopedDeferred {
                     activation: owner_activation,
                     ..
                 } if owner_activation == activation
@@ -1541,7 +1576,11 @@ impl AwbcProductStepExecutor {
         };
         if front.fiber.status != FiberStatus::Running
             && !(front.fiber.status == FiberStatus::Suspended
-                && matches!(&front.owner, ProductChildFiberOwner::Deferred { .. }))
+                && matches!(
+                    &front.owner,
+                    ProductChildFiberOwner::Deferred { .. }
+                        | ProductChildFiberOwner::ScopedDeferred { .. }
+                ))
         {
             if let Some(child) = self.child_fibers.pop_front() {
                 self.child_fibers.push_back(child);
@@ -1554,7 +1593,9 @@ impl AwbcProductStepExecutor {
         };
         let owner = child.owner.clone();
         let before_handles = match &owner {
-            ProductChildFiberOwner::LineTask { .. } | ProductChildFiberOwner::Deferred { .. } => {
+            ProductChildFiberOwner::LineTask { .. }
+            | ProductChildFiberOwner::Deferred { .. }
+            | ProductChildFiberOwner::ScopedDeferred { .. } => {
                 match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
                     Ok(handles) => Some(handles.into_keys().collect::<BTreeSet<_>>()),
                     Err(error) => {
@@ -1563,6 +1604,10 @@ impl AwbcProductStepExecutor {
                                 self.begin_product_line_task_child_failure(tag, error, output)
                             }
                             ProductChildFiberOwner::Deferred { .. } => {
+                                self.fail_with_error(error.into(), output);
+                                true
+                            }
+                            ProductChildFiberOwner::ScopedDeferred { .. } => {
                                 self.fail_with_error(error.into(), output);
                                 true
                             }
@@ -1666,7 +1711,8 @@ impl AwbcProductStepExecutor {
                             output,
                         );
                     }
-                    ProductChildFiberOwner::Deferred { .. } => {
+                    ProductChildFiberOwner::Deferred { .. }
+                    | ProductChildFiberOwner::ScopedDeferred { .. } => {
                         child.fiber.mark_trapped(FiberTrap {
                             code: AwbcTrapCode::InternalInvariant,
                             message: Some(message),
@@ -1695,7 +1741,8 @@ impl AwbcProductStepExecutor {
                 ProductChildFiberOwner::LineTask { tag, .. } => {
                     return self.begin_product_line_task_child_failure(tag, error.into(), output);
                 }
-                ProductChildFiberOwner::Deferred { .. } => {
+                ProductChildFiberOwner::Deferred { .. }
+                | ProductChildFiberOwner::ScopedDeferred { .. } => {
                     child.fiber.mark_trapped(FiberTrap {
                         code: AwbcTrapCode::InternalInvariant,
                         message: Some(error.to_string()),
@@ -1738,7 +1785,31 @@ impl AwbcProductStepExecutor {
                 LineTaskWorkTag::activation(activation.clone(), LineTaskWork::Defer(registration)),
                 LineTaskExitPolicy::default(),
                 ProductLineTaskFiberPhase::Active,
-                Some((activation, registration, site)),
+                Some(ProductDeferredChildKind::LineRoot {
+                    activation,
+                    registration,
+                    site,
+                }),
+            ),
+            ProductChildFiberOwner::ScopedDeferred {
+                content,
+                activation,
+                frame,
+                scope,
+                registration,
+                site,
+            } => (
+                content,
+                LineTaskWorkTag::activation(activation.clone(), LineTaskWork::Defer(registration)),
+                LineTaskExitPolicy::default(),
+                ProductLineTaskFiberPhase::Active,
+                Some(ProductDeferredChildKind::Scoped {
+                    activation,
+                    frame,
+                    scope,
+                    registration,
+                    site,
+                }),
             ),
             ProductChildFiberOwner::Independent => {
                 self.fail_with_error(
@@ -1826,24 +1897,12 @@ impl AwbcProductStepExecutor {
             observations,
             pure_stats: Some(candidate_stats),
         };
-        if let Some((deferred_activation, registration, site)) = deferred.clone() {
-            if let Err(error) = transaction.line_mut().complete_deferred_child(
-                &deferred_activation,
-                registration,
-                site,
-                &after_handles,
-            ) {
-                return self.begin_product_dialogue_failure(
-                    failure_transaction,
-                    error.into(),
-                    output,
-                );
-            }
+        if let Some(deferred_kind) = deferred.clone() {
             let failure = match child.fiber.terminal.as_ref() {
                 Some(FiberTerminalValue::Trapped(trap)) => Some(trap.clone()),
                 Some(FiberTerminalValue::Cancelled) => Some(FiberTrap {
                     code: AwbcTrapCode::InternalInvariant,
-                    message: Some("line-root defer child was cancelled".to_owned()),
+                    message: Some("defer child was cancelled".to_owned()),
                     source_map: None,
                 }),
                 Some(FiberTerminalValue::Returned(_)) => None,
@@ -1853,17 +1912,118 @@ impl AwbcProductStepExecutor {
                     source_map: None,
                 }),
             };
-            if let Some(trap) = failure {
-                self.record_trap(&trap, output);
-                let (transaction, batch) =
-                    match self.prepare_product_dialogue_failure(transaction, trap, batch) {
-                        Ok(prepared) => prepared,
-                        Err(error) => {
-                            self.fail_with_error(error, output);
-                            return true;
+            match deferred_kind {
+                ProductDeferredChildKind::LineRoot {
+                    activation: deferred_activation,
+                    registration,
+                    site,
+                } => {
+                    if let Err(error) = transaction.line_mut().complete_deferred_child(
+                        &deferred_activation,
+                        registration,
+                        site,
+                        &after_handles,
+                    ) {
+                        return self.begin_product_dialogue_failure(
+                            failure_transaction,
+                            error.into(),
+                            output,
+                        );
+                    }
+                    if let Some(trap) = failure {
+                        self.record_trap(&trap, output);
+                        let (transaction, batch) =
+                            match self.prepare_product_dialogue_failure(transaction, trap, batch) {
+                                Ok(prepared) => prepared,
+                                Err(error) => {
+                                    self.fail_with_error(error, output);
+                                    return true;
+                                }
+                            };
+                        return self.commit_product_dialogue_failure_close(
+                            transaction,
+                            batch,
+                            output,
+                        );
+                    }
+                }
+                ProductDeferredChildKind::Scoped {
+                    activation: deferred_activation,
+                    frame: frame_instance,
+                    scope: scope_id,
+                    registration,
+                    site,
+                } => {
+                    if let Err(error) = transaction.line_mut().complete_scoped_deferred_child(
+                        &deferred_activation,
+                        registration,
+                        &after_handles,
+                    ) {
+                        return self.begin_product_dialogue_failure(
+                            failure_transaction,
+                            error.into(),
+                            output,
+                        );
+                    }
+                    let activation_fiber = match &mut transaction.frame_mut().phase {
+                        ProductDialoguePhase::Activating { fiber, .. }
+                        | ProductDialoguePhase::Closing(ProductDialogueClosing {
+                            state: ProductDialogueClosingState::Activation { fiber, .. },
+                            ..
+                        }) => fiber,
+                        _ => {
+                            return self.begin_product_dialogue_failure(
+                                failure_transaction,
+                                ProductStepError::Line(
+                                    crate::line_task::LineRuntimeError::InvalidDeferredTransition,
+                                ),
+                                output,
+                            );
                         }
                     };
-                return self.commit_product_dialogue_failure_close(transaction, batch, output);
+                    let active_frame = activation_fiber
+                        .frames
+                        .last_mut()
+                        .filter(|frame| frame.instance == frame_instance);
+                    let Some(active_frame) = active_frame else {
+                        return self.begin_product_dialogue_failure(
+                            failure_transaction,
+                            ProductStepError::Line(
+                                crate::line_task::LineRuntimeError::InvalidDeferredTransition,
+                            ),
+                            output,
+                        );
+                    };
+                    let Some(scope) = active_frame
+                        .scopes
+                        .iter_mut()
+                        .find(|scope| scope.id == scope_id)
+                    else {
+                        return self.begin_product_dialogue_failure(
+                            failure_transaction,
+                            ProductStepError::Line(
+                                crate::line_task::LineRuntimeError::InvalidDeferredTransition,
+                            ),
+                            output,
+                        );
+                    };
+                    if scope.defer_inflight
+                        != Some(crate::awbc::fiber::FiberDeferredInFlight { registration, site })
+                        || scope.defer_exit.is_none()
+                    {
+                        return self.begin_product_dialogue_failure(
+                            failure_transaction,
+                            ProductStepError::Line(
+                                crate::line_task::LineRuntimeError::InvalidDeferredTransition,
+                            ),
+                            output,
+                        );
+                    }
+                    scope.defer_inflight = None;
+                    if scope.defer_failure.is_none() {
+                        scope.defer_failure = failure;
+                    }
+                }
             }
             let receipt = match self.dialogues.commit(transaction) {
                 Ok(receipt) => receipt,
@@ -2014,6 +2174,7 @@ impl AwbcProductStepExecutor {
                 result,
                 resume,
                 input.dialogue_input_actions.as_slice(),
+                input.host_call_results.as_slice(),
                 output,
                 pure_backend,
             ),
@@ -2287,6 +2448,7 @@ impl AwbcProductStepExecutor {
             pending_content_events: Vec::new(),
             pending_advance: false,
             pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
         };
         let mut dialogues = self.dialogues.clone();
         if let Err(error) = dialogues.begin(active) {
@@ -2312,6 +2474,7 @@ impl AwbcProductStepExecutor {
         result: crate::awbc::schema::AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
         input_actions: &[RuntimeDialogueInputActionEvent],
+        host_call_results: &[crate::step::RuntimeHostCallResult],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
@@ -2337,20 +2500,27 @@ impl AwbcProductStepExecutor {
             transaction.frame().phase,
             ProductDialoguePhase::Activating { .. }
         ) {
-            let progress = match self.step_dialogue_activation(&mut transaction, pure_backend) {
+            let progress = match self.step_dialogue_activation_with_host_results(
+                &mut transaction,
+                host_call_results,
+                pure_backend,
+            ) {
                 Ok(progress) => progress,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(transaction, error, output);
                 }
             };
             let candidate_pure_stats = progress.pure_stats;
-            let command_batch =
-                match self.prepare_line_task_commands(&mut transaction, progress.reducer) {
-                    Ok(batch) => batch,
-                    Err(error) => {
-                        return self.begin_product_dialogue_failure(transaction, error, output);
-                    }
-                };
+            let command_batch_result = match progress.execution {
+                Some(batch) => Ok(batch),
+                None => self.prepare_line_task_commands(&mut transaction, progress.reducer),
+            };
+            let command_batch = match command_batch_result {
+                Ok(batch) => batch,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
             let receipt = match self.dialogues.commit(transaction) {
                 Ok(receipt) => receipt,
                 Err(error) => {
@@ -2362,6 +2532,7 @@ impl AwbcProductStepExecutor {
                 self.compact_pure_stats = stats;
             }
             self.commit_line_task_commands(command_batch, output);
+            output.requests.host_calls.extend(progress.host_calls);
             let commands = receipt.into_line().into_commands();
             output.requests.line_commands.extend(commands);
             if let Some(event) = progress.presented {
@@ -2784,7 +2955,8 @@ impl AwbcProductStepExecutor {
                 )));
             }
         }
-        let batch = ProductLineTaskExecutionBatch {
+        line::settle_scoped_defer_releases(&mut transaction);
+        let mut batch = ProductLineTaskExecutionBatch {
             child_fibers: self.child_fibers.clone(),
             dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             next_generation: self.next_generation,
@@ -2792,6 +2964,37 @@ impl AwbcProductStepExecutor {
             observations: Vec::new(),
             pure_stats: None,
         };
+        let (scope_progress, scope_failure) =
+            match self.unwind_failed_activation_scope(&mut transaction, &mut batch) {
+                Ok(result) => result,
+                Err(cleanup) => {
+                    output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                        "dialogue cleanup after primary failure also failed: {cleanup}"
+                    )));
+                    self.fail_with_error(cleanup, output);
+                    return true;
+                }
+            };
+        if let Some(trap) = scope_failure {
+            output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                "dialogue cleanup after primary failure also failed: {trap:?}"
+            )));
+        }
+        if scope_progress {
+            let receipt = match self.dialogues.commit(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            self.commit_line_task_commands(batch, output);
+            output
+                .requests
+                .line_commands
+                .extend(receipt.into_line().into_commands());
+            return true;
+        }
         let reducer_closed = match &transaction.frame().phase {
             ProductDialoguePhase::Closing(ProductDialogueClosing {
                 state: ProductDialogueClosingState::Activation { .. },
