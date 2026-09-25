@@ -1279,6 +1279,7 @@ flow main() -> Unit {
         on mark(@.end) => log.info("end")
     return ()
 }
+
 entry cli @entry.main { goto @flow.main }
 "#,
     )
@@ -1302,6 +1303,83 @@ entry cli @entry.main { goto @flow.main }
         })
         .collect::<Vec<_>>();
     assert_eq!(plans, [1]);
+}
+
+#[test]
+fn reached_line_defers_keep_capture_order_and_verified_awbc_sites() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> String {
+    let message = "captured"
+    alice: hello[p]
+    with:
+        defer { log.info(message) }
+        defer on failed { log.info("failed") }
+    return "done"
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("checked line defer bodies compile with their capture ABI");
+    let runtime = compiled.runtime_plan();
+    let [content] = runtime.plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan")
+    };
+    let group = runtime
+        .plan
+        .line_task_groups()
+        .get(content.line_task_group().expect("line task group").index())
+        .expect("published line task group");
+    let registrations = group
+        .activation_ops()
+        .iter()
+        .filter_map(|op| match op {
+            FlowOp::RegisterDefer {
+                site,
+                outcome,
+                captures,
+                owner,
+            } => Some((*site, *outcome, captures.len(), *owner)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(registrations.len(), 2);
+    assert_eq!(registrations[0].2, 1);
+    assert_eq!(registrations[1].2, 0);
+    assert_eq!(
+        registrations[0].3,
+        arcweft_core::plan::RuntimeDeferOwner::LineRoot
+    );
+    assert_eq!(
+        registrations[1].3,
+        arcweft_core::plan::RuntimeDeferOwner::LineRoot
+    );
+    assert_eq!(
+        registrations[0].1,
+        arcweft_core::line_task::RuntimeDeferOutcomeFilter::Always
+    );
+    assert_eq!(
+        registrations[1].1,
+        arcweft_core::line_task::RuntimeDeferOutcomeFilter::Failed
+    );
+    assert_eq!(runtime.plan.defer_sites().len(), 2);
+
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "line_defer_sites.arcw",
+    )
+    .lower()
+    .expect("defer registrations lower to verified AWBC");
+    assert_eq!(report.program.defer_sites.len(), 2);
+    let bytes = report.program.encode_canonical().expect("encode AWBC");
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode AWBC");
+    assert_eq!(decoded, report.program);
 }
 
 fn collect_mark_triggers(
