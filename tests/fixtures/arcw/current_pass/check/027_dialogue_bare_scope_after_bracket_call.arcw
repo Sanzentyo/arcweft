@@ -11,7 +11,7 @@ flow dialogue_scope_edge() -> String {
             log.info("mark release")
         defer on failed:
             log.info("failed")
-        out .Completed
+        out ()
 
     @<character.alice>()[直後に裸ブロック。[p]] {
         log.info("this block is a separate lexical scope, not a line plan")
