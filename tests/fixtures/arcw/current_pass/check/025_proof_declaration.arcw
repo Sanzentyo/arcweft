@@ -1,0 +1,5 @@
+proof unit_proof() = ()
+
+flow proof_edge() -> String {
+    return "done"
+}
