@@ -1212,3 +1212,27 @@ CLI `spec_should_pass_check_fixtures_pass_after_refactor` の
 ないという既知の Match/fixture 境界で、全 recipe の合格ではない。
 generic child-fiber nested defer、残る callable/Match/View/task-plan/nominal/
 scheduler・restore 工程と最終 workspace gate は引き続き必須。
+
+## Inline enum record payload / statement match arm checkpoint — 2026-09-25
+
+`c0f39f1547b57843e4381c13fbc7db9811f033d5` を `main` に push 済み。
+`enum GameEvent { ChoiceSelected { id: i32 } }` の inline record payload を
+syntax、HIR、source-index、project symbol、Sema の nominal schema と semantic
+digest、RuntimePlan の admission まで型付きで保持した。statement `match` の
+expression arm は checked Ignore continuation で effect を実行し、native と
+decoded AWBC の両方で effectful/pure arm の破棄を確認した。record variant pattern
+の compiler preflight も、checked `VariantPayload` owner に限って受け入れる。
+native/decoded AWBC の inline-record pattern 実行 1/1 を確認した。
+
+検証: syntax lib 699/699、HIR lib 918 passed（既存 ignored 8）、Sema lib
+929/929、RuntimePlan package 全 target、compiler package 全 target
+（`RUST_MIN_STACK=16777216`）、workspace all-target/all-feature check、
+Clippy、fmt、structure audit gate（0 blockers）、cached diff check は終了コード0。
+`just test-workspace` は非 CLI package 群を通過後、CLI
+`spec_should_pass_check_fixtures_pass_after_refactor` の未編集 044 fixture で停止。
+fixture 内の `GameEvent` 宣言が存在しないため nominal TypeId が未解決で、
+今回の enum producer 回帰とは区別する。宣言を補った一時ソースの CLI check は
+次に `Vec.pop_front()` の未接続 runtime intrinsic で停止した。Sol Max の調査では
+同操作は `Option<T>` を返すだけでなく receiver の Vec を更新する必要があり、
+AWBC `while`/`while let` にも別の CFG 実装不足がある。両者を型付きの独立した
+変更として閉じ、044 の実行を検証する。元 fixture は未編集のまま。
