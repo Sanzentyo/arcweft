@@ -1067,3 +1067,27 @@ syntax/HIR で失敗する。026 は上記修正で通過済み。CLI `spec_shou
 未定義型を補っても pattern の最終型付けで失敗する。これらを既存 warning や未実行の
 workspace gate と混同しない。次は goal 本体の Content/Fx・call と取消継続の owner
 接続を優先し、最終 gate の前に 025/027/042/044 を個別の契約として処理する。
+
+**2026-09-25 Result-match fixture boundary correction:**
+
+直前 checkpoint の「042 で停止」は fixture の対象外の未接続 `bail` 呼出しを
+切り離したことで解消した。042 の `Result<i32, String>` の失敗枝を同じ型の
+`Err("Input must be greater than 0")` にし、結果 `match` の受理を維持した
+(`37d174fe814c3f0081f8f4628613b2a3b6d0f8c1`)。CLI spec check は 042 を
+通過し、次の 044 の未定義 `GameEvent` で停止する。042 単独 CLI check は終了コード0。
+
+`bail` 自体は Sol Max と compiler/native/AWBC の経路を照合した。
+Sema の純粋関数の expression-site 分類を Flow-site に変えるだけなら compiler
+`compile --emit check` は進むが、AWBC 検証は結果型を持つ function site の値なし
+終端で `ResultShapeMismatch`。現行 core は `Bail` を flow failure に変換する一方、
+維持言語契約は `Err(ArcError)` を返す。この差を AWBC の trap で覆うのは契約違反と
+判断し、局所パッチと失敗する追加テストは撤回した。`bail`/`ensure` の型付き Result
+carrier と native/AWBC の返却は独立した全層移行が必要。042 の `String` error 型を
+その未実装経路の受理証拠に使わない。
+
+044 を一時 source で分解すると、正しい payload-bearing enum 宣言を足した後も
+`.ChoiceSelected { id }` は pattern 最終型が欠ける。payload-binding pattern に変えると
+`Vec.pop_front()` は未接続 CapacityMethod intrinsic で止まり、Option source に替えると
+effect call を expression arm に置いた `match` は runtime disposition を要求する。
+この一連は Match/consumer migration の対象であり、fixture を単なる通過形へ弱めず
+未編集のまま維持した。workspace test と spec fixture gate は引き続き不合格。
