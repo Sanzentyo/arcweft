@@ -280,6 +280,7 @@ define_ast_kinds!(BODY_MARKERS, Body;
     ChoiceViewBodyKind => ChoiceViewBody,
     ChoicePlanBodyKind => ChoicePlanBody,
     DialogueLinePlanBodyKind => DialogueLinePlanBody,
+    DialogueLinePlanInitKind => DialogueLinePlanInit,
     DialogueCancelRuleBodyKind => DialogueCancelRuleBody,
     PredicateBlockKind => PredicateBlock,
     ProofBlockKind => ProofBlock,

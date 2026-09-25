@@ -265,7 +265,20 @@ impl HirModuleArenas {
                     let Ok(expression) = self.expressions.resolve_prepared(slots, owner) else {
                         return false;
                     };
-                    if scope.parent() != Some(expression.scope()) {
+                    let mut parent = scope.parent();
+                    let mut within_expression = false;
+                    let mut ancestors = BTreeSet::new();
+                    while let Some(parent_id) = parent {
+                        if !ancestors.insert(parent_id) {
+                            break;
+                        }
+                        if parent_id == expression.scope() {
+                            within_expression = true;
+                            break;
+                        }
+                        parent = scopes.get(&parent_id).and_then(|value| value.parent());
+                    }
+                    if !within_expression {
                         return false;
                     }
                     inherited_item

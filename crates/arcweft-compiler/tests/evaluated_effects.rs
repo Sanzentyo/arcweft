@@ -977,6 +977,79 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn init_out_remains_inside_the_pre_reveal_scope_in_runtime_plan() {
+    let source = r#"
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice()[本文。[p]] with {
+        init {
+            log.info("init-before-out")
+            out ()
+        }
+    }
+}
+
+entry cli @entry.main { goto @flow.main }
+"#;
+    let compiled = compile_attached_dialogue_project(source)
+        .expect("Init-scoped out is retained as a typed Dialogue result");
+    let runtime = compiled.runtime_plan();
+    let [flow] = runtime.plan.flows() else {
+        panic!("one executable flow")
+    };
+    let content = flow
+        .body()
+        .ops()
+        .iter()
+        .find_map(|operation| match operation {
+            FlowOp::Dialogue { content, .. } => runtime.plan.dialogue_content().get(*content),
+            _ => None,
+        })
+        .expect("the flow owns the Dialogue content plan");
+    let group = runtime
+        .plan
+        .line_task_groups()
+        .get(
+            content
+                .line_task_group()
+                .expect("Dialogue content owns a line task group")
+                .index(),
+        )
+        .expect("Dialogue line task group is retained");
+    let operations = group.activation_ops();
+    let enter = operations
+        .iter()
+        .position(|operation| matches!(operation, FlowOp::EnterScope { .. }))
+        .expect("Init enters its lexical activation scope");
+    let commit = operations
+        .iter()
+        .position(|operation| matches!(operation, FlowOp::CommitDialogueResult { .. }))
+        .expect("Init retains its authored out commit");
+    let exit = operations
+        .iter()
+        .position(|operation| matches!(operation, FlowOp::ExitScope))
+        .expect("Init exits its lexical activation scope");
+    let pre_out_effects = operations
+        .iter()
+        .filter(|operation| matches!(operation, FlowOp::EvaluatedEffect(_)))
+        .collect::<Vec<_>>();
+    assert!(enter < commit && commit < exit);
+    assert_eq!(
+        pre_out_effects.len(),
+        1,
+        "the Init effect precedes out; activation operations: {operations:#?}"
+    );
+    AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "init_out_pre_reveal.arcw",
+    )
+    .lower()
+    .expect("Init out activation stream lowers to verified AWBC");
+}
+
+#[test]
 fn nested_modifier_effects_use_the_body_content_effect_plan() {
     let compiled = compile_attached_dialogue_project(
         r#"

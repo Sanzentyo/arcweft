@@ -21,6 +21,8 @@ use crate::stmt::{
     HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
 };
 
+mod dialogue_init;
+
 fn resolve_flow(
     module: &HirModule,
     ordinal: usize,

@@ -691,7 +691,10 @@ impl HirLinePlan {
 /// Semantic line-plan item projection.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLinePlanItem {
-    Init(Box<[StmtId]>),
+    Init {
+        scope: ScopeId,
+        statements: Box<[StmtId]>,
+    },
     Thread(StmtId),
     On(StmtId),
     Statement(StmtId),
@@ -899,6 +902,10 @@ pub(crate) enum HirDialogueTransactionRequirement {
         expected: HirDialogueExpressionExpectation,
     },
     Statement(StmtId),
+    ScopedStatement {
+        scope: ScopeId,
+        statement: StmtId,
+    },
     Scope(ScopeId),
     Type(TypeId),
     RichTextCharge(HirRichTextCharge),
@@ -961,7 +968,8 @@ fn validate_line_plan_items(
 ) -> Result<(), HirModuleId> {
     for item in items {
         match item {
-            HirLinePlanItem::Init(statements) => {
+            HirLinePlanItem::Init { scope, statements } => {
+                validate_module(expected, scope.module())?;
                 for statement in statements {
                     validate_module(expected, statement.module())?;
                 }
@@ -987,10 +995,16 @@ fn report_line_plan_items<C: HirDialogueTransactionContext>(
 ) -> Result<(), HirDialogueTransactionError<C::Error>> {
     for item in items {
         match item {
-            HirLinePlanItem::Init(statements) => {
+            HirLinePlanItem::Init { scope, statements } => {
+                context
+                    .require(HirDialogueTransactionRequirement::Scope(*scope))
+                    .map_err(HirDialogueTransactionError::Context)?;
                 for statement in statements {
                     context
-                        .require(HirDialogueTransactionRequirement::Statement(*statement))
+                        .require(HirDialogueTransactionRequirement::ScopedStatement {
+                            scope: *scope,
+                            statement: *statement,
+                        })
                         .map_err(HirDialogueTransactionError::Context)?;
                 }
             }

@@ -4,7 +4,8 @@ use super::expression::AttachedExpressionNode;
 use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
     AstNode, BlockKind, ColonKind, DialogueCancelRuleBodyKind, DialogueCancelRuleStatementKind,
-    DialogueLinePlanBodyKind, DialogueLinePlanKind, ErrorNodeKind, MissingBodyKind,
+    DialogueLinePlanBodyKind, DialogueLinePlanInitKind, DialogueLinePlanKind, ErrorNodeKind,
+    MissingBodyKind,
 };
 use super::statement::{invalid as statement_invalid, optional_recovery, require_roles};
 use super::thread_body::{AttachedRequiredNestedThreadFlowBody, AttachedThreadFlowItem};
@@ -348,8 +349,95 @@ impl AttachedDialogueLinePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedDialogueLinePlanBody {
     syntax: AstNode<DialogueLinePlanBodyKind>,
-    items: Box<[StatementNode]>,
+    items: Box<[AttachedDialogueLinePlanItem]>,
     missing: Option<AstNode<MissingBodyKind>>,
+}
+
+/// One direct line-plan item, retaining the typed Init body boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedDialogueLinePlanItem {
+    Init(AttachedDialogueLinePlanInit),
+    Statement(StatementNode),
+}
+
+impl AttachedDialogueLinePlanItem {
+    pub fn syntax(&self) -> SyntaxNodeHandle {
+        match self {
+            Self::Init(item) => item.syntax().syntax(),
+            Self::Statement(statement) => statement.syntax(),
+        }
+    }
+
+    pub fn kind(&self) -> SyntaxKind {
+        self.syntax().kind()
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        match self {
+            Self::Init(item) => item.has_recovery(),
+            Self::Statement(statement) => syntax_has_recovery(&statement.syntax()),
+        }
+    }
+}
+
+/// Typed `init { ... }` / `init: ...` source boundary and its ordered statements.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedDialogueLinePlanInit {
+    syntax: AstNode<DialogueLinePlanInitKind>,
+    body: AstNode<BlockKind>,
+    statements: Box<[StatementNode]>,
+}
+
+impl AttachedDialogueLinePlanInit {
+    pub const fn syntax(&self) -> &AstNode<DialogueLinePlanInitKind> {
+        &self.syntax
+    }
+
+    /// The exact typed block that owns the Init statements and lexical scope.
+    pub const fn body(&self) -> &AstNode<BlockKind> {
+        &self.body
+    }
+
+    pub fn statements(&self) -> &[StatementNode] {
+        &self.statements
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        syntax_has_recovery(&self.syntax.syntax())
+    }
+
+    fn from_syntax(syntax: AstNode<DialogueLinePlanInitKind>) -> Result<Self, SyntaxAccessError> {
+        if syntax
+            .syntax()
+            .children()
+            .iter()
+            .any(|child| !matches!(child.role(), SyntaxRole::Colon | SyntaxRole::Body))
+        {
+            return Err(invalid(&syntax.syntax()));
+        }
+        let body = syntax
+            .syntax()
+            .optional_unique_child(SyntaxRole::Body)?
+            .ok_or_else(|| invalid(&syntax.syntax()))?
+            .cast::<BlockKind>()?;
+        if body.syntax().children().iter().any(|child| {
+            !matches!(
+                child.role().class(),
+                SyntaxRoleClass::Statement
+                    | SyntaxRoleClass::OpenDelimiter
+                    | SyntaxRoleClass::CloseDelimiter
+                    | SyntaxRoleClass::Recovery
+            )
+        }) {
+            return Err(invalid(&body.syntax()));
+        }
+        let statements = body.statements()?.into_boxed_slice();
+        Ok(Self {
+            syntax,
+            body,
+            statements,
+        })
+    }
 }
 
 impl AttachedDialogueLinePlanBody {
@@ -357,7 +445,7 @@ impl AttachedDialogueLinePlanBody {
         &self.syntax
     }
 
-    pub fn items(&self) -> &[StatementNode] {
+    pub fn items(&self) -> &[AttachedDialogueLinePlanItem] {
         &self.items
     }
 
@@ -370,7 +458,7 @@ impl AttachedDialogueLinePlanBody {
             || self
                 .items
                 .iter()
-                .any(|item| syntax_has_recovery(&item.syntax()))
+                .any(AttachedDialogueLinePlanItem::has_recovery)
     }
 
     fn from_syntax(syntax: AstNode<DialogueLinePlanBodyKind>) -> Result<Self, SyntaxAccessError> {
@@ -390,7 +478,20 @@ impl AttachedDialogueLinePlanBody {
             .syntax()
             .ordered_children(SyntaxRoleClass::DialogueLinePlanItem)?
             .into_iter()
-            .map(FamilyNode::<StatementFamily>::new)
+            .map(
+                |node| -> Result<AttachedDialogueLinePlanItem, SyntaxAccessError> {
+                    match node.kind() {
+                        SyntaxKind::DialogueLinePlanInit => Ok(AttachedDialogueLinePlanItem::Init(
+                            AttachedDialogueLinePlanInit::from_syntax(node.cast()?)?,
+                        )),
+                        _ => Ok(AttachedDialogueLinePlanItem::Statement(FamilyNode::<
+                            StatementFamily,
+                        >::new(
+                            node
+                        )?)),
+                    }
+                },
+            )
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
         let missing = syntax
@@ -452,3 +553,7 @@ fn syntax_has_recovery(syntax: &SyntaxNodeHandle) -> bool {
 fn invalid(owner: &SyntaxNodeHandle) -> SyntaxAccessError {
     SyntaxAccessError::InvalidExpressionProjection { id: owner.id() }
 }
+
+#[cfg(test)]
+#[path = "dialogue_plan_tests.rs"]
+mod tests;

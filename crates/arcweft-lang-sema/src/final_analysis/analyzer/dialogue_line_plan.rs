@@ -1398,90 +1398,138 @@ impl Analyzer<'_, '_, '_> {
         let mut output: Option<TypeKind> = None;
         let mut output_statements = BTreeSet::new();
         let mut cancel_rules = Vec::new();
-        let mut check_statement = |statement: StmtId| {
-            let module = self
-                .module(statement.module())
-                .map_err(AnalyzerExpressionError::fatal)?;
-            let payload = module.resolve_stmt(statement).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-            })?;
-            let plan = payload.kind().evaluation_plan();
-            let contextual_out = matches!(
-                &plan,
-                arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
-                    kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
-                    expression: Some(_),
-                    ..
+        let mut check_statement =
+            |statement: StmtId, expected_scope: Option<arcweft_lang_hir::identity::ScopeId>| {
+                let module = self
+                    .module(statement.module())
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                let payload = module.resolve_stmt(statement).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                if expected_scope.is_some_and(|scope| payload.scope() != scope) {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    ));
                 }
-            )
-            .then(|| output.as_ref().or(expected_line_result))
-            .flatten();
-            self.evaluate_block_statement_uses_with_out_expectation(
-                context,
-                module,
-                &[statement],
-                contextual_out.map(|expected| (application, expected)),
-            )?;
-            let arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
-                kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
-                expression: Some(value),
-                ..
-            } = plan
-            else {
-                return Ok(());
+                let directly_exits_line = matches!(
+                    payload.kind(),
+                    arcweft_lang_hir::stmt::HirStmtKind::Out { .. }
+                );
+                if expected_scope.is_some() {
+                    let escapes = match payload.kind() {
+                        arcweft_lang_hir::stmt::HirStmtKind::On { .. } => true,
+                        arcweft_lang_hir::stmt::HirStmtKind::Expression { expression } => {
+                            matches!(
+                                module
+                                    .resolve_expr(*expression)
+                                    .map_err(|_| {
+                                        AnalyzerExpressionError::fatal(
+                                            FinalSemanticAnalysisError::InvalidOwner,
+                                        )
+                                    })?
+                                    .kind(),
+                                arcweft_lang_hir::expr::HirExprKind::Thread(_)
+                            )
+                        }
+                        _ => false,
+                    };
+                    if escapes {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::InitEscapingChild { owner: statement },
+                        ));
+                    }
+                }
+                let outs = self.evaluate_block_statement_uses_with_out_expectation(
+                    context,
+                    module,
+                    &[statement],
+                    Some((application, output.as_ref().or(expected_line_result))),
+                )?;
+                for out in outs {
+                    let out_payload = module.resolve_stmt(out).map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                    })?;
+                    let arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
+                        kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
+                        expression: Some(value),
+                        ..
+                    } = out_payload.kind().evaluation_plan()
+                    else {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    };
+                    let transfer = self.topology.control_transfer_row(out).map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                    })?;
+                    let target = transfer.target().map_err(|error| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ControlTransfer(
+                            *error,
+                        ))
+                    })?;
+                    if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
+                        || target.output_application() != Some(application)
+                        || !output_statements.insert(out)
+                    {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    }
+                    let checked = self.evaluate_expression(
+                        context,
+                        value,
+                        output.as_ref().or(expected_line_result),
+                    )?;
+                    let checked_type = checked.value_type().ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value },
+                        )
+                    })?;
+                    match &output {
+                        Some(expected) if !expected.accepts(checked_type) => {
+                            return Err(AnalyzerExpressionError::rejected(value));
+                        }
+                        Some(_) => {}
+                        None => {
+                            output = Some(
+                                expected_line_result
+                                    .cloned()
+                                    .unwrap_or_else(|| checked_type.clone()),
+                            );
+                        }
+                    }
+                }
+                Ok(directly_exits_line.then_some(statement))
             };
-            let transfer = self.topology.control_transfer_row(statement).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-            })?;
-            let target = transfer.target().map_err(|error| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ControlTransfer(*error))
-            })?;
-            if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
-                || target.output_application() != Some(application)
-            {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                ));
-            }
-            if !output_statements.insert(statement) {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::WrongPayloadFamily,
-                ));
-            }
-            let checked = self.evaluate_expression(context, value, output.as_ref())?;
-            let checked_type = checked.value_type().ok_or_else(|| {
-                AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value },
-                )
-            })?;
-            match &output {
-                Some(expected) if !expected.accepts(checked_type) => {
-                    Err(AnalyzerExpressionError::rejected(value))
-                }
-                Some(_) => Ok(()),
-                None => {
-                    output = Some(
-                        expected_line_result
-                            .cloned()
-                            .unwrap_or_else(|| checked_type.clone()),
-                    );
-                    Ok(())
-                }
-            }
-        };
         let mut pending = vec![items];
+        let mut exited_by = None;
         while let Some(items) = pending.pop() {
             for item in items {
+                if let Some(after) = exited_by {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::LinePlanItemAfterOut { application, after },
+                    ));
+                }
                 match item {
-                    HirLinePlanItem::Init(statements) => {
+                    HirLinePlanItem::Init { scope, statements } => {
                         for statement in statements {
-                            check_statement(*statement)?;
+                            if let Some(after) = exited_by {
+                                return Err(AnalyzerExpressionError::fatal(
+                                    FinalSemanticAnalysisError::LinePlanItemAfterOut {
+                                        application,
+                                        after,
+                                    },
+                                ));
+                            }
+                            exited_by = check_statement(*statement, Some(*scope))?;
                         }
                     }
                     HirLinePlanItem::Thread(statement)
                     | HirLinePlanItem::On(statement)
                     | HirLinePlanItem::Statement(statement)
-                    | HirLinePlanItem::Error(statement) => check_statement(*statement)?,
+                    | HirLinePlanItem::Error(statement) => {
+                        exited_by = check_statement(*statement, None)?;
+                    }
                     HirLinePlanItem::CancelRule(statement) => cancel_rules.push(*statement),
                     HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                         pending.push(items)
@@ -1499,7 +1547,7 @@ impl Analyzer<'_, '_, '_> {
                 context,
                 module,
                 &[statement],
-                Some((application, &result)),
+                Some((application, Some(&result))),
             )? {
                 if !output_statements.insert(out) {
                     return Err(AnalyzerExpressionError::fatal(

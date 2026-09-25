@@ -286,6 +286,7 @@ fn choice_edges_cover_ten_logical_roles_with_typed_nested_paths() {
 fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
     let module = module(155);
     let scope = id::<ScopeId>(module, 1);
+    let init_scope = id::<ScopeId>(module, 8);
     let owner = id::<ExprId>(module, 2);
     let target = id::<ExprId>(module, 3);
     let statements = (10..17)
@@ -295,7 +296,10 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
         scope,
         None,
         Box::new([
-            HirLinePlanItem::Init(Box::new([statements[0], statements[1]])),
+            HirLinePlanItem::Init {
+                scope: init_scope,
+                statements: Box::new([statements[0], statements[1]]),
+            },
             HirLinePlanItem::StartGroup(Box::new([
                 HirLinePlanItem::Thread(statements[2]),
                 HirLinePlanItem::TogetherGroup(Box::new([
@@ -308,6 +312,10 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
         ]),
     )
     .expect("line plan");
+    assert!(matches!(
+        plan.items().first(),
+        Some(HirLinePlanItem::Init { scope, .. }) if *scope == init_scope
+    ));
     let content =
         HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
             .expect("empty dialogue content");

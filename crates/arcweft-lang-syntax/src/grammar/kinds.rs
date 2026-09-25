@@ -162,6 +162,7 @@ define_syntax_kinds! {
     ChoiceViewBody,
     ChoicePlanBody,
     DialogueLinePlanBody,
+    DialogueLinePlanInit,
     DialogueCancelRuleBody,
     PredicateBlock,
     ProofBlock,
@@ -586,6 +587,7 @@ impl SyntaxKind {
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
             | Self::DialogueLinePlanBody
+            | Self::DialogueLinePlanInit
             | Self::DialogueCancelRuleBody
             | Self::PredicateBlock
             | Self::ProofBlock
@@ -1054,6 +1056,7 @@ impl SyntaxKind {
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
             | Self::DialogueLinePlanBody
+            | Self::DialogueLinePlanInit
             | Self::DialogueCancelRuleBody
             | Self::PredicateBlock
             | Self::ProofBlock => Some(AstTag::Body),

@@ -215,28 +215,40 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
 impl LinePlanLowerer<'_, '_> {
     fn lower_items(&mut self, items: &[HirLinePlanItem]) -> Result<(), RuntimePlanLowerError> {
         for item in items {
+            if self.committed_result {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "line-plan item {item:?} is unreachable after an out statement"
+                )));
+            }
             match item {
+                HirLinePlanItem::Init { scope, statements } => {
+                    self.lower_init(*scope, statements)?;
+                }
                 HirLinePlanItem::Statement(statement) => {
-                    self.lower_top_level_statement(*statement)?;
+                    self.lower_top_level_statement(
+                        *statement,
+                        arcweft_core::plan::RuntimeDeferOwner::LineRoot,
+                    )?;
                 }
                 HirLinePlanItem::StartGroup(items) => {
                     let children = self.lower_node_items(items)?;
-                    self.root_children.push(NodeDraft::Start(children));
+                    if !children.is_empty() {
+                        self.root_children.push(NodeDraft::Start(children));
+                    }
                 }
                 HirLinePlanItem::TogetherGroup(items) => {
                     let children = self.lower_node_items(items)?;
-                    self.root_children.push(NodeDraft::Parallel {
-                        policy: ParallelPolicy::JoinAll,
-                        children,
-                    });
+                    if !children.is_empty() {
+                        self.root_children.push(NodeDraft::Parallel {
+                            policy: ParallelPolicy::JoinAll,
+                            children,
+                        });
+                    }
                 }
                 HirLinePlanItem::CancelRule(statement) => {
                     self.lower_cancel_rule(*statement)?;
                 }
-                HirLinePlanItem::Init(_)
-                | HirLinePlanItem::Thread(_)
-                | HirLinePlanItem::On(_)
-                | HirLinePlanItem::Error(_) => {
+                HirLinePlanItem::Thread(_) | HirLinePlanItem::On(_) | HirLinePlanItem::Error(_) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "line-plan item {item:?} has no complete typed runtime projection"
                     )));
@@ -246,9 +258,48 @@ impl LinePlanLowerer<'_, '_> {
         Ok(())
     }
 
+    fn lower_init(
+        &mut self,
+        scope: arcweft_lang_hir::identity::ScopeId,
+        statements: &[StmtId],
+    ) -> Result<(), RuntimePlanLowerError> {
+        for statement in statements {
+            if self.resolve_statement(*statement)?.scope() != scope {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "line-plan Init statement {statement:?} is outside its retained scope {scope:?}"
+                )));
+            }
+        }
+        self.activation_ops
+            .push(FlowDraft::Flow(RuntimeFlowOpSeed::EnterScope {
+                identity: arcweft_core::scope::RuntimeScopeIdentity::Anonymous,
+            }));
+        for statement in statements {
+            if self.committed_result {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "Init statement {statement:?} is unreachable after an out statement"
+                )));
+            }
+            let root_children_before = self.root_children.len();
+            self.lower_top_level_statement(
+                *statement,
+                arcweft_core::plan::RuntimeDeferOwner::CurrentScope,
+            )?;
+            if self.root_children.len() != root_children_before {
+                return Err(RuntimePlanLowerError::new(
+                    "Init cannot spawn line-task children before reveal",
+                ));
+            }
+        }
+        self.activation_ops
+            .push(FlowDraft::Flow(RuntimeFlowOpSeed::ExitScope));
+        Ok(())
+    }
+
     fn lower_top_level_statement(
         &mut self,
         statement: StmtId,
+        defer_owner: arcweft_core::plan::RuntimeDeferOwner,
     ) -> Result<(), RuntimePlanLowerError> {
         let kind = self.resolve_statement(statement)?.kind().clone();
         match self.statement_projection(statement)? {
@@ -313,11 +364,9 @@ impl LinePlanLowerer<'_, '_> {
                     });
                 }
                 HirStmtKind::Defer { .. } => {
-                    self.activation_ops
-                        .push(FlowDraft::Flow(self.flow.lower_defer_registration(
-                            statement,
-                            arcweft_core::plan::RuntimeDeferOwner::LineRoot,
-                        )?));
+                    self.activation_ops.push(FlowDraft::Flow(
+                        self.flow.lower_defer_registration(statement, defer_owner)?,
+                    ));
                 }
                 HirStmtKind::Expression { expression } => {
                     if let Some(child) = self.lower_thread_expression(expression)? {
@@ -343,25 +392,35 @@ impl LinePlanLowerer<'_, '_> {
         let mut nodes = Vec::new();
         for item in items {
             match item {
+                HirLinePlanItem::Init { .. } => {
+                    return Err(RuntimePlanLowerError::new(
+                        "Init is only executable as a direct pre-reveal line-plan item",
+                    ));
+                }
                 HirLinePlanItem::Statement(statement) => {
                     nodes.push(self.lower_node_statement(*statement)?);
                 }
                 HirLinePlanItem::StartGroup(children) => {
-                    nodes.push(NodeDraft::Start(self.lower_node_items(children)?));
+                    let children = self.lower_node_items(children)?;
+                    if !children.is_empty() {
+                        nodes.push(NodeDraft::Start(children));
+                    }
                 }
                 HirLinePlanItem::TogetherGroup(children) => {
-                    nodes.push(NodeDraft::Parallel {
-                        policy: ParallelPolicy::JoinAll,
-                        children: self.lower_node_items(children)?,
-                    });
+                    let children = self.lower_node_items(children)?;
+                    if !children.is_empty() {
+                        nodes.push(NodeDraft::Parallel {
+                            policy: ParallelPolicy::JoinAll,
+                            children,
+                        });
+                    }
                 }
                 HirLinePlanItem::Error(statement) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "recovered line-plan statement {statement:?} cannot enter runtime lowering"
                     )));
                 }
-                HirLinePlanItem::Init(_)
-                | HirLinePlanItem::Thread(_)
+                HirLinePlanItem::Thread(_)
                 | HirLinePlanItem::On(_)
                 | HirLinePlanItem::CancelRule(_) => {
                     return Err(RuntimePlanLowerError::new(format!(

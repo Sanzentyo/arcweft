@@ -9,6 +9,7 @@ pub(super) mod leaf;
 pub(super) mod projection;
 mod requirements;
 
+use self::dialogue_projection::dialogue_line_plan_sources_match;
 use self::projection::{expression_children_match, expression_payload_matches};
 use self::requirements::{candidate_dialogue_requirements, expression_requirements};
 
@@ -429,6 +430,20 @@ impl HirSourceIndex {
                             && metadata.source_site()
                                 == &HirSourceSite::Span(attached.whole_source_span())
                             && expression_payload_matches(payload.kind(), &attached)
+                            && match payload.kind() {
+                                HirExprKind::AttachedContentApplication(application) => {
+                                    dialogue_line_plan_sources_match(
+                                        application,
+                                        owner,
+                                        payload.scope(),
+                                        &attached,
+                                        slots,
+                                        block_arenas.scopes,
+                                        block_arenas.statements,
+                                    )
+                                }
+                                _ => true,
+                            }
                             && expression_manifest_matches(
                                 &expression_rows,
                                 parsed,

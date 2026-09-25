@@ -663,7 +663,7 @@ fn append_line_plan_item<'plan>(
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     let path = || owned_path(item_path.clone());
     match item {
-        HirLinePlanItem::Init(statements) => {
+        HirLinePlanItem::Init { statements, .. } => {
             for (statement, owner) in statements.iter().enumerate() {
                 push_owned_edge(
                     events,

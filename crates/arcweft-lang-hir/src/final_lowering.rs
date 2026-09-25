@@ -1390,6 +1390,13 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                 .statements
                 .resolve_staged(&self.slots, id)
                 .is_ok_and(|statement| HirTypeResolver::scope_is_live(self, statement.scope())),
+            HirDialogueTransactionRequirement::ScopedStatement { scope, statement } => self
+                .arenas
+                .statements
+                .resolve_staged(&self.slots, statement)
+                .is_ok_and(|statement| {
+                    statement.scope() == scope && HirTypeResolver::scope_is_live(self, scope)
+                }),
             HirDialogueTransactionRequirement::Scope(id) => {
                 HirTypeResolver::scope_is_live(self, id)
             }

@@ -95,7 +95,8 @@ pub use declaration::{
 pub use dialogue_plan::{
     AttachedDialogueCancelRuleBody, AttachedDialogueCancelRuleIndentedBody,
     AttachedDialogueCancelRuleStatement, AttachedDialogueLinePlan, AttachedDialogueLinePlanBody,
-    AttachedInputActionSelector, AttachedInputActionSelectorIssue,
+    AttachedDialogueLinePlanInit, AttachedDialogueLinePlanItem, AttachedInputActionSelector,
+    AttachedInputActionSelectorIssue,
 };
 pub use entry::{
     AttachedEntryBody, AttachedEntryDeclaration, AttachedEntryHttpMethod, AttachedEntryId,

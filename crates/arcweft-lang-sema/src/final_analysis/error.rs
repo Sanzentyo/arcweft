@@ -277,6 +277,14 @@ pub enum FinalSemanticAnalysisError {
     ControlTransfer(#[from] arcweft_lang_hir::project::HirControlTransferResolutionError),
     #[error("semantic fact does not match its final-HIR payload family")]
     WrongPayloadFamily,
+    #[error(
+        "line-plan init statement {owner:?} starts a child that would escape its pre-reveal scope"
+    )]
+    InitEscapingChild { owner: StmtId },
+    #[error(
+        "line-plan application {application:?} has an item after exiting through out {after:?}"
+    )]
+    LinePlanItemAfterOut { application: ExprId, after: StmtId },
     #[error("sealed Fx edge plan for expression {owner:?} is invalid: {source}")]
     FxEdgePlan {
         owner: ExprId,

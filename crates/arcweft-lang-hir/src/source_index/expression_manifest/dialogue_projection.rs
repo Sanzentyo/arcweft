@@ -1,5 +1,6 @@
 //! Exact dialogue-content payload projection shared by source-backed and E34 expressions.
 
+use arcweft_lang_syntax::attachment::{AttachedDialogueLinePlanItem, AttachedExpressionNode};
 use arcweft_lang_syntax::expressions::{
     SyntaxAttachedContentApplicationProjection, SyntaxDialogueActionArgumentProjection,
     SyntaxDialogueContentIssue, SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
@@ -7,10 +8,126 @@ use arcweft_lang_syntax::expressions::{
     SyntaxDialoguePointActionProjection, SyntaxLineBreakKind,
 };
 
+use crate::arena::ArenaSnapshot;
 use crate::dialogue_application::{
-    HirAttachedContentApplication, HirAttachedContentBodyPresence, HirDialogueContentError,
-    HirDialogueNodeKind, HirDialoguePointActionIdentity,
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily,
+    HirAttachedContentBodyPresence, HirDialogueContentError, HirDialogueNodeKind,
+    HirDialoguePointActionIdentity, HirLinePlanItem,
 };
+use crate::identity::{ExprId, ScopeId, StmtId};
+use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
+use crate::slot::SlotSnapshot;
+use crate::source_index::{HirSourceSite, block_projection::source_owner_matches};
+use crate::stmt::HirStmt;
+
+pub(super) fn dialogue_line_plan_sources_match(
+    actual: &HirAttachedContentApplication,
+    owner: ExprId,
+    owner_scope: ScopeId,
+    attached: &AttachedExpressionNode,
+    slots: &SlotSnapshot,
+    scopes: &ArenaSnapshot<HirScope, ScopeId>,
+    statement_arena: &ArenaSnapshot<HirStmt, StmtId>,
+) -> bool {
+    let expected = match attached.dialogue_line_plan() {
+        Ok(expected) => expected,
+        Err(_) => return false,
+    };
+    let HirAttachedContentApplicationFamily::DialogueLine {
+        plan: actual_plan, ..
+    } = actual.family()
+    else {
+        return expected.is_none();
+    };
+    match (actual_plan, expected.as_ref()) {
+        (None, None) => true,
+        (Some(plan), Some(expected)) => {
+            let body = expected.body();
+            let root = scopes.resolve_prepared(slots, plan.root_scope());
+            root.is_ok_and(|root| {
+                root.kind() == HirScopeKind::Block
+                    && root.owner() == &HirScopeOwner::Expr(owner)
+                    && root.parent() == Some(owner_scope)
+                    && source_owner_matches(
+                        slots,
+                        plan.root_scope(),
+                        body.syntax().id(),
+                        &HirSourceSite::Span(body.syntax().source_span()),
+                    )
+                    && plan.items().len() == body.items().len()
+                    && plan
+                        .items()
+                        .iter()
+                        .zip(body.items())
+                        .all(|(actual, expected)| match (actual, expected) {
+                            (
+                                HirLinePlanItem::Init { scope, statements },
+                                AttachedDialogueLinePlanItem::Init(expected),
+                            ) => {
+                                let source_scope = scopes.resolve_prepared(slots, *scope);
+                                source_scope.is_ok_and(|source_scope| {
+                                    source_scope.kind() == HirScopeKind::Block
+                                        && source_scope.owner() == &HirScopeOwner::Expr(owner)
+                                        && source_scope.parent() == Some(plan.root_scope())
+                                        && source_owner_matches(
+                                            slots,
+                                            *scope,
+                                            expected.body().id(),
+                                            &HirSourceSite::Span(expected.body().source_span()),
+                                        )
+                                        && statements.len() == expected.statements().len()
+                                        && statements.iter().zip(expected.statements()).all(
+                                            |(statement, expected)| {
+                                                line_plan_statement_source_matches(
+                                                    slots,
+                                                    statement_arena,
+                                                    *statement,
+                                                    expected,
+                                                    *scope,
+                                                )
+                                            },
+                                        )
+                                })
+                            }
+                            (
+                                HirLinePlanItem::Thread(statement)
+                                | HirLinePlanItem::On(statement)
+                                | HirLinePlanItem::Statement(statement)
+                                | HirLinePlanItem::CancelRule(statement)
+                                | HirLinePlanItem::Error(statement),
+                                AttachedDialogueLinePlanItem::Statement(expected),
+                            ) => line_plan_statement_source_matches(
+                                slots,
+                                statement_arena,
+                                *statement,
+                                expected,
+                                plan.root_scope(),
+                            ),
+                            _ => false,
+                        })
+            })
+        }
+        _ => false,
+    }
+}
+
+fn line_plan_statement_source_matches(
+    slots: &SlotSnapshot,
+    statements: &ArenaSnapshot<HirStmt, StmtId>,
+    statement: StmtId,
+    expected: &arcweft_lang_syntax::attachment::StatementNode,
+    scope: ScopeId,
+) -> bool {
+    statements
+        .resolve_prepared(slots, statement)
+        .is_ok_and(|statement| statement.scope() == scope)
+        && source_owner_matches(
+            slots,
+            statement,
+            expected.syntax().id(),
+            &HirSourceSite::Span(expected.source_span()),
+        )
+}
 
 pub(super) fn dialogue_application_projection_matches(
     actual: &HirAttachedContentApplication,

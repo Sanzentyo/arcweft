@@ -291,6 +291,106 @@ flow row() -> Unit {
 }
 
 #[test]
+fn dialogue_mark_handler_outs_contribute_to_the_line_result_type() {
+    for (handler_value, accepted) in [("\"Released\"", true), ("7", false)] {
+        let source = format!(
+            r#"
+pub character alice {{ display = "Alice" }}
+flow row() -> Unit {{
+    alice(voice=auto):
+        before [mark @.release] after[p]
+    with:
+        on mark(@.release):
+            out {handler_value}
+        out "Completed"
+    return ()
+}}
+"#,
+        );
+        let fixture = fixture(&source, None);
+        assert!(
+            fixture.project.analysis_view().is_ok(),
+            "typed mark handler HIR"
+        );
+        assert_eq!(
+            analyze(&fixture).is_ok(),
+            accepted,
+            "mark handler Out must agree with the line result: {source}",
+        );
+    }
+}
+
+#[test]
+fn dialogue_init_rejects_a_child_that_would_escape_pre_reveal_scope() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice[before [mark @.release] after[p]] with {
+        init {
+            on mark(@.release) { log.info("late") }
+        }
+        out ()
+    }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed Init and On HIR"
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::InitEscapingChild { .. })
+    ));
+}
+
+#[test]
+fn dialogue_line_plan_rejects_items_after_an_unconditional_out() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice[before [mark @.release] after[p]] with {
+        out ()
+        on mark(@.release) { log.info("unreachable") }
+    }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(
+        fixture.project.analysis_view().is_ok(),
+        "typed line-plan HIR"
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::LinePlanItemAfterOut { .. })
+    ));
+
+    let nested = super::fixture(
+        r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice()[本文。[p]] with {
+        init { out (); log.info("unreachable") }
+    }
+    return ()
+}
+"#,
+        None,
+    );
+    assert!(nested.project.analysis_view().is_ok(), "typed Init HIR");
+    assert!(matches!(
+        analyze(&nested),
+        Err(FinalSemanticAnalysisError::LinePlanItemAfterOut { .. })
+    ));
+}
+
+#[test]
 fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
     let cases: &[(
         &str,

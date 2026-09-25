@@ -2182,7 +2182,7 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         statements: &[super::StmtId],
-        out_expectation: Option<(ExprId, &TypeKind)>,
+        out_expectation: Option<(ExprId, Option<&TypeKind>)>,
     ) -> Result<Vec<super::StmtId>, AnalyzerExpressionError> {
         enum Work {
             Statement(super::StmtId),
@@ -2195,7 +2195,7 @@ impl Analyzer<'_, '_, '_> {
             .map(Work::Statement)
             .collect::<Vec<_>>();
         let mut seen = BTreeSet::new();
-        let mut contextual_outs = Vec::new();
+        let mut line_outs = Vec::new();
         while let Some(work) = pending.pop() {
             match work {
                 Work::Expression(expression) => {
@@ -2228,13 +2228,18 @@ impl Analyzer<'_, '_, '_> {
                                 )
                             })?;
                             if target.output_application() == Some(application) {
-                                let checked =
-                                    self.evaluate_expression(context, *value, Some(expected))?;
-                                if !checked.value_type().is_some_and(|ty| expected.accepts(ty)) {
-                                    return Err(AnalyzerExpressionError::rejected(*value));
+                                line_outs.push(owner);
+                                if let Some(expected) = expected {
+                                    let checked =
+                                        self.evaluate_expression(context, *value, Some(expected))?;
+                                    if !checked.value_type().is_some_and(|ty| expected.accepts(ty))
+                                    {
+                                        return Err(AnalyzerExpressionError::rejected(*value));
+                                    }
+                                    Some(*value)
+                                } else {
+                                    None
                                 }
-                                contextual_outs.push(owner);
-                                Some(*value)
                             } else {
                                 None
                             }
@@ -2287,7 +2292,7 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
         }
-        Ok(contextual_outs)
+        Ok(line_outs)
     }
 
     fn try_residuals_for_block(&self, owner: ExprId) -> Vec<&TypeKind> {

@@ -98,7 +98,8 @@ fn emit_braced_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
             break;
         }
         let start = parser.cursor();
-        let terminator = super::line_plan_defer_item_end(parser, start, close)
+        let terminator = line_plan_init_item_end(parser, start, close)
+            .or_else(|| super::line_plan_defer_item_end(parser, start, close))
             .or_else(|| super::line_plan_on_item_end(parser, start, close))
             .map(|end| (end, false))
             .or_else(|| find_statement_terminator(parser, start, close));
@@ -174,6 +175,7 @@ fn emit_indented_body(
             |_, _| true,
             |_, _| false,
         );
+        let item_end = line_plan_init_item_end(parser, start, interval.end()).unwrap_or(item_end);
         let significant_end = trimmed_end(parser, start, item_end);
         if indent_cursor.observe(parser, start) == suite_indent {
             emit_line_plan_item(parser, significant_end, item_kind, ordinal);
@@ -201,6 +203,10 @@ fn emit_line_plan_item(
     item_kind: SyntaxKind,
     ordinal: u32,
 ) {
+    if parser.at("init") {
+        emit_init(parser, end, item_kind, ordinal);
+        return;
+    }
     if parser.at("cancel")
         && first_significant(parser, parser.cursor().saturating_add(1), end)
             .and_then(|index| token_text(parser, index))
@@ -242,6 +248,123 @@ fn emit_line_plan_item(
         item_kind,
         SyntaxRole::DialogueLinePlanItem(ordinal),
     );
+}
+
+fn emit_init(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind, ordinal: u32) {
+    let owner_start = parser.cursor();
+    let head_end = physical_line_end(parser, owner_start, end);
+    let Some(introducer) = head_body_introducer(parser, owner_start, head_end) else {
+        emit_invalid_init(
+            parser,
+            end,
+            ordinal,
+            "syntax.dialogue.line_plan_init_missing_body",
+        );
+        return;
+    };
+    match token_text(parser, introducer) {
+        Some("{") => {
+            parser.start(
+                SyntaxKind::DialogueLinePlanInit,
+                SyntaxRole::DialogueLinePlanItem(ordinal),
+            );
+            parser.bump();
+            bump_trivia_before(parser, end);
+            bump_until(parser, introducer);
+            let _ = super::emit_braced_statement_block_until(
+                parser,
+                end,
+                item_kind,
+                SyntaxKind::Block,
+                SyntaxRole::Body,
+                "syntax.dialogue.line_plan_init_missing_close",
+            );
+            parser.finish();
+        }
+        Some(":") => {
+            let interval = indented_suite_interval(parser, owner_start, introducer, end);
+            if interval.issue().is_some() {
+                emit_invalid_init(
+                    parser,
+                    interval.end(),
+                    ordinal,
+                    "syntax.dialogue.line_plan_init_invalid_indent",
+                );
+                return;
+            }
+            parser.start(
+                SyntaxKind::DialogueLinePlanInit,
+                SyntaxRole::DialogueLinePlanItem(ordinal),
+            );
+            parser.bump();
+            bump_trivia_before(parser, introducer);
+            parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+            bump_until(parser, introducer);
+            parser.bump();
+            parser.finish();
+            bump_until(parser, interval.first_item());
+            super::emit_unbraced_statement_block_until(
+                parser,
+                interval.end(),
+                item_kind,
+                SyntaxRole::Body,
+            );
+            bump_until(parser, interval.end());
+            parser.finish();
+        }
+        _ => emit_invalid_init(
+            parser,
+            end,
+            ordinal,
+            "syntax.dialogue.line_plan_init_missing_body",
+        ),
+    }
+}
+
+fn emit_invalid_init(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u32,
+    code: &'static str,
+) {
+    let start = parser.current_offset();
+    parser.start(
+        SyntaxKind::ErrorStatement,
+        SyntaxRole::DialogueLinePlanItem(ordinal),
+    );
+    bump_until(parser, end);
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        code,
+        SourceRange::new(start, parser.current_offset()),
+        if code == "syntax.dialogue.line_plan_init_invalid_indent" {
+            "Dialogue Init requires an indented statement body after `:`"
+        } else {
+            "Dialogue Init requires a braced or indented statement body"
+        },
+    )));
+}
+
+/// Finds the full extent of a direct `init` item, including an indentation
+/// suite nested inside a braced line plan.
+fn line_plan_init_item_end(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    limit: usize,
+) -> Option<usize> {
+    if token_text(parser, start) != Some("init") {
+        return None;
+    }
+    let head_end = physical_line_end(parser, start, limit);
+    let introducer = head_body_introducer(parser, start, head_end)?;
+    match token_text(parser, introducer)? {
+        "{" => Some(
+            find_matching_close_before(parser, introducer + 1, limit, "{")
+                .map_or(limit, |close| close.saturating_add(1)),
+        ),
+        ":" => Some(indented_suite_interval(parser, start, introducer, limit).end()),
+        _ => None,
+    }
 }
 
 fn emit_cancel_rule(
