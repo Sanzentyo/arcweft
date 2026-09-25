@@ -1003,3 +1003,37 @@ stack overflow はこの checkpoint で再実行しておらず、以前の失�
 semantic type が AWBC の型グラフにないとして失敗した。従ってメモリ上の復元成功を
 保存用 DTO の受理とは扱わない。次はその型到達性と cancel `continue`/親制御移譲を
 それぞれ所有境界で閉じる。
+
+**2026-09-25 CharacterDialogue policy type reachability checkpoint:**
+
+Supersedes: 直前 checkpoint の「保存用 DTO の型到達性未完了」という実装状態。
+cancel `continue`、親 Flow `return`/`goto`、nested/CurrentScope defer は継続課題。
+
+inspected `main`/`origin/main` は
+`7acf4c5c50dd36b5452acfdd8cd89a689f8a92c0` で一致し、working tree は clean。
+CharacterDialogue producer が Voice / InlineFailure / InlineFallback / FallbackStyle の
+nominal schema、型 seed、variant domain、structural payload descendant を同一の
+case specification から保持する。RuntimePlan は生成 fact の graph をそのまま
+atomic admission へ渡し、binding は active program の owner/layout/cases を照合する。
+手組みの dialogue、player-native、runtime-driver fixture も同じ graph を使う。
+実 source の通常・取消 native/decoded AWBC 実行に加え、AWBC の各 tick で
+SaveDTO 化、JSON 往復、exact program への復元が通過した。
+
+検証: dialogue lib 61/61、RuntimePlan lib 81/81、compiler lib 112/112、compiler
+`evaluated_effects` 24/24、player-native lib 44/44 と関連 integration 2/2・8/8、
+runtime-driver 対象 1/1。workspace all-target/all-feature check と Clippy、fmt、
+cached diff check は終了コード 0（既存 warning あり）。`just structure-audit-gate` は
+本 cut の production owner 変更後に blocking violation 0 を確認した。
+`policies.rs` は base 167 行から 866 physical LOC（32,343 bytes、production 731 行、
+embedded tests 135 行）へ増えた。責務は producer-owned policy schema/projection/
+binding に一貫し、RuntimePlan 側への依存逆転や重複 authority はないため維持する。
+
+提案の `cargo clean` を checkout 内の `target` と確認して一度実行し、215,153 files、
+254.4 GiB の古い成果物を削除した。clean 前の workspace test は容量不足を避けるため
+ビルド中に停止し、clean 後に再実行した。再実行では workspace lib/integration 群と
+CLI の先行 named tests が通過したが、最後の CLI `arcw_fixtures_check_run` は 5/7 で
+終了コード 1。`024_stream_for_yield.arcw` は HIR staged arena validation、
+`032_raw_dialogue_braces.arcw` は raw Content の checked attached body projection で失敗した。
+この 2 件を workspace test 合格とは扱わない。維持仕様と owner を照合した結果、
+通常関数の `for` の HIR/source freeze と、checked RawLiteral を消費する compiler
+projection のそれぞれに不足がある。次の独立した cut で修正する。
