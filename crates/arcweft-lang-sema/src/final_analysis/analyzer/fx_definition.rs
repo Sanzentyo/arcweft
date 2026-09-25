@@ -1605,12 +1605,21 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
         else {
             return Err(CheckedFxDefinitionSealError::InvalidBody);
         };
+        self.analyzer
+            .seed_contextual_pattern_locals(
+                module,
+                parameter.pattern(),
+                &TypeKind::Named("FxSampleContext".to_owned()),
+            )
+            .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)?;
         let body = module
             .resolve_expr(closure.body())
             .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
-        let HirExprKind::RecordLiteral(record) = body.kind() else {
+        let HirExprKind::Record(record) = body.kind() else {
             return Err(CheckedFxDefinitionSealError::InvalidBody);
         };
+        self.check_transform_record_path(module_id, closure.body(), record.path())?;
+        let field_sources = record.fields();
         let expected = [
             ("translate_x", FxRuntimeType::Length),
             ("translate_y", FxRuntimeType::Length),
@@ -1624,7 +1633,7 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
             ("opacity", FxRuntimeType::F32),
         ];
         let mut fields = BTreeMap::<&str, ExprId>::new();
-        for field in record.fields() {
+        for field in field_sources {
             let HirRecordField::Explicit { name, value } = field else {
                 return Err(CheckedFxDefinitionSealError::InvalidBody);
             };
@@ -1683,6 +1692,45 @@ impl FxDefinitionSealer<'_, '_, '_, '_> {
             instructions,
         )
         .map_err(|_| CheckedFxDefinitionSealError::InvalidBody)
+    }
+
+    fn check_transform_record_path(
+        &self,
+        module_id: HirModuleId,
+        owner: ExprId,
+        path: &arcweft_lang_hir::leaf::HirPath,
+    ) -> Result<(), CheckedFxDefinitionSealError> {
+        let expected = crate::env::nominal::standard_nominal_id("Transform2D");
+        if !crate::nominal::hir_path_matches_type_path(path, expected.canonical_path()) {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        }
+        let accepted = self
+            .analyzer
+            .catalogs
+            .world
+            .environment()
+            .nominal_catalog()
+            .exact(expected.canonical_path())
+            .ok_or(CheckedFxDefinitionSealError::InvalidBody)?;
+        if accepted.id() != &expected
+            || accepted.try_instantiate([]) != Ok(TypeKind::Named("Transform2D".to_owned()))
+        {
+            return Err(CheckedFxDefinitionSealError::InvalidBody);
+        }
+        let module = self
+            .analyzer
+            .module(module_id)
+            .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+        let source = super::statements::expression_span(module, owner)
+            .map_err(|_| CheckedFxDefinitionSealError::OwnerInvariant)?;
+        match self
+            .analyzer
+            .symbols
+            .resolve_hir_type_target(module.key().path(), path, source)
+        {
+            Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::Unknown { .. }) => Ok(()),
+            _ => Err(CheckedFxDefinitionSealError::InvalidBody),
+        }
     }
 
     fn seal_sampler_expression(

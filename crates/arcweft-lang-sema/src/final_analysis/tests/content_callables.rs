@@ -1190,6 +1190,60 @@ fn opening() {
 }
 
 #[test]
+fn project_fx_sampler_accepts_typed_transform_record() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn typed_sampler() -> Fx {
+    Fx.transform(sample = |ctx| Transform2D {})
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("typed Transform2D sampler body");
+    let project = report
+        .checked_fx_definitions()
+        .definitions()
+        .find_map(|(_, definition)| definition.project())
+        .expect("project Fx definition");
+    let CheckedFxGraphExpression::Constructor(call) = project.body().root() else {
+        panic!("Fx.transform constructor body");
+    };
+    assert_eq!(
+        call.constructor(),
+        arcweft_presentation::fx::FxSourceConstructor::Transform
+    );
+    assert!(call.arguments().iter().any(|argument| matches!(
+        argument.value(),
+        CheckedFxConstructorArgumentValue::Value(CheckedFxSymbolicValue::Program(_))
+    )));
+}
+
+#[test]
+fn project_fx_sampler_rejects_typed_record_with_wrong_nominal() {
+    let fixture = fixture(
+        r#"
+struct Wrong {}
+
+#[fx]
+fn typed_sampler() -> Fx {
+    Fx.transform(sample = |ctx| Wrong {})
+}
+"#,
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(
+            crate::final_analysis::FinalSemanticAnalysisError::FxDefinition {
+                cause: crate::final_analysis::CheckedFxDefinitionSealError::InvalidBody,
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
 fn project_fx_builtin_wave_body_seals_default_row_and_short_phase() {
     let fixture = fixture(
         r#"
