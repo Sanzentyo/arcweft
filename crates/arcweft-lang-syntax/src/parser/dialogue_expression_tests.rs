@@ -3,12 +3,14 @@ mod tests {
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     use crate::expressions::{
-        ExpressionProjection, SyntaxAttachedContentApplicationForm,
-        SyntaxDialogueActionArgumentProjection, SyntaxDialogueContentProjection,
-        SyntaxDialogueNodeProjection, SyntaxDialoguePointActionPayload, SyntaxExpressionSlot,
+        ExpressionComponentRole, ExpressionProjection, PendingExpressionProjection,
+        SyntaxAttachedContentApplicationForm, SyntaxCallProjection, SyntaxClosureProjection,
+        SyntaxClosureSyntax, SyntaxClosureTerminator, SyntaxDialogueActionArgumentProjection,
+        SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+        SyntaxDialoguePointActionPayload, SyntaxExpressionSlot,
     };
     use crate::grammar::build::UnattachedGrammarEntry;
-    use crate::grammar::kinds::SyntaxKind;
+    use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
     use crate::parser::parse_document;
 
     fn document(source: &str) -> SourceDocument {
@@ -30,6 +32,46 @@ mod tests {
             .filter_map(UnattachedGrammarEntry::expression_projection)
             .filter_map(|projection| match projection.projection() {
                 ExpressionProjection::AttachedContentApplication(application) => Some(application),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn callback_call_projections(
+        built: &crate::grammar::build::GrammarBuild,
+    ) -> Vec<&PendingExpressionProjection> {
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter_map(UnattachedGrammarEntry::expression_projection)
+            .filter(|projection| {
+                matches!(
+                    projection.projection(),
+                    ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(_))
+                )
+            })
+            .collect()
+    }
+
+    fn indented_callback_closures(
+        built: &crate::grammar::build::GrammarBuild,
+    ) -> Vec<&SyntaxClosureProjection> {
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.role() == SyntaxRole::Argument(0))
+            .filter_map(UnattachedGrammarEntry::expression_projection)
+            .filter_map(|projection| match projection.projection() {
+                ExpressionProjection::Closure(closure)
+                    if matches!(
+                        closure.syntax(),
+                        SyntaxClosureSyntax::IndentedCallback { .. }
+                    ) =>
+                {
+                    Some(closure)
+                }
                 _ => None,
             })
             .collect()
@@ -146,6 +188,104 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    #[test]
+    fn inline_timed_cue_uses_the_indented_callback_graph_and_keeps_its_sibling() {
+        let source = concat!(
+            "flow opening {\n",
+            "    alice()[本文。[p]]\n",
+            "    with:\n",
+            "        at(0.42s): alice.stage.look(smile)\n",
+            "        let following = true\n",
+            "}\n",
+        );
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("inline timed cue parses");
+        assert_eq!(built.green().to_string(), source);
+
+        let applications = applications(&built);
+        assert_eq!(applications.len(), 1);
+        assert!(applications[0].has_plan());
+
+        let calls = callback_call_projections(&built);
+        let [call] = calls.as_slice() else {
+            panic!("inline timed cue owns one callback-block Call projection");
+        };
+        let ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(call)) =
+            call.projection()
+        else {
+            panic!("inline timed cue retains the callback-block Call family");
+        };
+        assert_eq!(call.callback(), SyntaxExpressionSlot::Authored);
+        assert_eq!(
+            call.terminator(),
+            crate::expressions::SyntaxCallArgumentListTerminator::Closed
+        );
+
+        let closures = indented_callback_closures(&built);
+        let [closure] = closures.as_slice() else {
+            panic!("inline timed cue owns one indented callback Closure projection");
+        };
+        assert_eq!(
+            closure.syntax(),
+            SyntaxClosureSyntax::IndentedCallback {
+                terminator: SyntaxClosureTerminator::Closed,
+            }
+        );
+        assert_eq!(closure.body(), SyntaxExpressionSlot::Authored);
+
+        let entries = built.index().entries();
+        assert!(entries.iter().any(|entry| {
+            entry.kind() == SyntaxKind::ExpressionStatement
+                && entry.role() == SyntaxRole::DialogueLinePlanItem(0)
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.kind() == SyntaxKind::LetStatement
+                && entry.role() == SyntaxRole::DialogueLinePlanItem(1)
+        }));
+    }
+
+    #[test]
+    fn inline_timed_cue_empty_body_and_malformed_tail_recover_before_the_next_item() {
+        let source = concat!(
+            "flow opening {\n",
+            "    alice()[本文。[p]]\n",
+            "    with:\n",
+            "        at(0.42s): alice.stage.look(smile) trailing\n",
+            "        at(0.84s):\n",
+            "        let following = true\n",
+            "}\n",
+        );
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("malformed and empty timed cues retain typed syntax");
+        assert_eq!(built.green().to_string(), source);
+
+        let calls = callback_call_projections(&built);
+        assert_eq!(calls.len(), 2);
+        let closures = indented_callback_closures(&built);
+        assert_eq!(closures.len(), 2);
+        assert_eq!(closures[0].body(), SyntaxExpressionSlot::Authored);
+        assert_eq!(closures[1].body(), SyntaxExpressionSlot::Missing);
+        assert!(built.index().entries().iter().any(|entry| {
+            entry.kind() == SyntaxKind::MissingExpression && entry.role() == SyntaxRole::Body
+        }));
+
+        let recovery = built
+            .index()
+            .entries()
+            .iter()
+            .filter_map(UnattachedGrammarEntry::expression_projection)
+            .flat_map(|projection| projection.components())
+            .find(|component| component.role() == ExpressionComponentRole::Recovery)
+            .expect("malformed timed-cue body retains an exact recovery component")
+            .range();
+        assert_eq!(&source[recovery.start()..recovery.end()], " trailing");
+
+        assert!(built.index().entries().iter().any(|entry| {
+            entry.kind() == SyntaxKind::LetStatement
+                && entry.role() == SyntaxRole::DialogueLinePlanItem(2)
+        }));
     }
 
     #[test]

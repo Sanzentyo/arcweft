@@ -448,8 +448,9 @@ Supported anchors:
 | `at(char(12))` | character reveal index |
 | `at(word(3))` | word/token reveal index |
 
-The line-plan cue form is `at(...) { ... }` or the indentation sugar
-`at(...):`.
+The line-plan cue forms `at(...) { ... }`, `at(...): action()`, and `at(...):`
+followed by an indented body are equivalent. The inline colon form ends at the
+line-plan item boundary, so the next line-plan item remains a sibling.
 
 ---
 

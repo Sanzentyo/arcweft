@@ -237,9 +237,21 @@ fn emit_line_plan_item(
         {
             let interval = indented_suite_interval(parser, parser.cursor(), colon, end);
             if interval.issue().is_none() {
-                emit_callback_expression(parser, colon, interval, ordinal);
+                emit_callback_expression(
+                    parser,
+                    colon,
+                    interval.first_item(),
+                    interval.end(),
+                    ordinal,
+                );
                 return;
             }
+        }
+        if let Some(colon) = head_body_introducer(parser, parser.cursor(), head_end)
+            .filter(|index| token_text(parser, *index) == Some(":"))
+        {
+            emit_callback_expression(parser, colon, colon.saturating_add(1), end, ordinal);
+            return;
         }
     }
     emit_statement_with_role(
@@ -580,20 +592,15 @@ fn emit_callback_let(
 fn emit_callback_expression(
     parser: &mut DocumentParser<'_, '_>,
     colon: usize,
-    interval: IndentedSuiteInterval,
+    body_start: usize,
+    body_end: usize,
     ordinal: u32,
 ) {
     parser.start(
         SyntaxKind::ExpressionStatement,
         SyntaxRole::DialogueLinePlanItem(ordinal),
     );
-    emit_indented_callback_call(
-        parser,
-        colon,
-        interval.first_item(),
-        interval.end(),
-        SyntaxRole::Initializer,
-    );
+    emit_indented_callback_call(parser, colon, body_start, body_end, SyntaxRole::Initializer);
     parser.finish();
 }
 

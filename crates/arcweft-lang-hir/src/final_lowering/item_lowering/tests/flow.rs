@@ -2,7 +2,9 @@ use super::*;
 
 use crate::arena::HirArenaPayload;
 use crate::dialogue_application::HirLinePlanItem;
-use crate::expr::{HirExprKind, HirThreadBodyOwner, HirThreadFlowItem};
+use crate::expr::{
+    HirCallArgument, HirCallValue, HirExprKind, HirThreadBodyOwner, HirThreadFlowItem,
+};
 use crate::item::{
     HirContractMode, HirFlowContractClause, HirFlowIdentity, HirFlowIssueClass, HirFlowIssueOwner,
     HirFlowItem, HirFlowReturn, HirFunctionBody,
@@ -115,6 +117,91 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
             kind => panic!("unexpected line-plan statement kind: {kind:?}"),
         }
     }
+}
+
+#[test]
+fn inline_dialogue_timed_cue_lowers_as_a_clean_callback_call() {
+    let parsed = parse(
+        "arcweft-test://proof/inline-dialogue-timed-cue-hir",
+        concat!(
+            "pub character alice { display = \"Alice\" }\n",
+            "flow inline_cue() -> String {\n",
+            "    let line = alice()[聞いて。[p]]\n",
+            "    with:\n",
+            "        at(0.42s): log.info(\"cue\")\n",
+            "        out ()\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, flow) = resolve_flow(&module, 1);
+    let HirThreadFlowItem::Statement(binding) = flow.body().items()[0] else {
+        panic!("Dialogue binding is the first flow statement")
+    };
+    let HirStmtKind::Let { initializer, .. } = module.resolve_stmt(binding).unwrap().kind() else {
+        panic!("Dialogue binding owns the line-plan initializer")
+    };
+    let HirExprKind::AttachedContentApplication(application) =
+        module.resolve_expr(*initializer).unwrap().kind()
+    else {
+        panic!("Dialogue binding retains its content application")
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = application.family()
+    else {
+        panic!("Dialogue application owns its line plan")
+    };
+    assert_eq!(plan.items().len(), 2);
+    let HirLinePlanItem::Statement(out_statement) = plan.items()[1] else {
+        panic!("out remains the sibling following the inline timed cue")
+    };
+    assert!(matches!(
+        module.resolve_stmt(out_statement).unwrap().kind(),
+        HirStmtKind::Out { .. }
+    ));
+    let HirLinePlanItem::Statement(cue_statement) = plan.items()[0] else {
+        panic!("inline timed cue remains a line-plan statement")
+    };
+    let HirStmtKind::Expression { expression: cue } =
+        module.resolve_stmt(cue_statement).unwrap().kind()
+    else {
+        panic!("inline timed cue remains an expression statement")
+    };
+    let HirExprKind::Call(call) = module.resolve_expr(*cue).unwrap().kind() else {
+        panic!("inline timed cue lowers through the ordinary Call payload")
+    };
+    let [
+        HirCallArgument::Positional {
+            value: HirCallValue::Present { value: callback },
+        },
+    ] = call.arguments()
+    else {
+        panic!("inline timed cue Call owns one positional callback")
+    };
+    let HirExprKind::Closure(closure) = module.resolve_expr(*callback).unwrap().kind() else {
+        panic!("inline timed cue callback lowers through the ordinary Closure payload")
+    };
+    assert!(matches!(
+        module.resolve_expr(closure.body()).unwrap().kind(),
+        HirExprKind::Call(_)
+    ));
 }
 
 #[test]
