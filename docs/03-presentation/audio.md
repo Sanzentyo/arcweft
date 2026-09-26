@@ -105,6 +105,21 @@ pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
 }
 ```
 
+## Voice resource loading
+
+`voice.load` loads a voice resource and has type
+`Need<Result<AudioHandle, VoiceError>>`. Its successful result is an
+`AudioHandle`, which identifies the loaded resource. A line's
+`line.voice_handle()` returns `VoiceHandle`, the separate scoped playback
+lease described in [line handles and returns](../01-language/dialogue-line-handles-and-returns.md).
+
+```arcw
+let voice_audio = try await voice.load(@voice.alice.001) with:
+    pending p:
+        scene.show(@scene.loading_voice)
+        progress.set(p.ratio)
+```
+
 ## Mixer / Bus
 
 ```arcw

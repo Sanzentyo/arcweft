@@ -15,7 +15,7 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
             progress.set(p.ratio)
     ).context("while loading opening background")
 
-    let voice = try (await voice.load(@voice.alice.opening.001) with:
+    let _voice_audio = try (await voice.load(@voice.alice.opening.001) with:
         pending p:
             scene.show(@scene.loading_voice)
             progress.set(p.ratio)
@@ -23,13 +23,13 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
         .map_err(.Voice)
         .context("while loading Alice opening voice")
 
-    alice(voice=voice)[
-        読み込みが完了しました。[p]
-    ]
-
     Ok(FlowExit.Goto(route))
 }
 ```
+
+`voice.load` has type `Need<Result<AudioHandle, VoiceError>>`; its successful
+`AudioHandle` identifies the loaded audio resource. The line-scoped playback
+lease returned by `line.voice_handle()` is the distinct `VoiceHandle` type.
 
 If `state.route_override` is `None`, `.context(...)` converts it to
 `Result<T, ArcError>` and prefix `try` propagates with a trace frame containing:

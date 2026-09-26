@@ -95,14 +95,18 @@ fn standard_env_contains_dialogue_fmt_builtin() {
 #[test]
 fn standard_need_producers_publish_typed_operation_and_join_policy() {
     let environment = TypeCheckEnv::standard();
-    for (path, expected) in [
+    for (path, expected, expected_ok, expected_error) in [
         (
             ["asset", "image"],
             crate::callable::CallableNeedProducerRole::asset_image(),
+            "ImageHandle",
+            "AssetError",
         ),
         (
             ["voice", "load"],
             crate::callable::CallableNeedProducerRole::voice_load(),
+            "AudioHandle",
+            "VoiceError",
         ),
     ] {
         let path = CallablePath::try_new(
@@ -122,11 +126,37 @@ fn standard_need_producers_publish_typed_operation_and_join_policy() {
             panic!("standard Need producer must retain its typed role")
         };
         assert_eq!(*role, expected);
-        assert!(matches!(
-            function.schema.value_type(),
-            Some(TypeKind::Need(payload))
-                if matches!(payload.as_ref(), TypeKind::Result { .. })
-        ));
+        let Some(TypeKind::Need(payload)) = function.schema.value_type() else {
+            panic!("standard asset and voice producers return Need<Result<_, _>>")
+        };
+        let TypeKind::Result { ok, error } = payload.as_ref() else {
+            panic!("standard asset and voice Need payloads are Result values")
+        };
+        let TypeKind::AcceptedNominal(ok) = ok.as_ref() else {
+            panic!("standard asset and voice successes are accepted opaque nominals")
+        };
+        let TypeKind::AcceptedNominal(error) = error.as_ref() else {
+            panic!("standard asset and voice failures are accepted opaque nominals")
+        };
+        assert_eq!(
+            ok.declaration()
+                .canonical_path()
+                .segments()
+                .last()
+                .expect("accepted path has one type segment")
+                .as_str(),
+            expected_ok
+        );
+        assert_eq!(
+            error
+                .declaration()
+                .canonical_path()
+                .segments()
+                .last()
+                .expect("accepted path has one type segment")
+                .as_str(),
+            expected_error
+        );
     }
 
     let load_bg = CallablePath::try_new(vec![CallableName::try_new("load_bg").unwrap()])

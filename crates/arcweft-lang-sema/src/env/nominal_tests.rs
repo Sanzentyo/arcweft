@@ -625,6 +625,7 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ("ContentLoadError", "std.content_load_error"),
         ("DialogueText", "std.dialogue_text"),
         ("ImageHandle", "std.image_handle"),
+        ("AudioHandle", "std.audio_handle"),
         ("VoiceError", "std.voice_error"),
     ] {
         let record = environment

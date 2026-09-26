@@ -222,7 +222,7 @@ pub const RUNTIME_STANDARD_VIRTUAL_PATH: RuntimeStandardOpaqueTypeSpec =
 /// Closed standard opaque inventory. Both semantic catalogs and external
 /// adapter references consume this inventory, so producer identity cannot
 /// diverge between those boundaries.
-pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 12] = [
+pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
     RUNTIME_STANDARD_REDUCTION,
     RuntimeStandardOpaqueTypeSpec::new(&["Watch"], 1, "std.watch"),
     RuntimeStandardOpaqueTypeSpec::new(&["Sample"], 1, "std.sample"),
@@ -234,6 +234,7 @@ pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 12] = [
     RuntimeStandardOpaqueTypeSpec::new(&["ContentLoadError"], 0, "std.content_load_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["DialogueText"], 0, "std.dialogue_text"),
     RuntimeStandardOpaqueTypeSpec::new(&["ImageHandle"], 0, "std.image_handle"),
+    RuntimeStandardOpaqueTypeSpec::new(&["AudioHandle"], 0, "std.audio_handle"),
     RuntimeStandardOpaqueTypeSpec::new(&["VoiceError"], 0, "std.voice_error"),
 ];
 
@@ -2374,6 +2375,36 @@ mod tests {
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
+    }
+
+    #[test]
+    fn standard_audio_handle_has_a_distinct_plain_opaque_owner() {
+        let spec = runtime_standard_opaque_type(&["AudioHandle"])
+            .expect("AudioHandle is in the standard opaque inventory");
+        assert_eq!(spec.arity(), 0);
+        assert_eq!(spec.producer(), "std.audio_handle");
+        assert_eq!(spec.value_class(), RuntimeOpaqueValueClass::Plain);
+        assert_eq!(
+            spec.persistence(),
+            RuntimeOpaquePersistence::ConstantAndSnapshot
+        );
+
+        let owner = spec
+            .monomorphic_owner()
+            .expect("AudioHandle is monomorphic");
+        assert_eq!(owner.admission(), RuntimeOpaqueTypeAdmission::ExactIdentity);
+        let value = owner
+            .try_wrap(RuntimeValue::Unit)
+            .expect("the exact standard owner wraps a generic test payload");
+        let checked = RuntimeCheckedType::Opaque {
+            owner: owner.clone(),
+        };
+        assert!(checked.accepts_value(&value));
+
+        let image_owner = runtime_standard_opaque_type(&["ImageHandle"])
+            .and_then(|spec| spec.monomorphic_owner())
+            .expect("ImageHandle is a distinct standard opaque owner");
+        assert!(!(RuntimeCheckedType::Opaque { owner: image_owner }).accepts_value(&value));
     }
 
     #[test]

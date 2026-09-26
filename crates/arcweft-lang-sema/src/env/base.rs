@@ -1153,7 +1153,7 @@ impl TypeCheckEnv {
             ["voice", "load"],
             FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
-                    ok: Box::new(TypeKind::VoiceHandle),
+                    ok: Box::new(TypeKind::Named("AudioHandle".to_owned())),
                     error: Box::new(TypeKind::Named("VoiceError".to_owned())),
                 })),
                 [FunctionParam::required(

@@ -2695,6 +2695,93 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
 }
 
 #[test]
+fn voice_load_returns_the_accepted_audio_resource_handle() {
+    let fixture = fixture(
+        r#"
+fn load_voice_resource(asset: Ref<Voice>) -> Result<AudioHandle, VoiceError> {
+    let audio = try await voice.load(asset)
+    Ok(audio)
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("voice.load returns its registered resource type");
+    let awaited = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Await(awaited) => Some(awaited),
+            _ => None,
+        })
+        .expect("fixture retains one Await fact");
+    let operand = report
+        .expression(awaited.operand())
+        .expect("Await operand has one checked expression");
+    let TypeKind::Need(result) = operand.value_type().expect("Await operand value") else {
+        panic!("voice.load result is one unary Need")
+    };
+    let TypeKind::Result { ok, error } = result.as_ref() else {
+        panic!("voice.load Need payload is one Result")
+    };
+
+    let TypeKind::AcceptedNominal(audio_handle) = ok.as_ref() else {
+        panic!("voice.load success is the accepted AudioHandle opaque type")
+    };
+    let audio_record = fixture
+        .registered
+        .environment()
+        .nominal_world()
+        .nominal_catalog()
+        .exact(audio_handle.declaration().canonical_path())
+        .expect("AudioHandle has an exact accepted standard row");
+    assert!(matches!(
+        audio_record.semantics(),
+        AcceptedNominalSemantics::Opaque(carrier)
+            if carrier.producer().as_str() == "std.audio_handle"
+    ));
+    assert_eq!(
+        fixture
+            .registered
+            .checked_ownership(&report, ok, CheckedOwnershipLimits::PRODUCTION)
+            .expect("AudioHandle has snapshot-clone ownership")
+            .disposition(),
+        RetainedValueDisposition::SnapshotClone
+    );
+
+    let TypeKind::AcceptedNominal(voice_error) = error.as_ref() else {
+        panic!("voice.load failure is the accepted VoiceError opaque type")
+    };
+    let error_record = fixture
+        .registered
+        .environment()
+        .nominal_world()
+        .nominal_catalog()
+        .exact(voice_error.declaration().canonical_path())
+        .expect("VoiceError has an exact accepted standard row");
+    assert!(matches!(
+        error_record.semantics(),
+        AcceptedNominalSemantics::Opaque(carrier)
+            if carrier.producer().as_str() == "std.voice_error"
+    ));
+
+    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
+        .expect("final analysis and accepted world share one symbol lease");
+    let admission = classifier
+        .classify(ok)
+        .expect("the accepted AudioHandle row projects through the core opaque owner");
+    let RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Opaque { owner }) =
+        admission.projection()
+    else {
+        panic!("AudioHandle projects to an opaque runtime type")
+    };
+    assert_eq!(owner.producer().as_str(), "std.audio_handle");
+    assert_eq!(owner.value_class(), RuntimeOpaqueValueClass::Plain);
+    assert_eq!(
+        owner.persistence(),
+        RuntimeOpaquePersistence::ConstantAndSnapshot
+    );
+}
+
+#[test]
 fn result_and_option_context_calls_publish_the_accepted_arc_error_type() {
     let fixture = fixture(
         r#"

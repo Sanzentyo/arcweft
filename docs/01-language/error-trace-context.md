@@ -151,11 +151,16 @@ let bg = try load_bg(id)
 Typed context:
 
 ```arcw
-let voice = try voice.load(@voice.alice.001)
-    .context("voice load failed")
+let voice_audio = try (await voice.load(@voice.alice.001) with:
+    pending p:
+        log.info("loading voice", progress = p.ratio)
+).context("voice load failed")
     .field("speaker", @character.alice)
     .field("line", @say.opening.001)
 ```
+
+`voice.load` returns `Need<Result<AudioHandle, VoiceError>>`; after a successful
+await, `voice_audio` is the loaded audio resource handle.
 
 On `Option<T>`:
 
