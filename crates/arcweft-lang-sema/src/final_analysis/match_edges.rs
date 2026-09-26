@@ -33,6 +33,7 @@ use super::{
     FinalSemanticAnalysisError, HirAnalysisProjectView, HirModuleId, SemanticFactFamily, TypeKind,
 };
 use crate::callable::{
+    CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallSemanticOperandSource,
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
@@ -791,6 +792,7 @@ impl CheckedStructuralEdgeDraft {
 
     pub(super) fn into_final_facts(
         mut self,
+        modules: &BTreeMap<HirModuleId, &HirModule>,
         calls: &BTreeMap<ExprId, super::CallTargetFacts>,
         mut callable_joins: PreparedCallableJoins,
     ) -> (
@@ -859,10 +861,15 @@ impl CheckedStructuralEdgeDraft {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
                     continue;
                 }
-                if let Some(error) = edges
-                    .iter()
-                    .find_map(|(child, role)| validate_checked_call_edge(call, *child, role).err())
-                {
+                if let Some(error) = edges.iter().find_map(|(child, role)| {
+                    validate_checked_call_edge(
+                        modules.get(&child.module()).copied(),
+                        call,
+                        *child,
+                        role,
+                    )
+                    .err()
+                }) {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
                     continue;
                 }
@@ -1317,6 +1324,7 @@ impl CheckedExpressionEdgeAuthority for FinalSemanticAnalysis {
 }
 
 fn validate_checked_call_edge(
+    module: Option<&HirModule>,
     facts: &super::CallTargetFacts,
     child: ExprId,
     role: &CheckedExpressionChildRole,
@@ -1327,19 +1335,84 @@ fn validate_checked_call_edge(
     match role {
         CheckedExpressionChildRole::Callee => Ok(()),
         CheckedExpressionChildRole::ContentCallee => Ok(()),
-        CheckedExpressionChildRole::Argument { ordinal } => application
-            .core()
-            .execution()
-            .arguments()
-            .get(usize::try_from(*ordinal).map_err(|_| CheckedChildEdgeError::CallSlotMismatch)?)
-            .filter(|argument| {
-                argument
-                    .slots()
-                    .iter()
-                    .any(|slot| slot.source().owner() == child)
-            })
-            .map(|_| ())
-            .ok_or(CheckedChildEdgeError::CallSlotMismatch),
+        CheckedExpressionChildRole::Argument { ordinal } => {
+            let index =
+                usize::try_from(*ordinal).map_err(|_| CheckedChildEdgeError::CallSlotMismatch)?;
+            let execution = application.core().execution();
+            let argument = execution
+                .arguments()
+                .get(index)
+                .ok_or(CheckedChildEdgeError::CallSlotMismatch)?;
+            if argument.passing() == CheckedCallArgumentPassing::Spread {
+                let module = module.ok_or(CheckedChildEdgeError::CallSlotMismatch)?;
+                let expression = module
+                    .resolve_expr(child)
+                    .map_err(|_| CheckedChildEdgeError::CallSlotMismatch)?;
+                let whole_container = argument.slots().len() == 1
+                    && argument.slots()[0].source().raw()
+                        == CheckedCallArgumentSlotSource::Expression(child);
+                let expanded_elements = match expression.kind() {
+                    HirExprKind::BracketSequence(sequence) => argument
+                        .slots()
+                        .iter()
+                        .map(|slot| slot.source().raw())
+                        .eq(sequence
+                            .elements()
+                            .iter()
+                            .copied()
+                            .map(CheckedCallArgumentSlotSource::Expression)),
+                    HirExprKind::NumericBracketSequence(sequence) => {
+                        argument.slots().iter().enumerate().all(|(ordinal, slot)| {
+                            u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                                slot.source().raw()
+                                    == CheckedCallArgumentSlotSource::CompactNumericElement {
+                                        sequence: child,
+                                        ordinal,
+                                    }
+                            })
+                        }) && argument.slots().len() == sequence.elements().len()
+                    }
+                    _ => false,
+                };
+                return (whole_container || expanded_elements)
+                    .then_some(())
+                    .ok_or(CheckedChildEdgeError::CallSlotMismatch);
+            }
+            let runtime_sources = argument
+                .slots()
+                .iter()
+                .filter(|slot| slot.source().owner() == child)
+                .count();
+            let semantic_sources = execution
+                .semantic_operands()
+                .iter()
+                .filter(|operand| match operand.source() {
+                    CheckedCallSemanticOperandSource::DialogueApplicationId {
+                        argument,
+                        source,
+                        ..
+                    }
+                    | CheckedCallSemanticOperandSource::DialogueApplicationTextKey {
+                        argument,
+                        source,
+                        ..
+                    } => usize::from(argument.get()) == index && *source == child,
+                    CheckedCallSemanticOperandSource::TextProxyObject { argument, source } => {
+                        usize::from(argument.get()) == index && source.owner() == child
+                    }
+                    CheckedCallSemanticOperandSource::DialogueTarget(_)
+                    | CheckedCallSemanticOperandSource::DialogueContent { .. }
+                    | CheckedCallSemanticOperandSource::DialogueLinePlan { .. } => false,
+                })
+                .count();
+            if (runtime_sources, semantic_sources) == (1, 0)
+                || (runtime_sources, semantic_sources) == (0, 1)
+            {
+                Ok(())
+            } else {
+                Err(CheckedChildEdgeError::CallSlotMismatch)
+            }
+        }
         _ => Ok(()),
     }
 }

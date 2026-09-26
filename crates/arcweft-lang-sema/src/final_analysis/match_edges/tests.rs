@@ -2,6 +2,70 @@ use super::*;
 use crate::final_analysis::{CheckedCaptureAuthorityViolation, CheckedClosure};
 
 #[test]
+fn dialogue_semantic_id_preserves_checked_call_edges() {
+    let fixture = crate::final_analysis::tests::fixture(
+        r#"
+pub character alice {}
+flow opening() -> String {
+    alice(id=@say.story.greeting, text_key=@text.story.greeting)[hello[p]]
+    return "ok"
+}
+"#,
+        None,
+    );
+    let report = crate::final_analysis::tests::analyze(&fixture).unwrap();
+    let (owner, application) = report
+        .expressions()
+        .find_map(|(owner, _)| {
+            let application = report.call(owner)?.selected_application()?;
+            application.core().execution().semantic_operands().iter().any(|operand| {
+                matches!(
+                    operand.source(),
+                    crate::callable::CheckedCallSemanticOperandSource::DialogueApplicationId { .. }
+                )
+            }).then_some((owner, application))
+        })
+        .expect("dialogue id is retained as a checked semantic operand");
+    let semantic = application
+        .core()
+        .execution()
+        .semantic_operands()
+        .iter()
+        .filter_map(|operand| match operand.source() {
+            crate::callable::CheckedCallSemanticOperandSource::DialogueApplicationId {
+                argument,
+                source,
+                ..
+            }
+            | crate::callable::CheckedCallSemanticOperandSource::DialogueApplicationTextKey {
+                argument,
+                source,
+                ..
+            } => Some((u32::from(argument.get()), *source)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(semantic.len(), 2);
+    let edges = report
+        .checked_child_edges(owner)
+        .expect("semantic-only id and text_key have exact checked argument edges");
+    for (ordinal, source) in semantic {
+        assert!(
+            application.core().execution().arguments()[usize::try_from(ordinal).unwrap()]
+                .slots()
+                .is_empty()
+        );
+        assert!(edges.iter().any(|edge| {
+            edge.child() == source
+                && matches!(edge.role(), CheckedExpressionChildRole::Argument { ordinal: actual } if *actual == ordinal)
+        }));
+    }
+    report
+        .checked_callable_join(owner)
+        .expect("callable join remains available to the compiler");
+}
+
+#[test]
 fn selected_graph_rejects_an_internally_valid_capture_receipt_for_another_interpretation() {
     let fixture = crate::final_analysis::tests::fixture(
         "fn caller() -> Unit { let offset = 0i64; let values = [42i64]; let read = || -> i64 { values[offset] }; () }\n",

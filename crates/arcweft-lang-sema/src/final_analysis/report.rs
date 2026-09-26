@@ -1214,7 +1214,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         let mut diagnostics = collect_final_diagnostics(&modules, &types, &expressions, &items)?;
         diagnostics.extend(text_proxy_diagnostics);
         let (edge_facts, unconsumed_callable_joins) =
-            structural_edges.into_final_facts(&calls, callable_joins);
+            structural_edges.into_final_facts(&modules, &calls, callable_joins);
         if !unconsumed_callable_joins.is_empty() {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }

@@ -291,6 +291,22 @@ flow main() -> String {
         CheckedCallSemanticOperandSource::TextProxyObject { argument, .. }
             if argument.get() == 1
     ));
+    let CheckedCallSemanticOperandSource::TextProxyObject { source, .. } = semantic.source() else {
+        unreachable!("Object type discriminator was checked above");
+    };
+    assert!(report
+        .checked_child_edges(owner)
+        .expect("semantic-only Object type keeps its checked argument edge")
+        .iter()
+        .any(|edge| {
+            edge.child() == source.owner()
+                && matches!(
+                    edge.role(),
+                    crate::semantic_coordinate::CheckedExpressionChildRole::ContentNominalDiscriminator {
+                        ordinal: 1
+                    }
+                )
+        }));
 
     let physical = report
         .physical_candidate_argument_evaluations()
