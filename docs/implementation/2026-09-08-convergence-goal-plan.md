@@ -1872,3 +1872,30 @@ runtime-plan の focused Clippy は Array 延長前に warning ありで通過�
 push 後の dirty は 053 formatter fixture と companion TOML/assets のみ。
 053 の typed formatter と公開 CLI typed `Ref<Asset>`、後続工程の受入条件は
 引き続き未完である。
+
+## 053 formatter 接続の設計判断 — 2026-09-27
+
+`main` の `de6562ee2224bf1dc98f7c72cb800270fcde7ec1` を確認した。
+053 の companion manifest/assets を一時的に `target/` へ配置した直接
+`arcw check` は、選択済み `fmt` call に typed runtime formatter lowering が
+ないため失敗した。053 fixture 本体と companion は未統合差分として保持する。
+
+Sema の `CheckedFmtCall` を primary value、選択済み named option、failure
+policy と source-order の authority とする。表示可能型の witness を同じ
+Sema 境界で封印し、通常の `#[expr]` 補間にも適用する。compiler の `Format`
+target は安定した checked call 座標と typed operand role を保持し、call
+projection の段階では dense template ID を持たない。project/closure instance
+の発見と materialization 後、生存する formatter call を完全な実行 scope と
+安定座標で整列し、既存 dialogue fragment の後に一スロット
+`FormattedInsert` template を割り当てる。plain-text context template は
+その後に置く。同じ identity/digest を RuntimePlan manifest、text-model
+catalog、AWBC へ登録する。
+
+Core の `FormatContent` は入力式を authored source order で一度ずつ評価し、
+回復可能な式・formatter failure を既存の Formatted outcome/policy に保持して
+artifact-bound Content を返す。native/pure と AWBC はこの評価契約を共有し、
+AWBC では値 register が完成する前に回復可能 failure を扱える verified な
+子式境界が必要である。artifact/schema/budget/cancel の失敗は fallback に
+変換しない。ここは設計決定であり、この時点で 053 の実行受理・native/AWBC
+parity・workspace test gate は未達。project `DisplayText` conformance は
+現行実装に選択証拠がなく、同じ工程で接続が必要な残件である。
