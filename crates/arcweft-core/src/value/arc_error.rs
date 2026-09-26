@@ -402,6 +402,8 @@ pub struct RuntimeArcError {
 pub enum RuntimeArcErrorValueError {
     #[error("runtime value is not owned by the exact std.arc_error owner")]
     InvalidOwner,
+    #[error("context operation receiver is not the expected Result or Option carrier")]
+    InvalidContextReceiver,
     #[error("ArcError payload is not the canonical version-1 tuple")]
     InvalidPayload,
     #[error("ArcError payload version is {actual}, expected {expected}")]
@@ -511,6 +513,89 @@ impl RuntimeArcError {
             RuntimeArcErrorSource::TypedValue(error)
         };
         Self::context_from_source(source, message, frame, limits)
+    }
+
+    /// Applies eager Result context to one canonical runtime carrier. `Ok`
+    /// passes through unchanged; `Err` becomes a canonical `ArcError` while
+    /// preserving its exact typed cause and appending the supplied frame.
+    pub fn context_result_value(
+        result: RuntimeValue,
+        message: RuntimeDialogueContentValue,
+        frame: RuntimeArcErrorFrame,
+    ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
+        Self::context_result_value_with(
+            result,
+            || Ok(message),
+            frame,
+            RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Applies lazy Result context. The message producer is called exactly
+    /// once on `Err` and never on `Ok`.
+    pub fn context_result_value_with(
+        result: RuntimeValue,
+        message: impl FnOnce() -> Result<RuntimeDialogueContentValue, RuntimeArcErrorValueError>,
+        frame: RuntimeArcErrorFrame,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
+        let (case, payload) = result
+            .try_into_builtin_variant_case()
+            .map_err(|_| RuntimeArcErrorValueError::InvalidContextReceiver)?;
+        match case {
+            RuntimeBuiltinVariantCaseIdentity::ResultOk => payload
+                .map(RuntimeValue::result_ok)
+                .ok_or(RuntimeArcErrorValueError::InvalidContextReceiver),
+            RuntimeBuiltinVariantCaseIdentity::ResultErr => {
+                let cause = payload.ok_or(RuntimeArcErrorValueError::InvalidContextReceiver)?;
+                let message = message()?;
+                let error = Self::context_from_result_with_limits(cause, message, frame, limits)?;
+                Ok(RuntimeValue::result_err(error.into_runtime_value()))
+            }
+            _ => Err(RuntimeArcErrorValueError::InvalidContextReceiver),
+        }
+    }
+
+    /// Applies eager Option context. `Some` becomes `Ok`; `None` becomes a
+    /// canonical `MissingValue` ArcError carrying the supplied Content.
+    pub fn context_option_value(
+        option: RuntimeValue,
+        message: RuntimeDialogueContentValue,
+        frame: RuntimeArcErrorFrame,
+    ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
+        Self::context_option_value_with(
+            option,
+            || Ok(message),
+            frame,
+            RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Applies lazy Option context. The message producer is called exactly
+    /// once on `None` and never on `Some`.
+    pub fn context_option_value_with(
+        option: RuntimeValue,
+        message: impl FnOnce() -> Result<RuntimeDialogueContentValue, RuntimeArcErrorValueError>,
+        frame: RuntimeArcErrorFrame,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
+        let (case, payload) = option
+            .try_into_builtin_variant_case()
+            .map_err(|_| RuntimeArcErrorValueError::InvalidContextReceiver)?;
+        match case {
+            RuntimeBuiltinVariantCaseIdentity::OptionSome => payload
+                .map(RuntimeValue::result_ok)
+                .ok_or(RuntimeArcErrorValueError::InvalidContextReceiver),
+            RuntimeBuiltinVariantCaseIdentity::OptionNone => {
+                if payload.is_some() {
+                    return Err(RuntimeArcErrorValueError::InvalidContextReceiver);
+                }
+                let message = message()?;
+                let error = Self::missing_value_with_limits(message, frame, limits)?;
+                Ok(RuntimeValue::result_err(error.into_runtime_value()))
+            }
+            _ => Err(RuntimeArcErrorValueError::InvalidContextReceiver),
+        }
     }
 
     fn context_from_typed_value(
@@ -1257,6 +1342,154 @@ mod tests {
         assert!(decoded.source().is_none());
         assert_eq!(decoded.trace().frames().len(), 1);
         assert!(decoded.trace().frames()[0].message().is_some());
+    }
+
+    #[test]
+    fn result_context_value_preserves_success_and_wraps_failure() {
+        let success = RuntimeValue::Unit;
+        let output = RuntimeArcError::context_result_value(
+            RuntimeValue::result_ok(success.clone()),
+            content_message(),
+            RuntimeArcErrorFrame::empty(),
+        )
+        .expect("Result::Ok context pass-through");
+        assert_eq!(
+            output.try_into_builtin_variant_case(),
+            Ok((RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(success)))
+        );
+
+        let cause = RuntimeValue::Opaque(crate::value::RuntimeOpaqueValue::new_exact(
+            &runtime_standard_opaque_type(&["AssetError"])
+                .and_then(|spec| spec.monomorphic_owner())
+                .expect("AssetError owner"),
+            RuntimeValue::String("missing".to_owned()),
+        ));
+        let message = content_message();
+        let output = RuntimeArcError::context_result_value(
+            RuntimeValue::result_err(cause.clone()),
+            message.clone(),
+            RuntimeArcErrorFrame::empty(),
+        )
+        .expect("Result::Err context conversion");
+        let (case, Some(error)) = output
+            .try_into_builtin_variant_case()
+            .expect("Result output carrier")
+        else {
+            panic!("context failure returns Result::Err")
+        };
+        assert_eq!(case, RuntimeBuiltinVariantCaseIdentity::ResultErr);
+        let error = RuntimeArcError::try_from_runtime_value(&error).expect("canonical ArcError");
+        assert_eq!(error.message(), &message);
+        assert!(matches!(
+            error.source(),
+            Some(RuntimeArcErrorSource::TypedValue(value)) if value == &cause
+        ));
+        assert_eq!(
+            error.trace().frames()[0].message(),
+            Some(&message),
+            "the typed Content message appears on the appended context frame"
+        );
+    }
+
+    #[test]
+    fn option_context_value_preserves_some_and_turns_none_into_missing_value() {
+        let success = RuntimeValue::String("route".to_owned());
+        let output = RuntimeArcError::context_option_value(
+            RuntimeValue::option_some(success.clone()),
+            content_message(),
+            RuntimeArcErrorFrame::empty(),
+        )
+        .expect("Option::Some context conversion");
+        assert_eq!(
+            output.try_into_builtin_variant_case(),
+            Ok((RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(success)))
+        );
+
+        let message = content_message();
+        let output = RuntimeArcError::context_option_value(
+            RuntimeValue::option_none(),
+            message.clone(),
+            RuntimeArcErrorFrame::empty(),
+        )
+        .expect("Option::None context conversion");
+        let (case, Some(error)) = output
+            .try_into_builtin_variant_case()
+            .expect("Result output carrier")
+        else {
+            panic!("missing Option value returns Result::Err")
+        };
+        assert_eq!(case, RuntimeBuiltinVariantCaseIdentity::ResultErr);
+        let error = RuntimeArcError::try_from_runtime_value(&error).expect("canonical ArcError");
+        assert_eq!(error.kind().as_str(), "MissingValue");
+        assert!(error.source().is_none());
+        assert_eq!(error.message(), &message);
+        assert_eq!(error.trace().frames()[0].message(), Some(&message));
+    }
+
+    #[test]
+    fn lazy_context_message_factory_runs_only_for_error_or_absence() {
+        let calls = std::cell::Cell::new(0);
+        let limits = RuntimeSchemaLimits::engine_default();
+        let frame = RuntimeArcErrorFrame::empty();
+        let output = RuntimeArcError::context_result_value_with(
+            RuntimeValue::result_ok(RuntimeValue::Unit),
+            || {
+                calls.set(calls.get() + 1);
+                Ok(content_message())
+            },
+            frame.clone(),
+            limits,
+        )
+        .expect("lazy Result::Ok context pass-through");
+        assert_eq!(calls.get(), 0);
+        assert_eq!(
+            output.builtin_variant_case(),
+            Some((
+                RuntimeBuiltinVariantCaseIdentity::ResultOk,
+                Some(&RuntimeValue::Unit)
+            ))
+        );
+
+        let output = RuntimeArcError::context_option_value_with(
+            RuntimeValue::option_some(RuntimeValue::Bool(true)),
+            || {
+                calls.set(calls.get() + 1);
+                Ok(content_message())
+            },
+            frame.clone(),
+            limits,
+        )
+        .expect("lazy Option::Some context pass-through");
+        assert_eq!(calls.get(), 0);
+        assert_eq!(
+            output.builtin_variant_case(),
+            Some((
+                RuntimeBuiltinVariantCaseIdentity::ResultOk,
+                Some(&RuntimeValue::Bool(true))
+            ))
+        );
+
+        RuntimeArcError::context_result_value_with(
+            RuntimeValue::result_err(RuntimeValue::String("failure".to_owned())),
+            || {
+                calls.set(calls.get() + 1);
+                Ok(content_message())
+            },
+            frame.clone(),
+            limits,
+        )
+        .expect("lazy Result::Err context");
+        RuntimeArcError::context_option_value_with(
+            RuntimeValue::option_none(),
+            || {
+                calls.set(calls.get() + 1);
+                Ok(content_message())
+            },
+            frame,
+            limits,
+        )
+        .expect("lazy Option::None context");
+        assert_eq!(calls.get(), 2);
     }
 
     #[test]
