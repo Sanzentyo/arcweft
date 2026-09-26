@@ -8322,6 +8322,12 @@ fn runtime_call_target(
         return runtime_standard_map_call(owner, application, *family)
             .map(RuntimeResolvedStaticCallTarget::StandardMap);
     }
+    if matches!(selected.schema().validator(), CallableValidator::Format) {
+        return Err(RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "checked fmt Content call has no typed runtime formatter lowering".to_owned(),
+        });
+    }
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));
     }
