@@ -219,10 +219,12 @@ impl RuntimeContentFragmentFact {
             {
                 roots.extend([duration_type, schedule_handle_type]);
             }
-            effect
-                .operation()
-                .effect()
-                .visit_operand_types(&mut |ty| roots.push(ty));
+            roots.push(effect.operation().result());
+            if let Some(operation) = effect.operation().evaluated_effect_operation() {
+                operation
+                    .effect()
+                    .visit_operand_types(&mut |ty| roots.push(ty));
+            }
         }
     }
 }

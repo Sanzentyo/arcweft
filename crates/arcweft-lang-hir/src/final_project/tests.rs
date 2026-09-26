@@ -17,7 +17,8 @@ use super::{
     HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
     HirRuntimeReachabilityEdge, HirRuntimeReachabilityError, HirRuntimeReachabilityRoot,
     HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
-    HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
+    HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention, HirSelectedCallArgument,
+    HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
     HirSelectedExpressionInventoryError, HirSemanticOwnerPath, HirSemanticPathStep, exported_parts,
     styles,
 };
@@ -158,8 +159,95 @@ fn runtime_reachability<'project>(
         input,
         topology,
         selected_postfix,
+        |owner| test_selected_call_inventory(executable, topology, owner),
         expression_projection,
     )
+}
+
+fn test_selected_call_inventory(
+    executable: HirAnalysisProjectView<'_>,
+    topology: &super::HirProjectEvaluationTopology,
+    owner: ExprId,
+) -> Option<HirSelectedCallExpressionDisposition> {
+    let call = executable
+        .modules()
+        .find_map(|(_, module)| module.resolve_expr(owner).ok())
+        .and_then(|expression| match expression.kind() {
+            HirExprKind::Call(call) => Some(call),
+            _ => None,
+        })?;
+    let arguments = call
+        .arguments()
+        .iter()
+        .enumerate()
+        .map(|(ordinal, argument)| {
+            let ordinal = u32::try_from(ordinal).ok()?;
+            let edge = topology.expression_edges(owner).iter().find(|edge| {
+                matches!(
+                    edge,
+                    super::HirExpressionEvaluationEdge::Expression {
+                        role: HirExpressionChildRole::Argument { ordinal: actual },
+                        child,
+                        ..
+                    } if *actual == ordinal && *child == argument.value()
+                )
+            })?;
+            match edge {
+                super::HirExpressionEvaluationEdge::Expression {
+                    ownership: HirExpressionChildOwnership::Owning,
+                    ..
+                } => Some(HirSelectedCallArgument::new(argument.value())),
+                super::HirExpressionEvaluationEdge::Expression {
+                    ownership: HirExpressionChildOwnership::ReferenceOnly,
+                    ..
+                } => {
+                    let semantic_owners = topology
+                        .expression_owners()
+                        .filter(|semantic_owner| {
+                            let edges = topology.expression_edges(*semantic_owner);
+                            let target = edges.iter().any(|edge| {
+                                matches!(
+                                    edge,
+                                    super::HirExpressionEvaluationEdge::Expression {
+                                        role: HirExpressionChildRole::DialogueTarget,
+                                        child,
+                                        ..
+                                    } if *child == owner
+                                )
+                            });
+                            let coordinate = edges.iter().any(|edge| {
+                                matches!(
+                                    edge,
+                                    super::HirExpressionEvaluationEdge::Expression {
+                                        role: HirExpressionChildRole::DialogueCoordinate {
+                                            ordinal: actual,
+                                        },
+                                        child,
+                                        ..
+                                    } if *actual == ordinal && *child == argument.value()
+                                )
+                            });
+                            target && coordinate
+                        })
+                        .collect::<Vec<_>>();
+                    let [semantic_owner] = semantic_owners.as_slice() else {
+                        return None;
+                    };
+                    Some(HirSelectedCallArgument::with_semantic_owner(
+                        argument.value(),
+                        *semantic_owner,
+                    ))
+                }
+                _ => None,
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(HirSelectedCallExpressionDisposition::Callable(
+        HirSelectedCallExpressionInventory::with_argument_semantics(
+            arguments.into_boxed_slice(),
+            call.callee().value_expression(),
+        ),
+    ))
 }
 
 fn retained_runtime_projection(
@@ -389,6 +477,7 @@ fn runtime_reachability_rejects_a_foreign_topology_generation() {
             input,
             foreign.as_ref(),
             |_| None,
+            |owner| test_selected_call_inventory(executable, foreign.as_ref(), owner),
             |_| structural_projection(HirRuntimeValueRetention::Retain),
         ),
         Err(HirRuntimeReachabilityError::TopologyGenerationMismatch)
@@ -3292,6 +3381,75 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 }
 
 #[test]
+fn runtime_call_inventory_accepts_reference_only_dialogue_metadata_arguments() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-dialogue-metadata",
+        "runtime-dialogue-metadata.arcw",
+        concat!(
+            "pub character alice { display = \"Alice\" }\n",
+            "flow opening { alice(id = @say.shared, source_locale = \"ja-JP\")[Hello。[p]] }\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module.clone())],
+    )
+    .unwrap();
+    let executable = project.analysis_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-dialogue-metadata");
+    let topology = evaluation_topology(&project, &symbols);
+    let call_edges = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Call(_))
+                .then(|| (owner, topology.expression_edges(owner).to_vec()))
+        })
+        .collect::<Vec<_>>();
+    let (call, metadata) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Call(_)).then(|| {
+                let metadata =
+                    topology
+                        .expression_edges(owner)
+                        .iter()
+                        .find_map(|edge| match edge {
+                            super::HirExpressionEvaluationEdge::Expression {
+                                role: HirExpressionChildRole::Argument { ordinal: 0 },
+                                ownership: HirExpressionChildOwnership::ReferenceOnly,
+                                child,
+                            } => Some(*child),
+                            _ => None,
+                        })?;
+                Some((owner, metadata))
+            })?
+        })
+        .unwrap_or_else(|| {
+            panic!("dialogue target calls have no reference-only argument edge: {call_edges:#?}")
+        });
+
+    let runtime = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| retained_runtime_projection(executable, owner),
+    )
+    .expect("runtime traversal accepts the sealed reference-only metadata argument");
+    assert!(runtime.contains_expression(call));
+    assert!(
+        !runtime.expression_children(call).contains(&metadata),
+        "Dialogue ID metadata is validated through its semantic owner, not an owning Call edge"
+    );
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "the fixture asserts retained and omitted Call projections in one matrix"
@@ -4010,6 +4168,7 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
                 input,
                 &topology,
                 |_| None,
+                |owner| test_selected_call_inventory(executable, &topology, owner),
                 |owner| {
                     if owner == call {
                         call_projection(
@@ -4116,6 +4275,7 @@ fn checked_callable_value_edges_retain_latent_bodies_and_reject_nonfunction_targ
             input,
             &topology,
             |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
             |owner| retained_runtime_projection(executable, owner),
         )
     };
@@ -4214,6 +4374,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
             input,
             &topology,
             |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
             |owner| retained_runtime_projection(executable, owner),
         )
         .expect("checked closure executions close both bodies");
@@ -4324,6 +4485,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
             missing,
             &topology,
             |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
             |owner| retained_runtime_projection(executable, owner),
         )
         .expect("HIR follows only supplied checked closure executions");
@@ -4364,6 +4526,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
             tampered,
             &topology,
             |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
             |owner| retained_runtime_projection(executable, owner),
         ),
         Err(HirRuntimeReachabilityError::InvalidEdgeTarget { .. })

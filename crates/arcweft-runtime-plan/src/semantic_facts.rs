@@ -30,7 +30,7 @@ pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
     RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
-    RuntimeOpaqueTypeProducerId,
+    RuntimeOpaqueTypeProducerId, RuntimeVariantIdentity,
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeBuiltinIteratorFamily,
@@ -46,6 +46,7 @@ use arcweft_core::value::{
     RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
     RuntimeValue,
 };
+use arcweft_dialogue::{CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyVariantOwner};
 use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_lang_hir::expr::{
@@ -109,9 +110,9 @@ mod type_dependencies;
 
 pub use content::{
     RuntimeContentFragmentFact, RuntimeContentFragmentFactError, RuntimeContentFragmentId,
-    RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectProgramFact,
-    RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact, RuntimeDialogueMarkKey,
-    RuntimeDialogueValueCaptureKey, RuntimeExecutableCaptureFact,
+    RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectOperationFact,
+    RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact,
+    RuntimeDialogueMarkKey, RuntimeDialogueValueCaptureKey, RuntimeExecutableCaptureFact,
 };
 pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
@@ -1393,6 +1394,9 @@ pub enum RuntimeResolvedNominalSource {
     BuiltinRecord {
         owner: arcweft_lang_sema::env::nominal::AcceptedNominalId,
     },
+    CharacterDialoguePolicy {
+        owner: CharacterDialoguePolicyVariantOwner,
+    },
     AcceptedRust(Arc<arcweft_lang_sema::final_analysis::RuntimeAcceptedRustNominalProjection>),
 }
 
@@ -1468,6 +1472,29 @@ impl RuntimeResolvedNominal {
         }
     }
 
+    /// Retains an exact nominal owner from the shared CharacterDialogue
+    /// policy graph.
+    pub fn character_dialogue_policy(
+        owner: CharacterDialoguePolicyVariantOwner,
+        policy_types: &Arc<CharacterDialoguePolicyTypeGraph>,
+    ) -> Self {
+        let RuntimeVariantIdentity::Nominal {
+            nominal,
+            semantic_identity,
+            layout,
+        } = policy_types.identity(owner)
+        else {
+            unreachable!("CharacterDialogue policy owners are nominal variants")
+        };
+        Self {
+            source: RuntimeResolvedNominalSource::CharacterDialoguePolicy { owner },
+            runtime_nominal: nominal.clone(),
+            identity: *semantic_identity,
+            layout: *layout,
+            source_graph: Arc::clone(policy_types.schema_graph()),
+        }
+    }
+
     pub const fn source(&self) -> &RuntimeResolvedNominalSource {
         &self.source
     }
@@ -1477,6 +1504,7 @@ impl RuntimeResolvedNominal {
             RuntimeResolvedNominalSource::Project { .. } => true,
             RuntimeResolvedNominalSource::ClosedVariant { .. } => true,
             RuntimeResolvedNominalSource::BuiltinRecord { .. } => true,
+            RuntimeResolvedNominalSource::CharacterDialoguePolicy { .. } => true,
             RuntimeResolvedNominalSource::AcceptedRust(projection) => {
                 projection.validate_project(project).is_ok()
             }
@@ -2909,6 +2937,10 @@ pub enum RuntimeResolvedVariantError {
         expected: String,
         actual: String,
     },
+    #[error("CharacterDialogue policy graph contains an unsupported checked type shape")]
+    InvalidDialoguePolicyType,
+    #[error("CharacterDialogue policy graph owner is not a nominal variant")]
+    InvalidDialoguePolicyOwner,
 }
 
 /// Checked enum case selected for a variant expression, constructor call, or pattern.
@@ -3011,6 +3043,92 @@ impl RuntimeResolvedVariant {
         )
     }
 
+    /// Retains one language-selected case from the shared CharacterDialogue
+    /// policy graph. Source aliases resolve to graph ordinals here; the graph
+    /// retains canonical case names and payload types.
+    pub fn character_dialogue_policy(
+        policy_types: Arc<CharacterDialoguePolicyTypeGraph>,
+        owner: CharacterDialoguePolicyVariantOwner,
+        ordinal: u32,
+        selected_language_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        let index = usize::try_from(ordinal).ok();
+        let case = index
+            .and_then(|index| policy_types.cases(owner).get(index))
+            .ok_or(RuntimeResolvedVariantError::CaseOrdinal {
+                ordinal,
+                case_count: u32::try_from(policy_types.cases(owner).len())
+                    .expect("policy case inventory is bounded"),
+            })?;
+        if case.language_name() != selected_language_name && case.name() != selected_language_name {
+            return Err(RuntimeResolvedVariantError::CaseName {
+                ordinal,
+                expected: case.language_name().to_owned(),
+                actual: selected_language_name.to_owned(),
+            });
+        }
+        let RuntimeCheckedType::Variant {
+            owner:
+                RuntimeVariantIdentity::Nominal {
+                    semantic_identity, ..
+                },
+            arguments,
+            cases,
+        } = policy_types.checked_type(owner)
+        else {
+            return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyOwner);
+        };
+        if !arguments.is_empty() || *semantic_identity != policy_types.semantic_identity(owner) {
+            return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyOwner);
+        }
+        let schema_cases = policy_types.cases(owner);
+        if cases.len() != schema_cases.len() {
+            return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyOwner);
+        }
+        let normalized_cases = cases
+            .iter()
+            .zip(schema_cases)
+            .map(|(case, schema)| {
+                if case.name != schema.name()
+                    || case.payload.is_some() != schema.payload().is_some()
+                {
+                    return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyOwner);
+                }
+                let payload = schema
+                    .payload()
+                    .map(|payload| {
+                        let checked = policy_types
+                            .checked_payload_type(payload)
+                            .map_err(|_| RuntimeResolvedVariantError::InvalidDialoguePolicyType)?;
+                        dialogue_policy_normalized_type(&policy_types, &checked)
+                    })
+                    .transpose()?;
+                Ok(RuntimeNormalizedVariantCase::new(
+                    case.name.clone(),
+                    payload,
+                ))
+            })
+            .collect::<Result<Vec<_>, RuntimeResolvedVariantError>>()?
+            .into_boxed_slice();
+        Self::project(
+            RuntimeResolvedNominal::character_dialogue_policy(owner, &policy_types),
+            Box::new([]),
+            ordinal,
+            case.name(),
+            normalized_cases,
+        )
+        .and_then(|variant| {
+            if variant.owner().semantic_identity() == *semantic_identity
+                && variant.ordinal() == ordinal
+                && variant.selected_name()? == case.name()
+            {
+                Ok(variant)
+            } else {
+                Err(RuntimeResolvedVariantError::InvalidDialoguePolicyOwner)
+            }
+        })
+    }
+
     pub fn runtime_builtin(
         identity: RuntimeSemanticTypeId,
         owner: RuntimeBuiltinVariantIdentity,
@@ -3110,6 +3228,74 @@ impl RuntimeResolvedVariant {
             case,
         })
     }
+}
+
+fn dialogue_policy_normalized_type(
+    policy_types: &Arc<CharacterDialoguePolicyTypeGraph>,
+    checked: &RuntimeCheckedType,
+) -> Result<RuntimeNormalizedType, RuntimeResolvedVariantError> {
+    use RuntimeCheckedType as Checked;
+    let identity = match checked {
+        Checked::Nominal {
+            semantic_identity, ..
+        } => *semantic_identity,
+        Checked::Opaque { owner } => owner.semantic_identity(),
+        _ => checked.semantic_identity_digest(),
+    };
+    let shape = match checked {
+        Checked::Unit => RuntimeTypeShape::Unit,
+        Checked::Never => RuntimeTypeShape::Never,
+        Checked::Bool => RuntimeTypeShape::Bool,
+        Checked::String => RuntimeTypeShape::String,
+        Checked::EntityReference => RuntimeTypeShape::EntityReference,
+        Checked::Sequence(item) => RuntimeTypeShape::Sequence {
+            kind: RuntimeSequenceKind::Seq,
+            item: Box::new(dialogue_policy_normalized_type(policy_types, item)?),
+        },
+        Checked::Tuple(items) => RuntimeTypeShape::Tuple(
+            items
+                .iter()
+                .map(|item| dialogue_policy_normalized_type(policy_types, item))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_boxed_slice(),
+        ),
+        Checked::Choice(items) => RuntimeTypeShape::Choice(
+            items
+                .iter()
+                .map(|item| dialogue_policy_normalized_type(policy_types, item))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_boxed_slice(),
+        ),
+        Checked::Opaque { owner } => RuntimeTypeShape::Opaque {
+            producer: owner.producer().clone(),
+            admission: owner.admission(),
+            value_class: owner.value_class(),
+            persistence: owner.persistence(),
+            arguments: Box::new([]),
+        },
+        Checked::Nominal {
+            semantic_identity: owner_identity,
+            arguments,
+            ..
+        } => {
+            let owner = policy_types
+                .owner_for_semantic_identity(*owner_identity)
+                .ok_or(RuntimeResolvedVariantError::InvalidDialoguePolicyType)?;
+            if identity != *owner_identity {
+                return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyType);
+            }
+            RuntimeTypeShape::Nominal {
+                nominal: RuntimeResolvedNominal::character_dialogue_policy(owner, policy_types),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| dialogue_policy_normalized_type(policy_types, argument))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            }
+        }
+        _ => return Err(RuntimeResolvedVariantError::InvalidDialoguePolicyType),
+    };
+    Ok(RuntimeNormalizedType::new(identity, shape))
 }
 
 /// Typed failure while consuming one ABI-positioned runtime call operand list.
@@ -4445,6 +4631,8 @@ pub struct RuntimePlanSemanticFactInput {
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+    character_dialogue_policy_types:
+        Option<Arc<arcweft_dialogue::CharacterDialoguePolicyTypeGraph>>,
     character_dialogue_generation:
         Option<character_dialogue_generation::RuntimeCharacterDialogueGenerationFact>,
 }
@@ -4494,6 +4682,7 @@ impl RuntimePlanSemanticFactInput {
             dialogue_content_fragments: Vec::new(),
             dialogue_lines: None,
             character_presentation_catalog: None,
+            character_dialogue_policy_types: None,
             character_dialogue_generation: None,
         }
     }
@@ -4838,6 +5027,8 @@ pub struct RuntimePlanSemanticFacts {
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+    character_dialogue_policy_types:
+        Option<Arc<arcweft_dialogue::CharacterDialoguePolicyTypeGraph>>,
     character_dialogue_generation:
         Option<character_dialogue_generation::RuntimeCharacterDialogueGenerationFact>,
 }
@@ -7167,14 +7358,13 @@ impl RuntimePlanSemanticFacts {
                 }
             }
             for effect in fragment.effects() {
-                if !evaluated_effect::validate_evaluated_effect_site(&modules, effect.operation())
-                    || !evaluated_effect::validate_evaluated_effect_operation(
-                        &modules,
-                        &expression_types,
-                        &calls,
-                        effect.operation().application_site(),
-                        effect.operation().effect(),
-                    )
+                if !validate_dialogue_effect_operation(
+                    &modules,
+                    &expression_types,
+                    &calls,
+                    effect.operation(),
+                ) || effect.operation().evaluated_effect_operation().is_none()
+                    && evaluated_effects.contains_key(&effect.operation().application())
                 {
                     return Err(RuntimeSemanticFactsError::InvalidContentFragment {
                         expression: fragment.source(),
@@ -7257,6 +7447,7 @@ impl RuntimePlanSemanticFacts {
         }
         let dialogue_lines = input.dialogue_lines;
         let character_presentation_catalog = input.character_presentation_catalog;
+        let character_dialogue_policy_types = input.character_dialogue_policy_types;
         let character_dialogue_generation = input.character_dialogue_generation;
         if let Some(declaration) = &character_dialogue_generation {
             character_dialogue_generation::validate_declaration(project, &modules, declaration)?;
@@ -7326,6 +7517,7 @@ impl RuntimePlanSemanticFacts {
             dialogue_content_fragments,
             dialogue_lines,
             character_presentation_catalog,
+            character_dialogue_policy_types,
             character_dialogue_generation,
         };
         for owner in facts.expression_types.keys() {
@@ -7519,15 +7711,22 @@ impl RuntimePlanSemanticFacts {
             };
             if effect.site() != expected
                 || !trigger_valid
-                || !self.expression_reaches(owner, effect.operation().site_root())
-                || !evaluated_effect::validate_evaluated_effect_site(modules, effect.operation())
-                || !evaluated_effect::validate_evaluated_effect_operation(
+                || !self.expression_reaches(owner, effect.operation().root())
+                || !(effect.operation().root() == effect.operation().application()
+                    || self.expression_reaches(
+                        effect.operation().root(),
+                        effect.operation().application(),
+                    ))
+                || !validate_dialogue_effect_operation(
                     modules,
                     &self.expression_types,
                     &self.calls,
-                    effect.operation().application_site(),
-                    effect.operation().effect(),
+                    effect.operation(),
                 )
+                || effect.operation().evaluated_effect_operation().is_none()
+                    && self
+                        .evaluated_effect(effect.operation().application())
+                        .is_some()
             {
                 return Err(RuntimeSemanticFactsError::InvalidDialogueEffectSite {
                     dialogue: owner,
@@ -7651,8 +7850,8 @@ impl RuntimePlanSemanticFacts {
                 .values()
                 .filter_map(RuntimeNominalDefinition::closed_owner_type_seed),
         );
-        if let Some(generation) = &self.character_dialogue_generation {
-            seeds.extend(generation.policy_types.type_seeds());
+        if let Some(policy_types) = &self.character_dialogue_policy_types {
+            seeds.extend(policy_types.type_seeds());
         }
         Ok(seeds)
     }
@@ -7692,8 +7891,8 @@ impl RuntimePlanSemanticFacts {
             | RuntimeVariantOwner::Option { .. }
             | RuntimeVariantOwner::Result { .. } => {}
         });
-        if let Some(generation) = &self.character_dialogue_generation {
-            graphs.push(Arc::clone(generation.policy_types.schema_graph()));
+        if let Some(policy_types) = &self.character_dialogue_policy_types {
+            graphs.push(Arc::clone(policy_types.schema_graph()));
         }
         RuntimeNominalSchemaGraph::try_merge(
             graphs.iter().map(Arc::as_ref),
@@ -7716,8 +7915,8 @@ impl RuntimePlanSemanticFacts {
             .values()
             .filter_map(RuntimeNominalDefinition::variant_seed)
             .collect::<Vec<_>>();
-        if let Some(generation) = &self.character_dialogue_generation {
-            seeds.extend(generation.policy_types.variant_domain_seeds());
+        if let Some(policy_types) = &self.character_dialogue_policy_types {
+            seeds.extend(policy_types.variant_domain_seeds());
         }
         seeds
     }
@@ -11148,18 +11347,31 @@ fn validate_project_instance_fragments(
                         && validate_normalized_type(modules, schedule_handle_type).is_ok()
                 }
             };
+            let application_is_call = semantics.call(effect.operation().application()).is_some();
+            let application_is_evaluated_effect = semantics
+                .expression(effect.operation().application())
+                .is_some_and(|expression| {
+                    matches!(
+                        expression.payload(),
+                        RuntimeProjectFunctionExpressionPayload::EvaluatedEffect { .. }
+                    )
+                });
             if !trigger_valid
-                || semantics
-                    .expression(effect.operation().site_root())
-                    .is_none()
-                || !evaluated_effect::validate_evaluated_effect_site(modules, effect.operation())
-                || !evaluated_effect::validate_evaluated_effect_operation(
+                || semantics.expression(effect.operation().root()).is_none()
+                || !(effect.operation().root() == effect.operation().application()
+                    || project_instance_expression_reaches(
+                        semantics,
+                        effect.operation().root(),
+                        effect.operation().application(),
+                    ))
+                || !validate_dialogue_effect_operation(
                     modules,
                     &expression_types,
                     &calls,
-                    effect.operation().application_site(),
-                    effect.operation().effect(),
+                    effect.operation(),
                 )
+                || effect.operation().evaluated_effect_operation().is_none()
+                    && (!application_is_call || application_is_evaluated_effect)
             {
                 return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
             }
@@ -11172,6 +11384,67 @@ fn validate_project_instance_fragments(
         }
     }
     Ok(())
+}
+
+fn validate_dialogue_effect_operation(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
+    operation: &RuntimeDialogueEffectOperationFact,
+) -> bool {
+    match operation {
+        RuntimeDialogueEffectOperationFact::EvaluatedEffect(effect) => {
+            matches!(effect.result().shape(), RuntimeTypeShape::Unit)
+                && evaluated_effect::validate_evaluated_effect_site(modules, effect)
+                && evaluated_effect::validate_evaluated_effect_operation(
+                    modules,
+                    expression_types,
+                    calls,
+                    effect.application_site(),
+                    effect.effect(),
+                )
+        }
+        RuntimeDialogueEffectOperationFact::OrdinaryCall {
+            root,
+            application,
+            result,
+        } => {
+            matches!(result.shape(), RuntimeTypeShape::Unit)
+                && validate_normalized_type(modules, result).is_ok()
+                && expression_types.get(root) == Some(result)
+                && expression_types.get(application) == Some(result)
+                && calls
+                    .get(application)
+                    .is_some_and(|call| call.result() == RuntimeCallResultShape::Value)
+        }
+    }
+}
+
+fn project_instance_expression_reaches(
+    semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+    owner: ExprId,
+    target: ExprId,
+) -> bool {
+    let mut pending = semantics
+        .expression_children(owner)
+        .unwrap_or_default()
+        .to_vec();
+    let mut visited = BTreeSet::new();
+    while let Some(expression) = pending.pop() {
+        if expression == target {
+            return true;
+        }
+        if visited.insert(expression) {
+            pending.extend(
+                semantics
+                    .expression_children(expression)
+                    .unwrap_or_default()
+                    .iter()
+                    .copied(),
+            );
+        }
+    }
+    false
 }
 
 fn validate_project_instance_dialogue_applications(

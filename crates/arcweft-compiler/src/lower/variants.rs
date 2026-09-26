@@ -71,6 +71,24 @@ pub(super) fn runtime_variant_under(
     arcweft_runtime_plan::semantic_facts::RuntimeResolvedVariant,
     RuntimeSemanticProjectionError,
 > {
+    if let TypeKind::Named(type_name) = variant.owner().ty()
+        && let Some(policy_owner) =
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type(&type_name)
+    {
+        let policy_types = Arc::clone(
+            world
+                .environment()
+                .character_dialogue_roles()
+                .policy_types(),
+        );
+        return RuntimeResolvedVariant::character_dialogue_policy(
+            policy_types,
+            policy_owner,
+            variant.ordinal(),
+            checked_variant_selected_name(variant)?,
+        )
+        .map_err(|error| runtime_variant_projection_error(&error));
+    }
     let semantic_type = variant.owner().semantic_type();
     let projected = match variant.owner().kind() {
         CheckedVariantOwnerKind::Project { nominal } => {

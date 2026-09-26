@@ -18,6 +18,7 @@ use arcweft_lang_hir::{
         HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
         HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
         HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
+        HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
     },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
@@ -44,6 +45,28 @@ use arcweft_tooling::runtime_diagnostic::{
     RUNTIME_ASSERTION_FAILED_CODE, RuntimeAssertionDiagnosticIdentity,
     project_persisted_assertion_failure, project_runtime_assertion_fault,
 };
+
+fn selected_call_inventory(
+    executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    owner: arcweft_lang_hir::identity::ExprId,
+) -> Option<HirSelectedCallExpressionDisposition> {
+    executable.modules().find_map(|(_, module)| {
+        let expression = module.resolve_expr(owner).ok()?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return None;
+        };
+        Some(HirSelectedCallExpressionDisposition::Callable(
+            HirSelectedCallExpressionInventory::new(
+                call.arguments()
+                    .iter()
+                    .map(|argument| argument.value())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                call.callee().value_expression(),
+            ),
+        ))
+    })
+}
 
 #[test]
 fn reloaded_artifact_without_exact_source_association_stays_unassociated() {
@@ -235,6 +258,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
             reachability_input,
             &topology,
             |_| None,
+            |owner| selected_call_inventory(executable, owner),
             |owner| {
                 executable.modules().find_map(|(_, module)| {
                     let expression = module.resolve_expr(owner).ok()?;

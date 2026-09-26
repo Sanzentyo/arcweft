@@ -46,6 +46,24 @@ flow opening() -> String {
         })
         .collect::<Vec<_>>();
     assert_eq!(semantic.len(), 2);
+    let selected_inventory = report
+        .selected_call_expression_inventory(owner)
+        .expect("FinalSemanticAnalysis retains the sealed HIR call inventory");
+    assert_eq!(selected_inventory.arguments().len(), 2);
+    for (ordinal, source) in &semantic {
+        let argument = selected_inventory.arguments()
+            [usize::try_from(*ordinal).expect("authored argument ordinal")];
+        assert_eq!(argument.expression(), *source);
+        let semantic_owner = argument
+            .semantic_owner()
+            .expect("Dialogue metadata retains its semantic owner");
+        assert!(matches!(
+            report
+                .expression(semantic_owner)
+                .map(|expression| expression.resolution()),
+            Some(CheckedExpressionResolution::DialogueApplication { .. })
+        ));
+    }
     let edges = report
         .checked_child_edges(owner)
         .expect("semantic-only id and text_key have exact checked argument edges");
@@ -98,6 +116,7 @@ fn selected_graph_rejects_an_internally_valid_capture_receipt_for_another_interp
     let dialogue_lines = project.seal_selected_dialogue_lines(&graph).unwrap();
     let selected = CheckedSelectedExpressionGraph {
         graph,
+        selected_call_inventories: BTreeMap::new(),
         declaration_only_trait_receiver_owners: BTreeSet::new(),
         dialogue_lines,
         fx_definition_declarations: BTreeSet::new(),

@@ -2,7 +2,7 @@
 
 mod scopes;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeCallableSpecializationSeedId,
@@ -18,6 +18,7 @@ use arcweft_core::value::{
     RuntimeDialogueOpaqueRole, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
     RuntimeUnaryOp, RuntimeValue,
 };
+use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
 use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
 use arcweft_lang_hir::item::HirFunctionBody;
@@ -1878,6 +1879,26 @@ impl<'hir> FinalExprLowerer<'hir> {
                             RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
                         )))
                     }
+                    Some(payload)
+                        if scalar_values.len() == 1
+                            && scalar_values
+                                .first()
+                                .is_some_and(|value| value.ty() == payload.identity()) =>
+                    {
+                        scalar_values.into_iter().next().map(Box::new)
+                    }
+                    Some(payload) if self.is_inline_failure_fallback(variant, payload)? => {
+                        let [text] = scalar_values.as_slice() else {
+                            return Err(format!(
+                                "InlineFailure.fallback at {id:?} requires one text or InlineFallback value"
+                            ));
+                        };
+                        Some(Box::new(self.lower_inline_failure_fallback_text(
+                            id,
+                            text.clone(),
+                            payload,
+                        )?))
+                    }
                     Some(_) => {
                         return Err(format!(
                             "variant constructor at {id:?} requires a non-positional payload"
@@ -1949,6 +1970,134 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ))
             })?;
         Ok(body.kind().clone())
+    }
+
+    fn is_inline_failure_fallback(
+        &self,
+        variant: &RuntimeResolvedVariant,
+        payload: &RuntimeNormalizedType,
+    ) -> Result<bool, String> {
+        let Some(policy_types) = self.facts.character_dialogue_policy_types() else {
+            return Ok(false);
+        };
+        let Some(failure_owner) =
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type("InlineFailure")
+        else {
+            return Ok(false);
+        };
+        let Some(fallback_owner) =
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type("InlineFallback")
+        else {
+            return Ok(false);
+        };
+        Ok(
+            variant.owner().semantic_identity() == policy_types.semantic_identity(failure_owner)
+                && variant.selected_name().map_err(|error| error.to_string())? == "Fallback"
+                && policy_types.owner_for_semantic_identity(payload.identity())
+                    == Some(fallback_owner),
+        )
+    }
+
+    fn is_character_dialogue_policy_variant(&self, variant: &RuntimeResolvedVariant) -> bool {
+        self.facts
+            .character_dialogue_policy_types()
+            .is_some_and(|policy_types| {
+                policy_types
+                    .owner_for_semantic_identity(variant.owner().semantic_identity())
+                    .is_some()
+            })
+    }
+
+    fn lower_inline_failure_fallback_text(
+        &self,
+        id: ExprId,
+        text: RuntimeExprSeed,
+        expected: &RuntimeNormalizedType,
+    ) -> Result<RuntimeExprSeed, String> {
+        let policy_types = self
+            .facts
+            .character_dialogue_policy_types()
+            .ok_or_else(|| {
+                format!("InlineFailure.fallback at {id:?} has no accepted policy graph")
+            })?;
+        let fallback_owner =
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type("InlineFallback")
+                .ok_or_else(|| "accepted policy graph has no InlineFallback owner".to_owned())?;
+        let style_owner =
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type("FallbackStyle")
+                .ok_or_else(|| "accepted policy graph has no FallbackStyle owner".to_owned())?;
+        let text_case = policy_types
+            .cases(fallback_owner)
+            .iter()
+            .find(|case| case.language_name() == "text")
+            .ok_or_else(|| "accepted InlineFallback graph has no text case".to_owned())?;
+        let text_variant = RuntimeResolvedVariant::character_dialogue_policy(
+            Arc::clone(policy_types),
+            fallback_owner,
+            text_case.ordinal(),
+            text_case.language_name(),
+        )
+        .map_err(|error| error.to_string())?;
+        let tuple_type = text_variant
+            .selected_payload_type()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "InlineFallback.text has no graph-owned tuple payload".to_owned())?;
+        let RuntimeTypeShape::Tuple(items) = tuple_type.shape() else {
+            return Err("InlineFallback.text payload is not the graph-owned tuple".to_owned());
+        };
+        let [text_type, style_type] = items.as_ref() else {
+            return Err("InlineFallback.text graph payload does not have two fields".to_owned());
+        };
+        if text.ty() != text_type.identity()
+            || policy_types.owner_for_semantic_identity(style_type.identity()) != Some(style_owner)
+        {
+            return Err(format!(
+                "InlineFailure.fallback at {id:?} does not match the graph-owned text and style payloads"
+            ));
+        }
+        let plain_case = policy_types
+            .cases(style_owner)
+            .iter()
+            .find(|case| case.language_name() == "plain")
+            .ok_or_else(|| "accepted FallbackStyle graph has no plain case".to_owned())?;
+        let plain_variant = RuntimeResolvedVariant::character_dialogue_policy(
+            Arc::clone(policy_types),
+            style_owner,
+            plain_case.ordinal(),
+            plain_case.language_name(),
+        )
+        .map_err(|error| error.to_string())?;
+        if plain_variant
+            .selected_payload_type()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Err("FallbackStyle.plain unexpectedly has a payload".to_owned());
+        }
+        let plain = RuntimeExprSeed::new(
+            plain_variant.owner().semantic_identity(),
+            RuntimeExprSeedKind::Variant {
+                ordinal: plain_case.ordinal(),
+                payload: None,
+            },
+        );
+        let tuple = RuntimeExprSeed::new(
+            tuple_type.identity(),
+            RuntimeExprSeedKind::Tuple(Box::new([text, plain])),
+        );
+        let fallback = RuntimeExprSeed::new(
+            text_variant.owner().semantic_identity(),
+            RuntimeExprSeedKind::Variant {
+                ordinal: text_case.ordinal(),
+                payload: Some(Box::new(tuple)),
+            },
+        );
+        if fallback.ty() != expected.identity() {
+            return Err(format!(
+                "InlineFailure.fallback at {id:?} produced a value outside its checked InlineFallback payload"
+            ));
+        }
+        Ok(fallback)
     }
 
     fn lower_standard_map(
@@ -2595,8 +2744,25 @@ impl<'hir> FinalExprLowerer<'hir> {
         let payload = variant
             .selected_payload_type()
             .map_err(|error| error.to_string())?;
+        let graph_owned = self.is_character_dialogue_policy_variant(variant);
+        let direct_graph_payload = graph_owned
+            && payload.is_some_and(|expected| {
+                types.len() == 1 && types.first().is_some_and(|actual| *actual == expected)
+            });
+        let string_fallback = match payload {
+            Some(expected) => {
+                self.is_inline_failure_fallback(variant, expected)?
+                    && types.len() == 1
+                    && types
+                        .first()
+                        .is_some_and(|actual| matches!(actual.shape(), RuntimeTypeShape::String))
+            }
+            None => false,
+        };
         (payload.is_some() == !operands.is_empty()
-            && variant_payload_accepts_argument_types(payload, &types))
+            && (variant_payload_accepts_argument_types(payload, &types)
+                || direct_graph_payload
+                || string_fallback))
         .then_some(())
         .ok_or_else(|| {
             format!(

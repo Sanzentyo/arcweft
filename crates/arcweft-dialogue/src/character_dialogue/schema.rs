@@ -40,7 +40,10 @@ use arcweft_interaction_model::dialogue::{
 };
 use arcweft_view::{ViewId, ViewRegistry};
 use policies::CharacterDialoguePolicyCase;
-pub use policies::{CharacterDialoguePolicyTypeGraph, CharacterDialoguePolicyVariantOwner};
+pub use policies::{
+    CharacterDialoguePolicyCaseSpec, CharacterDialoguePolicyTypeGraph,
+    CharacterDialoguePolicyTypeSchema, CharacterDialoguePolicyVariantOwner,
+};
 pub use role_payload::{
     CharacterDialogueRichTextColor, CharacterDialogueRichTextProperties,
     CharacterDialogueRichTextProperty, CharacterDialogueRichTextPropertyValue,

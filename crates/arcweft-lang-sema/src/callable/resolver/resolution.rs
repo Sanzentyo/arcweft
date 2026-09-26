@@ -706,6 +706,11 @@ fn resolve_free_call(
                         .world()
                         .environment()
                         .compile_time_scalars(),
+                    request
+                        .authority
+                        .world()
+                        .environment()
+                        .character_dialogue_roles(),
                 )
                 .ok_or(ResolveCallError::InvalidResolvedCallable)?,
         });

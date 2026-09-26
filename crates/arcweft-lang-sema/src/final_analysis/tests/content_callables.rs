@@ -51,6 +51,37 @@ fn content_insertions(report: &FinalSemanticAnalysis) -> Vec<&CheckedContentInse
 }
 
 #[test]
+fn fmt_on_error_shorthand_discard_selects_the_inline_failure_type() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, on_error=.discard)][p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("fmt's contextual on_error type admits .discard");
+    let discard = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Variant(variant)
+                if variant.selected().diagnostic_name() == Some("discard") =>
+            {
+                Some(expression)
+            }
+            _ => None,
+        })
+        .expect("discard retains its checked variant fact");
+    assert!(matches!(
+        discard.value_type(),
+        Some(crate::types::TypeKind::Named(name)) if name == "InlineFailure"
+    ));
+}
+
+#[test]
 fn presentation_content_calls_publish_typed_emissions_and_operands() {
     let fixture = fixture(
         r#"

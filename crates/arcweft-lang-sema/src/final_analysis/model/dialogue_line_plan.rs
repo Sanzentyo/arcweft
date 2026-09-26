@@ -1,12 +1,14 @@
 use arcweft_lang_hir::identity::ExprId;
 
 use super::{CheckedEvaluatedEffect, CheckedExecutableCapture};
+use crate::callable::{CheckedCallApplicationDigest, CheckedCallApplicationSite};
 use crate::checked_rich_text::CheckedDuration;
 use crate::effects::EffectSet;
+use crate::types::TypeKind;
 
-/// Checked effect sites for one content owner. Marker actions are retained in
-/// the source-ordered checked rich-text tokens, so this record has no
-/// detached mark or statement side table.
+/// Checked point-action sites for one content owner. Marker actions remain in
+/// the source-ordered checked rich-text tokens, so this record has no detached
+/// mark or statement side table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedDialogueEffectPlan {
     effect_sites: Box<[CheckedDialogueEffectSite]>,
@@ -24,7 +26,7 @@ impl CheckedDialogueEffectPlan {
     }
 }
 
-/// Source-ordered checked identity of one inline dialogue effect boundary.
+/// Source-ordered checked identity of one inline dialogue operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDialogueEffectSiteOrdinal(u32);
 
@@ -44,12 +46,49 @@ pub enum CheckedDialogueEffectTrigger {
     Delay(CheckedDuration),
 }
 
+/// Closed operation family retained by a dialogue point-action site.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDialogueEffectOperation {
+    EvaluatedEffect(Box<CheckedEvaluatedEffect>),
+    Call {
+        application: CheckedCallApplicationSite,
+        application_digest: CheckedCallApplicationDigest,
+        result: TypeKind,
+    },
+}
+
+impl CheckedDialogueEffectOperation {
+    pub const fn application(&self) -> &CheckedCallApplicationSite {
+        match self {
+            Self::EvaluatedEffect(effect) => effect.application(),
+            Self::Call { application, .. } => application,
+        }
+    }
+
+    pub const fn application_digest(&self) -> CheckedCallApplicationDigest {
+        match self {
+            Self::EvaluatedEffect(effect) => effect.application_digest(),
+            Self::Call {
+                application_digest, ..
+            } => *application_digest,
+        }
+    }
+
+    pub const fn result(&self) -> &TypeKind {
+        match self {
+            Self::EvaluatedEffect(effect) => effect.result(),
+            Self::Call { result, .. } => result,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedDialogueEffectSite {
     id: CheckedDialogueEffectSiteOrdinal,
     trigger: CheckedDialogueEffectTrigger,
+    root: ExprId,
     effects: EffectSet,
-    effect: Box<CheckedEvaluatedEffect>,
+    operation: CheckedDialogueEffectOperation,
     captures: Box<[CheckedExecutableCapture]>,
 }
 
@@ -57,24 +96,23 @@ impl CheckedDialogueEffectSite {
     pub(crate) const fn new(
         id: CheckedDialogueEffectSiteOrdinal,
         trigger: CheckedDialogueEffectTrigger,
+        root: ExprId,
         effects: EffectSet,
-        effect: Box<CheckedEvaluatedEffect>,
+        operation: CheckedDialogueEffectOperation,
         captures: Box<[CheckedExecutableCapture]>,
     ) -> Self {
         Self {
             id,
             trigger,
+            root,
             effects,
-            effect,
+            operation,
             captures,
         }
     }
 
-    /// Expression owning this line-plan effect site.  The root is retained by
-    /// the checked plan so compiler reachability never has to recover it from
-    /// a raw statement or content HIR walk.
     pub const fn root(&self) -> ExprId {
-        self.effect.site_root()
+        self.root
     }
 
     pub const fn id(&self) -> CheckedDialogueEffectSiteOrdinal {
@@ -90,8 +128,8 @@ impl CheckedDialogueEffectSite {
         &self.effects
     }
 
-    pub const fn effect(&self) -> &CheckedEvaluatedEffect {
-        &self.effect
+    pub const fn operation(&self) -> &CheckedDialogueEffectOperation {
+        &self.operation
     }
 
     pub const fn captures(&self) -> &[CheckedExecutableCapture] {

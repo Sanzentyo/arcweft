@@ -390,17 +390,17 @@ fn character_dialogue_patch_parameters(
         ),
         (
             "inline_error",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
         (
             "inline_error_policy",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
         (
             "inline_fallback",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
     ];
@@ -470,17 +470,17 @@ fn content_call_parameters(context: DialogueSchemaContext<'_>) -> Vec<CallablePa
         ),
         (
             "inline_error",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
         (
             "inline_error_policy",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
         (
             "inline_fallback",
-            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            TypeKind::Named("InlineFailure".to_owned()),
             CharacterDialogueFieldCoordinate::InlineFailure,
         ),
     ];
@@ -533,9 +533,7 @@ impl BuiltinCallableId {
     pub fn closed_signature_schema(&self) -> Option<CallableSignatureSchema> {
         let validator = CallableValidator::Builtin(self.clone());
         Some(match self {
-            Self::InlineFailureFallback => {
-                variadic_unchecked(TypeKind::Named("InlineFailure".to_owned()), validator, &[])
-            }
+            Self::InlineFailureFallback => return None,
             Self::Panic | Self::Fail | Self::Bail => schema(
                 vec![unchecked(
                     0,
@@ -626,13 +624,12 @@ impl BuiltinCallableId {
 
     /// Returns a builtin schema after joining the accepted semantic world.
     ///
-    /// `rgb` is intentionally the only currently world-dependent builtin:
-    /// its result is the exact registered `Color` scalar row rather than a
-    /// display-name `Named("Color")` placeholder.  Other builtins retain
-    /// their closed schemas.
+    /// `rgb` and the InlineFailure constructor use accepted-world owners;
+    /// neither may be assigned an identity by a world-free Named placeholder.
     pub(crate) fn world_signature_schema(
         &self,
         scalars: &crate::registration::RegisteredCompileTimeScalarTypes,
+        roles: &crate::character_dialogue::CharacterDialogueRuntimeRoleRegistry,
     ) -> Option<CallableSignatureSchema> {
         if matches!(self, Self::Rgb) {
             return Some(homogeneous(
@@ -641,6 +638,31 @@ impl BuiltinCallableId {
                 scalars
                     .type_for(crate::registration::CompileTimeScalarTypeRoleId::Color)
                     .clone(),
+                CallableValidator::Builtin(self.clone()),
+            ));
+        }
+        if matches!(self, Self::InlineFailureFallback) {
+            let policy_types = roles.policy_types();
+            let inline_failure =
+                arcweft_dialogue::CharacterDialoguePolicyTypeGraph::owner_for_language_type(
+                    "InlineFailure",
+                )?;
+            let inline_fallback =
+                arcweft_dialogue::CharacterDialoguePolicyTypeGraph::owner_for_language_type(
+                    "InlineFallback",
+                )?;
+            let _ = (
+                policy_types.identity(inline_failure),
+                policy_types.identity(inline_fallback),
+            );
+            let input = TypeKind::Choice(vec![
+                TypeKind::String,
+                TypeKind::Named(inline_fallback.language_type_name().to_owned()),
+            ]);
+            return Some(homogeneous(
+                1,
+                &input,
+                TypeKind::Named(inline_failure.language_type_name().to_owned()),
                 CallableValidator::Builtin(self.clone()),
             ));
         }

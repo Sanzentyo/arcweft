@@ -38,6 +38,29 @@ pub enum CharacterDialoguePolicyVariantOwner {
 }
 
 impl CharacterDialoguePolicyVariantOwner {
+    /// Language-visible policy owner order. Voice keeps its existing source
+    /// environment spelling and is therefore not part of this alias set.
+    #[must_use]
+    pub fn language_policy_owners() -> impl ExactSizeIterator<Item = Self> {
+        [
+            Self::InlineFailure,
+            Self::InlineFallback,
+            Self::FallbackStyle,
+        ]
+        .into_iter()
+    }
+
+    /// Source-level type name, where this policy owner is addressable by the
+    /// language. Runtime schema identity remains owned by this graph.
+    pub const fn language_type_name(self) -> &'static str {
+        match self {
+            Self::Voice => "DialogueVoice",
+            Self::InlineFailure => "InlineFailure",
+            Self::InlineFallback => "InlineFallback",
+            Self::FallbackStyle => "FallbackStyle",
+        }
+    }
+
     const fn public_id(self) -> &'static str {
         match self {
             Self::Voice => "arcweft.dialogue.CharacterDialogueVoice",
@@ -106,8 +129,9 @@ impl CharacterDialoguePolicyVariantOwner {
 /// variant-domain seeds, checked owner identities, and the runtime validation
 /// contract. Runtime-plan can admit these batches directly without rebuilding
 /// policy schemas from case names or display values.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterDialoguePolicyTypeGraph {
+    rich_text_owner: RuntimeOpaqueTypeOwner,
     schema_graph: Arc<RuntimeNominalSchemaGraph>,
     type_seeds: Box<[RuntimePlanTypeSeed]>,
     variant_domain_seeds: Box<[RuntimeVariantDomainSeed]>,
@@ -222,6 +246,7 @@ impl CharacterDialoguePolicyTypeGraph {
             .expect("four complete policy definitions");
 
         Ok(Self {
+            rich_text_owner: rich_text,
             schema_graph,
             type_seeds,
             variant_domain_seeds,
@@ -234,6 +259,76 @@ impl CharacterDialoguePolicyTypeGraph {
     #[must_use]
     pub const fn schema_graph(&self) -> &Arc<RuntimeNominalSchemaGraph> {
         &self.schema_graph
+    }
+
+    /// Exact accepted RichText role used to build this graph.
+    #[must_use]
+    pub const fn rich_text_owner(&self) -> &RuntimeOpaqueTypeOwner {
+        &self.rich_text_owner
+    }
+
+    /// Returns the source-ordered case schema retained by this graph.
+    #[must_use]
+    pub fn cases(
+        &self,
+        owner: CharacterDialoguePolicyVariantOwner,
+    ) -> &'static [CharacterDialoguePolicyCaseSpec] {
+        variant_spec(owner).cases
+    }
+
+    /// Projects a case payload through the graph's checked seed vocabulary.
+    /// Nested policy owners stay nominal, so structural carrier identities
+    /// agree with the type seeds emitted by this same graph.
+    pub fn checked_payload_type(
+        &self,
+        payload: CharacterDialoguePolicyTypeSchema,
+    ) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
+        checked_type_for_seed(payload, &self.rich_text_owner, &self.schema_graph)
+    }
+
+    /// Resolves the language-visible policy type alias to its exact graph
+    /// owner. This is the runtime identity bridge for the source alias.
+    #[must_use]
+    pub fn owner_for_language_type(name: &str) -> Option<CharacterDialoguePolicyVariantOwner> {
+        CharacterDialoguePolicyVariantOwner::language_policy_owners()
+            .find(|owner| owner.language_type_name() == name)
+    }
+
+    /// Returns the exact semantic identity retained for one policy owner.
+    #[must_use]
+    pub fn semantic_identity(
+        &self,
+        owner: CharacterDialoguePolicyVariantOwner,
+    ) -> RuntimeSemanticTypeId {
+        let RuntimeVariantIdentity::Nominal {
+            semantic_identity, ..
+        } = self.identity(owner)
+        else {
+            unreachable!("CharacterDialogue policy owners are nominal variants")
+        };
+        *semantic_identity
+    }
+
+    /// Complete checked type for one graph-owned policy variant.
+    #[must_use]
+    pub fn checked_type(&self, owner: CharacterDialoguePolicyVariantOwner) -> &RuntimeCheckedType {
+        &self.checked_variants[owner.index()]
+    }
+
+    /// Resolves an exact graph type identity back to its policy owner.
+    #[must_use]
+    pub fn owner_for_semantic_identity(
+        &self,
+        identity: RuntimeSemanticTypeId,
+    ) -> Option<CharacterDialoguePolicyVariantOwner> {
+        [
+            CharacterDialoguePolicyVariantOwner::Voice,
+            CharacterDialoguePolicyVariantOwner::InlineFailure,
+            CharacterDialoguePolicyVariantOwner::InlineFallback,
+            CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        ]
+        .into_iter()
+        .find(|owner| self.semantic_identity(*owner) == identity)
     }
 
     /// Clones the complete canonical type-seed batch for plan admission.
@@ -332,122 +427,163 @@ impl CharacterDialoguePolicyCase {
     }
 }
 
-#[derive(Clone, Copy)]
-enum PolicySchemaType {
+/// Recursive payload shape described by the CharacterDialogue policy graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CharacterDialoguePolicyTypeSchema {
     String,
     EntityReference,
     RichText,
     Nominal(CharacterDialoguePolicyVariantOwner),
-    Sequence(&'static PolicySchemaType),
-    Tuple(&'static [PolicySchemaType]),
-    Choice(&'static [PolicySchemaType]),
+    Sequence(&'static CharacterDialoguePolicyTypeSchema),
+    Tuple(&'static [CharacterDialoguePolicyTypeSchema]),
+    Choice(&'static [CharacterDialoguePolicyTypeSchema]),
 }
 
-#[derive(Clone, Copy)]
-struct PolicyCaseSpec {
+/// One source-ordered case and optional payload from the canonical graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CharacterDialoguePolicyCaseSpec {
     case: CharacterDialoguePolicyCase,
     ordinal: u32,
     name: &'static str,
-    payload: Option<PolicySchemaType>,
+    payload: Option<CharacterDialoguePolicyTypeSchema>,
+}
+
+impl CharacterDialoguePolicyCaseSpec {
+    #[must_use]
+    pub const fn ordinal(self) -> u32 {
+        self.ordinal
+    }
+
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    /// Source spelling accepted by the language for this graph case.
+    #[must_use]
+    pub const fn language_name(self) -> &'static str {
+        match self.case {
+            CharacterDialoguePolicyCase::VoiceAuto => "auto",
+            CharacterDialoguePolicyCase::VoiceId => "id",
+            CharacterDialoguePolicyCase::InlineFailureFailLine => "fail",
+            CharacterDialoguePolicyCase::InlineFailureDiscard => "discard",
+            CharacterDialoguePolicyCase::InlineFailureFallback => "fallback",
+            CharacterDialoguePolicyCase::InlineFallbackText => "text",
+            CharacterDialoguePolicyCase::InlineFallbackExprSource => "expr_source",
+            CharacterDialoguePolicyCase::InlineFallbackCallSource => "call_source",
+            CharacterDialoguePolicyCase::InlineFallbackValuePlain => "value_plain",
+            CharacterDialoguePolicyCase::FallbackStylePlain => "plain",
+            CharacterDialoguePolicyCase::FallbackStyleInheritSurrounding => "inherit_surrounding",
+            CharacterDialoguePolicyCase::FallbackStyleApply => "apply",
+        }
+    }
+
+    #[must_use]
+    pub const fn payload(self) -> Option<CharacterDialoguePolicyTypeSchema> {
+        self.payload
+    }
 }
 
 struct PolicyVariantSpec {
     owner: CharacterDialoguePolicyVariantOwner,
-    cases: &'static [PolicyCaseSpec],
+    cases: &'static [CharacterDialoguePolicyCaseSpec],
 }
 
-static INLINE_TEXT_TUPLE_ITEMS: [PolicySchemaType; 2] = [
-    PolicySchemaType::String,
-    PolicySchemaType::Nominal(CharacterDialoguePolicyVariantOwner::FallbackStyle),
+static INLINE_TEXT_TUPLE_ITEMS: [CharacterDialoguePolicyTypeSchema; 2] = [
+    CharacterDialoguePolicyTypeSchema::String,
+    CharacterDialoguePolicyTypeSchema::Nominal(CharacterDialoguePolicyVariantOwner::FallbackStyle),
 ];
-static STYLE_CHOICE_ITEMS: [PolicySchemaType; 2] = [
-    PolicySchemaType::EntityReference,
-    PolicySchemaType::RichText,
+static STYLE_CHOICE_ITEMS: [CharacterDialoguePolicyTypeSchema; 2] = [
+    CharacterDialoguePolicyTypeSchema::EntityReference,
+    CharacterDialoguePolicyTypeSchema::RichText,
 ];
-static STYLE_CHOICE: PolicySchemaType = PolicySchemaType::Choice(&STYLE_CHOICE_ITEMS);
-static INLINE_TEXT_PAYLOAD: PolicySchemaType = PolicySchemaType::Tuple(&INLINE_TEXT_TUPLE_ITEMS);
-static FALLBACK_STYLE_SEQUENCE: PolicySchemaType = PolicySchemaType::Sequence(&STYLE_CHOICE);
+static STYLE_CHOICE: CharacterDialoguePolicyTypeSchema =
+    CharacterDialoguePolicyTypeSchema::Choice(&STYLE_CHOICE_ITEMS);
+static INLINE_TEXT_PAYLOAD: CharacterDialoguePolicyTypeSchema =
+    CharacterDialoguePolicyTypeSchema::Tuple(&INLINE_TEXT_TUPLE_ITEMS);
+static FALLBACK_STYLE_SEQUENCE: CharacterDialoguePolicyTypeSchema =
+    CharacterDialoguePolicyTypeSchema::Sequence(&STYLE_CHOICE);
 
-static VOICE_CASES: [PolicyCaseSpec; 2] = [
-    PolicyCaseSpec {
+static VOICE_CASES: [CharacterDialoguePolicyCaseSpec; 2] = [
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::VoiceAuto,
         ordinal: 0,
         name: "Auto",
         payload: None,
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::VoiceId,
         ordinal: 1,
         name: "Id",
-        payload: Some(PolicySchemaType::String),
+        payload: Some(CharacterDialoguePolicyTypeSchema::String),
     },
 ];
-static INLINE_FAILURE_CASES: [PolicyCaseSpec; 3] = [
-    PolicyCaseSpec {
+static INLINE_FAILURE_CASES: [CharacterDialoguePolicyCaseSpec; 3] = [
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFailureFailLine,
         ordinal: 0,
         name: "FailLine",
         payload: None,
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFailureDiscard,
         ordinal: 1,
         name: "Discard",
         payload: None,
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFailureFallback,
         ordinal: 2,
         name: "Fallback",
-        payload: Some(PolicySchemaType::Nominal(
+        payload: Some(CharacterDialoguePolicyTypeSchema::Nominal(
             CharacterDialoguePolicyVariantOwner::InlineFallback,
         )),
     },
 ];
-static INLINE_FALLBACK_CASES: [PolicyCaseSpec; 4] = [
-    PolicyCaseSpec {
+static INLINE_FALLBACK_CASES: [CharacterDialoguePolicyCaseSpec; 4] = [
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFallbackText,
         ordinal: 0,
         name: "Text",
         payload: Some(INLINE_TEXT_PAYLOAD),
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFallbackExprSource,
         ordinal: 1,
         name: "ExprSource",
-        payload: Some(PolicySchemaType::Nominal(
+        payload: Some(CharacterDialoguePolicyTypeSchema::Nominal(
             CharacterDialoguePolicyVariantOwner::FallbackStyle,
         )),
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFallbackCallSource,
         ordinal: 2,
         name: "CallSource",
-        payload: Some(PolicySchemaType::Nominal(
+        payload: Some(CharacterDialoguePolicyTypeSchema::Nominal(
             CharacterDialoguePolicyVariantOwner::FallbackStyle,
         )),
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::InlineFallbackValuePlain,
         ordinal: 3,
         name: "ValuePlain",
         payload: None,
     },
 ];
-static FALLBACK_STYLE_CASES: [PolicyCaseSpec; 3] = [
-    PolicyCaseSpec {
+static FALLBACK_STYLE_CASES: [CharacterDialoguePolicyCaseSpec; 3] = [
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::FallbackStylePlain,
         ordinal: 0,
         name: "Plain",
         payload: None,
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::FallbackStyleInheritSurrounding,
         ordinal: 1,
         name: "InheritSurrounding",
         payload: None,
     },
-    PolicyCaseSpec {
+    CharacterDialoguePolicyCaseSpec {
         case: CharacterDialoguePolicyCase::FallbackStyleApply,
         ordinal: 2,
         name: "Apply",
@@ -475,21 +611,23 @@ static POLICY_VARIANTS: [PolicyVariantSpec; POLICY_VARIANT_COUNT] = [
 ];
 
 fn schema_for(
-    schema_type: PolicySchemaType,
+    schema_type: CharacterDialoguePolicyTypeSchema,
     rich_text: &RuntimeOpaqueTypeOwner,
 ) -> RuntimeTypeSchema {
     match schema_type {
-        PolicySchemaType::String => RuntimeTypeSchema::String,
-        PolicySchemaType::EntityReference => RuntimeTypeSchema::EntityReference,
-        PolicySchemaType::RichText => RuntimeTypeSchema::ExactOpaque {
+        CharacterDialoguePolicyTypeSchema::String => RuntimeTypeSchema::String,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeTypeSchema::EntityReference,
+        CharacterDialoguePolicyTypeSchema::RichText => RuntimeTypeSchema::ExactOpaque {
             owner: rich_text.clone(),
             arguments: Box::new([]),
         },
-        PolicySchemaType::Nominal(owner) => RuntimeTypeSchema::NominalRef(owner.schema_identity()),
-        PolicySchemaType::Sequence(item) => {
+        CharacterDialoguePolicyTypeSchema::Nominal(owner) => {
+            RuntimeTypeSchema::NominalRef(owner.schema_identity())
+        }
+        CharacterDialoguePolicyTypeSchema::Sequence(item) => {
             RuntimeTypeSchema::Seq(Box::new(schema_for(*item, rich_text)))
         }
-        PolicySchemaType::Tuple(items) => RuntimeTypeSchema::Tuple(
+        CharacterDialoguePolicyTypeSchema::Tuple(items) => RuntimeTypeSchema::Tuple(
             items
                 .iter()
                 .copied()
@@ -497,7 +635,7 @@ fn schema_for(
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
         ),
-        PolicySchemaType::Choice(items) => RuntimeTypeSchema::Choice(
+        CharacterDialoguePolicyTypeSchema::Choice(items) => RuntimeTypeSchema::Choice(
             items
                 .iter()
                 .copied()
@@ -509,17 +647,17 @@ fn schema_for(
 }
 
 fn checked_type_for_seed(
-    schema_type: PolicySchemaType,
+    schema_type: CharacterDialoguePolicyTypeSchema,
     rich_text: &RuntimeOpaqueTypeOwner,
     graph: &RuntimeNominalSchemaGraph,
 ) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
     Ok(match schema_type {
-        PolicySchemaType::String => RuntimeCheckedType::String,
-        PolicySchemaType::EntityReference => RuntimeCheckedType::EntityReference,
-        PolicySchemaType::RichText => RuntimeCheckedType::Opaque {
+        CharacterDialoguePolicyTypeSchema::String => RuntimeCheckedType::String,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference,
+        CharacterDialoguePolicyTypeSchema::RichText => RuntimeCheckedType::Opaque {
             owner: rich_text.clone(),
         },
-        PolicySchemaType::Nominal(owner) => {
+        CharacterDialoguePolicyTypeSchema::Nominal(owner) => {
             let identity = owner.schema_identity();
             RuntimeCheckedType::Nominal {
                 nominal: identity.nominal().clone(),
@@ -528,17 +666,17 @@ fn checked_type_for_seed(
                 arguments: Vec::new(),
             }
         }
-        PolicySchemaType::Sequence(item) => {
+        CharacterDialoguePolicyTypeSchema::Sequence(item) => {
             RuntimeCheckedType::Sequence(Box::new(checked_type_for_seed(*item, rich_text, graph)?))
         }
-        PolicySchemaType::Tuple(items) => RuntimeCheckedType::Tuple(
+        CharacterDialoguePolicyTypeSchema::Tuple(items) => RuntimeCheckedType::Tuple(
             items
                 .iter()
                 .copied()
                 .map(|item| checked_type_for_seed(item, rich_text, graph))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        PolicySchemaType::Choice(items) => RuntimeCheckedType::Choice(
+        CharacterDialoguePolicyTypeSchema::Choice(items) => RuntimeCheckedType::Choice(
             items
                 .iter()
                 .copied()
@@ -585,31 +723,33 @@ fn checked_variant_for_program(
 }
 
 fn checked_type_for_program(
-    schema_type: PolicySchemaType,
+    schema_type: CharacterDialoguePolicyTypeSchema,
     identities: &[RuntimeVariantIdentity; POLICY_VARIANT_COUNT],
     rich_text: &RuntimeOpaqueTypeOwner,
     visiting: &mut BTreeSet<CharacterDialoguePolicyVariantOwner>,
 ) -> Result<RuntimeCheckedType, CharacterDialogueValueError> {
     Ok(match schema_type {
-        PolicySchemaType::String => RuntimeCheckedType::String,
-        PolicySchemaType::EntityReference => RuntimeCheckedType::EntityReference,
-        PolicySchemaType::RichText => RuntimeCheckedType::Opaque {
+        CharacterDialoguePolicyTypeSchema::String => RuntimeCheckedType::String,
+        CharacterDialoguePolicyTypeSchema::EntityReference => RuntimeCheckedType::EntityReference,
+        CharacterDialoguePolicyTypeSchema::RichText => RuntimeCheckedType::Opaque {
             owner: rich_text.clone(),
         },
-        PolicySchemaType::Nominal(owner) => {
+        CharacterDialoguePolicyTypeSchema::Nominal(owner) => {
             return checked_variant_for_program(owner, identities, rich_text, visiting);
         }
-        PolicySchemaType::Sequence(item) => RuntimeCheckedType::Sequence(Box::new(
-            checked_type_for_program(*item, identities, rich_text, visiting)?,
-        )),
-        PolicySchemaType::Tuple(items) => RuntimeCheckedType::Tuple(
+        CharacterDialoguePolicyTypeSchema::Sequence(item) => {
+            RuntimeCheckedType::Sequence(Box::new(checked_type_for_program(
+                *item, identities, rich_text, visiting,
+            )?))
+        }
+        CharacterDialoguePolicyTypeSchema::Tuple(items) => RuntimeCheckedType::Tuple(
             items
                 .iter()
                 .copied()
                 .map(|item| checked_type_for_program(item, identities, rich_text, visiting))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        PolicySchemaType::Choice(items) => RuntimeCheckedType::Choice(
+        CharacterDialoguePolicyTypeSchema::Choice(items) => RuntimeCheckedType::Choice(
             items
                 .iter()
                 .copied()

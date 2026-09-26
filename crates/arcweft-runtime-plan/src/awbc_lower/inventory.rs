@@ -681,6 +681,10 @@ impl AwbcInventory {
         self.plan_types.get(&plan_type).copied()
     }
 
+    pub(crate) fn runtime_type_permits_copy(&self, ty: AwbcTypeId) -> bool {
+        self.program.runtime_type_permits_copy(ty)
+    }
+
     pub(crate) fn semantic_type(
         &self,
         semantic_identity: RuntimeSemanticTypeId,

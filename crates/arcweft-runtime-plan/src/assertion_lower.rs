@@ -6,6 +6,7 @@ use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::assertion_identity::AssertionConditionIndex;
+use crate::semantic_facts::RuntimeDialogueEffectProgramKey;
 
 const RUNTIME_ASSERTION_GUARD_SCHEMA: u16 = 1;
 const RUNTIME_ASSERTION_GUARD_CONTEXT: &str = "arcweft.runtime.assertion-guard.v1";
@@ -139,6 +140,33 @@ pub(crate) fn derive_runtime_line_assertion_guard(
     finish_guard(hasher)
 }
 
+/// Derives an assertion guard from the plan-unique inline callback identity.
+/// Reusing a declaration or line ordinal here could collide across callbacks
+/// whose assertion counters both begin at zero.
+pub(crate) fn derive_runtime_dialogue_effect_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    program: RuntimeDialogueEffectProgramKey,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "dialogue-effect-callback");
+    hasher.update(&program.template().get().get().to_le_bytes());
+    hasher.update(&program.site().get().get().to_le_bytes());
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+    finish_guard(hasher)
+}
+
 /// Derives a guard in the closure's own checked lexical scope. Two closures
 /// inside one declaration cannot reuse each other's assertion ordinals.
 pub(crate) fn derive_runtime_closure_assertion_guard(
@@ -199,4 +227,47 @@ fn hash_text(hasher: &mut blake3::Hasher, value: &str) {
 
 fn hash_len(hasher: &mut blake3::Hasher, len: usize) {
     hasher.update(&(len as u64).to_le_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dialogue_effect_assertion_guards_are_repeatable_and_site_unique() {
+        let package = CallablePackageId::try_new("dialogue-effect-assertions".to_owned())
+            .expect("test package id is valid");
+        let module = CanonicalModulePath::crate_root();
+        let condition = AssertionConditionIndex::try_new(0, 1).expect("one condition is valid");
+        let first = RuntimeDialogueEffectProgramKey::new(
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("first template id is valid"),
+            arcweft_core::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0)
+                .expect("first effect site id is valid"),
+        );
+        let other_template = RuntimeDialogueEffectProgramKey::new(
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(1)
+                .expect("second template id is valid"),
+            first.site(),
+        );
+        let other_site = RuntimeDialogueEffectProgramKey::new(
+            first.template(),
+            arcweft_core::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(1)
+                .expect("second effect site id is valid"),
+        );
+        let derive = |program| {
+            derive_runtime_dialogue_effect_assertion_guard(
+                &package,
+                &module,
+                program,
+                0,
+                condition,
+                RuntimeAssertionProfile::Always,
+            )
+        };
+
+        assert_eq!(derive(first), derive(first));
+        assert_ne!(derive(first), derive(other_template));
+        assert_ne!(derive(first), derive(other_site));
+    }
 }

@@ -21,19 +21,20 @@ use crate::{
     },
     env::{StandardDropPolicyCase, StandardDropPolicyValue, StandardEnvironmentValue},
     final_analysis::{
-        CheckedContentApplication, CheckedContentApplicationEdges, CheckedDialogueEffectPlan,
-        CheckedDialogueEffectSite, CheckedDropFade, CheckedDropFadeOperand, CheckedDropInvocation,
-        CheckedDropPolicySource, CheckedEffectField, CheckedEvaluatedEffect,
-        CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation, CheckedExecutableCapture,
-        CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionResolution,
-        CheckedValueResolution, PreparedContentApplication, PreparedContentEmission,
-        PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedEvaluatedEffect,
-        PreparedExpressionFact, PreparedStatementPayload,
+        CheckedContentApplication, CheckedContentApplicationEdges, CheckedDialogueEffectOperation,
+        CheckedDialogueEffectPlan, CheckedDialogueEffectSite, CheckedDropFade,
+        CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField,
+        CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
+        CheckedExecutableCapture, CheckedExplicitDropPolicy, CheckedExpression,
+        CheckedExpressionResolution, CheckedValueResolution, PreparedContentApplication,
+        PreparedContentEmission, PreparedDialogueApplication, PreparedDialogueEffectSite,
+        PreparedEvaluatedEffect, PreparedExpressionFact, PreparedStatementPayload,
     },
     semantic_coordinate::{
         SemanticCoordinateIndex, StableCheckedContentFragmentCoordinate,
         StableCheckedValueCoordinate,
     },
+    types::TypeKind,
 };
 
 use crate::callable::CheckedContentRole;
@@ -51,6 +52,7 @@ use crate::checked_text_proxy::{
     CheckedTextProxyValueOrigin, PreparedCheckedTextProxyApplication,
     PreparedCheckedTextProxyOrigin, PreparedCheckedTextProxyValue,
 };
+use crate::final_analysis::prepared::PreparedDialogueEffectOperation;
 use arcweft_lang_hir::{
     dialogue_application::HirAttachedContentApplicationFamily, expr::HirExprKind, identity::ExprId,
     module::HirModule,
@@ -115,8 +117,8 @@ struct ContentSealTraversal {
     active: BTreeSet<ExprId>,
     visited: BTreeSet<ExprId>,
     ids: BTreeMap<CheckedContentApplicationId, ExprId>,
-    dialogue_effect_roots: BTreeSet<ExprId>,
-    dialogue_effect_calls: BTreeSet<ExprId>,
+    dialogue_site_roots: BTreeSet<ExprId>,
+    dialogue_site_calls: BTreeSet<ExprId>,
     fragments: Vec<ContentFragmentFrame>,
     next_fx_ordinal: u32,
 }
@@ -446,19 +448,26 @@ fn seal_proxy_application(
 }
 
 impl Analyzer<'_, '_, '_> {
-    /// Prepares one ordinary or RichText-hosted evaluated effect from the
-    /// selected callable graph. A Pipe remains the structural operation owner
-    /// while its terminal Call supplies the selected application identity.
-    pub(super) fn prepare_evaluated_effect_expression(
+    pub(super) fn prepared_dialogue_call_site(
         &self,
         module: &HirModule,
         expression: ExprId,
-    ) -> Result<Option<PreparedEvaluatedEffect>, FinalSemanticAnalysisError> {
+    ) -> Result<CheckedCallSite, FinalSemanticAnalysisError> {
+        self.prepared_terminal_call_owner(module, expression)?
+            .map(CheckedCallSite::HirCall)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+    }
+
+    fn prepared_terminal_call_owner(
+        &self,
+        module: &HirModule,
+        expression: ExprId,
+    ) -> Result<Option<ExprId>, FinalSemanticAnalysisError> {
         let authored = module
             .resolve_expr(expression)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let call_owner = match authored.kind() {
-            HirExprKind::Call(_) => expression,
+        match authored.kind() {
+            HirExprKind::Call(_) => Ok(Some(expression)),
             HirExprKind::Pipe(authored_pipe) => match self.facts.expressions().get(&expression) {
                 Some(PreparedExpressionFact::Complete(checked)) => {
                     let CheckedExpressionResolution::Pipe(checked_pipe) = checked.resolution()
@@ -470,7 +479,7 @@ impl Analyzer<'_, '_, '_> {
                     {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
-                    checked_pipe.lookup_right()
+                    Ok(Some(checked_pipe.lookup_right()))
                 }
                 Some(PreparedExpressionFact::OwnerBound(prepared)) => {
                     let crate::final_analysis::PreparedOwnerBoundResolution::Pipe(prepared_pipe) =
@@ -483,11 +492,24 @@ impl Analyzer<'_, '_, '_> {
                     {
                         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                     }
-                    prepared_pipe.lookup_right()
+                    Ok(Some(prepared_pipe.lookup_right()))
                 }
-                _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+                _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
             },
-            _ => return Ok(None),
+            _ => Ok(None),
+        }
+    }
+
+    /// Prepares one ordinary or RichText-hosted evaluated effect from the
+    /// selected callable graph. A Pipe remains the structural operation owner
+    /// while its terminal Call supplies the selected application identity.
+    pub(super) fn prepare_evaluated_effect_expression(
+        &self,
+        module: &HirModule,
+        expression: ExprId,
+    ) -> Result<Option<PreparedEvaluatedEffect>, FinalSemanticAnalysisError> {
+        let Some(call_owner) = self.prepared_terminal_call_owner(module, expression)? else {
+            return Ok(None);
         };
         let (schema, disposition, has_remaining_group) =
             if let Ok(prepared_calls) = self.facts.prepared_calls() {
@@ -612,7 +634,7 @@ impl Analyzer<'_, '_, '_> {
             let root = match payload {
                 PreparedStatementPayload::EvaluatedEffect(prepared) => {
                     let root = prepared.root();
-                    if content_traversal.dialogue_effect_roots.contains(&root)
+                    if content_traversal.dialogue_site_roots.contains(&root)
                         || !self.facts.expressions().contains_key(&root)
                         || statement_roots.insert(*statement, root).is_some()
                     {
@@ -627,7 +649,7 @@ impl Analyzer<'_, '_, '_> {
                 }
                 PreparedStatementPayload::SealedEvaluatedEffectReference(reference) => {
                     let root = reference.site_root();
-                    if content_traversal.dialogue_effect_roots.contains(&root)
+                    if content_traversal.dialogue_site_roots.contains(&root)
                         || !self.facts.expressions().contains_key(&root)
                         || sealed_statement_references
                             .insert(*statement, *reference)
@@ -653,8 +675,8 @@ impl Analyzer<'_, '_, '_> {
                 .resolve_expr(owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             if !matches!(expression.kind(), HirExprKind::Pipe(_))
-                || content_traversal.dialogue_effect_roots.contains(&owner)
-                || content_traversal.dialogue_effect_calls.contains(&owner)
+                || content_traversal.dialogue_site_roots.contains(&owner)
+                || content_traversal.dialogue_site_calls.contains(&owner)
             {
                 continue;
             }
@@ -663,8 +685,8 @@ impl Analyzer<'_, '_, '_> {
                 let CheckedCallSite::HirCall(terminal) = site else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
-                if content_traversal.dialogue_effect_roots.contains(&terminal)
-                    || content_traversal.dialogue_effect_calls.contains(&terminal)
+                if content_traversal.dialogue_site_roots.contains(&terminal)
+                    || content_traversal.dialogue_site_calls.contains(&terminal)
                 {
                     continue;
                 }
@@ -678,8 +700,8 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             if !matches!(expression.kind(), HirExprKind::Call(_))
                 || effect_terminals.contains_key(&owner)
-                || content_traversal.dialogue_effect_roots.contains(&owner)
-                || content_traversal.dialogue_effect_calls.contains(&owner)
+                || content_traversal.dialogue_site_roots.contains(&owner)
+                || content_traversal.dialogue_site_calls.contains(&owner)
             {
                 continue;
             }
@@ -1425,10 +1447,10 @@ impl Analyzer<'_, '_, '_> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         for site in &effect_sites {
-            if !traversal.dialogue_effect_roots.insert(site.root())
+            if !traversal.dialogue_site_roots.insert(site.root())
                 || !traversal
-                    .dialogue_effect_calls
-                    .insert(site.effect().application().raw().expression())
+                    .dialogue_site_calls
+                    .insert(site.operation().application().raw().expression())
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
@@ -1530,39 +1552,90 @@ impl Analyzer<'_, '_, '_> {
         structural_edges: &super::super::match_edges::CheckedStructuralEdgeDraft,
         checked_callables: &crate::callable::CheckedCallableCatalog,
     ) -> Result<CheckedDialogueEffectSite, FinalSemanticAnalysisError> {
-        let (id, trigger, prepared) = site.into_parts();
-        let effect = self.seal_evaluated_effect(prepared)?;
-        let application = self
-            .facts
-            .calls()
-            .get(&effect.application().raw().expression())
-            .and_then(crate::callable::CallTargetFacts::selected_application)
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        if application.core().application_site() != effect.application()
-            || application.digest() != effect.application_digest()
-        {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let join = crate::callable::validate_selected_application(application, checked_callables)
-            .map_err(|error| {
-            FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error))
-        })?;
-        let effects = application
-            .core()
-            .solution()
-            .instantiate_effect_row(join.schema_effects())
-            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let captures = self.checked_dialogue_effect_captures(
-            effect.site_root(),
-            coordinates,
-            structural_edges,
-        )?;
+        let (id, trigger, root, prepared_operation) = site.into_parts();
+        let (operation, effects) = match prepared_operation {
+            PreparedDialogueEffectOperation::EvaluatedEffect(prepared) => {
+                if prepared.root() != root {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let effect = self.seal_evaluated_effect(prepared)?;
+                let application = self
+                    .facts
+                    .calls()
+                    .get(&effect.application().raw().expression())
+                    .and_then(crate::callable::CallTargetFacts::selected_application)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                if application.core().application_site() != effect.application()
+                    || application.digest() != effect.application_digest()
+                    || effect.result() != &TypeKind::Unit
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let join =
+                    crate::callable::validate_selected_application(application, checked_callables)
+                        .map_err(|error| {
+                            FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error))
+                        })?;
+                let effects = application
+                    .core()
+                    .solution()
+                    .instantiate_effect_row(join.schema_effects())
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                (
+                    CheckedDialogueEffectOperation::EvaluatedEffect(Box::new(effect)),
+                    effects,
+                )
+            }
+            PreparedDialogueEffectOperation::Call { site } => {
+                let terminal = self.terminal_effect_call(root)?;
+                if site != CheckedCallSite::HirCall(terminal) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let application = self
+                    .facts
+                    .calls()
+                    .get(&site.expression())
+                    .and_then(crate::callable::CallTargetFacts::selected_application)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let selected = application.core().candidates().selected();
+                if application.core().site() != site
+                    || selected.schema().evaluated_effect().is_some()
+                    || selected.call_group() != application.core().current_group()
+                    || selected
+                        .base()
+                        .next_group_for(application.core().current_group())
+                        .is_some()
+                    || !matches!(
+                        application.result(),
+                        CheckedCallResult::Value(TypeKind::Unit)
+                    )
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let join =
+                    crate::callable::validate_selected_application(application, checked_callables)
+                        .map_err(|error| {
+                            FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error))
+                        })?;
+                let effects = application
+                    .core()
+                    .solution()
+                    .instantiate_effect_row(join.schema_effects())
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                (
+                    CheckedDialogueEffectOperation::Call {
+                        application: application.core().application_site().clone(),
+                        application_digest: application.digest(),
+                        result: TypeKind::Unit,
+                    },
+                    effects,
+                )
+            }
+        };
+        let captures =
+            self.checked_dialogue_effect_captures(root, coordinates, structural_edges)?;
         Ok(CheckedDialogueEffectSite::new(
-            id,
-            trigger,
-            effects,
-            Box::new(effect),
-            captures,
+            id, trigger, root, effects, operation, captures,
         ))
     }
 

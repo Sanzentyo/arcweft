@@ -96,7 +96,7 @@ use arcweft_core::{
     },
 };
 use arcweft_dialogue::{
-    InlineFailureSelection,
+    CharacterDialoguePolicyTypeGraph, InlineFailureSelection,
     character_presentation::{
         CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
     },
@@ -151,8 +151,8 @@ use arcweft_lang_sema::{
     final_analysis::{
         CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
         CheckedCompileTimeScalar, CheckedCompileTimeValue, CheckedContentApplication, CheckedDefer,
-        CheckedDialogueEffectSite, CheckedDialogueEffectTrigger, CheckedDropFade,
-        CheckedDropInvocation, CheckedEffectField, CheckedEvaluatedEffect,
+        CheckedDialogueEffectOperation, CheckedDialogueEffectSite, CheckedDialogueEffectTrigger,
+        CheckedDropFade, CheckedDropInvocation, CheckedEffectField, CheckedEvaluatedEffect,
         CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
         CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimePatternFactFamily,
         CheckedExecutableRuntimeStatementFactFamily, CheckedExplicitDropPolicy,
@@ -194,9 +194,10 @@ use arcweft_runtime_plan::{
         RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
         RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
         RuntimeClosureParameterFact, RuntimeContentFragmentFact, RuntimeDeferFact,
-        RuntimeDialogueApplication, RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger,
-        RuntimeDialogueMarkFact, RuntimeDialogueMarkKey, RuntimeDialogueValueExpression,
-        RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+        RuntimeDialogueApplication, RuntimeDialogueEffectOperationFact,
+        RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectTrigger, RuntimeDialogueMarkFact,
+        RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
+        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
         RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
         RuntimeExecutableCaptureFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
         RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
@@ -695,6 +696,12 @@ fn project_runtime_semantic_fact_inventories(
     }
     let mut input = RuntimePlanSemanticFactInput::new();
     discovered_instances.append_callable_facts(&mut input);
+    input.attach_character_dialogue_policy_types(Arc::clone(
+        world
+            .environment()
+            .character_dialogue_roles()
+            .policy_types(),
+    ))?;
     if let Some(declaration) = character_dialogue_generation {
         input.attach_character_dialogue_generation(
             declaration,
@@ -4056,8 +4063,42 @@ fn runtime_dialogue_effect(
     analysis: &FinalSemanticAnalysis,
     instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeDialogueEffectProgramFact, RuntimeSemanticProjectionError> {
-    let operation =
-        runtime_evaluated_effect_under(site.effect(), symbols, world, analysis, instance)?;
+    let operation = match site.operation() {
+        CheckedDialogueEffectOperation::EvaluatedEffect(effect) => {
+            RuntimeDialogueEffectOperationFact::evaluated_effect(runtime_evaluated_effect_under(
+                effect, symbols, world, analysis, instance,
+            )?)
+        }
+        CheckedDialogueEffectOperation::Call {
+            application,
+            application_digest,
+            result,
+        } => {
+            let call_owner = application.raw().expression();
+            let checked_application = analysis
+                .call(call_owner)
+                .and_then(|facts| facts.selected_application())
+                .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: format!(
+                        "dialogue point-action call {call_owner:?} has no selected application"
+                    ),
+                })?;
+            if checked_application.digest() != *application_digest || *result != TypeKind::Unit {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: format!(
+                        "dialogue point-action call {call_owner:?} disagrees with its checked application or Unit result"
+                    ),
+                });
+            }
+            RuntimeDialogueEffectOperationFact::ordinary_call(
+                site.root(),
+                call_owner,
+                runtime_type_under(result, instance, symbols, world, analysis)?,
+            )
+        }
+    };
     let trigger = match site.trigger() {
         CheckedDialogueEffectTrigger::Content => RuntimeDialogueEffectTrigger::Content,
         CheckedDialogueEffectTrigger::Delay(at) => {
@@ -4241,7 +4282,20 @@ fn runtime_type_scoped_at(
         Err(_) => (incoming, ty.semantic_identity_digest_in_scope(incoming)?),
     };
     let runtime_scope = type_scopes::scope(scope)?;
-    let identity = RuntimeSemanticTypeId::from(semantic_identity);
+    let policy_types = world
+        .environment()
+        .character_dialogue_roles()
+        .policy_types();
+    let policy_owner = match ty {
+        TypeKind::Named(type_name) => {
+            CharacterDialoguePolicyTypeGraph::owner_for_language_type(type_name)
+        }
+        _ => None,
+    };
+    let identity = policy_owner.map_or_else(
+        || RuntimeSemanticTypeId::from(semantic_identity),
+        |owner| policy_types.semantic_identity(owner),
+    );
     let nested = |ty: &TypeKind| {
         runtime_type_scoped_at(ty, symbols, world, analysis, path, scope).map(Box::new)
     };
@@ -4675,6 +4729,13 @@ fn runtime_type_scoped_at(
                 arguments: Box::new([]),
             }
         }
+        TypeKind::Named(_) if policy_owner.is_some() => RuntimeTypeShape::Nominal {
+            nominal: RuntimeResolvedNominal::character_dialogue_policy(
+                policy_owner.expect("matched a graph-owned policy type"),
+                policy_types,
+            ),
+            arguments: Box::new([]),
+        },
         TypeKind::Named(_)
             if analysis
                 .accepted_closed_variant_owner(semantic_identity)
@@ -8058,6 +8119,42 @@ fn runtime_call_target(
     let selected = application.core().candidates().selected();
     let selected_id = selected.id();
     let selected_family = selected.family();
+    if matches!(
+        selected_id,
+        CallableCandidateId::Builtin(BuiltinCallableId::InlineFailureFallback)
+    ) {
+        let policy_types = Arc::clone(
+            world
+                .environment()
+                .character_dialogue_roles()
+                .policy_types(),
+        );
+        let policy_owner = CharacterDialoguePolicyTypeGraph::owner_for_language_type(
+            "InlineFailure",
+        )
+        .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "accepted CharacterDialogue policy graph has no InlineFailure owner".to_owned(),
+        })?;
+        let case = policy_types
+            .cases(policy_owner)
+            .iter()
+            .find(|case| case.language_name() == "fallback")
+            .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "accepted InlineFailure graph has no fallback case".to_owned(),
+            })?;
+        let variant = RuntimeResolvedVariant::character_dialogue_policy(
+            policy_types,
+            policy_owner,
+            case.ordinal(),
+            case.language_name(),
+        )
+        .map_err(|error| RuntimeSemanticProjectionError::Type {
+            reason: error.to_string(),
+        })?;
+        return Ok(RuntimeResolvedStaticCallTarget::Variant(variant));
+    }
     if selected.capacity_operation()
         == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront)
     {

@@ -3,6 +3,7 @@ use crate::final_analysis::PreparedProjectNominalTypeValueExpression;
 use crate::final_analysis::fx_application::{
     checked_builtin_fx_binding, checked_project_fx_argument,
 };
+use crate::final_analysis::prepared::PreparedDialogueEffectOperation;
 
 use crate::checked_rich_text::{
     CheckedDialogueHostEvent, PreparedCheckedDialogueToken, PreparedCheckedRichTextAction,
@@ -1261,10 +1262,17 @@ impl Analyzer<'_, '_, '_> {
                         }
                         _ => unreachable!("the grouped checked RichText effect event is closed"),
                     };
-                    let effect = self
+                    let operation = match self
                         .prepare_evaluated_effect_expression(module, expression)?
-                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                    effect_sites.push(PreparedDialogueEffectSite::new(id, trigger, effect));
+                    {
+                        Some(effect) => PreparedDialogueEffectOperation::EvaluatedEffect(effect),
+                        None => PreparedDialogueEffectOperation::Call {
+                            site: self.prepared_dialogue_call_site(module, expression)?,
+                        },
+                    };
+                    effect_sites.push(PreparedDialogueEffectSite::new(
+                        id, trigger, expression, operation,
+                    ));
                 }
                 PreparedCheckedRichTextAction::Control { .. }
                 | PreparedCheckedRichTextAction::Host { .. } => {}

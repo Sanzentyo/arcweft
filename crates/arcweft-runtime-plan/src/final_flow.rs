@@ -93,9 +93,10 @@ use crate::final_variant::{
     normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
 };
 use crate::semantic_facts::{
-    RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeClosureInstanceFact,
-    RuntimeClosureInstanceKey, RuntimeDialogueApplication, RuntimeDialogueApplicationTarget,
-    RuntimeDialogueEffectCaptureKey, RuntimeDialogueEffectProgramKey,
+    RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeCallResultShape,
+    RuntimeClosureInstanceFact, RuntimeClosureInstanceKey, RuntimeDialogueApplication,
+    RuntimeDialogueApplicationTarget, RuntimeDialogueEffectCaptureKey,
+    RuntimeDialogueEffectOperationFact, RuntimeDialogueEffectProgramKey,
     RuntimeDialogueValueCaptureKey, RuntimeDropFadeFact, RuntimeDropPolicyFact,
     RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
     RuntimeEvaluatedEffectOperandFact, RuntimeExecutableSemanticScope, RuntimeIteratorFact,
@@ -421,7 +422,7 @@ struct PendingDialogueEffectDefinition<'facts> {
     module: HirModuleId,
     site: RuntimeFunctionSiteSeedId,
     effects: RuntimeEffectSet,
-    operation: RuntimeEvaluatedEffectFact,
+    operation: RuntimeDialogueEffectOperationFact,
 }
 
 type ControllerResultLocalKey = RuntimeCallableId;
@@ -1388,7 +1389,14 @@ pub fn lower_runtime_plan_with_stats(
         dialogue_effect_sites: &dialogue_effect_sites,
         ..context
     };
-    define_dialogue_effect_sites(&context, effect_definitions, &mut builder, &mut errors);
+    let mut dialogue_effect_assertion_sites = Vec::new();
+    define_dialogue_effect_sites(
+        &context,
+        effect_definitions,
+        &mut builder,
+        &mut errors,
+        &mut dialogue_effect_assertion_sites,
+    );
     // Dialogue value sites capture caller-computed slot results. Admit a typed
     // callback input and caller result local per slot before reserving their
     // identity callbacks.
@@ -1445,6 +1453,7 @@ pub fn lower_runtime_plan_with_stats(
     };
     let (dialogue_content, mut dialogue_assertion_sites) =
         lower_dialogue_content(&context, &dialogue_effect_sites, &mut builder, &mut errors);
+    dialogue_assertion_sites.extend(dialogue_effect_assertion_sites);
     let context = FinalLoweringContext {
         dialogue_content: &dialogue_content,
         ..context
@@ -3451,6 +3460,7 @@ fn define_dialogue_effect_sites<'facts>(
     definitions: Vec<PendingDialogueEffectDefinition<'facts>>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
+    assertions: &mut Vec<RuntimeAssertionSite>,
 ) {
     for definition in definitions {
         let Some(module) = module_by_id(context.project, definition.module) else {
@@ -3461,26 +3471,112 @@ fn define_dialogue_effect_sites<'facts>(
             continue;
         };
         let scope = definition.scope;
-        let expr = match context.scoped_expr_lowerer(module, scope) {
-            Ok(expr) => expr,
-            Err(error) => {
-                errors.push(error);
-                continue;
+        let ops = match &definition.operation {
+            RuntimeDialogueEffectOperationFact::EvaluatedEffect(effect) => {
+                let expr = match context.scoped_expr_lowerer(module, scope) {
+                    Ok(expr) => expr,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
+                match lower_evaluated_effect(&expr, effect.effect()) {
+                    Ok(operation) => vec![RuntimeFlowOpSeed::EvaluatedEffect(operation)],
+                    Err(error) => {
+                        errors.push(RuntimePlanLowerError::new(format!(
+                            "dialogue content effect {:?} lowering failed: {error}",
+                            definition.key
+                        )));
+                        continue;
+                    }
+                }
             }
-        };
-        let operation = match lower_evaluated_effect(&expr, definition.operation.effect()) {
-            Ok(operation) => operation,
-            Err(error) => {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue content effect {:?} lowering failed: {error}",
-                    definition.key
-                )));
-                continue;
+            RuntimeDialogueEffectOperationFact::OrdinaryCall {
+                root,
+                application,
+                result,
+            } => {
+                let control = match context.dialogue_control_locals(scope.scope()) {
+                    Ok(control) => control,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
+                let locals = match context.dialogue_locals(scope.scope()) {
+                    Ok(locals) => locals,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
+                let specialized_operand_locals =
+                    match context.dialogue_specialized_operand_locals(scope.scope()) {
+                        Ok(locals) => locals,
+                        Err(error) => {
+                            errors.push(error);
+                            continue;
+                        }
+                    };
+                let mut flow = FinalFlowLowerer::new(
+                    module,
+                    context,
+                    RuntimeAssertionOwner::DialogueEffect(definition.key),
+                )
+                .with_dialogue_scope(
+                    scope,
+                    &control,
+                    &locals,
+                    &specialized_operand_locals,
+                );
+                let Some(call) = flow.call(*application) else {
+                    errors.push(RuntimePlanLowerError::new(format!(
+                        "dialogue content effect {:?} application has no accepted call fact",
+                        definition.key
+                    )));
+                    continue;
+                };
+                let application_type = match flow.expression_source_type(*application) {
+                    Ok(ty) => ty,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
+                let root_type = match flow.expression_source_type(*root) {
+                    Ok(ty) => ty,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
+                if !matches!(call.result(), RuntimeCallResultShape::Value)
+                    || application_type.identity() != result.identity()
+                    || root_type.identity() != result.identity()
+                {
+                    errors.push(RuntimePlanLowerError::new(format!(
+                        "dialogue content effect {:?} ordinary call result disagrees with its accepted operation",
+                        definition.key
+                    )));
+                    continue;
+                }
+                let ops = match flow.lower_flow_value(*root, RuntimeFlowValueContinuation::Return) {
+                    Ok(ops) => ops,
+                    Err(error) => {
+                        errors.push(RuntimePlanLowerError::new(format!(
+                            "dialogue content effect {:?} ordinary call lowering failed: {error}",
+                            definition.key
+                        )));
+                        continue;
+                    }
+                };
+                assertions.extend(flow.into_assertion_sites());
+                ops
             }
         };
         let body = RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
             effects: definition.effects,
-            ops: vec![RuntimeFlowOpSeed::EvaluatedEffect(operation)].into_boxed_slice(),
+            ops: ops.into_boxed_slice(),
         });
         if let Err(error) = builder.define_function_site_seed(&definition.site, body) {
             errors.push(RuntimePlanLowerError::new(format!(
@@ -4200,6 +4296,7 @@ fn validate_unique_assertion_guards(
 enum RuntimeAssertionOwner {
     Callable(CallableDeclarationId),
     Closure(arcweft_lang_sema::callable::CheckedClosureId),
+    DialogueEffect(RuntimeDialogueEffectProgramKey),
     Flow(FlowRuntimeId),
     Line(RuntimeLineId),
     Defer(StmtId),
@@ -4214,6 +4311,9 @@ impl RuntimeAssertionOwner {
                 closure.expression().source().id(),
                 closure.expression().range().start()
             ),
+            Self::DialogueEffect(program) => {
+                format!("dialogue-effect@{}:{}", program.template(), program.site())
+            }
             Self::Flow(flow) => flow.canonical_label(),
             Self::Line(line) => line.canonical_label(),
             Self::Defer(statement) => format!("defer@{statement:?}"),
@@ -6686,6 +6786,16 @@ impl<'a> FinalFlowLowerer<'a> {
                         profile,
                     )
                 }
+                RuntimeAssertionOwner::DialogueEffect(program) => {
+                    crate::assertion_lower::derive_runtime_dialogue_effect_assertion_guard(
+                        self.package,
+                        self.module.key().path(),
+                        *program,
+                        ordinal,
+                        condition_index,
+                        profile,
+                    )
+                }
                 RuntimeAssertionOwner::Flow(flow) => {
                     crate::assertion_lower::derive_runtime_flow_assertion_guard(
                         self.package,
@@ -7017,6 +7127,7 @@ mod tests {
         HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
         HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
         HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
+        HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
     };
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
@@ -7290,6 +7401,7 @@ mod tests {
                 input,
                 &topology,
                 |_| None,
+                |owner| selected_call_inventory(executable, owner),
                 |owner| retained_runtime_projection(executable, owner),
             )
             .expect("fixture reachability")
@@ -7319,6 +7431,28 @@ mod tests {
                     value: HirRuntimeValueRetention::Retain,
                 },
             })
+        })
+    }
+
+    fn selected_call_inventory(
+        executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+        owner: arcweft_lang_hir::identity::ExprId,
+    ) -> Option<HirSelectedCallExpressionDisposition> {
+        executable.modules().find_map(|(_, module)| {
+            let expression = module.resolve_expr(owner).ok()?;
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            Some(HirSelectedCallExpressionDisposition::Callable(
+                HirSelectedCallExpressionInventory::new(
+                    call.arguments()
+                        .iter()
+                        .map(|argument| argument.value())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                    call.callee().value_expression(),
+                ),
+            ))
         })
     }
 

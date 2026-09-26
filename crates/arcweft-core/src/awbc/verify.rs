@@ -7,7 +7,7 @@ mod structure;
 #[cfg(test)]
 pub(crate) use structure::types_compatible;
 
-use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram};
+use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram, AwbcTypeId};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -209,6 +209,16 @@ impl AwbcProgram {
         context: AwbcVerifyContext<'_>,
     ) -> Result<(), AwbcVerifyError> {
         structure::verify_program(self, budget, context)
+    }
+
+    /// Reports whether every value admitted by an AWBC runtime type can be copied.
+    ///
+    /// This uses the same type-graph ownership rule enforced by `CopyValue`, so
+    /// AWBC producers can preserve unrestricted local values without
+    /// duplicating verifier policy.
+    #[must_use]
+    pub fn runtime_type_permits_copy(&self, ty: AwbcTypeId) -> bool {
+        code::runtime_type_permits_copy(self, ty, 0)
     }
 
     /// Validates saved scope stacks at their exact resume coordinates through

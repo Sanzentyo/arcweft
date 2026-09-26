@@ -38,6 +38,7 @@ use arcweft_lang_hir::project::{
     HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
     HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
     HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
+    HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::stmt::HirStmtKind;
@@ -529,8 +530,36 @@ fn runtime_reachability_with(
     )
     .expect("fixture reachability input");
     executable
-        .runtime_semantic_reachability(input, &topology, selected_postfix, expression_projection)
+        .runtime_semantic_reachability(
+            input,
+            &topology,
+            selected_postfix,
+            |owner| selected_call_inventory(executable, owner),
+            expression_projection,
+        )
         .expect("fixture reachability")
+}
+
+fn selected_call_inventory(
+    executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
+    owner: arcweft_lang_hir::identity::ExprId,
+) -> Option<HirSelectedCallExpressionDisposition> {
+    executable.modules().find_map(|(_, module)| {
+        let expression = module.resolve_expr(owner).ok()?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return None;
+        };
+        Some(HirSelectedCallExpressionDisposition::Callable(
+            HirSelectedCallExpressionInventory::new(
+                call.arguments()
+                    .iter()
+                    .map(|argument| argument.value())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+                call.callee().value_expression(),
+            ),
+        ))
+    })
 }
 
 fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
@@ -3028,6 +3057,7 @@ fn iterator_reachability_with_edges<'project>(
             input,
             &topology,
             |_| None,
+            |owner| selected_call_inventory(executable, owner),
             |owner| retained_runtime_projection(executable, owner),
         )
         .expect("accepted iterator reachability")

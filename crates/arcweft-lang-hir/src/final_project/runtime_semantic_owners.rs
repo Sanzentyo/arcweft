@@ -814,6 +814,10 @@ impl<'project> HirAnalysisProjectView<'project> {
         input: HirRuntimeSemanticReachabilityInput,
         topology: &super::HirProjectEvaluationTopology,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        mut selected_call_edges: impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedCallExpressionDisposition>,
         mut expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
         self.validate_reachability_generation(&input, topology)?;
@@ -870,6 +874,7 @@ impl<'project> HirAnalysisProjectView<'project> {
                 &structural.expressions,
                 &execution_expression_roots,
                 &mut selected_postfix,
+                &mut selected_call_edges,
                 &mut expression_projection,
             )?;
             let mut selected_children = BTreeMap::new();

@@ -103,19 +103,20 @@ pub(super) fn seal(
     let replacements = expressions
         .into_iter()
         .map(|(owner, checked)| {
-            let plan = execution_plan_for_expression(
-                owner,
-                &checked,
-                calls,
-                &contextual_receivers,
-                &line_schedule_prefixes,
-            )?;
             let effect_roles = roles
                 .remove(&owner)
                 .unwrap_or_default()
                 .into_iter()
                 .collect::<Vec<_>>()
                 .into_boxed_slice();
+            let plan = execution_plan_for_expression_with_roles(
+                owner,
+                &checked,
+                calls,
+                &contextual_receivers,
+                &line_schedule_prefixes,
+                &effect_roles,
+            )?;
             let plan = match plan {
                 Some(plan) => Some(plan.with_evaluated_effect_roles(effect_roles)),
                 None if effect_roles.is_empty() => None,
@@ -140,13 +141,35 @@ fn add_rich_text_effect_execution_roles(
 ) -> Result<(), FinalSemanticAnalysisError> {
     let owner = report.content().id().owner();
     for site in report.effect_plan().effect_sites() {
-        add_effect_execution_roles(
-            site.effect(),
-            None,
-            Some((owner, site.root(), site.id())),
-            calls,
-            roles,
-        )?;
+        match site.operation() {
+            super::CheckedDialogueEffectOperation::EvaluatedEffect(effect) => {
+                add_effect_execution_roles(
+                    effect,
+                    None,
+                    Some((owner, site.root(), site.id())),
+                    calls,
+                    roles,
+                )?;
+            }
+            super::CheckedDialogueEffectOperation::Call {
+                application,
+                application_digest,
+                result,
+            } => {
+                if result != &crate::types::TypeKind::Unit {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                add_dialogue_call_execution_roles(
+                    owner,
+                    site.root(),
+                    site.id(),
+                    application,
+                    *application_digest,
+                    calls,
+                    roles,
+                )?;
+            }
+        }
     }
     for token in report.content().tokens() {
         if let CheckedDialogueToken::ContentInsert(insertion) = token {
@@ -154,6 +177,68 @@ fn add_rich_text_effect_execution_roles(
                 add_rich_text_effect_execution_roles(child, calls, roles)?;
             }
         }
+    }
+    Ok(())
+}
+
+fn add_dialogue_call_execution_roles(
+    owner: ExprId,
+    root: ExprId,
+    ordinal: super::CheckedDialogueEffectSiteOrdinal,
+    application_site: &crate::callable::CheckedCallApplicationSite,
+    application_digest: crate::callable::CheckedCallApplicationDigest,
+    calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
+    roles: &mut BTreeMap<ExprId, BTreeSet<super::CheckedEvaluatedEffectRole>>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let terminal = application_site.raw().expression();
+    let application = calls
+        .get(&terminal)
+        .and_then(crate::callable::CallTargetFacts::selected_application)
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+    if application.core().application_site() != application_site
+        || application.digest() != application_digest
+        || !matches!(
+            application.result(),
+            crate::callable::CheckedCallResult::Value(crate::types::TypeKind::Unit)
+        )
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let site_role = super::CheckedEvaluatedEffectRole::DialogueCallSite {
+        owner,
+        root,
+        ordinal,
+    };
+    roles.entry(root).or_default().insert(site_role.clone());
+    roles.entry(terminal).or_default().insert(site_role);
+
+    let mut current = Some(terminal);
+    let mut visited = BTreeSet::new();
+    while let Some(expression) = current {
+        if !visited.insert(expression) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let selected = calls
+            .get(&expression)
+            .and_then(crate::callable::CallTargetFacts::selected_application)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if expression == terminal
+            && (selected.core().application_site() != application_site
+                || selected.digest() != application_digest)
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        roles.entry(expression).or_default().insert(
+            super::CheckedEvaluatedEffectRole::DialogueCallApplication {
+                application: selected.digest(),
+            },
+        );
+        current = match selected.core().candidates().selected().state() {
+            crate::callable::ResolvedCallableState::Base => None,
+            crate::callable::ResolvedCallableState::Continuation(continuation) => {
+                Some(continuation.prefix_call_site().expression())
+            }
+        };
     }
     Ok(())
 }
@@ -285,6 +370,24 @@ fn execution_plan_for_expression(
     contextual_receivers: &BTreeMap<ExprId, crate::callable::CheckedCallContextualReceiverKind>,
     line_schedule_prefixes: &BTreeSet<ExprId>,
 ) -> Result<Option<super::CheckedExpressionExecutionPlan>, FinalSemanticAnalysisError> {
+    execution_plan_for_expression_with_roles(
+        owner,
+        checked,
+        calls,
+        contextual_receivers,
+        line_schedule_prefixes,
+        &[],
+    )
+}
+
+fn execution_plan_for_expression_with_roles(
+    owner: ExprId,
+    checked: &super::CheckedExpression,
+    calls: &BTreeMap<ExprId, crate::callable::CallTargetFacts>,
+    contextual_receivers: &BTreeMap<ExprId, crate::callable::CheckedCallContextualReceiverKind>,
+    line_schedule_prefixes: &BTreeSet<ExprId>,
+    effect_roles: &[super::CheckedEvaluatedEffectRole],
+) -> Result<Option<super::CheckedExpressionExecutionPlan>, FinalSemanticAnalysisError> {
     use super::{
         CheckedExpressionCallCallee, CheckedExpressionResolution, CheckedRuntimeValueDisposition,
         CheckedStructuralExecutionReason, CheckedValueResolution,
@@ -316,7 +419,15 @@ fn execution_plan_for_expression(
             super::CheckedExpressionExecutionPlan::fused_line_schedule_prefix(application.digest()),
         ));
     }
-    let value = if checked.result().value_type().is_some() {
+    let dialogue_call_site = effect_roles.iter().any(|role| {
+        matches!(
+            role,
+            super::CheckedEvaluatedEffectRole::DialogueCallSite { .. }
+        )
+    });
+    let value = if checked.result().value_type().is_some()
+        && (effect_roles.is_empty() || dialogue_call_site)
+    {
         CheckedRuntimeValueDisposition::Retain
     } else {
         CheckedRuntimeValueDisposition::Omit

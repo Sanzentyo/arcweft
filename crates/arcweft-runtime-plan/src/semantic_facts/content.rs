@@ -192,6 +192,67 @@ impl RuntimeExecutableCaptureFact {
     }
 }
 
+/// Closed operation family accepted for one template-local effect site.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeDialogueEffectOperationFact {
+    /// A checked evaluated effect whose operands were projected into the
+    /// accepted typed effect model.
+    EvaluatedEffect(RuntimeEvaluatedEffectFact),
+    /// An ordinary checked call retained as the callback's exact expression
+    /// root, selected application site, and result type.
+    OrdinaryCall {
+        root: ExprId,
+        application: ExprId,
+        result: RuntimeNormalizedType,
+    },
+}
+
+impl RuntimeDialogueEffectOperationFact {
+    pub const fn evaluated_effect(operation: RuntimeEvaluatedEffectFact) -> Self {
+        Self::EvaluatedEffect(operation)
+    }
+
+    pub const fn ordinary_call(
+        root: ExprId,
+        application: ExprId,
+        result: RuntimeNormalizedType,
+    ) -> Self {
+        Self::OrdinaryCall {
+            root,
+            application,
+            result,
+        }
+    }
+
+    pub const fn root(&self) -> ExprId {
+        match self {
+            Self::EvaluatedEffect(operation) => operation.site_root(),
+            Self::OrdinaryCall { root, .. } => *root,
+        }
+    }
+
+    pub const fn application(&self) -> ExprId {
+        match self {
+            Self::EvaluatedEffect(operation) => operation.application_site(),
+            Self::OrdinaryCall { application, .. } => *application,
+        }
+    }
+
+    pub const fn result(&self) -> &RuntimeNormalizedType {
+        match self {
+            Self::EvaluatedEffect(operation) => operation.result(),
+            Self::OrdinaryCall { result, .. } => result,
+        }
+    }
+
+    pub const fn evaluated_effect_operation(&self) -> Option<&RuntimeEvaluatedEffectFact> {
+        match self {
+            Self::EvaluatedEffect(operation) => Some(operation),
+            Self::OrdinaryCall { .. } => None,
+        }
+    }
+}
+
 /// Complete executable program row for one template-local effect site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeDialogueEffectProgramFact {
@@ -199,7 +260,7 @@ pub struct RuntimeDialogueEffectProgramFact {
     trigger: RuntimeDialogueEffectTrigger,
     effects: EffectSet,
     callable_type: RuntimeNormalizedType,
-    operation: RuntimeEvaluatedEffectFact,
+    operation: RuntimeDialogueEffectOperationFact,
     captures: Box<[RuntimeExecutableCaptureFact]>,
 }
 
@@ -209,7 +270,7 @@ impl RuntimeDialogueEffectProgramFact {
         trigger: RuntimeDialogueEffectTrigger,
         effects: EffectSet,
         callable_type: RuntimeNormalizedType,
-        operation: RuntimeEvaluatedEffectFact,
+        operation: RuntimeDialogueEffectOperationFact,
         captures: impl Into<Box<[RuntimeExecutableCaptureFact]>>,
     ) -> Self {
         Self {
@@ -238,7 +299,7 @@ impl RuntimeDialogueEffectProgramFact {
         &self.callable_type
     }
 
-    pub const fn operation(&self) -> &RuntimeEvaluatedEffectFact {
+    pub const fn operation(&self) -> &RuntimeDialogueEffectOperationFact {
         &self.operation
     }
 
@@ -346,6 +407,14 @@ impl RuntimeContentFragmentFact {
                     provided: effect.site(),
                 });
             }
+            if !matches!(
+                effect.operation().result().shape(),
+                super::RuntimeTypeShape::Unit
+            ) {
+                return Err(RuntimeContentFragmentFactError::NonUnitEffectResult {
+                    site: effect.site(),
+                });
+            }
             let mut locals = BTreeSet::new();
             let mut origins = BTreeSet::new();
             for capture in effect.captures() {
@@ -409,4 +478,6 @@ pub enum RuntimeContentFragmentFactError {
         site: RuntimeDialogueEffectSiteId,
         local: LocalId,
     },
+    #[error("content fragment effect site {site} does not return Unit")]
+    NonUnitEffectResult { site: RuntimeDialogueEffectSiteId },
 }

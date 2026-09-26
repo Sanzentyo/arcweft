@@ -64,6 +64,30 @@ fn object_proxy(compiled: &CompiledProject) -> &RichTextObjectProxy {
 }
 
 #[test]
+fn reference_only_dialogue_id_argument_survives_runtime_reachability() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+flow main() -> Unit {
+    alice(id = @say.shared, source_locale = "ja-JP")[Hello。[p]]
+}
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("checked dialogue ID metadata remains valid through runtime reachability");
+
+    let [flow] = compiled.runtime_plan().plan.flows() else {
+        panic!("one executable Flow")
+    };
+    assert!(
+        flow.body()
+            .ops()
+            .iter()
+            .any(|operation| matches!(operation, FlowOp::Dialogue { .. }))
+    );
+}
+
+#[test]
 fn ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc() {
     for ruby in ["|[夢](ゆめ)", "｜夢《ゆめ》"] {
         let source = format!(
@@ -843,6 +867,72 @@ entry cli @entry.main { goto @flow.main }
     )
     .lower()
     .expect("dialogue content and delay effects lower to verified product AWBC");
+}
+
+#[test]
+fn ordinary_dialogue_calls_lower_inside_their_exact_content_and_delay_callbacks() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+pub character bob { display = "Bob" }
+
+fn emit() -> Unit { () }
+
+flow main() -> Unit {
+    alice[inline [call emit()]]
+    bob[delayed [at 120ms call=emit()]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("ordinary project and value calls lower as dialogue callback bodies");
+    let plan = &compiled.runtime_plan().plan;
+    let [immediate, delayed] = plan.dialogue_content().rows() else {
+        panic!("fixture publishes one content plan per source line")
+    };
+    assert_eq!(immediate.effect_sites().len(), 1);
+    assert_eq!(delayed.effect_sites().len(), 1);
+    assert_ne!(immediate.template(), delayed.template());
+    assert_eq!(
+        immediate.effect_sites()[0].site(),
+        arcweft_core::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0).unwrap()
+    );
+    assert_eq!(
+        delayed.effect_sites()[0].site(),
+        immediate.effect_sites()[0].site(),
+        "site ordinals are local to each exact content template"
+    );
+    assert_eq!(
+        dialogue_effect_triggers(plan, immediate),
+        [RuntimeDialogueContentEffectTrigger::Content]
+    );
+    assert_eq!(
+        dialogue_effect_triggers(plan, delayed),
+        [RuntimeDialogueContentEffectTrigger::Delay {
+            duration: LogicalDuration::from_nanos(120_000_000),
+        }]
+    );
+
+    assert!(
+        dialogue_effect_callback_ops(plan, immediate, 0)
+            .iter()
+            .any(|operation| matches!(operation, FlowOp::ProjectCall { .. }))
+    );
+    assert!(
+        dialogue_effect_callback_ops(plan, delayed, 0)
+            .iter()
+            .any(|operation| matches!(operation, FlowOp::ProjectCall { .. }))
+    );
+    assert!(
+        plan.flows()
+            .iter()
+            .all(|flow| flow.body().ops().iter().all(|operation| !matches!(
+                operation,
+                FlowOp::ProjectCall { .. } | FlowOp::ApplyGroup { .. }
+            ))),
+        "point-action calls stay in trigger-owned callback sites"
+    );
 }
 
 #[test]
@@ -2418,6 +2508,34 @@ fn dialogue_effect_triggers(
         .iter()
         .map(|effect| effect.trigger())
         .collect()
+}
+
+fn dialogue_effect_callback_ops<'plan>(
+    plan: &'plan RuntimePlan,
+    content: &RuntimeDialogueContentPlan,
+    effect_index: usize,
+) -> &'plan [FlowOp] {
+    let effect = content
+        .effect_sites()
+        .get(effect_index)
+        .expect("dialogue effect index");
+    let callback = plan
+        .callable_states()
+        .get(effect.state())
+        .expect("dialogue callback state");
+    let arcweft_core::plan::RuntimeCallableTransition::Invoke { function, .. } =
+        &callback.transition
+    else {
+        panic!("dialogue effect invokes its callback function site")
+    };
+    let site = plan
+        .function_sites()
+        .get(*function)
+        .expect("dialogue callback function site");
+    let RuntimeFunctionSiteBody::Executable(body) = site.body() else {
+        panic!("dialogue point action has an executable callback body")
+    };
+    body.ops()
 }
 
 #[allow(

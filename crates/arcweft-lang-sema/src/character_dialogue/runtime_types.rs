@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::{
     env::{
         TypeCheckEnv,
+        identity::EnvironmentBindingId,
         nominal::{
             AcceptedNominalId, AcceptedNominalInstantiationError, AcceptedNominalOrigin,
             AcceptedNominalRecord, AcceptedNominalSemantics, standard_nominal_id,
@@ -18,6 +19,12 @@ use crate::{
     registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp},
     types::{EntityKind, GenericScopeError, TypeKind},
 };
+use arcweft_dialogue::{
+    CharacterDialoguePolicyCaseSpec, CharacterDialoguePolicyTypeGraph,
+    CharacterDialoguePolicyTypeSchema, CharacterDialoguePolicyVariantOwner,
+    PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
+};
+use std::sync::Arc;
 
 /// An authored role's semantic and executable projections from one declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +53,7 @@ pub struct CharacterDialogueRuntimeRoleRegistry {
     declarations: [CharacterDialogueRuntimeRoleDeclaration; 6],
     style_semantic: TypeKind,
     style_checked: RuntimeCheckedType,
+    policy_types: Arc<CharacterDialoguePolicyTypeGraph>,
     semantic_digest: [u8; 32],
 }
 
@@ -57,6 +65,7 @@ pub enum CharacterDialogueRoleDeclarationMismatch {
     Producer,
     ValueClass,
     Persistence,
+    PolicyGraph,
 }
 
 #[derive(Clone, Debug, Eq, Error, Ord, PartialEq, PartialOrd)]
@@ -73,6 +82,8 @@ pub enum CharacterDialogueRuntimeRoleError {
         role: Role,
         source: AcceptedNominalInstantiationError,
     },
+    #[error("CharacterDialogue policy graph does not use the exact accepted RichText owner")]
+    PolicyGraph,
     #[error(transparent)]
     GenericScope(#[from] GenericScopeError),
 }
@@ -86,6 +97,10 @@ impl CharacterDialogueRuntimeRoleRegistry {
     }
     pub const fn declarations(&self) -> &[CharacterDialogueRuntimeRoleDeclaration; 6] {
         &self.declarations
+    }
+
+    pub const fn policy_types(&self) -> &Arc<CharacterDialoguePolicyTypeGraph> {
+        &self.policy_types
     }
 
     pub fn declaration(&self, role: Role) -> Option<&CharacterDialogueRuntimeRoleDeclaration> {
@@ -207,6 +222,20 @@ impl CharacterDialogueRuntimeRoleRegistry {
             RuntimeCheckedType::EntityReference,
             rich_text.checked_type.clone(),
         ]);
+        let policy_types = world
+            .typecheck_env()
+            .character_dialogue_policy_types()
+            .cloned()
+            .ok_or(RoleError::PolicyGraph)?;
+        let RuntimeCheckedType::Opaque {
+            owner: accepted_rich_text,
+        } = &rich_text.checked_type
+        else {
+            return Err(RoleError::PolicyGraph);
+        };
+        if policy_types.rich_text_owner() != accepted_rich_text {
+            return Err(RoleError::PolicyGraph);
+        }
         let mut digest = blake3::Hasher::new();
         digest.update(b"arcweft.character-dialogue-role-registry.v1\0");
         for row in &declarations {
@@ -217,11 +246,29 @@ impl CharacterDialogueRuntimeRoleRegistry {
         digest.update(&[Role::Style.canonical_tag()]);
         digest.update(style_semantic.semantic_identity_digest()?.as_bytes());
         digest.update(style_checked.semantic_identity_digest().as_bytes());
+        for owner in [
+            CharacterDialoguePolicyVariantOwner::Voice,
+            CharacterDialoguePolicyVariantOwner::InlineFailure,
+            CharacterDialoguePolicyVariantOwner::InlineFallback,
+            CharacterDialoguePolicyVariantOwner::FallbackStyle,
+        ] {
+            let arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+                semantic_identity,
+                layout,
+                ..
+            } = policy_types.identity(owner)
+            else {
+                unreachable!("policy graph owners are nominal variants")
+            };
+            digest.update(semantic_identity.as_bytes());
+            digest.update(layout.as_bytes());
+        }
         Ok(Self {
             world: world.stamp(),
             declarations,
             style_semantic,
             style_checked,
+            policy_types,
             semantic_digest: digest.finalize().into(),
         })
     }
@@ -230,7 +277,7 @@ impl CharacterDialogueRuntimeRoleRegistry {
 impl TypeCheckEnv {
     pub(crate) fn with_standard_character_dialogue_roles(self) -> Self {
         let producer = arcweft_dialogue::CharacterDialogueRuntimeSchema::opaque_type_producer();
-        Role::AUTHORED_BASE
+        let environment = Role::AUTHORED_BASE
             .into_iter()
             .fold(self, |environment, role| {
                 let row = AcceptedNominalRecord::try_new_opaque(
@@ -247,7 +294,87 @@ impl TypeCheckEnv {
                 environment
                     .try_with_nominal_record(row)
                     .expect("standard authored roles have distinct paths")
-            })
+            });
+        let rich_text_id = CharacterDialogueRuntimeRoleRegistry::declaration_id(Role::RichText)
+            .expect("RichText is an authored role");
+        let rich_text = environment
+            .nominal_catalog()
+            .exact(rich_text_id.canonical_path())
+            .expect("standard RichText role is accepted")
+            .try_instantiate(Box::<[TypeKind]>::default())
+            .expect("standard RichText role is non-generic");
+        let rich_text_identity = rich_text
+            .semantic_identity_digest()
+            .expect("standard RichText role has a stable semantic identity")
+            .into();
+        let rich_text_owner = RuntimeOpaqueTypeOwner::exact_with(
+            producer,
+            rich_text_identity,
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let policy_types = Arc::new(
+            CharacterDialoguePolicyTypeGraph::try_new(
+                rich_text_owner,
+                PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
+            )
+            .expect("standard CharacterDialogue policy graph is valid"),
+        );
+        let environment =
+            environment.with_character_dialogue_policy_types(Arc::clone(&policy_types));
+        CharacterDialoguePolicyVariantOwner::language_policy_owners().fold(
+            environment,
+            |environment, owner| {
+                let ty = TypeKind::Named(owner.language_type_name().to_owned());
+                let binding = EnvironmentBindingId::try_new(owner.language_type_name())
+                    .expect("CharacterDialogue policy type names are valid bindings");
+                policy_types
+                    .cases(owner)
+                    .iter()
+                    .fold(environment, |environment, case| {
+                        environment
+                            .try_with_enum_variant_payload(
+                                binding.clone(),
+                                ty.clone(),
+                                case.language_name(),
+                                policy_case_payload(case),
+                            )
+                            .expect("policy cases are unique in their canonical owner")
+                    })
+            },
+        )
+    }
+}
+
+fn policy_case_payload(case: &CharacterDialoguePolicyCaseSpec) -> crate::env::EnumVariantPayload {
+    match case.payload() {
+        None => crate::env::EnumVariantPayload::Unit,
+        Some(CharacterDialoguePolicyTypeSchema::Tuple(items)) => {
+            crate::env::EnumVariantPayload::tuple(items.iter().copied().map(policy_schema_type))
+        }
+        Some(payload) => crate::env::EnumVariantPayload::tuple([policy_schema_type(payload)]),
+    }
+}
+
+fn policy_schema_type(schema: CharacterDialoguePolicyTypeSchema) -> TypeKind {
+    match schema {
+        CharacterDialoguePolicyTypeSchema::String => TypeKind::String,
+        CharacterDialoguePolicyTypeSchema::EntityReference => {
+            TypeKind::entity_ref(EntityKind::Style)
+        }
+        CharacterDialoguePolicyTypeSchema::RichText => TypeKind::Named("RichTextStyle".to_owned()),
+        CharacterDialoguePolicyTypeSchema::Nominal(owner) => {
+            TypeKind::Named(owner.language_type_name().to_owned())
+        }
+        CharacterDialoguePolicyTypeSchema::Sequence(item) => {
+            TypeKind::Seq(Box::new(policy_schema_type(*item)))
+        }
+        CharacterDialoguePolicyTypeSchema::Tuple(items) => {
+            TypeKind::Tuple(items.iter().copied().map(policy_schema_type).collect())
+        }
+        CharacterDialoguePolicyTypeSchema::Choice(items) => {
+            TypeKind::Choice(items.iter().copied().map(policy_schema_type).collect())
+        }
     }
 }
 

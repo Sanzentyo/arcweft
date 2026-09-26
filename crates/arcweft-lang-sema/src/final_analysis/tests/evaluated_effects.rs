@@ -371,5 +371,21 @@ fn evaluated_effect_does_not_fabricate_positional_field_identity() {
         "fn positional_field() { log.info(\"started\", 1i64); }\n",
         None,
     );
-    assert!(analyze(&fixture).is_err());
+    let report = analyze(&fixture).expect("rejected call retains semantic evidence");
+    let calls = report.calls().collect::<Vec<_>>();
+    let [(_, call)] = calls.as_slice() else {
+        panic!("one call is retained: {calls:?}");
+    };
+    assert!(matches!(
+        call.outcome(),
+        crate::callable::CallAnalysisOutcome::Rejected(_)
+    ));
+    assert!(call.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == crate::callable::CallableDiagnosticCode::NoViableSignature
+    }));
+    assert!(
+        report
+            .expressions()
+            .all(|(_, expression)| expression.evaluated_effect().is_none())
+    );
 }

@@ -16,6 +16,35 @@ use crate::{
 
 use super::{analyze, fixture};
 
+#[test]
+fn selected_free_dotted_builtin_does_not_publish_losing_nominal_receiver() {
+    let fixture = fixture(
+        r#"
+flow main() -> String {
+    let policy = InlineFailure.fallback("?")
+    return "ok"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("free dotted builtin has no nominal receiver fact");
+    assert_eq!(
+        report.types().map(|(_, ty)| ty).collect::<Vec<_>>(),
+        vec![&crate::types::TypeKind::String],
+        "the flow result is typed, but the losing InlineFailure receiver is not"
+    );
+    assert!(report.calls().any(|(_, call)| {
+        call.selected_application().is_some_and(|application| {
+            matches!(
+                application.core().candidates().selected().id(),
+                crate::callable::CallableCandidateId::Builtin(
+                    crate::callable::BuiltinCallableId::InlineFailureFallback
+                )
+            )
+        })
+    }));
+}
+
 fn object_applications(report: &FinalSemanticAnalysis) -> Vec<&CheckedTextProxyApplication> {
     fn visit<'a>(
         report: &'a CheckedRichTextReport,

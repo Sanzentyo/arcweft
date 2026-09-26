@@ -310,6 +310,7 @@ pub(super) fn validate_complete_inventory(
     topology: &HirProjectEvaluationTopology,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     selected_expressions: &super::match_edges::CheckedSelectedExpressionGraph,
+    accepted_type_owners: &BTreeSet<TypeId>,
     inventory: SemanticFactInventory<'_>,
     type_resolutions: &BTreeMap<TypeId, TypeResolutionReport>,
 ) -> Result<(), FinalSemanticAnalysisError> {
@@ -325,13 +326,7 @@ pub(super) fn validate_complete_inventory(
     } = inventory;
     if type_resolutions.is_empty() {
         require_complete(
-            modules
-                .values()
-                .flat_map(|module| module.types().map(|(id, _)| id))
-                .filter(|owner| {
-                    selected_expressions
-                        .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Type(*owner))
-                }),
+            accepted_type_owners.iter().copied(),
             types,
             SemanticFactFamily::Type,
         )?;

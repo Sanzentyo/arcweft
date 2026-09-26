@@ -731,6 +731,7 @@ impl HirAnalysisProjectView<'_> {
         outer_owners: &BTreeSet<ExprId>,
         execution_roots: &[ExprId],
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
         expression_disposition: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
         let traversal =
@@ -741,7 +742,7 @@ impl HirAnalysisProjectView<'_> {
                 outer_owners: Some(outer_owners),
                 execution_roots,
                 selected_postfix,
-                selected_call_edges: |_| None,
+                selected_call_edges,
                 expression_disposition,
             })?;
         Ok(HirSelectedRuntimeExpressionOwners {
@@ -867,14 +868,30 @@ impl HirAnalysisProjectView<'_> {
                     if result == HirRuntimeValueRetention::Retain {
                         selected.insert(owner);
                     }
-                    append_selected_invocation_operands(
+                    let selected_call = selected_call_edges(owner).ok_or(
+                        HirSelectedExpressionInventoryError::MissingSelectedCallEdges {
+                            expression: owner,
+                        },
+                    )?;
+                    let HirSelectedCallExpressionDisposition::Callable(selected_call) =
+                        selected_call
+                    else {
+                        return Err(
+                            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                                expression: owner,
+                            },
+                        );
+                    };
+                    append_selected_call_invocation_operands(
                         topology,
                         &modules,
                         owner,
                         call,
+                        &selected_call,
                         callee,
                         &mut pending,
                         &mut followed_edges,
+                        &mut required_semantic_owners,
                     )?;
                     selected_edges.insert(owner, followed_edges.into_boxed_slice());
                     continue;
@@ -946,7 +963,11 @@ impl HirAnalysisProjectView<'_> {
             }
             selected_edges.insert(owner, followed_edges.into_boxed_slice());
         }
-        if !required_semantic_owners.is_subset(&selected) {
+        let selected_semantic_owners = match domain {
+            SelectedExpressionDomain::SemanticAnalysis => &selected,
+            SelectedExpressionDomain::RuntimeType => &visited,
+        };
+        if !required_semantic_owners.is_subset(selected_semantic_owners) {
             return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
         }
         Ok(HirSelectedExpressionTraversal {
@@ -1051,12 +1072,19 @@ fn apply_selected_semantic_call(
     let HirSelectedCallExpressionDisposition::Callable(call) = disposition else {
         return Ok(false);
     };
+    let HirExprKind::Call(invocation) = kind else {
+        return Err(
+            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                expression: owner,
+            },
+        );
+    };
     selected.insert(owner);
     let mut followed_edges = Vec::new();
     append_selected_call_expression_edges(
         topology,
         owner,
-        kind,
+        invocation,
         call.arguments(),
         call.callee(),
         pending,
@@ -1167,20 +1195,13 @@ impl SelectedPostfixContext<'_> {
 fn append_selected_call_expression_edges(
     topology: &HirProjectEvaluationTopology,
     owner: ExprId,
-    kind: &HirExprKind,
+    invocation: &HirCallInvocation,
     arguments: &[HirSelectedCallArgument],
     callee: Option<ExprId>,
     pending: &mut VecDeque<ExprId>,
     followed: &mut Vec<HirExpressionEvaluationEdge>,
     required_semantic_owners: &mut BTreeSet<ExprId>,
 ) -> Result<(), HirSelectedExpressionInventoryError> {
-    let HirExprKind::Call(invocation) = kind else {
-        return Err(
-            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
-                expression: owner,
-            },
-        );
-    };
     let argument_edges = topology
         .expression_edges(owner)
         .iter()
@@ -1391,6 +1412,46 @@ fn append_selected_invocation_operands(
         pending.push_back(edge.child());
         followed.push(edge.clone());
     }
+    append_runtime_call_callee_operand(
+        topology, modules, owner, invocation, callee, pending, followed,
+    )
+}
+
+fn append_selected_call_invocation_operands(
+    topology: &HirProjectEvaluationTopology,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    invocation: &HirCallInvocation,
+    selected_call: &HirSelectedCallExpressionInventory,
+    callee: HirRuntimeCallCalleeDisposition,
+    pending: &mut VecDeque<ExprId>,
+    followed: &mut Vec<HirExpressionEvaluationEdge>,
+    required_semantic_owners: &mut BTreeSet<ExprId>,
+) -> Result<(), HirSelectedExpressionInventoryError> {
+    append_selected_call_expression_edges(
+        topology,
+        owner,
+        invocation,
+        selected_call.arguments(),
+        None,
+        pending,
+        followed,
+        required_semantic_owners,
+    )?;
+    append_runtime_call_callee_operand(
+        topology, modules, owner, invocation, callee, pending, followed,
+    )
+}
+
+fn append_runtime_call_callee_operand(
+    topology: &HirProjectEvaluationTopology,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    invocation: &HirCallInvocation,
+    callee: HirRuntimeCallCalleeDisposition,
+    pending: &mut VecDeque<ExprId>,
+    followed: &mut Vec<HirExpressionEvaluationEdge>,
+) -> Result<(), HirSelectedExpressionInventoryError> {
     if callee == HirRuntimeCallCalleeDisposition::Static {
         return Ok(());
     }

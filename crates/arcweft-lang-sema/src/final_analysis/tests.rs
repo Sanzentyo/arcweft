@@ -7027,6 +7027,40 @@ fn opening() {
 }
 
 #[test]
+fn character_dialogue_inline_failure_fallback_uses_canonical_policy_type() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+
+flow @flow.root root {
+    alice(id=@say.story.greeting, inline_error=InlineFailure.fallback("?"))[Hello。[p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("typed inline-failure policy is accepted by dialogue");
+    let (_, factory) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+                Some((owner, factory))
+            }
+            _ => None,
+        })
+        .expect("dialogue factory keeps the policy patch");
+    assert!(factory.patch().fields().iter().any(|field| {
+        field.coordinate() == &CharacterDialogueFieldCoordinate::InlineFailure
+            && matches!(
+                field.operation(),
+                CheckedPatchOperation::Set {
+                    ty: TypeKind::Named(name),
+                    ..
+                } if name == "InlineFailure"
+            )
+    }));
+}
+
+#[test]
 fn character_dialogue_patch_retains_typed_fields_in_source_order() {
     let fixture = fixture(
         r#"

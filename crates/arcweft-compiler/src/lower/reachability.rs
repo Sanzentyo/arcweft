@@ -10,7 +10,7 @@ use arcweft_lang_hir::{
         HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError, HirRuntimeReachabilityPath,
         HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
         HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
-        HirRuntimeValueRetention,
+        HirRuntimeValueRetention, HirSelectedCallExpressionDisposition,
     },
     scope::HirScopeOwner,
     source_index::HirCallableSourceOwner,
@@ -215,6 +215,12 @@ pub fn project_runtime_reachability<'project>(
             }
         }
     };
+    let mut selected_call_edges = |owner| {
+        analysis
+            .selected_call_expression_inventory(owner)
+            .cloned()
+            .map(HirSelectedCallExpressionDisposition::Callable)
+    };
     let reachability = project.runtime_semantic_reachability(
         input,
         analysis.hir_topology().as_ref(),
@@ -228,6 +234,7 @@ pub fn project_runtime_reachability<'project>(
             };
             Some(resolution.candidate())
         },
+        &mut selected_call_edges,
         &mut expression_projection,
     );
     if let Some(error) = projection_error {
@@ -308,6 +315,12 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             }
         }
     };
+    let mut selected_call_edges = |owner| {
+        analysis
+            .selected_call_expression_inventory(owner)
+            .cloned()
+            .map(HirSelectedCallExpressionDisposition::Callable)
+    };
     let reachability = project.runtime_semantic_reachability(
         input,
         analysis.hir_topology().as_ref(),
@@ -319,6 +332,7 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             };
             Some(resolution.candidate())
         },
+        &mut selected_call_edges,
         &mut expression_projection,
     );
     if let Some(error) = projection_error {

@@ -691,8 +691,8 @@ pub use pipe::{
 #[path = "model/dialogue_line_plan.rs"]
 mod dialogue_line_plan;
 pub use dialogue_line_plan::{
-    CheckedDialogueEffectPlan, CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger,
+    CheckedDialogueEffectOperation, CheckedDialogueEffectPlan, CheckedDialogueEffectSite,
+    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
 };
 
 #[path = "model/executable_capture.rs"]
@@ -2064,6 +2064,14 @@ pub enum CheckedEvaluatedEffectRole {
         root: ExprId,
         ordinal: CheckedDialogueEffectSiteOrdinal,
     },
+    DialogueCallSite {
+        owner: ExprId,
+        root: ExprId,
+        ordinal: CheckedDialogueEffectSiteOrdinal,
+    },
+    DialogueCallApplication {
+        application: CheckedCallApplicationDigest,
+    },
     DropPolicy {
         application: CheckedCallApplicationDigest,
     },
@@ -2194,7 +2202,13 @@ impl CheckedExpressionExecutionPlan {
                 disposition: CheckedRuntimeCallDisposition::Invoke,
                 ..
             }
-        ) && self.evaluated_effect_roles().is_empty()
+        ) && self.evaluated_effect_roles().iter().all(|role| {
+            matches!(
+                role,
+                CheckedEvaluatedEffectRole::DialogueCallSite { .. }
+                    | CheckedEvaluatedEffectRole::DialogueCallApplication { .. }
+            )
+        })
     }
 
     pub(crate) fn with_evaluated_effect_roles(
@@ -2220,7 +2234,13 @@ impl CheckedExpressionExecutionPlan {
                 ..
             } => Self::Call {
                 application,
-                result: if roles.is_empty() {
+                result: if roles.iter().all(|role| {
+                    matches!(
+                        role,
+                        CheckedEvaluatedEffectRole::DialogueCallSite { .. }
+                            | CheckedEvaluatedEffectRole::DialogueCallApplication { .. }
+                    )
+                }) {
                     result
                 } else {
                     CheckedRuntimeValueDisposition::Omit

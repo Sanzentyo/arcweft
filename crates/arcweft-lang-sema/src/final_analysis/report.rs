@@ -11,7 +11,7 @@ use arcweft_lang_hir::{
     item::{HirItemKind, HirVisibility},
     project::{
         HirProjectEvaluationTopology, HirRuntimeExecutableOwner, HirRuntimeReachabilityIdentity,
-        HirRuntimeSemanticReachability,
+        HirRuntimeSemanticReachability, HirSelectedCallExpressionInventory,
     },
     scope::HirScopeKind,
     source_index::{
@@ -75,6 +75,7 @@ pub struct FinalSemanticAnalysis {
     statements: BTreeMap<StmtId, CheckedStatement>,
     items: BTreeMap<ItemId, CheckedItem>,
     calls: BTreeMap<ExprId, CallTargetFacts>,
+    selected_call_inventories: BTreeMap<ExprId, HirSelectedCallExpressionInventory>,
     pub(super) edge_facts: BTreeMap<
         ExprId,
         Result<super::CheckedExpressionEdgeFact, super::CheckedExpressionEdgeError>,
@@ -1127,22 +1128,9 @@ impl FinalSemanticAnalysisPostEntryDraft {
         }
         validate_checked_entry_references(&expressions, &checked_entries)?;
 
-        let type_owners = if type_resolutions.is_empty() {
-            None
-        } else {
-            Some(accepted_type_owners(
-                &modules,
-                &expressions,
-                &calls,
-                &selected_expressions,
-            )?)
-        };
-        validate_type_resolution_reports(
-            &modules,
-            type_owners.as_ref(),
-            &types,
-            &type_resolutions,
-        )?;
+        let type_owners =
+            accepted_type_owners(&modules, &expressions, &calls, &selected_expressions)?;
+        validate_type_resolution_reports(&type_owners, &types, &type_resolutions)?;
         control.check()?;
 
         let inventory = SemanticFactInventory {
@@ -1159,6 +1147,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             evaluation_topology.as_ref(),
             &modules,
             &selected_expressions,
+            &type_owners,
             inventory,
             &type_resolutions,
         )?;
@@ -1219,6 +1208,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         control.check()?;
+        let selected_call_inventories = selected_expressions.into_selected_call_inventories();
         let mut analysis = FinalSemanticAnalysis {
             authority,
             checked_callables,
@@ -1239,6 +1229,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             statements,
             items,
             calls,
+            selected_call_inventories,
             edge_facts,
             diagnostics: diagnostics.into(),
             #[cfg(test)]
@@ -2096,6 +2087,17 @@ impl FinalSemanticAnalysis {
         self.calls.get(&owner)
     }
 
+    /// Returns the exact mapper-sealed HIR child inventory accepted for one
+    /// ordinary Call. Runtime reachability consumes this authority so it can
+    /// preserve reference-only semantic metadata arguments without guessing
+    /// ownership from source or raw HIR shape.
+    pub fn selected_call_expression_inventory(
+        &self,
+        owner: ExprId,
+    ) -> Option<&HirSelectedCallExpressionInventory> {
+        self.selected_call_inventories.get(&owner)
+    }
+
     /// Sole immutable checked callable/effect authority accepted with this
     /// semantic generation.
     pub const fn checked_callables(&self) -> &Arc<CheckedCallableCatalog> {
@@ -2335,20 +2337,14 @@ fn source_span(
 }
 
 fn validate_type_resolution_reports(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    accepted_owners: Option<&BTreeSet<TypeId>>,
+    accepted_owners: &BTreeSet<TypeId>,
     types: &BTreeMap<TypeId, TypeKind>,
     reports: &BTreeMap<TypeId, TypeResolutionReport>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     if reports.is_empty() {
         return Ok(());
     }
-    let all_nodes = accepted_owners.cloned().unwrap_or_else(|| {
-        modules
-            .values()
-            .flat_map(|module| module.types().map(|(owner, _)| owner))
-            .collect::<BTreeSet<_>>()
-    });
+    let all_nodes = accepted_owners;
     let mut node_facts = BTreeMap::new();
     for (owner, report) in reports {
         let product = report.outcome().product();
@@ -2373,7 +2369,7 @@ fn validate_type_resolution_reports(
         .into_iter()
         .filter_map(|(owner, ty)| ty.map(|ty| (owner, ty)))
         .collect::<BTreeMap<_, _>>();
-    if covered != all_nodes || recovered != *types {
+    if &covered != all_nodes || recovered != *types {
         let owner = all_nodes
             .iter()
             .find(|owner| !covered.contains(owner) || recovered.get(owner) != types.get(owner))

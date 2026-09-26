@@ -9,7 +9,6 @@ use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidenc
 use arcweft_dialogue::{
     CharacterDialogueGenerationDeclaration, CharacterDialoguePolicyTypeGraph,
     CharacterDialogueRuntimeRole, CharacterDialogueTypeReference, CharacterDialogueVisualType,
-    PRODUCTION_CHARACTER_DIALOGUE_LIMITS,
 };
 use arcweft_lang_hir::{
     identity::{ExprId, HirModuleId},
@@ -38,11 +37,24 @@ impl CharacterDialogueTypeReference for RuntimeNormalizedType {
 #[derive(Clone, Debug)]
 pub(super) struct RuntimeCharacterDialogueGenerationFact {
     pub(super) declaration: Arc<CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>>,
-    pub(super) policy_types: Arc<CharacterDialoguePolicyTypeGraph>,
     inventory: CharacterInventoryDescriptorV1,
 }
 
 impl RuntimePlanSemanticFactInput {
+    /// Retains the sole accepted policy graph issued from the RichText role.
+    pub fn attach_character_dialogue_policy_types(
+        &mut self,
+        policy_types: Arc<CharacterDialoguePolicyTypeGraph>,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        if self.character_dialogue_policy_types.is_some() {
+            return Err(RuntimeSemanticFactsError::DuplicateFact {
+                family: RuntimeSemanticFactFamily::CharacterDialogueGeneration,
+            });
+        }
+        self.character_dialogue_policy_types = Some(policy_types);
+        Ok(())
+    }
+
     /// Stages the producer's complete input contract independently of whether
     /// any dialogue line or factory expression is reachable.
     pub fn attach_character_dialogue_generation(
@@ -55,6 +67,11 @@ impl RuntimePlanSemanticFactInput {
                 family: RuntimeSemanticFactFamily::CharacterDialogueGeneration,
             });
         }
+        let policy_types = self.character_dialogue_policy_types.as_ref().ok_or(
+            RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
+                reason: "accepted CharacterDialogue policy graph is missing",
+            },
+        )?;
         let rich_text_index = CharacterDialogueRuntimeRole::AUTHORED_BASE
             .iter()
             .position(|role| *role == CharacterDialogueRuntimeRole::RichText)
@@ -74,18 +91,15 @@ impl RuntimePlanSemanticFactInput {
                 },
             );
         };
-        let policy_types = CharacterDialoguePolicyTypeGraph::try_new(
-            rich_text,
-            PRODUCTION_CHARACTER_DIALOGUE_LIMITS.runtime_schema_limits(),
-        )
-        .map_err(
-            |_| RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
-                reason: "CharacterDialogue policy nominal graph is invalid",
-            },
-        )?;
+        if policy_types.rich_text_owner() != &rich_text {
+            return Err(
+                RuntimeSemanticFactsError::InvalidCharacterDialogueGeneration {
+                    reason: "CharacterDialogue policy graph is bound to a different RichText role",
+                },
+            );
+        }
         self.character_dialogue_generation = Some(RuntimeCharacterDialogueGenerationFact {
             declaration,
-            policy_types: Arc::new(policy_types),
             inventory,
         });
         Ok(())
@@ -93,6 +107,13 @@ impl RuntimePlanSemanticFactInput {
 }
 
 impl RuntimePlanSemanticFacts {
+    /// Exact policy graph shared from accepted sema through plan admission.
+    pub fn character_dialogue_policy_types(
+        &self,
+    ) -> Option<&Arc<CharacterDialoguePolicyTypeGraph>> {
+        self.character_dialogue_policy_types.as_ref()
+    }
+
     /// Generation-wide producer inputs from the exact accepted compiler world.
     /// Their types also participate in the plan's common recursive type batch.
     pub fn character_dialogue_generation(

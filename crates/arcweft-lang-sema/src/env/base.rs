@@ -48,7 +48,10 @@ use arcweft_presentation::fx::{
     BUILTIN_FX_CALLABLE_CATALOG, BuiltinFxCallableParameter, BuiltinFxCallableRow,
     BuiltinFxParameterPresence, BuiltinFxParameterType, FxEnumDomain,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::Arc,
+};
 use thiserror::Error;
 
 /// Function or method signature tracked by the semantic environment.
@@ -247,6 +250,8 @@ pub struct TypeCheckEnv {
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     available_host_calls: Option<BTreeSet<arcweft_manifest_model::HostCallContractDigest>>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
+    character_dialogue_policy_types:
+        Option<Arc<arcweft_dialogue::CharacterDialoguePolicyTypeGraph>>,
     statement_ingress_inputs: Box<[StatementIngressTypePublicationInput]>,
 }
 
@@ -1858,6 +1863,20 @@ impl TypeCheckEnv {
         self.closed_enums.get(ty)
     }
 
+    pub(crate) fn character_dialogue_policy_types(
+        &self,
+    ) -> Option<&Arc<arcweft_dialogue::CharacterDialoguePolicyTypeGraph>> {
+        self.character_dialogue_policy_types.as_ref()
+    }
+
+    pub(crate) fn with_character_dialogue_policy_types(
+        mut self,
+        policy_types: Arc<arcweft_dialogue::CharacterDialoguePolicyTypeGraph>,
+    ) -> Self {
+        self.character_dialogue_policy_types = Some(policy_types);
+        self
+    }
+
     pub(crate) fn closed_enums(
         &self,
     ) -> impl ExactSizeIterator<Item = (&TypeKind, &EnvironmentEnumSchema)> {
@@ -1989,13 +2008,22 @@ fn root_higher_order_bindings(
 
 fn fmt_schema() -> CallableSignatureSchema {
     standard_schema(
-        vec![vec![standard_parameter(
-            0,
-            "value",
-            CallableParameterAdmission::unchecked_supply(),
-            CallableParameterPassing::PositionalOrNamed,
-            CallableParameterPresence::Required,
-        )]],
+        vec![vec![
+            standard_parameter(
+                0,
+                "value",
+                CallableParameterAdmission::unchecked_supply(),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                1,
+                "on_error",
+                CallableParameterAdmission::checked(TypeKind::Named("InlineFailure".to_owned())),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+        ]],
         TypeKind::DisplayText,
         CallableArgumentPolicy::new(
             UnknownNamedArgumentPolicy::OpenSupply,

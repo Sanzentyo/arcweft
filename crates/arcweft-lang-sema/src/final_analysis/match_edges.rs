@@ -122,6 +122,7 @@ fn checked_call_site_for_expression(
 #[derive(Debug)]
 pub(super) struct CheckedSelectedExpressionGraph {
     graph: HirSelectedExpressionGraph,
+    selected_call_inventories: BTreeMap<ExprId, HirSelectedCallExpressionInventory>,
     declaration_only_trait_receiver_owners: BTreeSet<SyntheticOwner>,
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
     fx_definition_declarations: BTreeSet<CallableDeclarationKey>,
@@ -192,7 +193,7 @@ impl CheckedSelectedExpressionGraph {
                 ));
             }
         }
-        Self::seal_with_call_inventory(
+        let mut selected = Self::seal_with_call_inventory(
             project,
             topology,
             expressions,
@@ -215,7 +216,14 @@ impl CheckedSelectedExpressionGraph {
                             .map(|_| HirSelectedCallExpressionDisposition::Structural)
                     })
             },
-        )
+        )?;
+        selected.selected_call_inventories = call_inventories
+            .into_iter()
+            .filter(|(owner, _)| {
+                selected.graph.contains_expression(*owner) && !fx_body_obligations.contains(*owner)
+            })
+            .collect();
+        Ok(selected)
     }
 
     /// Manual fact fixtures may omit prepared-call state only when their HIR
@@ -395,6 +403,7 @@ impl CheckedSelectedExpressionGraph {
             .collect();
         Ok(Self {
             graph,
+            selected_call_inventories: BTreeMap::new(),
             declaration_only_trait_receiver_owners,
             dialogue_lines,
             fx_definition_declarations,
@@ -404,6 +413,12 @@ impl CheckedSelectedExpressionGraph {
 
     pub(super) fn topology(&self) -> &Arc<HirProjectEvaluationTopology> {
         self.graph.topology()
+    }
+
+    pub(super) fn into_selected_call_inventories(
+        self,
+    ) -> BTreeMap<ExprId, HirSelectedCallExpressionInventory> {
+        self.selected_call_inventories
     }
 
     pub(super) fn contains_owner(&self, owner: arcweft_lang_hir::identity::SyntheticOwner) -> bool {

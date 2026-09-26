@@ -5162,6 +5162,10 @@ fn snapshot_only_affine_opaque_type_roundtrips_but_rejects_constant_materializat
         .opaque_owner(handle_ty)
         .expect("opaque owner projects")
         .expect("handle row is opaque");
+    assert!(
+        !decoded.runtime_type_permits_copy(handle_ty),
+        "affine opaque types must stay on the Move path"
+    );
     assert_eq!(
         owner.value_class(),
         RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue)

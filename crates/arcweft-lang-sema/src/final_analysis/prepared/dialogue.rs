@@ -6,7 +6,7 @@ use super::super::{
     CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
 };
 use super::{PreparedEvaluatedEffect, PreparedExpressionShell, TypeKind};
-use crate::callable::ContentCallableIdentity;
+use crate::callable::{CheckedCallSite, ContentCallableIdentity};
 use crate::checked_text_proxy::PreparedCheckedTextProxyApplication;
 
 /// Closed producer disposition for one attached-content application.
@@ -153,32 +153,42 @@ impl PreparedContentApplication {
     }
 }
 
-/// One source-ordered inline dialogue effect awaiting the final callable
-/// application seal.  The callable-owned preparation is kept private and is
-/// consumed into the public site only after its checked application is
-/// available.
+/// One source-ordered inline dialogue operation awaiting the final callable
+/// application seal. Evaluated effects retain their operation-specific
+/// preparation; ordinary calls retain only their exact terminal call site.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedDialogueEffectOperation {
+    EvaluatedEffect(PreparedEvaluatedEffect),
+    Call { site: CheckedCallSite },
+}
+
+/// One source-ordered inline dialogue operation awaiting the final callable
+/// application seal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedDialogueEffectSite {
     id: CheckedDialogueEffectSiteOrdinal,
     trigger: CheckedDialogueEffectTrigger,
-    effect: PreparedEvaluatedEffect,
+    root: ExprId,
+    operation: PreparedDialogueEffectOperation,
 }
 
 impl PreparedDialogueEffectSite {
     pub(crate) const fn new(
         id: CheckedDialogueEffectSiteOrdinal,
         trigger: CheckedDialogueEffectTrigger,
-        effect: PreparedEvaluatedEffect,
+        root: ExprId,
+        operation: PreparedDialogueEffectOperation,
     ) -> Self {
         Self {
             id,
             trigger,
-            effect,
+            root,
+            operation,
         }
     }
 
     pub(crate) const fn root(&self) -> ExprId {
-        self.effect.root()
+        self.root
     }
 
     pub(crate) const fn id(&self) -> CheckedDialogueEffectSiteOrdinal {
@@ -190,9 +200,10 @@ impl PreparedDialogueEffectSite {
     ) -> (
         CheckedDialogueEffectSiteOrdinal,
         CheckedDialogueEffectTrigger,
-        PreparedEvaluatedEffect,
+        ExprId,
+        PreparedDialogueEffectOperation,
     ) {
-        (self.id, self.trigger, self.effect)
+        (self.id, self.trigger, self.root, self.operation)
     }
 }
 

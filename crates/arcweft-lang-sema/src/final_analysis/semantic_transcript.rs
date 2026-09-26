@@ -3725,7 +3725,22 @@ fn write_effect_plan(
             }
         }
         write_effects(hasher, site.effects())?;
-        write_evaluated_effect(hasher, site.effect())?;
+        match site.operation() {
+            super::CheckedDialogueEffectOperation::EvaluatedEffect(effect) => {
+                transcript_update!(hasher, &[0]);
+                write_evaluated_effect(hasher, effect)?;
+            }
+            super::CheckedDialogueEffectOperation::Call {
+                application,
+                application_digest,
+                result,
+            } => {
+                transcript_update!(hasher, &[1]);
+                write_bytes(hasher, &application.coordinate().canonical_bytes()?)?;
+                transcript_update!(hasher, application_digest.as_bytes());
+                transcript_update!(hasher, result.semantic_identity_digest()?.as_bytes());
+            }
+        }
         write_len(hasher, site.captures().len())?;
         for capture in site.captures() {
             write_bytes(hasher, &capture.origin().canonical_bytes()?)?;

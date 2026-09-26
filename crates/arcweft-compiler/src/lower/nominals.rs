@@ -249,6 +249,40 @@ pub(super) fn definition(
         }.into());
     };
     match nominal.source() {
+        RuntimeResolvedNominalSource::CharacterDialoguePolicy { owner } => {
+            let policy_types = world
+                .environment()
+                .character_dialogue_roles()
+                .policy_types();
+            if !arguments.is_empty()
+                || ty.identity() != policy_types.semantic_identity(*owner)
+                || nominal
+                    != &arcweft_runtime_plan::semantic_facts::RuntimeResolvedNominal::character_dialogue_policy(
+                        *owner,
+                        policy_types,
+                    )
+            {
+                return Err(RuntimeSemanticProjectionError::Type {
+                    reason: "accepted CharacterDialogue policy graph changed after nominal projection"
+                        .to_owned(),
+                });
+            }
+            let first = policy_types.cases(*owner).first().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: "accepted CharacterDialogue policy variant has no cases".to_owned(),
+                }
+            })?;
+            let selected = RuntimeResolvedVariant::character_dialogue_policy(
+                Arc::clone(policy_types),
+                *owner,
+                first.ordinal(),
+                first.language_name(),
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Type {
+                reason: error.to_string(),
+            })?;
+            Ok(RuntimeNominalDefinition::Variant(selected.owner().clone()))
+        }
         RuntimeResolvedNominalSource::ClosedVariant { proof } => {
             let semantic_type = SemanticTypeDigest::from_bytes(*ty.identity().as_bytes());
             if proof.semantic_type() != semantic_type {

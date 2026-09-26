@@ -266,7 +266,7 @@ flow main() -> String {
     };
     assert_eq!(capture.ty(), &crate::types::TypeKind::String);
     let StableCheckedValueCoordinate::Expression(application) =
-        captured.effect().application().coordinate()
+        captured.operation().application().coordinate()
     else {
         panic!("effect application is expression-owned")
     };
@@ -277,6 +277,96 @@ flow main() -> String {
             .expect("capture local remains in the checked binding catalog")
             .ty(),
         capture.ty()
+    );
+}
+
+#[test]
+fn dialogue_point_actions_retain_ordinary_unit_call_authority() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+fn callback(message: String) -> Unit { log.info(message) }
+flow main() -> String {
+    let message = "captured";
+    alice[hello [call callback(message)] [at 120ms call=callback(message)]]
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("ordinary Unit dialogue calls are checked");
+    let applications = dialogue_application_resolutions(&report);
+    let [CheckedExpressionResolution::DialogueApplication { rich_text, .. }] =
+        applications.as_slice()
+    else {
+        panic!("ordinary-call fixture publishes one dialogue application")
+    };
+    let [immediate, delayed] = rich_text.effect_plan().effect_sites() else {
+        panic!("both ordinary calls publish source-ordered checked sites")
+    };
+
+    assert_eq!(immediate.id().get(), 0);
+    assert_eq!(delayed.id().get(), 1);
+    assert_eq!(
+        immediate.trigger(),
+        &crate::final_analysis::CheckedDialogueEffectTrigger::Content
+    );
+    assert_eq!(
+        delayed.trigger(),
+        &crate::final_analysis::CheckedDialogueEffectTrigger::Delay(
+            crate::checked_rich_text::CheckedDuration { millis: 120 }
+        )
+    );
+    for site in [immediate, delayed] {
+        assert_eq!(site.effects().to_labels(), vec!["log.write"]);
+        assert_eq!(site.operation().result(), &crate::types::TypeKind::Unit);
+        let [capture] = site.captures() else {
+            panic!("call argument local is retained as the callback capture")
+        };
+        assert_eq!(capture.ty(), &crate::types::TypeKind::String);
+        let call_owner = site.operation().application().raw().expression();
+        let application = report
+            .call(call_owner)
+            .and_then(crate::callable::CallTargetFacts::selected_application)
+            .expect("ordinary dialogue call retains its exact selected application");
+        assert_eq!(
+            application.core().application_site(),
+            site.operation().application()
+        );
+        assert_eq!(application.digest(), site.operation().application_digest());
+        assert_eq!(
+            application.result(),
+            &crate::callable::CheckedCallResult::Value(crate::types::TypeKind::Unit)
+        );
+        let execution = report
+            .expression(call_owner)
+            .and_then(|expression| expression.execution_plan())
+            .expect("call execution plan");
+        assert!(execution.executes_as_runtime_call());
+        assert_eq!(
+            execution.value(),
+            crate::final_analysis::CheckedRuntimeValueDisposition::Retain
+        );
+        assert!(!execution.is_evaluated_effect_carrier());
+        assert!(execution.evaluated_effect_roles().iter().any(|role| {
+            matches!(
+                role,
+                crate::final_analysis::CheckedEvaluatedEffectRole::DialogueCallSite {
+                    root,
+                    ..
+                } if *root == call_owner
+            )
+        }));
+    }
+    assert_ne!(
+        immediate.operation().application(),
+        delayed.operation().application(),
+        "each point action retains its own checked call application"
+    );
+    assert_eq!(
+        immediate.operation().application_digest(),
+        delayed.operation().application_digest(),
+        "equal selected calls share the application digest while retaining distinct sites"
     );
 }
 

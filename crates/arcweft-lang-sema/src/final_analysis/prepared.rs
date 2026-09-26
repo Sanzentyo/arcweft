@@ -29,7 +29,7 @@ pub(crate) use evaluated_effect::PreparedEvaluatedEffect;
 mod dialogue;
 pub(crate) use dialogue::{
     PreparedContentApplication, PreparedContentEmission, PreparedDialogueApplication,
-    PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
+    PreparedDialogueEffectOperation, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
 };
 #[path = "prepared/statement.rs"]
 mod statement;

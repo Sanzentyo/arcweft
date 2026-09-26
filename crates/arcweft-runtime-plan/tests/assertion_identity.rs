@@ -600,18 +600,37 @@ fn lower_assertion_project(
         Vec::new(),
     )
     .expect("fixture reachability input");
-    let runtime_owners = executable
-        .runtime_semantic_reachability(
-            reachability_input,
-            &topology,
-            |_| None,
-            |_| {
-                Some(HirRuntimeExpressionProjection::Structural {
-                    value: HirRuntimeValueRetention::Retain,
+    let runtime_owners =
+        executable
+            .runtime_semantic_reachability(
+                reachability_input,
+                &topology,
+                |_| None,
+                |owner| {
+                    executable.modules().find_map(|(_, module)| {
+                    let expression = module.resolve_expr(owner).ok()?;
+                    let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() else {
+                        return None;
+                    };
+                    Some(arcweft_lang_hir::project::HirSelectedCallExpressionDisposition::Callable(
+                        arcweft_lang_hir::project::HirSelectedCallExpressionInventory::new(
+                            call.arguments()
+                                .iter()
+                                .map(|argument| argument.value())
+                                .collect::<Vec<_>>()
+                                .into_boxed_slice(),
+                            call.callee().value_expression(),
+                        ),
+                    ))
                 })
-            },
-        )
-        .expect("runtime semantic reachability");
+                },
+                |_| {
+                    Some(HirRuntimeExpressionProjection::Structural {
+                        value: HirRuntimeValueRetention::Retain,
+                    })
+                },
+            )
+            .expect("runtime semantic reachability");
     for owner in runtime_owners.locals() {
         input.push_local_declaration(
             owner,
