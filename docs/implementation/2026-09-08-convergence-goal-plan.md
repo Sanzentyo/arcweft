@@ -1656,3 +1656,28 @@ materializer が解釈する Formatted policy と検証に限られ、Core の w
 payload を再定義せず、dialogue policy への既存方向の依存に収まる。
 template と materializer の責務は同じ Content contract の生成と消費であり、
 独立 state や重複 traversal を増やしていないため、ここも現時点では保持する。
+
+## fmt runtime decision under implementation — 2026-09-26
+
+Inspected `main`/`origin/main` SHA:
+`ebd4803a0b4fc14de9a6b248bf99333e67c7ff86`。049 の context と 053 fixture は
+引き続き dirty。これは実装受理ではなく、Sol Max と現行 owner を照合した
+次の実装境界の記録である。
+
+選択済み `CheckedFmtCall` を唯一の引数・policy authority とし、通常式の
+`fmt(...)` と dialogue 内 `fmt(...)` を同じ可到達 call inventory に載せる。
+各 call に単一 `Formatted` slot の canonical Content template を一つ発行し、
+slot の source/value-source は checked source range から有界に保持する。
+`ExprId` の debug 表記を fallback text に使わない。operand は C1 の source
+order で評価し、失敗を Content 構築前に型付き result として回収する。
+native では同期的 value-site、AWBC では dialogue terminator より前に
+operand が評価されるため、完成後の `MakeDialogueContent` だけで例外を
+捕捉しても契約を満たさない。純粋かつ非中断の DisplayText 呼び出しだけを
+許し、言語式/formatter の回復可能失敗と artifact/schema/budget/cancel の
+致命的失敗を分離する。
+
+現行 `TypeKind::DisplayText` は trait 適合 witness ではなく、plain 補間も
+exact Content 以外を十分に選別していない。Sema が builtin または選択済み
+project impl の適合 fact を seal し、compiler/runtime-plan へ渡す。
+builtin のみの fixture 受理を一般の DisplayText 実装完了と呼ばない。
+この段階では template 生成、実行、witness の検証は未実行・未達。
