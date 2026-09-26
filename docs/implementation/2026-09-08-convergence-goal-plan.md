@@ -1468,3 +1468,37 @@ fixture の `sema.final_analysis` value resolution で停止した。レシピ�
 `Fx.text(weight = .strong)` は現在の numeric weight 契約と異なるため、
 `700` への訂正が working tree に残る。053、049、および goal 全体の最終
 受理は未達。
+
+## 053 callable edge / Fx sampler checkpoint — 2026-09-26
+
+Supersedes: 直前の「053 rich-text / typed Need checkpoint」の working-tree
+状態と Fx sampler の次作業判断。確認した `main`/`origin/main` は
+`10936d084feefcd93727bf8695000a948699c581` で一致し、working tree は
+053 fixture の `.arcw`、companion profile と assets の未統合変更で dirty。
+
+`d150653b13007b45e4390f2420bf9461679c7e6e` で Fx body の式を一時的な
+型付き sampler 値として検証し、通常の final-analysis facts を並列公開せず
+`sin(ctx.time * speed + ctx.ordinal_phase()) * amplitude` を受理した。
+Sema の `project_fx_` focused tests 11/11、workspace check/Clippy、
+structure gate と fmt が通過した。`just test-workspace` は非 CLI 群と CLI
+7件中6件が通過し、未完の 049 fixture で停止した。Fx sealer
+`fx_definition.rs` の SIZE001 は、Fx 定義の型検証と value-program 構築を
+同じ owner に保持する実装（測定時 2507 行、基底 2282 行）として review。
+独立した authority や依存逆転は見つからず、LOC だけを減らす分割は行わない。
+
+`10936d084feefcd93727bf8695000a948699c581` は dialogue の `id` と
+`text_key` の意味論専用引数を checked child edge に結び、rest spread の
+whole-container / fixed literal element source も HIR と照合する。
+Sema dialogue edge と TextProxy の focused tests、compiler rest-spread
+focused test、workspace all-target/all-feature check/Clippy が通過。
+`RUST_MIN_STACK=16777216` の `just test-workspace` は非 CLI 群を通過し、
+CLI の未編集 049 fixture の `sema.final_analysis` で 6/7 の後に停止した。
+stack 指定なしの同レシピは compiler `callable_execution` で stack overflow
+したため、全体 gate 合格とは記録しない。
+
+053 の最初の dialogue application は companion manifest の `smile` 登録と
+character look 型では停止していない。Sol Max の最小再現で、
+`InlineFailure.fallback("?")` の返り型 `InlineFailure` と dialogue schema の
+`inline_error` 期待型 `InlineFailurePolicy` が一致しないと確認した。維持仕様は
+前者を canonical value とする。schema 訂正後も compiler の opaque producer
+と実行値の接続が必要であり、053 fixture の受理は未達。049 と goal 全体も未達。
