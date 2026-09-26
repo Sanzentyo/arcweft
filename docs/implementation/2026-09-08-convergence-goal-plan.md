@@ -1579,3 +1579,39 @@ fallback resolver を設けていない。
 `049_await_context_option_boundaries.arcw` の ExprId slot 23 で
 `sema.final_analysis` value resolution に失敗し、レシピ全体は未合格。
 053 の `fmt` Content 化と 049 fixture、goal 全体の受理は未達。
+
+## fmt checked-call / ArcError owner checkpoint — 2026-09-26
+
+Supersedes: 直前 checkpoint の「`fmt` は `DisplayText` を返す」と「049 は
+fixture の参照不足だけ」という現在状態。`main` に以下を push 済み。
+
+- `e5dbf2cfa3164e62df3c9b57c9f4ce5b68367f7c`: 標準 `fmt` を受理済み
+  `DialogueContent` 型へ変更し、文書化された named options と policy alias の
+  排他を選択済み `CheckedCallApplication::format_call()` で一度だけ確定。
+  通常 call と dialogue 内の call は同じ fact を使う。結果が exact Content
+  の補間は `ContentValue` として seal し、compiler は Content slot /
+  `ContentInsert` へ投影する。focused Sema `fmt_` 7/7、Sema/Compiler
+  all-target check、fmt と cached diff check が通過した。
+- `aaab0ed0271177e06ce64fa48d07888c3ef05cfb`: 既存 `std.arc_error`
+  owner の version 1 payload に型付き Content message、元の error value、
+  structured trace と snapshot admission を追加。`SourceCoordinate` は元の
+  document revision と byte range を保存し、UTF-8 検証済み
+  `SourceAnchor` を復元時に偽造しない。Core ArcError 3/3 と source coordinate
+  2/2 が通過した。
+
+両 commit を含む workspace all-target/all-feature check と Clippy、fmt、
+diff check は warning ありで通過。structure audit は 2625 files / 96
+packages / 333 review triggers / 0 blocking violations。新規
+`value/arc_error.rs` の SIZE001/TEST001 は、version 1 payload の typed
+encode/decode・limits・nested cause 検証を単一 owner に保持した 1291 行
+（うち embedded tests 98 行）として review した。source layout 自体は
+blocking violation ではなく、責務が分かれるまで行数だけの分割はしない。
+
+049 は未宣言 asset/voice を fixture 引数へ移すと、`Result` / `Option`
+`.context` の shared call 解決・実行不在が露出する。維持仕様上は
+`Result/Option.context` の `ArcError` 型・native/AWBC 実行を先に閉じ、
+pre-await `Need<Result<T,E>>.context` は Ready payload だけを変換しつつ
+Pending/cancel/save/restore を保つ派生 Need が必要。053 は `fmt` の
+recoverable formatted run、Core/native/AWBC の共通 formatter、動的 policy、
+一般の `DisplayText` 適合判定が未実装。両 fixture は作業ツリーに残り、
+この時点の `just test-workspace` 再実行と goal 全体の受理は未達。
