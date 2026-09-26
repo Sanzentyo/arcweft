@@ -1850,3 +1850,25 @@ cached diff check が通過した。check/test に既存 warning がある。
 `Bytes.with_capacity`。Vec `push`/`pop` の実更新、051 fixture、workspace
 test gate はこの SHA では未達・未実施である。push 後の dirty は Vec
 更新の作業差分と 053 fixture companion で、別の goal は含まれない。
+
+## Vec 更新と 051 fixture checkpoint — 2026-09-27
+
+`main` に `f091d95086ddc5144ef79c62f5f68aa299016b0e` を push した。
+選択済み `Vec.push(T)` / `Vec.pop()` の checked local または直接 nominal
+field place を runtime-plan の単一 mutation fact とし、引数を一度評価して
+更新する。Core native/pure と AWBC の専用 `VecPush` / `VecPop` 命令が同じ
+Vec sequence 値を更新する。AWBC codec/verifier/VM は値型、place、宛先、
+定長 Array の repeat 長を検証する。051 で露出した compact numeric
+`Array<T, N>` literal の checked 要素型・長さ投影も閉じ、runtime-codegen
+と accelerator の新 opcode/expr 利用側を更新した。
+
+CLI `compile --emit check` は 051 fixture を 1 flow、warning 0、obligation
+0 で受理した。native/AWBC callable execution 110/110、Core lib 687/687、
+runtime-plan lib 90/90、workspace all-target/all-feature check、AWBC の
+codec/verifier/VM focused test と forged fixed-Array 長不一致拒否、fmt、
+cached diff check が通過した。check/test は既存 warning あり。Core と
+runtime-plan の focused Clippy は Array 延長前に warning ありで通過したが、
+この SHA 全体に対する再実行はしていない。workspace test gate も未実施。
+push 後の dirty は 053 formatter fixture と companion TOML/assets のみ。
+053 の typed formatter と公開 CLI typed `Ref<Asset>`、後続工程の受入条件は
+引き続き未完である。
