@@ -13,9 +13,9 @@ use arcweft_lang_hir::{
 use super::{
     CallableArgumentSlotIndex, CallableCandidateId, CallableGroupIndex, CallableName,
     CallableParameter, CallableParameterConsumer, CallableParameterIndex, CallableParameterPassing,
-    CallableParameterPresence, CallableSignatureSchema, CheckedCallArgumentSlotSource,
-    DialogueApplicationMetadataCoordinate, OpenArgumentId, SpreadArgumentPolicy,
-    UnknownNamedArgumentPolicy,
+    CallableParameterPresence, CallableSignatureSchema, CallableValidator,
+    CheckedCallArgumentSlotSource, DialogueApplicationMetadataCoordinate, FmtParameterId,
+    OpenArgumentId, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };
 use crate::types::TypeKind;
 
@@ -630,6 +630,20 @@ pub(crate) fn map_call_arguments(
             passing,
             slots,
         });
+    }
+
+    if matches!(schema.validator(), CallableValidator::Format)
+        && [
+            FmtParameterId::OnError,
+            FmtParameterId::Fallback,
+            FmtParameterId::DiscardError,
+        ]
+        .into_iter()
+        .filter(|parameter| provided.get(parameter.index()).copied().unwrap_or(false))
+        .count()
+            > 1
+    {
+        return None;
     }
 
     if required_fixed_parameter_is_missing(parameters, &provided) {

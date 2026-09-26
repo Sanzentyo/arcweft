@@ -1387,7 +1387,31 @@ impl Analyzer<'_, '_, '_> {
                         CheckedDialogueToken::PointAction(action)
                     }
                     PreparedCheckedDialogueToken::Interpolation(expression) => {
-                        CheckedDialogueToken::Interpolation(expression)
+                        let expected_content = self
+                            .catalogs
+                            .world
+                            .environment()
+                            .typecheck_env()
+                            .standard_dialogue_content_type()
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        let Some(PreparedExpressionFact::Complete(checked)) =
+                            self.facts.expressions().get(&expression)
+                        else {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        };
+                        if checked.value_type() == Some(&expected_content) {
+                            let source = CheckedContentValueSource::from_evidence(
+                                coordinates
+                                    .expression_evidence(expression)
+                                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                            );
+                            if source.raw() != expression {
+                                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                            }
+                            CheckedDialogueToken::ContentValue { expression, source }
+                        } else {
+                            CheckedDialogueToken::Interpolation(expression)
+                        }
                     }
                     PreparedCheckedDialogueToken::ContentApplication(reference) => self
                         .seal_nested_content_application(

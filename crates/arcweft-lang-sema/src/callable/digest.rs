@@ -583,6 +583,7 @@ impl CanonicalEncoder {
             CallableValidator::StandardMap(_) => 22,
             CallableValidator::Content(_) => 23,
             CallableValidator::BuiltinFx(_) => 24,
+            CallableValidator::Format => 25,
         });
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {

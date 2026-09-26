@@ -555,13 +555,21 @@ impl TypeCheckEnv {
     /// Registers builtins that are available to ordinary Arcweft source files.
     #[must_use]
     fn with_standard_builtins(self) -> Self {
-        self.with_standard_presentation_nominals()
+        let environment = self
+            .with_standard_presentation_nominals()
             .with_standard_builtin_fx_callables()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
             .with_standard_dialogue_value_enums()
-            .with_standard_agent_enums()
-            .with_typed_standard_schema(standard_callable_path(["fmt"]), fmt_schema())
+            .with_standard_agent_enums();
+        let fmt_schema = fmt_schema(
+            environment
+                .standard_dialogue_content_type()
+                .expect("standard dialogue content owner is registered before fmt"),
+            environment.accepted_compile_time_scalar_type(CompileTimeScalarKind::Color),
+        );
+        environment
+            .with_typed_standard_schema(standard_callable_path(["fmt"]), fmt_schema)
             .with_typed_standard_schema(
                 standard_callable_path(["data", "shape"]),
                 data_shape_schema(),
@@ -2006,7 +2014,7 @@ fn root_higher_order_bindings(
     }
 }
 
-fn fmt_schema() -> CallableSignatureSchema {
+fn fmt_schema(content: TypeKind, color: TypeKind) -> CallableSignatureSchema {
     standard_schema(
         vec![vec![
             standard_parameter(
@@ -2018,18 +2026,67 @@ fn fmt_schema() -> CallableSignatureSchema {
             ),
             standard_parameter(
                 1,
+                "style",
+                CallableParameterAdmission::checked(TypeKind::String),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                2,
+                "locale",
+                CallableParameterAdmission::checked(TypeKind::String),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                3,
+                "currency",
+                CallableParameterAdmission::checked(TypeKind::String),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                4,
+                "none",
+                CallableParameterAdmission::checked(TypeKind::String),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                5,
+                "color",
+                CallableParameterAdmission::checked(color),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                6,
                 "on_error",
                 CallableParameterAdmission::checked(TypeKind::Named("InlineFailure".to_owned())),
                 CallableParameterPassing::NamedOnly,
                 CallableParameterPresence::Optional,
             ),
+            standard_parameter(
+                7,
+                "fallback",
+                CallableParameterAdmission::checked(TypeKind::String),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
+            standard_parameter(
+                8,
+                "discard_error",
+                CallableParameterAdmission::checked(TypeKind::Bool),
+                CallableParameterPassing::NamedOnly,
+                CallableParameterPresence::Optional,
+            ),
         ]],
-        TypeKind::DisplayText,
+        content,
         CallableArgumentPolicy::new(
-            UnknownNamedArgumentPolicy::OpenSupply,
+            UnknownNamedArgumentPolicy::Reject,
             SpreadArgumentPolicy::FixedLiteralOnly,
         ),
-        CallableValidator::Ordinary,
+        CallableValidator::Format,
         CallableGenericParameterIssuer::empty(),
     )
 }

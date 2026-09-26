@@ -2124,7 +2124,8 @@ fn collect_rich_text_expression_digests_with_state(
 ) -> Result<(), SemanticTranscriptError> {
     for token in report.content().tokens() {
         match token {
-            CheckedDialogueToken::Interpolation(expression) => {
+            CheckedDialogueToken::Interpolation(expression)
+            | CheckedDialogueToken::ContentValue { expression, .. } => {
                 remember_rich_text_expression(
                     analysis,
                     module,
@@ -2404,7 +2405,8 @@ fn write_rich_text_token(
         CheckedDialogueToken::PointAction(action) => {
             write_rich_text_point_action(hasher, action, child_digests)?;
         }
-        CheckedDialogueToken::Interpolation(expression) => {
+        CheckedDialogueToken::Interpolation(expression)
+        | CheckedDialogueToken::ContentValue { expression, .. } => {
             let digest = child_digests
                 .get(expression)
                 .ok_or(SemanticTranscriptError::MissingIdentity)?;

@@ -38,7 +38,7 @@ use super::{
     CallableSignatureSchemaDigest, CallableValidator, CapabilityCallableId,
     CheckedCallArgumentSlotSource, CheckedCallableDigest, CheckedCallableId,
     CheckedSemanticValueEvidence, CollectionMethodId, ContentCallableIdentity, DialogueCallableId,
-    DropCallableId, EquivalentCallableSource, FloatWidth, FunctionValueOrdinal,
+    DropCallableId, EquivalentCallableSource, FloatWidth, FmtParameterId, FunctionValueOrdinal,
     FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
     LineScheduleCallableId, MathCallableId, OpenArgumentId, OptionConstructorKind,
     PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
@@ -2663,10 +2663,148 @@ pub(crate) enum CheckedCallResultSeal {
     Continuation { prepared: TypeKind },
 }
 
+/// Exact selected operands and fallback policy for the standard `fmt`
+/// callable. The parameter identities are issued by its selected schema; the
+/// sources are copied from that call's C1 execution projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedFmtCall {
+    call_source: CheckedCallApplicationSite,
+    value: CheckedCallExecutionSource,
+    style: Option<CheckedCallExecutionSource>,
+    locale: Option<CheckedCallExecutionSource>,
+    currency: Option<CheckedCallExecutionSource>,
+    none: Option<CheckedCallExecutionSource>,
+    color: Option<CheckedCallExecutionSource>,
+    failure_policy: CheckedFmtFailurePolicy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedFmtFailurePolicy {
+    InheritCharacterDialogue,
+    OnError(CheckedCallExecutionSource),
+    FallbackText(CheckedCallExecutionSource),
+    /// `false` retains inherited failure handling; `true` discards formatter
+    /// failures. The selected Bool operand remains available to runtime.
+    DiscardError(CheckedCallExecutionSource),
+}
+
+impl CheckedFmtCall {
+    fn seal(core: &CheckedCallApplicationCore) -> Result<Self, CallConstraintInvariant> {
+        let schema = core.candidates().selected().schema();
+        if !matches!(schema.validator(), CallableValidator::Format) {
+            return Err(CallConstraintInvariant::MalformedSchemaInventory);
+        }
+        let group_index = core.current_group();
+        let group = schema
+            .group(group_index)
+            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        if schema.groups().len() != 1 || group.parameters().len() != 9 {
+            return Err(CallConstraintInvariant::MalformedSchemaInventory);
+        }
+
+        let source = |parameter: FmtParameterId| -> Result<
+            Option<CheckedCallExecutionSource>,
+            CallConstraintInvariant,
+        > {
+            let index = CallableParameterIndex::try_from_usize(parameter.index())
+                .map_err(|_| CallConstraintInvariant::MalformedSchemaInventory)?;
+            let schema_parameter = group
+                .parameter(index)
+                .filter(|schema_parameter| {
+                    schema_parameter.index() == index
+                        && schema_parameter
+                            .name()
+                            .is_some_and(|name| name.as_str() == parameter.source_name())
+                })
+                .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+            let coordinate = CallableParameterCoordinate::new(group_index, schema_parameter.index());
+            let mut matches = core
+                .execution()
+                .arguments()
+                .iter()
+                .flat_map(|argument| argument.slots())
+                .filter(|slot| {
+                    slot.destination() == &CheckedCallOperandDestination::Parameter(coordinate)
+                });
+            let Some(slot) = matches.next() else {
+                return Ok(None);
+            };
+            if matches.next().is_some() {
+                return Err(CallConstraintInvariant::MalformedMapperSeal);
+            }
+            Ok(Some(slot.source().clone()))
+        };
+
+        let value =
+            source(FmtParameterId::Value)?.ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+        let style = source(FmtParameterId::Style)?;
+        let locale = source(FmtParameterId::Locale)?;
+        let currency = source(FmtParameterId::Currency)?;
+        let none = source(FmtParameterId::NoneValue)?;
+        let color = source(FmtParameterId::Color)?;
+        let on_error = source(FmtParameterId::OnError)?;
+        let fallback = source(FmtParameterId::Fallback)?;
+        let discard_error = source(FmtParameterId::DiscardError)?;
+        let failure_policy = match (on_error, fallback, discard_error) {
+            (None, None, None) => CheckedFmtFailurePolicy::InheritCharacterDialogue,
+            (Some(policy), None, None) => CheckedFmtFailurePolicy::OnError(policy),
+            (None, Some(text), None) => CheckedFmtFailurePolicy::FallbackText(text),
+            (None, None, Some(discard)) => CheckedFmtFailurePolicy::DiscardError(discard),
+            _ => return Err(CallConstraintInvariant::MalformedMapperSeal),
+        };
+        Ok(Self {
+            call_source: core.application_site().clone(),
+            value,
+            style,
+            locale,
+            currency,
+            none,
+            color,
+            failure_policy,
+        })
+    }
+
+    /// Exact checked source of the complete fmt call, usable by the
+    /// `InlineFallback.call_source` runtime policy.
+    pub const fn call_source(&self) -> &CheckedCallApplicationSite {
+        &self.call_source
+    }
+
+    /// Exact selected primary-value operand source for `InlineFallback.expr_source`.
+    pub const fn value(&self) -> &CheckedCallExecutionSource {
+        &self.value
+    }
+
+    pub const fn style(&self) -> Option<&CheckedCallExecutionSource> {
+        self.style.as_ref()
+    }
+
+    pub const fn locale(&self) -> Option<&CheckedCallExecutionSource> {
+        self.locale.as_ref()
+    }
+
+    pub const fn currency(&self) -> Option<&CheckedCallExecutionSource> {
+        self.currency.as_ref()
+    }
+
+    pub const fn none(&self) -> Option<&CheckedCallExecutionSource> {
+        self.none.as_ref()
+    }
+
+    pub const fn color(&self) -> Option<&CheckedCallExecutionSource> {
+        self.color.as_ref()
+    }
+
+    pub const fn failure_policy(&self) -> &CheckedFmtFailurePolicy {
+        &self.failure_policy
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallApplication {
     core: Arc<CheckedCallApplicationCore>,
     result: CheckedCallResult,
+    format_call: Option<CheckedFmtCall>,
     digest: CheckedCallApplicationDigest,
 }
 
@@ -2718,6 +2856,14 @@ impl CheckedCallApplication {
             }
             _ => return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch),
         };
+        let format_call = if matches!(
+            core.candidates().selected().schema().validator(),
+            CallableValidator::Format
+        ) {
+            Some(CheckedFmtCall::seal(&core)?)
+        } else {
+            None
+        };
         let mut encoder = CheckedCallCanonicalEncoder::new(APPLICATION_DOMAIN);
         encoder.digest(core.digest().as_bytes());
         match &result {
@@ -2738,6 +2884,7 @@ impl CheckedCallApplication {
         Ok(Self {
             core,
             result,
+            format_call,
             digest,
         })
     }
@@ -2747,6 +2894,11 @@ impl CheckedCallApplication {
     }
     pub const fn result(&self) -> &CheckedCallResult {
         &self.result
+    }
+    /// Returns the one normalized formatter operand projection owned by this
+    /// selected call, whether it appears in dialogue content or ordinary code.
+    pub const fn format_call(&self) -> Option<&CheckedFmtCall> {
+        self.format_call.as_ref()
     }
     pub const fn digest(&self) -> CheckedCallApplicationDigest {
         self.digest

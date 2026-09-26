@@ -2497,6 +2497,41 @@ fn lower_checked_rich_text(
                     on_error: InlineFailureSelection::InheritCharacterDialogue,
                 });
             }
+            CheckedDialogueToken::ContentValue { expression, source } => {
+                if source.raw() != *expression {
+                    return Err(RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason:
+                            "checked Content interpolation source disagrees with its expression"
+                                .to_owned(),
+                    });
+                }
+                let slot = next_dialogue_slot(owner, values.len())?;
+                let value = runtime_dialogue_value_expression(
+                    owner,
+                    slot,
+                    RuntimeDialogueValueRole::Content,
+                    *expression,
+                    symbols,
+                    world,
+                    analysis,
+                    instance,
+                )?;
+                if value.ty().identity()
+                    != arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                {
+                    return Err(RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason: "checked Content interpolation has a different runtime type"
+                            .to_owned(),
+                    });
+                }
+                values.push(value);
+                nodes.push(RichTextNode::ContentInsert {
+                    slot,
+                    on_error: InlineFailureSelection::InheritCharacterDialogue,
+                });
+            }
             CheckedDialogueToken::LineBreak(kind) => match kind {
                 arcweft_lang_hir::dialogue_application::HirLineBreakKind::Line => {
                     nodes.push(RichTextNode::Control {

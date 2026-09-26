@@ -1,8 +1,8 @@
 use super::*;
 use crate::callable::{CallableName, CallableParameterPresence, CallablePath};
 use crate::types::{
-    EntityKind, GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner,
-    StandardMapFamily, TypeKind,
+    CompileTimeScalarKind, EntityKind, GenericParameterOwnerId, GenericTypeParameterId,
+    LanguageIntrinsicGenericOwner, StandardMapFamily, TypeKind,
 };
 use arcweft_data::DataFormat;
 use std::collections::BTreeSet;
@@ -34,7 +34,62 @@ fn standard_env_contains_dialogue_fmt_builtin() {
         .iter()
         .find(|function| function.path == fmt)
         .expect("fmt has one typed standard callable record");
-    assert_eq!(function.schema.value_type(), Some(&TypeKind::DisplayText));
+    let content = env
+        .standard_dialogue_content_type()
+        .expect("standard DialogueContent owner is accepted");
+    assert_eq!(function.schema.value_type(), Some(&content));
+    assert!(matches!(
+        function.schema.validator(),
+        crate::callable::CallableValidator::Format
+    ));
+    assert_eq!(
+        function.schema.argument_policy().unknown_named(),
+        crate::callable::UnknownNamedArgumentPolicy::Reject
+    );
+    let [group] = function.schema.groups() else {
+        panic!("fmt has one normalized parameter group")
+    };
+    let parameters = group.parameters();
+    assert_eq!(parameters.len(), 9);
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|parameter| parameter
+                .name()
+                .expect("fmt parameters have source labels")
+                .as_str())
+            .collect::<Vec<_>>(),
+        [
+            "value",
+            "style",
+            "locale",
+            "currency",
+            "none",
+            "color",
+            "on_error",
+            "fallback",
+            "discard_error",
+        ]
+    );
+    assert_eq!(
+        parameters[0].presence(),
+        CallableParameterPresence::Required
+    );
+    assert_eq!(parameters[1].declared_type(), Some(&TypeKind::String));
+    assert_eq!(parameters[2].declared_type(), Some(&TypeKind::String));
+    assert_eq!(parameters[3].declared_type(), Some(&TypeKind::String));
+    assert_eq!(parameters[4].declared_type(), Some(&TypeKind::String));
+    assert!(matches!(
+        parameters[5].declared_type(),
+        Some(TypeKind::CompileTimeScalar(color))
+            if color.kind() == CompileTimeScalarKind::Color
+    ));
+    assert_eq!(
+        parameters[6].declared_type(),
+        Some(&TypeKind::Named("InlineFailure".to_owned()))
+    );
+    assert_eq!(parameters[7].declared_type(), Some(&TypeKind::String));
+    assert_eq!(parameters[8].declared_type(), Some(&TypeKind::Bool));
 }
 
 #[test]

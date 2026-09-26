@@ -536,6 +536,13 @@ pub enum CheckedDialogueToken {
     Text(Box<str>),
     Escape(char),
     Interpolation(ExprId),
+    /// An interpolation whose exact accepted runtime type is DialogueContent.
+    /// The source coordinate is retained so lowering can create a Content
+    /// slot without treating it as scalar DisplayText.
+    ContentValue {
+        expression: ExprId,
+        source: CheckedContentValueSource,
+    },
     PointAction(CheckedRichTextAction),
     /// A checked attached-content insertion. Producer and execution authority
     /// are carried by the owning final-analysis expression; this token keeps
@@ -587,6 +594,7 @@ impl CheckedDialogueToken {
             Self::Text(_) => 0x00,
             Self::Escape(_) => 0x01,
             Self::Interpolation(_) => 0x02,
+            Self::ContentValue { .. } => 0x07,
             Self::PointAction(_) => 0x03,
             Self::ContentInsert(_) => 0x04,
             Self::LineBreak(_) => 0x05,

@@ -2063,6 +2063,7 @@ pub enum CallableValidator {
     Ordinary,
     FxConstructor(FxSourceConstructor),
     BuiltinFx(arcweft_presentation::fx::BuiltinFxCallableRowId),
+    Format,
     UnknownFxMember { member: CallableName },
     EnumConstructor(EnumVariantSignatureId),
     ResultConstructor(ResultConstructorKind),

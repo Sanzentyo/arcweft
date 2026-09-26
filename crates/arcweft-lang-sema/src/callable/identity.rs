@@ -1251,6 +1251,54 @@ pub enum DropCallableId {
     OnDrop,
 }
 
+/// Stable schema coordinates for the standard `fmt` callable.
+///
+/// The names in the source surface are resolved to these parameter identities
+/// by the selected callable schema. Consumers must not rediscover them from
+/// authored labels.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum FmtParameterId {
+    Value,
+    Style,
+    Locale,
+    Currency,
+    NoneValue,
+    Color,
+    OnError,
+    Fallback,
+    DiscardError,
+}
+
+impl FmtParameterId {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Value => 0,
+            Self::Style => 1,
+            Self::Locale => 2,
+            Self::Currency => 3,
+            Self::NoneValue => 4,
+            Self::Color => 5,
+            Self::OnError => 6,
+            Self::Fallback => 7,
+            Self::DiscardError => 8,
+        }
+    }
+
+    pub const fn source_name(self) -> &'static str {
+        match self {
+            Self::Value => "value",
+            Self::Style => "style",
+            Self::Locale => "locale",
+            Self::Currency => "currency",
+            Self::NoneValue => "none",
+            Self::Color => "color",
+            Self::OnError => "on_error",
+            Self::Fallback => "fallback",
+            Self::DiscardError => "discard_error",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PromotionCallableId {
     Promote,

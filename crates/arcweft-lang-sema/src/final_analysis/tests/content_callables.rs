@@ -1,10 +1,15 @@
 use crate::{
     callable::{
-        CallableAttachedContentExecution, CallableAttachedContentPolicy, CallableParameterPresence,
-        CheckedAttachedContentAdmission, CheckedCallAttachedContentOperand,
-        CheckedCallRuntimeOperand, CheckedContentRole,
+        CallAnalysisOutcome, CallableAttachedContentExecution, CallableAttachedContentPolicy,
+        CallableParameterCoordinate, CallableParameterIndex, CallableParameterPresence,
+        CheckedAttachedContentAdmission, CheckedCallApplication, CheckedCallAttachedContentOperand,
+        CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallRuntimeOperand,
+        CheckedContentRole, CheckedFmtFailurePolicy, FmtParameterId,
     },
-    checked_rich_text::{CheckedContentEmission, CheckedContentInsertion, CheckedDialogueToken},
+    checked_rich_text::{
+        CheckedContentEmission, CheckedContentInsertion, CheckedContentValueSource,
+        CheckedDialogueToken,
+    },
     final_analysis::{
         CheckedCompileTimeValue, CheckedContentFxApplication, CheckedContentFxBinding,
         CheckedExpressionResolution, CheckedFxBindingDecision, CheckedFxConstructorArgumentValue,
@@ -48,6 +53,28 @@ fn content_insertions(report: &FinalSemanticAnalysis) -> Vec<&CheckedContentInse
         }
     }
     insertions
+}
+
+fn content_values(
+    report: &FinalSemanticAnalysis,
+) -> Vec<(
+    arcweft_lang_hir::identity::ExprId,
+    &CheckedContentValueSource,
+)> {
+    let mut values = Vec::new();
+    for (_, expression) in report.expressions() {
+        let CheckedExpressionResolution::DialogueApplication { rich_text, .. } =
+            expression.resolution()
+        else {
+            continue;
+        };
+        for token in rich_text.content().tokens() {
+            if let CheckedDialogueToken::ContentValue { expression, source } = token {
+                values.push((*expression, source));
+            }
+        }
+    }
+    values
 }
 
 #[test]
@@ -148,6 +175,240 @@ flow @flow.root root {
         plain.value_type(),
         Some(crate::types::TypeKind::Named(name)) if name == "InlineFallback"
     ));
+}
+
+#[test]
+fn fmt_options_are_closed_and_typed() {
+    let valid = fixture(
+        r##"
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, style="number", locale="ja-JP", currency="JPY", none="--", color=rgb("#a8b5ff"))][p]]
+}
+"##,
+        None,
+    );
+    analyze(&valid).expect("fmt accepts its declared option types");
+
+    for arguments in [
+        "style=42i64",
+        "locale=true",
+        "currency=42i64",
+        "none=false",
+        "color=\"blue\"",
+        "fallback=42i64",
+        "discard_error=1i64",
+        "unknown_option=\"value\"",
+    ] {
+        let invalid = fixture(
+            &format!(
+                r#"
+pub character alice {{ display = "Alice" }}
+
+flow @flow.root root {{
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, {arguments})][p]]
+}}
+"#
+            ),
+            None,
+        );
+        let report = analyze(&invalid).expect("rejected fmt calls remain inspectable");
+        let calls = report.calls().collect::<Vec<_>>();
+        assert!(
+            calls
+                .iter()
+                .any(|(_, call)| matches!(call.outcome(), CallAnalysisOutcome::Rejected(_))),
+            "fmt rejects invalid option expression `{arguments}`; outcomes: {:?}",
+            calls
+                .iter()
+                .map(|(_, call)| call.outcome())
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn fmt_failure_aliases_are_exclusive_by_presence() {
+    for arguments in [
+        "on_error=.discard, fallback=\"?\"",
+        "fallback=\"?\", discard_error=true",
+        "on_error=.discard, discard_error=true",
+    ] {
+        let invalid = fixture(
+            &format!(
+                r#"
+pub character alice {{ display = "Alice" }}
+
+flow @flow.root root {{
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, {arguments})][p]]
+}}
+"#
+            ),
+            None,
+        );
+        match analyze(&invalid) {
+            Ok(report) => {
+                let calls = report.calls().collect::<Vec<_>>();
+                assert!(
+                    calls.iter().any(|(_, call)| {
+                        matches!(call.outcome(), CallAnalysisOutcome::Rejected(_))
+                    }),
+                    "fmt rejects simultaneous failure aliases `{arguments}`; outcomes: {:?}",
+                    calls
+                        .iter()
+                        .map(|(_, call)| call.outcome())
+                        .collect::<Vec<_>>()
+                );
+            }
+            Err(crate::final_analysis::FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                ..
+            }) => {}
+            Err(error) => panic!("fmt alias conflict has a rejected call outcome: {error:?}"),
+        }
+    }
+}
+
+fn selected_fmt_parameter<'a>(
+    application: &'a CheckedCallApplication,
+    parameter: FmtParameterId,
+) -> Option<&'a CheckedCallExecutionSource> {
+    let index = CallableParameterIndex::try_from_usize(parameter.index()).ok()?;
+    let coordinate = CallableParameterCoordinate::new(application.core().current_group(), index);
+    application
+        .core()
+        .execution()
+        .arguments()
+        .iter()
+        .flat_map(|argument| argument.slots())
+        .find(|slot| slot.destination() == &CheckedCallOperandDestination::Parameter(coordinate))
+        .map(|slot| slot.source())
+}
+
+#[test]
+fn ordinary_fmt_call_exposes_its_selected_typed_projection() {
+    let fixture = fixture(
+        r#"
+flow @flow.root root {
+    let score: i64 = 42i64
+    let content = fmt(score, style="number")
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("ordinary fmt call has a checked Content result");
+    let calls = report.calls().collect::<Vec<_>>();
+    let [(_, call)] = calls.as_slice() else {
+        panic!("one ordinary fmt call is retained")
+    };
+    let application = call
+        .selected_application()
+        .expect("ordinary fmt call is selected");
+    let fmt = application
+        .format_call()
+        .expect("selected fmt call owns the normalized projection");
+    assert_eq!(fmt.call_source().raw().expression(), calls[0].0);
+    assert_eq!(
+        fmt.value(),
+        selected_fmt_parameter(application, FmtParameterId::Value).expect("fmt primary operand")
+    );
+    assert_eq!(
+        fmt.style(),
+        selected_fmt_parameter(application, FmtParameterId::Style)
+    );
+    assert!(matches!(
+        fmt.failure_policy(),
+        CheckedFmtFailurePolicy::InheritCharacterDialogue
+    ));
+}
+
+#[test]
+fn fmt_content_interpolation_retains_selected_sources_and_policy() {
+    for (policy, policy_parameter, policy_kind) in [
+        ("on_error=.discard", FmtParameterId::OnError, 0),
+        ("fallback=\"unavailable\"", FmtParameterId::Fallback, 1),
+        ("discard_error=false", FmtParameterId::DiscardError, 2),
+    ] {
+        let fixture = fixture(
+            &format!(
+                r##"
+pub character alice {{ display = "Alice" }}
+
+flow @flow.root root {{
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, style="number", locale="ja-JP", currency="JPY", none="--", color=rgb("#a8b5ff"), {policy})][p]]
+}}
+"##,
+            ),
+            None,
+        );
+        let report = analyze(&fixture).expect("typed fmt content call");
+        let (owner, application) = report
+            .calls()
+            .find_map(|(owner, call)| {
+                let application = call.selected_application()?;
+                matches!(
+                    application
+                        .core()
+                        .candidates()
+                        .selected()
+                        .schema()
+                        .validator(),
+                    crate::callable::CallableValidator::Format
+                )
+                .then_some((owner, application))
+            })
+            .expect("fmt interpolation retains its selected typed call");
+        let fmt = application
+            .format_call()
+            .expect("selected fmt call owns the normalized projection");
+        assert_eq!(fmt.call_source().raw().expression(), owner);
+        let content_values = content_values(&report);
+        let [(content_expression, content_source)] = content_values.as_slice() else {
+            panic!("one exact Content interpolation is retained")
+        };
+        assert_eq!(*content_expression, owner);
+        assert_eq!(content_source.raw(), owner);
+        assert_eq!(
+            fmt.value(),
+            selected_fmt_parameter(application, FmtParameterId::Value)
+                .expect("fmt selected value operand")
+        );
+        for parameter in [
+            FmtParameterId::Style,
+            FmtParameterId::Locale,
+            FmtParameterId::Currency,
+            FmtParameterId::NoneValue,
+            FmtParameterId::Color,
+        ] {
+            assert_eq!(
+                match parameter {
+                    FmtParameterId::Style => fmt.style(),
+                    FmtParameterId::Locale => fmt.locale(),
+                    FmtParameterId::Currency => fmt.currency(),
+                    FmtParameterId::NoneValue => fmt.none(),
+                    FmtParameterId::Color => fmt.color(),
+                    _ => unreachable!(),
+                },
+                selected_fmt_parameter(application, parameter),
+                "fmt option {parameter:?} keeps its selected source"
+            );
+        }
+        let selected_policy =
+            selected_fmt_parameter(application, policy_parameter).expect("selected policy operand");
+        match (policy_kind, fmt.failure_policy()) {
+            (0, CheckedFmtFailurePolicy::OnError(source))
+            | (1, CheckedFmtFailurePolicy::FallbackText(source))
+            | (2, CheckedFmtFailurePolicy::DiscardError(source)) => {
+                assert_eq!(source.raw(), selected_policy.raw());
+                assert_eq!(source.coordinate(), selected_policy.coordinate());
+            }
+            _ => panic!("fmt policy alias is normalized to the matching typed variant"),
+        }
+    }
 }
 
 #[test]
