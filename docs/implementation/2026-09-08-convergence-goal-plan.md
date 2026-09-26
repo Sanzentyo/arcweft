@@ -1538,3 +1538,18 @@ resolution で停止したためレシピ全体は失敗扱いとする。
 formatted run を Content / text model / native / AWBC に接続すること、Color
 は単一の sRGB RGBA8 runtime value として literal `rgb` を検証済み定数から
 残余化すること。これらと 049、および goal 全体の最終受理は未達。
+
+## Qualified enum value checkpoint — 2026-09-26
+
+Supersedes: 直前 checkpoint の「完全修飾 `InlineFailure.discard` は HIR Select
+で止まる」という現在状態。`main`/`origin/main` の確認済み SHA は
+`05206d5f763072ca924120be0f08b08e3d2a85ff`。working tree には
+未完の Color runtime 移行と 053 fixture/companion が残る。
+
+同 SHA で、`Type.Case` の Select を accepted environment/project enum の
+静的 qualifier として解決する。HIR の選択済み semantic/runtime 両グラフは
+qualifier を実行 child にせず、case expression と正確な owner/case 照合を保持。
+`InlineFailure.discard`、`InlineFallback.value_plain`、project enum の focused
+Sema regression 1/1、HIR/Sema check、compiler all-target check、fmt と cached
+diff check は通過。native/AWBC での完全修飾値の実行と Color/053/049 の全体
+fixture gate はまだ未検証または未達。
