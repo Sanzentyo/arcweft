@@ -1681,3 +1681,38 @@ exact Content 以外を十分に選別していない。Sema が builtin また�
 project impl の適合 fact を seal し、compiler/runtime-plan へ渡す。
 builtin のみの fixture 受理を一般の DisplayText 実装完了と呼ばない。
 この段階では template 生成、実行、witness の検証は未実行・未達。
+
+## Result/Option context runtime checkpoint — 2026-09-26
+
+`main` に `8a540f312759e2a9e976f627a42003ff61f09a2a` を push した。
+`Result.context` / `Option.context` と lazy callback variant は、選択済み
+call fact から exact `ArcError` を返し、失敗時だけ message を Content に
+変換する。native と Product AWBC は同じ Core constructor を使い、原因値と
+構造化 frame を保持する。RuntimePlan は到達する context call にだけ
+canonical 一スロット Content template を発行し、bundle は AWBC 行と
+text-model 本文の完全一致を確認してから実行用 proof を渡す。standalone
+実行では String message に proof がなければ失敗し、既存 Content message は
+直接受理する。schema/codec/verifier と bundle/session replacement 経路も
+同じ契約へ移した。
+
+Core native/Product AWBC の context focused tests 10/10、Sema focused
+tests 2/2、bundle canonical admission 1/1、変更 crate の all-target check、
+workspace all-target/all-feature check と Clippy、`cargo fmt --all -- --check`、
+cached diff check が通過した。workspace check/Clippy は warning あり。
+`just structure-audit-gate` は 2628 files / 96 packages / 333 review triggers /
+0 blocking violations。今回の大きな Core 変更は既存の ArcError/Content
+owner と専用 test child modules に置き、別の authority や逆向き依存を
+追加していない。
+
+049 fixture の focused CLI は `Await operand ExprId(slot 39) is not a typed
+host call` で停止した。`asset.image` / `voice.load` は registered
+`Need<Result<...>>` producer だが、現行 Await target は Host request のみ
+である。必要な typed producer start / Need handle / 共通 Await と両 engine の
+待機・復帰は `c0936def8915ff3614a401fbad3e7fd42ecb604b` の
+[Need/Await 境界記録](2026-09-26-need-await-producer-boundary.md) に整理した。
+receiver の evaluated-child traversal、049 の fixture/CLI test、および 053 の
+fixture/companion は次の cut のため未commitで保持した。ArcError frame の
+実 source coordinate、pre-Await `Need<Result<T,E>>.context`、049/053 の
+実 native/decoded AWBC 受理、`just test-workspace` と goal 全体の最終 gate は
+未達。`just test-workspace` は既知の focused 049 失敗があるため、この cut
+では再実行していない。
