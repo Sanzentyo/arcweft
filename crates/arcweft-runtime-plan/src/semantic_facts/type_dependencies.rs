@@ -120,6 +120,7 @@ impl RuntimeResolvedStaticCallTarget {
                 RuntimeResolvedHostCallOwner::Agent(_) => {}
             },
             Self::Intrinsic(_)
+            | Self::Format(_)
             | Self::VecPopFront
             | Self::VecPop
             | Self::VecPush

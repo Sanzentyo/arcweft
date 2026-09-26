@@ -1659,6 +1659,7 @@ pub fn lower_runtime_plan_with_stats(
     facts.visit_dialogue_content_fragments(&mut |_, fragment| {
         dialogue_templates.push(fragment.template().clone());
     });
+    dialogue_templates.extend(facts.format_templates().map(|fact| fact.template().clone()));
     if let Some(template) = plain_text_context_template {
         dialogue_templates.push(template);
     }
@@ -3247,12 +3248,44 @@ fn lower_dialogue_content<'facts>(
                 )));
             }
         });
+    for fact in context.facts.format_templates() {
+        let template = fact.template();
+        let slots = template
+            .slots()
+            .iter()
+            .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
+                slot: slot.slot(),
+                role: slot.role(),
+                semantic_type: slot.semantic_type(),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        if let Err(error) = builder.register_dialogue_content_template_seed(
+            arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
+                id: template.id(),
+                digest: template.digest(),
+                slots,
+                effects: Box::default(),
+            },
+        ) {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "formatter content template {} is invalid: {error}",
+                template.id()
+            )));
+        }
+    }
     let mut template_ids = BTreeSet::new();
     context
         .facts
         .visit_dialogue_content_fragments(&mut |_, fragment| {
             template_ids.insert(fragment.template().id());
         });
+    template_ids.extend(
+        context
+            .facts
+            .format_templates()
+            .map(|fact| fact.template().id()),
+    );
     let plain_text_context_template = if needs_plain_text_context_template(context.facts) {
         match arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(
             template_ids.len(),

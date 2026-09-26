@@ -278,6 +278,14 @@ pub enum FinalSemanticAnalysisError {
     #[error("semantic fact does not match its final-HIR payload family")]
     WrongPayloadFamily,
     #[error(
+        "dialogue interpolation expression {expression:?} has unsupported display type {actual:?}"
+    )]
+    UnsupportedDialogueDisplayType {
+        owner: ExprId,
+        expression: ExprId,
+        actual: Box<TypeKind>,
+    },
+    #[error(
         "line-plan init statement {owner:?} starts a child that would escape its pre-reveal scope"
     )]
     InitEscapingChild { owner: StmtId },

@@ -15,6 +15,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::{
+    checked_rich_text::CheckedDisplayWitness,
     effect_row::{EffectRow, EffectRowError, EffectSubstitution},
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
@@ -2673,6 +2674,7 @@ pub(crate) enum CheckedCallResultSeal {
 pub struct CheckedFmtCall {
     call_source: CheckedCallApplicationSite,
     value: CheckedCallExecutionSource,
+    witness: CheckedDisplayWitness,
     style: Option<CheckedCallExecutionSource>,
     locale: Option<CheckedCallExecutionSource>,
     currency: Option<CheckedCallExecutionSource>,
@@ -2692,7 +2694,10 @@ pub enum CheckedFmtFailurePolicy {
 }
 
 impl CheckedFmtCall {
-    fn seal(core: &CheckedCallApplicationCore) -> Result<Self, CallConstraintInvariant> {
+    fn seal(
+        core: &CheckedCallApplicationCore,
+        content_type: &TypeKind,
+    ) -> Result<Self, CallConstraintInvariant> {
         let schema = core.candidates().selected().schema();
         if !matches!(schema.validator(), CallableValidator::Format) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
@@ -2740,6 +2745,20 @@ impl CheckedFmtCall {
 
         let value =
             source(FmtParameterId::Value)?.ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+        let value_type = core
+            .execution()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .find(|slot| slot.source() == &value)
+            .map(CheckedCallExecutionSlot::inferred)
+            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+        let witness =
+            CheckedDisplayWitness::for_fmt_primary(value_type, content_type).ok_or_else(|| {
+                CallConstraintInvariant::UnsupportedDisplayType {
+                    actual: Box::new(value_type.clone()),
+                }
+            })?;
         let style = source(FmtParameterId::Style)?;
         let locale = source(FmtParameterId::Locale)?;
         let currency = source(FmtParameterId::Currency)?;
@@ -2758,6 +2777,7 @@ impl CheckedFmtCall {
         Ok(Self {
             call_source: core.application_site().clone(),
             value,
+            witness,
             style,
             locale,
             currency,
@@ -2776,6 +2796,11 @@ impl CheckedFmtCall {
     /// Exact selected primary-value operand source for `InlineFallback.expr_source`.
     pub const fn value(&self) -> &CheckedCallExecutionSource {
         &self.value
+    }
+
+    /// Closed semantic proof selected from the final checked type of `value`.
+    pub const fn witness(&self) -> &CheckedDisplayWitness {
+        &self.witness
     }
 
     pub const fn style(&self) -> Option<&CheckedCallExecutionSource> {
@@ -2863,7 +2888,8 @@ impl CheckedCallApplication {
             core.candidates().selected().schema().validator(),
             CallableValidator::Format
         ) {
-            Some(CheckedFmtCall::seal(&core)?)
+            let content_type = crate::env::nominal::standard_dialogue_content_type();
+            Some(CheckedFmtCall::seal(&core, &content_type)?)
         } else {
             None
         };

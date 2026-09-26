@@ -739,7 +739,7 @@ impl CheckedCompileTimeScalarExpression {
 pub enum CheckedContentApplication {
     Value {
         id: CheckedContentApplicationId,
-        source: crate::checked_rich_text::CheckedContentValueSource,
+        source: crate::checked_rich_text::CheckedExpressionValueSource,
     },
     ContentResultCall {
         id: CheckedContentApplicationId,
@@ -795,7 +795,7 @@ impl CheckedContentApplicationEdges {
 impl CheckedContentApplication {
     pub(crate) const fn value(
         id: CheckedContentApplicationId,
-        source: crate::checked_rich_text::CheckedContentValueSource,
+        source: crate::checked_rich_text::CheckedExpressionValueSource,
     ) -> Self {
         Self::Value { id, source }
     }
@@ -838,7 +838,7 @@ impl CheckedContentApplication {
 
     pub const fn value_source(
         &self,
-    ) -> Option<&crate::checked_rich_text::CheckedContentValueSource> {
+    ) -> Option<&crate::checked_rich_text::CheckedExpressionValueSource> {
         match self {
             Self::Value { source, .. } => Some(source),
             Self::ContentResultCall { .. } | Self::EmissionCall { .. } => None,

@@ -4026,6 +4026,7 @@ impl RuntimeResolvedCallDispatch {
             },
             Self::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
                 | RuntimeResolvedStaticCallTarget::VecPush
@@ -4064,6 +4065,122 @@ pub enum RuntimeLineCallable {
     },
 }
 
+/// Selected standard formatter call. The checked semantic fact owns parameter
+/// identity, display admission, and failure policy. Authored source text is
+/// retained for the canonical per-call Content template; its dense template
+/// identity is allocated only after all executable instances are known.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeResolvedFormatCall {
+    checked: arcweft_lang_sema::callable::CheckedFmtCall,
+    call_source: Box<str>,
+    value_source: Box<str>,
+}
+
+impl RuntimeResolvedFormatCall {
+    pub fn new(
+        checked: arcweft_lang_sema::callable::CheckedFmtCall,
+        call_source: impl Into<Box<str>>,
+        value_source: impl Into<Box<str>>,
+    ) -> Self {
+        Self {
+            checked,
+            call_source: call_source.into(),
+            value_source: value_source.into(),
+        }
+    }
+
+    pub const fn checked(&self) -> &arcweft_lang_sema::callable::CheckedFmtCall {
+        &self.checked
+    }
+
+    pub const fn coordinate(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate {
+        self.checked.call_source().coordinate()
+    }
+
+    pub const fn call_source(&self) -> &str {
+        &self.call_source
+    }
+
+    pub const fn value_source(&self) -> &str {
+        &self.value_source
+    }
+}
+
+/// Owned lexical scope of a checked formatter occurrence. Distinct closed
+/// instances and nested closures must never share a generated template ID.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeFormatExecutableScope {
+    Global,
+    ProjectFunction(RuntimeProjectFunctionInstanceKey),
+    Closure(RuntimeClosureInstanceKey),
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeFormatTemplateKey {
+    scope: RuntimeFormatExecutableScope,
+    coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
+}
+
+impl RuntimeFormatTemplateKey {
+    pub fn new(
+        scope: RuntimeFormatExecutableScope,
+        coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
+    ) -> Self {
+        Self { scope, coordinate }
+    }
+
+    pub const fn scope(&self) -> &RuntimeFormatExecutableScope {
+        &self.scope
+    }
+
+    pub const fn coordinate(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate {
+        &self.coordinate
+    }
+
+    pub fn for_call(
+        scope: RuntimeExecutableSemanticScope<'_>,
+        call: &RuntimeResolvedFormatCall,
+    ) -> Self {
+        let scope = match scope {
+            RuntimeExecutableSemanticScope::Global => RuntimeFormatExecutableScope::Global,
+            RuntimeExecutableSemanticScope::ProjectFunction(key) => {
+                RuntimeFormatExecutableScope::ProjectFunction(key.clone())
+            }
+            RuntimeExecutableSemanticScope::Closure(key) => {
+                RuntimeFormatExecutableScope::Closure(key.clone())
+            }
+        };
+        Self::new(scope, call.coordinate().clone())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFormatTemplateFact {
+    key: RuntimeFormatTemplateKey,
+    template: arcweft_text_model::DialogueContentFragmentTemplate,
+}
+
+impl RuntimeFormatTemplateFact {
+    pub fn new(
+        key: RuntimeFormatTemplateKey,
+        template: arcweft_text_model::DialogueContentFragmentTemplate,
+    ) -> Self {
+        Self { key, template }
+    }
+
+    pub const fn key(&self) -> &RuntimeFormatTemplateKey {
+        &self.key
+    }
+
+    pub const fn template(&self) -> &arcweft_text_model::DialogueContentFragmentTemplate {
+        &self.template
+    }
+}
+
 /// Closed runtime dispatch selected by the shared semantic resolver.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
@@ -4072,6 +4189,7 @@ pub enum RuntimeLineCallable {
 )]
 pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
+    Format(RuntimeResolvedFormatCall),
     /// Checked in-place Vec operations consumed by expression lowering.
     VecPopFront,
     VecPop,
@@ -4847,6 +4965,7 @@ pub struct RuntimePlanSemanticFactInput {
     project_function_roots: Vec<RuntimeProjectFunctionRootFact>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
+    format_templates: Vec<RuntimeFormatTemplateFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
     character_dialogue_policy_types:
@@ -4899,6 +5018,7 @@ impl RuntimePlanSemanticFactInput {
             project_function_roots: Vec::new(),
             dialogue_applications: BTreeMap::new(),
             dialogue_content_fragments: Vec::new(),
+            format_templates: Vec::new(),
             dialogue_lines: None,
             character_presentation_catalog: None,
             character_dialogue_policy_types: None,
@@ -5153,6 +5273,10 @@ impl RuntimePlanSemanticFactInput {
         self.project_function_roots.push(root);
     }
 
+    pub fn push_format_template(&mut self, template: RuntimeFormatTemplateFact) {
+        self.format_templates.push(template);
+    }
+
     /// Stages the complete dialogue projection for the same single
     /// `RuntimePlanSemanticFacts::try_new` transaction as all other facts.
     pub fn attach_dialogue_projection(
@@ -5250,6 +5374,7 @@ pub struct RuntimePlanSemanticFacts {
         BTreeMap<(ItemId, RuntimeProjectFunctionRootRole), RuntimeProjectFunctionRootFact>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
+    format_templates: BTreeMap<RuntimeFormatTemplateKey, RuntimeFormatTemplateFact>,
     dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
     character_dialogue_policy_types:
@@ -6794,6 +6919,7 @@ impl RuntimePlanSemanticFacts {
                 ) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                    | RuntimeResolvedStaticCallTarget::Format(_)
                     | RuntimeResolvedStaticCallTarget::VecPopFront
                     | RuntimeResolvedStaticCallTarget::VecPop
                     | RuntimeResolvedStaticCallTarget::VecPush
@@ -7696,6 +7822,18 @@ impl RuntimePlanSemanticFacts {
         if let Some(expression) = duplicate_instance_template {
             return Err(RuntimeSemanticFactsError::DuplicateContentFragment { expression });
         }
+        let mut format_templates = BTreeMap::new();
+        for template in input.format_templates {
+            if !fragment_templates.insert(template.template().id())
+                || format_templates
+                    .insert(template.key().clone(), template)
+                    .is_some()
+            {
+                return Err(RuntimeSemanticFactsError::DuplicateFact {
+                    family: RuntimeSemanticFactFamily::FormatTemplate,
+                });
+            }
+        }
         let dialogue_lines = input.dialogue_lines;
         let character_presentation_catalog = input.character_presentation_catalog;
         let character_dialogue_policy_types = input.character_dialogue_policy_types;
@@ -7767,11 +7905,47 @@ impl RuntimePlanSemanticFacts {
             project_function_roots,
             dialogue_applications,
             dialogue_content_fragments,
+            format_templates,
             dialogue_lines,
             character_presentation_catalog,
             character_dialogue_policy_types,
             character_dialogue_generation,
         };
+        let mut selected_format_keys = BTreeSet::new();
+        let mut invalid_format_template = false;
+        facts.visit_scoped_calls(&mut |scope, _, call| {
+            let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(
+                formatted,
+            )) = call.dispatch()
+            else {
+                return;
+            };
+            let key = RuntimeFormatTemplateKey::for_call(scope.scope(), formatted);
+            if !selected_format_keys.insert(key.clone()) {
+                invalid_format_template = true;
+                return;
+            }
+            let Some(fact) = facts.format_template(&key) else {
+                invalid_format_template = true;
+                return;
+            };
+            let canonical = arcweft_text_model::DialogueContentFragmentTemplate::formatted_call(
+                fact.template().id(),
+                formatted.call_source(),
+                formatted.value_source(),
+            );
+            if !matches!(canonical, Ok(ref template) if template == fact.template()) {
+                invalid_format_template = true;
+            }
+        });
+        if invalid_format_template
+            || selected_format_keys.len() != facts.format_templates.len()
+            || selected_format_keys
+                .iter()
+                .any(|key| !facts.format_templates.contains_key(key))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidFormatTemplateCatalog);
+        }
         for owner in facts.expression_types.keys() {
             if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
                 && !facts.is_pure_program_closure(*owner)
@@ -8583,6 +8757,17 @@ impl RuntimePlanSemanticFacts {
         &self.dialogue_content_fragments
     }
 
+    pub fn format_template(
+        &self,
+        key: &RuntimeFormatTemplateKey,
+    ) -> Option<&RuntimeFormatTemplateFact> {
+        self.format_templates.get(key)
+    }
+
+    pub fn format_templates(&self) -> impl ExactSizeIterator<Item = &RuntimeFormatTemplateFact> {
+        self.format_templates.values()
+    }
+
     pub fn visit_dialogue_content_fragments<'facts>(
         &'facts self,
         visitor: &mut impl FnMut(
@@ -8599,6 +8784,31 @@ impl RuntimePlanSemanticFacts {
             self.root_closures.values(),
         ) {
             semantics.visit_content_fragments(scope, visitor);
+        }
+    }
+
+    /// Visits each selected call with the exact global, closed project-
+    /// function, or closure semantic catalog that owns it.
+    ///
+    /// Nested closures retain their own closure identity, and each selected
+    /// call is visited once in its executable catalog.
+    pub fn visit_scoped_calls<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeResolvedCall,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for (owner, call) in &self.calls {
+            visitor(global, *owner, call);
+        }
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+        ) {
+            semantics.visit_scoped_calls(scope, visitor);
         }
     }
 
@@ -8954,6 +9164,8 @@ pub enum RuntimeSemanticFactsError {
     DuplicateContentFragment { expression: ExprId },
     #[error("runtime content fragment source {expression:?} does not match its checked programs")]
     InvalidContentFragment { expression: ExprId },
+    #[error("formatter template catalog does not match the selected scoped fmt calls")]
+    InvalidFormatTemplateCatalog,
     #[error("dialogue application {expression:?} has too many value slots")]
     TooManyDialogueValueSlots { expression: ExprId },
     #[error(
@@ -9015,6 +9227,7 @@ pub enum RuntimeSemanticFactFamily {
     ClosureInstance,
     ProjectFunctionRoot,
     DialogueApplication,
+    FormatTemplate,
     CharacterDialogueGeneration,
 }
 
@@ -10072,6 +10285,7 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::VecPop
             | RuntimeResolvedStaticCallTarget::VecPush
             | RuntimeResolvedStaticCallTarget::Intrinsic(_)
+            | RuntimeResolvedStaticCallTarget::Format(_)
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
         ) => {}
@@ -10922,6 +11136,7 @@ fn validate_project_function_instance(
             }) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
             RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::Format(_)
                 | RuntimeResolvedStaticCallTarget::VecPopFront
                 | RuntimeResolvedStaticCallTarget::VecPop
                 | RuntimeResolvedStaticCallTarget::VecPush

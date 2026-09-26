@@ -1699,6 +1699,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 callee: RuntimeCallTarget::intrinsic(*intrinsic),
                 args: arguments.into_boxed_slice(),
             }),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(_)) => Err(
+                format!("formatter call {id:?} has no typed Content expression lowering"),
+            ),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPop)

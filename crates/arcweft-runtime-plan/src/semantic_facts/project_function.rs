@@ -1396,6 +1396,20 @@ impl RuntimeClosureInstanceFact {
     pub const fn semantics(&self) -> &RuntimeProjectFunctionInstanceSemanticFacts {
         &self.semantics
     }
+
+    pub fn visit_scoped_calls<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeResolvedCall,
+        ),
+    ) {
+        self.semantics.visit_scoped_calls(
+            RuntimeScopedExecutableSemanticFactView::closure(&self.key, &self.semantics),
+            visitor,
+        );
+    }
 }
 
 /// Complete closed semantic subcatalog for one exact project-function
@@ -2135,6 +2149,34 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
         }
     }
 
+    pub fn visit_scoped_calls<'facts>(
+        &'facts self,
+        scope: RuntimeScopedExecutableSemanticFactView<'facts>,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeResolvedCall,
+        ),
+    ) {
+        for expression in &self.expressions {
+            match expression.payload() {
+                RuntimeProjectFunctionExpressionPayload::Call(call) => {
+                    visitor(scope, expression.owner(), call);
+                }
+                RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
+                    closure.semantics().visit_scoped_calls(
+                        RuntimeScopedExecutableSemanticFactView::closure(
+                            closure.key(),
+                            closure.semantics(),
+                        ),
+                        visitor,
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
     pub fn visit_specializations<'facts>(
         &'facts self,
         visitor: &mut impl FnMut(
@@ -2559,6 +2601,20 @@ impl RuntimeProjectFunctionInstanceFact {
         visitor: &mut impl FnMut(ExprId, &'facts RuntimeResolvedCall),
     ) {
         self.semantics.visit_calls(visitor);
+    }
+
+    pub fn visit_scoped_calls<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeResolvedCall,
+        ),
+    ) {
+        self.semantics.visit_scoped_calls(
+            RuntimeScopedExecutableSemanticFactView::project_function(&self.key, &self.semantics),
+            visitor,
+        );
     }
 
     pub fn visit_statement_owners(&self, visitor: &mut impl FnMut(StmtId)) {

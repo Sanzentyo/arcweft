@@ -40,11 +40,11 @@ use crate::{
 use crate::callable::CheckedContentRole;
 use crate::checked_rich_text::{
     CheckedAttachedContentArgument, CheckedContentApplicationId, CheckedContentApplicationSite,
-    CheckedContentEmission, CheckedContentInsertion, CheckedContentValueSource,
-    CheckedDialogueContent, CheckedDialogueHostEvent, CheckedDialogueMark, CheckedDialogueToken,
-    CheckedRichTextAction, CheckedRichTextReport, PreparedCheckedDialogueMarkCatalog,
-    PreparedCheckedDialogueToken, PreparedCheckedRichTextAction, PreparedCheckedRichTextCheck,
-    PreparedCheckedRichTextReport,
+    CheckedContentEmission, CheckedContentInsertion, CheckedDialogueContent,
+    CheckedDialogueHostEvent, CheckedDialogueMark, CheckedDialogueToken,
+    CheckedExpressionValueSource, CheckedRichTextAction, CheckedRichTextReport,
+    PreparedCheckedDialogueMarkCatalog, PreparedCheckedDialogueToken,
+    PreparedCheckedRichTextAction, PreparedCheckedRichTextCheck, PreparedCheckedRichTextReport,
 };
 use crate::checked_text_proxy::{
     CheckedTextProxyApplication, CheckedTextProxyApplicationField,
@@ -1246,7 +1246,7 @@ impl Analyzer<'_, '_, '_> {
                 .callee()
                 .value_expression()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            let source = CheckedContentValueSource::from_evidence(
+            let source = CheckedExpressionValueSource::from_evidence(
                 coordinates
                     .expression_evidence(target)
                     .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
@@ -1399,18 +1399,34 @@ impl Analyzer<'_, '_, '_> {
                         else {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                         };
-                        if checked.value_type() == Some(&expected_content) {
-                            let source = CheckedContentValueSource::from_evidence(
-                                coordinates
-                                    .expression_evidence(expression)
-                                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
-                            );
-                            if source.raw() != expression {
-                                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                            }
-                            CheckedDialogueToken::ContentValue { expression, source }
-                        } else {
-                            CheckedDialogueToken::Interpolation(expression)
+                        let witness = checked
+                            .value_type()
+                            .map(|actual| {
+                                crate::checked_rich_text::CheckedDisplayWitness::for_interpolation(
+                                    actual,
+                                    &expected_content,
+                                )
+                                .ok_or_else(|| {
+                                    FinalSemanticAnalysisError::UnsupportedDialogueDisplayType {
+                                        owner: content_id.owner(),
+                                        expression,
+                                        actual: Box::new(actual.clone()),
+                                    }
+                                })
+                            })
+                            .transpose()?;
+                        let source = CheckedExpressionValueSource::from_evidence(
+                            coordinates
+                                .expression_evidence(expression)
+                                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                        );
+                        if source.raw() != expression {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
+                        CheckedDialogueToken::Interpolation {
+                            expression,
+                            source,
+                            witness,
                         }
                     }
                     PreparedCheckedDialogueToken::ContentApplication(reference) => self

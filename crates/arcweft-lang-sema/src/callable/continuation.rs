@@ -100,6 +100,8 @@ pub(crate) enum CallConstraintInvariant {
     EffectRow(#[from] crate::effect_row::EffectRowError),
     #[error("call argument mapping was not sealed by its producer")]
     MalformedMapperSeal,
+    #[error("fmt primary value type has no selected display witness: {actual:?}")]
+    UnsupportedDisplayType { actual: Box<crate::types::TypeKind> },
     #[error("callable generic schema inventory is malformed")]
     MalformedSchemaInventory,
     #[error("prepared graph issuer is foreign")]

@@ -199,7 +199,8 @@ use arcweft_runtime_plan::{
         RuntimeDialogueMarkKey, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
         RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
         RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
-        RuntimeExecutableCaptureFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeExecutableCaptureFact, RuntimeExecutableSemanticScope, RuntimeFormatTemplateFact,
+        RuntimeFormatTemplateKey, RuntimeImplicitCallableFact, RuntimeIteratorFact,
         RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
         RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
         RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
@@ -225,14 +226,14 @@ use arcweft_runtime_plan::{
         RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation,
         RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
         RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-        RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedMutablePlace,
-        RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
-        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
-        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
-        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
-        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
-        RuntimeTraitMethodFact, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
-        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeResolvedCallOperandSource, RuntimeResolvedFormatCall, RuntimeResolvedHostCall,
+        RuntimeResolvedMutablePlace, RuntimeResolvedNeedProducer, RuntimeResolvedNominal,
+        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
+        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmission,
+        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -279,6 +280,11 @@ pub enum RuntimeSemanticProjectionError {
     ),
     #[error(transparent)]
     RuntimeReachability(#[from] HirRuntimeReachabilityError),
+    #[error("checked formatter template projection failed at {owner:?}: {reason}")]
+    FormatTemplate {
+        owner: Option<ExprId>,
+        reason: String,
+    },
     #[error(transparent)]
     ProjectInstantiation(#[from] ProjectInstantiationError),
     #[error("project-function instance projection at {origin:?} failed: {source}")]
@@ -691,11 +697,20 @@ fn project_runtime_semantic_fact_inventories(
     runtime_calls.retain(|owner, _| {
         !closed_instance_type_owners.contains(&RuntimeProjectFunctionTypeOwner::Expression(*owner))
     });
+    let format_templates = project_runtime_format_templates(
+        &runtime_calls,
+        &project_function_instances,
+        &root_closures,
+        &dialogue_projection,
+    )?;
     let mut runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
     if let Some(view_value_owners) = view_value_owners {
         runtime_expression_type_owners.extend(view_value_owners.selected_expression_type_owners()?);
     }
     let mut input = RuntimePlanSemanticFactInput::new();
+    for template in format_templates {
+        input.push_format_template(template);
+    }
     discovered_instances.append_callable_facts(&mut input);
     input.attach_character_dialogue_policy_types(Arc::clone(
         world
@@ -1707,6 +1722,74 @@ impl RuntimeDialogueTemplateIdCatalog {
     }
 }
 
+fn project_runtime_format_templates(
+    global_calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
+    project_instances: &[RuntimeProjectFunctionInstanceFact],
+    root_closures: &[RuntimeClosureInstanceFact],
+    dialogue: &RuntimeDialogueProjectionCatalog,
+) -> Result<Vec<RuntimeFormatTemplateFact>, RuntimeSemanticProjectionError> {
+    let mut selected = BTreeMap::new();
+    let mut duplicate = None;
+    let mut visit = |scope: RuntimeExecutableSemanticScope<'_>,
+                     owner: ExprId,
+                     call: &RuntimeResolvedCall| {
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(formatted)) =
+            call.dispatch()
+        else {
+            return;
+        };
+        let key = RuntimeFormatTemplateKey::for_call(scope, formatted);
+        if selected.insert(key, formatted.clone()).is_some() {
+            duplicate = Some(owner);
+        }
+    };
+    for (owner, call) in global_calls {
+        visit(RuntimeExecutableSemanticScope::Global, *owner, call);
+    }
+    for instance in project_instances {
+        instance.visit_scoped_calls(&mut |scope, owner, call| visit(scope.scope(), owner, call));
+    }
+    for closure in root_closures {
+        closure.visit_scoped_calls(&mut |scope, owner, call| visit(scope.scope(), owner, call));
+    }
+    if let Some(owner) = duplicate {
+        return Err(RuntimeSemanticProjectionError::FormatTemplate {
+            owner: Some(owner),
+            reason: "two selected calls share one stable formatter coordinate".to_owned(),
+        });
+    }
+    selected
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (key, formatted))| {
+            let index = dialogue
+                .fragments
+                .len()
+                .checked_add(ordinal)
+                .ok_or_else(|| RuntimeSemanticProjectionError::FormatTemplate {
+                    owner: None,
+                    reason: "formatter template identity exceeds u32".to_owned(),
+                })?;
+            let id = RuntimeDialogueContentTemplateId::from_zero_based(index).ok_or_else(|| {
+                RuntimeSemanticProjectionError::FormatTemplate {
+                    owner: None,
+                    reason: "formatter template identity exceeds u32".to_owned(),
+                }
+            })?;
+            let template = DialogueContentFragmentTemplate::formatted_call(
+                id,
+                formatted.call_source(),
+                formatted.value_source(),
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::FormatTemplate {
+                owner: None,
+                reason: error.to_string(),
+            })?;
+            Ok(RuntimeFormatTemplateFact::new(key, template))
+        })
+        .collect()
+}
+
 fn collect_runtime_dialogue_template_keys(
     scope: &RuntimeDialogueProjectionScope,
     report: &CheckedRichTextReport,
@@ -2486,9 +2569,28 @@ fn lower_checked_rich_text(
             CheckedDialogueToken::Escape(value) => nodes.push(RichTextNode::Text {
                 text: value.to_string(),
             }),
-            CheckedDialogueToken::Interpolation(expression) => {
+            CheckedDialogueToken::Interpolation {
+                expression,
+                source,
+                witness,
+            } => {
+                if source.raw() != *expression {
+                    return Err(RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason: "checked interpolation source disagrees with its expression"
+                            .to_owned(),
+                    });
+                }
+                let witness =
+                    witness
+                        .as_ref()
+                        .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                            owner: Some(owner),
+                            reason: "accepted interpolation lacks selected DisplayText evidence"
+                                .to_owned(),
+                        })?;
                 let slot = next_dialogue_slot(owner, values.len())?;
-                values.push(runtime_dialogue_value_expression(
+                let projected = runtime_dialogue_value_expression(
                     owner,
                     slot,
                     RuntimeDialogueValueRole::Interpolation,
@@ -2497,46 +2599,64 @@ fn lower_checked_rich_text(
                     world,
                     analysis,
                     instance,
-                )?);
-                nodes.push(RichTextNode::Interpolation {
-                    slot,
-                    label: format!("{expression:?}"),
-                    on_error: InlineFailureSelection::InheritCharacterDialogue,
-                });
-            }
-            CheckedDialogueToken::ContentValue { expression, source } => {
-                if source.raw() != *expression {
-                    return Err(RuntimeSemanticProjectionError::Dialogue {
-                        owner: Some(owner),
-                        reason:
-                            "checked Content interpolation source disagrees with its expression"
-                                .to_owned(),
-                    });
-                }
-                let slot = next_dialogue_slot(owner, values.len())?;
-                let value = runtime_dialogue_value_expression(
-                    owner,
-                    slot,
-                    RuntimeDialogueValueRole::Content,
-                    *expression,
-                    symbols,
-                    world,
-                    analysis,
-                    instance,
                 )?;
-                if value.ty().identity()
-                    != arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
-                {
+                let is_content = projected.ty().identity()
+                    == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity();
+                if witness.is_content() && !is_content {
                     return Err(RuntimeSemanticProjectionError::Dialogue {
                         owner: Some(owner),
                         reason: "checked Content interpolation has a different runtime type"
                             .to_owned(),
                     });
                 }
-                values.push(value);
-                nodes.push(RichTextNode::ContentInsert {
+                if witness.is_deferred_generic()
+                    && !is_content
+                    && !matches!(
+                        projected.ty().shape(),
+                        RuntimeTypeShape::Unit
+                            | RuntimeTypeShape::Bool
+                            | RuntimeTypeShape::Signed(_)
+                            | RuntimeTypeShape::Unsigned(_)
+                            | RuntimeTypeShape::F32
+                            | RuntimeTypeShape::F64
+                            | RuntimeTypeShape::String
+                            | RuntimeTypeShape::Char
+                            | RuntimeTypeShape::Duration
+                            | RuntimeTypeShape::Progress
+                            | RuntimeTypeShape::EntityReference
+                    )
+                {
+                    return Err(RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason: "closed generic interpolation has no supported DisplayText witness"
+                            .to_owned(),
+                    });
+                }
+                let is_content =
+                    witness.is_content() || witness.is_deferred_generic() && is_content;
+                let role = if is_content {
+                    RuntimeDialogueValueRole::Content
+                } else {
+                    RuntimeDialogueValueRole::Interpolation
+                };
+                let value = RuntimeDialogueValueExpression::new(
                     slot,
-                    on_error: InlineFailureSelection::InheritCharacterDialogue,
+                    role,
+                    *expression,
+                    projected.ty().clone(),
+                );
+                values.push(value);
+                nodes.push(if is_content {
+                    RichTextNode::ContentInsert {
+                        slot,
+                        on_error: InlineFailureSelection::InheritCharacterDialogue,
+                    }
+                } else {
+                    RichTextNode::Interpolation {
+                        slot,
+                        label: format!("{expression:?}"),
+                        on_error: InlineFailureSelection::InheritCharacterDialogue,
+                    }
                 });
             }
             CheckedDialogueToken::LineBreak(kind) => match kind {
@@ -8454,6 +8574,37 @@ pub(crate) fn runtime_project_callable(
     .map_err(|error| error.to_string())
 }
 
+fn runtime_format_source_text(
+    project: HirAnalysisProjectView<'_>,
+    owner: ExprId,
+    query: arcweft_lang_hir::source_index::HirSourceQuery,
+) -> Result<String, RuntimeSemanticProjectionError> {
+    let module = project
+        .modules()
+        .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))
+        .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+    let span = module
+        .source_anchor(query)
+        .map_err(|error| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: format!("formatter source query is invalid: {error}"),
+        })?
+        .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "formatter source query has no authored span".to_owned(),
+        })?;
+    module
+        .provenance()
+        .document()
+        .text()
+        .get(span.range().as_range())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "formatter source span is outside its retained document".to_owned(),
+        })
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "checked callable families are exhaustively selected at this runtime boundary"
@@ -8568,10 +8719,26 @@ fn runtime_call_target(
             .map(RuntimeResolvedStaticCallTarget::StandardMap);
     }
     if matches!(selected.schema().validator(), CallableValidator::Format) {
-        return Err(RuntimeSemanticProjectionError::Call {
+        let checked =
+            application
+                .format_call()
+                .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "selected fmt call has no sealed formatter fact".to_owned(),
+                })?;
+        let call_source = runtime_format_source_text(
+            project,
             owner,
-            reason: "checked fmt Content call has no typed runtime formatter lowering".to_owned(),
-        });
+            arcweft_lang_hir::source_index::HirSourceQuery::Expr {
+                owner: checked.call_source().raw().expression(),
+                role: arcweft_lang_hir::source_index::HirExprSourceRole::Whole,
+            },
+        )?;
+        let value_source =
+            runtime_format_source_text(project, owner, checked.value().raw().source_query())?;
+        return Ok(RuntimeResolvedStaticCallTarget::Format(
+            RuntimeResolvedFormatCall::new(checked.clone(), call_source, value_source),
+        ));
     }
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));

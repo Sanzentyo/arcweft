@@ -7,8 +7,8 @@ use crate::{
         CheckedContentRole, CheckedFmtFailurePolicy, FmtParameterId,
     },
     checked_rich_text::{
-        CheckedContentEmission, CheckedContentInsertion, CheckedContentValueSource,
-        CheckedDialogueToken,
+        CheckedContentEmission, CheckedContentInsertion, CheckedDialogueToken,
+        CheckedDisplayScalar, CheckedDisplayWitness, CheckedExpressionValueSource,
     },
     final_analysis::{
         CheckedCompileTimeValue, CheckedContentFxApplication, CheckedContentFxBinding,
@@ -59,7 +59,7 @@ fn content_values(
     report: &FinalSemanticAnalysis,
 ) -> Vec<(
     arcweft_lang_hir::identity::ExprId,
-    &CheckedContentValueSource,
+    &CheckedExpressionValueSource,
 )> {
     let mut values = Vec::new();
     for (_, expression) in report.expressions() {
@@ -69,7 +69,12 @@ fn content_values(
             continue;
         };
         for token in rich_text.content().tokens() {
-            if let CheckedDialogueToken::ContentValue { expression, source } = token {
+            if let CheckedDialogueToken::Interpolation {
+                expression,
+                source,
+                witness: Some(CheckedDisplayWitness::Content),
+            } = token
+            {
                 values.push((*expression, source));
             }
         }
@@ -316,6 +321,12 @@ flow @flow.root root {
         selected_fmt_parameter(application, FmtParameterId::Value).expect("fmt primary operand")
     );
     assert_eq!(
+        fmt.witness(),
+        &CheckedDisplayWitness::Scalar(CheckedDisplayScalar::SignedInteger(
+            crate::checked_rich_text::CheckedDisplayIntegerWidth::Bits64
+        ))
+    );
+    assert_eq!(
         fmt.style(),
         selected_fmt_parameter(application, FmtParameterId::Style)
     );
@@ -365,6 +376,12 @@ flow @flow.root root {{
         let fmt = application
             .format_call()
             .expect("selected fmt call owns the normalized projection");
+        assert_eq!(
+            fmt.witness(),
+            &CheckedDisplayWitness::Scalar(CheckedDisplayScalar::SignedInteger(
+                crate::checked_rich_text::CheckedDisplayIntegerWidth::Bits64
+            ))
+        );
         assert_eq!(fmt.call_source().raw().expression(), owner);
         let content_values = content_values(&report);
         let [(content_expression, content_source)] = content_values.as_slice() else {
@@ -409,6 +426,111 @@ flow @flow.root root {{
             _ => panic!("fmt policy alias is normalized to the matching typed variant"),
         }
     }
+}
+
+#[test]
+fn fmt_option_primary_selects_inner_witness_without_a_none_text() {
+    let fixture = fixture(
+        r#"
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let nickname: Option<String> = Some("Ada")
+    alice(id=@say.story.greeting)[#[fmt(nickname, on_error=.discard)][p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("fmt handles Option through its failure policy");
+    let fmt = report
+        .calls()
+        .find_map(|(_, call)| {
+            let application = call.selected_application()?;
+            matches!(
+                application
+                    .core()
+                    .candidates()
+                    .selected()
+                    .schema()
+                    .validator(),
+                crate::callable::CallableValidator::Format
+            )
+            .then(|| application.format_call())
+            .flatten()
+        })
+        .expect("selected fmt call retains its admission witness");
+    assert_eq!(
+        fmt.witness(),
+        &CheckedDisplayWitness::Option(Box::new(CheckedDisplayScalar::String))
+    );
+    assert!(fmt.none().is_none(), "none text is optional for Option<T>");
+}
+
+#[test]
+fn plain_interpolation_keeps_scalar_witness_and_rejects_option() {
+    let valid = fixture(
+        r#"
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let title: String = "Ada"
+    alice(id=@say.story.greeting)[#[title][p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&valid).expect("String has a closed inline display witness");
+    let interpolations = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::DialogueApplication { rich_text, .. } => Some(
+                rich_text
+                    .content()
+                    .tokens()
+                    .iter()
+                    .filter_map(|token| match token {
+                        CheckedDialogueToken::Interpolation {
+                            expression,
+                            source,
+                            witness,
+                        } => Some((*expression, source.raw(), witness)),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("dialogue interpolation");
+    let [(expression, source, witness)] = interpolations.as_slice() else {
+        panic!("one checked interpolation carries its source and witness")
+    };
+    assert_eq!(expression, source);
+    assert_eq!(
+        witness
+            .as_ref()
+            .expect("supported type has a display witness"),
+        &CheckedDisplayWitness::Scalar(CheckedDisplayScalar::String)
+    );
+
+    let invalid = fixture(
+        r#"
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let nickname: Option<String> = Some("Ada")
+    alice(id=@say.story.greeting)[#[nickname][p]]
+}
+"#,
+        None,
+    );
+    let error = analyze(&invalid).expect_err("plain interpolation cannot display Option<T>");
+    assert!(matches!(
+        error,
+        crate::final_analysis::FinalSemanticAnalysisError::UnsupportedDialogueDisplayType {
+            actual,
+            ..
+        } if matches!(actual.as_ref(), crate::types::TypeKind::Option(_))
+    ));
 }
 
 #[test]

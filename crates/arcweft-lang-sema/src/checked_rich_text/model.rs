@@ -23,6 +23,7 @@ use crate::{
         CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
         StableCheckedContentFragmentCoordinate, StableCheckedValueCoordinate,
     },
+    types::{EntityKind, TypeKind},
 };
 
 /// Stable identity of one materialized owner-schema default.
@@ -447,14 +448,183 @@ impl CheckedContentApplicationId {
     }
 }
 
-/// Raw value expression paired with its accepted semantic path.
+/// Closed scalar family admitted by the inline display boundary.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedContentValueSource {
+pub enum CheckedDisplayScalar {
+    Unit,
+    Bool,
+    SignedInteger(CheckedDisplayIntegerWidth),
+    UnsignedInteger(CheckedDisplayIntegerWidth),
+    Float(CheckedDisplayFloatWidth),
+    String,
+    Char,
+    Duration,
+    Reference(EntityKind),
+    Progress,
+}
+
+/// Width of a signed or unsigned integer admitted for inline display.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedDisplayIntegerWidth {
+    Bits8,
+    Bits16,
+    Bits32,
+    Bits64,
+    Bits128,
+    Pointer,
+}
+
+/// Width of a floating-point value admitted for inline display.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedDisplayFloatWidth {
+    Bits32,
+    Bits64,
+}
+
+/// Selected proof that one final checked type can enter dialogue display.
+///
+/// `Option` is admitted only through explicit `fmt(...)`; its `Some` branch is
+/// limited to the same scalar families accepted by the core inline formatter.
+/// The option's `None` branch remains a recoverable formatter outcome governed
+/// by the selected `fmt` failure policy or `none` text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDisplayWitness {
+    Scalar(CheckedDisplayScalar),
+    Content,
+    Option(Box<CheckedDisplayScalar>),
+    /// An open project-function parameter. Every closed executable instance
+    /// must resolve this to a supported display type before publication.
+    DeferredGeneric(crate::types::GenericTypeReference),
+    OptionDeferredGeneric(crate::types::GenericTypeReference),
+}
+
+impl CheckedDisplayWitness {
+    pub(crate) fn for_interpolation(ty: &TypeKind, content_type: &TypeKind) -> Option<Self> {
+        if ty == content_type {
+            return Some(Self::Content);
+        }
+        if let TypeKind::GenericParam(parameter) = ty {
+            return Some(Self::DeferredGeneric(parameter.clone()));
+        }
+        Self::scalar_for_type(ty).map(Self::Scalar)
+    }
+
+    pub(crate) fn for_fmt_primary(ty: &TypeKind, content_type: &TypeKind) -> Option<Self> {
+        if ty == content_type {
+            return Some(Self::Content);
+        }
+        match ty {
+            TypeKind::Option(inner) => match inner.as_ref() {
+                TypeKind::GenericParam(parameter) => {
+                    Some(Self::OptionDeferredGeneric(parameter.clone()))
+                }
+                _ => Self::scalar_for_type(inner).map(|scalar| Self::Option(Box::new(scalar))),
+            },
+            TypeKind::GenericParam(parameter) => Some(Self::DeferredGeneric(parameter.clone())),
+            _ => Self::scalar_for_type(ty).map(Self::Scalar),
+        }
+    }
+
+    fn scalar_for_type(ty: &TypeKind) -> Option<CheckedDisplayScalar> {
+        Some(match ty {
+            TypeKind::Unit => CheckedDisplayScalar::Unit,
+            TypeKind::Bool => CheckedDisplayScalar::Bool,
+            TypeKind::I8 => CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits8),
+            TypeKind::I16 => {
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits16)
+            }
+            TypeKind::I32 => {
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits32)
+            }
+            TypeKind::I64 => {
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits64)
+            }
+            TypeKind::I128 => {
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits128)
+            }
+            TypeKind::ISize => {
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Pointer)
+            }
+            TypeKind::U8 => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits8)
+            }
+            TypeKind::U16 => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits16)
+            }
+            TypeKind::U32 => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits32)
+            }
+            TypeKind::U64 => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits64)
+            }
+            TypeKind::U128 => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits128)
+            }
+            TypeKind::USize => {
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Pointer)
+            }
+            TypeKind::F32 => CheckedDisplayScalar::Float(CheckedDisplayFloatWidth::Bits32),
+            TypeKind::F64 => CheckedDisplayScalar::Float(CheckedDisplayFloatWidth::Bits64),
+            TypeKind::String => CheckedDisplayScalar::String,
+            TypeKind::Char => CheckedDisplayScalar::Char,
+            TypeKind::Duration => CheckedDisplayScalar::Duration,
+            TypeKind::Ref(entity) => CheckedDisplayScalar::Reference(entity.kind().clone()),
+            TypeKind::Progress => CheckedDisplayScalar::Progress,
+            _ => return None,
+        })
+    }
+
+    pub const fn scalar(&self) -> Option<&CheckedDisplayScalar> {
+        match self {
+            Self::Scalar(scalar) => Some(scalar),
+            Self::Content
+            | Self::Option(_)
+            | Self::DeferredGeneric(_)
+            | Self::OptionDeferredGeneric(_) => None,
+        }
+    }
+
+    pub const fn option_inner(&self) -> Option<&CheckedDisplayScalar> {
+        match self {
+            Self::Option(scalar) => Some(scalar),
+            Self::Scalar(_)
+            | Self::Content
+            | Self::DeferredGeneric(_)
+            | Self::OptionDeferredGeneric(_) => None,
+        }
+    }
+
+    pub const fn is_content(&self) -> bool {
+        matches!(self, Self::Content)
+    }
+
+    pub const fn is_deferred_generic(&self) -> bool {
+        matches!(
+            self,
+            Self::DeferredGeneric(_) | Self::OptionDeferredGeneric(_)
+        )
+    }
+
+    /// Stable semantic tag for the closed witness family.
+    pub const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Scalar(_) => 0,
+            Self::Content => 1,
+            Self::Option(_) => 2,
+            Self::DeferredGeneric(_) => 3,
+            Self::OptionDeferredGeneric(_) => 4,
+        }
+    }
+}
+
+/// Raw display expression paired with its accepted semantic path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedExpressionValueSource {
     raw: ExprId,
     path: CheckedSemanticPath,
 }
 
-impl CheckedContentValueSource {
+impl CheckedExpressionValueSource {
     pub(crate) fn from_evidence(evidence: CheckedExpressionCoordinateEvidence) -> Self {
         Self {
             raw: evidence.owner(),
@@ -535,13 +705,13 @@ impl CheckedContentInsertion {
 pub enum CheckedDialogueToken {
     Text(Box<str>),
     Escape(char),
-    Interpolation(ExprId),
-    /// An interpolation whose exact accepted runtime type is DialogueContent.
-    /// The source coordinate is retained so lowering can create a Content
-    /// slot without treating it as scalar DisplayText.
-    ContentValue {
+    /// One dialogue value admitted by its final checked type. Exact Content
+    /// carries the Content witness; scalar values carry their closed inline
+    /// display witness.
+    Interpolation {
         expression: ExprId,
-        source: CheckedContentValueSource,
+        source: CheckedExpressionValueSource,
+        witness: Option<CheckedDisplayWitness>,
     },
     PointAction(CheckedRichTextAction),
     /// A checked attached-content insertion. Producer and execution authority
@@ -588,13 +758,28 @@ impl CheckedDialogueContent {
 }
 
 impl CheckedDialogueToken {
+    pub const fn witness(&self) -> Option<&CheckedDisplayWitness> {
+        match self {
+            Self::Interpolation { witness, .. } => witness.as_ref(),
+            Self::Text(_)
+            | Self::Escape(_)
+            | Self::PointAction(_)
+            | Self::ContentInsert(_)
+            | Self::LineBreak(_)
+            | Self::RawLiteral(_) => None,
+        }
+    }
+
     /// Stable token-family tag used by the checked RichText transcript.
     pub const fn semantic_tag(&self) -> u8 {
         match self {
             Self::Text(_) => 0x00,
             Self::Escape(_) => 0x01,
-            Self::Interpolation(_) => 0x02,
-            Self::ContentValue { .. } => 0x07,
+            Self::Interpolation {
+                witness: Some(witness),
+                ..
+            } if witness.is_content() => 0x07,
+            Self::Interpolation { .. } => 0x02,
             Self::PointAction(_) => 0x03,
             Self::ContentInsert(_) => 0x04,
             Self::LineBreak(_) => 0x05,
@@ -662,5 +847,149 @@ impl CheckedRichTextReport {
 
     pub const fn is_valid(&self) -> bool {
         self.content.diagnostics_complete() && self.diagnostics.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod display_witness_tests {
+    use super::{
+        CheckedDisplayFloatWidth, CheckedDisplayIntegerWidth, CheckedDisplayScalar,
+        CheckedDisplayWitness,
+    };
+    use crate::{env::nominal::standard_dialogue_content_type, types::EntityKind};
+
+    #[test]
+    fn selects_the_closed_core_inline_scalar_families() {
+        let content = standard_dialogue_content_type();
+        let supported = [
+            (crate::types::TypeKind::Unit, CheckedDisplayScalar::Unit),
+            (crate::types::TypeKind::Bool, CheckedDisplayScalar::Bool),
+            (
+                crate::types::TypeKind::I8,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits8),
+            ),
+            (
+                crate::types::TypeKind::I16,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits16),
+            ),
+            (
+                crate::types::TypeKind::I32,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits32),
+            ),
+            (
+                crate::types::TypeKind::I64,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits64),
+            ),
+            (
+                crate::types::TypeKind::I128,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Bits128),
+            ),
+            (
+                crate::types::TypeKind::ISize,
+                CheckedDisplayScalar::SignedInteger(CheckedDisplayIntegerWidth::Pointer),
+            ),
+            (
+                crate::types::TypeKind::U8,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits8),
+            ),
+            (
+                crate::types::TypeKind::U16,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits16),
+            ),
+            (
+                crate::types::TypeKind::U32,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits32),
+            ),
+            (
+                crate::types::TypeKind::U64,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits64),
+            ),
+            (
+                crate::types::TypeKind::U128,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Bits128),
+            ),
+            (
+                crate::types::TypeKind::USize,
+                CheckedDisplayScalar::UnsignedInteger(CheckedDisplayIntegerWidth::Pointer),
+            ),
+            (
+                crate::types::TypeKind::F32,
+                CheckedDisplayScalar::Float(CheckedDisplayFloatWidth::Bits32),
+            ),
+            (
+                crate::types::TypeKind::F64,
+                CheckedDisplayScalar::Float(CheckedDisplayFloatWidth::Bits64),
+            ),
+            (crate::types::TypeKind::String, CheckedDisplayScalar::String),
+            (crate::types::TypeKind::Char, CheckedDisplayScalar::Char),
+            (
+                crate::types::TypeKind::Duration,
+                CheckedDisplayScalar::Duration,
+            ),
+            (
+                crate::types::TypeKind::entity_ref(EntityKind::Character),
+                CheckedDisplayScalar::Reference(EntityKind::Character),
+            ),
+            (
+                crate::types::TypeKind::Progress,
+                CheckedDisplayScalar::Progress,
+            ),
+        ];
+
+        for (ty, scalar) in supported {
+            assert_eq!(
+                CheckedDisplayWitness::for_interpolation(&ty, &content),
+                Some(CheckedDisplayWitness::Scalar(scalar.clone())),
+                "plain interpolation witness for {ty:?}"
+            );
+            assert_eq!(
+                CheckedDisplayWitness::for_fmt_primary(&ty, &content),
+                Some(CheckedDisplayWitness::Scalar(scalar.clone())),
+                "fmt witness for {ty:?}"
+            );
+            let optional = crate::types::TypeKind::Option(Box::new(ty.clone()));
+            assert_eq!(
+                CheckedDisplayWitness::for_fmt_primary(&optional, &content),
+                Some(CheckedDisplayWitness::Option(Box::new(scalar))),
+                "fmt Some witness for {ty:?}"
+            );
+            assert_eq!(
+                CheckedDisplayWitness::for_interpolation(&optional, &content),
+                None,
+                "plain interpolation rejects {optional:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn exact_content_is_distinct_and_unsupported_shapes_have_no_witness() {
+        let content = standard_dialogue_content_type();
+        assert_eq!(
+            CheckedDisplayWitness::for_interpolation(&content, &content),
+            Some(CheckedDisplayWitness::Content)
+        );
+        assert_eq!(
+            CheckedDisplayWitness::for_fmt_primary(&content, &content),
+            Some(CheckedDisplayWitness::Content)
+        );
+
+        for ty in [
+            crate::types::TypeKind::Bytes,
+            crate::types::TypeKind::TextCluster,
+            crate::types::TypeKind::Tuple(vec![crate::types::TypeKind::String]),
+            crate::types::TypeKind::Option(Box::new(crate::types::TypeKind::Bytes)),
+            crate::types::TypeKind::Option(Box::new(content.clone())),
+        ] {
+            assert_eq!(
+                CheckedDisplayWitness::for_interpolation(&ty, &content),
+                None,
+                "plain interpolation has no witness for {ty:?}"
+            );
+            assert_eq!(
+                CheckedDisplayWitness::for_fmt_primary(&ty, &content),
+                None,
+                "fmt has no witness for {ty:?}"
+            );
+        }
     }
 }
