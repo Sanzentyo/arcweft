@@ -1641,3 +1641,18 @@ workspace Clippy と `just test-workspace` はこの cut 後に未実行。
 `fmt` の生成 template、native/AWBC の formatted run、DisplayText witness と
 recoverable operand 評価は未実装であり、この commit は 053 fixture の受理を
 意味しない。049 の context 実行と pre-await Need transform も未達。
+
+構造 review は `05d4450e9e694eab785d26a331e8ba55f872b059` の dirty tree で
+`just structure-audit-gate` を実行し、2625 files / 96 packages / 333 review
+triggers / 0 blocking violations。`arcweft-core/src/value/opaque.rs` は
+119415 bytes / 3066 physical LOC（base 2518、増分 548、embedded tests 799）。
+増分は既存 version 1 Content envelope の `Formatted` payload、codec、admission
+と同じ owner に属する。既存の opaque role/handle 群はこの cut で状態や
+依存を増やさず、新たな I/O・逆向き依存・二重 authority はない。現段階では
+Content の encode/decode/budget と一緒に保ち、行数だけの分割はしない。
+`arcweft-text-model/src/content.rs` は 73152 bytes / 1939 physical LOC
+（base 1431、増分 508、embedded tests 411）。増分は既存 template/catalog と
+materializer が解釈する Formatted policy と検証に限られ、Core の wire
+payload を再定義せず、dialogue policy への既存方向の依存に収まる。
+template と materializer の責務は同じ Content contract の生成と消費であり、
+独立 state や重複 traversal を増やしていないため、ここも現時点では保持する。
