@@ -10,7 +10,8 @@ pub use diagnostic::{
     DiagnosticLabel, DiagnosticLabelStyle, DiagnosticSeverity, DiagnosticSuggestion, SourceEdit,
 };
 pub use document::{
-    MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentError, SourceDocumentId,
+    MAX_REGISTRATION_SOURCE_BYTES, SourceCoordinate, SourceCoordinateError,
+    SourceCoordinateResolveError, SourceDocument, SourceDocumentError, SourceDocumentId,
     SourceDocumentIdError, SourceDocumentIdentity, SourceRevision, SourceRevisionParseError,
     SourceSetRevision, SourceSetRevisionError, SourceSpan, SourceSpanError,
     SourceSpanValidationError,

@@ -21,6 +21,13 @@ mod agent;
 pub(crate) use agent::{
     RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
 };
+mod arc_error;
+pub use arc_error::{
+    RUNTIME_ARC_ERROR_VALUE_VERSION, RuntimeArcError, RuntimeArcErrorDataEntry,
+    RuntimeArcErrorFrame, RuntimeArcErrorKind, RuntimeArcErrorNativeBacktrace,
+    RuntimeArcErrorSource, RuntimeArcErrorStateHash, RuntimeArcErrorTrace,
+    RuntimeArcErrorValueError,
+};
 mod awbc_save;
 mod callable;
 mod character_dialogue;

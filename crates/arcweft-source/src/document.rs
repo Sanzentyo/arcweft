@@ -292,6 +292,122 @@ pub struct SourceSpan {
     range: SourceRange,
 }
 
+/// Revision-bound byte coordinate that can cross a runtime boundary without
+/// claiming that the endpoints have already been checked against source UTF-8.
+///
+/// A [`SourceSpan`] is stronger: it can only be issued by a loaded
+/// [`SourceDocument`] after both endpoints have been checked as UTF-8
+/// boundaries. This coordinate preserves the exact source revision and a
+/// bounded range when source text is unavailable; call [`Self::resolve`] once
+/// the matching document is available to recover that stronger proof.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SourceCoordinate {
+    source: SourceDocumentIdentity,
+    range: SourceRange,
+}
+
+impl SourceCoordinate {
+    /// Constructs a coordinate after checking range order and source bounds.
+    pub fn try_new(
+        source: SourceDocumentIdentity,
+        range: SourceRange,
+    ) -> Result<Self, SourceCoordinateError> {
+        validate_coordinate_range(&source, range)?;
+        Ok(Self { source, range })
+    }
+
+    /// Reconstructs a bounded coordinate from its typed source identity parts.
+    pub fn try_from_parts(
+        id: SourceDocumentId,
+        revision: SourceRevision,
+        source_len: u64,
+        range: SourceRange,
+    ) -> Result<Self, SourceCoordinateError> {
+        Self::try_new(
+            SourceDocumentIdentity {
+                id,
+                revision,
+                source_len,
+            },
+            range,
+        )
+    }
+
+    /// Projects a fully validated source span to its revision-bound
+    /// serialization coordinate.
+    #[must_use]
+    pub fn from_span(span: &SourceSpan) -> Self {
+        Self {
+            source: span.source().clone(),
+            range: span.range(),
+        }
+    }
+
+    /// Projects a validated source anchor to its serializable coordinate.
+    #[must_use]
+    pub fn from_anchor(anchor: &crate::SourceAnchor) -> Self {
+        Self::from_span(&anchor.to_span())
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> &SourceDocumentIdentity {
+        &self.source
+    }
+
+    #[must_use]
+    pub const fn range(&self) -> SourceRange {
+        self.range
+    }
+
+    /// Resolves this coordinate against the exact document and checks the
+    /// endpoints as UTF-8 boundaries before returning a [`SourceSpan`].
+    pub fn resolve(
+        &self,
+        document: &SourceDocument,
+    ) -> Result<SourceSpan, SourceCoordinateResolveError> {
+        if self.source.id() != document.identity().id() {
+            return Err(SourceCoordinateResolveError::WrongDocument {
+                expected: document.identity().id().clone(),
+                actual: self.source.id().clone(),
+            });
+        }
+        if self.source.revision() != document.identity().revision() {
+            return Err(SourceCoordinateResolveError::WrongRevision {
+                expected: document.identity().revision(),
+                actual: self.source.revision(),
+            });
+        }
+        if self.source.source_len() != document.identity().source_len() {
+            return Err(SourceCoordinateResolveError::WrongLength {
+                expected: document.identity().source_len(),
+                actual: self.source.source_len(),
+            });
+        }
+        document
+            .span(self.range)
+            .map_err(SourceCoordinateResolveError::InvalidUtf8Range)
+    }
+}
+
+fn validate_coordinate_range(
+    source: &SourceDocumentIdentity,
+    range: SourceRange,
+) -> Result<(), SourceCoordinateError> {
+    if range.start() > range.end() {
+        return Err(SourceCoordinateError::Reversed);
+    }
+    let end = u64::try_from(range.end()).map_err(|_| SourceCoordinateError::EndpointOverflow {
+        endpoint: range.end(),
+    })?;
+    if end > source.source_len() {
+        return Err(SourceCoordinateError::OutOfBounds {
+            end,
+            source_len: source.source_len(),
+        });
+    }
+    Ok(())
+}
+
 impl SourceSpan {
     pub fn source(&self) -> &SourceDocumentIdentity {
         &self.source
@@ -369,6 +485,36 @@ pub enum SourceSpanError {
     NotUtf8Boundary,
 }
 
+/// Failure to construct a bounded, revision-bound source coordinate.
+#[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SourceCoordinateError {
+    #[error("source range start exceeds its end")]
+    Reversed,
+    #[error("source coordinate endpoint {endpoint} does not fit its revision-bound length")]
+    EndpointOverflow { endpoint: usize },
+    #[error("source coordinate ends at byte {end}, beyond source length {source_len}")]
+    OutOfBounds { end: u64, source_len: u64 },
+}
+
+/// Failure to resolve a source coordinate against its exact source document.
+#[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SourceCoordinateResolveError {
+    #[error("source coordinate belongs to document `{actual}`, not `{expected}`")]
+    WrongDocument {
+        expected: SourceDocumentId,
+        actual: SourceDocumentId,
+    },
+    #[error("source coordinate belongs to revision {actual:?}, not {expected:?}")]
+    WrongRevision {
+        expected: SourceRevision,
+        actual: SourceRevision,
+    },
+    #[error("source coordinate length is {actual}, not the document length {expected}")]
+    WrongLength { expected: u64, actual: u64 },
+    #[error("source coordinate is not a valid UTF-8 span: {0}")]
+    InvalidUtf8Range(#[source] SourceSpanError),
+}
+
 /// Failure to use a span with a different document identity or revision.
 #[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SourceSpanValidationError {
@@ -428,9 +574,9 @@ mod tests {
     use std::fmt::Write as _;
 
     use super::{
-        SourceDocument, SourceDocumentId, SourceDocumentIdError, SourceDocumentIdentity,
-        SourceRevision, SourceSetRevision, SourceSetRevisionError, SourceSpanError,
-        SourceSpanValidationError,
+        SourceCoordinate, SourceCoordinateError, SourceCoordinateResolveError, SourceDocument,
+        SourceDocumentId, SourceDocumentIdError, SourceDocumentIdentity, SourceRevision,
+        SourceSetRevision, SourceSetRevisionError, SourceSpanError, SourceSpanValidationError,
     };
     use crate::{SourceName, SourceRange};
 
@@ -657,6 +803,59 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<SourceDocumentIdentity>(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn source_coordinate_round_trips_without_claiming_utf8_proof() {
+        let source = document("manifest", "aéz");
+        let coordinate = SourceCoordinate::from_span(
+            &source
+                .span(SourceRange::new(1, 3))
+                .expect("UTF-8 source span"),
+        );
+
+        assert_eq!(coordinate.source(), source.identity());
+        assert_eq!(coordinate.range(), SourceRange::new(1, 3));
+        assert_eq!(
+            coordinate.resolve(&source).expect("resolve coordinate"),
+            source.span(SourceRange::new(1, 3)).expect("same span")
+        );
+    }
+
+    #[test]
+    fn source_coordinate_checks_revision_bounds_and_utf8_when_resolved() {
+        let source = document("manifest", "aéz");
+        let invalid_utf8_boundary = SourceCoordinate::try_from_parts(
+            source.identity().id().clone(),
+            source.identity().revision(),
+            source.identity().source_len(),
+            SourceRange::new(2, 3),
+        )
+        .expect("wire coordinate only proves bounds");
+        assert_eq!(
+            invalid_utf8_boundary.resolve(&source),
+            Err(SourceCoordinateResolveError::InvalidUtf8Range(
+                SourceSpanError::NotUtf8Boundary
+            ))
+        );
+
+        assert_eq!(
+            SourceCoordinate::try_new(source.identity().clone(), SourceRange::new(0, 5)),
+            Err(SourceCoordinateError::OutOfBounds {
+                end: 5,
+                source_len: 4,
+            })
+        );
+        assert_eq!(
+            SourceCoordinate::try_new(source.identity().clone(), SourceRange::new(3, 2)),
+            Err(SourceCoordinateError::Reversed)
+        );
+
+        let changed = document("manifest", "other");
+        assert!(matches!(
+            invalid_utf8_boundary.resolve(&changed),
+            Err(SourceCoordinateResolveError::WrongRevision { .. })
+        ));
     }
 
     #[test]

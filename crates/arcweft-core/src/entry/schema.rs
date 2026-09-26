@@ -559,6 +559,25 @@ pub fn canonical_runtime_value_bytes(
     Ok(sink.finish())
 }
 
+/// Produces a bounded canonical transcript for one snapshot-admissible
+/// runtime value. Snapshot mode permits snapshot-only opaque owners while
+/// retaining the same deterministic value encoding and shared limits used by
+/// constant admission.
+pub(crate) fn canonical_runtime_snapshot_value_bytes(
+    value: &RuntimeValue,
+    limits: RuntimeSchemaLimits,
+) -> Result<Vec<u8>, RuntimeSchemaError> {
+    let mut sink = CanonicalBytesSink::default();
+    let mut writer = CanonicalWriter {
+        sink: &mut sink,
+        max_string_bytes: Some(limits.max_string_bytes),
+        max_encoded_bytes: limits.max_encoded_bytes,
+    };
+    let mut validation = value_encoding::NoSchemaValidation;
+    value_encoding::visit_snapshot_bounded(value, limits, &mut writer, &mut validation, ())?;
+    Ok(sink.finish())
+}
+
 pub(crate) fn canonical_runtime_value_digest(
     value: &RuntimeValue,
     max_encoded_bytes: usize,

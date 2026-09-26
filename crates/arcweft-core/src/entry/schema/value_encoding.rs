@@ -103,6 +103,29 @@ pub(crate) fn validate_snapshot<V: ValueValidation>(
     validate_without_digest(value, limits, validation, expected, ValueEncoding::Snapshot)
 }
 
+/// Emits one snapshot-admissible runtime value through the shared bounded
+/// visitor. Unlike constant encoding, this admits snapshot-only opaque values
+/// such as runtime Content while preserving the same node, depth, sequence,
+/// string, and encoded-byte limits.
+pub(super) fn visit_snapshot_bounded<S: CanonicalSink + ?Sized, V: ValueValidation>(
+    value: &RuntimeValue,
+    limits: super::RuntimeSchemaLimits,
+    writer: &mut CanonicalWriter<'_, S>,
+    validation: &mut V,
+    expected: V::Expected,
+) -> Result<(), RuntimeSchemaError> {
+    let mut budget = ValueBudget::new(limits);
+    visit_with_encoding(
+        value.view(),
+        0,
+        writer,
+        Some(&mut budget),
+        validation,
+        expected,
+        ValueEncoding::Snapshot,
+    )
+}
+
 fn validate_without_digest<V: ValueValidation>(
     value: &RuntimeValue,
     limits: super::RuntimeSchemaLimits,
