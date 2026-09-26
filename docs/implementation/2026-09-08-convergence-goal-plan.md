@@ -1784,3 +1784,31 @@ Clippy、変更 Rust の rustfmt、cached diff check が通過した。check/Cli
 としては未実行・未達である。push 後の working tree は Need producer の
 native/AWBC/driver/host/CLI 実装と 049/053 fixture が dirty のままであり、
 この型訂正だけを hunk 単位で stage した。
+
+## Typed Need / bundle asset 統合 checkpoint — 2026-09-27
+
+`main` に `45d9d2251b644c0906136b1a2497b8fb15371b34` を push した。
+選択済み manifest の `Need<T>` を typed producer plan として native/AWBC へ接続し、
+task publication と Await の復帰、bundle asset の内容 identity と
+Image/Audio handle、generation 別の asset context、save/restore の検証まで
+統合した。標準 FS の manifest-backed Custom request は native adapter が
+契約と引数を照合して処理し、adapter が拒否した要求は終端失敗として公開する。
+`Need` の停止モードは effect row ではなく manifest と一致する callable の
+最終戻り型から決める。producer lowering は通常 host-call lowering に先行する。
+
+変更後の workspace all-target/all-feature check と Clippy、fmt、
+structure-audit-gate（97 packages、blocking violation 0）、cached diff check は
+通過した。Clippy/check には既存 warning がある。focused validation は
+compiler lib 115/115、native task 20/20、Sema の新規 collection 4/4、
+Core の AWBC role/verifier 回帰、CLI run fixture 全件、native headless asset
+実行、runtime-host/driver/Core の関連 test が通過した。
+`just test-workspace` は CLI linker の PDB 上限で停止したため、
+`cargo clean -p arcweft-cli` 後に `CARGO_PROFILE_TEST_DEBUG=0` と
+`CARGO_INCREMENTAL=0` で CLI の各 command を実行した。fixture test は
+7/8 で、051 の `CapacityMethod` runtime intrinsic 不足により未合格。
+053 companion manifest/assets の直接 check も `fmt` Content の typed runtime
+lowering 不足で未合格。これらを全体 gate の成功とは扱わない。
+
+push 後の working tree は 053 fixture `.arcw` と companion TOML/assets のみ
+dirty。051 の容量 method、053 の一般 formatter 実行、公開 CLI の typed
+`Ref<Asset>` 引数、その他の goal 受入条件は引き続き必須の残件である。
