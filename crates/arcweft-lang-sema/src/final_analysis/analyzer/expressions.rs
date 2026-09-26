@@ -3100,6 +3100,50 @@ impl Analyzer<'_, '_, '_> {
         value.push_str(relative.suffix().as_str());
         checked_choice_public_id(&value).map_err(AnalyzerExpressionError::fatal)
     }
+    /// Residualizes selected `rgb` calls after the candidate graph is sealed.
+    /// At this cut the exact builtin application is available and the outer
+    /// expression transaction can publish the prepared scalar replacement.
+    pub(super) fn residualize_runtime_rgb_colors(
+        &mut self,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let kind = crate::checked_text_proxy::CheckedCompileTimeScalarKind::Color;
+        let color_type = self.compile_time_scalar_type(&kind);
+        let owners = self
+            .facts
+            .expressions()
+            .iter()
+            .filter_map(|(owner, fact)| {
+                (matches!(fact, PreparedExpressionFact::Complete(_))
+                    && fact.value_type() == Some(&color_type)
+                    && matches!(
+                        fact.checked_resolution(),
+                        Some(CheckedExpressionResolution::Call)
+                    )
+                    && self.is_exact_rgb_call(*owner))
+                .then_some(*owner)
+            })
+            .collect::<Vec<_>>();
+
+        for owner in owners {
+            let module = self.module(owner.module())?;
+            let fact = self
+                .facts
+                .expressions()
+                .get(&owner)
+                .cloned()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            self.materialize_compile_time_scalar_fact(
+                module,
+                owner,
+                &kind,
+                color_type.clone(),
+                fact,
+            )
+            .map_err(|error| error.into_public(owner))?;
+        }
+        Ok(())
+    }
+
     fn check_aggregate_expression_kind(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,

@@ -156,16 +156,17 @@ use arcweft_lang_sema::{
         CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
         CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimePatternFactFamily,
         CheckedExecutableRuntimeStatementFactFamily, CheckedExplicitDropPolicy,
-        CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
-        CheckedIteratorFamily, CheckedNominalFieldPlace, CheckedOrdinaryFunctionEmission,
-        CheckedPatternResolution, CheckedProjectItemOwner, CheckedProjectNominal,
-        CheckedRecordPattern, CheckedRecordPatternOwner, CheckedRecordPatternRest,
-        CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedSelectResolution,
-        CheckedStatementPayload, CheckedTraitConformance, CheckedTraitIdentity, CheckedTriggerView,
-        CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantOwnerKind,
-        CheckedVariantResolution, FinalAnalysisImplicitCallableBody, FinalAnalysisTryView,
-        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
-        NominalSchemaProjectionError, RuntimeProjectNominalKind,
+        CheckedExpressionEdgeError, CheckedExpressionExecution, CheckedExpressionResolution,
+        CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedNominalFieldPlace,
+        CheckedOrdinaryFunctionEmission, CheckedPatternResolution, CheckedProjectItemOwner,
+        CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternOwner,
+        CheckedRecordPatternRest, CheckedRecordPatternSourceRef, CheckedRecordValueSource,
+        CheckedSelectResolution, CheckedStatementPayload, CheckedTraitConformance,
+        CheckedTraitIdentity, CheckedTriggerView, CheckedTryCarrier, CheckedValueResolution,
+        CheckedVariantOwner, CheckedVariantOwnerKind, CheckedVariantResolution,
+        FinalAnalysisImplicitCallableBody, FinalAnalysisTryView, FinalSemanticAnalysis,
+        FinalSemanticAnalysisError, NominalSchemaPath, NominalSchemaProjectionError,
+        RuntimeProjectNominalKind,
     },
     registration::RegisteredSemanticWorld,
     types::{
@@ -221,18 +222,18 @@ use arcweft_runtime_plan::{
         RuntimeRecordExpressionField, RuntimeRecordExpressionSource, RuntimeRecordPatternFact,
         RuntimeRecordPatternField, RuntimeRecordPatternRest, RuntimeRecordPatternSource,
         RuntimeRecordPlanError, RuntimeRecordTypeField, RuntimeReductionConstructor,
-        RuntimeRegisteredValueId, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
-        RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
-        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-        RuntimeResolvedHostCall, RuntimeResolvedMutablePlace, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
-        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmission,
-        RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
-        RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeRegisteredValueId, RuntimeResidualValue, RuntimeResolvedAttachedContent,
+        RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation,
+        RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+        RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedMutablePlace,
+        RuntimeResolvedNominal, RuntimeResolvedNominalRecord, RuntimeResolvedSelect,
+        RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+        RuntimeResolvedVariant, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
+        RuntimeSequenceKind, RuntimeStandardMapCall, RuntimeStandardMapFamily,
+        RuntimeStandardMapOperandOrder, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+        RuntimeTriggerAdmission, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
+        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -1079,6 +1080,50 @@ fn project_runtime_semantic_fact_inventories(
                     variants::runtime_stage_look(look, symbols, world, analysis)?,
                 );
             }
+            CheckedExpressionResolution::CompileTimeScalar(scalar) => {
+                if let CheckedCompileTimeScalar::Color(
+                    arcweft_lang_sema::checked_rich_text::CheckedColor::Rgba8(rgba),
+                ) = scalar.value()
+                {
+                    let value =
+                        RuntimeValue::Color(arcweft_core::value::RuntimeColor::from_rgba8(*rgba));
+                    match execution_projection.expression(owner)? {
+                        CheckedExpressionExecution::ResidualValue { application } => {
+                            let selected = analysis
+                                .call(owner)
+                                .and_then(CallTargetFacts::selected_application)
+                                .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                                    owner,
+                                    reason: "residual Color call has no selected application"
+                                        .to_owned(),
+                                })?;
+                            if selected.digest() != application
+                                || selected.core().candidates().selected().id()
+                                    != &CallableCandidateId::Builtin(BuiltinCallableId::Rgb)
+                            {
+                                return Err(RuntimeSemanticProjectionError::Call {
+                                    owner,
+                                    reason: "residual Color does not match the selected rgb call"
+                                        .to_owned(),
+                                });
+                            }
+                            input.push_expression_residual_value(
+                                owner,
+                                RuntimeResidualValue::new(application, value),
+                            );
+                        }
+                        CheckedExpressionExecution::Structural { .. } => {
+                            input.push_expression_literal(owner, value);
+                        }
+                        CheckedExpressionExecution::Call { .. } => {
+                            return Err(RuntimeSemanticProjectionError::Call {
+                                owner,
+                                reason: "checked Color call retained runtime invocation".to_owned(),
+                            });
+                        }
+                    }
+                }
+            }
             CheckedExpressionResolution::ImplicitParameter { .. }
             | CheckedExpressionResolution::PipeLeft(_)
             | CheckedExpressionResolution::DialogueLineCoordinate(_)
@@ -1090,7 +1135,6 @@ fn project_runtime_semantic_fact_inventories(
             | CheckedExpressionResolution::ViewFxApplication(_)
             | CheckedExpressionResolution::StyleValue(_)
             | CheckedExpressionResolution::CompileTimeCallee(_)
-            | CheckedExpressionResolution::CompileTimeScalar(_)
             | CheckedExpressionResolution::TypeValue(_)
             | CheckedExpressionResolution::CompileTimeEnum(_)
             | CheckedExpressionResolution::DialogueApplication { .. }
@@ -4604,6 +4648,11 @@ fn runtime_type_scoped_at(
                 ),
             });
         }
+        TypeKind::CompileTimeScalar(value)
+            if value.kind() == arcweft_lang_sema::types::CompileTimeScalarKind::Color =>
+        {
+            RuntimeTypeShape::Color
+        }
         TypeKind::CompileTimeScalar(_) => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
@@ -6467,6 +6516,7 @@ fn discover_runtime_project_executable_dependencies(
                 | CheckedExecutableRuntimeExpressionFactFamily::Scope
                 | CheckedExecutableRuntimeExpressionFactFamily::Consumed
                 | CheckedExecutableRuntimeExpressionFactFamily::Literal
+                | CheckedExecutableRuntimeExpressionFactFamily::ResidualValue
                 | CheckedExecutableRuntimeExpressionFactFamily::Select
                 | CheckedExecutableRuntimeExpressionFactFamily::NominalRecord
                 | CheckedExecutableRuntimeExpressionFactFamily::Variant
@@ -6888,6 +6938,44 @@ fn runtime_project_function_instance_semantic_facts(
                     }
                 };
                 RuntimeProjectFunctionExpressionPayload::Literal(value)
+            }
+            CheckedExecutableRuntimeExpressionFactFamily::ResidualValue => {
+                let CheckedExpressionResolution::CompileTimeScalar(scalar) = checked.resolution()
+                else {
+                    return Err(error(owner, "residual value is not a checked scalar"));
+                };
+                let color = match scalar.value() {
+                    CheckedCompileTimeScalar::Color(color) => color,
+                    _ => return Err(error(owner, "residual scalar is not a Color")),
+                };
+                let arcweft_lang_sema::checked_rich_text::CheckedColor::Rgba8(rgba) = color else {
+                    return Err(error(owner, "residual Color is not an RGBA8 value"));
+                };
+                let CheckedExpressionExecution::ResidualValue { application } =
+                    execution.expression(owner)?
+                else {
+                    return Err(error(owner, "Color call has no residual execution plan"));
+                };
+                let selected = analysis
+                    .call(owner)
+                    .and_then(CallTargetFacts::selected_application)
+                    .ok_or_else(|| error(owner, "residual Color call has no selected call"))?;
+                if selected.digest() != application
+                    || selected.core().candidates().selected().id()
+                        != &CallableCandidateId::Builtin(BuiltinCallableId::Rgb)
+                    || projected_types
+                        .get(&RuntimeProjectFunctionTypeOwner::Expression(owner))
+                        .is_none_or(|ty| !matches!(ty.shape(), RuntimeTypeShape::Color))
+                {
+                    return Err(error(
+                        owner,
+                        "residual value does not match a checked Color rgb application",
+                    ));
+                }
+                RuntimeProjectFunctionExpressionPayload::ResidualValue(RuntimeResidualValue::new(
+                    application,
+                    RuntimeValue::Color(arcweft_core::value::RuntimeColor::from_rgba8(*rgba)),
+                ))
             }
             CheckedExecutableRuntimeExpressionFactFamily::Value => {
                 let ty = checked.value_type().ok_or_else(|| {

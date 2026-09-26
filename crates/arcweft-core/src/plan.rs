@@ -396,6 +396,7 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::F32 => Some(RuntimeCheckedType::F32),
             RuntimePlanTypeProjection::F64 => Some(RuntimeCheckedType::F64),
             RuntimePlanTypeProjection::String => Some(RuntimeCheckedType::String),
+            RuntimePlanTypeProjection::Color => Some(RuntimeCheckedType::Color),
             RuntimePlanTypeProjection::Char => Some(RuntimeCheckedType::Char),
             RuntimePlanTypeProjection::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimePlanTypeProjection::Duration => Some(RuntimeCheckedType::Duration),

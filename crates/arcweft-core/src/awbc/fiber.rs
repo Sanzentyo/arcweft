@@ -2448,6 +2448,7 @@ fn validate_nested_runtime_value(
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::String(_)
+        | RuntimeValue::Color(_)
         | RuntimeValue::Need(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
@@ -3415,6 +3416,7 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::Bool(_), AwbcRuntimeTypeShape::Bool)
         | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
         | (RuntimeValue::F64(_), AwbcRuntimeTypeShape::F64)
+        | (RuntimeValue::Color(_), AwbcRuntimeTypeShape::Color)
         | (RuntimeValue::Char(_), AwbcRuntimeTypeShape::Char)
         | (RuntimeValue::Duration(_), AwbcRuntimeTypeShape::Duration)
         | (RuntimeValue::Progress(_), AwbcRuntimeTypeShape::Progress)
@@ -3599,6 +3601,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::TensorF32(_) => "tensor<f32>",
         RuntimeValue::TensorF64(_) => "tensor<f64>",
         RuntimeValue::String(_) => "string",
+        RuntimeValue::Color(_) => "color",
         RuntimeValue::Need(_) => "need",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",

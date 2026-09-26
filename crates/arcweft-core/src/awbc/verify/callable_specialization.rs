@@ -78,6 +78,7 @@ impl RuntimeCallableSpecializationContext for AwbcProgram {
             AwbcRuntimeTypeShape::F32 => RuntimePlanTypeProjection::F32,
             AwbcRuntimeTypeShape::F64 => RuntimePlanTypeProjection::F64,
             AwbcRuntimeTypeShape::String => RuntimePlanTypeProjection::String,
+            AwbcRuntimeTypeShape::Color => RuntimePlanTypeProjection::Color,
             AwbcRuntimeTypeShape::Char => RuntimePlanTypeProjection::Char,
             AwbcRuntimeTypeShape::Bytes => RuntimePlanTypeProjection::Bytes,
             AwbcRuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,

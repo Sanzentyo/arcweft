@@ -1021,6 +1021,7 @@ fn validate_replay_safe_value(
         | RuntimeValue::F32(_)
         | RuntimeValue::F64(_)
         | RuntimeValue::String(_)
+        | RuntimeValue::Color(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)

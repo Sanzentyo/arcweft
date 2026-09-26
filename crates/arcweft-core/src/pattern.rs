@@ -880,6 +880,7 @@ pub enum RuntimeCheckedType {
     F32,
     F64,
     String,
+    Color,
     Char,
     Duration,
     Progress,
@@ -1114,6 +1115,7 @@ impl RuntimeCheckedType {
             | (RuntimeValue::F32(_), Self::F32)
             | (RuntimeValue::F64(_), Self::F64)
             | (RuntimeValue::String(_), Self::String)
+            | (RuntimeValue::Color(_), Self::Color)
             | (RuntimeValue::Char(_), Self::Char)
             | (RuntimeValue::Duration(_), Self::Duration)
             | (RuntimeValue::Progress(_), Self::Progress)
@@ -1318,6 +1320,7 @@ fn write_checked_type_identity(
         RuntimeCheckedType::F32 => encoder.write_tag(5),
         RuntimeCheckedType::F64 => encoder.write_tag(6),
         RuntimeCheckedType::String => encoder.write_tag(7),
+        RuntimeCheckedType::Color => encoder.write_tag(26),
         RuntimeCheckedType::Char => encoder.write_tag(8),
         RuntimeCheckedType::Duration => encoder.write_tag(9),
         RuntimeCheckedType::Progress => encoder.write_tag(10),
@@ -1747,6 +1750,7 @@ fn runtime_record_pattern_domain(
         | RuntimePlanTypeProjection::F32
         | RuntimePlanTypeProjection::F64
         | RuntimePlanTypeProjection::String
+        | RuntimePlanTypeProjection::Color
         | RuntimePlanTypeProjection::Char
         | RuntimePlanTypeProjection::Bytes
         | RuntimePlanTypeProjection::Duration
@@ -2097,6 +2101,7 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::F32, RuntimeValue::F32(_))
         | (RuntimePlanTypeProjection::F64, RuntimeValue::F64(_))
         | (RuntimePlanTypeProjection::String, RuntimeValue::String(_))
+        | (RuntimePlanTypeProjection::Color, RuntimeValue::Color(_))
         | (RuntimePlanTypeProjection::Char, RuntimeValue::Char(_))
         | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
         | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))

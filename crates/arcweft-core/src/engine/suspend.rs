@@ -1294,6 +1294,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
+        | RuntimeValue::Color(_)
         | RuntimeValue::Tuple(_)
         | RuntimeValue::Seq(_)
         | RuntimeValue::Record(_)

@@ -107,6 +107,11 @@ pub enum CheckedExpressionExecution {
         result: CheckedRuntimeValueDisposition,
         callee: CheckedCallExecutionCallee,
     },
+    /// A checked call result is materialized as a runtime constant; the
+    /// application digest retains the exact compile-time producer authority.
+    ResidualValue {
+        application: crate::callable::CheckedCallApplicationDigest,
+    },
 }
 
 /// Callee handling selected by one sealed ordinary call application.
@@ -203,6 +208,7 @@ pub enum CheckedExecutableRuntimeExpressionFactFamily {
     NominalRecord,
     Variant,
     Call,
+    ResidualValue,
     EvaluatedEffect,
     PostfixCandidate,
     Await,
@@ -455,6 +461,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                     return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
                 }
                 CheckedExecutableRuntimeExpressionFactFamily::Call
+            } else if plan.residual_value_application().is_some() {
+                if !self.analysis.calls.contains_key(&owner) {
+                    return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
+                }
+                CheckedExecutableRuntimeExpressionFactFamily::ResidualValue
             } else {
                 match expression.resolution() {
                     CheckedExpressionResolution::Structural
@@ -713,6 +724,11 @@ impl FinalAnalysisExecutionProjection<'_> {
                             }
                         }
                     },
+                }
+            }
+            CheckedExpressionExecutionPlan::ResidualValue { application, .. } => {
+                CheckedExpressionExecution::ResidualValue {
+                    application: *application,
                 }
             }
         })

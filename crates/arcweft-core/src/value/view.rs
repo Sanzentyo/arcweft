@@ -8,9 +8,9 @@ use crate::pattern::RuntimeVariantIdentity;
 use crate::time::LogicalDuration;
 
 use super::{
-    DenseSeq, Progress, RecordSeqField, RuntimeAgentValue, RuntimeEntityReference, RuntimeInt,
-    RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeRecordFieldId, RuntimeRecordValue,
-    RuntimeReductionValue, RuntimeSeq, RuntimeUInt, RuntimeValue,
+    DenseSeq, Progress, RecordSeqField, RuntimeAgentValue, RuntimeColor, RuntimeEntityReference,
+    RuntimeInt, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeRecordFieldId,
+    RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeUInt, RuntimeValue,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -22,6 +22,7 @@ pub(crate) enum RuntimeScalarView<'a> {
     F32(f32),
     F64(f64),
     String(&'a str),
+    Color(RuntimeColor),
     Char(char),
     Duration(LogicalDuration),
     Progress(&'a Progress),
@@ -57,6 +58,7 @@ impl RuntimeValueView<'_> {
             Self::Scalar(RuntimeScalarView::F32(_)) => "f32",
             Self::Scalar(RuntimeScalarView::F64(_)) => "f64",
             Self::Scalar(RuntimeScalarView::String(_)) => "string",
+            Self::Scalar(RuntimeScalarView::Color(_)) => "color",
             Self::Scalar(RuntimeScalarView::Char(_)) => "char",
             Self::Scalar(RuntimeScalarView::Duration(_)) => "duration",
             Self::Scalar(RuntimeScalarView::Progress(_)) => "progress",
@@ -140,6 +142,7 @@ impl RuntimeValue {
             Self::F32(value) => View::Scalar(Scalar::F32(*value)),
             Self::F64(value) => View::Scalar(Scalar::F64(*value)),
             Self::String(value) => View::Scalar(Scalar::String(value)),
+            Self::Color(value) => View::Scalar(Scalar::Color(*value)),
             Self::Char(value) => View::Scalar(Scalar::Char(*value)),
             Self::Duration(value) => View::Scalar(Scalar::Duration(*value)),
             Self::Progress(value) => View::Scalar(Scalar::Progress(value)),

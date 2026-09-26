@@ -180,6 +180,7 @@ impl<'a> Iterator for SchemaChildren<'a> {
             | Schema::F32
             | Schema::F64
             | Schema::String
+            | Schema::Color
             | Schema::Char
             | Schema::Never
             | Schema::Duration
@@ -283,6 +284,7 @@ impl RuntimeTypeSchema {
                 | Self::F32
                 | Self::F64
                 | Self::String
+                | Self::Color
                 | Self::Char
                 | Self::Never
                 | Self::Duration

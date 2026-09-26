@@ -141,6 +141,7 @@ pub(super) fn schema<S: CanonicalSink + ?Sized>(
                     writer.u64(*length)?;
                     work.push(Work::Schema(item));
                 }
+                RuntimeTypeSchema::Color => writer.u8(38)?,
                 RuntimeTypeSchema::Map { kind, key, value } => {
                     writer.u8(22)?;
                     writer.u8(kind.semantic_tag())?;

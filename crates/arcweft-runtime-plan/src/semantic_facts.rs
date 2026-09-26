@@ -133,7 +133,7 @@ pub use project_function::{
     RuntimeProjectFunctionPatternPayload, RuntimeProjectFunctionPatternSemanticFact,
     RuntimeProjectFunctionRootFact, RuntimeProjectFunctionRootRole,
     RuntimeProjectFunctionStatementPayload, RuntimeProjectFunctionStatementSemanticFact,
-    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
+    RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection, RuntimeResidualValue,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -207,6 +207,7 @@ pub enum RuntimeTypeShape {
     F32,
     F64,
     String,
+    Color,
     Char,
     Bytes,
     Duration,
@@ -659,6 +660,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::F32 => RuntimePlanTypeProjection::F32,
             RuntimeTypeShape::F64 => RuntimePlanTypeProjection::F64,
             RuntimeTypeShape::String => RuntimePlanTypeProjection::String,
+            RuntimeTypeShape::Color => RuntimePlanTypeProjection::Color,
             RuntimeTypeShape::Char => RuntimePlanTypeProjection::Char,
             RuntimeTypeShape::Bytes => RuntimePlanTypeProjection::Bytes,
             RuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,
@@ -840,6 +842,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::F32
             | RuntimeTypeShape::F64
             | RuntimeTypeShape::String
+            | RuntimeTypeShape::Color
             | RuntimeTypeShape::Char
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
@@ -1037,6 +1040,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::F32
             | RuntimeTypeShape::F64
             | RuntimeTypeShape::String
+            | RuntimeTypeShape::Color
             | RuntimeTypeShape::Char
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
@@ -1072,6 +1076,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::F32 => Some(RuntimeCheckedType::F32),
             RuntimeTypeShape::F64 => Some(RuntimeCheckedType::F64),
             RuntimeTypeShape::String => Some(RuntimeCheckedType::String),
+            RuntimeTypeShape::Color => Some(RuntimeCheckedType::Color),
             RuntimeTypeShape::Char => Some(RuntimeCheckedType::Char),
             RuntimeTypeShape::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimeTypeShape::Duration => Some(RuntimeCheckedType::Duration),
@@ -3247,6 +3252,7 @@ fn dialogue_policy_normalized_type(
         Checked::Never => RuntimeTypeShape::Never,
         Checked::Bool => RuntimeTypeShape::Bool,
         Checked::String => RuntimeTypeShape::String,
+        Checked::Color => RuntimeTypeShape::Color,
         Checked::EntityReference => RuntimeTypeShape::EntityReference,
         Checked::Sequence(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Seq,
@@ -4599,6 +4605,7 @@ pub struct RuntimePlanSemanticFactInput {
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
+    expression_residual_values: Vec<(ExprId, RuntimeResidualValue)>,
     pattern_literals: Vec<(PatternId, RuntimeValue)>,
     pattern_items: Vec<(PatternId, RuntimeProjectItem)>,
     values: Vec<(ExprId, RuntimeResolvedValue)>,
@@ -4650,6 +4657,7 @@ impl RuntimePlanSemanticFactInput {
             expression_types: Vec::new(),
             pattern_types: Vec::new(),
             expression_literals: Vec::new(),
+            expression_residual_values: Vec::new(),
             pattern_literals: Vec::new(),
             pattern_items: Vec::new(),
             values: Vec::new(),
@@ -4742,6 +4750,11 @@ impl RuntimePlanSemanticFactInput {
 
     pub fn push_expression_literal(&mut self, owner: ExprId, value: RuntimeValue) {
         self.expression_literals.push((owner, value));
+    }
+
+    /// Stages one runtime value produced by a checked compile-time call.
+    pub fn push_expression_residual_value(&mut self, owner: ExprId, value: RuntimeResidualValue) {
+        self.expression_residual_values.push((owner, value));
     }
 
     pub fn push_pattern_literal(&mut self, owner: PatternId, value: RuntimeValue) {
@@ -4993,6 +5006,7 @@ pub struct RuntimePlanSemanticFacts {
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
+    expression_residual_values: BTreeMap<ExprId, RuntimeResidualValue>,
     pattern_literals: BTreeMap<PatternId, RuntimeValue>,
     pattern_items: BTreeMap<PatternId, RuntimeProjectItem>,
     values: BTreeMap<ExprId, RuntimeResolvedValue>,
@@ -6207,6 +6221,30 @@ impl RuntimePlanSemanticFacts {
                     )
                 },
             )?;
+        }
+
+        let expression_residual_values = collect_unique(
+            input.expression_residual_values,
+            RuntimeSemanticFactFamily::ResidualValue,
+        )?;
+        for (expression, residual) in &expression_residual_values {
+            require_expr_family(
+                &modules,
+                runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::ResidualValue,
+                |kind| matches!(kind, HirExprKind::Call(_)),
+            )?;
+            if expression_literals.contains_key(expression)
+                || !matches!(residual.value(), RuntimeValue::Color(_))
+                || !expression_types
+                    .get(expression)
+                    .is_some_and(|ty| matches!(ty.shape(), RuntimeTypeShape::Color))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidResidualValue {
+                    expression: *expression,
+                });
+            }
         }
 
         let pattern_literals = collect_unique(
@@ -7485,6 +7523,7 @@ impl RuntimePlanSemanticFacts {
             expression_children,
             pattern_types,
             expression_literals,
+            expression_residual_values,
             pattern_literals,
             pattern_items,
             values,
@@ -7795,7 +7834,17 @@ impl RuntimePlanSemanticFacts {
     }
 
     pub fn expression_literal(&self, expression: ExprId) -> Option<&RuntimeValue> {
-        self.expression_literals.get(&expression)
+        self.expression_literals.get(&expression).or_else(|| {
+            self.expression_residual_values
+                .get(&expression)
+                .map(RuntimeResidualValue::value)
+        })
+    }
+
+    /// Returns the exact checked compile-time call application that produced
+    /// one residualized runtime value.
+    pub fn expression_residual_value(&self, expression: ExprId) -> Option<&RuntimeResidualValue> {
+        self.expression_residual_values.get(&expression)
     }
 
     /// Returns the sole accepted normalized type of one selected runtime-domain
@@ -8505,6 +8554,8 @@ pub enum RuntimeSemanticFactsError {
     WrongProjectGeneration,
     #[error("runtime semantic facts contain more than one {family:?} fact for the same HIR ID")]
     DuplicateFact { family: RuntimeSemanticFactFamily },
+    #[error("residual runtime value for {expression:?} is not a checked Color call result")]
+    InvalidResidualValue { expression: ExprId },
     #[error("runtime pure program {program} does not match its checked View closure root")]
     InvalidPureProgram { program: RuntimePureProgramId },
     #[error("checked View closure root {closure:?} has no exact runtime pure-program fact")]
@@ -8719,6 +8770,7 @@ pub enum RuntimeSemanticFactFamily {
     ExpressionChildren,
     PatternType,
     ExpressionLiteral,
+    ResidualValue,
     PatternLiteral,
     PatternItem,
     Value,
@@ -9364,6 +9416,7 @@ fn normalized_type_matches_schema(
             | (RuntimeTypeShape::F32, RuntimeTypeSchema::F32)
             | (RuntimeTypeShape::F64, RuntimeTypeSchema::F64)
             | (RuntimeTypeShape::String, RuntimeTypeSchema::String)
+            | (RuntimeTypeShape::Color, RuntimeTypeSchema::Color)
             | (RuntimeTypeShape::Char, RuntimeTypeSchema::Char)
             | (RuntimeTypeShape::Duration, RuntimeTypeSchema::Duration)
             | (RuntimeTypeShape::Progress, RuntimeTypeSchema::Progress)
@@ -9644,6 +9697,7 @@ fn validate_normalized_type(
         | RuntimeTypeShape::F32
         | RuntimeTypeShape::F64
         | RuntimeTypeShape::String
+        | RuntimeTypeShape::Color
         | RuntimeTypeShape::Char
         | RuntimeTypeShape::Bytes
         | RuntimeTypeShape::Duration
@@ -10897,6 +10951,16 @@ fn validate_project_function_semantic_catalog(
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
             }
+            RuntimeProjectFunctionExpressionPayload::ResidualValue(value) => {
+                if !matches!(hir, HirExprKind::Call(_))
+                    || !matches!(value.value(), RuntimeValue::Color(_))
+                    || !expression_types
+                        .get(&owner)
+                        .is_some_and(|ty| matches!(ty.shape(), RuntimeTypeShape::Color))
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
             RuntimeProjectFunctionExpressionPayload::Value(value) => {
                 if !matches!(
                     hir,
@@ -11509,6 +11573,7 @@ fn validate_project_instance_dialogue_applications(
             RuntimeProjectFunctionExpressionPayload::Structural
             | RuntimeProjectFunctionExpressionPayload::Consumed
             | RuntimeProjectFunctionExpressionPayload::Literal(_)
+            | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
             | RuntimeProjectFunctionExpressionPayload::Scope(_)
             | RuntimeProjectFunctionExpressionPayload::Value(_)
             | RuntimeProjectFunctionExpressionPayload::Select(_)

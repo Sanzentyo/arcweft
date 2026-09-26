@@ -12,7 +12,8 @@ use crate::plan::{
     RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
 };
 use crate::value::{
-    RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeColor, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeSeq,
+    RuntimeSignedIntWidth,
 };
 
 fn semantic(tag: u8) -> RuntimeSemanticTypeId {
@@ -56,6 +57,15 @@ fn admitted(
     value: &RuntimeValue,
 ) -> Result<RuntimeValueDigest, RuntimePlanValueAdmissionError> {
     plan.accepts_value(id(plan, tag), value, RuntimeSchemaLimits::engine_default())
+}
+
+#[test]
+fn runtime_color_is_admitted_by_the_dedicated_plan_color_type() {
+    let plan = plan([seed(1, Type::Color), seed(2, Type::String)]);
+    let color = RuntimeValue::Color(RuntimeColor::new(12, 34, 56, 78));
+
+    assert!(admitted(&plan, 1, &color).is_ok());
+    assert!(admitted(&plan, 2, &color).is_err());
 }
 
 #[test]

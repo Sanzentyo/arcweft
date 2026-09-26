@@ -112,25 +112,30 @@ pub(super) fn runtime_to_fx(
             }
             _ => Err(type_error(expected, value)),
         },
-        FxRuntimeType::Color => {
-            let fields = exact_record(value, expected, &["red", "green", "blue", "alpha"])?;
-            let channel = |field| {
-                finite_field(&fields, field).and_then(|value| {
-                    Opacity::try_new(value).map_err(|error| {
-                        BundleViewValueConversionError::InvalidNumber {
-                            field,
-                            message: error.to_string(),
-                        }
+        FxRuntimeType::Color => match value {
+            RuntimeValue::Color(color) => {
+                Ok(FxRuntimeValue::Color(FxColor::from_rgba8(color.rgba8())))
+            }
+            _ => {
+                let fields = exact_record(value, expected, &["red", "green", "blue", "alpha"])?;
+                let channel = |field| {
+                    finite_field(&fields, field).and_then(|value| {
+                        Opacity::try_new(value).map_err(|error| {
+                            BundleViewValueConversionError::InvalidNumber {
+                                field,
+                                message: error.to_string(),
+                            }
+                        })
                     })
-                })
-            };
-            Ok(FxRuntimeValue::Color(FxColor::new(
-                channel("red")?,
-                channel("green")?,
-                channel("blue")?,
-                channel("alpha")?,
-            )))
-        }
+                };
+                Ok(FxRuntimeValue::Color(FxColor::new(
+                    channel("red")?,
+                    channel("green")?,
+                    channel("blue")?,
+                    channel("alpha")?,
+                )))
+            }
+        },
         FxRuntimeType::Vec2 => {
             let fields = exact_record(value, expected, &["x", "y"])?;
             Ok(FxRuntimeValue::Vec2(FxVec2 {
@@ -200,6 +205,10 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         RuntimeValue::EntityRef(value) => Some(value.runtime_label()),
         RuntimeValue::Char(value) => Some(value.to_string()),
         RuntimeValue::Duration(value) => Some(format_duration(value.as_nanos())),
+        RuntimeValue::Color(value) => {
+            let [red, green, blue, alpha] = value.rgba8();
+            Some(format!("#{red:02x}{green:02x}{blue:02x}{alpha:02x}"))
+        }
         RuntimeValue::Unit
         | RuntimeValue::Progress(_)
         | RuntimeValue::F32(_)
@@ -438,6 +447,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Color(_) => "color",
         RuntimeValue::Progress(_) => "progress",
         RuntimeValue::Range(_) => "range",
         RuntimeValue::Iterator(_) => "iterator",

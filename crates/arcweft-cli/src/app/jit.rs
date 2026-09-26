@@ -302,6 +302,10 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::TensorF32(value) => format!("tensor/f32/{:?}", value.shape().dims()),
         RuntimeValue::TensorF64(value) => format!("tensor/f64/{:?}", value.shape().dims()),
         RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Color(value) => {
+            let [red, green, blue, alpha] = value.rgba8();
+            format!("#{red:02x}{green:02x}{blue:02x}{alpha:02x}")
+        }
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Progress(value) => format!("progress/{:.3}", value.ratio()),

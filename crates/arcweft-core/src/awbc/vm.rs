@@ -2725,6 +2725,7 @@ pub(crate) fn constant_value(
         AwbcConstant::F32Bits(bits) => Ok(RuntimeValue::F32(f32::from_bits(*bits))),
         AwbcConstant::F64Bits(bits) => Ok(RuntimeValue::F64(f64::from_bits(*bits))),
         AwbcConstant::String(id) => Ok(RuntimeValue::String(string(program, *id)?.to_owned())),
+        AwbcConstant::Color(value) => Ok(RuntimeValue::Color(*value)),
         AwbcConstant::Char(value) => char::from_u32(*value)
             .map(RuntimeValue::Char)
             .ok_or_else(|| VmError::Runtime(format!("invalid char scalar {value}"))),

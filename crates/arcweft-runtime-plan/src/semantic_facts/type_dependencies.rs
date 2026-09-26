@@ -335,6 +335,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::Structural
             | Self::Consumed
             | Self::Literal(_)
+            | Self::ResidualValue(_)
             | Self::Select(_)
             | Self::PostfixCandidate(_)
             | Self::Await(_)

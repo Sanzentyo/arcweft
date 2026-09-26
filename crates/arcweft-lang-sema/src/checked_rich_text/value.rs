@@ -359,15 +359,22 @@ pub(crate) fn parse_public_id(source: &str) -> Result<PublicId, RichTextDiagnost
 
 pub(crate) fn parse_color(source: &str) -> Result<CheckedColor, RichTextDiagnosticCode> {
     if let Some(hex) = source.strip_prefix('#') {
-        if !matches!(hex.len(), 6 | 8) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if !matches!(hex.len(), 3 | 4 | 6 | 8) || !hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
             return Err(RichTextDiagnosticCode::InvalidColor);
         }
         let mut rgba = [255_u8; 4];
-        for (index, pair) in hex.as_bytes().chunks_exact(2).enumerate() {
-            let pair =
-                std::str::from_utf8(pair).map_err(|_| RichTextDiagnosticCode::InvalidColor)?;
-            rgba[index] =
-                u8::from_str_radix(pair, 16).map_err(|_| RichTextDiagnosticCode::InvalidColor)?;
+        if matches!(hex.len(), 3 | 4) {
+            for (index, byte) in hex.bytes().enumerate() {
+                let channel = hex_nibble(byte)?;
+                rgba[index] = channel * 17;
+            }
+        } else {
+            for (index, pair) in hex.as_bytes().chunks_exact(2).enumerate() {
+                let high = hex_nibble(pair[0])?;
+                let low = hex_nibble(pair[1])?;
+                rgba[index] = (high << 4) | low;
+            }
         }
         return Ok(CheckedColor::Rgba8(rgba));
     }
@@ -382,6 +389,15 @@ pub(crate) fn parse_color(source: &str) -> Result<CheckedColor, RichTextDiagnost
         _ => return Err(RichTextDiagnosticCode::InvalidColor),
     };
     Ok(CheckedColor::Rgba8(rgba))
+}
+
+fn hex_nibble(byte: u8) -> Result<u8, RichTextDiagnosticCode> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(RichTextDiagnosticCode::InvalidColor),
+    }
 }
 
 fn parse_vec2<P: Copy + Eq + 'static>(
@@ -530,7 +546,7 @@ fn is_non_finite_spelling(source: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_integer;
+    use super::{CheckedColor, parse_color, parse_integer};
     use crate::checked_rich_text::RichTextDiagnosticCode;
 
     #[test]
@@ -549,5 +565,28 @@ mod tests {
             parse_integer("-9223372036854775809"),
             Err(RichTextDiagnosticCode::Overflow)
         );
+    }
+
+    #[test]
+    fn color_parser_expands_short_hex_channels_and_checks_malformed_values() {
+        assert_eq!(
+            parse_color("#f08"),
+            Ok(CheckedColor::Rgba8([255, 0, 136, 255]))
+        );
+        assert_eq!(
+            parse_color("#f08c"),
+            Ok(CheckedColor::Rgba8([255, 0, 136, 204]))
+        );
+        assert_eq!(
+            parse_color("#Ff0088Cc"),
+            Ok(CheckedColor::Rgba8([255, 0, 136, 204]))
+        );
+        for malformed in ["#", "#ff", "#fffff", "#ggg", "#ffffgggg"] {
+            assert_eq!(
+                parse_color(malformed),
+                Err(RichTextDiagnosticCode::InvalidColor),
+                "{malformed} must be rejected"
+            );
+        }
     }
 }

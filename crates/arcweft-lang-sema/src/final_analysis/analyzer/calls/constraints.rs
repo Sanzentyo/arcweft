@@ -5232,7 +5232,13 @@ fn prepare_parameter_source_constraint(
             CallConstraintInvariant::MalformedSchemaInventory,
         ))
     })?;
-    if runtime_override.is_none() && matches!(declared, TypeKind::CompileTimeScalar(_)) {
+    let compile_time_only_scalar = match &declared {
+        TypeKind::CompileTimeScalar(value) => {
+            value.kind() != crate::types::CompileTimeScalarKind::Color
+        }
+        _ => false,
+    };
+    if runtime_override.is_none() && compile_time_only_scalar {
         if !projection.is_scalar() || rule != &crate::callable::CallableParameterValueRule::supply()
         {
             return Err(CallAnalysisFailure::Invariant(

@@ -1141,6 +1141,7 @@ impl Wire for RuntimeTypeSchema {
                 length.write_wire(writer)?;
                 item.write_wire(writer)?;
             }
+            Self::Color => writer.write_u8(37),
         }
         Ok(())
     }
@@ -1218,6 +1219,7 @@ impl Wire for RuntimeTypeSchema {
                     length: u64::read_wire(reader)?,
                     item: Box::new(Self::read_wire(reader)?),
                 },
+                37 => Self::Color,
                 tag => {
                     return Err(AwbcCodecError::UnknownTag {
                         kind: "runtime type schema",

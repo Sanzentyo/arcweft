@@ -378,6 +378,7 @@ impl<'a> PlanValueValidation<'a> {
             | (Type::F32, View::Scalar(Scalar::F32(_)))
             | (Type::F64, View::Scalar(Scalar::F64(_)))
             | (Type::String, View::Scalar(Scalar::String(_)))
+            | (Type::Color, View::Scalar(Scalar::Color(_)))
             | (Type::Char, View::Scalar(Scalar::Char(_)))
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
             | (Type::Progress, View::Scalar(Scalar::Progress(_)))

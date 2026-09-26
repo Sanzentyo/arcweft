@@ -703,6 +703,9 @@ fn runtime_expression_projection_for_owner(
                 callee,
             })
         }
+        CheckedExpressionExecution::ResidualValue { .. } => {
+            Ok(HirRuntimeExpressionProjection::ResidualValue)
+        }
     }
 }
 

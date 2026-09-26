@@ -24,6 +24,7 @@ pub(crate) use agent::{
 mod awbc_save;
 mod callable;
 mod character_dialogue;
+mod color;
 mod data_shape;
 mod env;
 mod expression_locals;
@@ -83,6 +84,7 @@ pub(crate) use callable::{
 };
 pub use callable::{RuntimeCallableValue, RuntimeCallableValueError};
 pub use character_dialogue::RuntimeCharacterDialogueProducerId;
+pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
@@ -216,6 +218,7 @@ pub enum RuntimeValue {
     TensorF32(DenseTensorF32),
     TensorF64(DenseTensorF64),
     String(String),
+    Color(RuntimeColor),
     /// Opaque identity of a one-shot temporal value. The payload type is owned
     /// by the enclosing runtime type, never inferred from this identity.
     Need(crate::task::NeedId),
@@ -341,6 +344,7 @@ impl RuntimeValue {
             | Self::TensorF32(_)
             | Self::TensorF64(_)
             | Self::String(_)
+            | Self::Color(_)
             | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
@@ -398,6 +402,7 @@ impl RuntimeValue {
             | Self::TensorF32(_)
             | Self::TensorF64(_)
             | Self::String(_)
+            | Self::Color(_)
             | Self::Need(_)
             | Self::Char(_)
             | Self::Duration(_)
@@ -3278,6 +3283,10 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             format!("tensor/f64/{:?}", value.shape().dims())
         }
         RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::Color(value) => {
+            let [red, green, blue, alpha] = value.rgba8();
+            format!("#{red:02x}{green:02x}{blue:02x}{alpha:02x}")
+        }
         RuntimeValue::Need(value) => format!("need/{}", value.0),
         RuntimeValue::EntityRef(value) => value.runtime_label(),
         RuntimeValue::Char(value) => value.to_string(),

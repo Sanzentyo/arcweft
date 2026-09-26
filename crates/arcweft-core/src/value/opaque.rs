@@ -1358,6 +1358,7 @@ impl RuntimeContentValueBudget {
             | RuntimeValue::UInt(_)
             | RuntimeValue::F32(_)
             | RuntimeValue::F64(_)
+            | RuntimeValue::Color(_)
             | RuntimeValue::MatrixF32(_)
             | RuntimeValue::MatrixF64(_)
             | RuntimeValue::TensorF32(_)

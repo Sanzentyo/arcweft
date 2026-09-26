@@ -2010,6 +2010,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::TensorF32(_) => "tensor f32",
         RuntimeValue::TensorF64(_) => "tensor f64",
         RuntimeValue::String(_) => "string",
+        RuntimeValue::Color(_) => "color",
         RuntimeValue::Need(_) => "need",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",

@@ -936,6 +936,40 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn dialogue_point_call_receives_a_checked_rgb_color_in_native_and_awbc_plans() {
+    let compiled = compile_attached_dialogue_project(
+        r##"
+pub character alice { display = "Alice" }
+
+fn flash(color: Color, time: Duration) -> Unit { () }
+
+flow main() -> Unit {
+    alice[flash [call flash(color=rgb("#ffffff"), time=90ms)]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"##,
+    )
+    .expect("rgb literal remains a checked Color value at the point-action call");
+    let runtime = compiled.runtime_plan();
+    let [content] = runtime.plan.dialogue_content().rows() else {
+        panic!("one point-action content plan");
+    };
+    assert!(
+        dialogue_effect_callback_ops(&runtime.plan, content, 0)
+            .iter()
+            .any(|operation| matches!(operation, FlowOp::ProjectCall { .. }))
+    );
+    AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "dialogue_rgb_point_call.arcw",
+    )
+    .lower()
+    .expect("the typed Color argument lowers to verified AWBC");
+}
+
+#[test]
 fn recursive_generic_closure_in_attached_default_reaches_verified_awbc() {
     let source = r#"
 pub character alice { display = "Alice" }

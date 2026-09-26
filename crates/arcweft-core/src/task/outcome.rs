@@ -208,6 +208,7 @@ impl TaskOutcomeContract {
                 | RuntimeCheckedType::F32
                 | RuntimeCheckedType::F64
                 | RuntimeCheckedType::String
+                | RuntimeCheckedType::Color
                 | RuntimeCheckedType::Char
                 | RuntimeCheckedType::Duration
                 | RuntimeCheckedType::Progress

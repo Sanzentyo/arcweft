@@ -80,6 +80,7 @@ fn validate_value(
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
         | RuntimeValue::String(_)
+        | RuntimeValue::Color(_)
         | RuntimeValue::Need(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)

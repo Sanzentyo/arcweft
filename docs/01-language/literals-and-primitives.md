@@ -249,8 +249,19 @@ Accepted color strings in `Color` context:
 "#rrggbbaa"
 ```
 
-MVP `Color` is sRGB RGBA. Future color-space-specific values should use
-constructors rather than prefix literals.
+Short channels expand by repeating the hexadecimal digit, and omitted alpha is
+255. MVP `Color` is one sRGB RGBA8 value. A checked RGBA8 color such as
+`rgb("#f08c")` is materialized as that typed runtime value when it enters a
+runtime expression, so ordinary functions can accept and return `Color`:
+
+```arcw
+fn echo_color(color: Color) -> Color { color }
+```
+
+`rgb` validates and reduces its literal at compile time; runtime code receives
+the four canonical channel bytes, not a string to parse again. Future
+color-space-specific values should use constructors rather than prefix
+literals.
 
 ```arcw
 let c1: Color = "#7aa2ff"

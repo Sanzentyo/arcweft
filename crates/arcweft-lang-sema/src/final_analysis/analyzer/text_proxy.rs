@@ -42,6 +42,29 @@ impl Analyzer<'_, '_, '_> {
         exact_type: TypeKind,
         fact: PreparedExpressionFact,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
+        let fact = self.prepare_compile_time_scalar_fact(module, owner, kind, exact_type, fact)?;
+        self.facts
+            .replace_existing_expression(owner, fact.clone())
+            .map_err(|_| {
+                AnalyzerExpressionError::fact(
+                    CandidateFactTransactionViolation::ProjectionUnavailable,
+                )
+            })?;
+        Ok(fact)
+    }
+
+    /// Prepares one checked compile-time scalar without publishing it. The
+    /// enclosing expression transaction owns publication for call results;
+    /// candidate argument checks use `materialize_compile_time_scalar_fact`
+    /// when they replace an already-published source fact.
+    pub(super) fn prepare_compile_time_scalar_fact(
+        &self,
+        module: &HirModule,
+        owner: arcweft_lang_hir::identity::ExprId,
+        kind: &CheckedCompileTimeScalarKind,
+        exact_type: TypeKind,
+        fact: PreparedExpressionFact,
+    ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         if let PreparedExpressionFact::CompileTimeScalar(prepared) = &fact {
             if prepared.shell().value_type() != Some(&exact_type) {
                 return Err(AnalyzerExpressionError::rejected(owner));
@@ -58,15 +81,7 @@ impl Analyzer<'_, '_, '_> {
         );
         let prepared = PreparedCompileTimeScalarExpression::try_new(shell, scalar, fact)
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let fact = PreparedExpressionFact::from(prepared);
-        self.facts
-            .replace_existing_expression(owner, fact.clone())
-            .map_err(|_| {
-                AnalyzerExpressionError::fact(
-                    CandidateFactTransactionViolation::ProjectionUnavailable,
-                )
-            })?;
-        Ok(fact)
+        Ok(PreparedExpressionFact::from(prepared))
     }
 
     pub(super) fn prepare_text_proxy_catalog(&mut self) -> Result<(), FinalSemanticAnalysisError> {
@@ -726,27 +741,31 @@ impl Analyzer<'_, '_, '_> {
         if !fact.effects().is_empty() {
             return Err(CompileTimeScalarReductionError::WrongHir);
         }
-        let exact_rgb = if matches!(kind, CheckedCompileTimeScalarKind::Color) {
-            self.facts
-                .prepared_calls()
-                .ok()
-                .and_then(|graph| {
-                    graph.project_site_payload(
-                        crate::callable::CheckedCallSite::HirCall(owner),
-                        |prefix| {
-                            prefix.application().selected().id()
-                                == &crate::callable::CallableCandidateId::Builtin(
-                                    crate::callable::BuiltinCallableId::Rgb,
-                                )
-                        },
-                        |_| false,
-                    )
-                })
-                .unwrap_or(false)
-        } else {
-            false
-        };
+        let exact_rgb =
+            matches!(kind, CheckedCompileTimeScalarKind::Color) && self.is_exact_rgb_call(owner);
         reduce_compile_time_scalar(module, owner, kind, fact, exact_rgb)
+    }
+
+    /// Whether the sealed ordinary call at this coordinate selected the
+    /// canonical `rgb` builtin. Color residualization uses this selected-call
+    /// evidence rather than recognizing source spelling.
+    pub(super) fn is_exact_rgb_call(&self, owner: arcweft_lang_hir::identity::ExprId) -> bool {
+        self.facts
+            .prepared_calls()
+            .ok()
+            .and_then(|graph| {
+                graph.project_site_payload(
+                    crate::callable::CheckedCallSite::HirCall(owner),
+                    |prefix| {
+                        prefix.application().selected().id()
+                            == &crate::callable::CallableCandidateId::Builtin(
+                                crate::callable::BuiltinCallableId::Rgb,
+                            )
+                    },
+                    |_| false,
+                )
+            })
+            .unwrap_or(false)
     }
 }
 

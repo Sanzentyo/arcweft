@@ -95,6 +95,7 @@ fn runtime_value_atoms_have_distinct_version_one_layout_transcripts() {
         (RuntimeTypeSchema::Progress, 33),
         (RuntimeTypeSchema::EntityReference, 34),
         (RuntimeTypeSchema::AgentValue, 35),
+        (RuntimeTypeSchema::Color, 38),
     ] {
         let expected = document(&[tag]);
         assert_eq!(

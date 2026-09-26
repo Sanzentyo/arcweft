@@ -206,6 +206,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::F32
             | RuntimePlanTypeProjection::F64
             | RuntimePlanTypeProjection::String
+            | RuntimePlanTypeProjection::Color
             | RuntimePlanTypeProjection::Char
             | RuntimePlanTypeProjection::Bytes
             | RuntimePlanTypeProjection::Duration

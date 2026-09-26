@@ -853,6 +853,7 @@ impl AwbcInventory {
             AwbcRuntimeTypeShape::F32 => RuntimeCheckedType::F32,
             AwbcRuntimeTypeShape::F64 => RuntimeCheckedType::F64,
             AwbcRuntimeTypeShape::String => RuntimeCheckedType::String,
+            AwbcRuntimeTypeShape::Color => RuntimeCheckedType::Color,
             AwbcRuntimeTypeShape::Char => RuntimeCheckedType::Char,
             AwbcRuntimeTypeShape::Duration => RuntimeCheckedType::Duration,
             AwbcRuntimeTypeShape::Progress => RuntimeCheckedType::Progress,
@@ -1068,6 +1069,7 @@ impl AwbcInventory {
             RuntimeValue::F32(value) => AwbcConstant::F32Bits(value.to_bits()),
             RuntimeValue::F64(value) => AwbcConstant::F64Bits(value.to_bits()),
             RuntimeValue::String(value) => AwbcConstant::String(self.intern_string(value)),
+            RuntimeValue::Color(value) => AwbcConstant::Color(*value),
             RuntimeValue::Char(value) => AwbcConstant::Char(u32::from(*value)),
             RuntimeValue::Duration(value) => AwbcConstant::DurationNanos(value.as_nanos()),
             RuntimeValue::EntityRef(value) => AwbcConstant::EntityRef(value.clone()),
@@ -1433,6 +1435,7 @@ impl AwbcInventory {
             | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
             | (RuntimeValue::F64(_), AwbcRuntimeTypeShape::F64)
             | (RuntimeValue::String(_), AwbcRuntimeTypeShape::String)
+            | (RuntimeValue::Color(_), AwbcRuntimeTypeShape::Color)
             | (RuntimeValue::Char(_), AwbcRuntimeTypeShape::Char)
             | (RuntimeValue::Duration(_), AwbcRuntimeTypeShape::Duration)
             | (RuntimeValue::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)

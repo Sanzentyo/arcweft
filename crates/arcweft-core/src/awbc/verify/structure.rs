@@ -290,6 +290,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::F32
             | AwbcRuntimeTypeShape::F64
             | AwbcRuntimeTypeShape::String
+            | AwbcRuntimeTypeShape::Color
             | AwbcRuntimeTypeShape::Char
             | AwbcRuntimeTypeShape::Duration
             | AwbcRuntimeTypeShape::Progress
@@ -492,6 +493,7 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcConstant::UInt { .. }
             | AwbcConstant::F32Bits(_)
             | AwbcConstant::F64Bits(_)
+            | AwbcConstant::Color(_)
             | AwbcConstant::DurationNanos(_)
             | AwbcConstant::EntityRef(_)
             | AwbcConstant::Bytes(_) => {}
@@ -577,6 +579,7 @@ fn verify_constant_graph_from(
         | AwbcConstant::F32Bits(_)
         | AwbcConstant::F64Bits(_)
         | AwbcConstant::String(_)
+        | AwbcConstant::Color(_)
         | AwbcConstant::Char(_)
         | AwbcConstant::DurationNanos(_)
         | AwbcConstant::EntityRef(_)

@@ -515,6 +515,41 @@ fn execution_plan_for_expression_with_roles(
                 CheckedStructuralExecutionReason::DialogueApplication,
             ))
         }
+        CheckedExpressionResolution::CompileTimeScalar(scalar)
+            if matches!(
+                scalar.value(),
+                super::CheckedCompileTimeScalar::Color(
+                    crate::checked_rich_text::CheckedColor::Rgba8(_)
+                )
+            ) =>
+        {
+            if matches!(scalar.original(), CheckedExpressionResolution::Call) {
+                let facts = calls
+                    .get(&owner)
+                    .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?;
+                if facts.outcome().site() != crate::callable::CheckedCallSite::HirCall(owner) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let application = facts
+                    .selected_application()
+                    .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?;
+                if application.core().candidates().selected().id()
+                    != &crate::callable::CallableCandidateId::Builtin(
+                        crate::callable::BuiltinCallableId::Rgb,
+                    )
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                Ok(super::CheckedExpressionExecutionPlan::residual_value(
+                    application.digest(),
+                ))
+            } else {
+                Ok(super::CheckedExpressionExecutionPlan::structural(
+                    value,
+                    CheckedStructuralExecutionReason::Value,
+                ))
+            }
+        }
         CheckedExpressionResolution::CompileTimeCallee(_)
         | CheckedExpressionResolution::TypeValue(_)
         | CheckedExpressionResolution::CompileTimeScalar(_) => {

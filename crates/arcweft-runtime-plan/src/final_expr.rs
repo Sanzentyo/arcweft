@@ -520,6 +520,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "final-HIR expression {id:?} contains recovery and is not executable"
             ));
         }
+        if let Some(value) = self.literal(id)
+            && matches!(expression.kind(), HirExprKind::Call(_))
+        {
+            return Ok(RuntimeExprSeed::new(
+                self.expression_source_type(id)?,
+                RuntimeExprSeedKind::Value(value.clone()),
+            ));
+        }
         let kind = match expression.kind() {
             HirExprKind::Unit => RuntimeExprSeedKind::Value(RuntimeValue::Unit),
             HirExprKind::Literal(_) | HirExprKind::NumericBracketSequence(_) => {

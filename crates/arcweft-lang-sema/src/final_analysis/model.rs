@@ -2094,6 +2094,15 @@ pub enum CheckedExpressionExecutionPlan {
         disposition: CheckedRuntimeCallDisposition,
         evaluated_effect_roles: Box<[CheckedEvaluatedEffectRole]>,
     },
+    /// The selected source call has been reduced to a checked runtime value.
+    /// Its original application remains in the semantic call graph, while the
+    /// runtime projection retains the owner without invoking or traversing its
+    /// compile-time-only operands.
+    ResidualValue {
+        application: CheckedCallApplicationDigest,
+        result: CheckedRuntimeValueDisposition,
+        evaluated_effect_roles: Box<[CheckedEvaluatedEffectRole]>,
+    },
 }
 
 impl CheckedExpressionExecutionPlan {
@@ -2122,6 +2131,14 @@ impl CheckedExpressionExecutionPlan {
         }
     }
 
+    pub(crate) fn residual_value(application: CheckedCallApplicationDigest) -> Self {
+        Self::ResidualValue {
+            application,
+            result: CheckedRuntimeValueDisposition::Retain,
+            evaluated_effect_roles: Box::new([]),
+        }
+    }
+
     pub(crate) fn fused_line_schedule_prefix(application: CheckedCallApplicationDigest) -> Self {
         Self::Call {
             application,
@@ -2135,7 +2152,7 @@ impl CheckedExpressionExecutionPlan {
     pub const fn call_disposition(&self) -> Option<CheckedRuntimeCallDisposition> {
         match self {
             Self::Call { disposition, .. } => Some(*disposition),
-            Self::Structural { .. } => None,
+            Self::Structural { .. } | Self::ResidualValue { .. } => None,
         }
     }
 
@@ -2143,13 +2160,14 @@ impl CheckedExpressionExecutionPlan {
         match self {
             Self::Structural { value, .. } => *value,
             Self::Call { result, .. } => *result,
+            Self::ResidualValue { result, .. } => *result,
         }
     }
 
     pub const fn structural_reason(&self) -> Option<CheckedStructuralExecutionReason> {
         match self {
             Self::Structural { reason, .. } => Some(*reason),
-            Self::Call { .. } => None,
+            Self::Call { .. } | Self::ResidualValue { .. } => None,
         }
     }
 
@@ -2157,12 +2175,20 @@ impl CheckedExpressionExecutionPlan {
         match self {
             Self::Structural { .. } => None,
             Self::Call { application, .. } => Some(*application),
+            Self::ResidualValue { .. } => None,
+        }
+    }
+
+    pub const fn residual_value_application(&self) -> Option<CheckedCallApplicationDigest> {
+        match self {
+            Self::ResidualValue { application, .. } => Some(*application),
+            Self::Structural { .. } | Self::Call { .. } => None,
         }
     }
 
     pub const fn call_callee(&self) -> Option<CheckedExpressionCallCallee> {
         match self {
-            Self::Structural { .. } => None,
+            Self::Structural { .. } | Self::ResidualValue { .. } => None,
             Self::Call { callee, .. } => Some(*callee),
         }
     }
@@ -2174,6 +2200,10 @@ impl CheckedExpressionExecutionPlan {
                 ..
             }
             | Self::Call {
+                evaluated_effect_roles,
+                ..
+            }
+            | Self::ResidualValue {
                 evaluated_effect_roles,
                 ..
             } => evaluated_effect_roles,
@@ -2247,6 +2277,19 @@ impl CheckedExpressionExecutionPlan {
                 },
                 callee,
                 disposition,
+                evaluated_effect_roles: roles,
+            },
+            Self::ResidualValue {
+                application,
+                result,
+                ..
+            } => Self::ResidualValue {
+                application,
+                result: if roles.is_empty() {
+                    result
+                } else {
+                    CheckedRuntimeValueDisposition::Omit
+                },
                 evaluated_effect_roles: roles,
             },
         }

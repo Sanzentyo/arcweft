@@ -500,6 +500,9 @@ pub enum HirRuntimeExpressionProjection {
         result: HirRuntimeValueRetention,
         callee: HirRuntimeCallCalleeDisposition,
     },
+    /// A checked source Call has already been reduced to a runtime constant.
+    /// Retain its owner without traversing compile-time-only call operands.
+    ResidualValue,
 }
 
 impl HirAnalysisProjectView<'_> {
@@ -956,6 +959,13 @@ impl HirAnalysisProjectView<'_> {
                     selected_edges.insert(owner, followed_edges.into_boxed_slice());
                     continue;
                 }
+                (HirExprKind::Call(_), HirRuntimeExpressionProjection::ResidualValue)
+                    if domain == SelectedExpressionDomain::RuntimeType =>
+                {
+                    selected.insert(owner);
+                    selected_edges.insert(owner, Box::new([]));
+                    continue;
+                }
                 (HirExprKind::Call(_), HirRuntimeExpressionProjection::Structural { value })
                     if domain == SelectedExpressionDomain::SemanticAnalysis =>
                 {
@@ -987,6 +997,13 @@ impl HirAnalysisProjectView<'_> {
                     continue;
                 }
                 (_, HirRuntimeExpressionProjection::Call { .. }) => {
+                    return Err(
+                        HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                            expression: owner,
+                        },
+                    );
+                }
+                (_, HirRuntimeExpressionProjection::ResidualValue) => {
                     return Err(
                         HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
                             expression: owner,

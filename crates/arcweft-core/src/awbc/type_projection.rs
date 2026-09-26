@@ -224,6 +224,7 @@ impl AwbcProgram {
             AwbcRuntimeTypeShape::F32 => Ok(RuntimeCheckedType::F32),
             AwbcRuntimeTypeShape::F64 => Ok(RuntimeCheckedType::F64),
             AwbcRuntimeTypeShape::String => Ok(RuntimeCheckedType::String),
+            AwbcRuntimeTypeShape::Color => Ok(RuntimeCheckedType::Color),
             AwbcRuntimeTypeShape::Char => Ok(RuntimeCheckedType::Char),
             AwbcRuntimeTypeShape::Duration => Ok(RuntimeCheckedType::Duration),
             AwbcRuntimeTypeShape::Progress => Ok(RuntimeCheckedType::Progress),

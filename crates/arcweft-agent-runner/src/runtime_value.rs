@@ -34,6 +34,12 @@ fn runtime_value_to_json_at(
         RuntimeValue::F32(value) => finite_json_number(f64::from(*value), path),
         RuntimeValue::F64(value) => finite_json_number(*value, path),
         RuntimeValue::String(value) => Ok(serde_json::Value::String(value.clone())),
+        RuntimeValue::Color(value) => {
+            let [red, green, blue, alpha] = value.rgba8();
+            Ok(serde_json::Value::String(format!(
+                "#{red:02x}{green:02x}{blue:02x}{alpha:02x}"
+            )))
+        }
         RuntimeValue::EntityRef(value) => Ok(serde_json::Value::String(value.runtime_label())),
         RuntimeValue::Char(value) => Ok(serde_json::Value::String(value.to_string())),
         RuntimeValue::Tuple(values) => values
@@ -255,6 +261,7 @@ fn ensure_finite_runtime_value(
         | RuntimeValue::Need(_)
         | RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
+        | RuntimeValue::Color(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Variant { payload: None, .. } => Ok(()),
     }

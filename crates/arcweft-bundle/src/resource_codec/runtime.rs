@@ -89,6 +89,7 @@ pub enum RuntimeValueKind {
     UnsignedInteger,
     Float,
     Text,
+    Color,
     Duration,
     Progress,
     EntityRef,
@@ -973,6 +974,7 @@ impl RuntimeValueKind {
             Self::Function => 130,
             Self::AgentValue => 131,
             Self::BoundType => 132,
+            Self::Color => 133,
         }
     }
 
@@ -1010,6 +1012,7 @@ impl RuntimeValueKind {
             130 => Some(Self::Function),
             131 => Some(Self::AgentValue),
             132 => Some(Self::BoundType),
+            133 => Some(Self::Color),
             _ => None,
         }
     }
@@ -1153,6 +1156,7 @@ fn runtime_type_layout_digest(
         AwbcRuntimeTypeShape::F32 => transcript.write_tag(4),
         AwbcRuntimeTypeShape::F64 => transcript.write_tag(5),
         AwbcRuntimeTypeShape::String => transcript.write_tag(6),
+        AwbcRuntimeTypeShape::Color => transcript.write_tag(39),
         AwbcRuntimeTypeShape::Char => transcript.write_tag(7),
         AwbcRuntimeTypeShape::Duration => transcript.write_tag(8),
         AwbcRuntimeTypeShape::Progress => transcript.write_tag(9),
@@ -1793,6 +1797,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeTypeShape::UInt(_) => RuntimeValueKind::UnsignedInteger,
         AwbcRuntimeTypeShape::F32 | AwbcRuntimeTypeShape::F64 => RuntimeValueKind::Float,
         AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Char => RuntimeValueKind::Text,
+        AwbcRuntimeTypeShape::Color => RuntimeValueKind::Color,
         AwbcRuntimeTypeShape::Duration => RuntimeValueKind::Duration,
         AwbcRuntimeTypeShape::Progress => RuntimeValueKind::Progress,
         AwbcRuntimeTypeShape::EntityRef => RuntimeValueKind::EntityRef,

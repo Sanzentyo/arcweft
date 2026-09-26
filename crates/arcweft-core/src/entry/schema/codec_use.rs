@@ -421,6 +421,7 @@ impl RuntimeCodecUse {
             | Schema::F32
             | Schema::F64
             | Schema::String
+            | Schema::Color
             | Schema::Char
             | Schema::Duration
             | Schema::Progress

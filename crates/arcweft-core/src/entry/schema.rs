@@ -51,6 +51,7 @@ pub enum RuntimeTypeSchema {
     F32,
     F64,
     String,
+    Color,
     Char,
     Bytes {
         format: RuntimeBytesFormat,
@@ -833,6 +834,13 @@ impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
                 self.u8(7)?;
                 self.string(value)
             }
+            Scalar::Color(value) => {
+                self.u8(20)?;
+                for channel in value.rgba8() {
+                    self.u8(channel)?;
+                }
+                Ok(())
+            }
             Scalar::Char(value) => {
                 self.u8(8)?;
                 self.fixed_u32(u32::from(value))
@@ -955,6 +963,7 @@ impl RuntimeTypeSchema {
             Self::F32 => "f32",
             Self::F64 => "f64",
             Self::String => "string",
+            Self::Color => "color",
             Self::Char => "char",
             Self::Bytes { .. } => "bytes",
             Self::Builtin(_) => "builtin variant",

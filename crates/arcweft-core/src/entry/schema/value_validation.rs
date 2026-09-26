@@ -299,6 +299,7 @@ impl<'a> SchemaValueValidation<'a> {
             | (Schema::F32, View::Scalar(Scalar::F32(_)))
             | (Schema::F64, View::Scalar(Scalar::F64(_)))
             | (Schema::String, View::Scalar(Scalar::String(_)))
+            | (Schema::Color, View::Scalar(Scalar::Color(_)))
             | (Schema::Char, View::Scalar(Scalar::Char(_)))
             | (Schema::Duration, View::Scalar(Scalar::Duration(_)))
             | (Schema::Progress, View::Scalar(Scalar::Progress(_)))

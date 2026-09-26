@@ -44,6 +44,19 @@ fn need_snapshot_preserves_handle_identity_and_rejects_empty_ids() {
 }
 
 #[test]
+fn rgba8_color_snapshot_preserves_all_channels() {
+    let value = RuntimeValue::Color(crate::value::RuntimeColor::new(12, 34, 56, 78));
+    let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+        .expect("RGBA8 color snapshots without a program-specific payload");
+    let encoded = serde_json::to_vec(&snapshot).expect("Color snapshot serializes");
+    let decoded: AwbcRuntimeValueSnapshot =
+        serde_json::from_slice(&encoded).expect("Color snapshot decodes");
+    let owner = RuntimeProgramOwner::Awbc(Arc::new(AwbcProgram::default()));
+
+    assert_eq!(decoded.into_runtime_value_for_program(&owner), Ok(value));
+}
+
+#[test]
 fn awbc_snapshot_deserialize_rejects_empty_all_and_any_predicates() {
     for value in [
         serde_json::json!({ "All": { "predicates": [] } }),

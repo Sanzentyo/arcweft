@@ -1656,8 +1656,7 @@ impl Analyzer<'_, '_, '_> {
                 self.facts
                     .expressions()
                     .get(&owner)
-                    .and_then(PreparedExpressionFact::complete)
-                    .map(super::super::free_capture::CheckedCaptureExpression::from_checked)
+                    .map(super::super::free_capture::CheckedCaptureExpression::from_prepared)
             },
             |local| self.facts.locals().get(&local).cloned(),
         )

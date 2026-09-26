@@ -4,8 +4,8 @@ use crate::awbc::schema::{AwbcSignedIntKind, AwbcUnsignedIntKind};
 use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::value::{
-    RuntimeInt, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeSeq,
-    RuntimeUInt,
+    RuntimeColor, RuntimeInt, RuntimeNominalRecordValue, RuntimeRecordFieldId, RuntimeRecordValue,
+    RuntimeSeq, RuntimeUInt,
 };
 
 fn program(shapes: impl IntoIterator<Item = Type>) -> AwbcProgram {
@@ -30,6 +30,15 @@ fn admits(
     value: &RuntimeValue,
 ) -> Result<RuntimeValueDigest, AwbcValueAdmissionError> {
     program.accepts_value(AwbcTypeId(ty), value, RuntimeSchemaLimits::engine_default())
+}
+
+#[test]
+fn color_values_are_admitted_only_by_the_awbc_color_type() {
+    let program = program([Type::Color, Type::String]);
+    let color = RuntimeValue::Color(RuntimeColor::new(12, 34, 56, 78));
+
+    assert!(admits(&program, 0, &color).is_ok());
+    assert!(admits(&program, 1, &color).is_err());
 }
 
 #[test]

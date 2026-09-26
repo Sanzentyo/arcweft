@@ -259,6 +259,7 @@ impl Work {
             | RuntimeTypeSchema::F32
             | RuntimeTypeSchema::F64
             | RuntimeTypeSchema::String
+            | RuntimeTypeSchema::Color
             | RuntimeTypeSchema::Char
             | RuntimeTypeSchema::Never
             | RuntimeTypeSchema::Duration

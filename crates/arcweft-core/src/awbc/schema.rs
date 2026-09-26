@@ -564,6 +564,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeTypeShape::F32
         | AwbcRuntimeTypeShape::F64
         | AwbcRuntimeTypeShape::String
+        | AwbcRuntimeTypeShape::Color
         | AwbcRuntimeTypeShape::Char
         | AwbcRuntimeTypeShape::Duration
         | AwbcRuntimeTypeShape::Progress
@@ -600,6 +601,7 @@ fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&
         | AwbcConstant::UInt { .. }
         | AwbcConstant::F32Bits(_)
         | AwbcConstant::F64Bits(_)
+        | AwbcConstant::Color(_)
         | AwbcConstant::Char(_)
         | AwbcConstant::DurationNanos(_)
         | AwbcConstant::Tuple(_)
@@ -866,6 +868,7 @@ pub enum AwbcRuntimeTypeShape {
     F32,
     F64,
     String,
+    Color,
     Char,
     Duration,
     Progress,
@@ -1008,6 +1011,7 @@ impl AwbcRuntimeTypeShape {
             | Self::F32
             | Self::F64
             | Self::String
+            | Self::Color
             | Self::Char
             | Self::Duration
             | Self::Progress
@@ -1106,6 +1110,7 @@ pub enum AwbcConstant {
     F32Bits(u32),
     F64Bits(u64),
     String(AwbcStringId),
+    Color(crate::value::RuntimeColor),
     Char(u32),
     DurationNanos(u64),
     EntityRef(RuntimeEntityReference),

@@ -3465,6 +3465,7 @@ fn constant_matches_type(
         | (AwbcConstant::F32Bits(_), AwbcRuntimeTypeShape::F32)
         | (AwbcConstant::F64Bits(_), AwbcRuntimeTypeShape::F64)
         | (AwbcConstant::String(_), AwbcRuntimeTypeShape::String)
+        | (AwbcConstant::Color(_), AwbcRuntimeTypeShape::Color)
         | (AwbcConstant::Char(_), AwbcRuntimeTypeShape::Char)
         | (AwbcConstant::DurationNanos(_), AwbcRuntimeTypeShape::Duration)
         | (AwbcConstant::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
@@ -3632,6 +3633,7 @@ pub(super) fn runtime_type_permits_copy(
                 | AwbcRuntimeTypeShape::F32
                 | AwbcRuntimeTypeShape::F64
                 | AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::Color
                 | AwbcRuntimeTypeShape::Char
                 | AwbcRuntimeTypeShape::Duration
                 | AwbcRuntimeTypeShape::Progress

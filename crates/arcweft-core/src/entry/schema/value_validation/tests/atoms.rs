@@ -5,7 +5,7 @@ use crate::entry::{
 };
 use crate::pattern::RuntimeCheckedType;
 use crate::time::LogicalDuration;
-use crate::value::{Progress, RuntimeEntityReference};
+use crate::value::{Progress, RuntimeColor, RuntimeEntityReference};
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 
 fn reference() -> RuntimeValue {
@@ -31,6 +31,10 @@ fn runtime_scalar_schemas_preserve_families_and_value_allowances() {
             RuntimeValue::Progress(Progress::new(0.5).unwrap().with_label("load")),
         ),
         (Schema::EntityReference, reference()),
+        (
+            Schema::Color,
+            RuntimeValue::Color(RuntimeColor::new(12, 34, 56, 78)),
+        ),
     ];
     for (expected, (schema, value)) in cases.iter().enumerate() {
         let encoded = bytes(value);

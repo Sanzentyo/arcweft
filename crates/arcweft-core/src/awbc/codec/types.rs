@@ -673,6 +673,7 @@ impl Wire for AwbcRuntimeType {
                 result: AwbcTypeId::read_wire(reader)?,
             },
             37 => AwbcRuntimeTypeShape::AgentValue,
+            39 => AwbcRuntimeTypeShape::Color,
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -767,6 +768,10 @@ fn write_runtime_type_shape(
         }
         AwbcRuntimeTypeShape::AgentValue => {
             writer.write_u8(37);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Color => {
+            writer.write_u8(39);
             Ok(())
         }
         _ => write_runtime_type_composite_shape(shape, writer),
@@ -878,6 +883,7 @@ fn write_runtime_type_composite_shape(
         | AwbcRuntimeTypeShape::F32
         | AwbcRuntimeTypeShape::F64
         | AwbcRuntimeTypeShape::String
+        | AwbcRuntimeTypeShape::Color
         | AwbcRuntimeTypeShape::Char
         | AwbcRuntimeTypeShape::Bytes
         | AwbcRuntimeTypeShape::Duration
@@ -989,6 +995,12 @@ impl Wire for AwbcConstant {
                 writer.write_u8(6);
                 value.write_wire(writer)?;
             }
+            Self::Color(value) => {
+                writer.write_u8(19);
+                for channel in value.rgba8() {
+                    channel.write_wire(writer)?;
+                }
+            }
             Self::Char(value) => {
                 writer.write_u8(7);
                 value.write_wire(writer)?;
@@ -1061,6 +1073,12 @@ impl Wire for AwbcConstant {
             4 => Self::F32Bits(reader.read_f32_bits()?),
             5 => Self::F64Bits(reader.read_f64_bits()?),
             6 => Self::String(AwbcStringId::read_wire(reader)?),
+            19 => Self::Color(crate::value::RuntimeColor::from_rgba8([
+                u8::read_wire(reader)?,
+                u8::read_wire(reader)?,
+                u8::read_wire(reader)?,
+                u8::read_wire(reader)?,
+            ])),
             7 => Self::Char(u32::read_wire(reader)?),
             8 => Self::DurationNanos(u64::read_wire(reader)?),
             9 => Self::EntityRef(RuntimeEntityReference::read_wire(reader)?),

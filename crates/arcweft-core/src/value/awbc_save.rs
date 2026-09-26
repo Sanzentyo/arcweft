@@ -56,6 +56,7 @@ pub enum AwbcRuntimeValueSnapshot {
     TensorF32(crate::math::DenseTensorF32),
     TensorF64(crate::math::DenseTensorF64),
     String(String),
+    Color(super::RuntimeColor),
     Need(crate::task::NeedId),
     Char(char),
     Duration(crate::time::LogicalDuration),
@@ -231,6 +232,7 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::TensorF32(value) => Self::TensorF32(value.clone()),
             RuntimeValue::TensorF64(value) => Self::TensorF64(value.clone()),
             RuntimeValue::String(value) => Self::String(value.clone()),
+            RuntimeValue::Color(value) => Self::Color(*value),
             RuntimeValue::Need(value) => {
                 if value.0.is_empty() {
                     return Err(AwbcRuntimeValueSnapshotError::new(
@@ -310,6 +312,7 @@ impl AwbcRuntimeValueSnapshot {
             Self::TensorF32(value) => RuntimeValue::TensorF32(value),
             Self::TensorF64(value) => RuntimeValue::TensorF64(value),
             Self::String(value) => RuntimeValue::String(value),
+            Self::Color(value) => RuntimeValue::Color(value),
             Self::Need(value) => {
                 if value.0.is_empty() {
                     return Err(AwbcRuntimeValueSnapshotError::new(

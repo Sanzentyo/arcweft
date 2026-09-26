@@ -15,7 +15,7 @@ use arcweft_lang_hir::{
     item::HirParameterKind,
 };
 use arcweft_lang_sema::callable::{
-    CallableGroupIndex, CallableInstantiationDigest, CheckedClosureId,
+    CallableGroupIndex, CallableInstantiationDigest, CheckedCallApplicationDigest, CheckedClosureId,
 };
 use arcweft_lang_sema::final_analysis::{
     CheckedExecutableRuntimeExpressionFactFamily, CheckedExecutableRuntimeFactPartition,
@@ -878,6 +878,7 @@ pub enum RuntimeProjectFunctionExpressionPayload {
     Scope(crate::semantic_facts::RuntimeScopeFact),
     Consumed,
     Literal(RuntimeValue),
+    ResidualValue(RuntimeResidualValue),
     Value(RuntimeResolvedValue),
     Select(RuntimeResolvedSelect),
     NominalRecord(RuntimeRecordExpressionFact),
@@ -907,6 +908,30 @@ pub enum RuntimeProjectFunctionExpressionPayload {
     Closure(Box<RuntimeClosureInstanceFact>),
 }
 
+/// Runtime value produced by reducing one exact checked compile-time call.
+///
+/// The selected application digest stays attached to the value so the call
+/// owner cannot be confused with an ordinary runtime invocation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeResidualValue {
+    application: CheckedCallApplicationDigest,
+    value: RuntimeValue,
+}
+
+impl RuntimeResidualValue {
+    pub const fn new(application: CheckedCallApplicationDigest, value: RuntimeValue) -> Self {
+        Self { application, value }
+    }
+
+    pub const fn application(&self) -> CheckedCallApplicationDigest {
+        self.application
+    }
+
+    pub const fn value(&self) -> &RuntimeValue {
+        &self.value
+    }
+}
+
 impl RuntimeProjectFunctionExpressionPayload {
     pub const fn family(&self) -> CheckedExecutableRuntimeExpressionFactFamily {
         match self {
@@ -914,6 +939,7 @@ impl RuntimeProjectFunctionExpressionPayload {
             Self::Scope(_) => CheckedExecutableRuntimeExpressionFactFamily::Scope,
             Self::Consumed => CheckedExecutableRuntimeExpressionFactFamily::Consumed,
             Self::Literal(_) => CheckedExecutableRuntimeExpressionFactFamily::Literal,
+            Self::ResidualValue(_) => CheckedExecutableRuntimeExpressionFactFamily::ResidualValue,
             Self::Value(_) => CheckedExecutableRuntimeExpressionFactFamily::Value,
             Self::Select(_) => CheckedExecutableRuntimeExpressionFactFamily::Select,
             Self::NominalRecord(_) => CheckedExecutableRuntimeExpressionFactFamily::NominalRecord,
@@ -1655,6 +1681,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     pub fn expression_literal(&self, owner: ExprId) -> Option<&RuntimeValue> {
         match self.expression(owner)?.payload() {
             RuntimeProjectFunctionExpressionPayload::Literal(value) => Some(value),
+            RuntimeProjectFunctionExpressionPayload::ResidualValue(value) => Some(value.value()),
             _ => None,
         }
     }
@@ -1962,6 +1989,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
+                | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)
                 | RuntimeProjectFunctionExpressionPayload::Select(_)
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
@@ -2008,6 +2036,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
+                | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)
                 | RuntimeProjectFunctionExpressionPayload::Select(_)
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
@@ -2046,6 +2075,7 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
                 | RuntimeProjectFunctionExpressionPayload::Scope(_)
                 | RuntimeProjectFunctionExpressionPayload::Consumed
                 | RuntimeProjectFunctionExpressionPayload::Literal(_)
+                | RuntimeProjectFunctionExpressionPayload::ResidualValue(_)
                 | RuntimeProjectFunctionExpressionPayload::Value(_)
                 | RuntimeProjectFunctionExpressionPayload::Select(_)
                 | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)

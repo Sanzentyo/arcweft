@@ -8,7 +8,7 @@ use crate::{semantic_coordinate::SemanticCoordinateIndex, types::TypeKind};
 
 use super::{
     CheckedExecutableCapture, CheckedExpression, FinalSemanticAnalysisError,
-    match_edges::CheckedStructuralEdgeDraft,
+    PreparedExpressionFact, match_edges::CheckedStructuralEdgeDraft,
 };
 
 /// Collects the free locals of a selected expression body in source order.
@@ -70,6 +70,16 @@ impl CheckedCaptureExpression {
             Some(local) => Self::Local {
                 local,
                 ty: checked.source_value_type().cloned(),
+            },
+            None => Self::NoLocal,
+        }
+    }
+
+    pub(super) fn from_prepared(checked: &PreparedExpressionFact) -> Self {
+        match checked.execution_local_use() {
+            Some(local) => Self::Local {
+                local,
+                ty: checked.value_type().cloned(),
             },
             None => Self::NoLocal,
         }

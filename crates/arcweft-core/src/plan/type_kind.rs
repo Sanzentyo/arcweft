@@ -208,6 +208,7 @@ pub enum RuntimePlanTypeProjection<R> {
     F32,
     F64,
     String,
+    Color,
     Char,
     Bytes,
     Duration,
@@ -408,6 +409,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::F32
             | Self::F64
             | Self::String
+            | Self::Color
             | Self::Char
             | Self::Bytes
             | Self::Duration
@@ -433,6 +435,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::F32 => RuntimePlanTypeProjection::F32,
             Self::F64 => RuntimePlanTypeProjection::F64,
             Self::String => RuntimePlanTypeProjection::String,
+            Self::Color => RuntimePlanTypeProjection::Color,
             Self::Char => RuntimePlanTypeProjection::Char,
             Self::Bytes => RuntimePlanTypeProjection::Bytes,
             Self::Duration => RuntimePlanTypeProjection::Duration,
@@ -558,6 +561,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::F32
             | Self::F64
             | Self::String
+            | Self::Color
             | Self::Char
             | Self::Bytes
             | Self::Duration

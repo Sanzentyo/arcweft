@@ -596,6 +596,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         let ingress_seal = self.complete_contextual_declarations(entry_roots)?;
         self.infer_residual_statement_bindings()?;
         self.analyze_residual_expressions()?;
+        self.residualize_runtime_rgb_colors()?;
         let selected_expressions = super::match_edges::CheckedSelectedExpressionGraph::seal(
             self.executable,
             Arc::clone(&self.topology),
