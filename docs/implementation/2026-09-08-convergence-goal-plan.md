@@ -1615,3 +1615,29 @@ Pending/cancel/save/restore を保つ派生 Need が必要。053 は `fmt` の
 recoverable formatted run、Core/native/AWBC の共通 formatter、動的 policy、
 一般の `DisplayText` 適合判定が未実装。両 fixture は作業ツリーに残り、
 この時点の `just test-workspace` 再実行と goal 全体の受理は未達。
+
+## Formatted Content lower-layer checkpoint — 2026-09-26
+
+Supersedes: 直前 checkpoint の「formatted run を Content / text model に
+接続すること」という未実装状態のうち、Core と text-model の契約部分。
+Inspected `main`/`origin/main` SHA:
+`88a81e15f7376640092fe87f43b3a3c3109aae91`。working tree には 049 の
+Sema/compiler/intrinsic と 049/053 fixture の未完差分が残る。
+
+同 SHA で version 1 の Content envelope に型付き `Formatted` binding を追加。
+成功値は Text または nested Content と任意の Runtime Color、失敗値は
+理由と任意の事前計算済み plain text を保持する。`inherit` / `on_error` /
+`fallback` / `discard` の閉じた選択を Core/AWBC/runtime-plan に通し、
+text-model が source/value source と policy を解釈する。Core は nested
+Content の artifact/depth、`on_error` の runtime graph budget、codec と
+verifier を検査する。検証済み一スロット manifest から plain-text Content
+を作る constructor は 049 の ArcError message 用にも利用できる。
+
+Core focused tests 2/2、dialogue policy decoder 1/1、text-model focused
+tests 5/5、変更した Core/dialogue/text-model/render-text の all-target check と
+Clippy、workspace all-target/all-feature check、`cargo fmt --all -- --check`、
+staged diff check が通過した。Clippy と workspace check は既存 warning あり。
+workspace Clippy と `just test-workspace` はこの cut 後に未実行。
+`fmt` の生成 template、native/AWBC の formatted run、DisplayText witness と
+recoverable operand 評価は未実装であり、この commit は 053 fixture の受理を
+意味しない。049 の context 実行と pre-await Need transform も未達。
