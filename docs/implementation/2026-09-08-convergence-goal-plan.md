@@ -1502,3 +1502,39 @@ character look 型では停止していない。Sol Max の最小再現で、
 `inline_error` 期待型 `InlineFailurePolicy` が一致しないと確認した。維持仕様は
 前者を canonical value とする。schema 訂正後も compiler の opaque producer
 と実行値の接続が必要であり、053 fixture の受理は未達。049 と goal 全体も未達。
+
+## 053 dialogue operation / policy checkpoint — 2026-09-26
+
+Supersedes: 直前 checkpoint の `InlineFailure` schema 不一致についての現在状態。
+確認した `main`/`origin/main` は
+`331385ab3a3c0a3ab0f8f24d581408d109051e40` で一致する。working tree
+には未完の 053 fixture `.arcw` と companion TOML/assets のみが残る。
+
+同 SHA で、選択済み call の意味論専用 child と accepted type owner を HIR/Sema
+から compiler の到達性へ接続した。CharacterDialogue の policy graph と
+`InlineFailure.fallback(String)` を compiler/runtime-plan/native/AWBC まで接続し、
+同じ String を使う二つの dialogue の native/AWBC 一致と AWBC codec 往復を
+検証した。dialogue point action は evaluated effect または選択済み Unit call
+として保持し、正確な application digest・effects・captures と callback role を
+runtime-plan に渡す。通常 call の結果は内部実行に保持する。Sema の拒否 call は
+tooling evidence として残し、位置引数から open effect field identity を
+捏造しないことを確認した。
+
+focused Sema/HIR/compiler/Core/runtime-plan と native/AWBC tests、workspace
+all-target/all-feature check、workspace Clippy、fmt、cached diff check、
+structure audit は通過。structure audit は 2622 files / 96 packages /
+331 review triggers / 0 blocking violations。今回増えた `final_flow.rs` は
+選択済み dialogue action の実行 lowering、`semantic_facts.rs` は同一世代の
+checked fact join、`final_expr.rs` は値の lowering、`awbc_lower/expr.rs` は
+AWBC 命令 lowering をそれぞれ保持し、並列 authority の増設は認めない。
+`RUST_MIN_STACK=16777216` の `just test-workspace` は非 CLI 群を通過し、
+CLI 7 件中 6 件が通過。未編集の 049 fixture の `sema.final_analysis` value
+resolution で停止したためレシピ全体は失敗扱いとする。
+
+053 fixture 全体は未受理。`InlineFailure.discard` の完全修飾値は HIR Select
+が type 名を値扱いする境界で止まり、`fmt(...)` は `DisplayText` trait を
+返して runtime Content にならず、`rgb("#ffffff")` は compile-time Color に
+留まる。Sol Max と照合した次の契約は、`fmt` の結果を型付き Content とし、
+formatted run を Content / text model / native / AWBC に接続すること、Color
+は単一の sRGB RGBA8 runtime value として literal `rgb` を検証済み定数から
+残余化すること。これらと 049、および goal 全体の最終受理は未達。
