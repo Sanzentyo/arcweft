@@ -2694,6 +2694,276 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
     );
 }
 
+#[test]
+fn result_and_option_context_calls_publish_the_accepted_arc_error_type() {
+    let fixture = fixture(
+        r#"
+type ArcResult<T> = Result<T, ArcError>
+
+fn result_context(value: Result<String, String>) -> ArcResult<String> {
+    value.context("result context")
+}
+fn option_context(value: Option<String>) -> ArcResult<String> {
+    value.context("option context")
+}
+fn result_lazy_context(value: Result<String, String>) -> ArcResult<String> {
+    value.with_context(|| "lazy result context")
+}
+fn option_lazy_context(value: Option<String>) -> ArcResult<String> {
+    value.with_context(|| "lazy option context")
+}
+fn result_content_context(
+    value: Result<String, String>,
+    message: DialogueContent,
+) -> ArcResult<String> {
+    value.context(message)
+}
+fn option_content_context(
+    value: Option<String>,
+    message: DialogueContent,
+) -> ArcResult<String> {
+    value.context(message)
+}
+fn result_lazy_content_context(
+    value: Result<String, String>,
+    message: DialogueContent,
+) -> ArcResult<String> {
+    value.with_context(|| message)
+}
+fn option_lazy_content_context(
+    value: Option<String>,
+    message: DialogueContent,
+) -> ArcResult<String> {
+    value.with_context(|| message)
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).unwrap_or_else(|error| {
+        if let FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = error {
+            let module = fixture
+                .project
+                .analysis_view()
+                .expect("executable HIR")
+                .modules()
+                .next()
+                .expect("root module")
+                .1;
+            let source = module.source_site(
+                module.provenance().source_identity(),
+                HirSourceQuery::Expr {
+                    owner,
+                    role: HirExprSourceRole::Whole,
+                },
+            );
+            let source_text = source.as_ref().ok().and_then(|site| match site.presence() {
+                HirSourcePresence::Present(HirSourceSite::Span(span)) => fixture
+                    .root_document
+                    .text()
+                    .get(span.range().as_range()),
+                _ => None,
+            });
+            let expression = module.resolve_expr(owner).map(|expression| expression.kind());
+            panic!(
+                "context expression {owner:?} has no checked type; source={source:?}, source_text={source_text:?}, expression={expression:?}"
+            );
+        }
+        panic!("Result and Option context calls are checked: {error}");
+    });
+    let context_results = report
+        .calls()
+        .filter_map(|(owner, call)| {
+            let selected = call.selected_application()?.core().candidates().selected();
+            matches!(
+                selected.id(),
+                crate::callable::CallableCandidateId::DomainMethod(
+                    crate::callable::DomainMethodId::Context
+                        | crate::callable::DomainMethodId::WithContext
+                )
+            )
+            .then(|| {
+                let expression = report.expression(owner).expect("context call expression");
+                (
+                    owner,
+                    selected.id(),
+                    expression.value_type().cloned(),
+                    format!("{:?}", expression.result()),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    let unavailable = context_results
+        .iter()
+        .filter(|(_, _, ty, _)| ty.is_none())
+        .map(|(owner, selected, _, result)| format!("{owner:?} {selected:?}: {result}"))
+        .collect::<Vec<_>>();
+    assert!(
+        unavailable.is_empty(),
+        "selected context calls have unavailable results: {unavailable:?}"
+    );
+    let context_types = context_results
+        .into_iter()
+        .filter_map(|(_, _, ty, _)| ty)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        context_types.len(),
+        8,
+        "all eager and lazy Result/Option String and Content calls survive"
+    );
+
+    let catalog = fixture
+        .registered
+        .environment()
+        .nominal_world()
+        .nominal_catalog();
+    for ty in &context_types {
+        let TypeKind::Result { error, .. } = ty else {
+            panic!("context publishes a Result")
+        };
+        let TypeKind::AcceptedNominal(nominal) = error.as_ref() else {
+            panic!("context error type uses the accepted ArcError owner")
+        };
+        assert!(
+            catalog
+                .exact(nominal.declaration().canonical_path())
+                .is_some_and(|record| matches!(
+                    record.semantics(),
+                    AcceptedNominalSemantics::Opaque(carrier)
+                        if carrier.producer().as_str() == "std.arc_error"
+                ))
+        );
+    }
+}
+
+#[test]
+fn flow_return_result_context_selects_calls_without_entering_closures() {
+    let cases = [
+        (
+            "bare Flow return",
+            r#"
+type ArcResult<T> = Result<T, ArcError>
+flow main() -> ArcResult<String> { return Ok("done") }
+"#,
+            1,
+        ),
+        (
+            "nested Flow return and closure-local return",
+            r#"
+type ArcResult<T> = Result<T, ArcError>
+flow nested() -> ArcResult<String> {
+    if true {
+        return Ok("branch")
+    }
+    let callback = || -> String {
+        return "inner"
+    }
+    return Ok("done")
+}
+"#,
+            2,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (label, source, expected_ok_calls) in cases {
+        let fixture = fixture(&source, None);
+        match analyze(&fixture) {
+            Err(error) => failures.push(format!("{label}: analysis error={error:?}")),
+            Ok(report) => {
+                let module = fixture
+                    .project
+                    .analysis_view()
+                    .expect("executable HIR")
+                    .modules()
+                    .next()
+                    .expect("root module")
+                    .1;
+                let mut selected_ok_calls = 0;
+                for (owner, call) in report.calls() {
+                    let source_site = module
+                        .source_site(module.provenance().source_identity(), call.source_query());
+                    let source_text =
+                        source_site
+                            .as_ref()
+                            .ok()
+                            .and_then(|site| match site.presence() {
+                                HirSourcePresence::Present(HirSourceSite::Span(span)) => {
+                                    fixture.root_document.text().get(span.range().as_range())
+                                }
+                                _ => None,
+                            });
+                    if source_text
+                        .as_deref()
+                        .is_some_and(|source| source.starts_with("Ok("))
+                    {
+                        match call.selected_application() {
+                            Some(application)
+                                if application.core().candidates().selected().id()
+                                    == &crate::callable::CallableCandidateId::Result(
+                                        crate::callable::ResultConstructorKind::Ok,
+                                    ) =>
+                            {
+                                selected_ok_calls += 1;
+                            }
+                            selected => failures.push(format!(
+                                "{label}: Ok call {owner:?} source={source_text:?} selected={selected:?}, outcome={:?}",
+                                call.outcome()
+                            )),
+                        }
+                    }
+                    if call.selected_application().is_none() {
+                        let diagnostics = call
+                            .diagnostics()
+                            .iter()
+                            .map(|diagnostic| diagnostic.code().as_str())
+                            .collect::<Vec<_>>();
+                        failures.push(format!(
+                            "{label}: unselected call {owner:?} source={source_text:?}, diagnostics={diagnostics:?}, outcome={:?}",
+                            call.outcome()
+                        ));
+                    }
+                }
+                if selected_ok_calls != expected_ok_calls {
+                    failures.push(format!(
+                        "{label}: expected {expected_ok_calls} selected Ok calls, found {selected_ok_calls}"
+                    ));
+                }
+                if label == "nested Flow return and closure-local return" {
+                    let closure_return_type =
+                        report.expressions().find_map(|(owner, expression)| {
+                            let source_site = module.source_site(
+                                module.provenance().source_identity(),
+                                HirSourceQuery::Expr {
+                                    owner,
+                                    role: HirExprSourceRole::Whole,
+                                },
+                            );
+                            let source_text = source_site.as_ref().ok().and_then(|site| match site
+                                .presence()
+                            {
+                                HirSourcePresence::Present(HirSourceSite::Span(span)) => {
+                                    fixture.root_document.text().get(span.range().as_range())
+                                }
+                                _ => None,
+                            });
+                            (source_text == Some("\"inner\""))
+                                .then(|| expression.value_type().cloned())
+                                .flatten()
+                        });
+                    if closure_return_type != Some(TypeKind::String) {
+                        failures.push(format!(
+                            "{label}: closure-local return should retain String, found {closure_return_type:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "incremental flow failures: {failures:#?}"
+    );
+}
+
 fn ownership_test_type_path(name: &str) -> TypePath {
     TypePath::from(
         ProjectSymbolPath::new(

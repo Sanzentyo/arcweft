@@ -11,6 +11,16 @@ use crate::value::RuntimeValue;
 use crate::{entry::RuntimeSchemaLimits, stream::StreamRuntimeId, task::RuntimeProgramOwner};
 use std::sync::Arc;
 
+fn is_context_intrinsic(intrinsic: crate::value::RuntimeIntrinsic) -> bool {
+    matches!(
+        intrinsic,
+        crate::value::RuntimeIntrinsic::StdOptionContext
+            | crate::value::RuntimeIntrinsic::StdOptionWithContext
+            | crate::value::RuntimeIntrinsic::StdResultContext
+            | crate::value::RuntimeIntrinsic::StdResultWithContext
+    )
+}
+
 pub(super) struct ProductVmHost<'a, B> {
     pub(super) backend: &'a mut B,
     pub(super) fallback_stats: &'a mut crate::step::RuntimePureCallStats,
@@ -47,6 +57,13 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             .intrinsics
             .get(intrinsic.index())
             .ok_or(VmError::MissingIntrinsic(intrinsic))?;
+        if let Some(identity) = record.identity.as_intrinsic()
+            && is_context_intrinsic(identity)
+        {
+            return self
+                .call_context_intrinsic(program, identity, args)
+                .map(Some);
+        }
         let external_context = if record.identity.as_intrinsic().is_some() {
             RuntimeExternalCallContext::unbound()
         } else {
@@ -128,6 +145,111 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
         self.fallback_stats.fallbacks = self.fallback_stats.fallbacks.saturating_add(1);
         run_function_with_host(program, record.function, args, self.context.clone(), self)
+    }
+}
+
+impl<B: RuntimeCallBackend> ProductVmHost<'_, B> {
+    fn call_context_intrinsic(
+        &mut self,
+        program: &AwbcProgram,
+        intrinsic: crate::value::RuntimeIntrinsic,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, VmError> {
+        let [receiver, message] = args else {
+            return Err(VmError::FunctionArgumentCount {
+                expected: 2,
+                actual: args.len(),
+            });
+        };
+        let callback = matches!(
+            intrinsic,
+            crate::value::RuntimeIntrinsic::StdOptionWithContext
+                | crate::value::RuntimeIntrinsic::StdResultWithContext
+        );
+        let receiver = receiver.clone();
+        let message = message.clone();
+        let limits = RuntimeSchemaLimits::engine_default();
+        let frame = crate::value::RuntimeArcErrorFrame::empty();
+        let message_factory = || {
+            let message = if callback {
+                match message {
+                    RuntimeValue::Callable(callback) => {
+                        self.invoke_context_callback(program, &callback)?
+                    }
+                    _ => {
+                        return Err(VmError::Runtime(
+                            "context callback operand is not a RuntimeCallableValue".to_owned(),
+                        ));
+                    }
+                }
+            } else {
+                message
+            };
+            let proof = self.context.plain_text_context_template_proof(program)?;
+            let artifact = self.context.artifact();
+            crate::value::RuntimeDialogueContentValue::try_new_context_message_with_limits(
+                artifact, proof, message, limits,
+            )
+            .map_err(|error| VmError::Runtime(error.to_string()))
+        };
+        let result = match intrinsic {
+            crate::value::RuntimeIntrinsic::StdResultContext
+            | crate::value::RuntimeIntrinsic::StdResultWithContext => {
+                crate::value::RuntimeArcError::context_result_value_try_with(
+                    receiver,
+                    message_factory,
+                    frame,
+                    limits,
+                )
+            }
+            crate::value::RuntimeIntrinsic::StdOptionContext
+            | crate::value::RuntimeIntrinsic::StdOptionWithContext => {
+                crate::value::RuntimeArcError::context_option_value_try_with(
+                    receiver,
+                    message_factory,
+                    frame,
+                    limits,
+                )
+            }
+            _ => unreachable!("context intrinsic identity was checked by the caller"),
+        };
+        result.map_err(|error| match error {
+            crate::value::RuntimeArcErrorContextValueError::Payload(error) => {
+                VmError::Runtime(error.to_string())
+            }
+            crate::value::RuntimeArcErrorContextValueError::Message(error) => error,
+        })
+    }
+
+    fn invoke_context_callback(
+        &mut self,
+        program: &AwbcProgram,
+        callback: &crate::value::RuntimeCallableValue,
+    ) -> Result<RuntimeValue, VmError> {
+        callback
+            .validate_for_owner(&self.program_owner)
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        let application = callback
+            .prepare_group(&[], None)
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        match application {
+            crate::value::RuntimeCallableApplication::Complete(value) => Ok(value),
+            crate::value::RuntimeCallableApplication::Invoke(invocation)
+            | crate::value::RuntimeCallableApplication::AttachedDefault(invocation) => {
+                let crate::value::RuntimeCallableBodyReference::Awbc(function) = invocation.body
+                else {
+                    return Err(VmError::Runtime(
+                        "AWBC context callback selected a non-AWBC function body".to_owned(),
+                    ));
+                };
+                let mut values = invocation.captures;
+                values.extend(invocation.arguments);
+                self.fallback_stats.pure_calls = self.fallback_stats.pure_calls.saturating_add(1);
+                self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
+                self.fallback_stats.fallbacks = self.fallback_stats.fallbacks.saturating_add(1);
+                run_function_with_host(program, function, &values, self.context.clone(), self)
+            }
+        }
     }
 }
 

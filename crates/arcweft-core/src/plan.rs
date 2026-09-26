@@ -301,6 +301,16 @@ impl RuntimePlan {
         self.dialogue_content.templates()
     }
 
+    /// Records the non-serialized plain-text Content proof after a
+    /// RuntimePlan/catalog owner join has validated the canonical template.
+    pub fn accept_plain_text_context_template_proof(
+        &mut self,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<(), RuntimeDialogueContentPlanTableError> {
+        self.dialogue_content
+            .accept_plain_text_context_template_proof(proof)
+    }
+
     #[must_use]
     pub fn entries(&self) -> &[RuntimeEntrySpec] {
         &self.entries

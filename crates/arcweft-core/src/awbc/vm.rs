@@ -51,6 +51,8 @@ pub struct VmStepOptions {
 pub struct VmExecutionContext {
     artifact: RuntimeArtifactFingerprint,
     program_owner: Option<RuntimeProgramOwner>,
+    plain_text_context_template_proof:
+        Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
 }
 
 impl VmExecutionContext {
@@ -59,6 +61,7 @@ impl VmExecutionContext {
         Self {
             artifact,
             program_owner: None,
+            plain_text_context_template_proof: None,
         }
     }
 
@@ -72,6 +75,19 @@ impl VmExecutionContext {
         Self {
             artifact,
             program_owner: Some(RuntimeProgramOwner::Awbc(program)),
+            plain_text_context_template_proof: None,
+        }
+    }
+
+    pub(crate) fn for_program_with_plain_text_context_proof(
+        artifact: RuntimeArtifactFingerprint,
+        program: std::sync::Arc<AwbcProgram>,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Self {
+        Self {
+            artifact,
+            program_owner: Some(RuntimeProgramOwner::Awbc(program)),
+            plain_text_context_template_proof: Some(proof),
         }
     }
 
@@ -92,6 +108,23 @@ impl VmExecutionContext {
             ));
         }
         Ok(owner.clone())
+    }
+
+    pub(crate) fn plain_text_context_template_proof(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>, VmError> {
+        let reference = program
+            .validated_plain_text_context_template()
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+        if let Some(proof) = self.plain_text_context_template_proof
+            && reference.is_none_or(|reference| !proof.matches_ref(reference))
+        {
+            return Err(VmError::Runtime(
+                "plain-text context proof does not match the AWBC program pointer".to_owned(),
+            ));
+        }
+        Ok(self.plain_text_context_template_proof)
     }
 }
 

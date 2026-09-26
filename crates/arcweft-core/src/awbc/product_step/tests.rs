@@ -31,6 +31,9 @@ use crate::task::{
 use crate::value::{RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
 
+#[path = "tests/context.rs"]
+mod context;
+
 fn fixture_dialogue_target() -> crate::value::RuntimeOpaqueValue {
     let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
         crate::value::RuntimeCharacterDialogueProducerId::get(),

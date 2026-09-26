@@ -8331,6 +8331,16 @@ fn runtime_call_target(
     if let Some(intrinsic) = runtime_intrinsic(selected_id) {
         return Ok(RuntimeResolvedStaticCallTarget::Intrinsic(intrinsic));
     }
+    if matches!(
+        selected_id,
+        CallableCandidateId::DomainMethod(DomainMethodId::Context | DomainMethodId::WithContext)
+    ) {
+        let CallableCandidateId::DomainMethod(method) = selected_id else {
+            unreachable!("context method identity was checked above")
+        };
+        return runtime_context_intrinsic(owner, application, method)
+            .map(RuntimeResolvedStaticCallTarget::Intrinsic);
+    }
     if let arcweft_lang_sema::callable::CallableCandidateId::Agent(intrinsic) = selected_id {
         let intrinsic = runtime_agent_intrinsic(*intrinsic);
         return Ok(
@@ -8415,6 +8425,45 @@ fn runtime_call_target(
             checked.semantic_digest().into_bytes(),
         ),
     ))
+}
+
+fn runtime_context_intrinsic(
+    owner: ExprId,
+    application: &CheckedCallApplication,
+    method: &DomainMethodId,
+) -> Result<RuntimeIntrinsic, RuntimeSemanticProjectionError> {
+    let receiver = match application.core().execution().receiver() {
+        CheckedCallReceiverProjection::Operand { ty, .. }
+        | CheckedCallReceiverProjection::SemanticOnly { ty, .. }
+        | CheckedCallReceiverProjection::Contextual { ty, .. } => ty,
+        CheckedCallReceiverProjection::None => {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "context method has no typed receiver projection".to_owned(),
+            });
+        }
+    };
+    let lazy = matches!(method, DomainMethodId::WithContext);
+    match receiver {
+        TypeKind::Result { .. } => Ok(if lazy {
+            RuntimeIntrinsic::StdResultWithContext
+        } else {
+            RuntimeIntrinsic::StdResultContext
+        }),
+        TypeKind::Option(_) => Ok(if lazy {
+            RuntimeIntrinsic::StdOptionWithContext
+        } else {
+            RuntimeIntrinsic::StdOptionContext
+        }),
+        TypeKind::Need(_) => Err(RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "Need context requires a distinct payload-mapping runtime operation".to_owned(),
+        }),
+        _ => Err(RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: "context method receiver is neither Result nor Option".to_owned(),
+        }),
+    }
 }
 
 fn runtime_line_callable(

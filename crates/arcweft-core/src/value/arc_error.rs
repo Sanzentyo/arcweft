@@ -440,6 +440,12 @@ pub enum RuntimeArcErrorValueError {
     InvalidField { field: &'static str },
 }
 
+#[derive(Debug)]
+pub(crate) enum RuntimeArcErrorContextValueError<E> {
+    Payload(RuntimeArcErrorValueError),
+    Message(E),
+}
+
 impl RuntimeArcError {
     /// Constructs an ArcError payload under the named engine limits.
     pub fn try_new(
@@ -539,20 +545,43 @@ impl RuntimeArcError {
         frame: RuntimeArcErrorFrame,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
-        let (case, payload) = result
-            .try_into_builtin_variant_case()
-            .map_err(|_| RuntimeArcErrorValueError::InvalidContextReceiver)?;
+        Self::context_result_value_try_with(result, message, frame, limits).map_err(|error| {
+            match error {
+                RuntimeArcErrorContextValueError::Payload(error)
+                | RuntimeArcErrorContextValueError::Message(error) => error,
+            }
+        })
+    }
+
+    pub(crate) fn context_result_value_try_with<E>(
+        result: RuntimeValue,
+        message: impl FnOnce() -> Result<RuntimeDialogueContentValue, E>,
+        frame: RuntimeArcErrorFrame,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeArcErrorContextValueError<E>> {
+        let (case, payload) = result.try_into_builtin_variant_case().map_err(|_| {
+            RuntimeArcErrorContextValueError::Payload(
+                RuntimeArcErrorValueError::InvalidContextReceiver,
+            )
+        })?;
         match case {
             RuntimeBuiltinVariantCaseIdentity::ResultOk => payload
                 .map(RuntimeValue::result_ok)
-                .ok_or(RuntimeArcErrorValueError::InvalidContextReceiver),
+                .ok_or(RuntimeArcErrorContextValueError::Payload(
+                    RuntimeArcErrorValueError::InvalidContextReceiver,
+                )),
             RuntimeBuiltinVariantCaseIdentity::ResultErr => {
-                let cause = payload.ok_or(RuntimeArcErrorValueError::InvalidContextReceiver)?;
-                let message = message()?;
-                let error = Self::context_from_result_with_limits(cause, message, frame, limits)?;
+                let cause = payload.ok_or(RuntimeArcErrorContextValueError::Payload(
+                    RuntimeArcErrorValueError::InvalidContextReceiver,
+                ))?;
+                let message = message().map_err(RuntimeArcErrorContextValueError::Message)?;
+                let error = Self::context_from_result_with_limits(cause, message, frame, limits)
+                    .map_err(RuntimeArcErrorContextValueError::Payload)?;
                 Ok(RuntimeValue::result_err(error.into_runtime_value()))
             }
-            _ => Err(RuntimeArcErrorValueError::InvalidContextReceiver),
+            _ => Err(RuntimeArcErrorContextValueError::Payload(
+                RuntimeArcErrorValueError::InvalidContextReceiver,
+            )),
         }
     }
 
@@ -579,22 +608,45 @@ impl RuntimeArcError {
         frame: RuntimeArcErrorFrame,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
-        let (case, payload) = option
-            .try_into_builtin_variant_case()
-            .map_err(|_| RuntimeArcErrorValueError::InvalidContextReceiver)?;
+        Self::context_option_value_try_with(option, message, frame, limits).map_err(|error| {
+            match error {
+                RuntimeArcErrorContextValueError::Payload(error)
+                | RuntimeArcErrorContextValueError::Message(error) => error,
+            }
+        })
+    }
+
+    pub(crate) fn context_option_value_try_with<E>(
+        option: RuntimeValue,
+        message: impl FnOnce() -> Result<RuntimeDialogueContentValue, E>,
+        frame: RuntimeArcErrorFrame,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeArcErrorContextValueError<E>> {
+        let (case, payload) = option.try_into_builtin_variant_case().map_err(|_| {
+            RuntimeArcErrorContextValueError::Payload(
+                RuntimeArcErrorValueError::InvalidContextReceiver,
+            )
+        })?;
         match case {
             RuntimeBuiltinVariantCaseIdentity::OptionSome => payload
                 .map(RuntimeValue::result_ok)
-                .ok_or(RuntimeArcErrorValueError::InvalidContextReceiver),
+                .ok_or(RuntimeArcErrorContextValueError::Payload(
+                    RuntimeArcErrorValueError::InvalidContextReceiver,
+                )),
             RuntimeBuiltinVariantCaseIdentity::OptionNone => {
                 if payload.is_some() {
-                    return Err(RuntimeArcErrorValueError::InvalidContextReceiver);
+                    return Err(RuntimeArcErrorContextValueError::Payload(
+                        RuntimeArcErrorValueError::InvalidContextReceiver,
+                    ));
                 }
-                let message = message()?;
-                let error = Self::missing_value_with_limits(message, frame, limits)?;
+                let message = message().map_err(RuntimeArcErrorContextValueError::Message)?;
+                let error = Self::missing_value_with_limits(message, frame, limits)
+                    .map_err(RuntimeArcErrorContextValueError::Payload)?;
                 Ok(RuntimeValue::result_err(error.into_runtime_value()))
             }
-            _ => Err(RuntimeArcErrorValueError::InvalidContextReceiver),
+            _ => Err(RuntimeArcErrorContextValueError::Payload(
+                RuntimeArcErrorValueError::InvalidContextReceiver,
+            )),
         }
     }
 

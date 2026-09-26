@@ -16,6 +16,9 @@ use crate::time::LogicalDuration;
 
 use super::RuntimeLineId;
 use crate::value::RuntimeDialogueOpaqueRole;
+use crate::value::{
+    RuntimeDialoguePlainTextContextTemplateProof, RuntimeDialoguePlainTextContextTemplateRef,
+};
 
 /// Semantic role of one evaluated dialogue template value.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -567,6 +570,8 @@ pub struct RuntimeDialogueContentPlanTable {
     rows: Box<[RuntimeDialogueContentPlan]>,
     by_key: BTreeMap<RuntimeDialogueContentApplicationKey, RuntimeDialogueContentPlanId>,
     templates: RuntimeDialogueContentTemplateManifestTable,
+    plain_text_context_template: Option<RuntimeDialoguePlainTextContextTemplateRef>,
+    plain_text_context_template_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
 }
 
 impl RuntimeDialogueContentPlanTable {
@@ -600,6 +605,41 @@ impl RuntimeDialogueContentPlanTable {
     pub const fn templates(&self) -> &RuntimeDialogueContentTemplateManifestTable {
         &self.templates
     }
+
+    /// Typed identity of the verified artifact-local template used to turn a
+    /// plain runtime String into Content for a context operation.
+    #[must_use]
+    pub const fn plain_text_context_template(
+        &self,
+    ) -> Option<RuntimeDialoguePlainTextContextTemplateRef> {
+        self.plain_text_context_template
+    }
+
+    #[must_use]
+    pub const fn plain_text_context_template_proof(
+        &self,
+    ) -> Option<RuntimeDialoguePlainTextContextTemplateProof> {
+        self.plain_text_context_template_proof
+    }
+
+    pub(crate) fn accept_plain_text_context_template_proof(
+        &mut self,
+        proof: RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<(), RuntimeDialogueContentPlanTableError> {
+        if self
+            .plain_text_context_template
+            .is_none_or(|reference| !proof.matches_ref(reference))
+        {
+            return Err(
+                RuntimeDialogueContentPlanTableError::InvalidPlainTextContextTemplate {
+                    message: "plain-text context proof does not match the plan's manifest pointer"
+                        .to_owned(),
+                },
+            );
+        }
+        self.plain_text_context_template_proof = Some(proof);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Default)]
@@ -607,6 +647,7 @@ pub(crate) struct RuntimeDialogueContentPlanTableBuilder {
     rows: Vec<RuntimeDialogueContentPlan>,
     by_key: BTreeMap<RuntimeDialogueContentApplicationKey, RuntimeDialogueContentPlanId>,
     templates: RuntimeDialogueContentTemplateManifestTableBuilder,
+    plain_text_context_template: Option<RuntimeDialoguePlainTextContextTemplateRef>,
 }
 
 impl RuntimeDialogueContentPlanTableBuilder {
@@ -619,6 +660,32 @@ impl RuntimeDialogueContentPlanTableBuilder {
         manifest: RuntimeDialogueContentTemplateManifest,
     ) -> Result<RuntimeDialogueContentTemplateId, RuntimeDialogueContentTemplateManifestError> {
         self.templates.intern(manifest)
+    }
+
+    pub(crate) fn intern_plain_text_context_template(
+        &mut self,
+        manifest: RuntimeDialogueContentTemplateManifest,
+    ) -> Result<RuntimeDialoguePlainTextContextTemplateRef, RuntimeDialogueContentPlanTableError>
+    {
+        let identity =
+            RuntimeDialoguePlainTextContextTemplateRef::try_from_plan_manifest(&manifest).map_err(
+                |error| RuntimeDialogueContentPlanTableError::InvalidPlainTextContextTemplate {
+                    message: error.to_string(),
+                },
+            )?;
+        self.templates.intern(manifest)?;
+        if let Some(existing) = self.plain_text_context_template
+            && existing != identity
+        {
+            return Err(
+                RuntimeDialogueContentPlanTableError::ConflictingPlainTextContextTemplate {
+                    existing: existing.id(),
+                    actual: identity.id(),
+                },
+            );
+        }
+        self.plain_text_context_template = Some(identity);
+        Ok(identity)
     }
 
     pub(crate) fn template(
@@ -686,6 +753,8 @@ impl RuntimeDialogueContentPlanTableBuilder {
             rows: self.rows.into_boxed_slice(),
             by_key: self.by_key,
             templates: self.templates.finish(),
+            plain_text_context_template: self.plain_text_context_template,
+            plain_text_context_template_proof: None,
         }
     }
 }
@@ -698,6 +767,17 @@ pub enum RuntimeDialogueContentPlanTableError {
     },
     #[error("runtime dialogue content plan table exceeds its u32 row limit")]
     TooManyRows,
+    #[error(transparent)]
+    TemplateManifest(#[from] RuntimeDialogueContentTemplateManifestError),
+    #[error("runtime plain-text context template is invalid: {message}")]
+    InvalidPlainTextContextTemplate { message: String },
+    #[error(
+        "runtime plain-text context template conflicts with the registered template {existing} (got {actual})"
+    )]
+    ConflictingPlainTextContextTemplate {
+        existing: RuntimeDialogueContentTemplateId,
+        actual: RuntimeDialogueContentTemplateId,
+    },
 }
 
 #[cfg(test)]

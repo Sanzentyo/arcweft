@@ -28,8 +28,8 @@ use super::{
 use crate::{
     nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits},
     types::{
-        CharacterNominalType, CompileTimeScalarKind, CompileTimeScalarType, SemanticTypeDigest,
-        TypeKind, direct_type_name,
+        AcceptedNominalType, CharacterNominalType, CompileTimeScalarKind, CompileTimeScalarType,
+        SemanticTypeDigest, TypeKind, direct_type_name,
     },
 };
 
@@ -1477,6 +1477,24 @@ pub(crate) fn standard_agent_error_type() -> TypeKind {
         .expect("AgentError has valid fixed standard opaque evidence")
         .try_instantiate([])
         .expect("AgentError is a zero-argument standard opaque nominal")
+}
+
+pub(crate) fn standard_arc_error_type() -> TypeKind {
+    let spec = RUNTIME_STANDARD_OPAQUE_TYPES
+        .iter()
+        .find(|spec| spec.path() == ["ArcError"])
+        .expect("ArcError has a fixed standard opaque producer");
+    standard_opaque_record(*spec, AcceptedNominalOrigin::Domain)
+        .expect("ArcError has valid fixed standard opaque evidence")
+        .try_instantiate([])
+        .expect("ArcError is a zero-argument standard opaque nominal")
+}
+
+pub(crate) fn standard_dialogue_content_type() -> TypeKind {
+    TypeKind::AcceptedNominal(AcceptedNominalType::new(
+        standard_nominal_id(crate::dialogue_view::DIALOGUE_CONTENT_TYPE),
+        [],
+    ))
 }
 
 fn validate_open_pattern(

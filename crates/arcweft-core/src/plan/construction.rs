@@ -67,7 +67,10 @@ use crate::runtime_id::{
     RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::stream::StreamPlan;
-use crate::value::{RuntimeAgentConstructor, RuntimeDialogueOpaqueRole, RuntimeRecordFieldIdError};
+use crate::value::{
+    RuntimeAgentConstructor, RuntimeDialogueOpaqueRole, RuntimeDialoguePlainTextContextTemplateRef,
+    RuntimeRecordFieldIdError,
+};
 
 use super::dialogue_content::RuntimeDialogueContentPlanTableBuilder;
 use super::executable_body::{RuntimeEffectSet, RuntimeExecutableBody};
@@ -1022,6 +1025,20 @@ impl RuntimePlanBuilder {
         result
     }
 
+    /// Registers the exact text-model manifest reserved for plain-text
+    /// context messages and retains its validated typed identity on the plan.
+    pub fn register_plain_text_context_template_seed(
+        &mut self,
+        seed: RuntimeDialogueContentTemplateManifestSeed,
+    ) -> Result<RuntimeDialoguePlainTextContextTemplateRef, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = self.try_register_plain_text_context_template_seed(seed);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
     fn try_register_dialogue_content_template_seed(
         &mut self,
         seed: RuntimeDialogueContentTemplateManifestSeed,
@@ -1029,6 +1046,16 @@ impl RuntimePlanBuilder {
         let manifest = self.lower_dialogue_content_template_manifest_seed(seed)?;
         self.dialogue_content
             .intern_template(manifest)
+            .map_err(RuntimePlanBuildError::from)
+    }
+
+    fn try_register_plain_text_context_template_seed(
+        &mut self,
+        seed: RuntimeDialogueContentTemplateManifestSeed,
+    ) -> Result<RuntimeDialoguePlainTextContextTemplateRef, RuntimePlanBuildError> {
+        let manifest = self.lower_dialogue_content_template_manifest_seed(seed)?;
+        self.dialogue_content
+            .intern_plain_text_context_template(manifest)
             .map_err(RuntimePlanBuildError::from)
     }
 

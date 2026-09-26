@@ -847,6 +847,8 @@ enum AwbcProductExecutorStatus {
 pub struct AwbcProductStepExecutor {
     pub(super) program: Arc<AwbcProgram>,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
+    plain_text_context_template_proof:
+        Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     fiber: FiberState,
     facade_fiber: FlowFiber,
     entry_bound: bool,
@@ -908,15 +910,46 @@ impl AwbcProductStepExecutor {
         &mut self,
         program: Arc<AwbcProgram>,
     ) -> Result<(), AwbcProductStepBuildError> {
+        self.replace_program_preserving_state_arc_with_context_proof(program, None)
+    }
+
+    /// Rebinds to a new verified AWBC program and its bundle-certified
+    /// plain-text context template proof.
+    pub fn replace_program_preserving_state_arc_with_plain_text_context_proof(
+        &mut self,
+        program: Arc<AwbcProgram>,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        self.replace_program_preserving_state_arc_with_context_proof(program, Some(proof))
+    }
+
+    fn replace_program_preserving_state_arc_with_context_proof(
+        &mut self,
+        program: Arc<AwbcProgram>,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<(), AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
                 message: error.to_string(),
             })?;
+        let template = program
+            .validated_plain_text_context_template()
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
+        if proof.is_some_and(|proof| template.is_none_or(|reference| !proof.matches_ref(reference)))
+        {
+            return Err(AwbcProductStepBuildError::InvalidProgram {
+                message: "plain-text context proof does not match the AWBC program pointer"
+                    .to_owned(),
+            });
+        }
         let snapshot = self.snapshot();
         let mut candidate = self.clone();
         candidate.artifact_fingerprint = Self::artifact_fingerprint(&program)?;
         candidate.program = program;
+        candidate.plain_text_context_template_proof = proof;
         candidate.validate_snapshot(&snapshot)?;
         candidate.rebuild_facade_stream_states_from_compact();
         candidate.sync_facade();
@@ -938,11 +971,44 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_entry_arc_with_context_proof(program, entry, budget_quantum, None)
+    }
+
+    /// Starts against a bundle-certified context-template proof. Standalone
+    /// AWBC callers use [`Self::for_entry_arc`], which leaves String context
+    /// conversion unavailable.
+    pub fn for_entry_arc_with_plain_text_context_proof(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_entry_arc_with_context_proof(program, entry, budget_quantum, Some(proof))
+    }
+
+    fn for_entry_arc_with_context_proof(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+        proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
                 message: error.to_string(),
             })?;
+        let template = program
+            .validated_plain_text_context_template()
+            .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
+                message: error.to_string(),
+            })?;
+        if proof.is_some_and(|proof| template.is_none_or(|reference| !proof.matches_ref(reference)))
+        {
+            return Err(AwbcProductStepBuildError::InvalidProgram {
+                message: "plain-text context proof does not match the AWBC program pointer"
+                    .to_owned(),
+            });
+        }
         let mut root_startup = root::prepare_startup(&program, entry)?;
         let mut fiber = if program.entries.is_empty() {
             FiberState {
@@ -985,6 +1051,7 @@ impl AwbcProductStepExecutor {
         }
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
         let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint);
+        executor.plain_text_context_template_proof = proof;
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
             executor.install_root_startup(startup);
@@ -1083,6 +1150,7 @@ impl AwbcProductStepExecutor {
         Self {
             program,
             artifact_fingerprint,
+            plain_text_context_template_proof: None,
             fiber,
             facade_fiber,
             entry_bound: false,
@@ -1417,6 +1485,20 @@ impl AwbcProductStepExecutor {
             .saturating_add(self.child_fibers.len())
     }
 
+    fn vm_execution_context(&self) -> VmExecutionContext {
+        match self.plain_text_context_template_proof {
+            Some(proof) => VmExecutionContext::for_program_with_plain_text_context_proof(
+                self.artifact_fingerprint,
+                Arc::clone(&self.program),
+                proof,
+            ),
+            None => VmExecutionContext::for_program(
+                self.artifact_fingerprint,
+                Arc::clone(&self.program),
+            ),
+        }
+    }
+
     fn has_attemptable_work(&self) -> bool {
         !matches!(
             self.fiber.status,
@@ -1439,14 +1521,10 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: VmExecutionContext::for_program(
-                self.artifact_fingerprint,
-                Arc::clone(&self.program),
-            ),
+            context: self.vm_execution_context(),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
-        let context =
-            VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
+        let context = self.vm_execution_context();
         match step_with_host_context(
             &self.program,
             &mut candidate,
@@ -1560,21 +1638,15 @@ impl AwbcProductStepExecutor {
             };
         loop {
             let step = {
+                let context = self.vm_execution_context();
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
-                    context: VmExecutionContext::for_program(
-                        self.artifact_fingerprint,
-                        Arc::clone(&self.program),
-                    ),
+                    context: context.clone(),
                     program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
                         &self.program,
                     )),
                 };
-                let context = VmExecutionContext::for_program(
-                    self.artifact_fingerprint,
-                    Arc::clone(&self.program),
-                );
                 step_with_host_context(
                     &self.program,
                     &mut fiber,
@@ -1727,14 +1799,10 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: VmExecutionContext::for_program(
-                self.artifact_fingerprint,
-                Arc::clone(&self.program),
-            ),
+            context: self.vm_execution_context(),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
-        let context =
-            VmExecutionContext::for_program(self.artifact_fingerprint, Arc::clone(&self.program));
+        let context = self.vm_execution_context();
         let terminal_exit = match child.fiber.status {
             FiberStatus::Returned => match child.fiber.terminal.as_ref() {
                 Some(FiberTerminalValue::DialogueResultSelected(value)) => {

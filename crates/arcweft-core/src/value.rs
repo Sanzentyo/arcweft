@@ -83,6 +83,7 @@ pub use agent::{
     RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr,
     RuntimeAgentValue,
 };
+pub(crate) use arc_error::RuntimeArcErrorContextValueError;
 pub use awbc_save::{
     AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
 };
@@ -108,6 +109,7 @@ pub use opaque::{
     RuntimeDialogueContentValueError, RuntimeDialogueFormattedFailureSelection,
     RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess,
     RuntimeDialogueFormattedValue, RuntimeDialogueFormattedValueError, RuntimeDialogueOpaqueRole,
+    RuntimeDialoguePlainTextContextTemplateProof, RuntimeDialoguePlainTextContextTemplateRef,
     RuntimeDialogueValueError, RuntimeDialogueViewField, RuntimeDialogueViewValue,
     RuntimeHandleKind, RuntimeInlineTextValue, RuntimeInlineTextValueError,
     RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
@@ -498,6 +500,10 @@ pub enum RuntimeIntrinsic {
     CoreIterNext,
     CoreOptionIsSome,
     CoreOptionUnwrap,
+    StdOptionContext,
+    StdOptionWithContext,
+    StdResultContext,
+    StdResultWithContext,
     CoreIndex,
     StringTrim,
     StringToString,
@@ -577,6 +583,10 @@ impl RuntimeIntrinsic {
             "core.iter.next" => Some(Self::CoreIterNext),
             "core.option.is_some" => Some(Self::CoreOptionIsSome),
             "core.option.unwrap" => Some(Self::CoreOptionUnwrap),
+            "std.option.context" => Some(Self::StdOptionContext),
+            "std.option.with_context" => Some(Self::StdOptionWithContext),
+            "std.result.context" => Some(Self::StdResultContext),
+            "std.result.with_context" => Some(Self::StdResultWithContext),
             "core.index" => Some(Self::CoreIndex),
             "string.trim" => Some(Self::StringTrim),
             "string.to_string" => Some(Self::StringToString),
@@ -657,6 +667,10 @@ impl RuntimeIntrinsic {
             Self::CoreIterNext => "core.iter.next",
             Self::CoreOptionIsSome => "core.option.is_some",
             Self::CoreOptionUnwrap => "core.option.unwrap",
+            Self::StdOptionContext => "std.option.context",
+            Self::StdOptionWithContext => "std.option.with_context",
+            Self::StdResultContext => "std.result.context",
+            Self::StdResultWithContext => "std.result.with_context",
             Self::CoreIndex => "core.index",
             Self::StringTrim => "string.trim",
             Self::StringToString => "string.to_string",

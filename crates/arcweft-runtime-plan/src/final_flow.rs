@@ -53,7 +53,8 @@ use arcweft_core::plan::{
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::{
-    RuntimeCallArgumentMode, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeCallArgumentMode, RuntimeIntrinsic, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeValue,
 };
 use arcweft_lang_hir::expr::{
     HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirThreadBody, HirThreadFlowItem,
@@ -80,7 +81,7 @@ use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationKey, CallablePackageId, ImplMethodDeclarationId,
 };
 use arcweft_source::SourceSpan;
-use arcweft_text_model::DialogueContentCatalog;
+use arcweft_text_model::{DialogueContentCatalog, DialogueContentFragmentTemplate};
 
 use crate::assertion_identity::{
     AssertionConditionIndex, AssertionPresentation, RuntimeAssertionInventory,
@@ -1451,7 +1452,7 @@ pub fn lower_runtime_plan_with_stats(
         defer_sites: &defer_sites,
         ..context
     };
-    let (dialogue_content, mut dialogue_assertion_sites) =
+    let (dialogue_content, mut dialogue_assertion_sites, plain_text_context_template) =
         lower_dialogue_content(&context, &dialogue_effect_sites, &mut builder, &mut errors);
     dialogue_assertion_sites.extend(dialogue_effect_assertion_sites);
     let context = FinalLoweringContext {
@@ -1646,7 +1647,7 @@ pub fn lower_runtime_plan_with_stats(
             .push_flow_seed(flow)
             .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     }
-    let plan = builder
+    let mut plan = builder
         .finish()
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut dialogue_records = Vec::new();
@@ -1659,12 +1660,55 @@ pub fn lower_runtime_plan_with_stats(
     facts.visit_dialogue_content_fragments(&mut |_, fragment| {
         dialogue_templates.push(fragment.template().clone());
     });
+    if let Some(template) = plain_text_context_template {
+        dialogue_templates.push(template);
+    }
     dialogue_templates.sort_by_key(|template| template.id());
     let dialogue_content_catalog = DialogueContentCatalog::try_from_records_and_templates(
         dialogue_records,
         dialogue_templates,
     )
     .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    if let Some(identity) = plan.dialogue_content().plain_text_context_template() {
+        let path = format!("dialogue.template.{}", identity.id());
+        let canonical = DialogueContentFragmentTemplate::plain_text_context(identity.id())
+            .map_err(|error| {
+                vec![RuntimePlanLowerError::new(format!(
+                    "plain-text context template factory failed: {error}"
+                ))]
+            })?;
+        let Some(manifest) = plan.dialogue_content().template(identity.id()) else {
+            return Err(vec![RuntimePlanLowerError::new(format!(
+                "{path} context pointer has no RuntimePlan manifest"
+            ))]);
+        };
+        let Some(template) = dialogue_content_catalog.find_template(identity.id()) else {
+            return Err(vec![RuntimePlanLowerError::new(format!(
+                "{path} context pointer has no text-model template"
+            ))]);
+        };
+        if manifest.digest() != identity.digest()
+            || template.digest() != identity.digest()
+            || template != &canonical
+        {
+            return Err(vec![RuntimePlanLowerError::new(format!(
+                "{path} context template disagrees with its canonical text-model identity or body"
+            ))]);
+        }
+        let proof = arcweft_core::value::RuntimeDialoguePlainTextContextTemplateProof::
+            try_from_validated_ref(identity, canonical.digest())
+            .map_err(|error| {
+                vec![RuntimePlanLowerError::new(format!(
+                    "{path} context proof is invalid: {error}"
+                ))]
+            })?;
+        plan.accept_plain_text_context_template_proof(proof)
+            .map_err(|error| {
+                vec![RuntimePlanLowerError::new(format!(
+                    "{path} context proof cannot be attached to the RuntimePlan: {error}"
+                ))]
+            })?;
+    }
     let pure_helper_count = plan.pure_helpers().len();
     let character_dialogue_generation = facts
         .character_dialogue_generation()
@@ -3173,6 +3217,7 @@ fn lower_dialogue_content<'facts>(
         RuntimeDialogueContentPlanSeedId,
     >,
     Vec<RuntimeAssertionSite>,
+    Option<DialogueContentFragmentTemplate>,
 ) {
     context
         .facts
@@ -3203,6 +3248,71 @@ fn lower_dialogue_content<'facts>(
                 )));
             }
         });
+    let mut template_ids = BTreeSet::new();
+    context
+        .facts
+        .visit_dialogue_content_fragments(&mut |_, fragment| {
+            template_ids.insert(fragment.template().id());
+        });
+    let plain_text_context_template = if needs_plain_text_context_template(context.facts) {
+        match arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(
+            template_ids.len(),
+        ) {
+            Some(id) => match DialogueContentFragmentTemplate::plain_text_context(id) {
+                Ok(template) => {
+                    let seed = arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
+                        id: template.id(),
+                        digest: template.digest(),
+                        slots: template
+                            .slots()
+                            .iter()
+                            .map(|slot| arcweft_core::plan::RuntimeDialogueContentSlotSeed {
+                                slot: slot.slot(),
+                                role: slot.role(),
+                                semantic_type: slot.semantic_type(),
+                            })
+                            .collect::<Vec<_>>()
+                            .into_boxed_slice(),
+                        effects: Box::new([]),
+                    };
+                    match builder.register_plain_text_context_template_seed(seed) {
+                        Ok(identity)
+                            if identity.id() == template.id()
+                                && identity.digest() == template.digest() =>
+                        {
+                            Some(template)
+                        }
+                        Ok(_) => {
+                            errors.push(RuntimePlanLowerError::new(
+                                "plain-text context template registration changed its text-model identity or digest",
+                            ));
+                            None
+                        }
+                        Err(error) => {
+                            errors.push(RuntimePlanLowerError::new(format!(
+                                "plain-text context template {id} is invalid: {error}"
+                            )));
+                            None
+                        }
+                    }
+                }
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(format!(
+                        "plain-text context template {id} is invalid: {error}"
+                    )));
+                    None
+                }
+            },
+            None => {
+                errors.push(RuntimePlanLowerError::new(
+                    "plain-text context template identity space is exhausted",
+                ));
+                None
+            }
+        }
+    } else {
+        None
+    };
     let mut value_definitions = Vec::new();
     let mut content_definitions = Vec::new();
     context
@@ -3294,7 +3404,42 @@ fn lower_dialogue_content<'facts>(
             Err(error) => errors.push(RuntimePlanLowerError::new(error.to_string())),
         }
     }
-    (content_handles, assertion_sites)
+    (
+        content_handles,
+        assertion_sites,
+        plain_text_context_template,
+    )
+}
+
+fn needs_plain_text_context_template(facts: &RuntimePlanSemanticFacts) -> bool {
+    let is_context_call = |call: &RuntimeResolvedCall| {
+        matches!(
+            call.dispatch(),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Intrinsic(
+                RuntimeIntrinsic::StdOptionContext
+                    | RuntimeIntrinsic::StdOptionWithContext
+                    | RuntimeIntrinsic::StdResultContext
+                    | RuntimeIntrinsic::StdResultWithContext
+            ))
+        )
+    };
+    if facts.calls().any(|(_, call)| is_context_call(call)) {
+        return true;
+    }
+    if facts.project_function_instances().any(|instance| {
+        let mut found = false;
+        instance.visit_calls(&mut |_, call| found |= is_context_call(call));
+        found
+    }) {
+        return true;
+    }
+    facts.root_closures().any(|closure| {
+        let mut found = false;
+        closure
+            .semantics()
+            .visit_calls(&mut |_, call| found |= is_context_call(call));
+        found
+    })
 }
 
 fn reserve_dialogue_effect_sites<'facts>(

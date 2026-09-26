@@ -788,6 +788,177 @@ pub struct RuntimeDialogueContentValue {
     effects: Box<[RuntimeDialogueContentEffectBinding]>,
 }
 
+/// Serialized AWBC claim naming the reserved plain-text Content template.
+///
+/// This pointer is not runtime proof. Consumers must resolve it against the
+/// immutable owner table, and String context execution additionally requires
+/// a non-serialized [`RuntimeDialoguePlainTextContextTemplateProof`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeDialoguePlainTextContextTemplateRef {
+    id: RuntimeDialogueContentTemplateId,
+    digest: RuntimeDialogueContentTemplateDigest,
+}
+
+impl RuntimeDialoguePlainTextContextTemplateRef {
+    /// Constructs a raw serialized pointer claim. This does not certify the
+    /// corresponding catalog body or authorize runtime String conversion.
+    pub const fn from_encoded_identity(
+        id: RuntimeDialogueContentTemplateId,
+        digest: RuntimeDialogueContentTemplateDigest,
+    ) -> Self {
+        Self { id, digest }
+    }
+
+    #[must_use]
+    pub const fn id(self) -> RuntimeDialogueContentTemplateId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn digest(self) -> RuntimeDialogueContentTemplateDigest {
+        self.digest
+    }
+
+    pub(crate) fn try_from_plan_manifest(
+        manifest: &crate::plan::RuntimeDialogueContentTemplateManifest,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        manifest.validate_slot_schema().map_err(|error| {
+            RuntimeDialogueContentValueError::InvalidTemplateManifest {
+                message: error.to_string(),
+            }
+        })?;
+        let slot = manifest.slots().first().copied();
+        validate_plain_text_context_template_schema(
+            manifest.id(),
+            manifest.digest(),
+            manifest.slots().len(),
+            slot.map(|slot| {
+                (
+                    slot.slot(),
+                    slot.role() == RuntimeDialogueValueRole::Formatted,
+                    slot.semantic_type(),
+                )
+            }),
+            manifest.effects().is_empty(),
+        )
+    }
+
+    pub(crate) fn try_from_awbc_program(
+        program: &crate::awbc::schema::AwbcProgram,
+    ) -> Result<Option<Self>, RuntimeDialogueContentValueError> {
+        let Some(template) = program.plain_text_context_template else {
+            return Ok(None);
+        };
+        let Some(row) = program.content_templates.get(template.id.index()) else {
+            return Err(invalid_plain_text_context_template(
+                "AWBC context template pointer is outside the content-template table",
+            ));
+        };
+        if row.id != template.id || row.digest != template.digest {
+            return Err(invalid_plain_text_context_template(
+                "AWBC context template pointer disagrees with its content-template row",
+            ));
+        }
+        let slot = row.slots.first().and_then(|slot| {
+            program
+                .runtime_types
+                .get(slot.semantic_type.index())
+                .map(|ty| {
+                    (
+                        slot.slot,
+                        slot.role == crate::awbc::schema::AwbcDialogueValueRole::Formatted,
+                        ty.semantic_identity(),
+                    )
+                })
+        });
+        validate_plain_text_context_template_schema(
+            template.id,
+            template.digest,
+            row.slots.len(),
+            slot,
+            row.effects.is_empty(),
+        )?;
+        Ok(Some(template))
+    }
+}
+
+/// Non-serialized proof that an owning plan/catalog join admitted the exact
+/// canonical plain-text context template. The caller must first compare the
+/// complete catalog template to `DialogueContentFragmentTemplate::plain_text_context(id)`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RuntimeDialoguePlainTextContextTemplateProof {
+    id: RuntimeDialogueContentTemplateId,
+    digest: RuntimeDialogueContentTemplateDigest,
+}
+
+impl RuntimeDialoguePlainTextContextTemplateProof {
+    /// Issues execution proof after the caller has validated the full
+    /// text-model catalog template against its canonical factory output.
+    pub fn try_from_validated_ref(
+        reference: RuntimeDialoguePlainTextContextTemplateRef,
+        canonical_digest: RuntimeDialogueContentTemplateDigest,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        if reference.digest != canonical_digest {
+            return Err(invalid_plain_text_context_template(
+                "validated catalog digest disagrees with the AWBC/RuntimePlan context pointer",
+            ));
+        }
+        Ok(Self {
+            id: reference.id,
+            digest: reference.digest,
+        })
+    }
+
+    #[must_use]
+    pub const fn id(self) -> RuntimeDialogueContentTemplateId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn digest(self) -> RuntimeDialogueContentTemplateDigest {
+        self.digest
+    }
+
+    #[must_use]
+    pub fn matches_ref(self, reference: RuntimeDialoguePlainTextContextTemplateRef) -> bool {
+        self.id == reference.id && self.digest == reference.digest
+    }
+}
+
+fn validate_plain_text_context_template_schema(
+    id: RuntimeDialogueContentTemplateId,
+    digest: RuntimeDialogueContentTemplateDigest,
+    slot_count: usize,
+    slot: Option<(RuntimeDialogueValueSlotId, bool, RuntimeSemanticTypeId)>,
+    no_effects: bool,
+) -> Result<RuntimeDialoguePlainTextContextTemplateRef, RuntimeDialogueContentValueError> {
+    let Some((slot_id, formatted, semantic_type)) = slot else {
+        return Err(invalid_plain_text_context_template(
+            "plain-text Content requires one Formatted slot and no effects",
+        ));
+    };
+    if slot_count != 1
+        || slot_id
+            != RuntimeDialogueValueSlotId::from_zero_based(0)
+                .expect("the first dialogue slot identity exists")
+        || !formatted
+        || semantic_type != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+        || !no_effects
+    {
+        return Err(invalid_plain_text_context_template(
+            "plain-text Content requires one exact Formatted/Content slot and no effects",
+        ));
+    }
+    Ok(RuntimeDialoguePlainTextContextTemplateRef { id, digest })
+}
+
+fn invalid_plain_text_context_template(message: &str) -> RuntimeDialogueContentValueError {
+    RuntimeDialogueContentValueError::InvalidTemplateManifest {
+        message: message.to_owned(),
+    }
+}
+
 impl Serialize for RuntimeDialogueContentValue {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -838,11 +1009,10 @@ impl RuntimeDialogueContentValue {
     }
 
     /// Constructs the canonical plain-text Content value used by runtime
-    /// context messages. The immutable runtime-plan manifest supplies the
-    /// artifact-local identity and digest; this function never invents them.
+    /// context messages from a non-serialized owner/catalog admission proof.
     pub fn try_new_plain_text(
         artifact: RuntimeArtifactFingerprint,
-        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        template: RuntimeDialoguePlainTextContextTemplateProof,
         text: impl Into<String>,
     ) -> Result<Self, RuntimeDialogueContentValueError> {
         Self::try_new_plain_text_with_limits(
@@ -856,23 +1026,19 @@ impl RuntimeDialogueContentValue {
     /// Limits-aware form of [`Self::try_new_plain_text`].
     pub fn try_new_plain_text_with_limits(
         artifact: RuntimeArtifactFingerprint,
-        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        template: RuntimeDialoguePlainTextContextTemplateProof,
         text: impl Into<String>,
         limits: RuntimeSchemaLimits,
     ) -> Result<Self, RuntimeDialogueContentValueError> {
-        template.validate_slot_schema().map_err(|error| {
-            RuntimeDialogueContentValueError::InvalidTemplateManifest {
-                message: error.to_string(),
-            }
-        })?;
-        if template.slots().len() != 1
-            || !template.effects().is_empty()
-            || template.slots()[0].role() != RuntimeDialogueValueRole::Formatted
-        {
-            return Err(RuntimeDialogueContentValueError::InvalidTemplateManifest {
-                message: "plain-text Content requires one Formatted slot and no effects".to_owned(),
-            });
-        }
+        Self::try_new_plain_text_from_template_with_limits(artifact, template, text, limits)
+    }
+
+    fn try_new_plain_text_from_template_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialoguePlainTextContextTemplateProof,
+        text: impl Into<String>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
         let formatted = RuntimeDialogueFormattedValue::try_new_with_limits(
             RuntimeDialogueFormattedOutcome::Success {
                 value: RuntimeDialogueFormattedSuccess::Text(text.into()),
@@ -884,13 +1050,51 @@ impl RuntimeDialogueContentValue {
         .map_err(
             |source| RuntimeDialogueContentValueError::InvalidFormattedValue { index: 0, source },
         )?;
-        let slot = template.slots()[0];
-        let binding = RuntimeDialogueValueBinding {
-            slot: slot.slot(),
-            role: RuntimeDialogueValueRole::Formatted,
-            value: formatted.into_runtime_value(),
-        };
-        Self::try_from_evaluated_bindings_with_limits(artifact, template, &[binding], limits)
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0)
+            .expect("plain-text Content has exactly one canonical slot");
+        Self::try_new_with_limits(
+            artifact,
+            template.id,
+            template.digest,
+            [RuntimeDialogueContentBinding::Formatted {
+                slot,
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: formatted,
+            }],
+            [],
+            limits,
+        )
+    }
+
+    pub(crate) fn try_new_context_message_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        plain_text_template: Option<RuntimeDialoguePlainTextContextTemplateProof>,
+        message: RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        match message {
+            RuntimeValue::String(text) => {
+                let template = plain_text_template.ok_or_else(|| {
+                    invalid_plain_text_context_template(
+                        "String context message has no registered plain-text Content template",
+                    )
+                })?;
+                Self::try_new_plain_text_from_template_with_limits(artifact, template, text, limits)
+            }
+            message @ RuntimeValue::Opaque(_) => {
+                let content = Self::try_from_runtime_value_with_limits(&message, limits)?;
+                if content.artifact() != artifact {
+                    return Err(RuntimeDialogueContentValueError::NestedArtifactMismatch {
+                        index: 0,
+                    });
+                }
+                Ok(content)
+            }
+            _ => Err(RuntimeDialogueContentValueError::InvalidBindingValue {
+                index: 0,
+                role: RuntimeDialogueValueRole::Formatted,
+            }),
+        }
     }
 
     /// Constructs a content envelope after applying the caller-selected
@@ -3015,7 +3219,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_text_content_constructor_uses_the_verified_one_slot_manifest() {
+    fn plain_text_content_constructor_requires_a_non_serialized_proof() {
         let slot = RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot");
         let manifest = crate::plan::RuntimeDialogueContentTemplateManifest::new_with_effects(
             content_template(),
@@ -3029,9 +3233,17 @@ mod tests {
             Box::new([]),
         );
         let artifact = content_artifact(0x72);
+        let reference =
+            RuntimeDialoguePlainTextContextTemplateRef::try_from_plan_manifest(&manifest)
+                .expect("one-slot Formatted manifest pointer");
+        let proof = RuntimeDialoguePlainTextContextTemplateProof::try_from_validated_ref(
+            reference,
+            manifest.digest(),
+        )
+        .expect("catalog-joined context proof");
 
         let value =
-            RuntimeDialogueContentValue::try_new_plain_text(artifact, &manifest, "context message")
+            RuntimeDialogueContentValue::try_new_plain_text(artifact, proof, "context message")
                 .expect("plain text Content");
         assert_eq!(value.artifact(), artifact);
         assert_eq!(value.template(), content_template());
@@ -3059,8 +3271,26 @@ mod tests {
             Box::new([]),
         );
         assert!(matches!(
-            RuntimeDialogueContentValue::try_new_plain_text(artifact, &invalid, "x"),
+            RuntimeDialoguePlainTextContextTemplateRef::try_from_plan_manifest(&invalid),
             Err(RuntimeDialogueContentValueError::InvalidTemplateManifest { .. })
+        ));
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_new_context_message_with_limits(
+                artifact,
+                None,
+                RuntimeValue::String("unproven".to_owned()),
+                RuntimeSchemaLimits::engine_default(),
+            ),
+            Err(RuntimeDialogueContentValueError::InvalidTemplateManifest { .. })
+        ));
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_new_context_message_with_limits(
+                artifact,
+                None,
+                value.clone().into_runtime_value(),
+                RuntimeSchemaLimits::engine_default(),
+            ),
+            Ok(content) if content == value
         ));
     }
 }

@@ -3,6 +3,7 @@
 mod character_dialogue_generation;
 pub mod character_package;
 pub mod container;
+mod dialogue_content_contract;
 pub mod fx_definitions;
 pub mod logical_identity;
 pub mod patch;
@@ -421,6 +422,8 @@ pub enum BundleCodecError {
     UnsupportedProductExecutablePayload { actual: String },
     #[error("product AWBC executable verification failed: {message}")]
     ProductAwbcVerification { message: String },
+    #[error("bundle dialogue Content contract is invalid: {message}")]
+    InvalidDialogueContentContract { message: String },
     #[error("Arcweft bundle format `{format}` requires Cargo feature `{feature}`")]
     DisabledFormat {
         format: BundleFormat,
@@ -946,7 +949,7 @@ impl ArcweftBundle {
     }
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
-        self.validate_kind()?;
+        self.validate_schema_and_kind()?;
         if self.character_dialogue_generation.is_some() {
             return Err(BundleCodecError::CharacterDialogueAwfbRequired {
                 format: BundleFormat::Json,
@@ -962,7 +965,9 @@ impl ArcweftBundle {
     }
 
     pub fn to_format_bytes(&self, format: BundleFormat) -> Result<Vec<u8>, BundleCodecError> {
-        self.validate_kind()?;
+        if format != BundleFormat::Json {
+            self.validate_schema_and_kind()?;
+        }
         if format != BundleFormat::Awfb && self.character_dialogue_generation.is_some() {
             return Err(BundleCodecError::CharacterDialogueAwfbRequired { format });
         }
@@ -1379,7 +1384,8 @@ impl ArcweftBundle {
                 expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             });
         }
-        self.validate_kind()
+        self.validate_kind()?;
+        self.validate_dialogue_content_contract().map(|_| ())
     }
 
     #[cfg(feature = "format-avro")]
@@ -1756,19 +1762,95 @@ mod tests {
         AudioAsset, AudioBusDef, AudioDecodeStrategy, AudioFormat, AudioGraph,
     };
     use arcweft_core::awbc::schema::{
-        AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+        AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcDialogueContentSlot,
+        AwbcDialogueContentTemplate, AwbcDialogueValueRole, AwbcEffectKind, AwbcEffectPlan,
         AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
         AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
-        AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature,
-        AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcRuntimeType, AwbcRuntimeTypeShape,
+        AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+        AwbcTerminator, AwbcTypeId,
     };
     use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId};
     use arcweft_core::entry::AgentBudget;
     use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
+    use arcweft_core::runtime_id::{RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId};
+    use arcweft_core::value::{
+        RuntimeDialogueOpaqueRole, RuntimeDialoguePlainTextContextTemplateRef,
+    };
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::DialogueContentFragmentTemplate;
+
+    #[test]
+    fn context_template_requires_canonical_catalog_body_at_bundle_admission() {
+        let id =
+            RuntimeDialogueContentTemplateId::from_zero_based(0).expect("first template identity");
+        let template = DialogueContentFragmentTemplate::plain_text_context(id)
+            .expect("canonical context template");
+        let owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
+        let mut program = minimal_awbc_program();
+        let producer = AwbcStringId(program.strings.len() as u32);
+        program.strings.push(owner.producer().as_str().to_owned());
+        let semantic_type = AwbcTypeId(program.runtime_types.len() as u32);
+        program.runtime_types.push(AwbcRuntimeType::new(
+            owner.semantic_identity(),
+            AwbcRuntimeTypeShape::Opaque {
+                producer,
+                admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
+                arguments: Vec::new(),
+            },
+        ));
+        program.content_templates.push(AwbcDialogueContentTemplate {
+            id,
+            digest: template.digest(),
+            slots: vec![AwbcDialogueContentSlot {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("first slot identity"),
+                role: AwbcDialogueValueRole::Formatted,
+                semantic_type,
+            }],
+            effects: Vec::new(),
+        });
+        program.plain_text_context_template = Some(
+            RuntimeDialoguePlainTextContextTemplateRef::from_encoded_identity(
+                id,
+                template.digest(),
+            ),
+        );
+        let catalog =
+            DialogueContentCatalog::try_from_records_and_templates(Vec::new(), vec![template])
+                .expect("canonical template catalog");
+        let empty = empty_test_bundle();
+        let bundle = ArcweftBundle::try_new(empty.manifest, empty.source_map, program, catalog)
+            .expect("context bundle construction");
+        let proof = bundle
+            .validate_dialogue_content_contract()
+            .expect("canonical AWBC and text model agree")
+            .expect("String context receives a proof");
+        assert_eq!(proof.id(), id);
+        ArcweftBundle::from_json_slice(&bundle.to_json_bytes().expect("encode bundle"))
+            .expect("decoded bundle preserves the canonical join");
+
+        let mut without_body = bundle;
+        without_body.dialogue_content = DialogueContentCatalog::new();
+        assert!(matches!(
+            without_body.validate_dialogue_content_contract(),
+            Err(BundleCodecError::InvalidDialogueContentContract { .. })
+        ));
+        assert!(matches!(
+            without_body.to_json_bytes(),
+            Err(BundleCodecError::InvalidDialogueContentContract { .. })
+        ));
+        let decoded_untrusted = serde_json::to_vec(&without_body)
+            .expect("unchecked JSON fixture encodes for decoder rejection");
+        assert!(matches!(
+            ArcweftBundle::from_json_slice(&decoded_untrusted),
+            Err(BundleCodecError::InvalidDialogueContentContract { .. })
+        ));
+    }
 
     #[cfg(feature = "format-yaml")]
     #[test]

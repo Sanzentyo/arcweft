@@ -8,10 +8,11 @@ use super::{
     BundleSessionOptions, BundleView, BundleViewRuntime, BundleViewRuntimeError,
     DialogueContentCatalog, EntryRuntimeId, FxDefinitions, GenerationBuildError, GenerationId,
     GenerationRuntimeImage, GenerationRuntimeTable, PresentationEnvironmentOverrides,
-    ProgramGeneration, ReadBudget, RootCommandHostCallCatalog, RuntimeTaskRegistry,
-    SessionEnvironmentState, SwapSession, SystemPaletteSet, ViewProgramResource,
-    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
-    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
+    RuntimeDialoguePlainTextContextTemplateProof, RuntimeTaskRegistry, SessionEnvironmentState,
+    SwapSession, SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton,
+    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
+    ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
 
 #[derive(Clone, Debug)]
@@ -19,6 +20,7 @@ pub(super) struct SessionRuntime {
     pub(super) source_label: String,
     pub(super) program: Arc<AwbcProgram>,
     pub(super) entry: AwbcEntryId,
+    pub(super) plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
     pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) dialogue_content: DialogueContentCatalog,
     pub(super) character_dialogue_schema:
@@ -215,13 +217,23 @@ impl SessionRuntime {
         source_label: String,
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
+        plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let executor = ArcweftRuntimeExecutor::from_awbc_product_arc(Arc::clone(&program), entry)?;
+        let executor = if let Some(proof) = plain_text_context_proof {
+            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof(
+                Arc::clone(&program),
+                entry,
+                proof,
+            )?
+        } else {
+            ArcweftRuntimeExecutor::from_awbc_product_arc(Arc::clone(&program), entry)?
+        };
         Ok(Self::with_executor(
             source_label,
             program,
             entry,
+            plain_text_context_proof,
             resources,
             executor,
         ))
@@ -231,6 +243,7 @@ impl SessionRuntime {
         source_label: String,
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
+        plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
         executor: ArcweftRuntimeExecutor,
     ) -> Self {
@@ -238,6 +251,7 @@ impl SessionRuntime {
             source_label,
             program,
             entry,
+            plain_text_context_proof,
             executor,
             dialogue_content: resources.dialogue_content,
             character_dialogue_schema: resources.character_dialogue_schema,
@@ -274,6 +288,7 @@ impl SessionRuntime {
             self.source_label.clone(),
             self.program.clone(),
             entry,
+            self.plain_text_context_proof,
             SessionRuntimeResources {
                 dialogue_content: self.dialogue_content.clone(),
                 character_dialogue_schema: self.character_dialogue_schema.clone(),
@@ -300,7 +315,14 @@ impl SessionRuntime {
         current: &ArcweftRuntimeExecutor,
     ) -> Result<(), BundleSessionError> {
         let mut executor = current.clone();
-        executor.replace_product_awbc_program_arc(Arc::clone(&self.program))?;
+        if let Some(proof) = self.plain_text_context_proof {
+            executor.replace_product_awbc_program_arc_with_plain_text_context_proof(
+                Arc::clone(&self.program),
+                proof,
+            )?;
+        } else {
+            executor.replace_product_awbc_program_arc(Arc::clone(&self.program))?;
+        }
         self.executor = executor;
         Ok(())
     }
@@ -315,6 +337,13 @@ pub(super) fn build_session_runtime(
             bundle.bundle_kind,
         ));
     }
+
+    let plain_text_context_proof =
+        bundle
+            .validate_dialogue_content_contract()
+            .map_err(|error| BundleSessionError::DialogueContentContract {
+                message: error.to_string(),
+            })?;
 
     let program = Arc::new(bundle.product_awbc_program().clone());
     let entry = selected_awbc_entry(&program, bundle, options)?;
@@ -416,6 +445,7 @@ pub(super) fn build_session_runtime(
         bundle.source_display_name().to_owned(),
         program,
         entry,
+        plain_text_context_proof,
         resources,
     )
     .map_err(BundleSessionError::from)

@@ -8,8 +8,8 @@ use crate::{
     env::{
         RegisteredTypeCheckEnv,
         nominal::{
-            AcceptedNominalCatalog, standard_agent_error_type, standard_nominal_id,
-            standard_reduction_record,
+            AcceptedNominalCatalog, standard_agent_error_type, standard_arc_error_type,
+            standard_dialogue_content_type, standard_nominal_id, standard_reduction_record,
         },
     },
     types::{
@@ -1044,9 +1044,8 @@ impl DomainMethodId {
             ),
             Self::DiagnosticsHasError => empty(TypeKind::Predicate, &[], validator),
             Self::RagContextPackSummary => empty(TypeKind::DisplayText, &[], validator),
-            Self::Context | Self::WithContext => {
-                variadic_unchecked(context_result(receiver)?, validator, &[])
-            }
+            Self::Context => context_schema(receiver, false, validator)?,
+            Self::WithContext => context_schema(receiver, true, validator)?,
         })
     }
 }
@@ -1213,14 +1212,42 @@ fn context_result(receiver: &TypeKind) -> Option<TypeKind> {
         TypeKind::Need(_) => Some(receiver.clone()),
         TypeKind::Option(inner) => Some(TypeKind::Result {
             ok: inner.clone(),
-            error: Box::new(named("ArcError")),
+            error: Box::new(standard_arc_error_type()),
         }),
         TypeKind::Result { ok, .. } => Some(TypeKind::Result {
             ok: ok.clone(),
-            error: Box::new(named("ArcError")),
+            error: Box::new(standard_arc_error_type()),
         }),
         _ => None,
     }
+}
+
+fn context_schema(
+    receiver: &TypeKind,
+    lazy: bool,
+    validator: CallableValidator,
+) -> Option<CallableSignatureSchema> {
+    let result = context_result(receiver)?;
+    let message_type = context_message_type();
+    let (name, input) = if lazy {
+        (
+            "callback",
+            TypeKind::function(std::iter::empty(), message_type),
+        )
+    } else {
+        ("message", message_type)
+    };
+    Some(schema(
+        vec![required(0, name, input)],
+        result,
+        &[],
+        closed(),
+        validator,
+    ))
+}
+
+fn context_message_type() -> TypeKind {
+    TypeKind::Choice(vec![TypeKind::String, standard_dialogue_content_type()])
 }
 
 /// Projects the presentation owner's closed source-constructor schema into
@@ -2317,6 +2344,68 @@ mod tests {
             panic!("Reduction.unchanged must return the accepted Reduction owner")
         };
         assert_eq!(reduction.arguments(), [inner.as_ref().clone()]);
+    }
+
+    #[test]
+    fn result_and_option_context_methods_accept_string_or_content_messages() {
+        let result_receiver = TypeKind::Result {
+            ok: Box::new(TypeKind::String),
+            error: Box::new(TypeKind::I64),
+        };
+        let option_receiver = TypeKind::Option(Box::new(TypeKind::String));
+        let expected_result = TypeKind::Result {
+            ok: Box::new(TypeKind::String),
+            error: Box::new(standard_arc_error_type()),
+        };
+
+        for receiver in [&result_receiver, &option_receiver] {
+            for (method, input, parameter_name) in [
+                (DomainMethodId::Context, context_message_type(), "message"),
+                (
+                    DomainMethodId::WithContext,
+                    TypeKind::function(std::iter::empty(), context_message_type()),
+                    "callback",
+                ),
+            ] {
+                let schema = method
+                    .signature_schema(receiver)
+                    .expect("context method applies to Result and Option");
+                assert_eq!(schema.value_type(), Some(&expected_result));
+                assert_eq!(
+                    schema.argument_policy(),
+                    CallableArgumentPolicy::new(
+                        UnknownNamedArgumentPolicy::Reject,
+                        SpreadArgumentPolicy::Reject,
+                    ),
+                );
+                let [group] = schema.groups() else {
+                    panic!("context method has one closed argument group")
+                };
+                let [parameter] = group.parameters() else {
+                    panic!("context method has one required argument")
+                };
+                assert_eq!(
+                    parameter.name().map(CallableName::as_str),
+                    Some(parameter_name)
+                );
+                match parameter.declared_type() {
+                    Some(TypeKind::Function {
+                        params,
+                        return_type,
+                        ..
+                    }) if parameter_name == "callback" => {
+                        assert!(params.is_empty());
+                        assert_eq!(return_type.as_ref(), &context_message_type());
+                    }
+                    declared => assert_eq!(declared, Some(&input)),
+                }
+                assert_eq!(
+                    parameter.passing(),
+                    CallableParameterPassing::PositionalOrNamed
+                );
+                assert_eq!(parameter.presence(), CallableParameterPresence::Required);
+            }
+        }
     }
 
     #[test]

@@ -57,6 +57,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.choices)?;
         writer.write_table(&self.choice_options)?;
         writer.write_table(&self.content_templates)?;
+        self.plain_text_context_template.write_wire(writer)?;
         writer.write_table(&self.content_units)?;
         writer.write_table(&self.line_task_groups)?;
         writer.write_table(&self.line_task_nodes)?;
@@ -101,6 +102,9 @@ impl Wire for AwbcProgram {
             choices: reader.read_table("choices", budget.choices)?,
             choice_options: reader.read_table("choice_options", budget.choice_options)?,
             content_templates: reader.read_table("content_templates", budget.content_templates)?,
+            plain_text_context_template: Option::<
+                crate::value::RuntimeDialoguePlainTextContextTemplateRef,
+            >::read_wire(reader)?,
             content_units: reader.read_table("content_units", budget.content_units)?,
             line_task_groups: reader.read_table("line_task_groups", budget.line_task_groups)?,
             line_task_nodes: reader.read_table("line_task_nodes", budget.line_task_nodes)?,
@@ -218,6 +222,20 @@ impl Wire for AwbcDialogueContentTemplate {
             slots: Vec::<AwbcDialogueContentSlot>::read_wire(reader)?,
             effects: Vec::<AwbcDialogueContentEffectSlot>::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::value::RuntimeDialoguePlainTextContextTemplateRef {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.id().write_wire(writer)?;
+        self.digest().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self::from_encoded_identity(
+            RuntimeDialogueContentTemplateId::read_wire(reader)?,
+            RuntimeDialogueContentTemplateDigest::read_wire(reader)?,
+        ))
     }
 }
 

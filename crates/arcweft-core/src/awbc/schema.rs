@@ -18,7 +18,8 @@ use crate::runtime_id::{
     RuntimeLocalDeclarationId,
 };
 use crate::value::{
-    RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind, RuntimeRecordFieldId,
+    RuntimeAgentConstructor, RuntimeDialoguePlainTextContextTemplateRef, RuntimeEntityReference,
+    RuntimeHandleKind, RuntimeRecordFieldId,
 };
 use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
@@ -232,6 +233,8 @@ pub struct AwbcProgram {
     pub choices: Vec<AwbcChoice>,
     pub choice_options: Vec<AwbcChoiceOption>,
     pub content_templates: Vec<AwbcDialogueContentTemplate>,
+    /// Exact verified plain-text Content template reserved for context calls.
+    pub plain_text_context_template: Option<RuntimeDialoguePlainTextContextTemplateRef>,
     pub content_units: Vec<AwbcContentUnit>,
     pub line_task_groups: Vec<AwbcLineTaskGroup>,
     pub line_task_nodes: Vec<AwbcLineTaskNode>,
@@ -278,6 +281,7 @@ impl Default for AwbcProgram {
             choices: Vec::new(),
             choice_options: Vec::new(),
             content_templates: Vec::new(),
+            plain_text_context_template: None,
             content_units: Vec::new(),
             line_task_groups: Vec::new(),
             line_task_nodes: Vec::new(),
@@ -300,6 +304,18 @@ impl Default for AwbcProgram {
 }
 
 impl AwbcProgram {
+    /// Resolves the serialized context-template claim against its exact AWBC
+    /// manifest row. This admits only the schema shape; catalog/body
+    /// certification remains a bundle-level join.
+    pub fn validated_plain_text_context_template(
+        &self,
+    ) -> Result<
+        Option<RuntimeDialoguePlainTextContextTemplateRef>,
+        crate::value::RuntimeDialogueContentValueError,
+    > {
+        RuntimeDialoguePlainTextContextTemplateRef::try_from_awbc_program(self)
+    }
+
     /// Returns the Product function selected by one exact semantic Flow ID.
     #[must_use]
     pub fn flow_function(&self, flow: &FlowRuntimeId) -> Option<AwbcFunctionId> {

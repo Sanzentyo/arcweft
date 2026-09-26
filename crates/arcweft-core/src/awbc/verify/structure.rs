@@ -1996,6 +1996,14 @@ fn verify_callable_body(
 
 fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
+    if program.plain_text_context_template.is_some() {
+        program
+            .validated_plain_text_context_template()
+            .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                at: "plain-text context template".to_owned(),
+                message: error.to_string(),
+            })?;
+    }
     for (index, template) in program.content_templates.iter().enumerate() {
         let at = format!("content template {index}");
         let expected = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(index)

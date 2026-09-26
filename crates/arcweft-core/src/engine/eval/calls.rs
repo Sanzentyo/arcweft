@@ -9,13 +9,23 @@ use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{RuntimePlanTypeProjection, RuntimeReceiverMode, RuntimeTraitMethodId};
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableValue, RuntimeIterator,
-    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeCallableValue, RuntimeIntrinsic,
+    RuntimeIterator, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
 };
 use crate::{
     entry::RuntimeSchemaLimits, pattern::RuntimeSemanticTypeId, pure::RuntimeExternalCallContext,
     task::RuntimeProgramOwner,
 };
+
+fn is_context_intrinsic(intrinsic: RuntimeIntrinsic) -> bool {
+    matches!(
+        intrinsic,
+        RuntimeIntrinsic::StdOptionContext
+            | RuntimeIntrinsic::StdOptionWithContext
+            | RuntimeIntrinsic::StdResultContext
+            | RuntimeIntrinsic::StdResultWithContext
+    )
+}
 
 pub(crate) struct TraitMethodCallOutcome {
     pub value: RuntimeValue,
@@ -107,6 +117,12 @@ impl Engine {
         result_type: RuntimePlanTypeId,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if let Some(intrinsic) = callee.as_intrinsic()
+            && is_context_intrinsic(intrinsic)
+        {
+            let args = self.evaluate_call_args(args, pure_backend)?;
+            return self.evaluate_context_intrinsic(intrinsic, args, pure_backend);
+        }
         let (args, context) = if callee.as_intrinsic().is_some() {
             (
                 self.evaluate_call_args(args, pure_backend)?,
@@ -131,6 +147,84 @@ impl Engine {
             (values, context)
         };
         Ok(evaluate_runtime_call(callee, &args, &context, pure_backend))
+    }
+
+    fn evaluate_context_intrinsic(
+        &mut self,
+        intrinsic: RuntimeIntrinsic,
+        mut args: Vec<RuntimeValue>,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let callback = matches!(
+            intrinsic,
+            RuntimeIntrinsic::StdOptionWithContext | RuntimeIntrinsic::StdResultWithContext
+        );
+        let [receiver, message] = args.as_mut_slice() else {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: intrinsic.as_label().to_owned(),
+                reason: format!("context intrinsic expected 2 arguments, got {}", args.len()),
+            });
+        };
+        let receiver = std::mem::replace(receiver, RuntimeValue::Unit);
+        let message = std::mem::replace(message, RuntimeValue::Unit);
+        let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+        let frame = crate::value::RuntimeArcErrorFrame::empty();
+        let message_factory = || {
+            let message = if callback {
+                match message {
+                    RuntimeValue::Callable(function) => {
+                        self.apply_runtime_function(&function, &[], pure_backend)?
+                    }
+                    value => {
+                        return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                            &value,
+                        )));
+                    }
+                }
+            } else {
+                message
+            };
+            let artifact = self
+                .plan
+                .artifact()
+                .ok_or(RuntimeEvalError::DialogueContentUnboundArtifact)?;
+            let template_proof = self
+                .plan
+                .dialogue_content()
+                .plain_text_context_template_proof();
+            crate::value::RuntimeDialogueContentValue::try_new_context_message_with_limits(
+                artifact,
+                template_proof,
+                message,
+                limits,
+            )
+            .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))
+        };
+        let result = match intrinsic {
+            RuntimeIntrinsic::StdResultContext | RuntimeIntrinsic::StdResultWithContext => {
+                crate::value::RuntimeArcError::context_result_value_try_with(
+                    receiver,
+                    message_factory,
+                    frame,
+                    limits,
+                )
+            }
+            RuntimeIntrinsic::StdOptionContext | RuntimeIntrinsic::StdOptionWithContext => {
+                crate::value::RuntimeArcError::context_option_value_try_with(
+                    receiver,
+                    message_factory,
+                    frame,
+                    limits,
+                )
+            }
+            _ => unreachable!("context intrinsic identity was checked by the caller"),
+        };
+        result.map_err(|error| match error {
+            crate::value::RuntimeArcErrorContextValueError::Payload(error) => {
+                RuntimeEvalError::DialogueContentConstruction(error.to_string())
+            }
+            crate::value::RuntimeArcErrorContextValueError::Message(error) => error,
+        })
     }
 
     fn evaluate_external_call_args(
@@ -425,3 +519,7 @@ impl Engine {
         Ok(values)
     }
 }
+
+#[cfg(test)]
+#[path = "calls/context_tests.rs"]
+mod context_tests;

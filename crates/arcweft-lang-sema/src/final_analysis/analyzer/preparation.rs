@@ -1,6 +1,7 @@
 //! Type resolution and local-binding preparation.
 
 use arcweft_lang_hir::{
+    body_edges::{HirBodyChild, HirBodyProjection},
     expr::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
     identity::{LocalId, SyntheticOwner},
     item::{HirCapabilityFunction, HirCapabilityMember},
@@ -853,9 +854,16 @@ impl Analyzer<'_, '_, '_> {
             }
             (
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
-                HirItemKind::Flow(_),
-            )
-            | (
+                HirItemKind::Flow(flow),
+            ) => {
+                append_flow_body_result_expectations(
+                    module,
+                    flow.body(),
+                    self.registered_callable_result(declaration)?,
+                    &mut expectations,
+                )?;
+            }
+            (
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
                 HirItemKind::View(_),
             ) => {}
@@ -1011,6 +1019,65 @@ pub(super) fn append_function_body_result_expectations(
         _ => expected,
     };
     expectations.push((*tail, tail_expected));
+    Ok(())
+}
+
+fn append_flow_body_result_expectations(
+    module: &HirModule,
+    body: &arcweft_lang_hir::expr::HirThreadBody,
+    expected: TypeKind,
+    expectations: &mut Vec<(ExprId, TypeKind)>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let projection = body
+        .try_body_projection()
+        .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?;
+    let mut visited = BTreeSet::new();
+    append_flow_projection_result_expectations(
+        module,
+        &projection,
+        &expected,
+        expectations,
+        &mut visited,
+    )
+}
+
+fn append_flow_projection_result_expectations(
+    module: &HirModule,
+    projection: &HirBodyProjection,
+    expected: &TypeKind,
+    expectations: &mut Vec<(ExprId, TypeKind)>,
+    visited: &mut BTreeSet<StmtId>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    for edge in projection.children() {
+        let HirBodyChild::Statement(owner) = edge.child() else {
+            continue;
+        };
+        if !visited.insert(owner) {
+            continue;
+        }
+        let statement = module
+            .resolve_stmt(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if statement.is_poisoned() {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        }
+        if let HirStmtKind::Return { value } = statement.kind() {
+            expectations.push((*value, expected.clone()));
+        }
+        for body in statement
+            .kind()
+            .body_projections()
+            .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
+        {
+            append_flow_projection_result_expectations(
+                module,
+                body.projection(),
+                expected,
+                expectations,
+                visited,
+            )?;
+        }
+    }
     Ok(())
 }
 

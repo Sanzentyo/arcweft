@@ -27,7 +27,7 @@ pub(crate) use trait_method::AwbcTraitMethodLowerer;
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcSourceMapEntry};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use arcweft_core::plan::{EntryRuntimeId, RuntimeDialogueContentApplicationKey, RuntimePlan};
-use arcweft_text_model::DialogueContentCatalog;
+use arcweft_text_model::{DialogueContentCatalog, DialogueContentFragmentTemplate};
 use thiserror::Error;
 
 /// Compiler-side context for one `RuntimePlan` to AWBC lowering operation.
@@ -161,6 +161,7 @@ impl<'a> AwbcLowerer<'a> {
             return Err(AwbcLowerError::Lowering(diagnostics));
         }
         let mut program = inventory.finish();
+        program.plain_text_context_template = plan.dialogue_content().plain_text_context_template();
         if options.emit_source_map && program.source_map.is_empty() {
             let source_file = program
                 .strings
@@ -199,6 +200,34 @@ fn validate_dialogue_content_join(
     catalog: &DialogueContentCatalog,
 ) -> Vec<AwbcLowerDiagnostic> {
     let mut diagnostics = Vec::new();
+    if let Some(identity) = plan.dialogue_content().plain_text_context_template() {
+        let path = format!("dialogue.template.{}", identity.id());
+        let manifest = plan.dialogue_content_templates().get(identity.id());
+        let catalog_template = catalog.find_template(identity.id());
+        let canonical_template = DialogueContentFragmentTemplate::plain_text_context(identity.id());
+        match (manifest, catalog_template, canonical_template) {
+            (Some(manifest), Some(template), Ok(canonical))
+                if manifest.digest() == identity.digest()
+                    && template == &canonical
+                    && template.digest() == identity.digest() => {}
+            (_, _, Err(error)) => diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                format!("plain-text context template factory failed: {error}"),
+            )),
+            (None, _, _) => diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "RuntimePlan plain-text context pointer has no manifest row",
+            )),
+            (_, None, _) => diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "plain-text context template is absent from the text-model catalog",
+            )),
+            _ => diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "plain-text context template identity, canonical body, or digest disagrees with its RuntimePlan authority",
+            )),
+        }
+    }
     for content in plan.dialogue_content().rows() {
         let path = format!("dialogue.line.{}", content.line().public_label());
         let key =

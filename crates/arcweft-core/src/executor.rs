@@ -278,6 +278,21 @@ impl ArcweftRuntimeExecutor {
         )))
     }
 
+    /// Starts Product AWBC with the non-serialized plain-text Content proof
+    /// supplied by a validated bundle/catalog join.
+    pub fn from_awbc_product_arc_with_plain_text_context_proof(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm = AwbcProductStepExecutor::for_entry_arc_with_plain_text_context_proof(
+            program, entry, 64, proof,
+        )?;
+        Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
+            Box::new(AwbcProductExecutor { vm }),
+        )))
+    }
+
     pub fn from_awbc_product_function(
         program: AwbcProgram,
         entry: AwbcEntryId,
@@ -354,6 +369,27 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.replace_program_preserving_state_arc(program)
             }
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
+            | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
+                Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "code-compatible Product AWBC replacement requires Product AWBC tier"
+                        .to_owned(),
+                })
+            }
+        }
+    }
+
+    /// Rebinds a compatible Product AWBC lease and its bundle-certified
+    /// plain-text Content proof while retaining live fiber state.
+    pub fn replace_product_awbc_program_arc_with_plain_text_context_proof(
+        &mut self,
+        program: Arc<AwbcProgram>,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .replace_program_preserving_state_arc_with_plain_text_context_proof(program, proof),
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
                 Err(AwbcProductStepBuildError::RestoreSnapshot {

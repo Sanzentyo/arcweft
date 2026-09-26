@@ -70,7 +70,9 @@ use arcweft_core::task::GenerationId;
 use arcweft_core::task::{
     CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskSequence,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeBinding, RuntimeDialoguePlainTextContextTemplateProof, RuntimePayload, RuntimeValue,
+};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
@@ -336,6 +338,8 @@ pub enum BundleSessionError {
     RootCommandHostCatalog(#[from] RootCommandHostCallCatalogError),
     #[error("failed to verify product AWBC generation: {message}")]
     ProductAwbcVerification { message: String },
+    #[error("bundle dialogue Content contract is invalid: {message}")]
+    DialogueContentContract { message: String },
     #[error(transparent)]
     ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
     #[error("product AWBC entry `{entry}` does not exist")]
