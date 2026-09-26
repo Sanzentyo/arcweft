@@ -1716,3 +1716,20 @@ fixture/companion は次の cut のため未commitで保持した。ArcError fra
 実 native/decoded AWBC 受理、`just test-workspace` と goal 全体の最終 gate は
 未達。`just test-workspace` は既知の focused 049 失敗があるため、この cut
 では再実行していない。
+
+## Typed Need producer schema checkpoint — 2026-09-26
+
+`main` に `a429eddd108d8fb581e15e8aeeec508d9cfb457f` を push した。
+Core に typed `NeedProducerOperation::AssetLoad` と image/voice kind を
+追加し、Sema の選択済み `CallableValidator::NeedProducer` role に operation
+と `TaskPolicy` を保持する。`asset.image` と `voice.load` だけを明示登録し、
+汎用の `Need<T>` 戻り値や callable 名から producer を推測しない。payload
+`T` は選択済みの具体化された `Need<T>` result の owner とし、role 内に
+重複保存しない。validator digest は operation/kind/policy を含む。
+
+Sema の登録/digest focused tests 2/2、Core/Sema all-target check、workspace
+all-target/all-feature check、変更 crate all-target Clippy、fmt、cached diff
+check が通過した。check/Clippy は warning あり。compiler/runtime-plan の
+selected producer fact、Need handle の生成・待機、native/AWBC 実行と復元は
+この SHA では未実装であり、049 fixture は引き続き未受理。receiver traversal、
+049/053 fixture など次の cut の差分は保持している。
