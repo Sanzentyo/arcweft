@@ -1910,6 +1910,15 @@ pub enum RuntimeExprSeedKind {
     SequencePopFront {
         place: RuntimeMutablePlaceSeed,
     },
+    /// Appends one exact item to an admitted Vec place and returns `Unit`.
+    SequencePush {
+        place: RuntimeMutablePlaceSeed,
+        value: Box<RuntimeExprSeed>,
+    },
+    /// Removes the last item from an exact admitted Vec place and returns `Option<T>`.
+    SequencePopBack {
+        place: RuntimeMutablePlaceSeed,
+    },
     EntityRef(RuntimeEntityReference),
     Let {
         binding: RuntimeLocalSeedId,
@@ -2313,6 +2322,21 @@ impl RuntimeExprSeed {
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),
             RuntimeExprSeedKind::Local(local) => push_free_local(local, bound, locals),
             RuntimeExprSeedKind::SequencePopFront { place } => match place {
+                RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
+                RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                    push_free_local(base, bound, locals)
+                }
+            },
+            RuntimeExprSeedKind::SequencePush { place, value } => {
+                match place {
+                    RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
+                    RuntimeMutablePlaceSeed::NominalField { base, .. } => {
+                        push_free_local(base, bound, locals)
+                    }
+                }
+                value.collect_free_locals(bound, locals);
+            }
+            RuntimeExprSeedKind::SequencePopBack { place } => match place {
                 RuntimeMutablePlaceSeed::Local(local) => push_free_local(local, bound, locals),
                 RuntimeMutablePlaceSeed::NominalField { base, .. } => {
                     push_free_local(base, bound, locals)

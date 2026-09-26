@@ -132,6 +132,16 @@ impl Engine {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }
+            RuntimeExprKind::SequencePush { place, value } => {
+                let value = self.evaluate_expr_with_backend(value, pure_backend)?;
+                self.fiber.env.push_vector_item(*place, value)?;
+                Ok(RuntimeValue::Unit)
+            }
+            RuntimeExprKind::SequencePopBack { place } => {
+                self.fiber.env.pop_vector_item(*place).map(|value| {
+                    value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
+                })
+            }
             RuntimeExprKind::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExprKind::Let {
                 binding,

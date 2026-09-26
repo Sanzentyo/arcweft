@@ -774,6 +774,29 @@ impl RuntimeSeq {
         }
     }
 
+    /// Appends one already type-checked Vec item while preserving logical rows.
+    /// Columnar storage is materialized once into owned values for this mutation.
+    pub(crate) fn push_vector_item(&mut self, value: RuntimeValue) {
+        if let Self::Values(values) = self {
+            values.push(value);
+            return;
+        }
+        let mut values = std::mem::replace(self, Self::Values(Vec::new())).into_values();
+        values.push(value);
+        *self = Self::Values(values);
+    }
+
+    /// Removes the last already type-checked Vec item without cloning it.
+    pub(crate) fn pop_vector_item(&mut self) -> Option<RuntimeValue> {
+        if let Self::Values(values) = self {
+            return values.pop();
+        }
+        let mut values = std::mem::replace(self, Self::Values(Vec::new())).into_values();
+        let popped = values.pop();
+        *self = Self::Values(values);
+        popped
+    }
+
     pub fn as_values(&self) -> Option<&[RuntimeValue]> {
         match self {
             Self::Values(values) => Some(values),
@@ -1848,8 +1871,41 @@ impl<T: Clone> DenseSeqStorage<T> {
 }
 
 #[cfg(test)]
-mod pop_front_tests {
+mod mutation_tests {
     use super::*;
+
+    #[test]
+    fn vector_end_mutation_preserves_rows_from_each_storage_form() {
+        let sequences = [
+            RuntimeSeq::values(vec![RuntimeValue::i32(7)]),
+            RuntimeSeq::dense_i32(vec![7]),
+            RuntimeSeq::tuple_columns(
+                1,
+                vec![
+                    RuntimeSeq::dense_i32(vec![7]),
+                    RuntimeSeq::dense_bool(vec![true]),
+                ],
+            )
+            .expect("tuple columns have one row"),
+            RuntimeSeq::record_columns(
+                1,
+                vec![("value".to_owned(), RuntimeSeq::dense_i32(vec![7]))],
+            )
+            .expect("record columns have one row"),
+        ];
+        for mut sequence in sequences {
+            let first = sequence.value_at(0);
+            sequence.push_vector_item(first.clone());
+            assert_eq!(sequence.len(), 2);
+            assert_eq!(sequence.pop_vector_item(), Some(first.clone()));
+            assert_eq!(sequence.into_values(), vec![first]);
+        }
+
+        let mut empty = RuntimeSeq::dense_i32(Vec::new());
+        assert_eq!(empty.pop_vector_item(), None);
+        empty.push_vector_item(RuntimeValue::i32(4));
+        assert_eq!(empty.pop_vector_item(), Some(RuntimeValue::i32(4)));
+    }
 
     #[test]
     fn pop_front_moves_values_from_each_storage_form_and_handles_empty_sequences() {

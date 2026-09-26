@@ -1626,6 +1626,160 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
 }
 
 #[test]
+fn native_vec_push_returns_unit_and_pop_back_moves_the_last_item() {
+    use crate::value::RuntimeSeq;
+
+    let item_type = RuntimeSemanticTypeId::from_bytes([0x51; 32]);
+    let payload_type = RuntimeSemanticTypeId::from_bytes([0x52; 32]);
+    let option_type = RuntimeSemanticTypeId::from_bytes([0x53; 32]);
+    let sequence_type = RuntimeSemanticTypeId::from_bytes([0x54; 32]);
+    let unit = unit_type();
+    let entry = flow_id("flow.vec_push_pop_back");
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    item_type,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I32),
+                ),
+                RuntimePlanTypeSeed::new(
+                    payload_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([item_type])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_type,
+                    RuntimePlanTypeProjection::Option {
+                        item: item_type,
+                        some_payload: payload_type,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    sequence_type,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: item_type,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(sequence_type),
+                RuntimeLocalDeclarationSeed::new(item_type),
+            ],
+        )
+        .expect("Vec mutation types admit");
+    let sequence = admission.local_ids()[0].clone();
+    let popped_item = admission.local_ids()[1].clone();
+    let pop_back = || {
+        RuntimeExprSeed::new(
+            option_type,
+            RuntimeExprSeedKind::SequencePopBack {
+                place: crate::plan::RuntimeMutablePlaceSeed::Local(sequence.clone()),
+            },
+        )
+    };
+    let some_item = |binding| {
+        RuntimePatternSeed::new(
+            option_type,
+            RuntimePatternSeedKind::Variant {
+                ordinal: 0,
+                payload: Some(Box::new(RuntimePatternSeed::new(
+                    payload_type,
+                    RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                        item_type, binding,
+                    )])),
+                ))),
+            },
+        )
+    };
+    builder
+        .push_flow_schema(flow_schema(&entry))
+        .expect("Vec mutation flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            entry.clone(),
+            [],
+            RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(
+                        sequence_type,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: true,
+                            local: sequence.clone(),
+                        },
+                    ),
+                    expr: RuntimeExprSeed::new(
+                        sequence_type,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Seq(RuntimeSeq::values(
+                            Vec::new(),
+                        ))),
+                    ),
+                },
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                    expr: RuntimeExprSeed::new(
+                        unit,
+                        RuntimeExprSeedKind::SequencePush {
+                            place: crate::plan::RuntimeMutablePlaceSeed::Local(sequence.clone()),
+                            value: Box::new(RuntimeExprSeed::new(
+                                item_type,
+                                RuntimeExprSeedKind::Value(RuntimeValue::i32(3)),
+                            )),
+                        },
+                    ),
+                },
+                RuntimeFlowOpSeed::Let {
+                    pattern: some_item(RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: popped_item.clone(),
+                    }),
+                    expr: pop_back(),
+                },
+                RuntimeFlowOpSeed::IfLet {
+                    pattern: some_item(RuntimePatternSeedKind::Discard),
+                    expr: pop_back(),
+                    guard: None,
+                    then_ops: vec![RuntimeFlowOpSeed::Return(
+                        "expected an empty Vec".to_owned(),
+                    )],
+                    else_ops: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                        item_type,
+                        RuntimeExprSeedKind::Local(popped_item),
+                    ))],
+                },
+            ],
+        ))
+        .expect("Vec mutation flow admits");
+    let mut engine = Engine::for_flow(builder.finish().expect("Vec mutation plan seals"), &entry)
+        .expect("Vec mutation flow exists");
+
+    let mut output = crate::step::RuntimeStepOutput::default();
+    for _ in 0..64 {
+        let next = step(&mut engine);
+        output.flow_events.extend(next.flow_events);
+        output.diagnostics.extend(next.diagnostics);
+        if matches!(
+            engine.fiber().status,
+            FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
+        ) {
+            break;
+        }
+    }
+
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "3".to_owned(),
+        }],
+        "output: {output:?}; status: {:?}",
+        engine.fiber().status
+    );
+}
+
+#[test]
 fn await_progress_runs_only_the_first_matching_observer() {
     let progress_type = RuntimeSemanticTypeId::from_bytes([3; 32]);
     let need_string_type = RuntimeSemanticTypeId::from_bytes([4; 32]);

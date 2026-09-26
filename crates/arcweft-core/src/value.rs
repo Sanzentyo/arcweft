@@ -1500,6 +1500,15 @@ pub enum RuntimeExprKind {
     SequencePopFront {
         place: RuntimeMutablePlace,
     },
+    /// Appends one item to an admitted Vec place and returns `Unit`.
+    SequencePush {
+        place: RuntimeMutablePlace,
+        value: Box<RuntimeExpr>,
+    },
+    /// Removes the last item from an admitted Vec place and returns `Option<T>`.
+    SequencePopBack {
+        place: RuntimeMutablePlace,
+    },
     EntityRef(RuntimeEntityReference),
     Let {
         binding: RuntimeLocalDeclarationId,
@@ -1763,6 +1772,8 @@ impl RuntimeExpr {
             | RuntimeExprKind::Filter { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::SequencePopFront { .. }
+            | RuntimeExprKind::SequencePush { .. }
+            | RuntimeExprKind::SequencePopBack { .. }
             | RuntimeExprKind::IfLet { .. }
             | RuntimeExprKind::Match { .. }
             | RuntimeExprKind::ReductionUnchanged { .. } => false,
@@ -1782,6 +1793,22 @@ impl fmt::Display for RuntimeExpr {
                 }
                 RuntimeMutablePlace::NominalField { base, field } => {
                     write!(f, "vec_pop_front/local#{base}.field#{}", field.zero_based())
+                }
+            },
+            RuntimeExprKind::SequencePush { place, .. } => match place {
+                RuntimeMutablePlace::Local(local) => {
+                    write!(f, "vec_push/local#{local}")
+                }
+                RuntimeMutablePlace::NominalField { base, field } => {
+                    write!(f, "vec_push/local#{base}.field#{}", field.zero_based())
+                }
+            },
+            RuntimeExprKind::SequencePopBack { place } => match place {
+                RuntimeMutablePlace::Local(local) => {
+                    write!(f, "vec_pop_back/local#{local}")
+                }
+                RuntimeMutablePlace::NominalField { base, field } => {
+                    write!(f, "vec_pop_back/local#{base}.field#{}", field.zero_based())
                 }
             },
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),

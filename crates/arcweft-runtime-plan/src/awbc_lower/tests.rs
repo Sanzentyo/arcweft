@@ -2,8 +2,8 @@ use super::*;
 
 use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, FiberState};
 use arcweft_core::awbc::schema::{
-    AwbcBlockId, AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcPattern, AwbcProgram,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcTerminator,
+    AwbcBlockId, AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcMutablePlace, AwbcPattern,
+    AwbcProgram, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcTerminator,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{
@@ -369,6 +369,91 @@ fn build_while_let_pop_front_plan() -> RuntimePlan {
         .push_entry(flow_entry("while_let.pop_front", flow))
         .expect("while-let pop_front entry admits");
     builder.finish().expect("while-let pop_front plan seals")
+}
+
+fn build_vec_push_pop_plan() -> RuntimePlan {
+    let flow = flow_id("vec.push_pop");
+    let bool_type = type_id(3);
+    let sequence_type = type_id(4);
+    let payload_type = type_id(5);
+    let option_type = type_id(6);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(2), RuntimePlanTypeProjection::Unit),
+                RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
+                RuntimePlanTypeSeed::new(
+                    sequence_type,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: arcweft_core::plan::RuntimePlanSequenceKind::Vec,
+                        item: bool_type,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    payload_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([bool_type])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_type,
+                    RuntimePlanTypeProjection::Option {
+                        item: bool_type,
+                        some_payload: payload_type,
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(sequence_type)],
+        )
+        .expect("Vec push/pop test types and local admit");
+    let sequence = admission.local_ids()[0].clone();
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("Vec push/pop flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("Vec push/pop flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(
+                        sequence_type,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: true,
+                            local: sequence.clone(),
+                        },
+                    ),
+                    expr: two_bool_vec_expr(sequence_type),
+                },
+                RuntimeFlowOpSeed::Let {
+                    pattern: RuntimePatternSeed::new(type_id(2), RuntimePatternSeedKind::Discard),
+                    expr: RuntimeExprSeed::new(
+                        type_id(2),
+                        RuntimeExprSeedKind::SequencePush {
+                            place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(
+                                sequence.clone(),
+                            ),
+                            value: Box::new(bool_expr(true)),
+                        },
+                    ),
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    option_type,
+                    RuntimeExprSeedKind::SequencePopBack {
+                        place: arcweft_core::plan::RuntimeMutablePlaceSeed::Local(sequence),
+                    },
+                )),
+            ],
+        ))
+        .expect("Vec push/pop flow admits");
+    builder
+        .push_entry(flow_entry("vec.push_pop", flow))
+        .expect("Vec push/pop entry admits");
+    builder.finish().expect("Vec push/pop plan seals")
 }
 
 fn flow_entry(id: &str, flow: FlowRuntimeId) -> RuntimeEntrySpec {
@@ -1767,6 +1852,41 @@ fn while_let_reevaluates_its_mutating_scrutinee_until_exhausted() {
     assert_eq!(
         run_entry(&decoded),
         VmExit::Returned(Some(RuntimeValue::String("after".to_owned())))
+    );
+}
+
+#[test]
+fn vec_push_and_pop_back_lower_to_place_mutation_instructions() {
+    let report = lower_plan(&build_vec_push_pop_plan());
+    assert!(
+        report
+            .program
+            .instructions
+            .iter()
+            .any(|instruction| matches!(
+                instruction,
+                AwbcInstruction::VecPush {
+                    place: AwbcMutablePlace::Local(_),
+                    ..
+                }
+            ))
+    );
+    assert!(
+        report
+            .program
+            .instructions
+            .iter()
+            .any(|instruction| matches!(
+                instruction,
+                AwbcInstruction::VecPop {
+                    place: AwbcMutablePlace::Local(_),
+                    ..
+                }
+            ))
+    );
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::option_some(RuntimeValue::Bool(true))))
     );
 }
 

@@ -58,6 +58,21 @@ impl RuntimeExpr {
                     push_free_local(*base, bound, locals)
                 }
             },
+            RuntimeExprKind::SequencePush { place, value } => {
+                match place {
+                    RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
+                    RuntimeMutablePlace::NominalField { base, .. } => {
+                        push_free_local(*base, bound, locals)
+                    }
+                }
+                value.collect_evaluation_free_locals(plan, bound, locals)?;
+            }
+            RuntimeExprKind::SequencePopBack { place } => match place {
+                RuntimeMutablePlace::Local(local) => push_free_local(*local, bound, locals),
+                RuntimeMutablePlace::NominalField { base, .. } => {
+                    push_free_local(*base, bound, locals)
+                }
+            },
             RuntimeExprKind::Let {
                 binding,
                 expr,

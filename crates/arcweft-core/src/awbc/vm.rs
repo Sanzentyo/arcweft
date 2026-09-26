@@ -5,10 +5,11 @@
 //! This module never falls back to the structured VM.
 
 use super::fiber::{
-    AwbcProjectCallSite, FiberAwaitManyState, FiberAwaitTarget, FiberCursor, FiberResumeTarget,
-    FiberReturnContinuation, FiberReturnPoint, FiberSafePoint, FiberScopeCleanup, FiberState,
-    FiberStateError, FiberStatus, FiberSuspension, FiberSuspensionReason, FiberTerminalValue,
-    FiberTrap, runtime_value_matches_type, runtime_variant_identity,
+    AwbcProjectCallSite, FiberAwaitManyState, FiberAwaitTarget, FiberCursor, FiberFrame,
+    FiberResumeTarget, FiberReturnContinuation, FiberReturnPoint, FiberSafePoint,
+    FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
+    FiberSuspensionReason, FiberTerminalValue, FiberTrap, runtime_value_matches_type,
+    runtime_variant_identity,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
@@ -835,8 +836,37 @@ fn execute_instruction(
         }
         AwbcInstruction::RepeatSequence { dst, value, len } => {
             let value = register(fiber, *value)?.clone();
-            let len = usize::try_from(register(fiber, *len)?.try_u64().unwrap_or_default())
-                .unwrap_or(usize::MAX);
+            let len = register(fiber, *len)?
+                .try_u64()
+                .and_then(|length| usize::try_from(length).ok())
+                .ok_or_else(|| {
+                    VmError::Runtime("repeat sequence length is not a host usize".to_owned())
+                })?;
+            let dst_ty = program
+                .frame_layouts
+                .get(fiber.active_frame()?.layout.index())
+                .and_then(|layout| layout.slots.get(dst.index()))
+                .map(|slot| slot.ty)
+                .ok_or_else(|| {
+                    VmError::Runtime("repeat sequence has no destination type".to_owned())
+                })?;
+            if let Some(AwbcRuntimeTypeShape::Array { length, .. }) = program
+                .runtime_types
+                .get(dst_ty.index())
+                .map(AwbcRuntimeType::shape)
+            {
+                let expected = length
+                    .constant()
+                    .and_then(|length| usize::try_from(length).ok())
+                    .ok_or_else(|| {
+                        VmError::Runtime("repeat Array has no constant length".to_owned())
+                    })?;
+                if len != expected {
+                    return Err(VmError::Runtime(format!(
+                        "repeat Array length {len} differs from its destination length {expected}"
+                    )));
+                }
+            }
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, runtime_sequence_repeat_value(&value, len))?;
@@ -976,6 +1006,25 @@ fn execute_instruction(
                         ));
                     }
                 }
+            };
+            let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
+            fiber.active_frame_mut()?.set_register(*dst, result)?;
+        }
+        AwbcInstruction::VecPush { place, value } => {
+            let value = register(fiber, *value)?.clone();
+            let frame = fiber.active_frame_mut()?;
+            mutable_vec_sequence(frame, place, "Vec.push")?.push_vector_item(value);
+        }
+        AwbcInstruction::VecPop { dst, place } => {
+            let base = mutable_place_base(place);
+            if dst == &base {
+                return Err(VmError::Runtime(
+                    "Vec.pop destination aliases its receiver".to_owned(),
+                ));
+            }
+            let popped = {
+                let frame = fiber.active_frame_mut()?;
+                mutable_vec_sequence(frame, place, "Vec.pop")?.pop_vector_item()
             };
             let result = popped.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
             fiber.active_frame_mut()?.set_register(*dst, result)?;
@@ -2594,6 +2643,50 @@ fn require_runtime_type(
             runtime_value_label(value),
             expected.0
         )))
+    }
+}
+
+fn mutable_place_base(place: &AwbcMutablePlace) -> AwbcRegisterId {
+    match place {
+        AwbcMutablePlace::Local(register) => *register,
+        AwbcMutablePlace::NominalField { base, .. } => *base,
+    }
+}
+
+fn mutable_vec_sequence<'a>(
+    frame: &'a mut FiberFrame,
+    place: &AwbcMutablePlace,
+    operation: &str,
+) -> Result<&'a mut RuntimeSeq, VmError> {
+    let base = mutable_place_base(place);
+    let Some(receiver) = frame
+        .registers
+        .get_mut(base.index())
+        .and_then(Option::as_mut)
+    else {
+        return Err(FiberStateError::RegisterOutOfBounds {
+            register: base.0,
+            layout: frame.layout.0,
+        }
+        .into());
+    };
+    match (place, receiver) {
+        (AwbcMutablePlace::Local(_), RuntimeValue::Seq(sequence)) => Ok(sequence),
+        (AwbcMutablePlace::NominalField { field, .. }, RuntimeValue::NominalRecord(record)) => {
+            let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(*field as usize)
+                .map_err(|_| {
+                    VmError::Runtime(format!("{operation} has an invalid nominal field identity"))
+                })?;
+            record
+                .sequence_field_mut(field)
+                .map_err(|error| VmError::Runtime(error.to_string()))
+        }
+        (AwbcMutablePlace::Local(_), _) => Err(VmError::Runtime(format!(
+            "{operation} expected a Vec value"
+        ))),
+        (AwbcMutablePlace::NominalField { .. }, _) => Err(VmError::Runtime(format!(
+            "{operation} expected a nominal record receiver"
+        ))),
     }
 }
 

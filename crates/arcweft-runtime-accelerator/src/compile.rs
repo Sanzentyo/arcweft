@@ -932,6 +932,8 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         }
         RuntimeExprKind::ReductionUnchanged { state } => 2 + runtime_expr_work_units(state),
         RuntimeExprKind::SequencePopFront { .. } => 4,
+        RuntimeExprKind::SequencePush { value, .. } => 4 + runtime_expr_work_units(value),
+        RuntimeExprKind::SequencePopBack { .. } => 4,
     }
 }
 

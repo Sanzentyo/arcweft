@@ -1629,7 +1629,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self.call(id)?;
-        if let Some(RuntimeResolvedCallMutation::VecPopFront { place, .. }) = selected.mutation() {
+        if let Some(mutation) = selected.mutation() {
+            let place = match mutation {
+                RuntimeResolvedCallMutation::VecPopFront { place, .. }
+                | RuntimeResolvedCallMutation::VecPop { place, .. }
+                | RuntimeResolvedCallMutation::VecPush { place, .. } => place,
+            };
             let place = match place {
                 RuntimeResolvedMutablePlace::Local(local) => {
                     RuntimeMutablePlaceSeed::Local(self.local(local)?)
@@ -1641,7 +1646,29 @@ impl<'hir> FinalExprLowerer<'hir> {
                     }
                 }
             };
-            return Ok(RuntimeExprSeedKind::SequencePopFront { place });
+            return match mutation {
+                RuntimeResolvedCallMutation::VecPopFront { .. } => {
+                    Ok(RuntimeExprSeedKind::SequencePopFront { place })
+                }
+                RuntimeResolvedCallMutation::VecPop { .. } => {
+                    Ok(RuntimeExprSeedKind::SequencePopBack { place })
+                }
+                RuntimeResolvedCallMutation::VecPush { .. } => {
+                    let Some(RuntimeResolvedCallOperandSource::Expression(value)) = selected
+                        .operands()
+                        .get(1)
+                        .map(RuntimeResolvedCallOperand::source)
+                    else {
+                        return Err(format!(
+                            "Vec.push call {id:?} lacks its checked value source"
+                        ));
+                    };
+                    Ok(RuntimeExprSeedKind::SequencePush {
+                        place,
+                        value: Box::new(self.lower_source(value)?),
+                    })
+                }
+            };
         }
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
             map,
@@ -1674,6 +1701,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             }),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPop)
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPush)
             | RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::AgentProbeComparison(_),
             )

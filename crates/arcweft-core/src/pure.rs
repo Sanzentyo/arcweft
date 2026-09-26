@@ -1900,6 +1900,16 @@ impl<'a> PureEvaluator<'a> {
                     value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
                 })
             }
+            RuntimeExprKind::SequencePush { place, value } => {
+                let value = self.evaluate_expr(value)?;
+                self.env.push_vector_item(*place, value)?;
+                Ok(RuntimeValue::Unit)
+            }
+            RuntimeExprKind::SequencePopBack { place } => {
+                self.env.pop_vector_item(*place).map(|value| {
+                    value.map_or_else(RuntimeValue::option_none, RuntimeValue::option_some)
+                })
+            }
             RuntimeExprKind::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExprKind::Let {
                 binding,

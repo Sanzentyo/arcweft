@@ -129,6 +129,29 @@ impl RuntimeEnv {
         &mut self,
         place: RuntimeMutablePlace,
     ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        Ok(self.sequence_mut(place)?.pop_front())
+    }
+
+    pub(crate) fn push_vector_item(
+        &mut self,
+        place: RuntimeMutablePlace,
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeEvalError> {
+        self.sequence_mut(place)?.push_vector_item(value);
+        Ok(())
+    }
+
+    pub(crate) fn pop_vector_item(
+        &mut self,
+        place: RuntimeMutablePlace,
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        Ok(self.sequence_mut(place)?.pop_vector_item())
+    }
+
+    fn sequence_mut(
+        &mut self,
+        place: RuntimeMutablePlace,
+    ) -> Result<&mut super::RuntimeSeq, RuntimeEvalError> {
         let local = match place {
             RuntimeMutablePlace::Local(local) => local,
             RuntimeMutablePlace::NominalField { base, .. } => base,
@@ -137,15 +160,13 @@ impl RuntimeEnv {
             if let Some(binding) = scope.binding_mut(local) {
                 return match place {
                     RuntimeMutablePlace::Local(_) => match &mut binding.value {
-                        RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
+                        RuntimeValue::Seq(sequence) => Ok(sequence),
                         value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
                             value,
                         ))),
                     },
                     RuntimeMutablePlace::NominalField { field, .. } => match &mut binding.value {
-                        RuntimeValue::NominalRecord(record) => {
-                            record.pop_sequence_front_field(field)
-                        }
+                        RuntimeValue::NominalRecord(record) => record.sequence_field_mut(field),
                         value => Err(RuntimeEvalError::ExpectedSequence(runtime_value_label(
                             value,
                         ))),
@@ -521,5 +542,30 @@ mod tests {
             sequence.value_at(0),
             RuntimeValue::String("second".to_owned())
         );
+    }
+
+    #[test]
+    fn vector_end_mutation_targets_the_nearest_local_or_nominal_field() {
+        let local = local(11);
+        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set_root(local, RuntimeValue::Seq(RuntimeSeq::dense_i32(vec![1])));
+        env.push_scope();
+        env.set(
+            local,
+            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+                RuntimeNominalTypeId::try_new("game.Items").unwrap(),
+                crate::pattern::RuntimeSemanticTypeId::from_bytes([11; 32]),
+                TypeLayoutHash::from_bytes([11; 32]),
+                vec![RuntimeValue::Seq(RuntimeSeq::dense_i32(vec![2]))],
+            )),
+        );
+        let place = RuntimeMutablePlace::NominalField { base: local, field };
+        assert_eq!(env.push_vector_item(place, RuntimeValue::i32(3)), Ok(()));
+        assert_eq!(env.pop_vector_item(place), Ok(Some(RuntimeValue::i32(3))));
+        env.pop_scope();
+        let place = RuntimeMutablePlace::Local(local);
+        assert_eq!(env.pop_vector_item(place), Ok(Some(RuntimeValue::i32(1))));
+        assert_eq!(env.pop_vector_item(place), Ok(None));
     }
 }

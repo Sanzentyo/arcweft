@@ -940,6 +940,73 @@ flow main() -> i64 {
     "42"
 );
 
+callable_case!(
+    vec_push_and_pop_mutate_the_same_local,
+    r#"
+flow main() -> i64 {
+    let items = Vec<i64>::with_capacity(2usize)
+    items.push(1i64)
+    items.push(42i64)
+    match items.pop() {
+        .Some(value) => return value
+        .None => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    vec_push_and_pop_mutate_a_direct_nominal_field,
+    r#"
+struct Queue { items: Vec<i64> }
+flow main() -> i64 {
+    let queue = Queue { items = Vec<i64>::with_capacity(2usize) }
+    queue.items.push(42i64)
+    match queue.items.pop() {
+        .Some(value) => return value
+        .None => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    vec_push_inside_function_returns_updated_value,
+    r#"
+fn build_numbers() -> Vec<i64> {
+    let items = Vec<i64>::with_capacity(2usize)
+    items.push(42i64)
+    items
+}
+flow main() -> i64 {
+    let items = build_numbers()
+    match items.pop() {
+        .Some(value) => return value
+        .None => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    fixed_numeric_arrays_retain_their_checked_element_and_length,
+    r#"
+flow main() -> i64 {
+    let fixed: Array<i32, 3> = [1i32, 2i32, 3i32]
+    let repeated: Array<i32, 4> = [0i32; 4i64]
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
 #[test]
 fn vec_pop_front_rejects_nested_and_indexed_nominal_fields() {
     for source in [

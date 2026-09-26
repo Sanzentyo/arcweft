@@ -201,7 +201,7 @@ impl RuntimePlanBuilder {
                 RuntimeExprKind::Local(local)
             }
             RuntimeExprSeedKind::SequencePopFront { place } => {
-                let (place, item) = self.lower_vec_pop_front_place(place)?;
+                let (place, item) = self.lower_vec_place(place, "Vec.pop_front place")?;
                 self.require_projection("Vec.pop_front result", ty, |projection| {
                     matches!(
                         projection,
@@ -209,6 +209,28 @@ impl RuntimePlanBuilder {
                     )
                 })?;
                 RuntimeExprKind::SequencePopFront { place }
+            }
+            RuntimeExprSeedKind::SequencePush { place, value } => {
+                let (place, item) = self.lower_vec_place(place, "Vec.push place")?;
+                let value = self.lower_expression(*value)?;
+                require_same("Vec.push item", item, value.ty())?;
+                self.require_projection("Vec.push result", ty, |projection| {
+                    matches!(projection, RuntimePlanTypeProjection::Unit)
+                })?;
+                RuntimeExprKind::SequencePush {
+                    place,
+                    value: Box::new(value),
+                }
+            }
+            RuntimeExprSeedKind::SequencePopBack { place } => {
+                let (place, item) = self.lower_vec_place(place, "Vec.pop_back place")?;
+                self.require_projection("Vec.pop_back result", ty, |projection| {
+                    matches!(
+                        projection,
+                        RuntimePlanTypeProjection::Option { item: result, .. } if *result == item
+                    )
+                })?;
+                RuntimeExprKind::SequencePopBack { place }
             }
             RuntimeExprSeedKind::EntityRef(entity) => {
                 self.require_projection("entity-reference expression", ty, |projection| {
@@ -1317,9 +1339,10 @@ impl RuntimePlanBuilder {
         }
     }
 
-    fn lower_vec_pop_front_place(
+    fn lower_vec_place(
         &self,
         place: RuntimeMutablePlaceSeed,
+        context: &'static str,
     ) -> Result<(RuntimeMutablePlace, RuntimePlanTypeId), RuntimePlanBuildError> {
         let (place, sequence_type) = match place {
             RuntimeMutablePlaceSeed::Local(local) => {
@@ -1329,7 +1352,7 @@ impl RuntimePlanBuilder {
             RuntimeMutablePlaceSeed::NominalField { base, field } => {
                 let (base, record_type) = self.resolve_local(&base)?;
                 if self.nominal_record_domains.get(record_type).is_none() {
-                    return invalid_projection("Vec.pop_front nominal-field base", record_type);
+                    return invalid_projection(context, record_type);
                 }
                 let (field, sequence_type) = self.resolve_record_field(record_type, field)?;
                 (
@@ -1343,7 +1366,7 @@ impl RuntimePlanBuilder {
                 kind: crate::plan::RuntimePlanSequenceKind::Vec,
                 item,
             } => *item,
-            _ => return invalid_projection("Vec.pop_front receiver", sequence_type),
+            _ => return invalid_projection(context, sequence_type),
         };
         Ok((place, item))
     }
@@ -2365,6 +2388,24 @@ impl RuntimePlanBuilder {
                 Ok(())
             }
             RuntimeExprKind::SequencePopFront { place } => {
+                let base = match place {
+                    RuntimeMutablePlace::Local(local) => *local,
+                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                };
+                require_local_in_scope(base, scope)?;
+                used.insert(base);
+                Ok(())
+            }
+            RuntimeExprKind::SequencePush { place, value } => {
+                let base = match place {
+                    RuntimeMutablePlace::Local(local) => *local,
+                    RuntimeMutablePlace::NominalField { base, .. } => *base,
+                };
+                require_local_in_scope(base, scope)?;
+                used.insert(base);
+                self.validate_expression_locals(value, scope, used)
+            }
+            RuntimeExprKind::SequencePopBack { place } => {
                 let base = match place {
                     RuntimeMutablePlace::Local(local) => *local,
                     RuntimeMutablePlace::NominalField { base, .. } => *base,

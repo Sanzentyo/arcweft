@@ -369,6 +369,13 @@ impl RuntimeNominalRecordValue {
         &mut self,
         field: RuntimeRecordFieldId,
     ) -> Result<Option<RuntimeValue>, super::RuntimeEvalError> {
+        Ok(self.sequence_field_mut(field)?.pop_front())
+    }
+
+    pub(crate) fn sequence_field_mut(
+        &mut self,
+        field: RuntimeRecordFieldId,
+    ) -> Result<&mut super::RuntimeSeq, super::RuntimeEvalError> {
         let Some(value) = self.field_mut(field) else {
             return Err(super::RuntimeEvalError::MissingField {
                 field: format!("field#{}", field.zero_based()),
@@ -376,7 +383,7 @@ impl RuntimeNominalRecordValue {
             });
         };
         match value {
-            RuntimeValue::Seq(sequence) => Ok(sequence.pop_front()),
+            RuntimeValue::Seq(sequence) => Ok(sequence),
             value => Err(super::RuntimeEvalError::ExpectedSequence(
                 super::runtime_value_label(value),
             )),

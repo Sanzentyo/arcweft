@@ -89,30 +89,29 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 }
             }
             RuntimeExprKind::SequencePopFront { place } => {
-                let local_register = |local| {
-                    self.frame.register_for_local(local).unwrap_or_else(|| {
-                        panic!(
-                            "admitted Vec.pop_front receiver local `{local}` is not in the AWBC frame at {}",
-                            self.path
-                        )
-                    })
-                };
-                let place = match place {
-                    RuntimeMutablePlace::Local(local) => {
-                        AwbcMutablePlace::Local(local_register(*local))
-                    }
-                    RuntimeMutablePlace::NominalField { base, field } => {
-                        AwbcMutablePlace::NominalField {
-                            base: local_register(*base),
-                            field: field.zero_based(),
-                        }
-                    }
-                };
+                let place = self.lower_mutable_place(place, "Vec.pop_front");
                 let dst = self
                     .frame
                     .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
                 self.inventory
                     .push_instruction(AwbcInstruction::SequencePopFront { dst, place });
+                dst
+            }
+            RuntimeExprKind::SequencePush { place, value } => {
+                let value = self.lower(value);
+                let place = self.lower_mutable_place(place, "Vec.push");
+                self.inventory
+                    .push_instruction(AwbcInstruction::VecPush { place, value });
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit, ty)
+            }
+            RuntimeExprKind::SequencePopBack { place } => {
+                let place = self.lower_mutable_place(place, "Vec.pop");
+                let dst = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::VecPop { dst, place });
                 dst
             }
             RuntimeExprKind::EntityRef(value) => {
@@ -879,6 +878,28 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         self.inventory
             .push_instruction(AwbcInstruction::LoadConst { dst, constant });
         dst
+    }
+
+    fn lower_mutable_place(
+        &self,
+        place: &RuntimeMutablePlace,
+        operation: &str,
+    ) -> AwbcMutablePlace {
+        let local_register = |local| {
+            self.frame.register_for_local(local).unwrap_or_else(|| {
+                panic!(
+                    "admitted {operation} receiver local `{local}` is not in the AWBC frame at {}",
+                    self.path
+                )
+            })
+        };
+        match place {
+            RuntimeMutablePlace::Local(local) => AwbcMutablePlace::Local(local_register(*local)),
+            RuntimeMutablePlace::NominalField { base, field } => AwbcMutablePlace::NominalField {
+                base: local_register(*base),
+                field: field.zero_based(),
+            },
+        }
     }
 
     fn intern_intrinsic(

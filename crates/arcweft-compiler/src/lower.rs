@@ -859,12 +859,19 @@ fn project_runtime_semantic_fact_inventories(
                     }
                 })?;
                 if let HirExprKind::NumericBracketSequence(sequence) = hir.kind() {
-                    let TypeKind::Vec(item) = checked_expression_type(expression, owner)? else {
-                        return Err(RuntimeSemanticProjectionError::ExpressionLiteral {
-                            owner,
-                            reason: "compact numeric sequence did not retain its checked item type"
-                                .to_owned(),
-                        });
+                    let item = match checked_expression_type(expression, owner)? {
+                        TypeKind::Vec(item) => item.as_ref(),
+                        TypeKind::Array {
+                            item,
+                            len: arcweft_lang_sema::types::ArrayLength::Const(len),
+                        } if *len == sequence.elements().len() => item.as_ref(),
+                        _ => {
+                            return Err(RuntimeSemanticProjectionError::ExpressionLiteral {
+                                owner,
+                                reason: "compact numeric sequence lacks an exact checked Vec or Array item and length"
+                                    .to_owned(),
+                            });
+                        }
                     };
                     let values = sequence
                         .elements()
@@ -5867,6 +5874,10 @@ fn runtime_call(
     let selected = application.core().candidates().selected();
     let is_vec_pop_front = selected.capacity_operation()
         == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront);
+    let is_vec_push = selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::Push);
+    let is_vec_pop = selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::Pop);
     let is_capacity_hint = matches!(
         selected.capacity_operation(),
         Some(
@@ -5886,7 +5897,7 @@ fn runtime_call(
                 abi_position,
                 ..
             } => {
-                if is_vec_pop_front || is_capacity_hint {
+                if is_vec_pop_front || is_vec_push || is_vec_pop || is_capacity_hint {
                     let receiver = match source.raw() {
                         arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(
                             receiver,
@@ -5916,8 +5927,9 @@ fn runtime_call(
                         });
                     };
                     let receiver_type = checked_expression_type(checked_receiver, receiver)?;
-                    if (is_vec_pop_front && !matches!(receiver_type, TypeKind::Vec(_)))
-                        || (is_capacity_hint && receiver_type != ty)
+                    if receiver_type != ty
+                        || ((is_vec_pop_front || is_vec_push || is_vec_pop)
+                            && !matches!(receiver_type, TypeKind::Vec(_)))
                     {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
@@ -5925,7 +5937,7 @@ fn runtime_call(
                                 .to_owned(),
                         });
                     }
-                    if is_vec_pop_front {
+                    if is_vec_pop_front || is_vec_push || is_vec_pop {
                         let place = match place.nominal_field() {
                             Some(field) => {
                                 let runtime_field =
@@ -5944,9 +5956,21 @@ fn runtime_call(
                             }
                             None => RuntimeResolvedMutablePlace::Local(place.local_id()),
                         };
-                        mutation = Some(RuntimeResolvedCallMutation::VecPopFront {
-                            source: receiver,
-                            place,
+                        mutation = Some(if is_vec_pop_front {
+                            RuntimeResolvedCallMutation::VecPopFront {
+                                source: receiver,
+                                place,
+                            }
+                        } else if is_vec_push {
+                            RuntimeResolvedCallMutation::VecPush {
+                                source: receiver,
+                                place,
+                            }
+                        } else {
+                            RuntimeResolvedCallMutation::VecPop {
+                                source: receiver,
+                                place,
+                            }
                         });
                     }
                 }
@@ -8493,6 +8517,16 @@ fn runtime_call_target(
         == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront)
     {
         return Ok(RuntimeResolvedStaticCallTarget::VecPopFront);
+    }
+    if selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::Push)
+    {
+        return Ok(RuntimeResolvedStaticCallTarget::VecPush);
+    }
+    if selected.capacity_operation()
+        == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::Pop)
+    {
+        return Ok(RuntimeResolvedStaticCallTarget::VecPop);
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::Presentation(presentation) =
         selected_id

@@ -98,6 +98,100 @@ fn minimal_program() -> AwbcProgram {
     }
 }
 
+#[test]
+fn forged_repeat_sequence_rejects_runtime_length_mismatch_for_fixed_array() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Bool),
+        runtime_type(2, AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64)),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Array {
+                item: AwbcTypeId(0),
+                length: 2.into(),
+            },
+        ),
+    ];
+    program.signatures[0].result = Some(AwbcTypeId(2));
+    program.frame_layouts[0].slots = vec![
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(1),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(2),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+    ];
+    let mut repeat_length_bits = [0; 16];
+    repeat_length_bits[..8].copy_from_slice(&3_u64.to_le_bytes());
+    program.constants = vec![
+        AwbcConstant::Bool(true),
+        AwbcConstant::UInt {
+            kind: AwbcUnsignedIntKind::U64,
+            bits: repeat_length_bits,
+        },
+    ];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::RepeatSequence {
+            dst: AwbcRegisterId(2),
+            value: AwbcRegisterId(0),
+            len: AwbcRegisterId(1),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("forged repeat has valid static types");
+    let encoded = program
+        .encode_canonical()
+        .expect("encode forged fixed-array repeat");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode forged fixed-array repeat");
+    assert_eq!(decoded, program);
+
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64)
+        .expect("forged repeat fiber initializes");
+    let output = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .expect("runtime mismatch surfaces as a VM trap");
+    let super::vm::VmExit::Trapped(trap) = output.exit else {
+        panic!("wrong fixed Array length traps instead of producing a value");
+    };
+    assert_eq!(trap.code, AwbcTrapCode::InternalInvariant);
+    assert!(trap.message.as_deref().is_some_and(|message| {
+        message.contains("repeat Array length 3 differs from its destination length 2")
+    }));
+    assert_eq!(fiber.frames[0].registers[2], None);
+}
+
 fn sequence_pop_front_program() -> AwbcProgram {
     let mut program = minimal_program();
     program
@@ -316,6 +410,283 @@ fn nominal_field_sequence_pop_front_program() -> AwbcProgram {
     };
     program.canonicalize_string_table();
     program
+}
+
+fn sequence_vec_push_pop_program() -> AwbcProgram {
+    let mut program = sequence_pop_front_program();
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::MakeSequence {
+            dst: AwbcRegisterId(2),
+            items: vec![AwbcRegisterId(1)],
+        },
+        AwbcInstruction::VecPush {
+            place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
+            value: AwbcRegisterId(0),
+        },
+        AwbcInstruction::VecPop {
+            dst: AwbcRegisterId(3),
+            place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
+        },
+        AwbcInstruction::VecPop {
+            dst: AwbcRegisterId(4),
+            place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
+        },
+        AwbcInstruction::VecPop {
+            dst: AwbcRegisterId(5),
+            place: AwbcMutablePlace::Local(AwbcRegisterId(2)),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 7);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(5)),
+    };
+    program
+}
+
+fn nominal_field_vec_push_pop_program() -> AwbcProgram {
+    let mut program = nominal_field_sequence_pop_front_program();
+    let place = AwbcMutablePlace::NominalField {
+        base: AwbcRegisterId(3),
+        field: 0,
+    };
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::MakeSequence {
+            dst: AwbcRegisterId(2),
+            items: vec![AwbcRegisterId(1)],
+        },
+        AwbcInstruction::MakeRecord {
+            dst: AwbcRegisterId(3),
+            ty: AwbcTypeId(4),
+            fields: vec![AwbcRegisterId(2)],
+        },
+        AwbcInstruction::VecPush {
+            place,
+            value: AwbcRegisterId(0),
+        },
+        AwbcInstruction::VecPop {
+            dst: AwbcRegisterId(4),
+            place,
+        },
+        AwbcInstruction::VecPush {
+            place,
+            value: AwbcRegisterId(1),
+        },
+        AwbcInstruction::VecPop {
+            dst: AwbcRegisterId(5),
+            place,
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 8);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(5)),
+    };
+    program
+}
+
+#[test]
+fn vec_push_and_pop_roundtrip_verify_and_mutate_local_places() {
+    let program = sequence_vec_push_pop_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("typed Vec.push and Vec.pop instructions verify");
+    let encoded = program.encode_canonical().expect("encode Vec push/pop");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode Vec push/pop");
+    assert_eq!(decoded, program);
+
+    let mut temporary_receiver = program.clone();
+    temporary_receiver.frame_layouts[0].slots[2].role = AwbcFrameSlotRole::Temporary;
+    assert!(
+        temporary_receiver
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut non_vec_receiver = program.clone();
+    non_vec_receiver.runtime_types[3] = runtime_type(
+        5,
+        AwbcRuntimeTypeShape::Sequence {
+            kind: crate::plan::RuntimePlanSequenceKind::Seq,
+            item: AwbcTypeId(0),
+        },
+    );
+    assert!(
+        non_vec_receiver
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut aliased_destination = program.clone();
+    if let AwbcInstruction::VecPop { dst, .. } = &mut aliased_destination.instructions[4] {
+        *dst = AwbcRegisterId(2);
+    } else {
+        panic!("first Vec.pop instruction retains its schema variant");
+    }
+    assert!(
+        aliased_destination
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64)
+        .expect("Vec push/pop fiber initializes");
+    let mutation = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 7,
+        },
+    )
+    .expect("Vec push and pop execute");
+    assert_eq!(mutation.exit, super::vm::VmExit::Running);
+    let Some(RuntimeValue::Seq(sequence)) = fiber.frames[0].registers[2].as_ref() else {
+        panic!("mutated local remains a Vec register");
+    };
+    assert_eq!(sequence.len(), 0);
+    assert_eq!(
+        fiber.frames[0].registers[3],
+        Some(RuntimeValue::option_some(RuntimeValue::Bool(true)))
+    );
+    assert_eq!(
+        fiber.frames[0].registers[4],
+        Some(RuntimeValue::option_some(RuntimeValue::Bool(false)))
+    );
+    assert_eq!(
+        fiber.frames[0].registers[5],
+        Some(RuntimeValue::option_none())
+    );
+    let returned = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("empty Vec.pop returns None");
+    assert_eq!(
+        returned.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::option_none()))
+    );
+}
+
+#[test]
+fn vec_push_and_pop_roundtrip_verify_and_mutate_nominal_field_places() {
+    let program = nominal_field_vec_push_pop_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("nominal Vec.push and Vec.pop instructions verify");
+    let encoded = program
+        .encode_canonical()
+        .expect("encode nominal field Vec push/pop");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode nominal field Vec push/pop");
+    assert_eq!(decoded, program);
+
+    let mut missing_field = program.clone();
+    if let AwbcInstruction::VecPush {
+        place: AwbcMutablePlace::NominalField { field, .. },
+        ..
+    } = &mut missing_field.instructions[4]
+    {
+        *field = 1;
+    } else {
+        panic!("first Vec.push instruction targets a nominal field");
+    }
+    assert!(
+        missing_field
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut non_vec_field = program.clone();
+    let (public_id, layout, arguments, shape) = match non_vec_field.runtime_types[4].shape() {
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id,
+            layout,
+            arguments,
+            shape,
+            ..
+        } => (*public_id, *layout, arguments.clone(), *shape),
+        _ => panic!("test type retains its nominal record shape"),
+    };
+    non_vec_field.runtime_types[4] = runtime_type(
+        6,
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id,
+            layout,
+            arguments,
+            shape,
+            fields: vec![AwbcRecordField {
+                field: crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0)
+                    .expect("field id fits"),
+                name: None,
+                ty: AwbcTypeId(0),
+            }],
+        },
+    );
+    assert!(
+        non_vec_field
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .is_err()
+    );
+
+    let mut fiber = FiberState::for_entry(&decoded, AwbcEntryId(0), 1, 64)
+        .expect("nominal field Vec push/pop fiber initializes");
+    let mutation = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8,
+        },
+    )
+    .expect("nominal field Vec push and pop execute");
+    assert_eq!(mutation.exit, super::vm::VmExit::Running);
+    let Some(RuntimeValue::NominalRecord(record)) = fiber.frames[0].registers[3].as_ref() else {
+        panic!("nominal receiver stays in its local register");
+    };
+    let field =
+        crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).expect("field id fits");
+    let Some(RuntimeValue::Seq(sequence)) = record.field(field) else {
+        panic!("nominal Vec field remains in its record");
+    };
+    assert_eq!(sequence.len(), 1);
+    assert_eq!(sequence.value_at(0), RuntimeValue::Bool(false));
+    assert_eq!(
+        fiber.frames[0].registers[4],
+        Some(RuntimeValue::option_some(RuntimeValue::Bool(true)))
+    );
+    assert_eq!(
+        fiber.frames[0].registers[5],
+        Some(RuntimeValue::option_some(RuntimeValue::Bool(false)))
+    );
+    let returned = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("nominal field pop result returns");
+    assert_eq!(
+        returned.exit,
+        super::vm::VmExit::Returned(Some(RuntimeValue::option_some(RuntimeValue::Bool(false))))
+    );
 }
 
 #[test]
@@ -1895,6 +2266,8 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::Binary, 0x14, Value),
         (AwbcOpcode::SpecializeCallable, 0x15, Value),
         (AwbcOpcode::SequencePopFront, 0x16, Value),
+        (AwbcOpcode::VecPush, 0x17, Value),
+        (AwbcOpcode::VecPop, 0x18, Value),
         (AwbcOpcode::CallPureHelper, 0x20, CallTask),
         (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
         (AwbcOpcode::CallTraitMethod, 0x22, CallTask),
