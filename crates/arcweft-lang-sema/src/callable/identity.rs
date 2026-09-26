@@ -1125,6 +1125,9 @@ impl CapacityMethodId {
             kind: CallableIndexKind::Parameter,
             value: arity,
         })?;
+        if !Self::supports_shape(&receiver, method.as_str(), usize::from(arity)) {
+            return Err(CallableIdentityError::InvalidCapacityMethod);
+        }
         Ok(Self {
             receiver,
             method,
@@ -1141,6 +1144,24 @@ impl CapacityMethodId {
         self.arity as usize
     }
 
+    pub(crate) fn is_supported_shape(&self) -> bool {
+        Self::supports_shape(self.receiver(), self.method().as_str(), self.arity())
+    }
+
+    fn supports_shape(receiver: &TypeKind, method: &str, arity: usize) -> bool {
+        match (receiver, method, arity) {
+            (TypeKind::String | TypeKind::Bytes | TypeKind::Vec(_), "with_capacity", 1) => true,
+            (TypeKind::String, "trim" | "to_string", 0) => true,
+            (TypeKind::Vec(_), "pop" | "pop_front", 0) => true,
+            (TypeKind::Vec(_), "push", 1) => true,
+            (TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes, "reserve" | "shrink_to", 1) => {
+                true
+            }
+            (TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes, "shrink", 0) => true,
+            _ => false,
+        }
+    }
+
     pub(crate) fn resolve_associated(
         receiver: &TypeKind,
         member: &CallableName,
@@ -1154,28 +1175,13 @@ impl CapacityMethodId {
         {
             return Ok(None);
         }
+        if !Self::supports_shape(receiver, member.as_str(), authored_arity) {
+            return Ok(None);
+        }
         Self::try_new(receiver.clone(), member.clone(), authored_arity).map(Some)
     }
 
     pub fn resolve(receiver: &TypeKind, method: &CallableName, arity: usize) -> Option<Self> {
-        if receiver == &TypeKind::String
-            && matches!((method.as_str(), arity), ("trim" | "to_string", 0))
-        {
-            // String-preserving instance method.
-        } else if let TypeKind::Vec(_) = receiver
-            && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
-        {
-        } else if matches!(
-            receiver,
-            TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes
-        ) {
-            match (method.as_str(), arity) {
-                ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => {}
-                _ => return None,
-            }
-        } else {
-            return None;
-        }
         Self::try_new(receiver.clone(), method.clone(), arity).ok()
     }
 
@@ -1184,9 +1190,10 @@ impl CapacityMethodId {
             (receiver, "with_capacity") => receiver.clone(),
             (TypeKind::String, "trim" | "to_string") => TypeKind::String,
             (TypeKind::Vec(item), "pop" | "pop_front") => TypeKind::Option(item.clone()),
+            (TypeKind::Vec(_), "push") => TypeKind::Unit,
             (
                 TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes,
-                "push" | "reserve" | "shrink_to" | "shrink",
+                "reserve" | "shrink_to" | "shrink",
             ) => TypeKind::Unit,
             _ => unreachable!("CapacityMethodId constructors retain a supported method identity"),
         }

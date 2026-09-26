@@ -310,6 +310,10 @@ pub trait Reservable {
 }
 ```
 
+The `&mut self` receiver requires a writable place: a local value or a direct
+nominal field. The `mut` marker is a distinct binding annotation and is not
+required just to call these methods.
+
 MVP standard implementors:
 
 ```text

@@ -120,20 +120,21 @@ use crate::{
     callable::{
         AdapterPackageId, AgentIntrinsicSignatureId, CallConstraintInvariant, CallPoison,
         CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableCandidateId,
-        CallableDocumentation, CallableEffectSchema, CallableGenericParameterIssuer,
-        CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
-        CallableOverloadIndex, CallableParameter, CallableParameterAdmission,
-        CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
-        CallableParameterPresence, CallablePath, CallableProviderId, CallableReceiverMode,
-        CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
-        CheckedCallArgumentSlotSource, CheckedCallExecutionSource, CheckedClosureId,
-        DialogueCallableId, DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog,
-        EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-        EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal, LineContextMethodId,
-        LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
-        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog,
-        SemanticSignatureSurface, SpreadArgumentPolicy, StageMethodId, UnknownCallKind,
-        UnknownNamedArgumentPolicy, ViewModifierId,
+        CallableDiagnosticCode, CallableDocumentation, CallableEffectSchema,
+        CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind, CallableLimits,
+        CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+        CallableParameterAdmission, CallableParameterGroup, CallableParameterIndex,
+        CallableParameterPassing, CallableParameterPresence, CallablePath, CallableProviderId,
+        CallableReceiverMode, CallableRecord, CallableSignatureSchema, CallableValidator,
+        CapacityMethodId, CatalogCallableEntry, CheckedCallArgumentSlotSource,
+        CheckedCallExecutionSource, CheckedClosureId, DialogueCallableId, DomainMethodId,
+        EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
+        EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
+        EnvironmentDeclarationOrdinal, LineContextMethodId, LineScheduleCallableId,
+        NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS, PresentationCallableId,
+        ProjectCallablePath, RegisteredCallableCatalog, SemanticSignatureSurface,
+        SpreadArgumentPolicy, StageMethodId, UnknownCallKind, UnknownNamedArgumentPolicy,
+        ViewModifierId,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
@@ -5589,7 +5590,7 @@ fn production_analyzer_routes_capacity_through_typed_associated_authority() {
 
 #[test]
 fn associated_capacity_checker_signature_primary_and_schema_equal() {
-    const SOURCE: &str = "fn caller() { String.with_capacity(1usize, 2usize, 3usize); }\n";
+    const SOURCE: &str = "fn caller() { String.with_capacity(capacity = 1usize); }\n";
     let fixture = fixture(SOURCE, None);
     let report = analyze(&fixture).expect("typed Capacity final analysis");
     let (_, call) = report.calls().next().expect("one Capacity call fact");
@@ -5602,7 +5603,7 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
         .expect("root HIR module");
     let cancellation = AtomicBool::new(false);
 
-    for argument in ["1usize", "2usize", "3usize"] {
+    for argument in ["1usize"] {
         let byte_offset = SOURCE.find(argument).expect("authored argument") + 2;
         let outcome = query_signature(
             SignatureQuery::production(
@@ -5617,10 +5618,10 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
         )
         .expect("native Capacity signature help");
         let SignatureQueryOutcome::Help(help) = outcome else {
-            panic!("cursor inside every Capacity argument must produce help")
+            panic!("cursor inside the Capacity argument must produce help")
         };
         assert_eq!(help.active_signature().get(), 0);
-        let active = help.active_parameter().expect("unchecked rest parameter");
+        let active = help.active_parameter().expect("capacity parameter");
         assert_eq!(active.group().get(), 0);
         assert_eq!(active.parameter().get(), 0);
         let [signature] = help.signatures() else {
@@ -5648,22 +5649,53 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
         assert_eq!(
             selected.schema().argument_policy(),
             CallableArgumentPolicy::new(
-                UnknownNamedArgumentPolicy::OpenSupply,
-                SpreadArgumentPolicy::Unchecked,
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::Reject,
             )
         );
         let [group] = signature.groups() else {
             panic!("one Capacity group")
         };
         let [parameter] = group.parameters() else {
-            panic!("one unchecked rest parameter")
+            panic!("one checked capacity parameter")
         };
-        assert!(parameter.admission().is_unchecked());
+        assert_eq!(parameter.name().map(CallableName::as_str), Some("capacity"));
+        assert_eq!(parameter.declared_type(), Some(&TypeKind::USize));
         assert_eq!(
             parameter.passing(),
-            CallableParameterPassing::RestPositional
+            CallableParameterPassing::PositionalOrNamed
         );
-        assert_eq!(parameter.presence(), CallableParameterPresence::Optional);
+        assert_eq!(parameter.presence(), CallableParameterPresence::Required);
+    }
+}
+
+#[test]
+fn capacity_method_identity_rejects_unsupported_receiver_operation_and_arity_shapes() {
+    let method = |name| CallableName::try_new(name).expect("capacity method name");
+    let vec_i32 = TypeKind::Vec(Box::new(TypeKind::I32));
+
+    for (receiver, name, arity) in [
+        (TypeKind::String, "with_capacity", 0),
+        (TypeKind::Bytes, "with_capacity", 2),
+        (vec_i32.clone(), "reserve", 0),
+        (vec_i32.clone(), "shrink_to", 2),
+        (vec_i32.clone(), "pop", 1),
+        (vec_i32.clone(), "push", 0),
+        (TypeKind::String, "push", 1),
+        (TypeKind::Bytes, "push", 1),
+        (vec_i32.clone(), "collect", 0),
+    ] {
+        assert!(matches!(
+            CapacityMethodId::try_new(receiver, method(name), arity),
+            Err(crate::callable::CallableIdentityError::InvalidCapacityMethod)
+        ));
+    }
+
+    assert!(CapacityMethodId::try_new(vec_i32.clone(), method("push"), 1).is_ok());
+    assert!(CapacityMethodId::try_new(TypeKind::String, method("shrink"), 0).is_ok());
+    assert!(CapacityMethodId::try_new(TypeKind::Bytes, method("reserve"), 1).is_ok());
+    for receiver in [TypeKind::String, TypeKind::Bytes] {
+        assert!(CapacityMethodId::resolve(&receiver, &method("push"), 1).is_none());
     }
 }
 
@@ -8549,40 +8581,114 @@ fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
 }
 
 #[test]
-fn intentionally_unchecked_capacity_arguments_retain_clean_typed_facts() {
+fn capacity_method_parameters_match_their_typed_owner_contracts() {
     let fixture = fixture(
-        "fn caller() { String.with_capacity(size = 8, [9, 10]...); }\n",
+        r#"
+fn operations() {
+    let mut items = Vec<String>.with_capacity(capacity = 8usize)
+    items.reserve(additional = 4usize)
+    items.shrink_to(min_capacity = 2usize)
+    items.shrink()
+    items.push(value = "Ada")
+    let last = items.pop()
+    let first = items.pop_front()
+    let text = String.with_capacity(capacity = 16usize)
+    let bytes = Bytes.with_capacity(capacity = 32usize)
+}
+"#,
         None,
     );
-    let report = analyze(&fixture).expect("unchecked Capacity argument analysis");
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| selected_execution_arguments(facts).len() == 2)
-        .expect("unchecked call facts");
-    assert!(matches!(
-        selected_candidate(call).id(),
-        CallableCandidateId::CapacityMethod(_)
-    ));
-    assert_eq!(selected_candidates(call).len(), 1);
-    let physical = report
-        .physical_candidate_argument_evaluations()
-        .filter(|evaluation| evaluation.call_expression() == call.expression())
-        .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 2);
-    assert!(
-        physical
-            .iter()
-            .all(|evaluation| evaluation.pass() == CandidateEvaluationPass::Probe)
-    );
-    assert_eq!(physical[0].expected(), &CandidateExpectedType::Unmapped);
-    assert_eq!(physical[1].expected(), &CandidateExpectedType::Unchecked);
-    let retained = selected_execution_arguments(call)
-        .iter()
-        .flat_map(|argument| argument.slots())
-        .collect::<Vec<_>>();
-    assert_eq!(retained.len(), 2);
-    assert!(retained.iter().all(|fact| fact.expected().is_none()));
+    let report = analyze(&fixture).expect("typed capacity and Vec operation analysis");
+    let calls = report.calls().map(|(_, facts)| facts).collect::<Vec<_>>();
+    assert_eq!(calls.len(), 9);
+
+    for call in calls {
+        let selected = selected_candidate(call);
+        let CallableCandidateId::CapacityMethod(method) = selected.id() else {
+            panic!("capacity and Vec operations use the closed method family")
+        };
+        let application = selected_application(call);
+        match method.method().as_str() {
+            "with_capacity" => {
+                assert_eq!(
+                    selected.schema().groups()[0].parameters()[0].declared_type(),
+                    Some(&TypeKind::USize)
+                );
+                assert_eq!(application.result().value_type(), Some(method.receiver()));
+            }
+            "reserve" | "shrink_to" => {
+                assert_eq!(
+                    selected.schema().groups()[0].parameters()[0].declared_type(),
+                    Some(&TypeKind::USize)
+                );
+                assert_eq!(application.result().value_type(), Some(&TypeKind::Unit));
+            }
+            "push" => {
+                assert_eq!(
+                    selected.schema().groups()[0].parameters()[0].declared_type(),
+                    Some(&TypeKind::String)
+                );
+                assert_eq!(application.result().value_type(), Some(&TypeKind::Unit));
+            }
+            "shrink" => {
+                assert!(
+                    selected
+                        .schema()
+                        .groups()
+                        .iter()
+                        .all(|group| group.parameters().is_empty())
+                );
+                assert_eq!(application.result().value_type(), Some(&TypeKind::Unit));
+            }
+            "pop" | "pop_front" => {
+                assert!(
+                    selected
+                        .schema()
+                        .groups()
+                        .iter()
+                        .all(|group| group.parameters().is_empty())
+                );
+                assert_eq!(
+                    application.result().value_type(),
+                    Some(&TypeKind::Option(Box::new(TypeKind::String)))
+                );
+            }
+            operation => panic!("unexpected capacity method {operation}"),
+        }
+        assert!(
+            selected
+                .schema()
+                .groups()
+                .iter()
+                .flat_map(|group| group.parameters())
+                .all(|parameter| !matches!(
+                    parameter.admission(),
+                    CallableParameterAdmission::UncheckedSupply
+                ))
+        );
+    }
+}
+
+#[test]
+fn capacity_method_rejects_arguments_with_wrong_types() {
+    for source in [
+        "fn caller() { String.with_capacity(\"wrong\"); }\n",
+        "fn caller(items: Vec<i32>) { items.reserve(\"wrong\"); }\n",
+        "fn caller(items: Vec<i32>) { items.shrink_to(true); }\n",
+        "fn caller(items: Vec<i32>) { items.push(\"wrong\"); }\n",
+    ] {
+        let fixture = fixture(source, None);
+        let report = analyze(&fixture).expect("argument rejection retains a call diagnostic");
+        let calls = report.calls().collect::<Vec<_>>();
+        let [(_, call)] = calls.as_slice() else {
+            panic!("one invalid capacity call is retained")
+        };
+        assert!(call.selected_application().is_none());
+        assert_eq!(
+            call.diagnostics()[0].code(),
+            CallableDiagnosticCode::NoViableSignature
+        );
+    }
 }
 
 #[test]

@@ -341,6 +341,9 @@ impl CheckedCapacityMethodIdentity {
     }
 
     pub(crate) fn seal(id: super::CapacityMethodId) -> Result<Self, CallConstraintInvariant> {
+        if !id.is_supported_shape() {
+            return Err(CallConstraintInvariant::PreparedBaseMismatch);
+        }
         let operation = match id.method().as_str() {
             "with_capacity" => CheckedCapacityOperation::WithCapacity,
             "trim" => CheckedCapacityOperation::Trim,

@@ -79,6 +79,8 @@ pub enum BuiltinIdentityError {
 pub enum CallableIdentityError {
     #[error(transparent)]
     Scalar(#[from] CallableScalarError),
+    #[error("invalid capacity method receiver, operation, or arity")]
+    InvalidCapacityMethod,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

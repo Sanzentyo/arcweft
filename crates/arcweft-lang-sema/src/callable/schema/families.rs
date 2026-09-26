@@ -1055,18 +1055,43 @@ impl CapacityMethodId {
         let result = self.result_type();
         let validator = CallableValidator::Capacity(self.clone());
         match (self.method().as_str(), self.arity()) {
-            ("with_capacity", _) => variadic_unchecked(result, validator, &[]),
-            ("trim" | "to_string" | "pop" | "pop_front" | "collect" | "shrink", 0) => {
+            ("with_capacity", 1) => schema(
+                vec![required(0, "capacity", TypeKind::USize)],
+                result,
+                &[],
+                closed(),
+                validator,
+            ),
+            ("trim" | "to_string" | "pop" | "pop_front" | "shrink", 0) => {
                 empty(result, &[], validator)
             }
-            ("push" | "reserve" | "shrink_to", 1) => schema(
+            ("push", 1) => {
+                let TypeKind::Vec(item) = self.receiver() else {
+                    unreachable!("CapacityMethodId retains Vec as its push receiver")
+                };
+                schema(
+                    vec![required(0, "value", item.as_ref().clone())],
+                    result,
+                    &[],
+                    closed(),
+                    validator,
+                )
+            }
+            ("reserve", 1) => schema(
                 vec![parameter(
                     0,
-                    Some("value"),
-                    CallableParameterAdmission::unchecked_supply(),
+                    Some("additional"),
+                    CallableParameterAdmission::checked(TypeKind::USize),
                     CallableParameterPassing::PositionalOrNamed,
                     CallableParameterPresence::Required,
                 )],
+                result,
+                &[],
+                closed(),
+                validator,
+            ),
+            ("shrink_to", 1) => schema(
+                vec![required(0, "min_capacity", TypeKind::USize)],
                 result,
                 &[],
                 closed(),

@@ -264,7 +264,7 @@ fn assert_capacity_native_signature(
         panic!("semantic signature must retain CapacityMethod identity")
     };
     assert_eq!(capacity.receiver(), &TypeKind::String);
-    assert_eq!(capacity.arity(), 3);
+    assert_eq!(capacity.arity(), 1);
 
     let [group] = native_signature.groups() else {
         panic!("Capacity must retain one semantic parameter group")
@@ -272,20 +272,17 @@ fn assert_capacity_native_signature(
     assert_eq!(group.index().get(), 0);
     assert_eq!(group.kind(), CallableGroupKind::Initial);
     let [parameter] = group.parameters() else {
-        panic!("Capacity must retain one unchecked rest parameter")
+        panic!("Capacity must retain one checked parameter")
     };
     assert_eq!(parameter.coordinate(), active);
-    assert_eq!(parameter.label(), "...args: <unchecked-supply>?");
-    assert_eq!(parameter.name().map(CallableName::as_str), Some("args"));
-    assert_eq!(
-        parameter.admission(),
-        &CallableParameterAdmission::UncheckedSupply
-    );
+    assert_eq!(parameter.label(), "capacity: usize");
+    assert_eq!(parameter.name().map(CallableName::as_str), Some("capacity"));
+    assert_eq!(parameter.declared_type(), Some(&TypeKind::USize));
     assert_eq!(
         parameter.passing(),
-        CallableParameterPassing::RestPositional
+        CallableParameterPassing::PositionalOrNamed
     );
-    assert_eq!(parameter.presence(), CallableParameterPresence::Optional);
+    assert_eq!(parameter.presence(), CallableParameterPresence::Required);
 
     crate::features::signature::signature_help(outcome)
         .expect("native semantic help projects without lookup")
@@ -301,12 +298,12 @@ fn assert_capacity_lsp_projection(wire: &SignatureHelp, native_projection: &Sign
     };
     assert_eq!(
         wire_signature.label,
-        "String.with_capacity(...args: <unchecked-supply>?) -> String"
+        "String.with_capacity(capacity: usize) -> String"
     );
     let Some([wire_parameter]) = wire_signature.parameters.as_deref() else {
         panic!("LSP must expose exactly one Capacity parameter")
     };
-    assert_eq!(wire_parameter.label, ParameterLabel::LabelOffsets([21, 49]));
+    assert_eq!(wire_parameter.label, ParameterLabel::LabelOffsets([21, 36]));
 }
 
 #[expect(
@@ -429,24 +426,20 @@ fn final_native_outcomes(
 #[test]
 fn associated_capacity_native_lsp_projection_parity() {
     const CAPACITY_SOURCE: &str = "fn allocate() -> String {\n\
-    String.with_capacity(1usize, 2usize, 3usize)\n\
+    String.with_capacity(capacity = 1usize)\n\
 }\n";
     let expected_candidate = CallableCandidateId::CapacityMethod(
         CapacityMethodId::try_new(
             TypeKind::String,
             CallableName::try_new("with_capacity").expect("capacity method name"),
-            3,
+            1,
         )
         .expect("capacity candidate identity"),
     );
-    for (slot, outcome) in final_native_outcomes(
-        CAPACITY_SOURCE,
-        &["1usize", "2usize", "3usize"],
-        Vec::new(),
-        Vec::new(),
-    )
-    .into_iter()
-    .enumerate()
+    for (slot, outcome) in
+        final_native_outcomes(CAPACITY_SOURCE, &["1usize"], Vec::new(), Vec::new())
+            .into_iter()
+            .enumerate()
     {
         let native_projection =
             assert_capacity_native_signature(&outcome, &expected_candidate, slot);
