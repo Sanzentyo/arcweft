@@ -1765,3 +1765,22 @@ check、Core all-target Clippy、fmt と cached diff check が通過した。
 check/Clippy は warning あり。これは外部 Need の既存経路の安全性 cut で、
 StartNeed producer registry・task event link・Product restore の移行と
 049 fixture の実行受理はまだ含まれない。
+
+## Loaded audio handle type checkpoint — 2026-09-27
+
+`main` に `88f89da1622f8a724747358341ed5d48b6a3dd50` を push した。
+`voice.load` の成功型を、line の再生中 lease `VoiceHandle` から標準 opaque
+資源型 `AudioHandle` (`std.audio_handle`) に分けた。`VoiceHandle` の
+line 操作と affine ownership は変更していない。選択済み標準 callable の
+`Need<Result<AudioHandle, VoiceError>>` 型、accepted nominal、Core opaque
+owner、関連する言語・音声・例示文書を揃えた。実 bundle 資源を検証して
+`AudioHandle` を発行する host adapter はこの commit に含まれず、Need
+producer の統合差分として作業中である。
+
+Core/Sema focused tests 5 件、両 crate の all-target/all-feature check と
+Clippy、変更 Rust の rustfmt、cached diff check が通過した。check/Clippy は
+既存 warning あり。shared runtime の workspace gate と 049 fixture は、
+未統合の producer/continuation 差分が残るため、この checkpoint の受理証拠
+としては未実行・未達である。push 後の working tree は Need producer の
+native/AWBC/driver/host/CLI 実装と 049/053 fixture が dirty のままであり、
+この型訂正だけを hunk 単位で stage した。
