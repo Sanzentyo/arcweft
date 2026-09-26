@@ -389,7 +389,7 @@ impl AwbcProductStepExecutor {
                         queued: std::collections::VecDeque::new(),
                     }))
                 }
-                FiberAwaitTarget::Need(need) => FlowFiberStatus::NeedWaiting(need.clone()),
+                FiberAwaitTarget::Need { id, .. } => FlowFiberStatus::NeedWaiting(id.clone()),
             },
             FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),
             FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::BudgetYield => {

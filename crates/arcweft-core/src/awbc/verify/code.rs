@@ -2039,22 +2039,30 @@ fn apply_terminator(
             resume,
         } => {
             let handle_ty = read_register(verifier, function, block, *handle, state)?;
-            if !is_await_handle(runtime_shape(program, handle_ty)) {
+            let Some(handle_shape) = runtime_shape(program, handle_ty) else {
+                return invalid_type(&at, "task or need handle");
+            };
+            let result_ty = match handle_shape {
+                AwbcRuntimeTypeShape::Need(item) | AwbcRuntimeTypeShape::Task(item) => *item,
+                AwbcRuntimeTypeShape::Dynamic => {
+                    dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "await binding requires Dynamic runtime type".to_owned(),
+                    })?
+                }
+                _ => return invalid_type(&at, "task or need handle"),
+            };
+            if !is_await_handle(Some(handle_shape)) {
                 return invalid_type(&at, "task or need handle");
             }
             let mut next = state.clone();
             if let Some(pattern) = binding {
-                let dynamic =
-                    dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "await binding requires Dynamic runtime type".to_owned(),
-                    })?;
                 validate_pattern(
                     verifier,
                     function,
                     block,
                     *pattern,
-                    dynamic,
+                    result_ty,
                     Some(AwbcBindMode::Declare),
                     &mut next,
                     0,

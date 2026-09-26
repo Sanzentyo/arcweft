@@ -2358,6 +2358,82 @@ fn ready_result_error_payload_is_resumed_without_trapping() {
 }
 
 #[test]
+fn ready_need_payload_must_match_the_selected_item_type() {
+    let (mut executor, input) = typed_direct_need_executor_and_input(vec![runtime_need_state(
+        0,
+        Need::Ready(RuntimePayload(RuntimeValue::Bool(true))),
+    )]);
+
+    let result = executor.step(input, direct_need_step_options());
+
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Failed);
+    assert!(matches!(
+        executor.fiber.terminal,
+        Some(FiberTerminalValue::Trapped(ref trap))
+            if trap.code == crate::awbc::schema::AwbcTrapCode::HostAbiMismatch
+    ));
+    assert!(
+        result
+            .output
+            .flow_events
+            .iter()
+            .all(|event| !matches!(event, crate::plan::FlowEvent::AwaitReady { .. }))
+    );
+}
+
+#[test]
+fn need_await_snapshot_retains_and_validates_selected_item_type() {
+    let (mut executor, input) = typed_direct_need_executor_and_input(vec![runtime_need_state(
+        0,
+        Need::Pending(Progress::new(0.5).expect("fixture progress is valid")),
+    )]);
+    let result = executor.step(input, direct_need_step_options());
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+
+    let snapshot = executor.snapshot();
+    assert!(matches!(
+        snapshot
+            .fiber
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason),
+        Some(crate::awbc::fiber::FiberSuspensionReason::Await {
+            target: crate::awbc::fiber::FiberAwaitTarget::Need {
+                item_type: AwbcTypeId(2),
+                ..
+            },
+            ..
+        })
+    ));
+
+    let mut tampered = snapshot.clone();
+    let Some(crate::awbc::fiber::FiberSuspension {
+        reason:
+            crate::awbc::fiber::FiberSuspensionReason::Await {
+                target: crate::awbc::fiber::FiberAwaitTarget::Need { item_type, .. },
+                ..
+            },
+        ..
+    }) = tampered.fiber.suspension.as_mut()
+    else {
+        panic!("typed Need remains suspended");
+    };
+    *item_type = AwbcTypeId(1);
+    assert!(executor.restore_snapshot(tampered).is_err());
+
+    let saved =
+        AwbcProductExecutorSaveSnapshot::from_live(&snapshot).expect("typed Need suspension saves");
+    let encoded = serde_json::to_string(&saved).expect("typed Need suspension serializes");
+    let decoded: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_str(&encoded).expect("typed Need suspension restores");
+    let owner = crate::task::RuntimeProgramOwner::Awbc(executor.program.clone());
+    let restored = decoded
+        .into_live_for_program(&owner)
+        .expect("typed Need suspension converts to live state");
+    assert_eq!(restored.fiber, snapshot.fiber);
+}
+
+#[test]
 fn unresolved_direct_need_blocks_without_inventing_a_task_request() {
     let unresolved = [
         Need::NotStarted,
@@ -2962,6 +3038,27 @@ fn direct_need_executor_and_input(
     (executor, input)
 }
 
+fn typed_direct_need_executor_and_input(
+    need_states: Vec<RuntimeNeedState>,
+) -> (AwbcProductStepExecutor, RuntimeStepInput) {
+    let executor = AwbcProductStepExecutor::for_function_invocation(
+        typed_direct_need_program(),
+        AwbcEntryId(0),
+        AwbcFunctionId(0),
+        [RuntimeFlowParameterBinding {
+            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+            value: RuntimeValue::Need(NeedId("need.profile".to_owned())),
+        }],
+        64,
+    )
+    .expect("typed Need product executor starts");
+    let input = RuntimeStepInput {
+        need_states,
+        ..RuntimeStepInput::default()
+    };
+    (executor, input)
+}
+
 fn direct_need_step_options() -> RuntimeStepOptions {
     RuntimeStepOptions {
         mode: crate::step::RuntimeStepMode::Drain,
@@ -3073,6 +3170,27 @@ fn direct_need_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+fn typed_direct_need_program() -> AwbcProgram {
+    let mut program = direct_need_program();
+    let string_ty = AwbcTypeId(2);
+    program.runtime_types[0] = AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([91; 32]),
+        AwbcRuntimeTypeShape::Need(string_ty),
+    );
+    program.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeSemanticTypeId::from_bytes([92; 32]),
+        AwbcRuntimeTypeShape::String,
+    ));
+    program.signatures[0].result = Some(string_ty);
+    program.frame_layouts[0].slots[1].ty = string_ty;
+    program.patterns[0] = AwbcPattern::Bind {
+        target: AwbcRegisterId(1),
+        mutable: false,
+        expected: Some(string_ty),
+    };
+    program
 }
 
 fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffectPlanId {

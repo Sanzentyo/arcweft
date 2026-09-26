@@ -80,7 +80,11 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
     assert!(matches!(
         suspended.exit,
         VmExit::Suspended(FiberSuspensionReason::Await {
-            target: FiberAwaitTarget::Need(NeedId(ref need)),
+            target: FiberAwaitTarget::Need {
+                id: NeedId(ref need),
+                item_type: AwbcTypeId(1),
+                handle: NEED_REGISTER,
+            },
             binding: None,
             observer: None,
         }) if need == "need.profile"
@@ -438,7 +442,11 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
         .suspend(FiberSuspension {
             resume: FiberResumeTarget::Declared(AWAIT_RESUME),
             reason: FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need(NeedId("need.profile".to_owned())),
+                target: FiberAwaitTarget::Need {
+                    id: NeedId("need.profile".to_owned()),
+                    item_type: AwbcTypeId(1),
+                    handle: NEED_REGISTER,
+                },
                 binding: None,
                 observer: None,
             },

@@ -2270,9 +2270,17 @@ impl AwbcProductStepExecutor {
                 observer,
             } => match target {
                 FiberAwaitTarget::Task(task) => self.ensure_await_started(&task, output),
-                FiberAwaitTarget::Need(need) => {
+                FiberAwaitTarget::Need { id, item_type, .. } => {
                     if let Some(resume) = declared_resume {
-                        self.resume_need(&need, binding, observer, resume, need_states, output);
+                        self.resume_need(
+                            &id,
+                            item_type,
+                            binding,
+                            observer,
+                            resume,
+                            need_states,
+                            output,
+                        );
                     }
                 }
             },
@@ -2342,9 +2350,15 @@ impl AwbcProductStepExecutor {
                 FiberAwaitTarget::Task(task) => {
                     self.resume_await(&task, binding, observer, resume, task_events, output)
                 }
-                FiberAwaitTarget::Need(need) => {
-                    self.resume_need(&need, binding, observer, resume, need_states, output)
-                }
+                FiberAwaitTarget::Need { id, item_type, .. } => self.resume_need(
+                    &id,
+                    item_type,
+                    binding,
+                    observer,
+                    resume,
+                    need_states,
+                    output,
+                ),
             },
             FiberSuspensionReason::AwaitMany(state) => {
                 self.resume_await_many(state, resume, task_events, output)

@@ -132,6 +132,7 @@ impl AwbcProductStepExecutor {
     pub(super) fn resume_need(
         &mut self,
         need: &NeedId,
+        item_type: crate::awbc::schema::AwbcTypeId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
@@ -158,7 +159,26 @@ impl AwbcProductStepExecutor {
             Need::Pending(progress) => observer.is_some_and(|observer| {
                 self.resume_await_progress(observer, progress.clone(), output)
             }),
-            Need::Ready(value) => self.resume_await_value(binding, resume, value.value(), output),
+            Need::Ready(value) => {
+                if !crate::awbc::fiber::runtime_value_matches_type(
+                    &self.program,
+                    value.value(),
+                    item_type,
+                    0,
+                ) {
+                    self.fail_with_trap(
+                        AwbcTrapCode::HostAbiMismatch,
+                        format!(
+                            "Need {} published a Ready payload outside its checked item type",
+                            need.0
+                        ),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
+                self.resume_await_value(binding, resume, value.value(), output)
+            }
             Need::Cancelled => {
                 let cancellation = cancel_fiber(&mut self.fiber);
                 self.consume_observations(cancellation.observations, output);
@@ -664,7 +684,7 @@ impl AwbcProductStepExecutor {
                 }
             }
             FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need(_),
+                target: FiberAwaitTarget::Need { .. },
                 ..
             }
             | FiberSuspensionReason::BudgetYield => {}
@@ -743,12 +763,18 @@ impl AwbcProductStepExecutor {
                 output,
             )),
             FiberSuspensionReason::Await {
-                target: FiberAwaitTarget::Need(need),
+                target:
+                    FiberAwaitTarget::Need {
+                        id: need,
+                        item_type,
+                        ..
+                    },
                 binding,
                 observer,
             } => Ok(self.resume_deferred_await_need(
                 &mut child.fiber,
                 &need,
+                item_type,
                 binding,
                 observer,
                 resume,
@@ -859,6 +885,7 @@ impl AwbcProductStepExecutor {
         &mut self,
         fiber: &mut FiberState,
         need: &NeedId,
+        item_type: crate::awbc::schema::AwbcTypeId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
         observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
@@ -891,14 +918,32 @@ impl AwbcProductStepExecutor {
                     output,
                 )
             }),
-            Need::Ready(value) => resume_deferred_await_value(
-                &self.program,
-                fiber,
-                binding,
-                resume,
-                value.value(),
-                output,
-            ),
+            Need::Ready(value) => {
+                if !crate::awbc::fiber::runtime_value_matches_type(
+                    &self.program,
+                    value.value(),
+                    item_type,
+                    0,
+                ) {
+                    mark_child_trapped(
+                        fiber,
+                        AwbcTrapCode::HostAbiMismatch,
+                        format!(
+                            "Need {} published a Ready payload outside its checked item type",
+                            need.0
+                        ),
+                    );
+                    return true;
+                }
+                resume_deferred_await_value(
+                    &self.program,
+                    fiber,
+                    binding,
+                    resume,
+                    value.value(),
+                    output,
+                )
+            }
             Need::Cancelled => {
                 let cancellation = cancel_fiber(fiber);
                 self.consume_observations(cancellation.observations, output);

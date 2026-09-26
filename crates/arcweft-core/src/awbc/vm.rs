@@ -2641,8 +2641,12 @@ fn await_target(
         .ok_or_else(|| VmError::Runtime("await handle register has no runtime type".to_owned()))?;
     let value = register(fiber, register_id)?.clone();
     match runtime_type.shape() {
-        AwbcRuntimeTypeShape::Need(_) => match value {
-            RuntimeValue::Need(need) if !need.0.is_empty() => Ok(FiberAwaitTarget::Need(need)),
+        AwbcRuntimeTypeShape::Need(item_type) => match value {
+            RuntimeValue::Need(id) if !id.0.is_empty() => Ok(FiberAwaitTarget::Need {
+                id,
+                item_type: *item_type,
+                handle: register_id,
+            }),
             value => Err(VmError::Runtime(format!(
                 "NeedHandle register contained {}",
                 runtime_value_label(&value)

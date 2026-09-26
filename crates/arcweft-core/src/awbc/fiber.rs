@@ -237,7 +237,11 @@ pub enum FiberSuspensionReason {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum FiberAwaitTarget {
     Task(RuntimeValue),
-    Need(NeedId),
+    Need {
+        id: NeedId,
+        item_type: AwbcTypeId,
+        handle: AwbcRegisterId,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -435,7 +439,11 @@ pub enum AwbcFiberSuspensionReasonSnapshot {
 #[serde(deny_unknown_fields)]
 pub enum AwbcFiberAwaitTargetSnapshot {
     Task(AwbcRuntimeValueSnapshot),
-    Need(NeedId),
+    Need {
+        id: NeedId,
+        item_type: AwbcTypeId,
+        handle: AwbcRegisterId,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -937,7 +945,15 @@ impl AwbcFiberAwaitTargetSnapshot {
             FiberAwaitTarget::Task(value) => {
                 Self::Task(AwbcRuntimeValueSnapshot::from_runtime_value(value)?)
             }
-            FiberAwaitTarget::Need(need) => Self::Need(need.clone()),
+            FiberAwaitTarget::Need {
+                id,
+                item_type,
+                handle,
+            } => Self::Need {
+                id: id.clone(),
+                item_type: *item_type,
+                handle: *handle,
+            },
         })
     }
 
@@ -946,7 +962,15 @@ impl AwbcFiberAwaitTargetSnapshot {
             Self::Task(value) => {
                 FiberAwaitTarget::Task(value.into_runtime_value_for_program(owner)?)
             }
-            Self::Need(need) => FiberAwaitTarget::Need(need),
+            Self::Need {
+                id,
+                item_type,
+                handle,
+            } => FiberAwaitTarget::Need {
+                id,
+                item_type,
+                handle,
+            },
         })
     }
 }
@@ -2914,7 +2938,7 @@ fn validate_suspension(
             binding,
             observer,
         } => {
-            validate_await_suspension(program, target, *binding)?;
+            validate_await_suspension(program, frame, target, *binding)?;
             if observer.is_some_and(|observer| {
                 observer.destination.index() >= frame.registers.len()
                     || program.resume_points.get(observer.resume.index()).is_none()
@@ -2975,6 +2999,7 @@ pub(crate) fn dialogue_target_matches_program(
 
 fn validate_await_suspension(
     program: &AwbcProgram,
+    frame: &FiberFrame,
     target: &FiberAwaitTarget,
     binding: Option<AwbcPatternId>,
 ) -> Result<(), FiberStateError> {
@@ -2991,13 +3016,31 @@ fn validate_await_suspension(
                 ),
             });
         }
-        FiberAwaitTarget::Need(need) if need.0.is_empty() => {
-            return Err(FiberStateError::InvalidRuntimeValue {
-                path: "suspension.await.target".to_owned(),
-                reason: "Need identity must not be empty".to_owned(),
-            });
+        FiberAwaitTarget::Need {
+            id,
+            item_type,
+            handle,
+        } => {
+            let item_type_exists = program.runtime_types.get(item_type.index()).is_some();
+            let layout_slot = program
+                .frame_layouts
+                .get(frame.layout.index())
+                .and_then(|layout| layout.slots.get(handle.index()));
+            let register_value = frame.registers.get(handle.index()).and_then(Option::as_ref);
+            let matches_source = layout_slot.is_some_and(|slot| {
+                matches!(
+                    program.runtime_types.get(slot.ty.index()).map(AwbcRuntimeType::shape),
+                    Some(AwbcRuntimeTypeShape::Need(source_item)) if *source_item == *item_type
+                )
+            }) && matches!(register_value, Some(RuntimeValue::Need(source_id)) if source_id == id);
+            if id.0.is_empty() || !item_type_exists || !matches_source {
+                return Err(FiberStateError::InvalidRuntimeValue {
+                    path: "suspension.await.target".to_owned(),
+                    reason: "Need identity or selected item type disagrees with its retained handle register".to_owned(),
+                });
+            }
         }
-        FiberAwaitTarget::Task(_) | FiberAwaitTarget::Need(_) => {}
+        FiberAwaitTarget::Task(_) => {}
     }
     Ok(())
 }
