@@ -332,6 +332,20 @@ fn validate_method_role(
         _ => None,
     };
     match schema.validator() {
+        CallableValidator::NeedProducer(_) => {
+            let CallableCandidateId::Environment(environment) = candidate else {
+                return Err(CallableCatalogError::IdKeyMismatch);
+            };
+            if environment.owner()
+                != &EnvironmentCallableOwner::Standard(super::StandardEnvironmentId::Core)
+                || environment.kind() != EnvironmentCallableKind::Function
+                || !matches!(key, CallableLookupKey::Free(_))
+                || !matches!(schema.value_type(), Some(crate::types::TypeKind::Need(_)))
+                || !matches!(schema.effects(), super::CallableEffectSchema::Fixed(_))
+            {
+                return Err(CallableCatalogError::IdKeyMismatch);
+            }
+        }
         CallableValidator::Method(role) => {
             if !matches!(key, CallableLookupKey::Method(_)) {
                 return Err(CallableCatalogError::MethodValidatorLookupMismatch {

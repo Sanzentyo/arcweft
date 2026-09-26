@@ -78,6 +78,33 @@ semantic_digest!(TaskPlanSemanticDigest);
 semantic_digest!(RuntimeTypeSemanticDigest);
 semantic_digest!(NeedTimeoutContractDigest);
 
+/// Typed operation selected by one callable contract that produces a
+/// `Need<Result<_, _>>` for a host asset.
+///
+/// The operation is an execution identity. The request's payload identity is
+/// still derived from the selected callable's instantiated result type.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum NeedProducerOperation {
+    AssetLoad { kind: AssetLoadKind },
+}
+
+/// Asset load family retained in the selected producer contract and request.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AssetLoadKind {
+    Image,
+    Voice,
+}
+
+impl AssetLoadKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Image => "image",
+            Self::Voice => "voice",
+        }
+    }
+}
+
 /// Closed producer family used by the canonical instance-key transcript.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NeedProducerFamily {
@@ -618,7 +645,7 @@ pub enum TaskClass {
     Background,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TaskPolicy {
     JoinSameKey,
     AlwaysStart,

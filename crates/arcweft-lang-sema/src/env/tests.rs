@@ -93,6 +93,56 @@ fn standard_env_contains_dialogue_fmt_builtin() {
 }
 
 #[test]
+fn standard_need_producers_publish_typed_operation_and_join_policy() {
+    let environment = TypeCheckEnv::standard();
+    for (path, expected) in [
+        (
+            ["asset", "image"],
+            crate::callable::CallableNeedProducerRole::asset_image(),
+        ),
+        (
+            ["voice", "load"],
+            crate::callable::CallableNeedProducerRole::voice_load(),
+        ),
+    ] {
+        let path = CallablePath::try_new(
+            path.into_iter()
+                .map(CallableName::try_new)
+                .collect::<Result<Vec<_>, _>>()
+                .expect("typed standard producer path"),
+        )
+        .expect("standard path is nonempty");
+        let function = environment
+            .standard_functions()
+            .iter()
+            .find(|function| function.path == path)
+            .expect("standard producer schema is registered");
+        let crate::callable::CallableValidator::NeedProducer(role) = function.schema.validator()
+        else {
+            panic!("standard Need producer must retain its typed role")
+        };
+        assert_eq!(*role, expected);
+        assert!(matches!(
+            function.schema.value_type(),
+            Some(TypeKind::Need(payload))
+                if matches!(payload.as_ref(), TypeKind::Result { .. })
+        ));
+    }
+
+    let load_bg = CallablePath::try_new(vec![CallableName::try_new("load_bg").unwrap()])
+        .expect("load_bg standard path");
+    let unbacked = environment
+        .standard_functions()
+        .iter()
+        .find(|function| function.path == load_bg)
+        .expect("legacy typed declaration remains visible to sema");
+    assert!(matches!(
+        unbacked.schema.validator(),
+        crate::callable::CallableValidator::Ordinary
+    ));
+}
+
+#[test]
 fn standard_callable_inventory_is_typed_before_publication() {
     let environment = TypeCheckEnv::standard();
     let functions = environment.standard_functions();

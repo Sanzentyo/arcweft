@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use arcweft_core::task::{AssetLoadKind, NeedProducerOperation, TaskPolicy};
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
 use arcweft_presentation::rich_text::{
     PresentationContentAttachedBodyPolicy, PresentationContentCallableDefinition,
@@ -2061,10 +2062,16 @@ impl CallableAttachedContentPolicy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableValidator {
     Ordinary,
+    /// Explicit standard-call producer operation and checked start policy.
+    /// The payload type is always projected from the selected, instantiated
+    /// `Need<T>` result and is never copied into this role.
+    NeedProducer(CallableNeedProducerRole),
     FxConstructor(FxSourceConstructor),
     BuiltinFx(arcweft_presentation::fx::BuiltinFxCallableRowId),
     Format,
-    UnknownFxMember { member: CallableName },
+    UnknownFxMember {
+        member: CallableName,
+    },
     EnumConstructor(EnumVariantSignatureId),
     ResultConstructor(ResultConstructorKind),
     OptionConstructor(OptionConstructorKind),
@@ -2086,6 +2093,50 @@ pub enum CallableValidator {
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
     ViewModifier(super::ViewModifierId),
+}
+
+/// Complete callable-owned role for a standard `Need` producer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CallableNeedProducerRole {
+    operation: NeedProducerOperation,
+    policy: TaskPolicy,
+}
+
+impl CallableNeedProducerRole {
+    #[must_use]
+    pub const fn asset_image() -> Self {
+        Self {
+            operation: NeedProducerOperation::AssetLoad {
+                kind: AssetLoadKind::Image,
+            },
+            policy: TaskPolicy::JoinSameKey,
+        }
+    }
+
+    #[must_use]
+    pub const fn voice_load() -> Self {
+        Self {
+            operation: NeedProducerOperation::AssetLoad {
+                kind: AssetLoadKind::Voice,
+            },
+            policy: TaskPolicy::JoinSameKey,
+        }
+    }
+
+    #[must_use]
+    pub const fn new(operation: NeedProducerOperation, policy: TaskPolicy) -> Self {
+        Self { operation, policy }
+    }
+
+    #[must_use]
+    pub const fn operation(self) -> NeedProducerOperation {
+        self.operation
+    }
+
+    #[must_use]
+    pub const fn policy(self) -> TaskPolicy {
+        self.policy
+    }
 }
 
 /// Pre-check behavior of one structurally identified method declaration.

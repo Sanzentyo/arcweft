@@ -559,6 +559,7 @@ impl CanonicalEncoder {
     fn validator(&mut self, validator: &CallableValidator) {
         self.tag(match validator {
             CallableValidator::Ordinary => 0,
+            CallableValidator::NeedProducer(_) => 26,
             CallableValidator::FxConstructor(_) => 1,
             CallableValidator::UnknownFxMember { .. } => 2,
             CallableValidator::EnumConstructor(_) => 3,
@@ -585,6 +586,21 @@ impl CanonicalEncoder {
             CallableValidator::BuiltinFx(_) => 24,
             CallableValidator::Format => 25,
         });
+        if let CallableValidator::NeedProducer(role) = validator {
+            match role.operation() {
+                arcweft_core::task::NeedProducerOperation::AssetLoad { kind } => {
+                    self.tag(0);
+                    self.tag(match kind {
+                        arcweft_core::task::AssetLoadKind::Image => 0,
+                        arcweft_core::task::AssetLoadKind::Voice => 1,
+                    });
+                }
+            }
+            self.tag(match role.policy() {
+                arcweft_core::task::TaskPolicy::JoinSameKey => 0,
+                arcweft_core::task::TaskPolicy::AlwaysStart => 1,
+            });
+        }
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {
                 super::CallableMethodRole::TraitRequirement => 0,
@@ -823,8 +839,9 @@ mod tests {
         CallableAttachedContentExecution, CallableAttachedContentParameter,
         CallableAttachedContentPolicy, CallableCompileTimeScalarKind,
         CallableContentParameterConsumer, CallableGroupIndex, CallableMethodRole,
-        CallableParameterAdmission, CallableParameterConsumer, CallableParameterPresence,
-        CallableParameterValueRule, CallableValidator, ContentCallableIdentity,
+        CallableNeedProducerRole, CallableParameterAdmission, CallableParameterConsumer,
+        CallableParameterPresence, CallableParameterValueRule, CallableValidator,
+        ContentCallableIdentity,
     };
     use crate::character_dialogue::CharacterDialogueFieldCoordinate;
     use crate::types::{SemanticTypeDigest, TypeKind};
@@ -864,6 +881,37 @@ mod tests {
             encoder.into_bytes().expect("canonical fixture encoding"),
             expected.into_bytes().expect("canonical fixture encoding")
         );
+    }
+
+    #[test]
+    fn need_producer_validator_digest_commits_operation_kind_and_start_policy() {
+        for (role, kind_tag, policy_tag) in [
+            (CallableNeedProducerRole::asset_image(), 0_u16, 0_u16),
+            (CallableNeedProducerRole::voice_load(), 1_u16, 0_u16),
+            (
+                CallableNeedProducerRole::new(
+                    arcweft_core::task::NeedProducerOperation::AssetLoad {
+                        kind: arcweft_core::task::AssetLoadKind::Voice,
+                    },
+                    arcweft_core::task::TaskPolicy::AlwaysStart,
+                ),
+                1_u16,
+                1_u16,
+            ),
+        ] {
+            let mut actual = CanonicalEncoder::default();
+            actual.validator(&CallableValidator::NeedProducer(role));
+
+            let mut expected = Vec::new();
+            expected.extend_from_slice(&26_u16.to_le_bytes());
+            expected.extend_from_slice(&0_u16.to_le_bytes());
+            expected.extend_from_slice(&kind_tag.to_le_bytes());
+            expected.extend_from_slice(&policy_tag.to_le_bytes());
+            assert_eq!(
+                actual.into_bytes().expect("canonical producer encoding"),
+                expected
+            );
+        }
     }
 
     #[test]

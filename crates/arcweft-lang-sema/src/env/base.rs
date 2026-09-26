@@ -13,11 +13,11 @@ use super::{
 use crate::callable::{
     CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect,
     CallableExtensionReceiver, CallableGenericParameterIssuer, CallableGroupIndex,
-    CallableGroupKind, CallableLogLevel, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterAdmission, CallableParameterGroup, CallableParameterIndex,
-    CallableParameterPassing, CallableParameterPresence, CallablePath, CallableSignatureSchema,
-    CallableValidator, DropCallableId, PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy,
-    StandardMapFamily, UnknownNamedArgumentPolicy, ViewModifierId,
+    CallableGroupKind, CallableLogLevel, CallableName, CallableNeedProducerRole,
+    CallableOverloadIndex, CallableParameter, CallableParameterAdmission, CallableParameterGroup,
+    CallableParameterIndex, CallableParameterPassing, CallableParameterPresence, CallablePath,
+    CallableSignatureSchema, CallableValidator, DropCallableId, PRODUCTION_CALLABLE_LIMITS,
+    SpreadArgumentPolicy, StandardMapFamily, UnknownNamedArgumentPolicy, ViewModifierId,
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
@@ -1135,7 +1135,7 @@ impl TypeCheckEnv {
             ),
             std::iter::empty::<EffectCapability>(),
         );
-        env.with_standard_function(
+        env.with_standard_need_producer_function(
             ["asset", "image"],
             FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
@@ -1147,8 +1147,9 @@ impl TypeCheckEnv {
                     TypeKind::entity_ref(crate::types::EntityKind::Asset),
                 )],
             ),
+            CallableNeedProducerRole::asset_image(),
         )
-        .with_standard_function(
+        .with_standard_need_producer_function(
             ["voice", "load"],
             FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
@@ -1160,6 +1161,7 @@ impl TypeCheckEnv {
                     TypeKind::entity_ref(crate::types::EntityKind::Voice),
                 )],
             ),
+            CallableNeedProducerRole::voice_load(),
         )
         .with_standard_method(
             TypeKind::VoiceHandle,
@@ -1685,6 +1687,40 @@ impl TypeCheckEnv {
         I: IntoIterator<Item = E>,
         E: Into<EffectCapability>,
     {
+        self.with_typed_standard_function_validator(
+            path,
+            signature,
+            effects,
+            CallableValidator::Ordinary,
+        )
+    }
+
+    #[must_use]
+    fn with_standard_need_producer_function<const N: usize>(
+        self,
+        path: [&str; N],
+        signature: FunctionSignature,
+        role: CallableNeedProducerRole,
+    ) -> Self {
+        self.with_typed_standard_function_validator(
+            standard_callable_path(path),
+            signature,
+            std::iter::empty::<EffectCapability>(),
+            CallableValidator::NeedProducer(role),
+        )
+    }
+
+    fn with_typed_standard_function_validator<I, E>(
+        self,
+        path: CallablePath,
+        signature: FunctionSignature,
+        effects: I,
+        validator: CallableValidator,
+    ) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<EffectCapability>,
+    {
         let signature = self.canonical_standard_callable_signature(signature);
         let effects = crate::effects::EffectSet::from_labels(
             effects
@@ -1696,7 +1732,7 @@ impl TypeCheckEnv {
         let schema = signature
             .callable_schema(
                 EffectRow::closed(effects),
-                CallableValidator::Ordinary,
+                validator,
                 CallableGenericParameterIssuer::empty(),
                 &PRODUCTION_CALLABLE_LIMITS,
             )
