@@ -1553,3 +1553,29 @@ qualifier を実行 child にせず、case expression と正確な owner/case �
 Sema regression 1/1、HIR/Sema check、compiler all-target check、fmt と cached
 diff check は通過。native/AWBC での完全修飾値の実行と Color/053/049 の全体
 fixture gate はまだ未検証または未達。
+
+## Runtime Color checkpoint — 2026-09-26
+
+Supersedes: 直前 checkpoint の「Color は compile-time に留まる」という現在状態。
+`71c3d69105a8e251cc21b279ac9ace50f968e7cd` を `main` へ push 済み。
+チェック済み `rgb` の RGBA8 を単一の `RuntimeColor` / `RuntimeValue::Color`
+として実行側へ渡す。選択済み builtin application の digest を保持する
+`ResidualValue` を HIR/Sema/runtime-plan/compiler に通し、通常関数の引数・
+返り値、native、AWBC の型・定数・codec・verifier・snapshot・admission を
+同じ Color に接続した。短い `#rgb` / `#rgba` と長い `#rrggbb` /
+`#rrggbbaa` は一つの parser で RGBA8 に正規化し、不正値を拒否する。
+
+focused compiler native/AWBC Color 往復 2/2、dialogue point Color 1/1、
+Core Color tests 3/3、Sema parser test、workspace all-target/all-feature
+check、workspace Clippy、fmt、cached diff check が通過。structure audit は
+2624 files / 96 packages / 331 review triggers / 0 blocking violations。
+増えた `semantic_facts.rs` は同一世代の残余値と選択済み application の照合、
+`final_expr.rs` はその値の lowering、`compiler/lower.rs` は sema の正確な
+Color から runtime facts への投影を各 owner 内で行い、並列 Color 型や
+fallback resolver を設けていない。
+
+`RUST_MIN_STACK=16777216` の `just test-workspace` は非 CLI 群と CLI の
+先行 6 件が通過した。最後の CLI fixture 群は既知の未完 049
+`049_await_context_option_boundaries.arcw` の ExprId slot 23 で
+`sema.final_analysis` value resolution に失敗し、レシピ全体は未合格。
+053 の `fmt` Content 化と 049 fixture、goal 全体の受理は未達。
