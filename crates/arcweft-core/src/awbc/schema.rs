@@ -1434,6 +1434,7 @@ awbc_u8_enum! {
     pub enum AwbcDialogueValueRole {
         Interpolation = 0,
         Content = 1,
+        Formatted = 2,
     }
 }
 

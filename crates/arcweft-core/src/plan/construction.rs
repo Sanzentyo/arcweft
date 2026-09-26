@@ -1059,8 +1059,10 @@ impl RuntimePlanBuilder {
                         actual: slot.slot,
                     });
                 }
-                if slot.role == RuntimeDialogueValueRole::Content
-                    && slot.semantic_type != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                if matches!(
+                    slot.role,
+                    RuntimeDialogueValueRole::Content | RuntimeDialogueValueRole::Formatted
+                ) && slot.semantic_type != RuntimeDialogueOpaqueRole::Content.semantic_identity()
                 {
                     return Err(RuntimePlanBuildError::DialogueTemplateSlotMismatch {
                         slot: slot.slot,
@@ -1217,8 +1219,10 @@ impl RuntimePlanBuilder {
                     Ok(capture)
                 })
                 .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
-            if value.role == RuntimeDialogueValueRole::Content
-                && !self.is_exact_dialogue_content_type(result)
+            if matches!(
+                value.role,
+                RuntimeDialogueValueRole::Content | RuntimeDialogueValueRole::Formatted
+            ) && !self.is_exact_dialogue_content_type(result)
             {
                 return Err(RuntimePlanBuildError::InvalidDialogueContentType {
                     slot: value.slot,

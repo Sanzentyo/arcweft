@@ -159,6 +159,12 @@ pub enum RuntimeDialogueContentValueError {
         #[source]
         source: RuntimeInlineTextValueError,
     },
+    #[error("runtime dialogue formatted binding {index} has an invalid typed payload: {source}")]
+    InvalidFormattedValue {
+        index: usize,
+        #[source]
+        source: RuntimeDialogueFormattedValueError,
+    },
     #[error("nested runtime dialogue content value at binding {index} belongs to another artifact")]
     NestedArtifactMismatch { index: usize },
     #[error("runtime dialogue content value exceeds the shared nesting limit of {maximum}")]
@@ -314,6 +320,315 @@ impl RuntimeInlineTextValue {
     }
 }
 
+/// Successful display value produced by a checked formatting operation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDialogueFormattedSuccess {
+    Text(String),
+    Content(Box<RuntimeDialogueContentValue>),
+}
+
+/// Result of one checked formatting operation before dialogue failure policy
+/// is applied.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDialogueFormattedOutcome {
+    Success {
+        value: RuntimeDialogueFormattedSuccess,
+        color: Option<crate::value::RuntimeColor>,
+    },
+    Failure {
+        reason: String,
+        value_plain: Option<String>,
+    },
+}
+
+/// Selected dynamic failure-policy operand retained with a formatted value.
+///
+/// `OnError` deliberately preserves the producer's typed runtime value. The
+/// dialogue crate owns its strict interpretation; Core does not duplicate the
+/// dialogue policy schema.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDialogueFormattedFailureSelection {
+    Inherit,
+    OnError(RuntimeValue),
+    Fallback(String),
+    Discard(bool),
+}
+
+/// Closed formatting result and its selected failure-policy operand.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueFormattedValue {
+    outcome: RuntimeDialogueFormattedOutcome,
+    failure: RuntimeDialogueFormattedFailureSelection,
+}
+
+/// Failure to construct or decode one closed formatted Content binding.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeDialogueFormattedValueError {
+    #[error("formatted Content binding is not the canonical outcome/policy tuple")]
+    InvalidPayload,
+    #[error("formatted Content binding exceeds the shared string limit of {maximum} bytes")]
+    StringLimit { maximum: usize },
+}
+
+impl RuntimeDialogueFormattedValue {
+    /// Constructs a formatted binding under the default runtime schema limits.
+    pub fn try_new(
+        outcome: RuntimeDialogueFormattedOutcome,
+        failure: RuntimeDialogueFormattedFailureSelection,
+    ) -> Result<Self, RuntimeDialogueFormattedValueError> {
+        Self::try_new_with_limits(outcome, failure, RuntimeSchemaLimits::engine_default())
+    }
+
+    /// Constructs a formatted binding after checking its authored/display text
+    /// against the shared runtime string budget.
+    pub fn try_new_with_limits(
+        outcome: RuntimeDialogueFormattedOutcome,
+        failure: RuntimeDialogueFormattedFailureSelection,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueFormattedValueError> {
+        let value = Self { outcome, failure };
+        value.validate_string_limits(limits)?;
+        Ok(value)
+    }
+
+    /// Decodes the private payload carried by a Formatted Content slot.
+    pub fn try_from_runtime_value_with_limits(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueFormattedValueError> {
+        Self::try_decode_runtime_value_at(value, limits, 0)
+    }
+
+    fn try_decode_runtime_value_at(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+        depth: usize,
+    ) -> Result<Self, RuntimeDialogueFormattedValueError> {
+        let RuntimeValue::Tuple(fields) = value else {
+            return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+        };
+        let [outcome, failure] = fields.as_slice() else {
+            return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+        };
+        let outcome = decode_formatted_outcome(outcome, limits, depth)?;
+        let failure = decode_formatted_failure_selection(failure)?;
+        Self::try_new_with_limits(outcome, failure, limits)
+    }
+
+    #[must_use]
+    pub const fn outcome(&self) -> &RuntimeDialogueFormattedOutcome {
+        &self.outcome
+    }
+
+    #[must_use]
+    pub const fn failure_selection(&self) -> &RuntimeDialogueFormattedFailureSelection {
+        &self.failure
+    }
+
+    /// Encodes this typed binding for the enclosing Content envelope.
+    #[must_use]
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        RuntimeValue::Tuple(vec![
+            encode_formatted_outcome(self.outcome),
+            encode_formatted_failure_selection(self.failure),
+        ])
+    }
+
+    fn validate_string_limits(
+        &self,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimeDialogueFormattedValueError> {
+        let maximum = usize::try_from(limits.max_string_bytes).unwrap_or(usize::MAX);
+        let strings = match &self.outcome {
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Text(text),
+                ..
+            } => [Some(text.as_str()), None, None],
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Content(_),
+                ..
+            } => [None, None, None],
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason,
+                value_plain,
+            } => [Some(reason.as_str()), value_plain.as_deref(), None],
+        };
+        for text in strings.into_iter().flatten() {
+            if !limits.permits_string_bytes(text.len()) {
+                return Err(RuntimeDialogueFormattedValueError::StringLimit { maximum });
+            }
+        }
+        let policy_text = match &self.failure {
+            RuntimeDialogueFormattedFailureSelection::Fallback(text) => Some(text.as_str()),
+            RuntimeDialogueFormattedFailureSelection::Inherit
+            | RuntimeDialogueFormattedFailureSelection::OnError(_)
+            | RuntimeDialogueFormattedFailureSelection::Discard(_) => None,
+        };
+        if policy_text.is_some_and(|text| !limits.permits_string_bytes(text.len())) {
+            return Err(RuntimeDialogueFormattedValueError::StringLimit { maximum });
+        }
+        Ok(())
+    }
+}
+
+fn encode_formatted_outcome(outcome: RuntimeDialogueFormattedOutcome) -> RuntimeValue {
+    match outcome {
+        RuntimeDialogueFormattedOutcome::Success { value, color } => match value {
+            RuntimeDialogueFormattedSuccess::Text(text) => RuntimeValue::Tuple(vec![
+                RuntimeValue::u8(0),
+                RuntimeValue::String(text),
+                encode_formatted_optional_color(color),
+            ]),
+            RuntimeDialogueFormattedSuccess::Content(value) => RuntimeValue::Tuple(vec![
+                RuntimeValue::u8(1),
+                value.into_runtime_value(),
+                encode_formatted_optional_color(color),
+            ]),
+        },
+        RuntimeDialogueFormattedOutcome::Failure {
+            reason,
+            value_plain,
+        } => RuntimeValue::Tuple(vec![
+            RuntimeValue::u8(2),
+            RuntimeValue::String(reason),
+            encode_formatted_optional_string(value_plain),
+        ]),
+    }
+}
+
+fn decode_formatted_outcome(
+    value: &RuntimeValue,
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+) -> Result<RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+    };
+    let [RuntimeValue::UInt(RuntimeUInt::U8(tag)), payload, extra] = fields.as_slice() else {
+        return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+    };
+    match tag {
+        0 => {
+            let RuntimeValue::String(text) = payload else {
+                return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+            };
+            Ok(RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Text(text.clone()),
+                color: decode_formatted_optional_color(extra)?,
+            })
+        }
+        1 => {
+            let child_depth = depth.saturating_add(1);
+            let nested = RuntimeDialogueContentValue::try_decode_unvalidated_at(
+                payload,
+                limits,
+                child_depth,
+            )
+            .map_err(|_| RuntimeDialogueFormattedValueError::InvalidPayload)?;
+            Ok(RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Content(Box::new(nested)),
+                color: decode_formatted_optional_color(extra)?,
+            })
+        }
+        2 => {
+            let RuntimeValue::String(reason) = payload else {
+                return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+            };
+            Ok(RuntimeDialogueFormattedOutcome::Failure {
+                reason: reason.clone(),
+                value_plain: decode_formatted_optional_string(extra)?,
+            })
+        }
+        _ => Err(RuntimeDialogueFormattedValueError::InvalidPayload),
+    }
+}
+
+fn encode_formatted_failure_selection(
+    failure: RuntimeDialogueFormattedFailureSelection,
+) -> RuntimeValue {
+    match failure {
+        RuntimeDialogueFormattedFailureSelection::Inherit => {
+            RuntimeValue::Tuple(vec![RuntimeValue::u8(0)])
+        }
+        RuntimeDialogueFormattedFailureSelection::OnError(value) => {
+            RuntimeValue::Tuple(vec![RuntimeValue::u8(1), value])
+        }
+        RuntimeDialogueFormattedFailureSelection::Fallback(text) => {
+            RuntimeValue::Tuple(vec![RuntimeValue::u8(2), RuntimeValue::String(text)])
+        }
+        RuntimeDialogueFormattedFailureSelection::Discard(value) => {
+            RuntimeValue::Tuple(vec![RuntimeValue::u8(3), RuntimeValue::Bool(value)])
+        }
+    }
+}
+
+fn decode_formatted_failure_selection(
+    value: &RuntimeValue,
+) -> Result<RuntimeDialogueFormattedFailureSelection, RuntimeDialogueFormattedValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+    };
+    match fields.as_slice() {
+        [RuntimeValue::UInt(RuntimeUInt::U8(0))] => {
+            Ok(RuntimeDialogueFormattedFailureSelection::Inherit)
+        }
+        [RuntimeValue::UInt(RuntimeUInt::U8(1)), value] => Ok(
+            RuntimeDialogueFormattedFailureSelection::OnError(value.clone()),
+        ),
+        [
+            RuntimeValue::UInt(RuntimeUInt::U8(2)),
+            RuntimeValue::String(text),
+        ] => Ok(RuntimeDialogueFormattedFailureSelection::Fallback(
+            text.clone(),
+        )),
+        [
+            RuntimeValue::UInt(RuntimeUInt::U8(3)),
+            RuntimeValue::Bool(value),
+        ] => Ok(RuntimeDialogueFormattedFailureSelection::Discard(*value)),
+        _ => Err(RuntimeDialogueFormattedValueError::InvalidPayload),
+    }
+}
+
+fn encode_formatted_optional_color(color: Option<crate::value::RuntimeColor>) -> RuntimeValue {
+    match color {
+        Some(color) => RuntimeValue::Tuple(vec![RuntimeValue::Color(color)]),
+        None => RuntimeValue::Tuple(Vec::new()),
+    }
+}
+
+fn decode_formatted_optional_color(
+    value: &RuntimeValue,
+) -> Result<Option<crate::value::RuntimeColor>, RuntimeDialogueFormattedValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+    };
+    match fields.as_slice() {
+        [] => Ok(None),
+        [RuntimeValue::Color(color)] => Ok(Some(*color)),
+        _ => Err(RuntimeDialogueFormattedValueError::InvalidPayload),
+    }
+}
+
+fn encode_formatted_optional_string(value: Option<String>) -> RuntimeValue {
+    match value {
+        Some(value) => RuntimeValue::Tuple(vec![RuntimeValue::String(value)]),
+        None => RuntimeValue::Tuple(Vec::new()),
+    }
+}
+
+fn decode_formatted_optional_string(
+    value: &RuntimeValue,
+) -> Result<Option<String>, RuntimeDialogueFormattedValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueFormattedValueError::InvalidPayload);
+    };
+    match fields.as_slice() {
+        [] => Ok(None),
+        [RuntimeValue::String(value)] => Ok(Some(value.clone())),
+        _ => Err(RuntimeDialogueFormattedValueError::InvalidPayload),
+    }
+}
+
 /// Closed typed binding admitted into a Content envelope.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeDialogueContentBinding {
@@ -326,6 +641,11 @@ pub enum RuntimeDialogueContentBinding {
         slot: RuntimeDialogueValueSlotId,
         semantic_type: RuntimeSemanticTypeId,
         value: RuntimeDialogueContentValue,
+    },
+    Formatted {
+        slot: RuntimeDialogueValueSlotId,
+        semantic_type: RuntimeSemanticTypeId,
+        value: RuntimeDialogueFormattedValue,
     },
 }
 
@@ -362,7 +682,9 @@ impl RuntimeDialogueContentBinding {
     #[must_use]
     pub const fn slot(&self) -> RuntimeDialogueValueSlotId {
         match self {
-            Self::Interpolation { slot, .. } | Self::Content { slot, .. } => *slot,
+            Self::Interpolation { slot, .. }
+            | Self::Content { slot, .. }
+            | Self::Formatted { slot, .. } => *slot,
         }
     }
 
@@ -371,15 +693,16 @@ impl RuntimeDialogueContentBinding {
         match self {
             Self::Interpolation { .. } => RuntimeDialogueValueRole::Interpolation,
             Self::Content { .. } => RuntimeDialogueValueRole::Content,
+            Self::Formatted { .. } => RuntimeDialogueValueRole::Formatted,
         }
     }
 
     #[must_use]
     pub const fn semantic_type(&self) -> RuntimeSemanticTypeId {
         match self {
-            Self::Interpolation { semantic_type, .. } | Self::Content { semantic_type, .. } => {
-                *semantic_type
-            }
+            Self::Interpolation { semantic_type, .. }
+            | Self::Content { semantic_type, .. }
+            | Self::Formatted { semantic_type, .. } => *semantic_type,
         }
     }
 
@@ -387,7 +710,7 @@ impl RuntimeDialogueContentBinding {
     pub const fn inline_text(&self) -> Option<&RuntimeInlineTextValue> {
         match self {
             Self::Interpolation { value, .. } => Some(value),
-            Self::Content { .. } => None,
+            Self::Content { .. } | Self::Formatted { .. } => None,
         }
     }
 
@@ -395,7 +718,15 @@ impl RuntimeDialogueContentBinding {
     pub const fn content(&self) -> Option<&RuntimeDialogueContentValue> {
         match self {
             Self::Content { value, .. } => Some(value),
-            Self::Interpolation { .. } => None,
+            Self::Interpolation { .. } | Self::Formatted { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn formatted(&self) -> Option<&RuntimeDialogueFormattedValue> {
+        match self {
+            Self::Formatted { value, .. } => Some(value),
+            Self::Interpolation { .. } | Self::Content { .. } => None,
         }
     }
 
@@ -420,6 +751,15 @@ impl RuntimeDialogueContentBinding {
                 semantic_type,
                 value,
             },
+            Self::Formatted {
+                semantic_type,
+                value,
+                ..
+            } => Self::Formatted {
+                slot,
+                semantic_type,
+                value,
+            },
         }
     }
 
@@ -427,6 +767,7 @@ impl RuntimeDialogueContentBinding {
         match self {
             Self::Interpolation { value, .. } => value.into_runtime_value(),
             Self::Content { value, .. } => value.into_runtime_value(),
+            Self::Formatted { value, .. } => value.into_runtime_value(),
         }
     }
 }
@@ -494,6 +835,62 @@ impl RuntimeDialogueContentValue {
             effects,
             RuntimeSchemaLimits::engine_default(),
         )
+    }
+
+    /// Constructs the canonical plain-text Content value used by runtime
+    /// context messages. The immutable runtime-plan manifest supplies the
+    /// artifact-local identity and digest; this function never invents them.
+    pub fn try_new_plain_text(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        text: impl Into<String>,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_new_plain_text_with_limits(
+            artifact,
+            template,
+            text,
+            RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Limits-aware form of [`Self::try_new_plain_text`].
+    pub fn try_new_plain_text_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        text: impl Into<String>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        template.validate_slot_schema().map_err(|error| {
+            RuntimeDialogueContentValueError::InvalidTemplateManifest {
+                message: error.to_string(),
+            }
+        })?;
+        if template.slots().len() != 1
+            || !template.effects().is_empty()
+            || template.slots()[0].role() != RuntimeDialogueValueRole::Formatted
+        {
+            return Err(RuntimeDialogueContentValueError::InvalidTemplateManifest {
+                message: "plain-text Content requires one Formatted slot and no effects".to_owned(),
+            });
+        }
+        let formatted = RuntimeDialogueFormattedValue::try_new_with_limits(
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Text(text.into()),
+                color: None,
+            },
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+            limits,
+        )
+        .map_err(
+            |source| RuntimeDialogueContentValueError::InvalidFormattedValue { index: 0, source },
+        )?;
+        let slot = template.slots()[0];
+        let binding = RuntimeDialogueValueBinding {
+            slot: slot.slot(),
+            role: RuntimeDialogueValueRole::Formatted,
+            value: formatted.into_runtime_value(),
+        };
+        Self::try_from_evaluated_bindings_with_limits(artifact, template, &[binding], limits)
     }
 
     /// Constructs a content envelope after applying the caller-selected
@@ -621,6 +1018,20 @@ impl RuntimeDialogueContentValue {
                 RuntimeDialogueValueRole::Content => {
                     let value = Self::try_from_runtime_value_with_limits(&evaluated.value, limits)?;
                     RuntimeDialogueContentBinding::Content {
+                        slot: expected_slot,
+                        semantic_type: slot.semantic_type(),
+                        value,
+                    }
+                }
+                RuntimeDialogueValueRole::Formatted => {
+                    let value = RuntimeDialogueFormattedValue::try_from_runtime_value_with_limits(
+                        &evaluated.value,
+                        limits,
+                    )
+                    .map_err(|source| {
+                        RuntimeDialogueContentValueError::InvalidFormattedValue { index, source }
+                    })?;
+                    RuntimeDialogueContentBinding::Formatted {
                         slot: expected_slot,
                         semantic_type: slot.semantic_type(),
                         value,
@@ -1068,6 +1479,32 @@ impl RuntimeDialogueContentValue {
                     )?;
                     nested.validate_structure_at(limits, nested_depth)?;
                 }
+                RuntimeDialogueContentBinding::Formatted {
+                    semantic_type: _,
+                    value,
+                    ..
+                } => {
+                    value.validate_string_limits(limits).map_err(|source| {
+                        RuntimeDialogueContentValueError::InvalidFormattedValue { index, source }
+                    })?;
+                    if let RuntimeDialogueFormattedOutcome::Success {
+                        value: RuntimeDialogueFormattedSuccess::Content(nested),
+                        ..
+                    } = value.outcome()
+                    {
+                        if nested.artifact != self.artifact {
+                            return Err(RuntimeDialogueContentValueError::NestedArtifactMismatch {
+                                index,
+                            });
+                        }
+                        let nested_depth = depth.checked_add(1).ok_or(
+                            RuntimeDialogueContentValueError::NestingLimit {
+                                maximum: maximum_depth,
+                            },
+                        )?;
+                        nested.validate_structure_at(limits, nested_depth)?;
+                    }
+                }
             }
         }
         if !limits.permits_sequence_items(self.effects.len()) {
@@ -1240,6 +1677,21 @@ fn decode_content_binding(
             let value =
                 RuntimeDialogueContentValue::try_decode_unvalidated_at(value, limits, next_depth)?;
             Ok(RuntimeDialogueContentBinding::Content {
+                slot,
+                semantic_type,
+                value,
+            })
+        }
+        RuntimeDialogueValueRole::Formatted => {
+            let value =
+                RuntimeDialogueFormattedValue::try_decode_runtime_value_at(value, limits, depth)
+                    .map_err(
+                        |source| RuntimeDialogueContentValueError::InvalidFormattedValue {
+                            index,
+                            source,
+                        },
+                    )?;
+            Ok(RuntimeDialogueContentBinding::Formatted {
                 slot,
                 semantic_type,
                 value,
@@ -2513,6 +2965,102 @@ mod tests {
                 RuntimeDialogueContentValueError::InvalidInlineTextValue { .. }
                     | RuntimeDialogueContentValueError::NonCanonicalSlot { .. },
             )
+        ));
+    }
+
+    #[test]
+    fn formatted_content_binding_round_trips_closed_outcome_and_dynamic_policy() {
+        let artifact = content_artifact(0x71);
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot");
+        let formatted = RuntimeDialogueFormattedValue::try_new(
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason: "format failed".to_owned(),
+                value_plain: Some("plain value".to_owned()),
+            },
+            RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::String(
+                "typed policy operand".to_owned(),
+            )),
+        )
+        .expect("formatted result");
+        let value = RuntimeDialogueContentValue::try_new(
+            artifact,
+            content_template(),
+            content_digest(),
+            [RuntimeDialogueContentBinding::Formatted {
+                slot,
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: formatted,
+            }],
+        )
+        .expect("formatted Content envelope");
+        let runtime = value.clone().into_runtime_value();
+
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&runtime),
+            Ok(value.clone())
+        );
+        assert_eq!(
+            value
+                .binding(slot)
+                .and_then(RuntimeDialogueContentBinding::formatted)
+                .map(RuntimeDialogueFormattedValue::failure_selection),
+            Some(&RuntimeDialogueFormattedFailureSelection::OnError(
+                RuntimeValue::String("typed policy operand".to_owned())
+            ))
+        );
+        assert_eq!(
+            value.bindings()[0].role(),
+            RuntimeDialogueValueRole::Formatted
+        );
+    }
+
+    #[test]
+    fn plain_text_content_constructor_uses_the_verified_one_slot_manifest() {
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot");
+        let manifest = crate::plan::RuntimeDialogueContentTemplateManifest::new_with_effects(
+            content_template(),
+            content_digest(),
+            vec![crate::plan::RuntimeDialogueContentSlot::new(
+                slot,
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )]
+            .into_boxed_slice(),
+            Box::new([]),
+        );
+        let artifact = content_artifact(0x72);
+
+        let value =
+            RuntimeDialogueContentValue::try_new_plain_text(artifact, &manifest, "context message")
+                .expect("plain text Content");
+        assert_eq!(value.artifact(), artifact);
+        assert_eq!(value.template(), content_template());
+        assert_eq!(value.template_digest(), content_digest());
+        assert!(matches!(
+            value.binding(slot).and_then(RuntimeDialogueContentBinding::formatted),
+            Some(RuntimeDialogueFormattedValue {
+                outcome: RuntimeDialogueFormattedOutcome::Success {
+                    value: RuntimeDialogueFormattedSuccess::Text(text),
+                    color: None,
+                },
+                failure: RuntimeDialogueFormattedFailureSelection::Inherit,
+            }) if text == "context message"
+        ));
+
+        let invalid = crate::plan::RuntimeDialogueContentTemplateManifest::new_with_effects(
+            content_template(),
+            content_digest(),
+            vec![crate::plan::RuntimeDialogueContentSlot::new(
+                slot,
+                RuntimeDialogueValueRole::Interpolation,
+                RuntimeSemanticTypeId::from_bytes([0xa1; 32]),
+            )]
+            .into_boxed_slice(),
+            Box::new([]),
+        );
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_new_plain_text(artifact, &invalid, "x"),
+            Err(RuntimeDialogueContentValueError::InvalidTemplateManifest { .. })
         ));
     }
 }

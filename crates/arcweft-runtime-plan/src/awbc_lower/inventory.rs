@@ -481,6 +481,7 @@ impl AwbcInventory {
                         AwbcDialogueValueRole::Interpolation
                     }
                     RuntimeDialogueValueRole::Content => AwbcDialogueValueRole::Content,
+                    RuntimeDialogueValueRole::Formatted => AwbcDialogueValueRole::Formatted,
                 };
                 Ok(AwbcDialogueContentSlot {
                     slot: slot.slot(),

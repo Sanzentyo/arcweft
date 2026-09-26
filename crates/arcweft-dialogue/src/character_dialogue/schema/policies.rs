@@ -70,6 +70,33 @@ impl CharacterDialoguePolicyVariantOwner {
         }
     }
 
+    /// Canonical nominal identity used to validate a policy variant value.
+    #[must_use]
+    pub const fn runtime_public_id(self) -> &'static str {
+        self.public_id()
+    }
+
+    /// Semantic identity shared by every generated policy type graph.
+    #[must_use]
+    pub const fn semantic_identity(self) -> RuntimeSemanticTypeId {
+        RuntimeSemanticTypeId::from_bytes(self.semantic_digest())
+    }
+
+    /// Whether a runtime variant carries this policy's nominal semantic owner.
+    /// The active executable type table separately verifies its layout hash.
+    #[must_use]
+    pub fn matches_runtime_identity(self, identity: &RuntimeVariantIdentity) -> bool {
+        matches!(
+            identity,
+            RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity,
+                ..
+            } if nominal.as_str() == self.public_id()
+                && *semantic_identity == self.semantic_identity()
+        )
+    }
+
     const fn semantic_digest(self) -> [u8; 32] {
         match self {
             // SHA-256 of the versioned canonical owner labels. These bytes are
@@ -274,6 +301,20 @@ impl CharacterDialoguePolicyTypeGraph {
         owner: CharacterDialoguePolicyVariantOwner,
     ) -> &'static [CharacterDialoguePolicyCaseSpec] {
         variant_spec(owner).cases
+    }
+
+    /// Resolves an exact wire case by owner, ordinal, and canonical case name.
+    #[must_use]
+    pub fn case_spec_for_value(
+        owner: CharacterDialoguePolicyVariantOwner,
+        ordinal: u32,
+        name: &str,
+    ) -> Option<CharacterDialoguePolicyCaseSpec> {
+        variant_spec(owner)
+            .cases
+            .iter()
+            .copied()
+            .find(|case| case.ordinal() == ordinal && case.name() == name)
     }
 
     /// Projects a case payload through the graph's checked seed vocabulary.

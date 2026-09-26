@@ -378,11 +378,11 @@ impl<'a> LineDisplayFrameResolver<'a> {
                     styles,
                     resolved,
                 )?,
-                RichTextNode::ContentInsert { .. } => {
+                RichTextNode::ContentInsert { .. } | RichTextNode::FormattedInsert { .. } => {
                     return Err(LineDisplayError {
                         line: self.spec.line().clone(),
                         expr: String::new(),
-                        reason: "content must be materialized before renderer resolution"
+                        reason: "content insertion must be materialized before renderer resolution"
                             .to_owned(),
                     });
                 }

@@ -77,6 +77,9 @@ fn context_with_styles(
             RuntimeDialogueValueRole::Content => {
                 panic!("test context does not use nested content bindings")
             }
+            RuntimeDialogueValueRole::Formatted => {
+                panic!("test context does not use formatted Content bindings")
+            }
         })
         .collect::<Vec<_>>();
     RuntimeLineContext::new(

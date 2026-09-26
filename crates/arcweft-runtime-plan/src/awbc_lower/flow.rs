@@ -3516,6 +3516,7 @@ fn awbc_dialogue_value_role(role: RuntimeDialogueValueRole) -> AwbcDialogueValue
     match role {
         RuntimeDialogueValueRole::Interpolation => AwbcDialogueValueRole::Interpolation,
         RuntimeDialogueValueRole::Content => AwbcDialogueValueRole::Content,
+        RuntimeDialogueValueRole::Formatted => AwbcDialogueValueRole::Formatted,
     }
 }
 

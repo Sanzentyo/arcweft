@@ -208,6 +208,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                             arcweft_core::plan::RuntimeDialogueValueRole::Content => {
                                 AwbcDialogueValueRole::Content
                             }
+                            arcweft_core::plan::RuntimeDialogueValueRole::Formatted => {
+                                AwbcDialogueValueRole::Formatted
+                            }
                         },
                         value: self.lower(value),
                     })

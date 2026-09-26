@@ -12,13 +12,14 @@ use arcweft_core::runtime_id::{
 };
 use arcweft_core::value::{
     MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeDialogueContentBinding, RuntimeDialogueContentValue,
-    RuntimeDialogueContentValueError, RuntimeDialogueOpaqueRole,
+    RuntimeDialogueContentValueError, RuntimeDialogueFormattedFailureSelection,
+    RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess, RuntimeDialogueOpaqueRole,
 };
 use arcweft_dialogue::{InlineFailurePolicy, InlineFailureSelection, InlineFallback};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-use crate::{RichTextControl, RichTextDocument, RichTextNode};
+use crate::{RichTextColor, RichTextControl, RichTextDocument, RichTextNode, RichTextStyle};
 
 /// One slot declaration in an immutable fragment's exact value schema.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -122,6 +123,10 @@ pub enum DialogueContentFragmentTemplateError {
     NonCanonicalEffects,
     #[error("fragment template Content slot {slot} does not use the exact Content semantic type")]
     InvalidContentSemanticType { slot: RuntimeDialogueValueSlotId },
+    #[error("fragment template Formatted slot {slot} does not use the exact Content semantic type")]
+    InvalidFormattedSemanticType { slot: RuntimeDialogueValueSlotId },
+    #[error("fragment template formatted source at node {node} exceeds {maximum} bytes")]
+    FormattedSourceLimit { node: usize, maximum: usize },
     #[error("fragment template node {node} references an undeclared slot {slot}")]
     UndeclaredSlot {
         node: usize,
@@ -184,6 +189,32 @@ impl DialogueContentFragmentTemplate {
     ) -> Result<Self, DialogueContentFragmentTemplateError> {
         let digest = Self::canonical_digest_for(&slots, &marks, &effects, &content);
         Self::try_new(id, digest, slots, marks, effects, content)
+    }
+
+    /// Produces the shared one-slot Content template used to turn a plain
+    /// runtime String into artifact-bound dialogue Content. The caller supplies
+    /// the identity assigned by the verified runtime-plan manifest; the digest
+    /// and exact slot schema are derived here.
+    pub fn plain_text_context(
+        id: RuntimeDialogueContentTemplateId,
+    ) -> Result<Self, DialogueContentFragmentTemplateError> {
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0)
+            .ok_or(DialogueContentFragmentTemplateError::NonCanonicalSlots)?;
+        Self::try_new_canonical(
+            id,
+            vec![DialogueContentTemplateSlot::new(
+                slot,
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )],
+            Vec::new(),
+            Vec::new(),
+            RichTextDocument::new(vec![RichTextNode::FormattedInsert {
+                slot,
+                call_source: String::new(),
+                value_source: String::new(),
+            }]),
+        )
     }
 
     /// Creates and validates a template's complete slot/mark/effect schema.
@@ -293,6 +324,15 @@ impl DialogueContentFragmentTemplate {
                     },
                 );
             }
+            if slot.role() == RuntimeDialogueValueRole::Formatted
+                && slot.semantic_type() != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+            {
+                return Err(
+                    DialogueContentFragmentTemplateError::InvalidFormattedSemanticType {
+                        slot: slot.slot(),
+                    },
+                );
+            }
         }
         for (index, mark) in self.marks.iter().enumerate() {
             let expected = RuntimeDialogueMarkId::from_zero_based(index)
@@ -324,6 +364,22 @@ impl DialogueContentFragmentTemplate {
                 }
                 RichTextNode::ContentInsert { slot, .. } => {
                     self.require_slot(node, *slot, RuntimeDialogueValueRole::Content)?;
+                }
+                RichTextNode::FormattedInsert {
+                    slot,
+                    call_source,
+                    value_source,
+                } => {
+                    self.require_slot(node, *slot, RuntimeDialogueValueRole::Formatted)?;
+                    let maximum =
+                        usize::try_from(RuntimeSchemaLimits::engine_default().max_string_bytes)
+                            .unwrap_or(usize::MAX);
+                    if call_source.len() > maximum || value_source.len() > maximum {
+                        return Err(DialogueContentFragmentTemplateError::FormattedSourceLimit {
+                            node,
+                            maximum,
+                        });
+                    }
                 }
                 RichTextNode::Scope { body, .. } | RichTextNode::Ruby { body, .. } => {
                     self.validate_nodes(body)?;
@@ -694,13 +750,26 @@ pub enum DialogueContentMaterializationError {
     },
     #[error("content insertion slot {slot} has no runtime binding")]
     MissingBinding { slot: RuntimeDialogueValueSlotId },
-    #[error("content insertion slot {slot} has role {actual:?}, expected Content")]
+    #[error("content insertion slot {slot} has role {actual:?}, expected {expected:?}")]
     InvalidBindingRole {
         slot: RuntimeDialogueValueSlotId,
         actual: RuntimeDialogueValueRole,
+        expected: RuntimeDialogueValueRole,
     },
     #[error("content value does not match template slot schema at slot {slot}")]
     BindingSchemaMismatch { slot: RuntimeDialogueValueSlotId },
+    #[error("formatted Content slot {slot} has no Formatted binding")]
+    MissingFormattedBinding { slot: RuntimeDialogueValueSlotId },
+    #[error("formatted Content slot {slot} has an invalid dynamic failure policy: {reason}")]
+    InvalidFormattedPolicy {
+        slot: RuntimeDialogueValueSlotId,
+        reason: String,
+    },
+    #[error("formatted Content slot {slot} failed: {reason}")]
+    FormattedFailure {
+        slot: RuntimeDialogueValueSlotId,
+        reason: String,
+    },
     #[error("content node {node} references an unrebased slot {slot}")]
     UnrebasedSlot {
         node: usize,
@@ -873,7 +942,10 @@ impl MaterializationState<'_> {
                     slot: declaration.slot(),
                 });
             }
-            if declaration.role() == RuntimeDialogueValueRole::Content {
+            if matches!(
+                declaration.role(),
+                RuntimeDialogueValueRole::Content | RuntimeDialogueValueRole::Formatted
+            ) {
                 slots.insert(declaration.slot(), None);
             } else {
                 let rebased = RuntimeDialogueValueSlotId::from_zero_based(self.bindings.len())
@@ -982,6 +1054,34 @@ impl MaterializationState<'_> {
                         }
                     }
                 }
+                RichTextNode::FormattedInsert {
+                    slot,
+                    call_source,
+                    value_source,
+                } => {
+                    let checkpoint = self.checkpoint();
+                    let mut child_occurrence = occurrence.to_vec();
+                    child_occurrence.push(u32::try_from(node_index).map_err(|_| {
+                        DialogueContentMaterializationError::OccurrencePathOverflow
+                    })?);
+                    match self.expand_formatted_insert(
+                        *slot,
+                        value,
+                        depth,
+                        child_occurrence,
+                        template,
+                        occurrence,
+                        node_index,
+                        call_source,
+                        value_source,
+                    ) {
+                        Ok(nodes) => expanded.extend(nodes),
+                        Err(error) => {
+                            self.rollback(checkpoint);
+                            return Err(error);
+                        }
+                    }
+                }
                 RichTextNode::Scope { style, body } => {
                     self.record_origin(template, occurrence, node_index)?;
                     expanded.push(RichTextNode::Scope {
@@ -1009,6 +1109,151 @@ impl MaterializationState<'_> {
         Ok(expanded)
     }
 
+    fn expand_formatted_insert(
+        &mut self,
+        slot: RuntimeDialogueValueSlotId,
+        value: &RuntimeDialogueContentValue,
+        depth: usize,
+        child_occurrence: Vec<u32>,
+        template: RuntimeDialogueContentTemplateId,
+        occurrence: &[u32],
+        node_index: usize,
+        call_source: &str,
+        value_source: &str,
+    ) -> Result<Vec<RichTextNode>, DialogueContentMaterializationError> {
+        let Some(binding) = value.binding(slot) else {
+            return Err(DialogueContentMaterializationError::MissingFormattedBinding { slot });
+        };
+        if binding.role() != RuntimeDialogueValueRole::Formatted {
+            return Err(DialogueContentMaterializationError::InvalidBindingRole {
+                slot,
+                actual: binding.role(),
+                expected: RuntimeDialogueValueRole::Formatted,
+            });
+        }
+        let Some(formatted) = binding.formatted() else {
+            return Err(DialogueContentMaterializationError::MissingFormattedBinding { slot });
+        };
+        let policy = match formatted.failure_selection() {
+            RuntimeDialogueFormattedFailureSelection::Inherit => self.inherited_policy.clone(),
+            RuntimeDialogueFormattedFailureSelection::OnError(value) => {
+                InlineFailurePolicy::try_from_runtime_value(value).map_err(|error| {
+                    DialogueContentMaterializationError::InvalidFormattedPolicy {
+                        slot,
+                        reason: error.to_string(),
+                    }
+                })?
+            }
+            RuntimeDialogueFormattedFailureSelection::Fallback(text) => {
+                InlineFailurePolicy::fallback_text(text.clone())
+            }
+            RuntimeDialogueFormattedFailureSelection::Discard(true) => InlineFailurePolicy::Discard,
+            RuntimeDialogueFormattedFailureSelection::Discard(false) => {
+                self.inherited_policy.clone()
+            }
+        };
+
+        match formatted.outcome() {
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason,
+                value_plain,
+            } => {
+                let nodes = apply_formatted_failure(
+                    slot,
+                    &policy,
+                    reason,
+                    value_plain.as_deref(),
+                    call_source,
+                    value_source,
+                )?;
+                for _ in &nodes {
+                    self.record_origin(template, occurrence, node_index)?;
+                }
+                Ok(nodes)
+            }
+            RuntimeDialogueFormattedOutcome::Success {
+                value: success,
+                color,
+            } => match success {
+                RuntimeDialogueFormattedSuccess::Text(text) => {
+                    let nodes = colored_text_nodes(text, *color);
+                    if color.is_some() {
+                        self.reserve_node()?;
+                    }
+                    self.record_generated_text_origins(template, occurrence, node_index, &nodes)?;
+                    Ok(nodes)
+                }
+                RuntimeDialogueFormattedSuccess::Content(nested) => {
+                    if nested.artifact() != value.artifact() {
+                        return Err(DialogueContentMaterializationError::ArtifactMismatch {
+                            expected: value.artifact(),
+                            actual: nested.artifact(),
+                        });
+                    }
+                    let child_depth = depth.checked_add(1).ok_or(
+                        DialogueContentMaterializationError::NestingLimit {
+                            maximum: usize::try_from(self.limits.max_depth).unwrap_or(usize::MAX),
+                        },
+                    )?;
+                    let checkpoint = self.checkpoint();
+                    let origin_start = self.origins.len();
+                    let nodes = match self.expand(nested, child_depth, child_occurrence) {
+                        Ok(nodes) => nodes,
+                        Err(error) => {
+                            self.rollback(checkpoint);
+                            let reason = error.to_string();
+                            return apply_formatted_failure(
+                                slot,
+                                &policy,
+                                &reason,
+                                None,
+                                call_source,
+                                value_source,
+                            )
+                            .and_then(|fallback| {
+                                if fallback.is_empty() {
+                                    Ok(fallback)
+                                } else {
+                                    self.record_origin(template, occurrence, node_index)?;
+                                    Ok(fallback)
+                                }
+                            });
+                        }
+                    };
+                    let child_origins = self.origins.split_off(origin_start);
+                    if let Some(color) = color {
+                        self.reserve_node()?;
+                        self.record_origin(template, occurrence, node_index)?;
+                        self.origins.extend(child_origins);
+                        Ok(vec![RichTextNode::Scope {
+                            style: Box::new(color_style(*color)),
+                            body: nodes,
+                        }])
+                    } else {
+                        self.origins.extend(child_origins);
+                        Ok(nodes)
+                    }
+                }
+            },
+        }
+    }
+
+    fn record_generated_text_origins(
+        &mut self,
+        template: RuntimeDialogueContentTemplateId,
+        occurrence: &[u32],
+        node_index: usize,
+        nodes: &[RichTextNode],
+    ) -> Result<(), DialogueContentMaterializationError> {
+        for node in nodes {
+            self.record_origin(template, occurrence, node_index)?;
+            if let RichTextNode::Scope { body, .. } = node {
+                self.record_generated_text_origins(template, occurrence, node_index, body)?;
+            }
+        }
+        Ok(())
+    }
+
     fn expand_content_insert(
         &mut self,
         slot: RuntimeDialogueValueSlotId,
@@ -1023,12 +1268,14 @@ impl MaterializationState<'_> {
             return Err(DialogueContentMaterializationError::InvalidBindingRole {
                 slot,
                 actual: binding.role(),
+                expected: RuntimeDialogueValueRole::Content,
             });
         }
         let Some(nested) = binding.content() else {
             return Err(DialogueContentMaterializationError::InvalidBindingRole {
                 slot,
                 actual: binding.role(),
+                expected: RuntimeDialogueValueRole::Content,
             });
         };
         if nested.artifact() != value.artifact() {
@@ -1055,6 +1302,8 @@ impl MaterializationState<'_> {
         if matches!(
             error,
             DialogueContentMaterializationError::FailedInsertion { .. }
+                | DialogueContentMaterializationError::InvalidFormattedPolicy { .. }
+                | DialogueContentMaterializationError::FormattedFailure { .. }
         ) {
             return Err(error);
         }
@@ -1067,7 +1316,7 @@ impl MaterializationState<'_> {
             }
             InlineFailurePolicy::Discard => Ok(None),
             InlineFailurePolicy::Fallback { fallback } => {
-                if let Some(text) = content_fallback_text(slot, &fallback) {
+                if let Some(text) = content_fallback_text(&fallback) {
                     return Ok(Some(RichTextNode::Text { text }));
                 }
                 Ok(None)
@@ -1124,6 +1373,7 @@ impl MaterializationState<'_> {
                 event: event.clone(),
             },
             RichTextNode::ContentInsert { .. }
+            | RichTextNode::FormattedInsert { .. }
             | RichTextNode::Scope { .. }
             | RichTextNode::Ruby { .. } => {
                 unreachable!("structured nodes are handled by expand_nodes before leaf rebasing")
@@ -1209,23 +1459,82 @@ struct MaterializationCheckpoint {
     effects: usize,
 }
 
-fn content_fallback_text(
-    slot: RuntimeDialogueValueSlotId,
-    fallback: &InlineFallback,
-) -> Option<String> {
+fn content_fallback_text(fallback: &InlineFallback) -> Option<String> {
     match fallback {
         InlineFallback::Text { text, .. } => Some(text.clone()),
-        InlineFallback::ExprSource { .. } | InlineFallback::CallSource { .. } => {
-            Some(format!("content slot {slot}"))
+        InlineFallback::ExprSource { .. }
+        | InlineFallback::CallSource { .. }
+        | InlineFallback::ValuePlain => None,
+    }
+}
+
+fn apply_formatted_failure(
+    slot: RuntimeDialogueValueSlotId,
+    policy: &InlineFailurePolicy,
+    reason: &str,
+    value_plain: Option<&str>,
+    call_source: &str,
+    value_source: &str,
+) -> Result<Vec<RichTextNode>, DialogueContentMaterializationError> {
+    match policy {
+        InlineFailurePolicy::FailLine => {
+            Err(DialogueContentMaterializationError::FailedInsertion {
+                slot,
+                source: Box::new(DialogueContentMaterializationError::FormattedFailure {
+                    slot,
+                    reason: reason.to_owned(),
+                }),
+            })
         }
-        InlineFallback::ValuePlain => None,
+        InlineFailurePolicy::Discard => Ok(Vec::new()),
+        InlineFailurePolicy::Fallback { fallback } => {
+            let text = match fallback {
+                InlineFallback::Text { text, .. } => Some(text.clone()),
+                InlineFallback::ExprSource { .. } => Some(value_source.to_owned()),
+                InlineFallback::CallSource { .. } => Some(call_source.to_owned()),
+                InlineFallback::ValuePlain => value_plain.map(ToOwned::to_owned),
+            };
+            Ok(text
+                .map(|text| vec![RichTextNode::Text { text }])
+                .unwrap_or_default())
+        }
+    }
+}
+
+fn colored_text_nodes(
+    text: &str,
+    color: Option<arcweft_core::value::RuntimeColor>,
+) -> Vec<RichTextNode> {
+    match color {
+        Some(color) => vec![RichTextNode::Scope {
+            style: Box::new(color_style(color)),
+            body: vec![RichTextNode::Text {
+                text: text.to_owned(),
+            }],
+        }],
+        None => vec![RichTextNode::Text {
+            text: text.to_owned(),
+        }],
+    }
+}
+
+fn color_style(color: arcweft_core::value::RuntimeColor) -> RichTextStyle {
+    RichTextStyle::Color {
+        value: RichTextColor::Rgba8 {
+            value: color.rgba8(),
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_core::value::{RuntimeDialogueOpaqueRole, RuntimeInlineTextValue};
+    use arcweft_core::value::{
+        RuntimeDialogueFormattedFailureSelection, RuntimeDialogueFormattedOutcome,
+        RuntimeDialogueFormattedSuccess, RuntimeDialogueFormattedValue, RuntimeDialogueOpaqueRole,
+        RuntimeInlineTextValue, RuntimeValue,
+    };
+    use arcweft_dialogue::FallbackStylePolicy;
 
     fn artifact(marker: u8) -> RuntimeArtifactFingerprint {
         RuntimeArtifactFingerprint::try_from_bytes([marker; 32]).expect("artifact")
@@ -1244,6 +1553,205 @@ mod tests {
             slot: RuntimeDialogueValueSlotId::from_zero_based(index).expect("slot"),
             semantic_type,
             value: RuntimeInlineTextValue::try_new(semantic_type, text).expect("inline text"),
+        }
+    }
+
+    fn formatted_template(
+        id: usize,
+        call_source: &str,
+        value_source: &str,
+    ) -> DialogueContentFragmentTemplate {
+        DialogueContentFragmentTemplate::try_new_canonical(
+            template_id(id),
+            vec![DialogueContentTemplateSlot::new(
+                RuntimeDialogueValueSlotId::from_zero_based(0).expect("formatted slot"),
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )],
+            Vec::new(),
+            Vec::new(),
+            RichTextDocument::new(vec![RichTextNode::FormattedInsert {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("formatted slot"),
+                call_source: call_source.to_owned(),
+                value_source: value_source.to_owned(),
+            }]),
+        )
+        .expect("formatted template")
+    }
+
+    #[test]
+    fn plain_text_context_template_has_one_exact_formatted_slot() {
+        let template = DialogueContentFragmentTemplate::plain_text_context(template_id(0))
+            .expect("plain-text context template");
+        assert_eq!(template.slots().len(), 1);
+        assert_eq!(template.marks().len(), 0);
+        assert_eq!(template.effects().len(), 0);
+        assert_eq!(
+            template.slots()[0],
+            DialogueContentTemplateSlot::new(
+                RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot"),
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )
+        );
+        assert!(matches!(
+            template.content().nodes.as_slice(),
+            [RichTextNode::FormattedInsert {
+                call_source,
+                value_source,
+                ..
+            }] if call_source.is_empty() && value_source.is_empty()
+        ));
+    }
+
+    fn formatted_value(
+        artifact: RuntimeArtifactFingerprint,
+        template: &DialogueContentFragmentTemplate,
+        outcome: RuntimeDialogueFormattedOutcome,
+        failure: RuntimeDialogueFormattedFailureSelection,
+    ) -> RuntimeDialogueContentValue {
+        RuntimeDialogueContentValue::try_new(
+            artifact,
+            template.id(),
+            template.digest(),
+            [RuntimeDialogueContentBinding::Formatted {
+                slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("formatted slot"),
+                semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                value: RuntimeDialogueFormattedValue::try_new(outcome, failure)
+                    .expect("formatted value"),
+            }],
+        )
+        .expect("Content value")
+    }
+
+    #[test]
+    fn formatted_success_materializes_text_and_color_without_retaining_the_slot() {
+        let artifact = artifact(0x52);
+        let template = formatted_template(0, "fmt(score)", "score");
+        let digest = template.digest();
+        let catalog = DialogueContentFragmentCatalog::try_from_templates(artifact, vec![template])
+            .expect("catalog");
+        let value = formatted_value(
+            artifact,
+            catalog.find(template_id(0)).expect("template"),
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Text("42".to_owned()),
+                color: Some(arcweft_core::value::RuntimeColor::new(1, 2, 3, 255)),
+            },
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+        );
+
+        let materialized = DialogueContentMaterializer::new(&catalog)
+            .materialize_with_policy(&value, &InlineFailurePolicy::FailLine)
+            .expect("materialized formatted text");
+
+        assert_eq!(
+            materialized.document().nodes,
+            vec![RichTextNode::Scope {
+                style: Box::new(RichTextStyle::Color {
+                    value: RichTextColor::Rgba8 {
+                        value: [1, 2, 3, 255]
+                    },
+                }),
+                body: vec![RichTextNode::Text {
+                    text: "42".to_owned(),
+                }],
+            }]
+        );
+        assert!(materialized.bindings().is_empty());
+        assert_eq!(value.template_digest(), digest);
+    }
+
+    #[test]
+    fn formatted_failure_uses_exact_expression_call_and_plain_value_fallbacks() {
+        let artifact = artifact(0x53);
+        let template = formatted_template(0, "fmt(score, locale)", "score");
+        let digest = template.digest();
+        let catalog = DialogueContentFragmentCatalog::try_from_templates(artifact, vec![template])
+            .expect("catalog");
+        let failure = || RuntimeDialogueFormattedOutcome::Failure {
+            reason: "formatter unavailable".to_owned(),
+            value_plain: Some("123".to_owned()),
+        };
+
+        for (selection, expected) in [
+            (
+                RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::String(
+                    "not an InlineFailure value".to_owned(),
+                )),
+                None,
+            ),
+            (
+                RuntimeDialogueFormattedFailureSelection::Fallback("fallback".to_owned()),
+                Some("fallback"),
+            ),
+            (
+                RuntimeDialogueFormattedFailureSelection::Discard(true),
+                None,
+            ),
+        ] {
+            let value = RuntimeDialogueContentValue::try_new(
+                artifact,
+                template_id(0),
+                digest,
+                [RuntimeDialogueContentBinding::Formatted {
+                    slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot"),
+                    semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+                    value: RuntimeDialogueFormattedValue::try_new(failure(), selection)
+                        .expect("formatted failure"),
+                }],
+            )
+            .expect("Content value");
+            let result = DialogueContentMaterializer::new(&catalog)
+                .materialize_with_policy(&value, &InlineFailurePolicy::Discard);
+            if expected.is_none()
+                && matches!(
+                    value.bindings()[0]
+                        .formatted()
+                        .map(RuntimeDialogueFormattedValue::failure_selection),
+                    Some(RuntimeDialogueFormattedFailureSelection::OnError(_))
+                )
+            {
+                assert!(matches!(
+                    result,
+                    Err(DialogueContentMaterializationError::InvalidFormattedPolicy { .. })
+                ));
+            } else {
+                assert_eq!(
+                    result.expect("policy is applied").document().nodes,
+                    expected.map_or_else(Vec::new, |text| vec![RichTextNode::Text {
+                        text: text.to_owned(),
+                    }])
+                );
+            }
+        }
+
+        let inherited = formatted_value(
+            artifact,
+            catalog.find(template_id(0)).expect("template"),
+            failure(),
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+        );
+        for (policy, expected) in [
+            (
+                InlineFailurePolicy::fallback_expr_source(FallbackStylePolicy::Plain),
+                "score",
+            ),
+            (
+                InlineFailurePolicy::fallback_call_source(FallbackStylePolicy::Plain),
+                "fmt(score, locale)",
+            ),
+            (InlineFailurePolicy::fallback_value_plain(), "123"),
+        ] {
+            let materialized = DialogueContentMaterializer::new(&catalog)
+                .materialize_with_policy(&inherited, &policy)
+                .expect("source fallback");
+            assert_eq!(
+                materialized.document().nodes,
+                vec![RichTextNode::Text {
+                    text: expected.to_owned(),
+                }]
+            );
         }
     }
 

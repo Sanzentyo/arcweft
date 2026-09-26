@@ -56,6 +56,16 @@ pub enum RichTextNode {
         slot: RuntimeDialogueValueSlotId,
         on_error: InlineFailureSelection,
     },
+    /// Inserts the checked result of a rich-text formatting operation.
+    ///
+    /// Source strings are retained exactly for recoverable expression/call
+    /// fallback policies. Formatting outcome and the selected dynamic policy
+    /// operand come from the matching typed Content binding.
+    FormattedInsert {
+        slot: RuntimeDialogueValueSlotId,
+        call_source: String,
+        value_source: String,
+    },
     HostEvent {
         event: DialogueHostEvent,
     },
@@ -149,6 +159,7 @@ impl RichTextNode {
             Self::Control { .. }
             | Self::Interpolation { .. }
             | Self::ContentInsert { .. }
+            | Self::FormattedInsert { .. }
             | Self::HostEvent { .. } => None,
         }
     }

@@ -1949,7 +1949,7 @@ fn apply_terminator(
                 }
                 match binding.role {
                     AwbcDialogueValueRole::Interpolation => {}
-                    AwbcDialogueValueRole::Content => {
+                    AwbcDialogueValueRole::Content | AwbcDialogueValueRole::Formatted => {
                         if !is_exact_dialogue_content_type(program, ty) {
                             return invalid_type(&at, "exact DialogueContent opaque value");
                         }

@@ -2053,6 +2053,16 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         });
                     }
                 }
+                crate::awbc::schema::AwbcDialogueValueRole::Formatted => {
+                    if !is_exact_dialogue_content_type(program, slot.semantic_type) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message:
+                                "dialogue formatted slot type is not the exact Content opaque owner"
+                                    .to_owned(),
+                        });
+                    }
+                }
             }
         }
         for (effect_index, effect) in template.effects.iter().enumerate() {

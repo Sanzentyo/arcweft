@@ -105,10 +105,12 @@ pub use opaque::{
     RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION, RuntimeDialogueActionValue,
     RuntimeDialogueAdvanceAction, RuntimeDialogueContentBinding,
     RuntimeDialogueContentEffectBinding, RuntimeDialogueContentValue,
-    RuntimeDialogueContentValueError, RuntimeDialogueOpaqueRole, RuntimeDialogueValueError,
-    RuntimeDialogueViewField, RuntimeDialogueViewValue, RuntimeHandleKind, RuntimeInlineTextValue,
-    RuntimeInlineTextValueError, RuntimeOpaquePersistence, RuntimeOpaqueValue,
-    RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
+    RuntimeDialogueContentValueError, RuntimeDialogueFormattedFailureSelection,
+    RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess,
+    RuntimeDialogueFormattedValue, RuntimeDialogueFormattedValueError, RuntimeDialogueOpaqueRole,
+    RuntimeDialogueValueError, RuntimeDialogueViewField, RuntimeDialogueViewValue,
+    RuntimeHandleKind, RuntimeInlineTextValue, RuntimeInlineTextValueError,
+    RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
 };
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,

@@ -1130,7 +1130,9 @@ impl<'a> StaticDocumentResolver<'a> {
                         },
                     });
                 }
-                RichTextNode::Interpolation { .. } | RichTextNode::ContentInsert { .. } => {
+                RichTextNode::Interpolation { .. }
+                | RichTextNode::ContentInsert { .. }
+                | RichTextNode::FormattedInsert { .. } => {
                     return Err(TextResolveError::DynamicNode {
                         node_index: current_index,
                     });

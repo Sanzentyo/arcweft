@@ -24,11 +24,12 @@ use crate::value::RuntimeDialogueOpaqueRole;
 pub enum RuntimeDialogueValueRole {
     Interpolation = 0,
     Content = 1,
+    Formatted = 2,
 }
 
 impl RuntimeDialogueValueRole {
     /// Complete canonical role inventory in wire/tag order.
-    pub const ALL: [Self; 2] = [Self::Interpolation, Self::Content];
+    pub const ALL: [Self; 3] = [Self::Interpolation, Self::Content, Self::Formatted];
 
     /// Canonical compact tag used by runtime-owned content envelopes.
     #[must_use]
@@ -42,6 +43,7 @@ impl RuntimeDialogueValueRole {
         match value {
             0 => Some(Self::Interpolation),
             1 => Some(Self::Content),
+            2 => Some(Self::Formatted),
             _ => None,
         }
     }
@@ -228,6 +230,15 @@ impl RuntimeDialogueContentTemplateManifest {
                     },
                 );
             }
+            if slot.role() == RuntimeDialogueValueRole::Formatted
+                && slot.semantic_type() != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+            {
+                return Err(
+                    RuntimeDialogueContentTemplateManifestError::InvalidFormattedSlot {
+                        slot: expected,
+                    },
+                );
+            }
         }
         for (index, effect) in self.effects.iter().enumerate() {
             let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
@@ -345,6 +356,8 @@ pub enum RuntimeDialogueContentTemplateManifestError {
     },
     #[error("runtime dialogue template manifest Content slot {slot} is not exact Content")]
     InvalidContentSlot { slot: RuntimeDialogueValueSlotId },
+    #[error("runtime dialogue template Formatted slot {slot} is not exact Content")]
+    InvalidFormattedSlot { slot: RuntimeDialogueValueSlotId },
     #[error("runtime dialogue template manifest id {id} has conflicting authority")]
     IdentityConflict {
         id: RuntimeDialogueContentTemplateId,

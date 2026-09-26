@@ -31,8 +31,8 @@ pub use character_dialogue::{
     RuntimeFieldPath, StructuredPatch,
 };
 pub use inline_failure::{
-    FallbackStylePolicy, InlineFailurePolicy, InlineFailureSelection, InlineFallback,
-    InlineTextFailure,
+    FallbackStylePolicy, InlineFailurePolicy, InlineFailurePolicyDecodeError,
+    InlineFailureSelection, InlineFallback, InlineTextFailure,
 };
 pub use presentation_profile::DialoguePresentationProfile;
 pub use presentation_revision::DialogueProfileRevision;

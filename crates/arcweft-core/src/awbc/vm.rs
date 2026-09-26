@@ -1227,6 +1227,9 @@ fn execute_instruction(
                         super::schema::AwbcDialogueValueRole::Content => {
                             crate::plan::RuntimeDialogueValueRole::Content
                         }
+                        super::schema::AwbcDialogueValueRole::Formatted => {
+                            crate::plan::RuntimeDialogueValueRole::Formatted
+                        }
                     };
                     Ok(crate::plan::RuntimeDialogueValueBinding {
                         slot: slot.slot,
@@ -1302,6 +1305,9 @@ fn execute_instruction(
                         }
                         super::schema::AwbcDialogueValueRole::Content => {
                             crate::plan::RuntimeDialogueValueRole::Content
+                        }
+                        super::schema::AwbcDialogueValueRole::Formatted => {
+                            crate::plan::RuntimeDialogueValueRole::Formatted
                         }
                     };
                     Ok(crate::plan::RuntimeDialogueContentSlot::new(
@@ -1978,6 +1984,9 @@ fn execute_terminator(
                             }
                             crate::awbc::schema::AwbcDialogueValueRole::Content => {
                                 crate::plan::RuntimeDialogueValueRole::Content
+                            }
+                            crate::awbc::schema::AwbcDialogueValueRole::Formatted => {
+                                crate::plan::RuntimeDialogueValueRole::Formatted
                             }
                         },
                         value: register(fiber, binding.value)?.clone(),
