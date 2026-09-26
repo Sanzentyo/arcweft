@@ -217,6 +217,35 @@ impl DialogueContentFragmentTemplate {
         )
     }
 
+    /// Creates the canonical one-slot template for one checked `fmt(...)`
+    /// call. The caller supplies the per-call identity assigned by the
+    /// verified runtime-plan manifest. Both authored source strings are kept
+    /// in the `FormattedInsert` transcript and therefore contribute to the
+    /// canonical digest.
+    pub fn formatted_call(
+        id: RuntimeDialogueContentTemplateId,
+        call_source: impl Into<String>,
+        value_source: impl Into<String>,
+    ) -> Result<Self, DialogueContentFragmentTemplateError> {
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0)
+            .ok_or(DialogueContentFragmentTemplateError::NonCanonicalSlots)?;
+        Self::try_new_canonical(
+            id,
+            vec![DialogueContentTemplateSlot::new(
+                slot,
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )],
+            Vec::new(),
+            Vec::new(),
+            RichTextDocument::new(vec![RichTextNode::FormattedInsert {
+                slot,
+                call_source: call_source.into(),
+                value_source: value_source.into(),
+            }]),
+        )
+    }
+
     /// Creates and validates a template's complete slot/mark/effect schema.
     pub fn try_new(
         id: RuntimeDialogueContentTemplateId,
@@ -802,6 +831,16 @@ pub enum DialogueContentMaterializationError {
     OccurrencePathOverflow,
 }
 
+impl DialogueContentMaterializationError {
+    fn is_recoverable_formatted_failure(&self) -> bool {
+        match self {
+            Self::FormattedFailure { .. } => true,
+            Self::FailedInsertion { source, .. } => source.is_recoverable_formatted_failure(),
+            _ => false,
+        }
+    }
+}
+
 /// Pure expansion boundary for an artifact-pinned fragment catalog.
 #[derive(Clone, Copy, Debug)]
 pub struct DialogueContentMaterializer<'a> {
@@ -1201,6 +1240,9 @@ impl MaterializationState<'_> {
                         Ok(nodes) => nodes,
                         Err(error) => {
                             self.rollback(checkpoint);
+                            if !error.is_recoverable_formatted_failure() {
+                                return Err(error);
+                            }
                             let reason = error.to_string();
                             return apply_formatted_failure(
                                 slot,
@@ -1561,22 +1603,8 @@ mod tests {
         call_source: &str,
         value_source: &str,
     ) -> DialogueContentFragmentTemplate {
-        DialogueContentFragmentTemplate::try_new_canonical(
-            template_id(id),
-            vec![DialogueContentTemplateSlot::new(
-                RuntimeDialogueValueSlotId::from_zero_based(0).expect("formatted slot"),
-                RuntimeDialogueValueRole::Formatted,
-                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
-            )],
-            Vec::new(),
-            Vec::new(),
-            RichTextDocument::new(vec![RichTextNode::FormattedInsert {
-                slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("formatted slot"),
-                call_source: call_source.to_owned(),
-                value_source: value_source.to_owned(),
-            }]),
-        )
-        .expect("formatted template")
+        DialogueContentFragmentTemplate::formatted_call(template_id(id), call_source, value_source)
+            .expect("formatted template")
     }
 
     #[test]
@@ -1602,6 +1630,63 @@ mod tests {
                 ..
             }] if call_source.is_empty() && value_source.is_empty()
         ));
+    }
+
+    #[test]
+    fn formatted_call_template_has_one_exact_slot_and_authored_sources() {
+        let template = DialogueContentFragmentTemplate::formatted_call(
+            template_id(1),
+            "fmt(score, style=\"number\")",
+            "score",
+        )
+        .expect("formatted-call template");
+
+        assert_eq!(template.slots().len(), 1);
+        assert_eq!(template.marks().len(), 0);
+        assert_eq!(template.effects().len(), 0);
+        assert_eq!(
+            template.slots()[0],
+            DialogueContentTemplateSlot::new(
+                RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot"),
+                RuntimeDialogueValueRole::Formatted,
+                RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            )
+        );
+        assert!(matches!(
+            template.content().nodes.as_slice(),
+            [RichTextNode::FormattedInsert {
+                slot,
+                call_source,
+                value_source,
+            }] if *slot == RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot")
+                && call_source == "fmt(score, style=\"number\")"
+                && value_source == "score"
+        ));
+    }
+
+    #[test]
+    fn formatted_call_template_digest_is_deterministic_and_source_sensitive() {
+        let id = template_id(2);
+        let call_source = "fmt(score, style=\"number\")";
+        let value_source = "score";
+        let first = DialogueContentFragmentTemplate::formatted_call(id, call_source, value_source)
+            .expect("formatted-call template");
+        let repeated =
+            DialogueContentFragmentTemplate::formatted_call(id, call_source, value_source)
+                .expect("same formatted-call template");
+        let different_call = DialogueContentFragmentTemplate::formatted_call(
+            id,
+            "fmt(score, style=\"currency\")",
+            value_source,
+        )
+        .expect("changed call-source template");
+        let different_value =
+            DialogueContentFragmentTemplate::formatted_call(id, call_source, "player.score")
+                .expect("changed value-source template");
+
+        assert_eq!(first.digest(), repeated.digest());
+        assert_ne!(first.digest(), different_call.digest());
+        assert_ne!(first.digest(), different_value.digest());
     }
 
     fn formatted_value(
@@ -1753,6 +1838,84 @@ mod tests {
                 }]
             );
         }
+    }
+
+    #[test]
+    fn formatted_nested_content_keeps_template_errors_fatal_despite_fallback() {
+        let artifact = artifact(0x54);
+        let outer_template = formatted_template(0, "fmt(value)", "value");
+        let missing_template = template_id(1);
+        let nested = RuntimeDialogueContentValue::try_new(
+            artifact,
+            missing_template,
+            RuntimeDialogueContentTemplateDigest::from_bytes([0x56; 32]),
+            [],
+        )
+        .expect("Content value with missing template");
+        let catalog = DialogueContentFragmentCatalog::try_from_templates(
+            artifact,
+            vec![outer_template.clone()],
+        )
+        .expect("catalog");
+        let outer = formatted_value(
+            artifact,
+            catalog.find(outer_template.id()).expect("outer template"),
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Content(Box::new(nested)),
+                color: None,
+            },
+            RuntimeDialogueFormattedFailureSelection::Fallback("outer fallback".to_owned()),
+        );
+
+        let result = DialogueContentMaterializer::new(&catalog)
+            .materialize_with_policy(&outer, &InlineFailurePolicy::FailLine);
+
+        assert!(matches!(
+            result,
+            Err(DialogueContentMaterializationError::MissingTemplate { template })
+                if template == missing_template
+        ));
+    }
+
+    #[test]
+    fn formatted_nested_failure_remains_recoverable_by_outer_fallback() {
+        let artifact = artifact(0x57);
+        let outer_template = formatted_template(0, "fmt(value)", "value");
+        let nested_template = formatted_template(1, "fmt(inner)", "inner");
+        let catalog = DialogueContentFragmentCatalog::try_from_templates(
+            artifact,
+            vec![outer_template.clone(), nested_template.clone()],
+        )
+        .expect("catalog");
+        let nested = formatted_value(
+            artifact,
+            catalog.find(nested_template.id()).expect("nested template"),
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason: "nested formatter unavailable".to_owned(),
+                value_plain: None,
+            },
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+        );
+        let outer = formatted_value(
+            artifact,
+            catalog.find(outer_template.id()).expect("outer template"),
+            RuntimeDialogueFormattedOutcome::Success {
+                value: RuntimeDialogueFormattedSuccess::Content(Box::new(nested)),
+                color: None,
+            },
+            RuntimeDialogueFormattedFailureSelection::Fallback("outer fallback".to_owned()),
+        );
+
+        let materialized = DialogueContentMaterializer::new(&catalog)
+            .materialize_with_policy(&outer, &InlineFailurePolicy::FailLine)
+            .expect("nested formatter failure uses outer policy");
+
+        assert_eq!(
+            materialized.document().nodes,
+            vec![RichTextNode::Text {
+                text: "outer fallback".to_owned(),
+            }]
+        );
     }
 
     #[test]
