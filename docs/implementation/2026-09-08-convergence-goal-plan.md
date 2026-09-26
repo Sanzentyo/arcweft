@@ -1749,3 +1749,19 @@ dispatch の manifest contract と Suspend mode を検証し、普通の extern
 check、変更 crate all-target Clippy、fmt、cached diff check が通過した。
 check/Clippy は warning あり。producer start、Need handle、Await の実行、
 AWBC codec/snapshot と 049 fixture 受理はまだこの SHA に含まれない。
+
+## AWBC Need Await typed suspension checkpoint — 2026-09-26
+
+`main` に `92a9b91fbdf9bbd35574b5c9362ab47bb701755a` を push した。
+既存の外部 Need Await に対し、suspended target と save DTO が発生元の
+register と exact item `T` を保持する。復元時に register/type/NeedId の
+一致を検証し、main/deferred Product 経路は `Ready` payload が `T` に
+入ることを確認してから AwaitReady を発行・束縛する。verifier も Await
+binding pattern を `Need<T>` の `T` で検証する。
+
+不正な Ready focused test 1/1、save DTO round-trip/型改ざん 1/1、
+direct suspension 8/8、Core all-target check、workspace all-target/all-feature
+check、Core all-target Clippy、fmt と cached diff check が通過した。
+check/Clippy は warning あり。これは外部 Need の既存経路の安全性 cut で、
+StartNeed producer registry・task event link・Product restore の移行と
+049 fixture の実行受理はまだ含まれない。
