@@ -1812,3 +1812,20 @@ lowering 不足で未合格。これらを全体 gate の成功とは扱わな�
 push 後の working tree は 053 fixture `.arcw` と companion TOML/assets のみ
 dirty。051 の容量 method、053 の一般 formatter 実行、公開 CLI の typed
 `Ref<Asset>` 引数、その他の goal 受入条件は引き続き必須の残件である。
+
+## CapacityMethod 型契約 checkpoint — 2026-09-27
+
+`main` に `810655d4198eac3520b59e42e613f92fd1683f8d` を push した。
+`with_capacity`、`reserve`、`shrink_to` の引数を一つの checked `usize` に
+閉じ、`Vec<T>.push` は `T` を要求する。`push`/`pop`/`pop_front` は Vec に
+限定し、仕様にない String/Bytes の `push` 受理、任意個・未型付けの容量引数、
+到達不能な `collect` schema を除いた。直接構築する CapacityMethod identity
+も同じ family/arity を検証する。LSP の旧三引数署名期待と維持仕様を更新し、
+`&mut self` は現行の local/直接 nominal field place を要求し、binding の
+`mut` 注記を別物として扱う現行契約を明記した。
+
+Sema の容量 method focused test 3/3、署名 query 1/1、LSP native/署名
+projection parity 1/1、fmt、cached diff check が通過した。この commit は
+型契約の訂正であり、runtime の constructor/容量 hint/Vec push・pop は
+未統合。051 fixture の runtime 受理や workspace gate の合格は主張しない。
+053 fixture は引き続き別の active diff である。
