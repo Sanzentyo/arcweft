@@ -218,6 +218,70 @@ flow main() -> String {
 }
 
 #[test]
+fn selected_need_producer_projects_its_instantiated_result_and_admission() {
+    let (project, context) = removed_role_project(
+        r#"
+flow main(background: Ref<Asset>) -> i64 {
+    let pending = asset.image(background)
+    return 1i64
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("a selected standard Need producer has a closed runtime fact");
+    let producers = compiled
+        .runtime_facts()
+        .calls()
+        .filter_map(|(owner, call)| call.need_producer().map(|producer| (owner, call, producer)))
+        .collect::<Vec<_>>();
+    let [(owner, call, producer)] = producers.as_slice() else {
+        panic!("one selected asset producer call is projected")
+    };
+
+    assert_eq!(
+        producer.operation(),
+        arcweft_core::task::NeedProducerOperation::AssetLoad {
+            kind: arcweft_core::task::AssetLoadKind::Image,
+        }
+    );
+    assert_eq!(
+        producer.policy(),
+        arcweft_core::task::TaskPolicy::JoinSameKey
+    );
+    assert_eq!(
+        compiled.runtime_facts().expression_type(*owner),
+        Some(producer.need_type()),
+        "producer item T must be the exact selected call result Need<T>"
+    );
+    let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(item) =
+        producer.need_type().shape()
+    else {
+        panic!("selected producer result is Need<T>")
+    };
+    assert!(matches!(
+        item.shape(),
+        arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Result { .. }
+    ));
+    assert_eq!(producer.admission().arguments().len(), 1);
+    assert_eq!(
+        producer.admission().arguments()[0].ty().as_bytes(),
+        call.operands()[0].ty().identity().as_bytes(),
+        "the admission and runtime call retain the same checked argument type"
+    );
+    assert!(matches!(
+        call.operands()[0].source(),
+        arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandSource::Expression(_)
+    ));
+    assert!(matches!(
+        call.dispatch(),
+        arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallDispatch::Static(
+            arcweft_runtime_plan::semantic_facts::RuntimeResolvedStaticCallTarget::Registered(_)
+        )
+    ));
+}
+
+#[test]
 fn runtime_project_materialization_indexes_the_source_row_for_rest_spread() {
     let (project, context) = removed_role_project(
         r#"
@@ -1546,13 +1610,54 @@ flow main() -> Result<i64, String> {
         .project_function_instances()
         .collect::<Vec<_>>();
     assert_eq!(instances.len(), 4);
-    for instance in instances {
+    for instance in &instances {
         assert_eq!(
             instance.suspension(),
             arcweft_lang_sema::final_analysis::CheckedSuspensionRole::MaySuspend
         );
         assert_eq!(instance.execution(), arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExecution::ExecutableFunctionSite);
     }
+    let mut bound_extern_need_calls = 0;
+    for instance in &instances {
+        let semantics = instance.semantics();
+        semantics.visit_calls(&mut |owner, call| {
+            let arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallDispatch::Static(
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedStaticCallTarget::Host(host),
+            ) = call.dispatch()
+            else {
+                return;
+            };
+            if !matches!(
+                host.owner(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
+                    _
+                )
+            ) {
+                return;
+            }
+            bound_extern_need_calls += 1;
+            assert!(host.contract().is_some());
+            assert_eq!(host.mode(), arcweft_core::step::RuntimeHostCallMode::Suspend);
+            assert!(call.need_producer().is_none());
+            let result = semantics
+                .expression_source_type(owner)
+                .expect("suspending extern call retains its selected result type");
+            let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(item) = result.shape()
+            else {
+                panic!("manifest-bound extern call result remains Need<T>")
+            };
+            assert!(matches!(
+                item.shape(),
+                arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Result {
+                    value,
+                    error,
+                    ..
+                } if matches!(value.shape(), arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Unit)
+                    && matches!(error.shape(), arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::String)
+            ));
+        });
+    }
+    assert!(bound_extern_need_calls > 0);
     assert_eq!(
         compiled
             .runtime_plan()

@@ -41,6 +41,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
+use arcweft_core::task::{NeedProducerOperation, TaskPolicy};
 use arcweft_core::value::{
     RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
     RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
@@ -3335,6 +3336,16 @@ pub enum RuntimeResolvedCallError {
         "ordinary project-function call operands do not match its logical materialization plan"
     )]
     ProjectFunctionMaterializationMismatch,
+    #[error("Need producer role is attached to a call that does not produce Need<T>")]
+    NeedProducerResultNotNeed,
+    #[error("Need producer call must retain only source-ordered scalar arguments")]
+    NeedProducerOperandShape,
+    #[error("Need producer admission argument count differs from its call operands")]
+    NeedProducerAdmissionCount,
+    #[error("Need producer admission type differs at argument {ordinal}")]
+    NeedProducerAdmissionType { ordinal: u32 },
+    #[error("Need producer dispatch is not a registered or manifest-bound extern call")]
+    NeedProducerDispatch,
 }
 
 /// Runtime attached-content value retained separately from ordinary authored
@@ -3428,8 +3439,54 @@ pub struct RuntimeResolvedCall {
     operands: Box<[RuntimeResolvedCallOperand]>,
     attached_content: Option<RuntimePositionedAttachedContent>,
     project_function: Option<RuntimeProjectFunctionCallPlan>,
+    need_producer: Option<RuntimeResolvedNeedProducer>,
     mutation: Option<RuntimeResolvedCallMutation>,
     result: RuntimeCallResultShape,
+}
+
+/// Exact checked producer authority projected from one selected callable
+/// schema. The payload is retained as the instantiated result's `Need<T>`;
+/// it is never copied into the Sema-owned producer role.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeResolvedNeedProducer {
+    operation: NeedProducerOperation,
+    policy: TaskPolicy,
+    need_type: RuntimeNormalizedType,
+    admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
+}
+
+impl RuntimeResolvedNeedProducer {
+    pub fn try_new(
+        role: arcweft_lang_sema::callable::CallableNeedProducerRole,
+        need_type: RuntimeNormalizedType,
+        admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        if !matches!(need_type.shape(), RuntimeTypeShape::Need(_)) {
+            return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        }
+        Ok(Self {
+            operation: role.operation(),
+            policy: role.policy(),
+            need_type,
+            admission,
+        })
+    }
+
+    pub const fn operation(&self) -> NeedProducerOperation {
+        self.operation
+    }
+
+    pub const fn policy(&self) -> TaskPolicy {
+        self.policy
+    }
+
+    pub const fn need_type(&self) -> &RuntimeNormalizedType {
+        &self.need_type
+    }
+
+    pub const fn admission(&self) -> &arcweft_lang_sema::CheckedNeedProducerAdmission {
+        &self.admission
+    }
 }
 
 /// Checked mutation owned by one final call fact.
@@ -3665,9 +3722,79 @@ impl RuntimeResolvedCall {
             operands: operands.into_boxed_slice(),
             attached_content: positioned_attached_content,
             project_function,
+            need_producer: None,
             mutation: None,
             result,
         })
+    }
+
+    /// Attaches the exact selected producer role and Sema admission after
+    /// checking that they describe this call's source-ordered argument row.
+    pub fn try_with_need_producer(
+        mut self,
+        producer: RuntimeResolvedNeedProducer,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        if self.result != RuntimeCallResultShape::Value
+            || self.project_function.is_some()
+            || self.attached_content.is_some()
+            || self.mutation.is_some()
+            || !matches!(producer.need_type().shape(), RuntimeTypeShape::Need(_))
+        {
+            return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        }
+        let target_admitted = match self.dispatch() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(_)) => {
+                true
+            }
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) => {
+                matches!(
+                    host.owner(),
+                    RuntimeResolvedHostCallOwner::ExternCapability(_)
+                ) && host.contract().is_some()
+                    && host.mode() == RuntimeHostCallMode::Suspend
+            }
+            RuntimeResolvedCallDispatch::Static(_) | RuntimeResolvedCallDispatch::Value { .. } => {
+                false
+            }
+        };
+        if !target_admitted {
+            return Err(RuntimeResolvedCallError::NeedProducerDispatch);
+        }
+        let admitted_arguments = producer.admission().arguments();
+        if admitted_arguments.len() != self.operands.len() {
+            return Err(RuntimeResolvedCallError::NeedProducerAdmissionCount);
+        }
+        for (ordinal, (admitted, operand)) in admitted_arguments
+            .iter()
+            .zip(self.operands.iter())
+            .enumerate()
+        {
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| RuntimeResolvedCallError::NeedProducerAdmissionCount)?;
+            let RuntimeResolvedCallOperandOrigin::Argument { argument, slot } = operand.origin()
+            else {
+                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
+            };
+            let RuntimeResolvedCallOperandSource::Expression(_) = operand.source() else {
+                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
+            };
+            if *argument != ordinal
+                || *slot != 0
+                || !matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                )
+            {
+                return Err(RuntimeResolvedCallError::NeedProducerOperandShape);
+            }
+            if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
+                return Err(RuntimeResolvedCallError::NeedProducerAdmissionType { ordinal });
+            }
+        }
+        if self.need_producer.replace(producer).is_some() {
+            return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        }
+        Ok(self)
     }
 
     /// Attaches a checked in-place operation after validating the complete
@@ -3748,6 +3875,10 @@ impl RuntimeResolvedCall {
 
     pub const fn project_function(&self) -> Option<&RuntimeProjectFunctionCallPlan> {
         self.project_function.as_ref()
+    }
+
+    pub const fn need_producer(&self) -> Option<&RuntimeResolvedNeedProducer> {
+        self.need_producer.as_ref()
     }
 
     pub const fn mutation(&self) -> Option<RuntimeResolvedCallMutation> {
@@ -8718,6 +8849,8 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("expression {expression:?} has a runtime call disposition but is not a Call")]
     InvalidRuntimeCallDisposition { expression: ExprId },
+    #[error("Need producer fact for {expression:?} does not match its exact call result type")]
+    InvalidNeedProducerFact { expression: ExprId },
     #[error("selected runtime call {expression:?} requires a runtime receiver but has none")]
     MissingRuntimeCallReceiver { expression: ExprId },
     #[error("runtime trait method fact does not match its final-HIR implementation member")]
@@ -9774,6 +9907,17 @@ fn validate_call(
     };
     if !attached_matches {
         return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
+    }
+    if let Some(producer) = call.need_producer() {
+        let Some(result_type) = expression_source_type else {
+            return Err(RuntimeSemanticFactsError::InvalidNeedProducerFact { expression });
+        };
+        if producer.need_type() != result_type
+            || !matches!(result_type.shape(), RuntimeTypeShape::Need(_))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidNeedProducerFact { expression });
+        }
+        validate_normalized_type(modules, producer.need_type())?;
     }
     if let Some(plan) = call.project_function() {
         validate_callable(modules, plan.callable())?;

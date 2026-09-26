@@ -130,8 +130,8 @@ use arcweft_lang_sema::{
         AgentIntrinsicSignatureId, BuiltinCallableId, CallTargetFacts, CallableCandidateId,
         CallableFamily, CallableLogLevel, CallableParameterPresence, CallableValidator,
         CheckedAttachedContentAdmission, CheckedCallApplication, CheckedCallArgumentPassing,
-        CheckedCallCalleeExecution, CheckedCallOperandDestination, CheckedCallReceiverProjection,
-        CheckedCallRuntimeOperand, CheckedCallableExecution,
+        CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallOperandDestination,
+        CheckedCallReceiverProjection, CheckedCallRuntimeOperand, CheckedCallableExecution,
         CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeInput,
         CheckedProjectFunctionRuntimeOutcome, CheckedProjectFunctionRuntimeSelection,
         CollectionMethodId, DomainMethodId, LineContextMethodId, LineScheduleCallableId,
@@ -227,13 +227,14 @@ use arcweft_runtime_plan::{
         RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
         RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
         RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedMutablePlace,
-        RuntimeResolvedNominal, RuntimeResolvedNominalRecord, RuntimeResolvedSelect,
-        RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
-        RuntimeResolvedVariant, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
-        RuntimeSequenceKind, RuntimeStandardMapCall, RuntimeStandardMapFamily,
-        RuntimeStandardMapOperandOrder, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-        RuntimeTriggerAdmission, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
-        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeResolvedNeedProducer, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
+        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
+        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
+        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
+        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
+        RuntimeTraitMethodFact, RuntimeTriggerAdmission, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -6087,6 +6088,116 @@ fn runtime_call(
         owner,
         reason: error.to_string(),
     })?;
+    let call = if let CallableValidator::NeedProducer(role) = selected.schema().validator() {
+        let admission = analysis
+            .checked_need_producer_admission_for_call(
+                project,
+                symbols,
+                world,
+                owner,
+                arcweft_lang_sema::CheckedOwnershipLimits::PRODUCTION,
+            )
+            .map_err(|error| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: format!("selected Need producer arguments are not admitted: {error}"),
+            })?;
+        let checked_operands = application.core().runtime_operands();
+        if admission.arguments().len() != checked_operands.len() {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "selected Need producer admission does not cover its source row".to_owned(),
+            });
+        }
+        for (ordinal, (admitted, checked)) in admission
+            .arguments()
+            .iter()
+            .zip(checked_operands.iter())
+            .enumerate()
+        {
+            let CheckedCallRuntimeOperand::Argument {
+                argument,
+                passing,
+                slot,
+            } = checked
+            else {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "selected Need producer has a receiver outside its argument admission"
+                        .to_owned(),
+                });
+            };
+            let CheckedCallArgumentSlotSource::Expression(_) = slot.source().raw() else {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "selected Need producer argument is not one expression source"
+                        .to_owned(),
+                });
+            };
+            if *passing == CheckedCallArgumentPassing::Spread
+                || usize::from(argument.get()) != ordinal
+                || slot.slot().get() != 0
+                || admitted.coordinate() != slot.source().coordinate()
+                || admitted.ty() != slot.inferred().semantic_identity_digest()?
+            {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "selected Need producer admission differs from source-ordered checked arguments"
+                        .to_owned(),
+                });
+            }
+        }
+        let result_type = application.result().value_type().ok_or_else(|| {
+            RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "selected Need producer has no checked value result".to_owned(),
+            }
+        })?;
+        let need_type = runtime_type_under(result_type, enclosing, symbols, world, analysis)?;
+        if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) =
+            call.dispatch()
+            && matches!(
+                host.owner(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
+                    _
+                )
+            )
+        {
+            let manifest_result = selected.schema().value_type().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "manifest-bound Need producer has no callable result type".to_owned(),
+                }
+            })?;
+            let manifest_result =
+                runtime_type_under(manifest_result, enclosing, symbols, world, analysis)?;
+            if host.contract().is_none()
+                || host.mode() != RuntimeHostCallMode::Suspend
+                || manifest_result != need_type
+                || !matches!(manifest_result.shape(), arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(_))
+            {
+                return Err(RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "extern Need producer manifest result must match the exact suspended Need<T> call result"
+                        .to_owned(),
+                });
+            }
+        }
+        let producer =
+            RuntimeResolvedNeedProducer::try_new(*role, need_type, admission).map_err(|error| {
+                RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: error.to_string(),
+                }
+            })?;
+        call.try_with_need_producer(producer).map_err(|error| {
+            RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: error.to_string(),
+            }
+        })?
+    } else {
+        call
+    };
     let call = if let Some(mutation) = mutation {
         call.try_with_mutation(mutation)
             .map_err(|error| RuntimeSemanticProjectionError::Call {
