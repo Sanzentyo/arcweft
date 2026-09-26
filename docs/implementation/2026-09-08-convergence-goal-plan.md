@@ -1829,3 +1829,24 @@ projection parity 1/1、fmt、cached diff check が通過した。この commit 
 型契約の訂正であり、runtime の constructor/容量 hint/Vec push・pop は
 未統合。051 fixture の runtime 受理や workspace gate の合格は主張しない。
 053 fixture は引き続き別の active diff である。
+
+## CapacityMethod constructor / 容量 hint 実行 checkpoint — 2026-09-27
+
+`main` に `b6e42b6cc86a39e9c8871de499d1d8f6ae2816aa` を push した。
+選択済み CapacityMethod を Vec/String/Bytes の typed runtime intrinsic へ
+投影し、`with_capacity` は空の該当 collection を返し、`reserve`、
+`shrink_to`、`shrink` は checked `usize` と writable receiver を検証して
+Unit を返す。容量値そのものは言語から観測できない。native/pure と AWBC
+product host が同じ評価を利用し、AWBC verifier は family、arity、型、
+effect row を検証する。Unit の式文は runtime-plan が discard binding として
+一度だけ評価する。
+
+Vec/String/Bytes の canonical source constructor と hint の native/AWBC
+6/6、compiler callable execution 102/102、runtime-plan lib 89/89、
+Core 容量 focused 3/3、変更 crate の all-target/all-feature check、fmt、
+cached diff check が通過した。check/test に既存 warning がある。
+`String::with_capacity` / `Bytes::with_capacity` は受理済み source
+契約外であり、canonical form は `String.with_capacity` /
+`Bytes.with_capacity`。Vec `push`/`pop` の実更新、051 fixture、workspace
+test gate はこの SHA では未達・未実施である。push 後の dirty は Vec
+更新の作業差分と 053 fixture companion で、別の goal は含まれない。
