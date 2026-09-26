@@ -26,13 +26,17 @@ use crate::plan::{
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
-    RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeCharacterDialogueProducerId,
-    RuntimeDialogueOpaqueRole, RuntimeReductionProducer,
+    RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeCapacityFamily,
+    RuntimeCapacityOperation, RuntimeCharacterDialogueProducerId, RuntimeDialogueOpaqueRole,
+    RuntimeIntrinsic, RuntimeReductionProducer,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchOperation,
 };
 use std::collections::{BTreeSet, VecDeque};
+
+#[cfg(test)]
+mod capacity_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
@@ -1075,6 +1079,9 @@ fn apply_instruction(
         } => {
             check_index(program.intrinsics.len(), intrinsic.0, "intrinsics", &at)?;
             let intrinsic = &program.intrinsics[intrinsic.index()];
+            if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
+                verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
+            }
             verify_callable(
                 verifier,
                 function,
@@ -3544,6 +3551,69 @@ fn dynamic_type(program: &AwbcProgram) -> Option<AwbcTypeId> {
         .position(|ty| matches!(ty.shape(), AwbcRuntimeTypeShape::Dynamic))
         .and_then(|index| u32::try_from(index).ok())
         .map(AwbcTypeId)
+}
+
+fn verify_capacity_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let Some((family, operation)) = intrinsic.capacity_contract() else {
+        return Ok(());
+    };
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "capacity intrinsic has no signature".to_owned(),
+        })?;
+    let collection = |ty| match (family, runtime_shape(program, ty)) {
+        (
+            RuntimeCapacityFamily::Vec,
+            Some(AwbcRuntimeTypeShape::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                ..
+            }),
+        )
+        | (RuntimeCapacityFamily::String, Some(AwbcRuntimeTypeShape::String))
+        | (RuntimeCapacityFamily::Bytes, Some(AwbcRuntimeTypeShape::Bytes)) => true,
+        _ => false,
+    };
+    let usize_type = |ty| {
+        matches!(
+            runtime_shape(program, ty),
+            Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize))
+        )
+    };
+    let unit_result = signature
+        .result
+        .is_some_and(|ty| matches!(runtime_shape(program, ty), Some(AwbcRuntimeTypeShape::Unit)));
+    let valid = match (operation, signature.params.as_slice()) {
+        (RuntimeCapacityOperation::Construct, [hint]) => {
+            usize_type(*hint) && signature.result.is_some_and(collection)
+        }
+        (RuntimeCapacityOperation::Hint, [receiver, hint]) => {
+            collection(*receiver) && usize_type(*hint) && unit_result
+        }
+        (RuntimeCapacityOperation::Shrink, [receiver]) => collection(*receiver) && unit_result,
+        _ => false,
+    };
+    let pure = program
+        .effect_sets
+        .get(signature.effects.index())
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !valid || !pure {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: format!(
+                "capacity intrinsic `{}` has an invalid typed signature",
+                intrinsic.as_label()
+            ),
+        });
+    }
+    Ok(())
 }
 
 fn runtime_shape(program: &AwbcProgram, ty: AwbcTypeId) -> Option<&AwbcRuntimeTypeShape> {

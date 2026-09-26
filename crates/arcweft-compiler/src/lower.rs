@@ -5867,6 +5867,14 @@ fn runtime_call(
     let selected = application.core().candidates().selected();
     let is_vec_pop_front = selected.capacity_operation()
         == Some(arcweft_lang_sema::callable::CheckedCapacityOperation::PopFront);
+    let is_capacity_hint = matches!(
+        selected.capacity_operation(),
+        Some(
+            arcweft_lang_sema::callable::CheckedCapacityOperation::Reserve
+                | arcweft_lang_sema::callable::CheckedCapacityOperation::ShrinkTo
+                | arcweft_lang_sema::callable::CheckedCapacityOperation::Shrink
+        )
+    );
     let mut operands = Vec::new();
     let mut positioned_attached_content = None;
     let mut mutation = None;
@@ -5878,7 +5886,7 @@ fn runtime_call(
                 abi_position,
                 ..
             } => {
-                if is_vec_pop_front {
+                if is_vec_pop_front || is_capacity_hint {
                     let receiver = match source.raw() {
                         arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(
                             receiver,
@@ -5888,7 +5896,7 @@ fn runtime_call(
                         } => {
                             return Err(RuntimeSemanticProjectionError::Call {
                                 owner,
-                                reason: "Vec.pop_front receiver is not a writable local place"
+                                reason: "capacity receiver is not a writable local place"
                                     .to_owned(),
                             });
                         }
@@ -5896,46 +5904,51 @@ fn runtime_call(
                     let checked_receiver = analysis.expression(receiver).ok_or_else(|| {
                         RuntimeSemanticProjectionError::Call {
                             owner,
-                            reason: "Vec.pop_front receiver has no checked expression fact"
-                                .to_owned(),
+                            reason: "capacity receiver has no checked expression fact".to_owned(),
                         }
                     })?;
                     let Some(place) = checked_receiver.mutable_place() else {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
-                            reason: "Vec.pop_front receiver must be a local or direct nominal field place"
-                                .to_owned(),
+                            reason:
+                                "capacity receiver must be a local or direct nominal field place"
+                                    .to_owned(),
                         });
                     };
-                    if !matches!(
-                        checked_expression_type(checked_receiver, receiver)?,
-                        TypeKind::Vec(_)
-                    ) {
+                    let receiver_type = checked_expression_type(checked_receiver, receiver)?;
+                    if (is_vec_pop_front && !matches!(receiver_type, TypeKind::Vec(_)))
+                        || (is_capacity_hint && receiver_type != ty)
+                    {
                         return Err(RuntimeSemanticProjectionError::Call {
                             owner,
-                            reason: "Vec.pop_front checked receiver is not a Vec".to_owned(),
+                            reason: "capacity receiver differs from its checked method type"
+                                .to_owned(),
                         });
                     }
-                    let place = match place.nominal_field() {
-                        Some(field) => {
-                            let runtime_field = field.field().runtime_field().ok_or_else(|| {
-                                RuntimeSemanticProjectionError::Call {
-                                    owner,
-                                    reason: "Vec.pop_front field has no runtime field identity"
-                                        .to_owned(),
+                    if is_vec_pop_front {
+                        let place = match place.nominal_field() {
+                            Some(field) => {
+                                let runtime_field =
+                                    field.field().runtime_field().ok_or_else(|| {
+                                        RuntimeSemanticProjectionError::Call {
+                                            owner,
+                                            reason:
+                                                "Vec.pop_front field has no runtime field identity"
+                                                    .to_owned(),
+                                        }
+                                    })?;
+                                RuntimeResolvedMutablePlace::NominalField {
+                                    base: place.local_id(),
+                                    field: runtime_field,
                                 }
-                            })?;
-                            RuntimeResolvedMutablePlace::NominalField {
-                                base: place.local_id(),
-                                field: runtime_field,
                             }
-                        }
-                        None => RuntimeResolvedMutablePlace::Local(place.local_id()),
-                    };
-                    mutation = Some(RuntimeResolvedCallMutation::VecPopFront {
-                        source: receiver,
-                        place,
-                    });
+                            None => RuntimeResolvedMutablePlace::Local(place.local_id()),
+                        };
+                        mutation = Some(RuntimeResolvedCallMutation::VecPopFront {
+                            source: receiver,
+                            place,
+                        });
+                    }
                 }
                 operands.push(RuntimeResolvedCallOperand::new(
                     abi_position,
@@ -8823,6 +8836,18 @@ fn runtime_intrinsic(
         return match (method.receiver(), method.method().as_str()) {
             (TypeKind::String, "trim") => Some(RuntimeIntrinsic::StringTrim),
             (TypeKind::String, "to_string") => Some(RuntimeIntrinsic::StringToString),
+            (TypeKind::Vec(_), "with_capacity") => Some(RuntimeIntrinsic::VecWithCapacity),
+            (TypeKind::String, "with_capacity") => Some(RuntimeIntrinsic::StringWithCapacity),
+            (TypeKind::Bytes, "with_capacity") => Some(RuntimeIntrinsic::BytesWithCapacity),
+            (TypeKind::Vec(_), "reserve") => Some(RuntimeIntrinsic::VecReserve),
+            (TypeKind::String, "reserve") => Some(RuntimeIntrinsic::StringReserve),
+            (TypeKind::Bytes, "reserve") => Some(RuntimeIntrinsic::BytesReserve),
+            (TypeKind::Vec(_), "shrink_to") => Some(RuntimeIntrinsic::VecShrinkTo),
+            (TypeKind::String, "shrink_to") => Some(RuntimeIntrinsic::StringShrinkTo),
+            (TypeKind::Bytes, "shrink_to") => Some(RuntimeIntrinsic::BytesShrinkTo),
+            (TypeKind::Vec(_), "shrink") => Some(RuntimeIntrinsic::VecShrink),
+            (TypeKind::String, "shrink") => Some(RuntimeIntrinsic::StringShrink),
+            (TypeKind::Bytes, "shrink") => Some(RuntimeIntrinsic::BytesShrink),
             _ => None,
         };
     }

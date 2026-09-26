@@ -26,10 +26,11 @@ use crate::value::{
     RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue, RuntimeSeq,
     RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
     RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary,
-    evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
-    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
-    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_index_intrinsic,
-    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
+    evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
+    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
+    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
+    evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
@@ -2656,6 +2657,11 @@ impl<'a> PureEvaluator<'a> {
         }
         if let Some(intrinsic) = callee.as_intrinsic()
             && let Some(value) = evaluate_string_intrinsic(intrinsic, &args)?
+        {
+            return Ok(value);
+        }
+        if let Some(intrinsic) = callee.as_intrinsic()
+            && let Some(value) = evaluate_capacity_intrinsic(intrinsic, &args)?
         {
             return Ok(value);
         }

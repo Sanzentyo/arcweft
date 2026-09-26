@@ -518,6 +518,18 @@ pub enum RuntimeIntrinsic {
     CoreIndex,
     StringTrim,
     StringToString,
+    VecWithCapacity,
+    StringWithCapacity,
+    BytesWithCapacity,
+    VecReserve,
+    StringReserve,
+    BytesReserve,
+    VecShrinkTo,
+    StringShrinkTo,
+    BytesShrinkTo,
+    VecShrink,
+    StringShrink,
+    BytesShrink,
     StdF32Abs,
     StdF32Floor,
     StdF32Ceil,
@@ -578,7 +590,40 @@ pub enum RuntimeIntrinsic {
     MathTensorAddF64,
 }
 
+/// Closed capacity intrinsic family shared by execution and bytecode verification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeCapacityFamily {
+    Vec,
+    String,
+    Bytes,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeCapacityOperation {
+    Construct,
+    Hint,
+    Shrink,
+}
+
 impl RuntimeIntrinsic {
+    pub(crate) const fn capacity_contract(
+        self,
+    ) -> Option<(RuntimeCapacityFamily, RuntimeCapacityOperation)> {
+        use RuntimeCapacityFamily::{Bytes, String, Vec};
+        use RuntimeCapacityOperation::{Construct, Hint, Shrink};
+        Some(match self {
+            Self::VecWithCapacity => (Vec, Construct),
+            Self::StringWithCapacity => (String, Construct),
+            Self::BytesWithCapacity => (Bytes, Construct),
+            Self::VecReserve | Self::VecShrinkTo => (Vec, Hint),
+            Self::StringReserve | Self::StringShrinkTo => (String, Hint),
+            Self::BytesReserve | Self::BytesShrinkTo => (Bytes, Hint),
+            Self::VecShrink => (Vec, Shrink),
+            Self::StringShrink => (String, Shrink),
+            Self::BytesShrink => (Bytes, Shrink),
+            _ => return None,
+        })
+    }
     pub fn from_label(label: &str) -> Option<Self> {
         match label {
             "add" => Some(Self::Add),
@@ -601,6 +646,18 @@ impl RuntimeIntrinsic {
             "core.index" => Some(Self::CoreIndex),
             "string.trim" => Some(Self::StringTrim),
             "string.to_string" => Some(Self::StringToString),
+            "vec.with_capacity" => Some(Self::VecWithCapacity),
+            "string.with_capacity" => Some(Self::StringWithCapacity),
+            "bytes.with_capacity" => Some(Self::BytesWithCapacity),
+            "vec.reserve" => Some(Self::VecReserve),
+            "string.reserve" => Some(Self::StringReserve),
+            "bytes.reserve" => Some(Self::BytesReserve),
+            "vec.shrink_to" => Some(Self::VecShrinkTo),
+            "string.shrink_to" => Some(Self::StringShrinkTo),
+            "bytes.shrink_to" => Some(Self::BytesShrinkTo),
+            "vec.shrink" => Some(Self::VecShrink),
+            "string.shrink" => Some(Self::StringShrink),
+            "bytes.shrink" => Some(Self::BytesShrink),
             "std.f32.abs" => Some(Self::StdF32Abs),
             "std.f32.floor" => Some(Self::StdF32Floor),
             "std.f32.ceil" => Some(Self::StdF32Ceil),
@@ -685,6 +742,18 @@ impl RuntimeIntrinsic {
             Self::CoreIndex => "core.index",
             Self::StringTrim => "string.trim",
             Self::StringToString => "string.to_string",
+            Self::VecWithCapacity => "vec.with_capacity",
+            Self::StringWithCapacity => "string.with_capacity",
+            Self::BytesWithCapacity => "bytes.with_capacity",
+            Self::VecReserve => "vec.reserve",
+            Self::StringReserve => "string.reserve",
+            Self::BytesReserve => "bytes.reserve",
+            Self::VecShrinkTo => "vec.shrink_to",
+            Self::StringShrinkTo => "string.shrink_to",
+            Self::BytesShrinkTo => "bytes.shrink_to",
+            Self::VecShrink => "vec.shrink",
+            Self::StringShrink => "string.shrink",
+            Self::BytesShrink => "bytes.shrink",
             Self::StdF32Abs => "std.f32.abs",
             Self::StdF32Floor => "std.f32.floor",
             Self::StdF32Ceil => "std.f32.ceil",
@@ -2231,6 +2300,49 @@ pub fn evaluate_string_intrinsic(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+/// Evaluates the closed capacity surface. Capacity is not observable, but
+/// selected operands still have to be evaluated and checked exactly once.
+pub fn evaluate_capacity_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    let Some((family, operation)) = intrinsic.capacity_contract() else {
+        return Ok(None);
+    };
+    let wrong_args = || RuntimeEvalError::UnsupportedPure {
+        name: intrinsic.as_label().to_owned(),
+        reason: "expected the selected collection receiver and usize capacity argument".to_owned(),
+    };
+    let receiver_matches = |value: &RuntimeValue| match (family, value) {
+        (RuntimeCapacityFamily::Vec, RuntimeValue::Seq(_))
+        | (RuntimeCapacityFamily::String, RuntimeValue::String(_)) => true,
+        (RuntimeCapacityFamily::Bytes, RuntimeValue::Seq(sequence)) => {
+            sequence.dense_kind() == Some(DenseSeqKind::Bytes)
+        }
+        _ => false,
+    };
+    let has_usize =
+        |value: &RuntimeValue| matches!(value, RuntimeValue::UInt(RuntimeUInt::USize(_)));
+    match operation {
+        RuntimeCapacityOperation::Construct if matches!(args, [hint] if has_usize(hint)) => {
+            Ok(Some(match family {
+                RuntimeCapacityFamily::Vec => RuntimeValue::Seq(RuntimeSeq::values(Vec::new())),
+                RuntimeCapacityFamily::String => RuntimeValue::String(String::new()),
+                RuntimeCapacityFamily::Bytes => {
+                    RuntimeValue::Seq(RuntimeSeq::dense_bytes(Vec::new()))
+                }
+            }))
+        }
+        RuntimeCapacityOperation::Hint if matches!(args, [receiver, hint] if receiver_matches(receiver) && has_usize(hint)) => {
+            Ok(Some(RuntimeValue::Unit))
+        }
+        RuntimeCapacityOperation::Shrink if matches!(args, [receiver] if receiver_matches(receiver)) => {
+            Ok(Some(RuntimeValue::Unit))
+        }
+        _ => Err(wrong_args()),
+    }
 }
 
 pub fn evaluate_index_intrinsic(

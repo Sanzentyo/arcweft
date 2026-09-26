@@ -892,6 +892,54 @@ flow main() -> i64 {
     "42"
 );
 
+callable_case!(
+    capacity_hints_preserve_the_empty_vec_result,
+    r#"
+flow main() -> i64 {
+    let items = Vec<i64>::with_capacity(4usize)
+    items.reserve(2usize)
+    items.shrink_to(1usize)
+    items.shrink()
+    match items.pop_front() {
+        .None => return 42i64
+        .Some(_) => return 0i64
+    }
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    capacity_hints_preserve_string_value,
+    r#"
+flow main() -> i64 {
+    let text = String.with_capacity(4usize)
+    text.reserve(2usize)
+    text.shrink_to(1usize)
+    text.shrink()
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    capacity_hints_preserve_bytes_value,
+    r#"
+flow main() -> i64 {
+    let bytes = Bytes.with_capacity(4usize)
+    bytes.reserve(2usize)
+    bytes.shrink_to(1usize)
+    bytes.shrink()
+    return 42i64
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
 #[test]
 fn vec_pop_front_rejects_nested_and_indexed_nominal_fields() {
     for source in [

@@ -10,7 +10,8 @@ use crate::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
         RuntimeEntityReference, RuntimeEnv, RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding,
         RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        RuntimeValueNestingError, evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
+        RuntimeValueNestingError, evaluate_capacity_intrinsic,
+        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
         evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
         runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
@@ -1168,6 +1169,71 @@ fn string_intrinsics_preserve_typed_receiver_semantics() {
         )
         .expect("to_string evaluates"),
         Some(RuntimeValue::String("alice".to_owned()))
+    );
+}
+
+#[test]
+fn capacity_intrinsics_preserve_collection_shapes_and_reject_invalid_hints() {
+    for (intrinsic, expected) in [
+        (
+            RuntimeIntrinsic::VecWithCapacity,
+            RuntimeValue::Seq(RuntimeSeq::values(Vec::new())),
+        ),
+        (
+            RuntimeIntrinsic::StringWithCapacity,
+            RuntimeValue::String(String::new()),
+        ),
+        (
+            RuntimeIntrinsic::BytesWithCapacity,
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(Vec::new())),
+        ),
+    ] {
+        assert_eq!(
+            evaluate_capacity_intrinsic(intrinsic, &[RuntimeValue::usize(8)]),
+            Ok(Some(expected)),
+        );
+        assert_eq!(
+            RuntimeIntrinsic::from_label(intrinsic.as_label()),
+            Some(intrinsic)
+        );
+        assert!(evaluate_capacity_intrinsic(intrinsic, &[RuntimeValue::u64(8)]).is_err());
+    }
+    assert_eq!(
+        evaluate_capacity_intrinsic(
+            RuntimeIntrinsic::VecReserve,
+            &[
+                RuntimeValue::Seq(RuntimeSeq::dense_i32(vec![1])),
+                RuntimeValue::usize(2)
+            ],
+        ),
+        Ok(Some(RuntimeValue::Unit)),
+    );
+    assert_eq!(
+        evaluate_capacity_intrinsic(
+            RuntimeIntrinsic::BytesShrink,
+            &[RuntimeValue::Seq(RuntimeSeq::dense_bytes(vec![1]))],
+        ),
+        Ok(Some(RuntimeValue::Unit)),
+    );
+    assert!(
+        evaluate_capacity_intrinsic(
+            RuntimeIntrinsic::StringReserve,
+            &[
+                RuntimeValue::Seq(RuntimeSeq::values(Vec::new())),
+                RuntimeValue::usize(2)
+            ],
+        )
+        .is_err()
+    );
+    assert!(
+        evaluate_capacity_intrinsic(
+            RuntimeIntrinsic::BytesShrinkTo,
+            &[
+                RuntimeValue::Seq(RuntimeSeq::dense_u8(vec![1])),
+                RuntimeValue::usize(2)
+            ],
+        )
+        .is_err()
     );
 }
 

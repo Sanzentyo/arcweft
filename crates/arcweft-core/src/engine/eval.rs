@@ -24,8 +24,9 @@ use crate::value::{
 };
 use crate::value::{RuntimeLocalBinding, RuntimeNominalRecordExpr};
 use crate::value::{
-    RuntimeReductionValue, evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
-    evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
+    RuntimeReductionValue, evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
+    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_std_float_intrinsic,
+    evaluate_string_intrinsic,
 };
 use std::sync::Arc;
 
@@ -1107,6 +1108,11 @@ pub(crate) fn evaluate_runtime_call(
     }
     if let Some(intrinsic) = callee.as_intrinsic()
         && let Ok(Some(value)) = evaluate_string_intrinsic(intrinsic, args)
+    {
+        return value;
+    }
+    if let Some(intrinsic) = callee.as_intrinsic()
+        && let Ok(Some(value)) = evaluate_capacity_intrinsic(intrinsic, args)
     {
         return value;
     }

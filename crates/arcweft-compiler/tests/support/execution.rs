@@ -11,7 +11,9 @@ use arcweft_core::pure::{
 };
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
 use arcweft_core::task::RuntimeProgramOwner;
-use arcweft_core::value::{RuntimeCallTarget, RuntimeEvalError, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeCallTarget, RuntimeEvalError, RuntimeValue, evaluate_capacity_intrinsic,
+};
 use arcweft_dialogue::{
     CharacterDialogueRuntimeExternalCallBackend, CharacterDialogueRuntimeSchema,
 };
@@ -321,10 +323,21 @@ struct CharacterDialogueVmHost<'a> {
 impl VmHost for CharacterDialogueVmHost<'_> {
     fn call_intrinsic(
         &mut self,
-        _program: &AwbcProgram,
+        program: &AwbcProgram,
         intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
-        _args: &[RuntimeValue],
+        args: &[RuntimeValue],
     ) -> Result<Option<RuntimeValue>, VmError> {
+        if let Some(identity) = program
+            .intrinsics
+            .get(intrinsic.index())
+            .and_then(|record| record.identity.as_intrinsic())
+        {
+            if let Some(value) = evaluate_capacity_intrinsic(identity, args)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+            {
+                return Ok(Some(value));
+            }
+        }
         Err(VmError::MissingIntrinsic(intrinsic))
     }
 

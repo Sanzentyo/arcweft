@@ -5347,20 +5347,30 @@ impl<'a> FinalFlowLowerer<'a> {
                         "cannot resolve final-HIR Thread expression {thread:?}: {error}"
                     ))
                 })?;
-                let HirExprKind::Thread(thread_expr) = thread_expr.kind() else {
+                if let HirExprKind::Thread(thread_expr) = thread_expr.kind() {
+                    if thread_expr.mode() == HirThreadMode::Detached {
+                        return Err(RuntimePlanLowerError::new(format!(
+                            "detached Thread expression {thread:?} requires typed runtime ownership metadata"
+                        )));
+                    }
+                    return Ok(vec![RuntimeFlowOpSeed::Thread {
+                        name: thread_expr.name().map(|name| name.as_str().to_owned()),
+                        body: self.lower_body_as_one_error(thread_expr.body())?,
+                    }]);
+                }
+                let ty = self.expression_source_type(*thread)?;
+                if !matches!(ty.shape(), RuntimeTypeShape::Unit) {
                     return Err(RuntimePlanLowerError::new(format!(
-                        "expression statement {id:?} references non-Thread expression {thread:?} without a checked effect disposition"
-                    )));
-                };
-                if thread_expr.mode() == HirThreadMode::Detached {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "detached Thread expression {thread:?} requires typed runtime ownership metadata"
+                        "expression statement {id:?} has a non-Unit value without an explicit binding"
                     )));
                 }
-                Ok(vec![RuntimeFlowOpSeed::Thread {
-                    name: thread_expr.name().map(|name| name.as_str().to_owned()),
-                    body: self.lower_body_as_one_error(thread_expr.body())?,
-                }])
+                let pattern =
+                    RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard);
+                let expr = self
+                    .expr_lowerer()
+                    .lower_source(*thread)
+                    .map_err(RuntimePlanLowerError::new)?;
+                Ok(vec![RuntimeFlowOpSeed::Let { pattern, expr }])
             }
             HirStmtKind::Choice { choice } => self.lower_flow_value(
                 *choice,
