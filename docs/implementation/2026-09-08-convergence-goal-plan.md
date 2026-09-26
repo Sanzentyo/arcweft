@@ -1733,3 +1733,19 @@ check が通過した。check/Clippy は warning あり。compiler/runtime-plan 
 selected producer fact、Need handle の生成・待機、native/AWBC 実行と復元は
 この SHA では未実装であり、049 fixture は引き続き未受理。receiver traversal、
 049/053 fixture など次の cut の差分は保持している。
+
+## Selected Need producer fact checkpoint — 2026-09-26
+
+`main` に `8d755d99f8f4e6b927606048a8514a81d85aa162` を push した。
+compiler は選択済み `NeedProducer` role と Sema admission を checked call の
+source-order 引数へ照合し、runtime-plan は operation/policy、具体化済み
+`Need<T>` result、admission を単一の `RuntimeResolvedNeedProducer` fact に
+保持する。call expression type との完全一致、引数 coordinate/type、Host
+dispatch の manifest contract と Suspend mode を検証し、普通の extern
+`Need<T>` Host call に producer role を捏造しない。
+
+標準 producer projection と manifest-backed Host の focused compiler tests
+各 1/1、compiler/runtime-plan all-target check、workspace all-target/all-feature
+check、変更 crate all-target Clippy、fmt、cached diff check が通過した。
+check/Clippy は warning あり。producer start、Need handle、Await の実行、
+AWBC codec/snapshot と 049 fixture 受理はまだこの SHA に含まれない。
