@@ -592,7 +592,7 @@ impl Wire for AwbcInstruction {
                 effect.write_wire(writer)?;
                 args.write_wire(writer)?;
             }
-            Self::StartTask { dst, plan, args } => {
+            Self::StartNeed { dst, plan, args } => {
                 dst.write_wire(writer)?;
                 plan.write_wire(writer)?;
                 args.write_wire(writer)?;
@@ -853,7 +853,7 @@ impl Wire for AwbcInstruction {
                 effect: AwbcEffectPlanId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
-            AwbcOpcode::StartTask => Self::StartTask {
+            AwbcOpcode::StartNeed => Self::StartNeed {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 plan: AwbcTaskPlanId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
@@ -1379,7 +1379,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::MakeDialogueContent
             | AwbcOpcode::CharacterDialogue
             | AwbcOpcode::EmitEffect
-            | AwbcOpcode::StartTask
+            | AwbcOpcode::StartNeed
             | AwbcOpcode::SpawnFiber
             | AwbcOpcode::StreamYield
             | AwbcOpcode::StreamClose

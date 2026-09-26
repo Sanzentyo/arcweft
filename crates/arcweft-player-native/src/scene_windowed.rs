@@ -987,7 +987,7 @@ fn load_native_player_session_save(
         source,
     })?;
     let save = NativePlayerSessionSave::decode(&bytes)?;
-    runtime.session_mut().import_session_save_bytes(
+    runtime.import_session_save_bytes(
         &save.runtime_session,
         &arcweft_save::SaveDecodeOptions::default(),
     )?;

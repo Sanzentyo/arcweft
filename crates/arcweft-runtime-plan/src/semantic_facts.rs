@@ -41,7 +41,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
-use arcweft_core::task::{NeedProducerOperation, TaskPolicy};
+use arcweft_core::task::{NeedProducerRequestProjection, NeedProducerTaskPlan};
 use arcweft_core::value::{
     RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
     RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
@@ -3346,6 +3346,12 @@ pub enum RuntimeResolvedCallError {
     NeedProducerAdmissionType { ordinal: u32 },
     #[error("Need producer dispatch is not a registered or manifest-bound extern call")]
     NeedProducerDispatch,
+    #[error("Need producer plan is not bound to the checked call-site authority")]
+    NeedProducerSiteMismatch,
+    #[error("Need producer payload type differs from the instantiated Need<T> item")]
+    NeedProducerPayloadTypeMismatch,
+    #[error("Need producer plan request differs from the selected call dispatch")]
+    NeedProducerPlanMismatch,
 }
 
 /// Runtime attached-content value retained separately from ordinary authored
@@ -3449,35 +3455,45 @@ pub struct RuntimeResolvedCall {
 /// it is never copied into the Sema-owned producer role.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedNeedProducer {
-    operation: NeedProducerOperation,
-    policy: TaskPolicy,
+    plan: NeedProducerTaskPlan,
     need_type: RuntimeNormalizedType,
     admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
 }
 
 impl RuntimeResolvedNeedProducer {
     pub fn try_new(
-        role: arcweft_lang_sema::callable::CallableNeedProducerRole,
+        plan: NeedProducerTaskPlan,
         need_type: RuntimeNormalizedType,
         admission: arcweft_lang_sema::CheckedNeedProducerAdmission,
     ) -> Result<Self, RuntimeResolvedCallError> {
-        if !matches!(need_type.shape(), RuntimeTypeShape::Need(_)) {
+        let RuntimeTypeShape::Need(item) = need_type.shape() else {
             return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
+        };
+        if plan.site() != admission.site() {
+            return Err(RuntimeResolvedCallError::NeedProducerSiteMismatch);
+        }
+        if item.identity() != plan.payload_type() {
+            return Err(RuntimeResolvedCallError::NeedProducerPayloadTypeMismatch);
+        }
+        if plan.argument_count() != admission.arguments().len()
+            || plan.argument_types().len() != admission.arguments().len()
+            || plan
+                .argument_types()
+                .iter()
+                .zip(admission.arguments())
+                .any(|(plan_type, admission)| plan_type.as_bytes() != admission.ty().as_bytes())
+        {
+            return Err(RuntimeResolvedCallError::NeedProducerAdmissionCount);
         }
         Ok(Self {
-            operation: role.operation(),
-            policy: role.policy(),
+            plan,
             need_type,
             admission,
         })
     }
 
-    pub const fn operation(&self) -> NeedProducerOperation {
-        self.operation
-    }
-
-    pub const fn policy(&self) -> TaskPolicy {
-        self.policy
+    pub const fn plan(&self) -> &NeedProducerTaskPlan {
+        &self.plan
     }
 
     pub const fn need_type(&self) -> &RuntimeNormalizedType {
@@ -3742,20 +3758,35 @@ impl RuntimeResolvedCall {
         {
             return Err(RuntimeResolvedCallError::NeedProducerResultNotNeed);
         }
-        let target_admitted = match self.dispatch() {
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(_)) => {
-                true
-            }
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) => {
+        let target_admitted = match (self.dispatch(), producer.plan().request()) {
+            (
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(_)),
+                NeedProducerRequestProjection::AssetLoad { .. },
+            ) => true,
+            (
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)),
+                NeedProducerRequestProjection::ExternCapability {
+                    capability,
+                    operation,
+                    contract,
+                    ..
+                },
+            ) => {
                 matches!(
                     host.owner(),
                     RuntimeResolvedHostCallOwner::ExternCapability(_)
-                ) && host.contract().is_some()
-                    && host.mode() == RuntimeHostCallMode::Suspend
+                ) && host.mode() == RuntimeHostCallMode::Suspend
+                    && host.contract().is_some_and(|selected| {
+                        selected.as_bytes() == contract.as_bytes()
+                            && selected.as_bytes() == producer.plan().contract().as_bytes()
+                    })
+                    && capability.0 == host.capability()
+                    && operation == host.operation()
             }
-            RuntimeResolvedCallDispatch::Static(_) | RuntimeResolvedCallDispatch::Value { .. } => {
-                false
-            }
+            (
+                RuntimeResolvedCallDispatch::Static(_) | RuntimeResolvedCallDispatch::Value { .. },
+                _,
+            ) => false,
         };
         if !target_admitted {
             return Err(RuntimeResolvedCallError::NeedProducerDispatch);
@@ -3789,6 +3820,26 @@ impl RuntimeResolvedCall {
             }
             if admitted.ty().as_bytes() != operand.ty().identity().as_bytes() {
                 return Err(RuntimeResolvedCallError::NeedProducerAdmissionType { ordinal });
+            }
+            let binding_matches = match producer.plan().request() {
+                NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
+                    match operand.binding() {
+                        RuntimeResolvedCallOperandBinding::Positional => true,
+                        RuntimeResolvedCallOperandBinding::Named(name) => name == argument_name,
+                    }
+                }
+                NeedProducerRequestProjection::ExternCapability { argument_names, .. } => {
+                    match (operand.binding(), argument_names.get(ordinal as usize)) {
+                        (RuntimeResolvedCallOperandBinding::Positional, Some(None)) => true,
+                        (RuntimeResolvedCallOperandBinding::Named(name), Some(Some(expected))) => {
+                            name == expected
+                        }
+                        _ => false,
+                    }
+                }
+            };
+            if !binding_matches {
+                return Err(RuntimeResolvedCallError::NeedProducerPlanMismatch);
             }
         }
         if self.need_producer.replace(producer).is_some() {

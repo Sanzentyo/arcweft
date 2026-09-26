@@ -157,6 +157,7 @@ fn builtin_iterator_lowers_and_executes_on_awbc_product_vm() {
         RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget { max_ops: 128 },
+            ..RuntimeStepOptions::default()
         },
         &mut pure_backend,
     );

@@ -15,7 +15,7 @@ use crate::plan::RuntimeDialogueValueBinding;
 use crate::runtime_id::{
     RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeIdCursor, RuntimeIdNamespace,
 };
-use crate::task::{NeedId, RuntimeProgramOwner};
+use crate::task::{NeedId, RuntimeProgramOwner, TaskId};
 use crate::value::{
     AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeCallableApplication,
     RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableValue,
@@ -33,6 +33,8 @@ type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
 pub struct FiberState {
     pub instance: RuntimeFiberInstanceId,
     pub next_frame_instance: RuntimeIdCursor,
+    /// Next per-fiber AwaitMany occurrence ordinal, persisted across safe points.
+    pub next_await_many_ordinal: u64,
     pub generation: u64,
     pub entry: AwbcEntryId,
     pub cursor: FiberCursor,
@@ -236,7 +238,6 @@ pub enum FiberSuspensionReason {
 /// bytecode compatibility surrogate.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum FiberAwaitTarget {
-    Task(RuntimeValue),
     Need {
         id: NeedId,
         item_type: AwbcTypeId,
@@ -248,6 +249,9 @@ pub enum FiberAwaitTarget {
 pub struct FiberAwaitManyState {
     pub plan: AwbcTaskPlanId,
     pub binding: Option<AwbcPatternId>,
+    /// Product assigns the current runtime generation at the first fan-out;
+    /// the same identity is reused across partial fan-out and restore.
+    pub invocation: Option<crate::task::AwaitManyInvocationIdentity>,
     pub items: Vec<RuntimeValue>,
     pub next_index: u32,
     pub in_flight: Vec<FiberAwaitManyInFlight>,
@@ -316,6 +320,7 @@ pub struct FiberCheckpoint {
 pub struct AwbcFiberStateSnapshot {
     pub instance: RuntimeFiberInstanceId,
     pub next_frame_instance: RuntimeIdCursor,
+    pub next_await_many_ordinal: u64,
     pub generation: u64,
     pub entry: AwbcEntryId,
     pub cursor: FiberCursor,
@@ -438,7 +443,6 @@ pub enum AwbcFiberSuspensionReasonSnapshot {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum AwbcFiberAwaitTargetSnapshot {
-    Task(AwbcRuntimeValueSnapshot),
     Need {
         id: NeedId,
         item_type: AwbcTypeId,
@@ -451,6 +455,7 @@ pub enum AwbcFiberAwaitTargetSnapshot {
 pub struct AwbcFiberAwaitManySnapshot {
     pub plan: AwbcTaskPlanId,
     pub binding: Option<AwbcPatternId>,
+    pub invocation: Option<crate::task::AwaitManyInvocationIdentity>,
     pub items: Vec<AwbcRuntimeValueSnapshot>,
     pub next_index: u32,
     pub in_flight: Vec<FiberAwaitManyInFlight>,
@@ -480,6 +485,7 @@ impl AwbcFiberStateSnapshot {
         Ok(Self {
             instance: state.instance,
             next_frame_instance: state.next_frame_instance,
+            next_await_many_ordinal: state.next_await_many_ordinal,
             generation: state.generation,
             entry: state.entry,
             cursor: state.cursor,
@@ -513,6 +519,7 @@ impl AwbcFiberStateSnapshot {
         Ok(FiberState {
             instance: self.instance,
             next_frame_instance: self.next_frame_instance,
+            next_await_many_ordinal: self.next_await_many_ordinal,
             generation: self.generation,
             entry: self.entry,
             cursor: self.cursor,
@@ -942,9 +949,6 @@ impl AwbcFiberSuspensionReasonSnapshot {
 impl AwbcFiberAwaitTargetSnapshot {
     fn from_live(target: &FiberAwaitTarget) -> AwbcSaveResult<Self> {
         Ok(match target {
-            FiberAwaitTarget::Task(value) => {
-                Self::Task(AwbcRuntimeValueSnapshot::from_runtime_value(value)?)
-            }
             FiberAwaitTarget::Need {
                 id,
                 item_type,
@@ -957,11 +961,8 @@ impl AwbcFiberAwaitTargetSnapshot {
         })
     }
 
-    fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberAwaitTarget> {
+    fn into_live(self, _owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberAwaitTarget> {
         Ok(match self {
-            Self::Task(value) => {
-                FiberAwaitTarget::Task(value.into_runtime_value_for_program(owner)?)
-            }
             Self::Need {
                 id,
                 item_type,
@@ -980,6 +981,7 @@ impl AwbcFiberAwaitManySnapshot {
         Ok(Self {
             plan: state.plan,
             binding: state.binding,
+            invocation: state.invocation,
             items: state
                 .items
                 .iter()
@@ -1004,6 +1006,7 @@ impl AwbcFiberAwaitManySnapshot {
         Ok(FiberAwaitManyState {
             plan: self.plan,
             binding: self.binding,
+            invocation: self.invocation,
             items: self
                 .items
                 .into_iter()
@@ -1161,7 +1164,141 @@ pub enum FiberStateError {
     },
 }
 
+fn visit_value_graph<E>(
+    value: &RuntimeValue,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))
+}
+
+fn visit_value_slice<E>(
+    values: &[RuntimeValue],
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    for value in values {
+        visit_value_graph(value, visitor)?;
+    }
+    Ok(())
+}
+
+fn visit_scope_cleanup_values<E>(
+    cleanups: &[FiberScopeCleanup],
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    for cleanup in cleanups {
+        visit_value_slice(&cleanup.args, visitor)?;
+    }
+    Ok(())
+}
+
+fn visit_deferred_capture_values<E>(
+    registrations: &[FiberDeferredRegistration],
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    for registration in registrations {
+        visit_value_slice(&registration.captures, visitor)?;
+    }
+    Ok(())
+}
+
 impl FiberState {
+    /// Visits every runtime value retained by this fiber, including values in
+    /// saved call continuations, defer captures, suspension payloads, streams,
+    /// and terminal results.
+    pub fn visit_runtime_values<E>(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for frame in &self.frames {
+            for value in frame.registers.iter().flatten() {
+                visit_value_graph(value, &mut visitor)?;
+            }
+            if let Some(return_to) = &frame.return_to {
+                match &return_to.continuation {
+                    FiberReturnContinuation::Ordinary
+                    | FiberReturnContinuation::ProjectCallTarget { .. } => {}
+                    FiberReturnContinuation::ProjectCallDefault { logical_values, .. } => {
+                        visit_value_slice(logical_values, &mut visitor)?;
+                    }
+                    FiberReturnContinuation::ApplyGroupDefault {
+                        callable,
+                        arguments,
+                        ..
+                    } => {
+                        visit_value_graph(callable, &mut visitor)?;
+                        visit_value_slice(arguments, &mut visitor)?;
+                    }
+                }
+            }
+            visit_scope_cleanup_values(&frame.root_cleanups, &mut visitor)?;
+            visit_deferred_capture_values(&frame.root_defers, &mut visitor)?;
+            for scope in &frame.scopes {
+                visit_scope_cleanup_values(&scope.cleanups, &mut visitor)?;
+                visit_deferred_capture_values(&scope.defers, &mut visitor)?;
+            }
+        }
+        if let Some(suspension) = &self.suspension {
+            match &suspension.reason {
+                FiberSuspensionReason::Dialogue {
+                    target,
+                    values,
+                    line_task_captures,
+                    ..
+                } => {
+                    visit_value_graph(target.payload(), &mut visitor)?;
+                    for binding in values.iter() {
+                        visit_value_graph(&binding.value, &mut visitor)?;
+                    }
+                    visit_value_slice(line_task_captures, &mut visitor)?;
+                }
+                FiberSuspensionReason::AwaitMany(state) => {
+                    visit_value_slice(&state.items, &mut visitor)?;
+                    for value in state.results.iter().flatten() {
+                        visit_value_graph(value, &mut visitor)?;
+                    }
+                }
+                FiberSuspensionReason::HostCall { args, .. } => {
+                    visit_value_slice(args, &mut visitor)?;
+                }
+                FiberSuspensionReason::Choice { .. }
+                | FiberSuspensionReason::Await { .. }
+                | FiberSuspensionReason::BudgetYield => {}
+            }
+        }
+        for stream in &self.streams {
+            visit_value_slice(&stream.queue, &mut visitor)?;
+        }
+        if let Some(terminal) = &self.terminal {
+            match terminal {
+                FiberTerminalValue::Returned(Some(value))
+                | FiberTerminalValue::DialogueResultSelected(value) => {
+                    visit_value_graph(value, &mut visitor)?;
+                }
+                FiberTerminalValue::Returned(None)
+                | FiberTerminalValue::Cancelled
+                | FiberTerminalValue::Trapped(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Allocates one checked AwaitMany occurrence using the current Product
+    /// generation, while retaining the ordinal on this persisted fiber.
+    pub fn take_await_many_invocation(
+        &mut self,
+        generation: crate::task::GenerationId,
+    ) -> Result<crate::task::AwaitManyInvocationIdentity, crate::task::AwaitManyIdentityError> {
+        let ordinal = self.next_await_many_ordinal;
+        self.next_await_many_ordinal = ordinal
+            .checked_add(1)
+            .ok_or(crate::task::AwaitManyIdentityError::InvocationOrdinalOverflow)?;
+        Ok(crate::task::AwaitManyInvocationIdentity::new(
+            generation,
+            crate::runtime_id::RuntimePersistentFiberId::from_allocated(self.instance.get().get()),
+            ordinal,
+        ))
+    }
+
     /// Creates a root fiber for a function entrypoint.
     pub fn for_entry(
         program: &AwbcProgram,
@@ -1267,6 +1404,7 @@ impl FiberState {
         Ok(Self {
             instance,
             next_frame_instance,
+            next_await_many_ordinal: 0,
             generation,
             entry,
             cursor: FiberCursor {
@@ -2947,7 +3085,7 @@ fn validate_suspension(
             }
         }
         FiberSuspensionReason::AwaitMany(await_many) => {
-            validate_await_many_suspension(program, await_many)?;
+            validate_await_many_suspension(program, state, await_many)?;
         }
         FiberSuspensionReason::HostCall {
             call,
@@ -3007,15 +3145,6 @@ fn validate_await_suspension(
         return Err(FiberStateError::InvalidFrame);
     }
     match target {
-        FiberAwaitTarget::Task(task) if !matches!(task, RuntimeValue::String(_)) => {
-            return Err(FiberStateError::InvalidRuntimeValue {
-                path: "suspension.await.target".to_owned(),
-                reason: format!(
-                    "expected task handle, received {}",
-                    runtime_value_type_label(task)
-                ),
-            });
-        }
         FiberAwaitTarget::Need {
             id,
             item_type,
@@ -3040,13 +3169,13 @@ fn validate_await_suspension(
                 });
             }
         }
-        FiberAwaitTarget::Task(_) => {}
     }
     Ok(())
 }
 
 fn validate_await_many_suspension(
     program: &AwbcProgram,
+    fiber: &FiberState,
     await_many: &FiberAwaitManyState,
 ) -> Result<(), FiberStateError> {
     let plan = program
@@ -3057,17 +3186,78 @@ fn validate_await_many_suspension(
         .signatures
         .get(plan.signature.index())
         .ok_or(FiberStateError::InvalidFrame)?;
-    if plan.many.is_none()
-        || plan.arguments.len() != signature.params.len()
+    let (public_id, need_id, limit) = match &plan.kind {
+        crate::awbc::schema::AwbcTaskPlanKind::AwaitMany {
+            public_id,
+            need_id,
+            limit,
+            ..
+        } => (*public_id, *need_id, *limit),
+        crate::awbc::schema::AwbcTaskPlanKind::NeedProducer { .. } => {
+            return Err(FiberStateError::InvalidFrame);
+        }
+    };
+    let base_task = program
+        .strings
+        .get(public_id.index())
+        .map(|value| TaskId(value.clone()))
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let base_need = program
+        .strings
+        .get(need_id.index())
+        .map(|value| NeedId(value.clone()))
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let mut in_flight_indices = BTreeSet::new();
+    let unique_in_flight = await_many
+        .in_flight
+        .iter()
+        .all(|in_flight| in_flight_indices.insert(in_flight.index as usize));
+    let partition_is_valid = match await_many.invocation {
+        None => {
+            await_many.next_index == 0
+                && await_many.in_flight.is_empty()
+                && await_many.results.is_empty()
+        }
+        Some(_) => {
+            await_many.results.len() == await_many.items.len()
+                && await_many.next_index as usize <= await_many.items.len()
+                && await_many.in_flight.len() <= limit as usize
+                && unique_in_flight
+                && (0..await_many.items.len()).all(|index| {
+                    if index < await_many.next_index as usize {
+                        await_many.results[index].is_some() != in_flight_indices.contains(&index)
+                    } else {
+                        await_many.results[index].is_none() && !in_flight_indices.contains(&index)
+                    }
+                })
+        }
+    };
+    let in_flight_identity_is_valid = await_many.invocation.is_none_or(|invocation| {
+        await_many.in_flight.iter().all(|in_flight| {
+            let index = in_flight.index as usize;
+            invocation
+                .task_id(&base_task, index)
+                .is_ok_and(|expected| expected.0 == in_flight.task_id)
+                && invocation
+                    .need_id(&base_need, index)
+                    .is_ok_and(|expected| expected.0 == in_flight.need_id)
+        })
+    });
+    if plan.arguments.len() != signature.params.len()
         || await_many
             .binding
             .is_some_and(|binding| program.patterns.get(binding.index()).is_none())
-        || await_many.results.len() > await_many.items.len()
         || await_many.next_index as usize > await_many.items.len()
         || await_many
             .in_flight
             .iter()
             .any(|in_flight| in_flight.index as usize >= await_many.items.len())
+        || !partition_is_valid
+        || !in_flight_identity_is_valid
+        || await_many.invocation.is_some_and(|invocation| {
+            invocation.fiber().get() != fiber.instance.get().get()
+                || invocation.ordinal() >= fiber.next_await_many_ordinal
+        })
     {
         return Err(FiberStateError::InvalidFrame);
     }
@@ -3763,6 +3953,49 @@ mod tests {
         );
         let target = crate::value::RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::Unit);
         (program, target)
+    }
+
+    fn bundle_image_handle_value() -> RuntimeValue {
+        let artifact = crate::value::RuntimeBundleAssetArtifactDigest::try_from_bytes([0x31; 32])
+            .expect("fixture artifact digest is nonzero");
+        let context = crate::value::RuntimeBundleAssetContext::new(
+            crate::task::GenerationId::new(0),
+            artifact,
+        );
+        let resource = crate::value::RuntimeBundleAssetResourceId::try_new("asset.bg.room")
+            .expect("fixture asset identity is canonical");
+        let content = crate::value::RuntimeAssetContentDigest::try_for_bytes(b"image")
+            .expect("fixture content digest fits");
+        let binding = crate::value::RuntimeBundleAssetBinding::try_new(context, resource, content)
+            .expect("fixture asset binding is valid");
+        crate::value::RuntimeImageHandleValue::from_binding(binding)
+            .into_runtime_value()
+            .expect("fixture ImageHandle is standard-owned")
+    }
+
+    #[test]
+    fn fiber_value_visitor_finds_asset_handles_nested_in_register_values() {
+        let program = zero_parameter_entry_program();
+        let mut fiber = FiberState::for_entry(&program, crate::awbc::schema::AwbcEntryId(0), 0, 64)
+            .expect("fixture fiber starts");
+        fiber.frames[0]
+            .registers
+            .push(Some(RuntimeValue::Tuple(vec![bundle_image_handle_value()])));
+        let mut roles = Vec::new();
+
+        fiber
+            .visit_runtime_values(|value| {
+                if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
+                    roles.push(role);
+                }
+                Ok::<_, ()>(())
+            })
+            .expect("fiber runtime values visit");
+
+        assert_eq!(
+            roles,
+            vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
+        );
     }
 
     #[test]

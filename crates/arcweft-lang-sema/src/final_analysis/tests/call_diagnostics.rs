@@ -29,6 +29,70 @@ fn overload_fixture(argument: &str) -> Fixture {
 }
 
 #[test]
+fn rejected_result_root_call_keeps_its_source_diagnostic() {
+    for source in [
+        "fn caller() -> i64 { return choose(true) }\n",
+        "flow main() -> i64 { return choose(true) }\n",
+    ] {
+        let fixture = typed_overload_fixture(
+            source,
+            "choose",
+            vec![TestCallableOverload::strict([TypeKind::I64], TypeKind::I64)],
+        );
+        let analysis = analyze(&fixture).unwrap_or_else(|error| {
+            panic!("rejected result root retains final call facts: {error:?}")
+        });
+        let calls = analysis.calls().collect::<Vec<_>>();
+        let [(_, call)] = calls.as_slice() else {
+            panic!("one rejected result-root call is retained");
+        };
+        let [diagnostic] = call.diagnostics() else {
+            panic!("one source-backed call diagnostic is retained");
+        };
+        assert_eq!(diagnostic.code(), CallableDiagnosticCode::NoViableSignature);
+        assert!(call.selected_application().is_none());
+        let span = diagnostic
+            .span()
+            .expect("the rejected call has a source span");
+        assert_eq!(&source[span.range().as_range()], "choose(true)");
+    }
+}
+
+#[test]
+fn ambiguous_and_noncallable_result_roots_keep_their_call_diagnostics() {
+    for (fixture, expected) in [
+        (
+            typed_overload_fixture(
+                "fn caller() -> i64 { return choose(1) }\n",
+                "choose",
+                vec![
+                    TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
+                    TestCallableOverload::strict([TypeKind::U64], TypeKind::I64),
+                ],
+            ),
+            CallableDiagnosticCode::AmbiguousOverload,
+        ),
+        (
+            fixture("fn caller(value: i64) -> i64 { return value() }\n", None),
+            CallableDiagnosticCode::NonCallableTarget,
+        ),
+    ] {
+        let analysis = analyze(&fixture)
+            .unwrap_or_else(|error| panic!("unselected result root retains call facts: {error:?}"));
+        let calls = analysis.calls().collect::<Vec<_>>();
+        let [(_, call)] = calls.as_slice() else {
+            panic!("one unselected result-root call is retained");
+        };
+        let [diagnostic] = call.diagnostics() else {
+            panic!("one source-backed {expected:?} diagnostic is retained: {call:?}");
+        };
+        assert_eq!(diagnostic.code(), expected);
+        assert!(call.selected_application().is_none());
+        assert!(diagnostic.span().is_some());
+    }
+}
+
+#[test]
 fn final_call_diagnostics_follow_the_retained_outcome_and_source() {
     for (fixture, expected) in [
         (

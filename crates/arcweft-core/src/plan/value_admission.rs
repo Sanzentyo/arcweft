@@ -383,6 +383,7 @@ impl<'a> PlanValueValidation<'a> {
             | (Type::Duration, View::Scalar(Scalar::Duration(_)))
             | (Type::Progress, View::Scalar(Scalar::Progress(_)))
             | (Type::EntityReference, View::Scalar(Scalar::EntityRef(_))) => Ok(Children::None),
+            (Type::Need(_), View::RuntimeOnly(RuntimeValue::Need(_))) => Ok(Children::None),
             (Type::Signed(width), View::Scalar(Scalar::Int(actual)))
                 if actual.width() == *width =>
             {

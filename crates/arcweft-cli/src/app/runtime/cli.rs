@@ -1,9 +1,9 @@
 use super::entry::select_runtime_cli_entry;
 use super::options::CliRunOptions;
+use super::source::compile_source_runtime_program;
 use super::steps::{NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
-    load_and_check_selection, native_host_policy_for_selection, require_profile_kind,
-    resolve_source_selection, runtime_pure_config_for_selection,
+    require_profile_kind, resolve_source_selection, runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
@@ -27,9 +27,9 @@ pub(in crate::app) fn runtime_cli_command(
         options.math_wgpu_min_elements,
     );
     require_profile_kind(&selection, LaunchKind::Cli, "cli")?;
-    let checked = load_and_check_selection(&selection, None)?;
-    let host_policy = native_host_policy_for_selection(&selection)?;
-    let plan = checked.runtime_plan().plan.clone();
+    let mut phases = Vec::new();
+    let runtime = compile_source_runtime_program(&selection, None, &mut phases)?;
+    let plan = runtime.plan.clone();
     let entry = if selection.profile().is_some() {
         Some(selection.command_entry(options.entry.as_deref())?)
     } else {
@@ -42,7 +42,8 @@ pub(in crate::app) fn runtime_cli_command(
         &entry,
         NativeRunHost {
             source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-            policy: &host_policy,
+            bundle_assets: Some(runtime.bundle_assets()),
+            policy: &runtime.host_policy,
             adapter_registrars,
             cli_args: &options.args,
         },
@@ -53,7 +54,7 @@ pub(in crate::app) fn runtime_cli_command(
             executor: options.executor,
             pure_config,
         },
-        &checked.execution_diagnostics,
+        &runtime.execution_diagnostics,
     )?;
     let report = RuntimeRunReport {
         host_system: host_system_info(),

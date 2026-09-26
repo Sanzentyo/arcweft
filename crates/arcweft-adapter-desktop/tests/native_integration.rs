@@ -9,7 +9,9 @@ use arcweft_core::{
 #[cfg(target_os = "windows")]
 use arcweft_desktop_contract::PlatformKind;
 use arcweft_desktop_contract::{DesktopFeature, DesktopResponse, SupportLevel};
-use arcweft_host_adapter::{HostAdapterRegistry, HostTaskCompletion, HostTaskSubmission};
+use arcweft_host_adapter::{
+    HostAdapterRegistry, HostTaskCompletion, HostTaskSubmission, HostTaskSubmissionContext,
+};
 
 #[test]
 fn native_desktop_capabilities_complete_through_host_registry() {
@@ -27,7 +29,11 @@ fn native_desktop_capabilities_complete_through_host_registry() {
         .expect("integration task has a standalone outcome contract");
 
     let submission = registry
-        .submit(&task, &bound_outcome)
+        .submit(
+            &task,
+            &bound_outcome,
+            HostTaskSubmissionContext::new(arcweft_core::task::TaskPublicationRevision::FIRST),
+        )
         .expect("desktop platform adapter owns capabilities");
     let HostTaskSubmission::Completed(outcome) = submission else {
         panic!("capabilities should complete without a window pump");

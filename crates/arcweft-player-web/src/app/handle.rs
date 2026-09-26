@@ -129,10 +129,15 @@ fn create(
         session_options.engine_resource_types.as_ref(),
     )
     .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
-    let session = BundleSession::new(&bundle, session_options)
+    let session = BundleSession::from_awfb_bytes(&bundle_bytes, session_options)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
-    let broker = BrowserTaskBroker::from_bundle(&bundle)
-        .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
+    let generation = session.active_generation();
+    let broker = BrowserTaskBroker::from_bundle(
+        &bundle,
+        generation.bundle_asset_context(),
+        generation.artifact_identity,
+    )
+    .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;
     let images = BundleImageCatalog::from_bundle(&bundle)
         .map_err(|error| WebPlayerError::Image(error.to_string()))?;
     let clock = LogicalClockQuantizer::new(16, 4)

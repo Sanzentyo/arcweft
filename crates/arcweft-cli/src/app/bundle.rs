@@ -265,6 +265,15 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
     compiled: ProfileCompiledRuntimePlan,
     include_spaces: Vec<BundleVirtualFileSpace>,
 ) -> Result<CompiledBundleArtifact, ExitCode> {
+    compile_bundle_from_profile_runtime_plan_with_adapter(selection, compiled, include_spaces, None)
+}
+
+pub(in crate::app) fn compile_bundle_from_profile_runtime_plan_with_adapter(
+    selection: &SourceSelection,
+    compiled: ProfileCompiledRuntimePlan,
+    include_spaces: Vec<BundleVirtualFileSpace>,
+    adapter_override: Option<&str>,
+) -> Result<CompiledBundleArtifact, ExitCode> {
     let semantic_index = Arc::clone(compiled.compiled.analysis_lease().semantic_index());
     let execution_diagnostics = Arc::clone(&compiled.execution_diagnostics);
     let verification = verify_compiled_project(&compiled.compiled, VerificationPolicy::default())?;
@@ -279,7 +288,7 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
         .map(|entry| entry.kind.clone())
         .collect::<Vec<_>>();
     let required_host_calls = bundle_required_host_calls(&compiled.plan);
-    let adapter_manifest = adapter_manifest_for_selection(selection, None)?;
+    let adapter_manifest = adapter_manifest_for_selection(selection, adapter_override)?;
     let adapter_manifest_ids = bundle_adapter_manifest_ids(
         adapter_manifest.id().as_str(),
         required_host_calls.iter().map(String::as_str),
@@ -336,6 +345,7 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
             &compiled,
             adapter_manifest_ids,
             required_host_calls,
+            adapter_override,
         ),
         compiled.source_map,
         compiled.product_awbc,
@@ -436,10 +446,19 @@ fn hydrate_default_view_localization(
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
     let mut calls = Vec::new();
     plan.visit_flow_ops(&mut |op| match op {
-        FlowOp::Await { target, .. } => calls.push(host_call_id_for_template(
-            target.request.capability.0.as_str(),
-            target.request.operation.as_str(),
-        )),
+        FlowOp::StartNeedProducer { target, .. } => {
+            use arcweft_core::task::NeedProducerRequestProjection;
+            match target.plan().request() {
+                NeedProducerRequestProjection::AssetLoad { kind, .. } => {
+                    calls.push(host_call_id_for_template("asset", kind.as_str()));
+                }
+                NeedProducerRequestProjection::ExternCapability {
+                    capability,
+                    operation,
+                    ..
+                } => calls.push(host_call_id_for_template(&capability.0, operation)),
+            }
+        }
         FlowOp::AwaitMany { target, .. } => calls.push(host_call_id_for_template(
             target.request.capability.0.as_str(),
             target.request.operation.as_str(),
@@ -458,6 +477,7 @@ fn bundle_manifest(
     compiled: &ProfileCompiledRuntimePlan,
     adapter_manifest_ids: Vec<String>,
     required_host_calls: Vec<String>,
+    adapter_override: Option<&str>,
 ) -> BundleManifest {
     BundleManifest {
         profile_id: selection
@@ -467,7 +487,9 @@ fn bundle_manifest(
             .profile()
             .map(|profile| bundle_launch_kind(profile.kind())),
         entry: selection.entry().map(str::to_owned),
-        adapter: selection.adapter().map(str::to_owned),
+        adapter: adapter_override
+            .or_else(|| selection.adapter())
+            .map(str::to_owned),
         adapter_manifest_ids,
         required_host_calls,
         runtime: BundleRuntimeSummary {
@@ -722,6 +744,10 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::ExpectedAwfbProduct { .. } => ExitCode::from(2),
         BundleRunnerError::ReadBundle { .. }
         | BundleRunnerError::DecodeBundle(_)
+        | BundleRunnerError::ContainerArtifactIdentity(_)
+        | BundleRunnerError::LogicalArtifactIdentity(_)
+        | BundleRunnerError::BundleAssetContext(_)
+        | BundleRunnerError::BundleAssetAdapter(_)
         | BundleRunnerError::InvalidImageAsset(_)
         | BundleRunnerError::UnsupportedBundleKind { .. }
         | BundleRunnerError::DecodeImageAsset { .. }
@@ -736,6 +762,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::UnknownEntry { .. }
         | BundleRunnerError::NonFlowEntry { .. }
         | BundleRunnerError::StartEntry(_)
+        | BundleRunnerError::LogicalEpochExhausted
         | BundleRunnerError::NativeTask(_)
         | BundleRunnerError::NativeAdapter(_) => ExitCode::FAILURE,
     }
@@ -766,8 +793,18 @@ fn validate_referenced_bundle_image_assets(
 fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
     let mut refs = Vec::new();
     plan.visit_flow_ops(&mut |op| match op {
-        FlowOp::Await { target, .. } => {
-            refs.extend(static_image_asset_ref_for_template(&target.request));
+        FlowOp::StartNeedProducer { target, .. } => {
+            if matches!(
+                target.plan().request(),
+                arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
+                    kind: arcweft_core::task::AssetLoadKind::Image,
+                    ..
+                }
+            ) && let Some(argument) = target.arguments().first()
+                && let Some(asset) = static_image_asset_ref_expr(argument)
+            {
+                refs.push(asset);
+            }
         }
         FlowOp::AwaitMany {
             target, pending, ..
@@ -903,6 +940,10 @@ fn bundle_adapter_manifest_ids<'a>(
                         .map(|_| standard::SYSTEM_INFO_ADAPTER_ID)
                 })
                 .or_else(|| {
+                    matches!(host_call, "asset.image" | "asset.voice")
+                        .then_some(standard::BUNDLE_ASSET_ADAPTER_ID)
+                })
+                .or_else(|| {
                     matches!(host_call, "line_task.run_child" | "flow_thread.run_child")
                         .then_some(INTERNAL_SCHEDULER_ADAPTER_ID)
                 })
@@ -935,6 +976,14 @@ fn bundle_adapter_manifests<'a>(
     {
         manifests.push(bundle_adapter_manifest_from_context(
             &standard::system_info_manifest(),
+        ));
+    }
+    if required
+        .iter()
+        .any(|host_call| matches!(*host_call, "asset.image" | "asset.voice"))
+    {
+        manifests.push(bundle_adapter_manifest_from_context(
+            &standard::bundle_asset_manifest(),
         ));
     }
     if required

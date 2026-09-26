@@ -21,6 +21,8 @@ mod agent;
 pub(crate) use agent::{
     RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
 };
+mod asset_handle;
+pub(crate) use asset_handle::standard_asset_opaque_payload_is_valid;
 mod arc_error;
 pub use arc_error::{
     RUNTIME_ARC_ERROR_VALUE_VERSION, RuntimeArcError, RuntimeArcErrorDataEntry,
@@ -46,6 +48,7 @@ mod range;
 mod record;
 mod record_id;
 mod reduction;
+mod runtime_value_visit;
 mod sequence_constructors;
 mod sequence_impls;
 mod shape;
@@ -84,6 +87,13 @@ pub use agent::{
     RuntimeAgentValue,
 };
 pub(crate) use arc_error::RuntimeArcErrorContextValueError;
+pub use asset_handle::{
+    RUNTIME_BUNDLE_ASSET_VALUE_VERSION, RuntimeAssetContentDigest, RuntimeAssetErrorValue,
+    RuntimeAudioHandleValue, RuntimeBundleAssetArtifactDigest, RuntimeBundleAssetBinding,
+    RuntimeBundleAssetContext, RuntimeBundleAssetFailure, RuntimeBundleAssetFailureReason,
+    RuntimeBundleAssetOpaqueRole, RuntimeBundleAssetResourceId, RuntimeBundleAssetValueError,
+    RuntimeImageHandleValue, RuntimeVoiceErrorValue, runtime_bundle_asset_opaque_role,
+};
 pub use awbc_save::{
     AwbcRuntimeCallableSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
 };
@@ -123,6 +133,7 @@ pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
 pub use reduction::{
     RuntimeCommand, RuntimeReductionProducer, RuntimeReductionValue, RuntimeReductionValueError,
 };
+pub use runtime_value_visit::visit_runtime_value_graph;
 pub use sequence_constructors::{
     runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
     runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,

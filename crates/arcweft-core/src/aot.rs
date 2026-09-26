@@ -122,6 +122,7 @@ impl AotLinearOp {
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
+            | FlowOp::StartNeedProducer { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
@@ -257,6 +258,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
+        | FlowOp::StartNeedProducer { .. }
         | FlowOp::AwaitMany { .. }
         | FlowOp::HostCall { .. }
         | FlowOp::ProjectCall { .. }
@@ -334,6 +336,7 @@ impl AotOpClass {
             FlowOp::SelectDialogueResult { .. } => Self::Effect,
             FlowOp::LineOperation { .. } => Self::Await,
             FlowOp::Await { .. }
+            | FlowOp::StartNeedProducer { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
@@ -392,6 +395,7 @@ impl AotProgramStats {
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }
+                | FlowOp::StartNeedProducer { .. }
                 | FlowOp::HostCall { .. }
                 | FlowOp::ProjectCall { .. }
                 | FlowOp::ApplyGroup { .. }

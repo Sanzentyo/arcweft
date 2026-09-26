@@ -481,10 +481,14 @@ impl RuntimePureCallStats {
 }
 
 /// Runtime stepping policy selected by hosts and CLI tooling.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RuntimeStepOptions {
     pub mode: RuntimeStepMode,
     pub budget: RuntimeStepBudget,
+    /// Maximum new host task requests this step may emit. Hosts reserve
+    /// sequence capacity before execution so a saturated task journal cannot
+    /// wrap or partially publish a batch.
+    pub max_new_task_requests: usize,
 }
 
 /// Deterministic work budget for one `Engine::step` call.
@@ -681,6 +685,16 @@ impl RuntimeStepOutput {
 impl Default for RuntimeStepBudget {
     fn default() -> Self {
         Self { max_ops: 1 }
+    }
+}
+
+impl Default for RuntimeStepOptions {
+    fn default() -> Self {
+        Self {
+            mode: RuntimeStepMode::default(),
+            budget: RuntimeStepBudget::default(),
+            max_new_task_requests: usize::MAX,
+        }
     }
 }
 

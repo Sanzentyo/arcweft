@@ -1,5 +1,6 @@
 //! Hot-swap generation model for embedding runtimes.
 
+pub use arcweft_bundle::BundleArtifactIdentity as BundleSessionArtifactIdentity;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::runtime::AdapterRequirementsSection as CompactAdapterRequirementsSection;
@@ -14,6 +15,7 @@ use arcweft_core::entry::{
 };
 use arcweft_core::plan::{EntryRuntimeId, RuntimeEntryKind, RuntimeEntryRoles};
 use arcweft_core::task::GenerationId;
+use arcweft_core::value::{RuntimeBundleAssetContext, RuntimeBundleAssetValueError};
 use arcweft_text_model::DialogueContentCatalog;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -45,6 +47,7 @@ pub struct CodeSlot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProgramGeneration {
     pub id: GenerationId,
+    pub artifact_identity: BundleSessionArtifactIdentity,
     pub content_root: BundleDigest,
     pub dialogue_content: BundleDigest,
     /// Exact immutable Dialogue producer generation. A changed declaration
@@ -148,6 +151,8 @@ pub enum GenerationBuildError {
     AdapterRequirementFingerprint { message: String },
     #[error("failed to decode executable entry kind for `{entry}`")]
     InvalidEntryKind { entry: String },
+    #[error("failed to derive bundle asset artifact binding: {0}")]
+    BundleAssetBinding(#[from] RuntimeBundleAssetValueError),
 }
 
 #[derive(Clone, Debug)]
@@ -172,11 +177,13 @@ impl Default for RuntimeSignature {
 impl ProgramGeneration {
     pub fn empty(
         id: GenerationId,
+        artifact_identity: BundleSessionArtifactIdentity,
         content_root: BundleDigest,
         dialogue_content: BundleDigest,
     ) -> Self {
         Self {
             id,
+            artifact_identity,
             content_root,
             dialogue_content,
             character_dialogue_generation: None,
@@ -190,6 +197,7 @@ impl ProgramGeneration {
 
     pub fn from_bundle(
         id: GenerationId,
+        artifact_identity: BundleSessionArtifactIdentity,
         bundle: &ArcweftBundle,
     ) -> Result<Self, GenerationBuildError> {
         if bundle.bundle_kind != ArcweftBundleKind::Game {
@@ -205,6 +213,7 @@ impl ProgramGeneration {
             })?;
         Self::from_verified_awbc(
             id,
+            artifact_identity,
             bundle.product_awbc().program(),
             content_root(bundle)?,
             adapter_requirements(bundle)?,
@@ -218,15 +227,18 @@ impl ProgramGeneration {
 
     pub fn from_verified_awbc(
         id: GenerationId,
+        artifact_identity: BundleSessionArtifactIdentity,
         program: &AwbcProgram,
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
         dialogue_content: BundleDigest,
         character_dialogue_generation: Option<RuntimeValueDigest>,
     ) -> Result<Self, GenerationBuildError> {
+        artifact_identity.bundle_asset_context(id)?;
         let (state_layouts, entry_compatibility) = awbc_entry_compatibility(program)?;
         Ok(Self {
             id,
+            artifact_identity,
             content_root,
             dialogue_content,
             character_dialogue_generation,
@@ -236,6 +248,24 @@ impl ProgramGeneration {
             entry_compatibility,
             adapter_requirements,
         })
+    }
+
+    /// Builds the Core context for a bundle asset task owned by this exact
+    /// generation and complete artifact identity.
+    #[must_use]
+    pub fn bundle_asset_context(&self) -> RuntimeBundleAssetContext {
+        Self::bundle_asset_context_for(self.id, self.artifact_identity)
+            .expect("ProgramGeneration construction validates its artifact binding digest")
+    }
+
+    /// Builds an asset context for a candidate generation before its runtime
+    /// image is committed, using the same bundle-owned identity digest as the
+    /// active-generation path.
+    pub fn bundle_asset_context_for(
+        id: GenerationId,
+        artifact_identity: BundleSessionArtifactIdentity,
+    ) -> Result<RuntimeBundleAssetContext, RuntimeBundleAssetValueError> {
+        artifact_identity.bundle_asset_context(id)
     }
 }
 
@@ -786,14 +816,28 @@ mod retirement_tests;
 
 #[cfg(test)]
 mod character_generation_tests {
-    use super::{ProgramGeneration, SwapCompatibility, classify_swap};
-    use arcweft_bundle::container::BundleDigest;
+    use super::{
+        BundleSessionArtifactIdentity, ProgramGeneration, SwapCompatibility, classify_swap,
+    };
+    use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleKind};
     use arcweft_core::{entry::RuntimeValueDigest, task::GenerationId};
+
+    fn artifact_identity(id: u64) -> BundleSessionArtifactIdentity {
+        let content_root = BundleDigest::of(&id.to_le_bytes());
+        let manifest_digest = BundleDigest::of(&id.wrapping_add(1).to_le_bytes());
+        BundleSessionArtifactIdentity::AwfbContainer {
+            identity: ArtifactIdentity::new(1, BundleKind::Program, content_root, manifest_digest),
+        }
+    }
 
     #[test]
     fn a_changed_dialogue_declaration_keeps_a_separate_runtime_generation() {
-        let active =
-            ProgramGeneration::empty(GenerationId::new(1), BundleDigest::ZERO, BundleDigest::ZERO);
+        let active = ProgramGeneration::empty(
+            GenerationId::new(1),
+            artifact_identity(1),
+            BundleDigest::of(b"content"),
+            BundleDigest::of(b"dialogue"),
+        );
         let mut next = active.clone();
         next.id = GenerationId::new(2);
         next.character_dialogue_generation = Some(RuntimeValueDigest::from_bytes([7; 32]));

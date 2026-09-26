@@ -1,13 +1,23 @@
-use super::{ProgramGeneration, SwapCompatibility, SwapError, SwapPhase, SwapSession};
-use arcweft_bundle::container::BundleDigest;
+use super::{
+    BundleSessionArtifactIdentity, ProgramGeneration, SwapCompatibility, SwapError, SwapPhase,
+    SwapSession,
+};
+use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleKind};
 use arcweft_core::task::GenerationId;
 use std::sync::Arc;
 
 fn generation(id: u64) -> Arc<ProgramGeneration> {
+    let content_root = BundleDigest::of(&id.to_le_bytes());
+    let manifest_digest = BundleDigest::of(&id.wrapping_add(1).to_le_bytes());
     Arc::new(ProgramGeneration::empty(
         GenerationId::new(id),
-        BundleDigest::of(&id.to_le_bytes()),
-        BundleDigest::ZERO,
+        BundleSessionArtifactIdentity::AwfbContainer {
+            identity: ArtifactIdentity::new(1, BundleKind::Program, content_root, manifest_digest),
+        },
+        content_root,
+        // These tests cover retirement mechanics; keep executable dialogue
+        // content fixed while the bundle identity changes between generations.
+        BundleDigest::of(b"unchanged dialogue"),
     ))
 }
 

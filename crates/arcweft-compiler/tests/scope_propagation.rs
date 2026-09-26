@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use arcweft_compiler::source::compile_source;
+use arcweft_compiler::types::CompiledSource;
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
 use arcweft_core::awbc::fiber::{AwbcFiberStateSnapshot, FiberState};
 use arcweft_core::awbc::schema::{AwbcEntryId, AwbcProgram};
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
+use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeEffectExpr};
+use arcweft_core::plan::FlowOp;
 use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::RuntimeValue;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -18,6 +21,16 @@ fn assert_both(definitions: &str, body: &str, expected: &str) {
     );
     execution::assert_native_return(&source, expected);
     execution::assert_awbc_return(&source, RuntimeValue::String(expected.to_owned()));
+}
+
+fn assertion_guards(project: &CompiledSource) -> Vec<RuntimeAssertionGuardId> {
+    let mut guards = Vec::new();
+    project.plan.visit_flow_ops(&mut |operation| {
+        if let FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert { guard, .. }) = operation {
+            guards.push(*guard);
+        }
+    });
+    guards
 }
 
 #[test]
@@ -138,6 +151,67 @@ fn nested_flow_scopes_unwind_only_the_frames_crossed_by_the_residual() {
         );
         assert_both("", &body, expected);
     }
+}
+
+#[test]
+fn long_contextual_await_tail_lowers_inside_nested_scopes() {
+    let statement_count = 32;
+    let statements = (0..statement_count)
+        .flat_map(|index| {
+            [
+                format!(
+                    "let _image_{index:02} = try (await asset.image(background)).context(\"image {index} failed\")"
+                ),
+                "assert.check(true)".to_owned(),
+            ]
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        r#"
+type ArcResult<T> = Result<T, ArcError>
+flow many(background: Ref<Asset>) -> ArcResult<String> effects {{ log.write }} {{
+    scope outer {{
+        scope inner {{
+            {statements}
+        }}
+    }}
+    return Ok("done")
+}}
+"#
+    );
+
+    let baseline_assertions = vec!["assert.check(true)"; statement_count].join("\n");
+    let baseline_source = format!(
+        r#"
+type ArcResult<T> = Result<T, ArcError>
+flow many(background: Ref<Asset>) -> ArcResult<String> effects {{ log.write }} {{
+    scope outer {{
+        scope inner {{
+            {baseline_assertions}
+        }}
+    }}
+    return Ok("done")
+}}
+"#
+    );
+
+    let baseline = compile_source(&baseline_source).expect("baseline assertion sequence compiles");
+    let compiled =
+        compile_source(&source).expect("deep Await/Try tails lower without recursive stack growth");
+    assert_eq!(
+        assertion_guards(&compiled),
+        assertion_guards(&baseline),
+        "deferred tails retain authored assertion ordinal order"
+    );
+    let mut leaked_noop = false;
+    compiled.plan.visit_flow_ops(&mut |operation| {
+        leaked_noop |= matches!(operation, FlowOp::Noop);
+    });
+    assert!(
+        !leaked_noop,
+        "internal worklist holes never enter a runtime plan"
+    );
 }
 
 #[test]

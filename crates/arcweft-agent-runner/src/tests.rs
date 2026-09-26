@@ -71,13 +71,15 @@ use arcweft_core::{
         RuntimeAwaitTargetSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
         RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-        RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
-        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+        RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalDeclarationSeed,
+        RuntimeNeedProducerStartTargetSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
-    step::RuntimeHostCallMode,
+    step::{HostCallContractDigest, RuntimeHostCallMode},
     task::{
-        HostCapabilityId, HostTaskRequest, NeedId, RuntimeProgramOwner, TaskId, TaskOutcomeContract,
+        CancelScopeId, HostCapabilityId, HostRestartPolicy, HostTaskRequest,
+        NeedProducerContractDigest, NeedProducerRequestProjection, NeedProducerSiteDigest,
+        NeedProducerTaskPlan, RuntimeProgramOwner, TaskClass, TaskPolicy, TaskPriority,
     },
     time::LogicalDuration,
     value::{
@@ -528,22 +530,78 @@ fn response_result_binding_pattern(
     )
 }
 
-fn agent_task_outcome(response_ty: u8) -> TaskOutcomeContract {
-    let ready = match response_ty {
-        CAPTURE_REFERENCE_TY => RuntimeAgentOperationalType::CaptureReference,
-        RESOURCE_TY => RuntimeAgentOperationalType::Resource,
-        ENTITY_METADATA_TY => RuntimeAgentOperationalType::EntityMetadata,
-        PROJECT_NEIGHBORHOOD_TY => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
-        OBSERVATION_TY => RuntimeAgentOperationalType::Observation,
-        _ => panic!("fixture response type {response_ty} has no Agent task outcome"),
-    };
-    TaskOutcomeContract::new(RuntimeCheckedType::Result {
-        ok: Box::new(RuntimeCheckedType::Agent(
-            arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(ready)
-                .expect("task outcome fixture has a leaf Agent owner"),
-        )),
-        error: Box::new(RuntimeCheckedType::String),
-    })
+fn response_need_type(response_result_ty: u8) -> RuntimeSemanticTypeId {
+    RuntimeSemanticTypeId::from_bytes([response_result_ty.wrapping_add(64); 32])
+}
+
+fn admit_response_and_need_locals(
+    builder: &mut RuntimePlanBuilder,
+    response_ty: u8,
+    response_result_ty: u8,
+) -> (
+    arcweft_core::plan::RuntimeLocalSeedId,
+    arcweft_core::plan::RuntimeLocalSeedId,
+) {
+    let need_ty = response_need_type(response_result_ty);
+    let locals = builder
+        .admit_type_batch(
+            controller_agent_types()
+                .into_iter()
+                .chain([RuntimePlanTypeSeed::new(
+                    need_ty,
+                    RuntimePlanTypeProjection::Need(controller_type(response_result_ty)),
+                )]),
+            [
+                RuntimeLocalDeclarationSeed::new(controller_type(response_ty)),
+                RuntimeLocalDeclarationSeed::new(need_ty),
+            ],
+        )
+        .expect("response and Need locals admit");
+    (locals.local_ids()[0].clone(), locals.local_ids()[1].clone())
+}
+
+fn agent_need_producer(
+    response_result_ty: u8,
+    operation: String,
+    request_args: Vec<RuntimeHostArgumentSeed>,
+) -> (NeedProducerTaskPlan, Vec<RuntimeExprSeed>) {
+    let mut argument_names = Vec::with_capacity(request_args.len());
+    let mut argument_types = Vec::with_capacity(request_args.len());
+    let mut arguments = Vec::with_capacity(request_args.len());
+    for argument in request_args {
+        let (name, value) = match argument {
+            RuntimeHostArgumentSeed::Positional(value) => (None, value),
+            RuntimeHostArgumentSeed::Named(argument) => (Some(argument.name), argument.value),
+            RuntimeHostArgumentSeed::Spread(_) => {
+                panic!("Agent Need producer fixtures do not use spread arguments")
+            }
+        };
+        argument_types.push(value.ty());
+        argument_names.push(name);
+        arguments.push(value);
+    }
+
+    let contract_bytes = [response_result_ty; 32];
+    let contract = HostCallContractDigest::from_bytes(contract_bytes);
+    let plan = NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes(contract_bytes),
+        NeedProducerSiteDigest::from_bytes([response_result_ty.wrapping_add(32); 32]),
+        NeedProducerRequestProjection::ExternCapability {
+            capability: HostCapabilityId("agent".to_owned()),
+            operation,
+            contract,
+            argument_names: argument_names.into_boxed_slice(),
+        },
+        argument_types.into_boxed_slice(),
+        controller_type(response_result_ty),
+        TaskPolicy::AlwaysStart,
+        HostRestartPolicy::MustBeQuiescent,
+        TaskClass::Background,
+        TaskPriority(0),
+        CancelScopeId("flow".to_owned()),
+    )
+    .expect("Agent Need producer plan admits");
+    (plan, arguments)
 }
 
 fn agent_controller_program_seed(
@@ -1239,15 +1297,17 @@ fn capture_binding_program() -> AwbcProgram {
 
 fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
     let mut builder = RuntimePlanBuilder::new();
-    let locals = builder
-        .admit_type_batch(
-            controller_agent_types(),
-            [RuntimeLocalDeclarationSeed::new(controller_type(
-                CAPTURE_REFERENCE_TY,
-            ))],
-        )
-        .expect("capture response local admits");
-    let shot = locals.local_ids()[0].clone();
+    let (shot, need) =
+        admit_response_and_need_locals(&mut builder, CAPTURE_REFERENCE_TY, CAPTURE_RESULT_TY);
+    let need_ty = response_need_type(CAPTURE_RESULT_TY);
+    let (producer_plan, producer_arguments) = agent_need_producer(
+        CAPTURE_RESULT_TY,
+        "capture".to_owned(),
+        vec![RuntimeHostArgumentSeed::Positional(controller_expr(
+            CAPTURE_TARGET_TY,
+            RuntimeExprSeedKind::Agent(arcweft_core::plan::RuntimeAgentExprSeed::CaptureViewport),
+        ))],
+    );
     let flow = flow_id("agent.capture_binding");
     agent_controller_program_with_builder(
         builder,
@@ -1256,6 +1316,19 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_ty,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need.clone(),
+                        },
+                    ),
+                    target: RuntimeNeedProducerStartTargetSeed {
+                        plan: producer_plan,
+                        arguments: producer_arguments,
+                    },
+                },
                 RuntimeFlowOpSeed::Await {
                     binding: Some(response_result_binding_pattern(
                         CAPTURE_RESULT_TY,
@@ -1263,19 +1336,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                         shot.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        need: NeedId("need.agent.capture".to_owned()),
-                        task: TaskId("task.agent.capture".to_owned()),
-                        outcome: agent_task_outcome(CAPTURE_REFERENCE_TY),
-                        request: RuntimeHostTaskRequestTemplateSeed {
-                            capability: HostCapabilityId("agent".to_owned()),
-                            operation: "capture".to_owned(),
-                            args: vec![RuntimeHostArgumentSeed::Positional(controller_expr(
-                                CAPTURE_TARGET_TY,
-                                RuntimeExprSeedKind::Agent(
-                                    arcweft_core::plan::RuntimeAgentExprSeed::CaptureViewport,
-                                ),
-                            ))],
-                        },
+                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
                     },
                     observers: Vec::new(),
                 },
@@ -1301,15 +1362,17 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
 
 fn read_resource_binding_program() -> AwbcProgram {
     let mut builder = RuntimePlanBuilder::new();
-    let locals = builder
-        .admit_type_batch(
-            controller_agent_types(),
-            [RuntimeLocalDeclarationSeed::new(controller_type(
-                RESOURCE_TY,
-            ))],
-        )
-        .expect("resource response local admits");
-    let resource = locals.local_ids()[0].clone();
+    let (resource, need) =
+        admit_response_and_need_locals(&mut builder, RESOURCE_TY, RESOURCE_RESULT_TY);
+    let need_ty = response_need_type(RESOURCE_RESULT_TY);
+    let (producer_plan, producer_arguments) = agent_need_producer(
+        RESOURCE_RESULT_TY,
+        "read_resource".to_owned(),
+        vec![RuntimeHostArgumentSeed::Positional(controller_expr(
+            STRING_TY,
+            RuntimeExprSeedKind::Value(RuntimeValue::String("agent://resource/test".to_owned())),
+        ))],
+    );
     let flow = flow_id("agent.read_resource_binding");
     agent_controller_program_with_builder(
         builder,
@@ -1318,6 +1381,19 @@ fn read_resource_binding_program() -> AwbcProgram {
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_ty,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need.clone(),
+                        },
+                    ),
+                    target: RuntimeNeedProducerStartTargetSeed {
+                        plan: producer_plan,
+                        arguments: producer_arguments,
+                    },
+                },
                 RuntimeFlowOpSeed::Await {
                     binding: Some(response_result_binding_pattern(
                         RESOURCE_RESULT_TY,
@@ -1325,19 +1401,7 @@ fn read_resource_binding_program() -> AwbcProgram {
                         resource.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        need: NeedId("need.agent.read_resource".to_owned()),
-                        task: TaskId("task.agent.read_resource".to_owned()),
-                        outcome: agent_task_outcome(RESOURCE_TY),
-                        request: RuntimeHostTaskRequestTemplateSeed {
-                            capability: HostCapabilityId("agent".to_owned()),
-                            operation: "read_resource".to_owned(),
-                            args: vec![RuntimeHostArgumentSeed::Positional(controller_expr(
-                                STRING_TY,
-                                RuntimeExprSeedKind::Value(RuntimeValue::String(
-                                    "agent://resource/test".to_owned(),
-                                )),
-                            ))],
-                        },
+                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
                     },
                     observers: Vec::new(),
                 },
@@ -1382,17 +1446,11 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
         args,
     } = request;
     let mut builder = RuntimePlanBuilder::new();
-    let locals = builder
-        .admit_type_batch(
-            controller_agent_types(),
-            [RuntimeLocalDeclarationSeed::new(controller_type(
-                response_ty,
-            ))],
-        )
-        .expect("response local admits");
-    let response = locals.local_ids()[0].clone();
-    let need = NeedId(format!("need.{agent_id}"));
-    let task = TaskId(format!("task.{agent_id}"));
+    let (response, need) =
+        admit_response_and_need_locals(&mut builder, response_ty, response_result_ty);
+    let need_ty = response_need_type(response_result_ty);
+    let (producer_plan, producer_arguments) =
+        agent_need_producer(response_result_ty, operation.to_owned(), args);
     agent_controller_program_with_builder(
         builder,
         RuntimeFlowSeed::new(
@@ -1400,6 +1458,19 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_ty,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need.clone(),
+                        },
+                    ),
+                    target: RuntimeNeedProducerStartTargetSeed {
+                        plan: producer_plan,
+                        arguments: producer_arguments,
+                    },
+                },
                 RuntimeFlowOpSeed::Await {
                     binding: Some(response_result_binding_pattern(
                         response_result_ty,
@@ -1407,14 +1478,7 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
                         response.clone(),
                     )),
                     target: RuntimeAwaitTargetSeed {
-                        need,
-                        task,
-                        outcome: agent_task_outcome(response_ty),
-                        request: RuntimeHostTaskRequestTemplateSeed {
-                            capability: HostCapabilityId("agent".to_owned()),
-                            operation: operation.to_owned(),
-                            args,
-                        },
+                        source: RuntimeExprSeed::new(need_ty, RuntimeExprSeedKind::Local(need)),
                     },
                     observers: Vec::new(),
                 },
@@ -1772,6 +1836,7 @@ fn checkpoint_requires_an_explicit_name_on_both_controller_routes() {
         operation: "checkpoint".to_owned(),
         args: Vec::new(),
         named_args: Vec::new(),
+        manifest_contract: None,
     })
     .expect_err("task checkpoint without a name is rejected");
     assert_eq!(
@@ -1974,6 +2039,7 @@ fn custom_task_attach_records_runtime_resource_payload() {
             .expect("test record fields are unique"),
         )],
         named_args: Vec::new(),
+        manifest_contract: None,
     };
     let request = agent_host_request_from_task(&request).expect("attach task lowers");
     let mut runner = AgentRunner::new(

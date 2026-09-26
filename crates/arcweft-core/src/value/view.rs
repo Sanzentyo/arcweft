@@ -78,6 +78,7 @@ impl RuntimeValueView<'_> {
                 RuntimeValue::TensorF64(_) => "f64 tensor",
                 RuntimeValue::Range(_) => "range",
                 RuntimeValue::Iterator(_) => "iterator",
+                RuntimeValue::Need(_) => "Need value",
                 RuntimeValue::Callable(_) => "function",
                 _ => unreachable!("runtime-only views are issued for runtime-only values"),
             },

@@ -1154,6 +1154,21 @@ impl BundleViewRuntime {
         })
     }
 
+    pub(crate) fn visit_runtime_values(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), String>,
+    ) -> Result<(), String> {
+        for value in self.view_root_bindings.values() {
+            arcweft_core::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
+        }
+        for mount in self.mounts.values() {
+            for value in mount.runtime_parameters.values() {
+                arcweft_core::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Restores an exact mount table atomically after validating every identity and slot.
     #[expect(
         clippy::too_many_lines,

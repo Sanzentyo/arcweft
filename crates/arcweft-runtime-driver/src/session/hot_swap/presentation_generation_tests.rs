@@ -1,7 +1,9 @@
 use super::super::{
-    BundleEntryStart, BundleSession, BundleSessionOptions, BundleSessionSaveError, BundleStepInput,
-    GenerationId, ProgramGeneration, RuntimeClockStep, SwapCompatibility,
+    BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionArtifactIdentity,
+    BundleSessionOptions, BundleSessionSaveError, BundleStepInput, GenerationId, ProgramGeneration,
+    RuntimeClockStep, SwapCompatibility,
 };
+
 use arcweft_bundle::{
     ArcweftBundle, BundleManifest, BundleRuntimeSummary,
     resource_codec::{
@@ -19,6 +21,10 @@ use arcweft_core::{
         EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
         RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
     },
+    task::{
+        CancelScopeId, HostTaskRequest, LogicalEpoch, TaskClass, TaskId, TaskKey, TaskPolicy,
+        TaskPriority, TaskSequence, TaskSpec,
+    },
 };
 use arcweft_presentation::appearance::{
     ColorScheme, PresentationColor, PresentationEnvironmentOverrides, PresentationEnvironmentValue,
@@ -34,6 +40,112 @@ use arcweft_view::{
         ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
     },
 };
+
+#[test]
+fn generation_counter_exhaustion_rejects_swap_before_commit() {
+    let first = bundle(10, ColorScheme::Light);
+    let second = bundle(20, ColorScheme::Dark);
+    let mut session = BundleSession::new(&first, BundleSessionOptions::default()).unwrap();
+    session.next_generation_id = u64::MAX;
+
+    assert!(matches!(
+        session.hot_swap_bundle(&second),
+        Err(BundleHotSwapError::GenerationIdExhausted)
+    ));
+    assert_eq!(session.active_generation().id, GenerationId::new(0));
+    assert_eq!(session.next_generation_id, u64::MAX);
+}
+
+#[test]
+fn restore_rejects_reused_generation_counter() {
+    let first = bundle(10, ColorScheme::Light);
+    let mut session = BundleSession::new(&first, BundleSessionOptions::default()).unwrap();
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(step.finished, "{:?}", step.diagnostics);
+    let mut snapshot = session.snapshot_session().unwrap();
+    snapshot.runtime.next_generation_id = session.active_generation().id.get();
+
+    assert!(matches!(
+        session.restore_session_snapshot(snapshot),
+        Err(BundleSessionSaveError::GenerationMismatch {
+            field: "next_generation_id",
+            ..
+        })
+    ));
+}
+
+#[test]
+fn local_task_cancellation_reaches_runtime_and_releases_its_generation_pin() {
+    let mut session = BundleSession::new(
+        &bundle(10, ColorScheme::Light),
+        BundleSessionOptions::default(),
+    )
+    .unwrap();
+    let sequence = TaskSequence(7);
+    let dispatch = crate::task::HostTaskDispatch {
+        generation: GenerationId::new(0),
+        logical_epoch: LogicalEpoch(1),
+        sequence,
+        last_publication_revision: None,
+        bundle_asset_context: None,
+        task: TaskSpec::new(
+            TaskId("task.cancelled".to_owned()),
+            TaskKey("task.cancelled".to_owned()),
+            TaskClass::Background,
+            TaskPriority(0),
+            CancelScopeId("test".to_owned()),
+            TaskPolicy::AlwaysStart,
+            HostTaskRequest::custom("test", "unit", []),
+        ),
+    };
+    session.tasks.register_dispatch(&dispatch);
+    session
+        .task_generation_pins
+        .insert(sequence, session.swap.pin_active_generation());
+    session.cancel_runtime_tasks(&crate::task::RuntimeTaskCancelTarget::All);
+
+    let prepared = session.prepare_step_input(
+        RuntimeClockStep::from_millis(1, 16).unwrap(),
+        BundleStepInput::default(),
+    );
+    assert!(matches!(
+        prepared.runtime.task_events.as_slice(),
+        [arcweft_core::task::TaskEvent {
+            task_id,
+            kind: arcweft_core::task::TaskEventKind::Cancelled,
+            ..
+        }] if task_id.0 == "task.cancelled"
+    ));
+    assert!(session.task_generation_pins.is_empty());
+}
+
+#[test]
+fn task_sequence_uses_last_available_identity_once() {
+    let mut session = BundleSession::new(
+        &bundle(10, ColorScheme::Light),
+        BundleSessionOptions::default(),
+    )
+    .unwrap();
+    session.next_task_sequence = u64::MAX - 1;
+    let task = TaskSpec::new(
+        TaskId("task.last".to_owned()),
+        TaskKey("task.last".to_owned()),
+        TaskClass::Background,
+        TaskPriority(0),
+        CancelScopeId("test".to_owned()),
+        TaskPolicy::AlwaysStart,
+        HostTaskRequest::custom("test", "unit", []),
+    );
+
+    let dispatch =
+        session.dispatch_requested_tasks(RuntimeClockStep::from_millis(1, 16).unwrap(), vec![task]);
+    assert_eq!(dispatch.len(), 1);
+    assert_eq!(dispatch[0].sequence, TaskSequence(u64::MAX - 1));
+    assert_eq!(session.next_task_sequence, u64::MAX);
+}
 
 fn bundle(red: u8, scheme: ColorScheme) -> ArcweftBundle {
     bundle_with_source_note(red, scheme, "")
@@ -168,6 +280,28 @@ fn commit_generational(session: &mut BundleSession, bundle: &ArcweftBundle) {
 }
 
 #[test]
+fn retained_runtime_image_keeps_its_original_artifact_identity() {
+    let first = bundle(10, ColorScheme::Light);
+    let second = bundle(20, ColorScheme::Dark);
+    let mut session = BundleSession::new(&first, BundleSessionOptions::default()).unwrap();
+    let first_identity = session.active_generation().artifact_identity;
+    let second_identity = BundleSessionArtifactIdentity::LogicalBundle {
+        identity: second.logical_identity().unwrap(),
+    };
+
+    commit_generational(&mut session, &second);
+
+    assert_eq!(
+        session.active_generation().artifact_identity,
+        second_identity
+    );
+    assert_eq!(
+        session.artifact_identity_for_generation(GenerationId::new(0)),
+        Some(first_identity)
+    );
+}
+
+#[test]
 fn source_only_style_change_retains_content_only_compatibility() {
     let first = bundle(10, ColorScheme::Light);
     let second = bundle_with_source_note(10, ColorScheme::Light, "source-only change");
@@ -189,7 +323,14 @@ fn retired_presentation_survives_chained_content_only_swap_and_fiber_completion(
     commit_generational(&mut session, &second);
     let mut third = second.clone();
     third.manifest.profile_id = Some("profile.next_content".to_owned());
-    let candidate = ProgramGeneration::from_bundle(GenerationId::new(2), &third).unwrap();
+    let candidate = ProgramGeneration::from_bundle(
+        GenerationId::new(2),
+        BundleSessionArtifactIdentity::LogicalBundle {
+            identity: third.logical_identity().unwrap(),
+        },
+        &third,
+    )
+    .unwrap();
     assert_eq!(
         crate::swap::classify_swap(session.active_generation(), &candidate),
         SwapCompatibility::ContentOnly

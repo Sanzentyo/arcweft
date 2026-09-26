@@ -1,7 +1,8 @@
 use super::{AwbcProductStepExecutor, ProductStepError};
 use crate::awbc::schema::{
     AwbcConstant, AwbcContentUnitId, AwbcEffectKind, AwbcEffectPlanId, AwbcProgram,
-    AwbcResourceResidency, AwbcStringId, AwbcTaskPlanId, AwbcTaskPolicy,
+    AwbcResourceResidency, AwbcStringId, AwbcTaskClass, AwbcTaskPlanId, AwbcTaskPlanKind,
+    AwbcTaskPolicy, AwbcTaskRequestProjection,
 };
 use crate::awbc::vm::constant_value;
 use crate::effect::{
@@ -352,9 +353,28 @@ pub(super) fn task_spec(
             .cloned()
             .ok_or_else(|| ProductStepError::Internal("missing AWBC task string".to_owned()))
     };
-    let capability = string(record.capability)?;
-    let operation = string(record.operation)?;
-    let need = NeedId(string(record.need_id)?);
+    let AwbcTaskPlanKind::AwaitMany {
+        public_id: _,
+        need_id,
+        ..
+    } = &record.kind
+    else {
+        return Err(ProductStepError::Internal(
+            "AwaitMany execution references a NeedProducer plan".to_owned(),
+        ));
+    };
+    let AwbcTaskRequestProjection::CustomCapability {
+        capability,
+        operation,
+    } = &record.request
+    else {
+        return Err(ProductStepError::Internal(
+            "AwaitMany execution references a non-custom task request".to_owned(),
+        ));
+    };
+    let capability = string(*capability)?;
+    let operation = string(*operation)?;
+    let need = NeedId(string(*need_id)?);
     if args.len() != record.arguments.len() {
         return Err(ProductStepError::Input(format!(
             "AWBC task `{}` expects {} arguments, received {}",
@@ -381,7 +401,7 @@ pub(super) fn task_spec(
         }
     }
     let request = HostTaskRequest::custom_with_named_args(capability, operation, positional, named);
-    let class = request.task_class();
+    let class = task_class(record.class);
     let outcome = TaskOutcomeContract::program(
         program
             .runtime_types
@@ -434,12 +454,35 @@ const fn task_policy(policy: AwbcTaskPolicy) -> TaskPolicy {
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn task_public_id(&self, plan: AwbcTaskPlanId) -> String {
-        self.program
-            .task_plans
-            .get(plan.index())
-            .and_then(|record| self.program.strings.get(record.public_id.index()))
-            .cloned()
-            .unwrap_or_else(|| format!("awbc.task.{}", plan.0))
+    pub(super) fn task_plan_ids(&self, plan: AwbcTaskPlanId) -> Option<(String, NeedId)> {
+        let record = self.program.task_plans.get(plan.index())?;
+        let AwbcTaskPlanKind::AwaitMany {
+            public_id, need_id, ..
+        } = &record.kind
+        else {
+            return None;
+        };
+        Some((
+            self.program.strings.get(public_id.index())?.clone(),
+            NeedId(self.program.strings.get(need_id.index())?.clone()),
+        ))
+    }
+}
+
+const fn task_class(class: AwbcTaskClass) -> crate::task::TaskClass {
+    match class {
+        AwbcTaskClass::LocalView => crate::task::TaskClass::LocalView,
+        AwbcTaskClass::Io => crate::task::TaskClass::Io,
+        AwbcTaskClass::Cpu => crate::task::TaskClass::Cpu,
+        AwbcTaskClass::GpuPrepare => crate::task::TaskClass::GpuPrepare,
+        AwbcTaskClass::ShaderCompile => crate::task::TaskClass::ShaderCompile,
+        AwbcTaskClass::WasmCall => crate::task::TaskClass::WasmCall,
+        AwbcTaskClass::AssetDecode => crate::task::TaskClass::AssetDecode,
+        AwbcTaskClass::AudioDecode => crate::task::TaskClass::AudioDecode,
+        AwbcTaskClass::AudioRender => crate::task::TaskClass::AudioRender,
+        AwbcTaskClass::TtsSynthesis => crate::task::TaskClass::TtsSynthesis,
+        AwbcTaskClass::BgmPrecompose => crate::task::TaskClass::BgmPrecompose,
+        AwbcTaskClass::Lsp => crate::task::TaskClass::Lsp,
+        AwbcTaskClass::Background => crate::task::TaskClass::Background,
     }
 }

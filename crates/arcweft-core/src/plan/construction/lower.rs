@@ -23,8 +23,8 @@ use crate::pattern::{
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
 use crate::task::{
-    AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NamedHostArg,
-    RuntimeHostArgumentTemplate, TaskOutcomeContract,
+    AwaitManyTarget, HostTaskRequestTemplate, NamedHostArg, RuntimeHostArgumentTemplate,
+    TaskOutcomeContract,
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
@@ -57,6 +57,42 @@ use super::{
     RuntimePlanBuilder, RuntimeRecordFieldSeedId, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
     RuntimeStreamPlanSeed,
 };
+
+enum FlowOpLowerFrame {
+    /// Retains the source-order parent list while a nested Match arm is lowered.
+    List {
+        seeds: std::vec::IntoIter<RuntimeFlowOpSeed>,
+        lowered: Vec<FlowOp>,
+    },
+    /// Lowers each arm body before the next arm, matching recursive admission order.
+    MatchArms {
+        scrutinee: RuntimeExpr,
+        arms: std::vec::IntoIter<RuntimeFlowMatchArmSeed>,
+        lowered: Vec<RuntimeMatchArm>,
+    },
+    /// Receives the completed arm list and appends it to its owning Match.
+    FinishMatchArm {
+        pattern: RuntimePattern,
+        guard: Option<RuntimeExpr>,
+    },
+}
+
+#[derive(Clone)]
+struct FlowLocalValidationFrame<'a> {
+    ops: &'a [FlowOp],
+    next: usize,
+    scope: BTreeSet<RuntimeLocalDeclarationId>,
+    scope_frames: Vec<BTreeSet<RuntimeLocalDeclarationId>>,
+}
+
+enum FlowLocalValidationWork<'a> {
+    List(FlowLocalValidationFrame<'a>),
+    MatchArms {
+        arms: std::slice::Iter<'a, RuntimeMatchArm>,
+        scope: BTreeSet<RuntimeLocalDeclarationId>,
+        scope_frames: Vec<BTreeSet<RuntimeLocalDeclarationId>>,
+    },
+}
 
 impl RuntimeAgentTypeContext for RuntimePlanBuilder {
     type Type = RuntimePlanTypeId;
@@ -2707,10 +2743,118 @@ impl RuntimePlanBuilder {
         &self,
         seeds: Vec<RuntimeFlowOpSeed>,
     ) -> Result<Vec<FlowOp>, RuntimePlanBuildError> {
-        seeds
-            .into_iter()
-            .map(|seed| self.lower_flow_op(seed))
-            .collect()
+        // Try/Await continuations can produce long right-nested Match trees.
+        // Keep Match arm traversal on an explicit stack so source-order seed
+        // admission does not consume one native frame per continuation.
+        let mut frames = vec![FlowOpLowerFrame::List {
+            seeds: seeds.into_iter(),
+            lowered: Vec::new(),
+        }];
+        loop {
+            let Some(frame) = frames.pop() else {
+                return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                    context: "frame stack became empty before the root list completed",
+                });
+            };
+            match frame {
+                FlowOpLowerFrame::List { mut seeds, lowered } => match seeds.next() {
+                    Some(RuntimeFlowOpSeed::Match { scrutinee, arms }) => {
+                        let scrutinee = self.lower_expression(scrutinee)?;
+                        frames.push(FlowOpLowerFrame::List { seeds, lowered });
+                        frames.push(FlowOpLowerFrame::MatchArms {
+                            scrutinee,
+                            arms: arms.into_iter(),
+                            lowered: Vec::new(),
+                        });
+                    }
+                    Some(seed) => {
+                        frames.push(FlowOpLowerFrame::List { seeds, lowered });
+                        let operation = self.lower_flow_op(seed)?;
+                        let Some(FlowOpLowerFrame::List { lowered, .. }) = frames.last_mut() else {
+                            return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                context: "a leaf operation lost its containing list",
+                            });
+                        };
+                        lowered.push(operation);
+                    }
+                    None => match frames.pop() {
+                        Some(FlowOpLowerFrame::FinishMatchArm { pattern, guard }) => {
+                            let Some(FlowOpLowerFrame::MatchArms {
+                                lowered: arms_lowered,
+                                ..
+                            }) = frames.last_mut()
+                            else {
+                                return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                    context: "a match arm body has no owning Match",
+                                });
+                            };
+                            arms_lowered.push(RuntimeMatchArm {
+                                pattern,
+                                guard,
+                                ops: lowered,
+                            });
+                        }
+                        Some(_) => {
+                            return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                context: "a completed child list has an unexpected parent frame",
+                            });
+                        }
+                        None => return Ok(lowered),
+                    },
+                },
+                FlowOpLowerFrame::MatchArms {
+                    scrutinee,
+                    mut arms,
+                    lowered,
+                } => match arms.next() {
+                    Some(arm) => {
+                        let RuntimeFlowMatchArmSeed {
+                            pattern,
+                            guard,
+                            ops,
+                        } = arm;
+                        let pattern = self.lower_pattern_seed(pattern)?;
+                        require_same("flow match pattern", scrutinee.ty(), pattern.ty())?;
+                        let guard = guard
+                            .map(|guard| self.lower_expression(guard))
+                            .transpose()?;
+                        if let Some(guard) = &guard {
+                            self.require_bool("flow match guard", guard.ty())?;
+                        }
+                        frames.push(FlowOpLowerFrame::MatchArms {
+                            scrutinee,
+                            arms,
+                            lowered,
+                        });
+                        frames.push(FlowOpLowerFrame::FinishMatchArm { pattern, guard });
+                        frames.push(FlowOpLowerFrame::List {
+                            seeds: ops.into_iter(),
+                            lowered: Vec::new(),
+                        });
+                    }
+                    None => {
+                        let Some(FlowOpLowerFrame::List {
+                            lowered: parent_ops,
+                            ..
+                        }) = frames.last_mut()
+                        else {
+                            return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                                context: "a Match has no containing operation list",
+                            });
+                        };
+                        parent_ops.push(FlowOp::Match {
+                            scrutinee,
+                            arms: lowered,
+                        });
+                    }
+                },
+                FlowOpLowerFrame::FinishMatchArm { .. } => {
+                    return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                        context: "match arm completion ran before its child list",
+                    });
+                }
+            }
+        }
     }
 
     #[allow(
@@ -2817,31 +2961,49 @@ impl RuntimePlanBuilder {
                 target,
                 observers,
             } => {
-                self.validate_task_outcome(&target.outcome, "await payload")?;
+                let source = self.lower_expression(target.source)?;
+                let item = self.need_item_type(source.ty())?;
+                let binding = binding
+                    .map(|binding| self.lower_pattern_seed(binding))
+                    .transpose()?;
+                if let Some(binding) = &binding {
+                    require_same("Await result binding", item, binding.ty())?;
+                }
                 FlowOp::Await {
-                    binding: binding
-                        .map(|binding| self.lower_pattern_seed(binding))
-                        .transpose()?,
-                    target: AwaitTarget {
-                        need: target.need,
-                        task: target.task,
-                        outcome: target.outcome,
-                        request: self.lower_host_task_request(target.request)?,
-                    },
+                    binding,
+                    target: crate::plan::RuntimeNeedAwaitTarget::new(source),
                     observers: observers
                         .into_iter()
                         .map(|observer| {
                             Ok(crate::plan::RuntimeAwaitPendingObserver {
                                 pattern: self.lower_pattern_seed(observer.pattern)?,
-                                ops: observer
-                                    .ops
-                                    .into_iter()
-                                    .map(|op| self.lower_flow_op(op))
-                                    .collect::<Result<_, _>>()?,
+                                ops: self.lower_flow_ops(observer.ops)?,
                             })
                         })
                         .collect::<Result<_, RuntimePlanBuildError>>()?,
                 }
+            }
+            RuntimeFlowOpSeed::StartNeedProducer { binding, target } => {
+                let binding = self.lower_pattern_seed(binding)?;
+                let item = self.need_item_type(binding.ty())?;
+                let plan_item =
+                    self.resolve_seed_type("Need producer payload", target.plan.payload_type())?;
+                require_same("Need producer result item", item, plan_item)?;
+                let mut arguments = Vec::with_capacity(target.arguments.len());
+                for (argument, expected_type) in target
+                    .arguments
+                    .into_iter()
+                    .zip(target.plan.argument_types().iter().copied())
+                {
+                    let argument = self.lower_expression(argument)?;
+                    let expected_type =
+                        self.resolve_seed_type("Need producer argument", expected_type)?;
+                    require_same("Need producer argument", expected_type, argument.ty())?;
+                    arguments.push(argument);
+                }
+                let target =
+                    crate::plan::RuntimeNeedProducerStartTarget::try_new(target.plan, arguments)?;
+                FlowOp::StartNeedProducer { binding, target }
             }
             RuntimeFlowOpSeed::AwaitMany {
                 binding,
@@ -2946,13 +3108,10 @@ impl RuntimePlanBuilder {
                     else_ops: self.lower_flow_ops(else_ops)?,
                 }
             }
-            RuntimeFlowOpSeed::Match { scrutinee, arms } => {
-                let scrutinee = self.lower_expression(scrutinee)?;
-                let arms = arms
-                    .into_iter()
-                    .map(|arm| self.lower_flow_match_arm(arm, scrutinee.ty()))
-                    .collect::<Result<_, _>>()?;
-                FlowOp::Match { scrutinee, arms }
+            RuntimeFlowOpSeed::Match { .. } => {
+                return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                    context: "Match reached the recursive leaf-operation lowerer",
+                });
             }
             RuntimeFlowOpSeed::Loop { result, body } => FlowOp::Loop {
                 result: result
@@ -3548,27 +3707,6 @@ impl RuntimePlanBuilder {
         })
     }
 
-    fn lower_flow_match_arm(
-        &self,
-        arm: RuntimeFlowMatchArmSeed,
-        scrutinee_ty: RuntimePlanTypeId,
-    ) -> Result<RuntimeMatchArm, RuntimePlanBuildError> {
-        let pattern = self.lower_pattern_seed(arm.pattern)?;
-        require_same("flow match pattern", scrutinee_ty, pattern.ty())?;
-        let guard = arm
-            .guard
-            .map(|guard| self.lower_expression(guard))
-            .transpose()?;
-        if let Some(guard) = &guard {
-            self.require_bool("flow match guard", guard.ty())?;
-        }
-        Ok(RuntimeMatchArm {
-            pattern,
-            guard,
-            ops: self.lower_flow_ops(arm.ops)?,
-        })
-    }
-
     fn lower_iterator_evidence(
         &self,
         source: RuntimePlanTypeId,
@@ -3696,6 +3834,16 @@ impl RuntimePlanBuilder {
                 }
             }
             _ => invalid_projection("AwaitMany source", source),
+        }
+    }
+
+    fn need_item_type(
+        &self,
+        source: RuntimePlanTypeId,
+    ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
+        match self.projection(source)? {
+            RuntimePlanTypeProjection::Need(item) => Ok(*item),
+            _ => invalid_projection("Await source", source),
         }
     }
 
@@ -4161,6 +4309,74 @@ impl RuntimePlanBuilder {
         Ok(used)
     }
 
+    fn validate_flow_match_arms_iterative(
+        &self,
+        arms: &[RuntimeMatchArm],
+        scope: &BTreeSet<RuntimeLocalDeclarationId>,
+        used: &mut BTreeSet<RuntimeLocalDeclarationId>,
+        scope_frames: &[BTreeSet<RuntimeLocalDeclarationId>],
+    ) -> Result<(), RuntimePlanBuildError> {
+        // Match branches clone lexical scope state, while the explicit list
+        // cursor keeps a continuation chain of nested Match nodes off-stack.
+        let mut work = vec![FlowLocalValidationWork::MatchArms {
+            arms: arms.iter(),
+            scope: scope.clone(),
+            scope_frames: scope_frames.to_vec(),
+        }];
+        while let Some(frame) = work.pop() {
+            match frame {
+                FlowLocalValidationWork::MatchArms {
+                    mut arms,
+                    scope,
+                    scope_frames,
+                } => {
+                    let Some(arm) = arms.next() else {
+                        continue;
+                    };
+                    let arm_scope = extend_scope(&scope, pattern_binding_locals(&arm.pattern))?;
+                    if let Some(guard) = &arm.guard {
+                        self.validate_expression_locals(guard, &arm_scope, used)?;
+                    }
+                    work.push(FlowLocalValidationWork::MatchArms {
+                        arms,
+                        scope,
+                        scope_frames: scope_frames.clone(),
+                    });
+                    work.push(FlowLocalValidationWork::List(FlowLocalValidationFrame {
+                        ops: &arm.ops,
+                        next: 0,
+                        scope: arm_scope,
+                        scope_frames,
+                    }));
+                }
+                FlowLocalValidationWork::List(mut frame) => {
+                    let Some(op) = frame.ops.get(frame.next) else {
+                        continue;
+                    };
+                    frame.next += 1;
+                    if let FlowOp::Match { scrutinee, arms } = op {
+                        self.validate_expression_locals(scrutinee, &frame.scope, used)?;
+                        work.push(FlowLocalValidationWork::List(frame.clone()));
+                        work.push(FlowLocalValidationWork::MatchArms {
+                            arms: arms.iter(),
+                            scope: frame.scope,
+                            scope_frames: frame.scope_frames,
+                        });
+                    } else {
+                        self.validate_flow_operation_locals_inner(
+                            std::slice::from_ref(op),
+                            &mut frame.scope,
+                            used,
+                            &mut frame.scope_frames,
+                        )?;
+                        work.push(FlowLocalValidationWork::List(frame));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "lexical validation exhaustively rejects runtime-only continuation operations"
@@ -4220,7 +4436,7 @@ impl RuntimePlanBuilder {
                     target,
                     observers,
                 } => {
-                    self.validate_task_request_locals(&target.request, scope, used)?;
+                    self.validate_expression_locals(&target.source, scope, used)?;
                     for observer in observers {
                         let mut observer_scope =
                             extend_scope(scope, pattern_binding_locals(&observer.pattern))?;
@@ -4234,6 +4450,12 @@ impl RuntimePlanBuilder {
                     if let Some(binding) = binding {
                         *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                     }
+                }
+                FlowOp::StartNeedProducer { binding, target } => {
+                    for argument in target.arguments() {
+                        self.validate_expression_locals(argument, scope, used)?;
+                    }
+                    *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                 }
                 FlowOp::AwaitMany {
                     binding,
@@ -4331,20 +4553,7 @@ impl RuntimePlanBuilder {
                 }
                 FlowOp::Match { scrutinee, arms } => {
                     self.validate_expression_locals(scrutinee, scope, used)?;
-                    for arm in arms {
-                        let mut arm_scope =
-                            extend_scope(scope, pattern_binding_locals(&arm.pattern))?;
-                        if let Some(guard) = &arm.guard {
-                            self.validate_expression_locals(guard, &arm_scope, used)?;
-                        }
-                        let mut arm_frames = scope_frames.clone();
-                        self.validate_flow_operation_locals_inner(
-                            &arm.ops,
-                            &mut arm_scope,
-                            used,
-                            &mut arm_frames,
-                        )?;
-                    }
+                    self.validate_flow_match_arms_iterative(arms, scope, used, scope_frames)?;
                 }
                 FlowOp::Loop { result, body } => {
                     let mut nested = scope.clone();
@@ -4756,6 +4965,17 @@ impl RuntimePlanBuilder {
         ty: RuntimePlanTypeId,
         value: &RuntimeValue,
     ) -> Result<(), RuntimePlanBuildError> {
+        if crate::value::visit_runtime_value_graph(value, |node| {
+            if matches!(node, RuntimeValue::Need(_)) {
+                Err(())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
+        {
+            return Err(RuntimePlanBuildError::InvalidValueType { context, ty });
+        }
         if value.contains_function() {
             return Err(RuntimePlanBuildError::FunctionValueInPlan { context });
         }

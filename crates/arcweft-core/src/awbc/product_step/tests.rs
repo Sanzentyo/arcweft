@@ -11,11 +11,12 @@ use crate::awbc::schema::{
     AwbcContentUnitId, AwbcDialogueContentTemplate, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding, AwbcFlowExecutable,
     AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
-    AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcLineCancelHandler, AwbcPattern,
-    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument,
+    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcLineCancelHandler,
+    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy,
+    AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
@@ -26,7 +27,8 @@ use crate::step::{
     RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason,
 };
 use crate::task::{
-    LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
+    GenerationId, LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+    TaskPublicationRevision, TaskSequence,
 };
 use crate::value::{RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
@@ -42,6 +44,87 @@ fn fixture_dialogue_target() -> crate::value::RuntimeOpaqueValue {
         crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
     );
     crate::value::RuntimeOpaqueValue::new_exact(&owner, RuntimeValue::Unit)
+}
+
+fn fixture_bundle_image_handle() -> RuntimeValue {
+    let artifact = crate::value::RuntimeBundleAssetArtifactDigest::try_from_bytes([0x32; 32])
+        .expect("fixture artifact digest is nonzero");
+    let context = crate::value::RuntimeBundleAssetContext::new(GenerationId::new(0), artifact);
+    let resource = crate::value::RuntimeBundleAssetResourceId::try_new("asset.bg.room")
+        .expect("fixture asset identity is canonical");
+    let content = crate::value::RuntimeAssetContentDigest::try_for_bytes(b"image")
+        .expect("fixture content digest fits");
+    let binding = crate::value::RuntimeBundleAssetBinding::try_new(context, resource, content)
+        .expect("fixture asset binding is valid");
+    crate::value::RuntimeImageHandleValue::from_binding(binding)
+        .into_runtime_value()
+        .expect("fixture ImageHandle is standard-owned")
+}
+
+#[test]
+fn product_snapshot_visitor_finds_asset_handles_in_dialogue_captures() {
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        return_program(),
+        crate::awbc::schema::AwbcEntryId(0),
+        64,
+    )
+    .expect("fixture Product executor starts");
+    let content_id = AwbcContentUnitId(0);
+    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+        std::num::NonZeroU32::MIN,
+    );
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        content,
+        0,
+    );
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation,
+            content: content_id,
+            target: fixture_dialogue_target(),
+            target_type: AwbcTypeId(0),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.asset.capture")
+                .expect("fixture line identity"),
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(0),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            captures: Box::new([RuntimeValue::Tuple(vec![fixture_bundle_image_handle()])]),
+            task_inputs: Box::new([]),
+            values: Box::new([]),
+            effect_callbacks: Box::new([]),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            phase: ProductDialoguePhase::Activating {
+                fiber: executor.fiber.clone(),
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+            pending_activation_host_call: None,
+        })
+        .expect("dialogue capture remains owned by Product state");
+    let snapshot = executor.snapshot();
+    let mut roles = Vec::new();
+
+    snapshot
+        .visit_runtime_values(|value| {
+            if let Some(role) = crate::value::runtime_bundle_asset_opaque_role(value) {
+                roles.push(role);
+            }
+            Ok(())
+        })
+        .expect("Product snapshot visits every runtime value");
+
+    assert_eq!(
+        roles,
+        vec![crate::value::RuntimeBundleAssetOpaqueRole::ImageHandle]
+    );
 }
 
 #[test]
@@ -1339,6 +1422,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
             phase: ProductLineTaskFiberPhase::Active,
         },
         fiber: executor.fiber.clone(),
+        runtime_generation: executor.runtime_generation,
         pending_host_call: None,
     });
     let transaction = executor
@@ -1362,12 +1446,16 @@ fn save_snapshot_preserves_queued_progress_publications() {
     let mut executor = AwbcProductStepExecutor::for_entry(return_program(), AwbcEntryId(0), 64)
         .expect("product executor starts");
     let event = TaskEvent {
+        generation: GenerationId::new(0),
         logical_epoch: LogicalEpoch(7),
         task_id: TaskId("task.snapshot".to_owned()),
         sequence: TaskSequence(3),
+        publication_revision: TaskPublicationRevision::FIRST,
         kind: TaskEventKind::Progress(Progress::new(0.25).expect("fixture Progress is valid")),
     };
-    executor.latch_task_events(std::slice::from_ref(&event));
+    let mut output = crate::step::RuntimeStepOutput::default();
+    executor.latch_task_events(std::slice::from_ref(&event), &mut output);
+    assert!(output.diagnostics.is_empty());
 
     let saved = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
         .expect("queued Progress snapshots");
@@ -2308,12 +2396,22 @@ fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert_eq!(result.stats.need_states_in, 1);
     assert!(result.output.requests.tasks.is_empty());
-    assert!(result.output.flow_events.iter().all(|event| !matches!(
+    assert!(result.output.flow_events.iter().any(|event| matches!(
         event,
-        crate::plan::FlowEvent::AwaitStarted { .. }
-            | crate::plan::FlowEvent::AwaitReady { .. }
-            | crate::plan::FlowEvent::AwaitProgress { .. }
+        crate::plan::FlowEvent::AwaitStarted { need, task: None }
+            if need.0 == "need.profile"
     )));
+    assert!(result.output.flow_events.iter().any(|event| matches!(
+        event,
+        crate::plan::FlowEvent::AwaitReady { need, .. } if need.0 == "need.profile"
+    )));
+    assert!(
+        result
+            .output
+            .flow_events
+            .iter()
+            .all(|event| !matches!(event, crate::plan::FlowEvent::AwaitProgress { .. }))
+    );
 }
 
 #[test]
@@ -2388,7 +2486,7 @@ fn need_await_snapshot_retains_and_validates_selected_item_type() {
         Need::Pending(Progress::new(0.5).expect("fixture progress is valid")),
     )]);
     let result = executor.step(input, direct_need_step_options());
-    assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Output);
 
     let snapshot = executor.snapshot();
     assert!(matches!(
@@ -2440,18 +2538,30 @@ fn unresolved_direct_need_blocks_without_inventing_a_task_request() {
         Need::Pending(Progress::new(0.5).expect("fixture progress is valid")),
     ];
     for state in unresolved {
+        let is_pending = matches!(&state, Need::Pending(_));
         let (mut executor, input) =
             direct_need_executor_and_input(vec![runtime_need_state(0, state)]);
 
         let result = executor.step(input, direct_need_step_options());
 
-        assert_eq!(
-            result.fiber_status,
-            FlowFiberStatus::NeedWaiting(NeedId("need.profile".to_owned()))
-        );
-        assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+        assert!(matches!(
+            &result.fiber_status,
+            FlowFiberStatus::NeedWaiting(state) if state.need == NeedId("need.profile".to_owned())
+        ));
+        assert_eq!(result.stop_reason, RuntimeStepStopReason::Output);
         assert!(result.output.requests.tasks.is_empty());
-        assert!(result.output.flow_events.is_empty());
+        assert!(result.output.flow_events.iter().any(|event| matches!(
+            event,
+            crate::plan::FlowEvent::AwaitStarted { need, task: None }
+                if need.0 == "need.profile"
+        )));
+        if is_pending {
+            assert!(result.output.flow_events.iter().any(|event| matches!(
+                event,
+                crate::plan::FlowEvent::AwaitProgress { need, .. }
+                    if need.0 == "need.profile"
+            )));
+        }
     }
 }
 
@@ -2492,6 +2602,458 @@ fn direct_need_uses_the_first_terminal_sequence() {
     );
     assert_eq!(result.stats.need_states_in, 3);
     assert!(result.output.requests.tasks.is_empty());
+}
+
+#[test]
+fn restartable_need_save_restore_reensures_exact_launch_and_accepts_next_revision() {
+    let generation = GenerationId::new(7);
+    let program = std::sync::Arc::new(need_producer_program(AwbcTaskRestartPolicy::Restartable));
+    let mut executor = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("Restartable Need producer verifies");
+
+    let start = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(start.output.requests.tasks.len(), 1);
+    let task_spec = start.output.requests.tasks[0].clone();
+    let need = executor
+        .restartable_dispatches()
+        .into_iter()
+        .find(|dispatch| dispatch.task_id == task_spec.id)
+        .expect("accepted producer is visible to dispatch projection")
+        .need_id;
+
+    for (revision, amount) in [(1, 0.25), (2, 0.5)] {
+        let progress = producer_task_event(
+            generation,
+            task_spec.id.clone(),
+            revision,
+            TaskEventKind::Progress(Progress::new(amount).expect("progress is valid")),
+        );
+        let step = executor.step(
+            RuntimeStepInput {
+                task_events: vec![progress],
+                ..RuntimeStepInput::default()
+            },
+            RuntimeStepOptions::default(),
+        );
+        assert!(step.output.flow_events.iter().any(|event| matches!(
+            event,
+            crate::plan::FlowEvent::AwaitProgress { need: observed, .. }
+                if observed == &need
+        )));
+        assert!(matches!(step.fiber_status, FlowFiberStatus::NeedWaiting(_)));
+    }
+
+    let live = executor
+        .snapshot_for_save()
+        .expect("Restartable in-flight Need can be saved");
+    let mut future_observation = live.clone();
+    let observation_key = future_observation
+        .need_publications
+        .keys()
+        .find(|(_, observed_need)| observed_need == &need)
+        .cloned()
+        .expect("local Await retains its observed Need cursor");
+    let crate::task::TaskPublicationCursor::LocalTaskEvent {
+        generation: observed_generation,
+        logical_epoch,
+        dispatch_sequence,
+        ..
+    } = future_observation.need_publications[&observation_key]
+    else {
+        panic!("local producer observation uses a task event cursor")
+    };
+    future_observation.need_publications.insert(
+        observation_key,
+        crate::task::TaskPublicationCursor::LocalTaskEvent {
+            generation: observed_generation,
+            logical_epoch,
+            dispatch_sequence,
+            publication_revision: TaskPublicationRevision::new(
+                std::num::NonZeroU64::new(3).expect("future revision is nonzero"),
+            ),
+        },
+    );
+    let error = executor
+        .restore_snapshot(future_observation)
+        .expect_err("a waiter cannot claim a producer revision it has not accepted");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("not bounded by its accepted producer publication")
+    ));
+    assert!(executor.restartable_dispatches().iter().any(|dispatch| {
+        dispatch.task_id == task_spec.id
+            && matches!(
+                dispatch.publication,
+                Some(crate::task::TaskPublicationCursor::LocalTaskEvent {
+                    publication_revision,
+                    ..
+                }) if publication_revision.get() == 2
+            )
+    }));
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
+        .expect("Restartable Need snapshot serializes");
+    let encoded = serde_json::to_string(&saved).expect("save snapshot serializes");
+    let decoded: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_str(&encoded).expect("save snapshot decodes");
+    let restored_live = decoded
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::clone(&program),
+        ))
+        .expect("verified program and typed producer snapshot restore");
+    let mut restored = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("restore executor starts");
+    restored
+        .restore_snapshot(restored_live)
+        .expect("Restartable launch and publication revision restore");
+    assert!(
+        restored
+            .restartable_dispatches()
+            .iter()
+            .any(|dispatch| { dispatch.task_id == task_spec.id && dispatch.needs_reensure })
+    );
+
+    let reensure = restored.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 0,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(reensure.output.requests.tasks, vec![task_spec.clone()]);
+    assert!(
+        restored
+            .restartable_dispatches()
+            .iter()
+            .all(|dispatch| !dispatch.needs_reensure)
+    );
+
+    let ready = producer_task_event(
+        generation,
+        task_spec.id.clone(),
+        3,
+        TaskEventKind::Ready(RuntimePayload(RuntimeValue::String("ready".to_owned()))),
+    );
+    let completed = restored.step(
+        RuntimeStepInput {
+            task_events: vec![ready],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions::default(),
+    );
+    assert_eq!(completed.stop_reason, RuntimeStepStopReason::OneOp);
+    assert!(completed.output.flow_events.iter().any(|event| matches!(
+        event,
+        crate::plan::FlowEvent::AwaitReady { need: observed, value }
+            if observed == &need && value.value() == &RuntimeValue::String("ready".to_owned())
+    )));
+    let finished = restored.step(RuntimeStepInput::default(), RuntimeStepOptions::default());
+    assert_eq!(finished.stop_reason, RuntimeStepStopReason::Done);
+}
+
+#[test]
+fn must_be_quiescent_need_save_returns_typed_defer() {
+    let generation = GenerationId::new(7);
+    let mut executor = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::new(need_producer_program(
+            AwbcTaskRestartPolicy::MustBeQuiescent,
+        )),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("MustBeQuiescent Need producer verifies");
+    let started = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    let need = executor
+        .need_producers
+        .launches()
+        .next()
+        .expect("Need producer was admitted")
+        .need()
+        .clone();
+    assert_eq!(started.output.requests.tasks.len(), 1);
+    assert_eq!(
+        executor.snapshot_for_save(),
+        Err(super::AwbcProductSaveError::NeedsQuiescence { needs: vec![need] })
+    );
+}
+
+#[test]
+fn ready_need_producer_payload_is_checked_before_publication_and_on_restore() {
+    let generation = GenerationId::new(7);
+    let program = std::sync::Arc::new(need_producer_program(AwbcTaskRestartPolicy::Restartable));
+    let mut rejected = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("Restartable Need producer verifies");
+    let started = rejected.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    let task = started.output.requests.tasks[0].clone();
+    let invalid_ready = producer_task_event(
+        generation,
+        task.id.clone(),
+        1,
+        TaskEventKind::Ready(RuntimePayload(RuntimeValue::Bool(true))),
+    );
+    let failed = rejected.step(
+        RuntimeStepInput {
+            task_events: vec![invalid_ready],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions::default(),
+    );
+    assert_eq!(failed.stop_reason, RuntimeStepStopReason::Failed);
+    assert!(
+        failed
+            .output
+            .flow_events
+            .iter()
+            .all(|event| !matches!(event, crate::plan::FlowEvent::AwaitReady { .. }))
+    );
+    let launch = rejected
+        .need_producers
+        .launches()
+        .next()
+        .expect("invalid Ready does not remove the producer");
+    assert_eq!(launch.state(), &Need::NotStarted);
+    assert!(launch.publication().is_none());
+    assert!(!launch.task_terminal());
+
+    let mut accepted = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("second Need producer verifies");
+    let started = accepted.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    let task = started.output.requests.tasks[0].clone();
+    let valid_ready = producer_task_event(
+        generation,
+        task.id,
+        1,
+        TaskEventKind::Ready(RuntimePayload(RuntimeValue::String("ready".to_owned()))),
+    );
+    accepted.step(
+        RuntimeStepInput {
+            task_events: vec![valid_ready],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions {
+            mode: crate::step::RuntimeStepMode::Drain,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    let mut forged = accepted.snapshot();
+    forged.need_producers.launches[0].state = Need::Ready(RuntimePayload(RuntimeValue::Bool(true)));
+    let error = accepted
+        .restore_snapshot(forged)
+        .expect_err("restored Ready payload must match its selected Need<T>");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("saved Need producer Ready payload is outside its checked item type")
+    ));
+}
+
+#[test]
+fn await_many_occurrence_frontier_survives_product_save_restore_and_rebind() {
+    let generation = GenerationId::new(7);
+    let program = std::sync::Arc::new(return_program());
+    let mut executor = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("Product executor starts");
+    let first = executor
+        .fiber
+        .take_await_many_invocation(generation)
+        .expect("first per-fiber occurrence is allocated");
+    let base_task = TaskId("task.await-many-base".to_owned());
+    let base_need = NeedId("need.await-many-base".to_owned());
+    let first_task = first.task_id(&base_task, 0).expect("item task identity");
+    let first_need = first.need_id(&base_need, 0).expect("item Need identity");
+    assert_eq!(first.ordinal(), 0);
+
+    let live = executor
+        .snapshot_for_save()
+        .expect("running fiber occurrence frontier is saveable");
+    let saved =
+        AwbcProductExecutorSaveSnapshot::from_live(&live).expect("Product save snapshot converts");
+    let encoded = serde_json::to_string(&saved).expect("Product snapshot serializes");
+    let decoded: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_str(&encoded).expect("Product snapshot decodes");
+    let restored_live = decoded
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::clone(&program),
+        ))
+        .expect("fiber occurrence frontier restores");
+    let mut restored = AwbcProductStepExecutor::for_entry_arc_with_generation(
+        std::sync::Arc::clone(&program),
+        AwbcEntryId(0),
+        64,
+        generation,
+    )
+    .expect("restore executor starts");
+    restored
+        .restore_snapshot(restored_live)
+        .expect("fiber occurrence frontier validates");
+    let next_generation = GenerationId::new(8);
+    restored
+        .rebind_generation(next_generation)
+        .expect("new generation rebinds future occurrences");
+    let second = restored
+        .fiber
+        .take_await_many_invocation(next_generation)
+        .expect("next per-fiber occurrence is allocated");
+
+    assert_eq!(second.fiber(), first.fiber());
+    assert_eq!(second.generation(), next_generation);
+    assert_eq!(second.ordinal(), 1);
+    assert_ne!(
+        second.task_id(&base_task, 0).expect("second task identity"),
+        first_task
+    );
+    assert_ne!(
+        second.need_id(&base_need, 0).expect("second Need identity"),
+        first_need
+    );
+}
+
+#[test]
+fn await_many_partial_fanout_survives_restore_when_task_quota_is_exhausted() {
+    let generation = GenerationId::new(7);
+    let program = await_many_product_program();
+    let items = await_many_items();
+    let mut executor = await_many_executor(&program, items.clone(), generation);
+    let first = executor.step(
+        RuntimeStepInput::default(),
+        RuntimeStepOptions {
+            max_new_task_requests: 1,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(first.output.requests.tasks.len(), 1);
+    assert!(first.output.diagnostics.is_empty());
+    assert_ne!(first.stop_reason, RuntimeStepStopReason::Failed);
+    let first_task = first.output.requests.tasks[0].clone();
+    let invocation = match executor
+        .fiber
+        .suspension
+        .as_ref()
+        .map(|suspension| &suspension.reason)
+    {
+        Some(crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state)) => {
+            assert_eq!(state.next_index, 1);
+            assert_eq!(state.in_flight.len(), 1);
+            assert_eq!(state.in_flight[0].task_id, first_task.id.0);
+            state.invocation.expect("accepted AwaitMany occurrence")
+        }
+        _ => panic!("quota leaves the fan-out safely suspended"),
+    };
+
+    let live = executor
+        .snapshot_for_save()
+        .expect("partial AwaitMany continuation is saveable");
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&live)
+        .expect("partial AwaitMany Product state serializes");
+    let encoded = serde_json::to_string(&saved).expect("Product save serializes");
+    let decoded: AwbcProductExecutorSaveSnapshot =
+        serde_json::from_str(&encoded).expect("Product save decodes");
+    let restored_live = decoded
+        .into_live_for_program(&crate::task::RuntimeProgramOwner::Awbc(
+            std::sync::Arc::new(program.clone()),
+        ))
+        .expect("partial AwaitMany continuation restores");
+    let mut restored = await_many_executor(&program, items, generation);
+    restored
+        .restore_snapshot(restored_live)
+        .expect("partial AwaitMany identity and links validate");
+
+    let ready = producer_task_event(
+        generation,
+        first_task.id.clone(),
+        1,
+        TaskEventKind::Ready(RuntimePayload(RuntimeValue::String("one".to_owned()))),
+    );
+    let resumed = restored.step(
+        RuntimeStepInput {
+            task_events: vec![ready],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions {
+            max_new_task_requests: 2,
+            ..RuntimeStepOptions::default()
+        },
+    );
+    assert_eq!(resumed.output.requests.tasks.len(), 2);
+    assert_eq!(resumed.output.diagnostics.len(), 1);
+    assert_eq!(
+        resumed.output.diagnostics[0].message,
+        format!("task {} sequence 21 delivered", first_task.id.0)
+    );
+    assert_ne!(resumed.stop_reason, RuntimeStepStopReason::Failed);
+    assert!(
+        resumed
+            .output
+            .requests
+            .tasks
+            .iter()
+            .all(|task| task.id != first_task.id)
+    );
+    assert_ne!(
+        resumed.output.requests.tasks[0].id,
+        resumed.output.requests.tasks[1].id
+    );
+    assert!(matches!(
+        restored
+            .fiber
+            .suspension
+            .as_ref()
+            .map(|suspension| &suspension.reason),
+        Some(crate::awbc::fiber::FiberSuspensionReason::AwaitMany(state))
+            if state.invocation == Some(invocation)
+                && state.next_index == 3
+                && state.in_flight.len() == 2
+    ));
 }
 
 #[test]
@@ -3063,6 +3625,7 @@ fn direct_need_step_options() -> RuntimeStepOptions {
     RuntimeStepOptions {
         mode: crate::step::RuntimeStepMode::Drain,
         budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+        max_new_task_requests: usize::MAX,
     }
 }
 
@@ -3190,6 +3753,345 @@ fn typed_direct_need_program() -> AwbcProgram {
         mutable: false,
         expected: Some(string_ty),
     };
+    program
+}
+
+fn need_producer_program(restart: AwbcTaskRestartPolicy) -> AwbcProgram {
+    let item_ty = AwbcTypeId(1);
+    let need_ty = AwbcTypeId(0);
+    let item_identity = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let contract_bytes = [0x45; 32];
+    let contract = crate::task::NeedProducerContractDigest::from_bytes(contract_bytes);
+    let site = crate::task::NeedProducerSiteDigest::from_bytes([0x46; 32]);
+    let host_contract = crate::step::HostCallContractDigest::from_bytes(contract_bytes);
+    let producer_plan = crate::task::NeedProducerTaskPlan::try_new(
+        contract,
+        site,
+        crate::task::NeedProducerRequestProjection::ExternCapability {
+            capability: crate::task::HostCapabilityId("probe".to_owned()),
+            operation: "read".to_owned(),
+            contract: host_contract,
+            argument_names: Box::new([]),
+        },
+        Box::new([]),
+        item_identity,
+        crate::task::TaskPolicy::JoinSameKey,
+        match restart {
+            AwbcTaskRestartPolicy::Restartable => crate::task::HostRestartPolicy::Restartable,
+            AwbcTaskRestartPolicy::MustBeQuiescent => {
+                crate::task::HostRestartPolicy::MustBeQuiescent
+            }
+        },
+        crate::task::TaskClass::Io,
+        crate::task::TaskPriority(0),
+        crate::task::CancelScopeId("flow".to_owned()),
+    )
+    .expect("test producer plan is internally consistent");
+    let mut program = AwbcProgram {
+        strings: vec![
+            "entry.main".to_owned(),
+            "probe".to_owned(),
+            "read".to_owned(),
+            "flow".to_owned(),
+        ],
+        runtime_types: vec![
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x90; 32]),
+                AwbcRuntimeTypeShape::Need(item_ty),
+            ),
+            AwbcRuntimeType::new(item_identity, AwbcRuntimeTypeShape::String),
+        ],
+        signatures: vec![
+            AwbcSignature {
+                params: Vec::new(),
+                result: Some(item_ty),
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: need_ty,
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: item_ty,
+                    role: AwbcFrameSlotRole::ReturnValue,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        }],
+        instructions: vec![AwbcInstruction::StartNeed {
+            dst: AwbcRegisterId(0),
+            plan: crate::awbc::schema::AwbcTaskPlanId(0),
+            args: Vec::new(),
+        }],
+        patterns: vec![AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: Some(item_ty),
+        }],
+        resume_points: vec![AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::Await,
+        }],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 1),
+                terminator: AwbcTerminator::Await {
+                    handle: AwbcRegisterId(0),
+                    binding: Some(AwbcPatternId(0)),
+                    observer: None,
+                    resume: AwbcResumePointId(0),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(1, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(1)),
+                },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            },
+        ],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 2),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
+        }],
+        task_plans: vec![AwbcTaskPlan {
+            signature: AwbcSignatureId(1),
+            request: AwbcTaskRequestProjection::ExternCapability {
+                capability: AwbcStringId(1),
+                operation: AwbcStringId(2),
+                contract: host_contract,
+            },
+            class: AwbcTaskClass::Io,
+            priority: 0,
+            cancel_scope: AwbcStringId(3),
+            policy: AwbcTaskPolicy::JoinSameKey,
+            payload_type: item_ty,
+            arguments: Vec::<AwbcHostArgument>::new(),
+            kind: AwbcTaskPlanKind::NeedProducer {
+                contract,
+                site,
+                semantic_digest: producer_plan.semantic_digest(),
+                restart,
+            },
+        }],
+        flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
+            roles: crate::entry::RuntimeEntryRoles::None,
+        }],
+        ..AwbcProgram::default()
+    };
+    program.canonicalize_string_table();
+    program
+}
+
+fn producer_task_event(
+    generation: GenerationId,
+    task_id: TaskId,
+    revision: u64,
+    kind: TaskEventKind,
+) -> TaskEvent {
+    TaskEvent {
+        generation,
+        logical_epoch: LogicalEpoch(13),
+        task_id,
+        sequence: TaskSequence(21),
+        publication_revision: TaskPublicationRevision::new(
+            std::num::NonZeroU64::new(revision).expect("event revision is nonzero"),
+        ),
+        kind,
+    }
+}
+
+fn await_many_items() -> RuntimeValue {
+    RuntimeValue::Seq(crate::value::RuntimeSeq::values(vec![
+        RuntimeValue::String("one".to_owned()),
+        RuntimeValue::String("two".to_owned()),
+        RuntimeValue::String("three".to_owned()),
+    ]))
+}
+
+fn await_many_executor(
+    program: &AwbcProgram,
+    items: RuntimeValue,
+    generation: GenerationId,
+) -> AwbcProductStepExecutor {
+    AwbcProductStepExecutor::for_function_invocation_with_generation(
+        program.clone(),
+        AwbcEntryId(0),
+        AwbcFunctionId(0),
+        [RuntimeFlowParameterBinding {
+            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+            value: items,
+        }],
+        64,
+        generation,
+    )
+    .expect("AwaitMany Product executor starts")
+}
+
+fn await_many_product_program() -> AwbcProgram {
+    let item_ty = AwbcTypeId(1);
+    let sequence_ty = AwbcTypeId(2);
+    let mut program = AwbcProgram {
+        strings: vec![
+            "entry.main".to_owned(),
+            "probe".to_owned(),
+            "read".to_owned(),
+            "flow".to_owned(),
+            "task.items".to_owned(),
+            "need.items".to_owned(),
+        ],
+        runtime_types: vec![
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x90; 32]),
+                AwbcRuntimeTypeShape::Unit,
+            ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x91; 32]),
+                AwbcRuntimeTypeShape::String,
+            ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x92; 32]),
+                AwbcRuntimeTypeShape::Sequence {
+                    kind: crate::plan::RuntimePlanSequenceKind::Vec,
+                    item: item_ty,
+                },
+            ),
+        ],
+        signatures: vec![
+            AwbcSignature {
+                params: vec![sequence_ty],
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+            AwbcSignature {
+                params: vec![item_ty],
+                result: None,
+                effects: AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: vec![AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: vec![AwbcFrameSlot {
+                name: None,
+                ty: sequence_ty,
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        }],
+        resume_points: vec![AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::AwaitMany,
+        }],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::AwaitMany {
+                    plan: crate::awbc::schema::AwbcTaskPlanId(0),
+                    source: AwbcRegisterId(0),
+                    binding: None,
+                    resume: AwbcResumePointId(0),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return { value: None },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            },
+        ],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 2),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
+        }],
+        task_plans: vec![AwbcTaskPlan {
+            signature: AwbcSignatureId(1),
+            request: AwbcTaskRequestProjection::CustomCapability {
+                capability: AwbcStringId(1),
+                operation: AwbcStringId(2),
+            },
+            class: AwbcTaskClass::Io,
+            priority: 0,
+            cancel_scope: AwbcStringId(3),
+            policy: AwbcTaskPolicy::JoinSameKey,
+            payload_type: item_ty,
+            arguments: vec![AwbcHostArgument {
+                name: None,
+                spread: false,
+            }],
+            kind: AwbcTaskPlanKind::AwaitMany {
+                public_id: AwbcStringId(4),
+                need_id: AwbcStringId(5),
+                item_binding: AwbcRegisterId(0),
+                limit: 3,
+            },
+        }],
+        flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
+            roles: crate::entry::RuntimeEntryRoles::None,
+        }],
+        ..AwbcProgram::default()
+    };
+    program.canonicalize_string_table();
     program
 }
 

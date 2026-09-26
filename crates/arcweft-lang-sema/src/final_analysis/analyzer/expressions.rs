@@ -49,7 +49,9 @@ use arcweft_lang_hir::expr::{
 };
 use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
 
-use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
+use super::expression_error::{
+    AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
+};
 use super::state::{
     CandidateFactOperationFailure, CandidateFactTransactionAction,
     CandidateFactTransactionAuthority,
@@ -320,6 +322,40 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 }
 
 impl Analyzer<'_, '_, '_> {
+    /// An unselected call deliberately has no value type. Body-result validation
+    /// may defer that one error to its retained, source-backed call diagnostic.
+    pub(super) fn has_unselected_call_diagnostic(
+        &self,
+        context: &AnalyzerExpressionContext<'_>,
+        owner: ExprId,
+    ) -> Result<bool, super::CandidateFactTransactionViolation> {
+        let fact = match context.authority() {
+            AnalyzerExpressionFactAuthority::Published => {
+                self.facts.expressions().get(&owner).cloned()
+            }
+            AnalyzerExpressionFactAuthority::Candidate(authority) => {
+                self.facts.candidate_expression(authority, owner)?
+            }
+        };
+        if !matches!(
+            fact,
+            Some(PreparedExpressionFact::Complete(ref value))
+                if matches!(value.result(), crate::final_analysis::CheckedExpressionResult::Unavailable)
+                    && matches!(value.resolution(), CheckedExpressionResolution::Call)
+        ) {
+            return Ok(false);
+        }
+        Ok(self
+            .facts
+            .prepared_calls()?
+            .project_site_payload(
+                crate::callable::CheckedCallSite::HirCall(owner),
+                |_| false,
+                |_| true,
+            )
+            .unwrap_or(false))
+    }
+
     /// Root/publication entrypoint.  Recursive expression evaluation must use
     /// [`Self::evaluate_expression`] with the caller-owned context so a
     /// candidate never falls back to the published fact map.
@@ -1568,23 +1604,29 @@ impl Analyzer<'_, '_, '_> {
                         })
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let item = common_type(child_types, item_expectation.complete_type())
+                let item = common_type(child_types, item_expectation.contextual_shape())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                Ok(structural_expression(
-                    TypeKind::Vec(Box::new(item)),
+                checked_bracket_sequence_expression(
+                    owner,
+                    expected,
+                    item,
+                    sequence.elements().len(),
                     if expected.is_some() {
                         CheckedTypeSelection::Expected
                     } else {
                         CheckedTypeSelection::Inferred
                     },
-                ))
+                )
             }
             HirExprKind::NumericBracketSequence(sequence) => {
                 let item = integer_suffix_type(sequence.common_suffix())
-                    .or_else(|| expected_item(expectation.complete_type()).cloned())
+                    .or_else(|| expected_item(expected).cloned())
                     .unwrap_or(TypeKind::I32);
-                Ok(structural_expression(
-                    TypeKind::Vec(Box::new(item)),
+                checked_bracket_sequence_expression(
+                    owner,
+                    expected,
+                    item,
+                    sequence.elements().len(),
                     if sequence.common_suffix().is_some() {
                         CheckedTypeSelection::Explicit
                     } else if expected.is_some() {
@@ -1592,7 +1634,7 @@ impl Analyzer<'_, '_, '_> {
                     } else {
                         CheckedTypeSelection::DefaultNumericFallback
                     },
-                ))
+                )
             }
             HirExprKind::ArrayRepeat(repeat) => {
                 let value = self.evaluate_expression_with_expectation(
@@ -1600,7 +1642,10 @@ impl Analyzer<'_, '_, '_> {
                     repeat.value(),
                     expectation.project_checked(owner, expected_item(expected))?,
                 )?;
-                self.evaluate_expression(context, repeat.length(), Some(&TypeKind::USize))?;
+                let length =
+                    self.evaluate_expression(context, repeat.length(), Some(&TypeKind::USize))?;
+                let length = array_repeat_length(&length)
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
                 let value_type = value.value_type().cloned().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(
                         FinalSemanticAnalysisError::ExpressionTypeUnavailable {
@@ -1608,12 +1653,20 @@ impl Analyzer<'_, '_, '_> {
                         },
                     )
                 })?;
+                let ty = TypeKind::Array {
+                    item: Box::new(value_type),
+                    len: ArrayLength::Const(length),
+                };
+                if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
                 Ok(structural_expression(
-                    TypeKind::Array {
-                        item: Box::new(value_type),
-                        len: ArrayLength::Inferred,
+                    ty,
+                    if expected.is_some() {
+                        CheckedTypeSelection::Expected
+                    } else {
+                        CheckedTypeSelection::Inferred
                     },
-                    CheckedTypeSelection::Inferred,
                 ))
             }
             HirExprKind::Range(range) => {
@@ -4415,6 +4468,38 @@ fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> Check
         EffectSet::new(),
         CheckedExpressionResolution::Structural,
     )
+}
+
+fn checked_bracket_sequence_expression(
+    owner: ExprId,
+    expected: Option<&TypeKind>,
+    item: TypeKind,
+    element_count: usize,
+    selection: CheckedTypeSelection,
+) -> Result<CheckedExpression, AnalyzerExpressionError> {
+    let ty = if matches!(expected, Some(TypeKind::Array { .. })) {
+        TypeKind::Array {
+            item: Box::new(item),
+            len: ArrayLength::Const(element_count),
+        }
+    } else {
+        TypeKind::Vec(Box::new(item))
+    };
+    if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+        return Err(AnalyzerExpressionError::rejected(owner));
+    }
+    Ok(structural_expression(ty, selection))
+}
+
+fn array_repeat_length(length: &PreparedExpressionFact) -> Option<usize> {
+    let CheckedExpressionResolution::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
+        magnitude,
+        ..
+    })) = length.checked_resolution()?
+    else {
+        return None;
+    };
+    magnitude.to_decimal_string().parse().ok()
 }
 
 fn checked_choice_public_id(

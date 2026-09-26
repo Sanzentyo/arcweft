@@ -1,12 +1,11 @@
 use super::{
-    AwaitState, AwaitTarget, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId,
-    AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTaskPlanId,
-    AwbcTrapCode, ChoiceRuntimeOption, ChoiceState, FiberAwaitTarget, FiberStatus,
-    FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
-    HostTaskRequestTemplate, MappedEffect, NeedId, ProductStepError, RuntimeDiagnostic,
-    RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepMode, RuntimeStepOptions,
-    RuntimeStepOutput, RuntimeStepStopReason, TaskId, has_host_requests, has_visible_output,
-    runtime_value_label, source_diagnostic,
+    AwaitItemType, AwaitState, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId,
+    AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTrapCode,
+    ChoiceRuntimeOption, ChoiceState, FiberAwaitTarget, FiberStatus, FiberSuspensionReason,
+    FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState, MappedEffect,
+    ProductStepError, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
+    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, TaskId,
+    has_host_requests, has_visible_output, runtime_value_label, source_diagnostic,
 };
 
 impl AwbcProductStepExecutor {
@@ -281,21 +280,29 @@ impl AwbcProductStepExecutor {
         match self.product_status() {
             AwbcProductExecutorStatus::Shared(status) => *status,
             AwbcProductExecutorStatus::WaitingMany(state) => {
-                // The shared structured facade has no evaluated-source
-                // waiting-many carrier. Preserve the exact items and binding
-                // in the compact status, and expose only a coarse suspension.
-                FlowFiberStatus::Waiting(Box::new(AwaitState {
-                    binding: None,
-                    target: AwaitTarget::new(
-                        self.task_need_id(state.plan),
-                        TaskId(self.task_public_id(state.plan)),
-                        HostTaskRequestTemplate::new("awbc", "await_many", []),
-                    ),
-                    observers: Vec::new(),
-                    resume: None,
-                    observed_through: None,
-                    queued: std::collections::VecDeque::new(),
-                }))
+                self.task_plan_ids(state.plan).map_or_else(
+                    || {
+                        FlowFiberStatus::Failed(
+                            "AWBC AwaitMany suspension references a non-AwaitMany plan".to_owned(),
+                        )
+                    },
+                    |(task, _)| {
+                        FlowFiberStatus::WaitingMany(crate::engine::WaitingManyStatus::Observed(
+                            crate::engine::AwaitManyProgress {
+                                task: state.in_flight.first().map_or_else(
+                                    || TaskId(task),
+                                    |item| TaskId(item.task_id.clone()),
+                                ),
+                                completed: state
+                                    .results
+                                    .iter()
+                                    .filter(|result| result.is_some())
+                                    .count(),
+                                total: state.items.len(),
+                            },
+                        ))
+                    },
+                )
             }
         }
     }
@@ -369,28 +376,21 @@ impl AwbcProductStepExecutor {
                     resume: None,
                 })
             }
-            FiberSuspensionReason::Await { target, .. } => match target {
-                FiberAwaitTarget::Task(task) => {
-                    let task = TaskId(runtime_value_label(task));
-                    let plan = self.task_plan_for_id(&task.0);
-                    FlowFiberStatus::Waiting(Box::new(AwaitState {
-                        binding: None,
-                        target: AwaitTarget::new(
-                            plan.map_or_else(
-                                || NeedId(task.0.clone()),
-                                |plan| self.task_need_id(plan),
-                            ),
-                            task,
-                            HostTaskRequestTemplate::new("awbc", "await", []),
-                        ),
-                        observers: Vec::new(),
-                        resume: None,
-                        observed_through: None,
-                        queued: std::collections::VecDeque::new(),
-                    }))
-                }
-                FiberAwaitTarget::Need { id, .. } => FlowFiberStatus::NeedWaiting(id.clone()),
-            },
+            FiberSuspensionReason::Await {
+                target: FiberAwaitTarget::Need { id, item_type, .. },
+                ..
+            } => FlowFiberStatus::NeedWaiting(Box::new(AwaitState {
+                binding: None,
+                need: id.clone(),
+                item_type: AwaitItemType::Awbc(*item_type),
+                observers: Vec::new(),
+                resume: None,
+                observed_through: self
+                    .need_publications
+                    .get(&(self.facade_fiber.persistent_id, id.clone()))
+                    .copied(),
+                queued: std::collections::VecDeque::new(),
+            })),
             FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),
             FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::BudgetYield => {
                 FlowFiberStatus::Running
@@ -485,31 +485,5 @@ impl AwbcProductStepExecutor {
                     function.0
                 ))
             })
-    }
-
-    pub(super) fn task_plan_for_id(&self, task: &str) -> Option<AwbcTaskPlanId> {
-        self.program
-            .task_plans
-            .iter()
-            .enumerate()
-            .find_map(|(index, plan)| {
-                self.program
-                    .strings
-                    .get(plan.public_id.index())
-                    .filter(|public_id| public_id.as_str() == task)
-                    .and_then(|_| u32::try_from(index).ok())
-                    .map(AwbcTaskPlanId)
-            })
-    }
-
-    pub(super) fn task_need_id(&self, plan: AwbcTaskPlanId) -> NeedId {
-        NeedId(
-            self.program
-                .task_plans
-                .get(plan.index())
-                .and_then(|plan| self.program.strings.get(plan.need_id.index()))
-                .cloned()
-                .unwrap_or_else(|| format!("awbc.need.{}", plan.0)),
-        )
     }
 }

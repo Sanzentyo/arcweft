@@ -123,8 +123,12 @@ flow main() -> String { return "done" }
 "#,
         None,
     );
+    let analysis =
+        analyze(&fixture).expect("rejected destination keeps its final source-backed call fact");
     assert!(
-        analyze(&fixture).is_err(),
+        analysis.call_diagnostics().any(|diagnostic| {
+            diagnostic.code() == crate::callable::CallableDiagnosticCode::NoViableSignature
+        }),
         "the selected Vec destination must retain the source sequence item type"
     );
 }
@@ -139,8 +143,12 @@ fn wrap<T>(value: T) -> Result<String, String> {
 ",
         None,
     );
+    let analysis =
+        analyze(&fixture).expect("rejected constructor keeps its final source-backed call fact");
     assert!(
-        analyze(&fixture).is_err(),
+        analysis.call_diagnostics().any(|diagnostic| {
+            diagnostic.code() == crate::callable::CallableDiagnosticCode::NoViableSignature
+        }),
         "T must remain rigid during constructor inference"
     );
 }

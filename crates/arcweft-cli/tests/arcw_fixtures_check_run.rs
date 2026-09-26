@@ -124,6 +124,20 @@ fn current_check_fixtures_pass() {
 }
 
 #[test]
+fn await_context_option_boundaries_fixture_passes() {
+    let path =
+        fixture_root().join("spec_should_pass/check/049_await_context_option_boundaries.arcw");
+    let output = run_arcw(&["compile", "--emit", "check"], &path);
+    assert!(
+        output.status.success(),
+        "arcw compile --emit check should pass for {}\nstdout:\n{}\nstderr:\n{}",
+        path.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn current_run_fixtures_pass() {
     for path in arcw_files(&fixture_root().join("current_pass/run")) {
         let output = run_fixture_from_temp(&path, |cmd| {

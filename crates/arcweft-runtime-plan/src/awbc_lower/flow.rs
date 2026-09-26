@@ -29,7 +29,7 @@ use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskNode, LineTaskTrigger,
     ParallelPolicy,
 };
-use arcweft_core::pattern::RuntimePattern;
+use arcweft_core::pattern::{RuntimePattern, RuntimePatternKind};
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDeferOwner,
     RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget,
@@ -1382,44 +1382,82 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 target,
                 observers,
             } => {
-                let Some(task) = self.inventory.intern_host_task_with_outcome(
-                    &target.need.0,
-                    &target.task.0,
-                    &target.request,
-                    &target.outcome,
-                ) else {
-                    return;
-                };
-                let args = target
-                    .request
-                    .args
-                    .iter()
-                    .map(|arg| {
-                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
-                            .lower(arg.value())
-                    })
-                    .collect::<Vec<_>>();
-                let task_handle = frame.temp(self.inventory.dynamic_ty());
-                self.inventory.push_instruction(AwbcInstruction::StartTask {
-                    dst: task_handle,
-                    plan: task,
-                    args,
-                });
+                let handle = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                    .lower(target.source());
                 let binding = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
                 if observers.is_empty() {
                     body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
                         AwbcTerminator::Await {
-                            handle: task_handle,
+                            handle,
                             binding,
                             observer: None,
                             resume,
                         }
                     });
                 } else {
-                    self.lower_await_observers(frame, body, task_handle, binding, observers, path);
+                    self.lower_await_observers(frame, body, handle, binding, observers, path);
                 }
+            }
+            FlowOp::StartNeedProducer { binding, target } => {
+                let Some(plan) = self
+                    .inventory
+                    .intern_need_producer_task(target.plan(), target.arguments())
+                else {
+                    return;
+                };
+                let arguments = target
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(argument)
+                    })
+                    .collect::<Vec<_>>();
+                let Some(destination_type) = self.inventory.plan_type(binding.ty()) else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        "need_producer.binding",
+                        "Need producer binding type was not admitted by AWBC type preflight",
+                    ));
+                    return;
+                };
+                let destination = match binding.kind() {
+                    RuntimePatternKind::Bind { binding, .. }
+                    | RuntimePatternKind::Typed { binding } => {
+                        frame.local(binding.local(), destination_type)
+                    }
+                    _ => {
+                        self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                            "need_producer.binding",
+                            "Need producer result must bind one Need<T> local",
+                        ));
+                        return;
+                    }
+                };
+                let item_type = self.inventory.semantic_type(target.plan().payload_type());
+                if !self
+                    .inventory
+                    .program
+                    .runtime_types
+                    .get(destination_type.index())
+                    .is_some_and(|runtime_type| {
+                        matches!(
+                            runtime_type.shape(),
+                            AwbcRuntimeTypeShape::Need(item) if Some(*item) == item_type
+                        )
+                    })
+                {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        "need_producer.binding",
+                        "Need producer binding must have the exact selected Need<T> type",
+                    ));
+                    return;
+                }
+                self.inventory.push_instruction(AwbcInstruction::StartNeed {
+                    dst: destination,
+                    plan,
+                    args: arguments,
+                });
             }
             FlowOp::AwaitMany {
                 binding,
@@ -1429,23 +1467,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_pending_effects(pending);
                 let source = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
                     .lower(&target.source);
-                let Some(task) = self.inventory.intern_host_task_with_outcome(
+                let item_binding =
+                    frame.local(target.item_binding, self.local_type(target.item_binding));
+                let Some(task) = self.inventory.intern_await_many_task(
                     &target.need.0,
                     &target.task.0,
                     &target.request,
                     &target.outcome,
+                    item_binding,
+                    target.limit,
                 ) else {
                     return;
                 };
-                let item_binding =
-                    frame.local(target.item_binding, self.local_type(target.item_binding));
-                if let Err(diagnostic) =
-                    self.inventory
-                        .set_await_many_policy(task, item_binding, target.limit)
-                {
-                    self.inventory.diagnostic(diagnostic);
-                    return;
-                }
                 let binding = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
@@ -3724,6 +3757,7 @@ fn collect_flow_dependencies(
             | FlowOp::CommitDialogueResult { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::AwaitMany { .. }
+            | FlowOp::StartNeedProducer { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
             | FlowOp::ApplyGroup { .. }

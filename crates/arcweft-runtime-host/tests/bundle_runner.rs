@@ -1,4 +1,8 @@
-use arcweft_adapter_context::manifest::{AdapterHostCall, AdapterManifest};
+use arcweft_adapter_context::manifest::{
+    AdapterCallableGroupIndex, AdapterCallableParameterIndex, AdapterFunctionParam,
+    AdapterFunctionSignature, AdapterHostCall, AdapterManifest, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
+};
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
@@ -8,17 +12,28 @@ use arcweft_core::entry::{
     EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
     RuntimeFlowSchema,
 };
-use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
+use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeHostArgumentSeed, RuntimeHostTaskRequestTemplateSeed, RuntimePlanBuilder,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimeLocalDeclarationSeed, RuntimeNeedProducerStartTargetSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed,
 };
-use arcweft_core::task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract};
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::step::{
+    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
+};
+use arcweft_core::task::{
+    CancelScopeId, HostCapabilityId, HostRestartPolicy, HostTaskRequest, LogicalEpoch,
+    NeedProducerContractDigest, NeedProducerRequestProjection, NeedProducerSiteDigest,
+    NeedProducerTaskPlan, TaskClass, TaskDispatchIdentity, TaskEvent, TaskEventKind, TaskPolicy,
+    TaskPriority, TaskPublicationRevision, TaskSequence,
+};
+use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use arcweft_host_adapter::{
-    HostAdapter, HostAdapterError, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome,
+    HostAdapter, HostAdapterError, HostAdapterRegistry, HostTaskCompletion, HostTaskMetrics,
+    HostTaskOutcome,
 };
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
@@ -69,6 +84,106 @@ fn bundle_runner_executes_custom_adapter_without_cli() {
     assert_eq!(report.source, "custom.arcw");
     assert_eq!(report.adapter_manifests, 1);
     assert_eq!(report.native_io.completed_tasks, 1);
+    assert_eq!(report.native_io.failed_tasks, 0);
+    assert_eq!(report.final_status, "done return custom-done");
+    assert!(report.steps.iter().any(|step| step.task_requests == 1));
+}
+
+#[test]
+fn runtime_plan_vm_starts_and_awaits_a_typed_need_producer() {
+    let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(
+        custom_echo_plan(),
+        ArcweftExecutionTier::RuntimePlanVm,
+    )
+    .expect("runtime-plan producer executor builds");
+    let entry = EntryRuntimeId::from_source_entity_body("entry.custom")
+        .expect("custom entry identity is valid");
+    executor
+        .start_structured_entry(&entry)
+        .expect("custom entry starts");
+    let options = RuntimeStepOptions {
+        mode: RuntimeStepMode::Drain,
+        budget: RuntimeStepBudget { max_ops: 16 },
+        ..RuntimeStepOptions::default()
+    };
+
+    let started = executor.step(RuntimeStepInput::default(), options);
+    assert_eq!(
+        started.output.requests.tasks.len(),
+        1,
+        "producer start did not emit a task: stop={:?}, status={:?}, diagnostics={:?}",
+        started.stop_reason,
+        started.fiber_status,
+        started.output.diagnostics
+    );
+    let task = started.output.requests.tasks[0].clone();
+    assert!(matches!(
+        &task.request,
+        HostTaskRequest::Custom { capability, operation, .. }
+            if capability.0 == "custom" && operation == "echo"
+    ));
+    assert_eq!(
+        executor.task_generation(&task.id),
+        Some(executor.generation())
+    );
+    assert_eq!(executor.restartable_dispatches().len(), 1);
+
+    let event = TaskEvent::from_dispatch(
+        TaskDispatchIdentity::new(
+            executor.generation(),
+            LogicalEpoch(1),
+            TaskSequence(1),
+            task.id,
+        ),
+        TaskPublicationRevision::FIRST,
+        TaskEventKind::Ready(RuntimePayload::new(RuntimeValue::String(
+            "echo-ok".to_owned(),
+        ))),
+    );
+    let completed = executor.step(
+        RuntimeStepInput {
+            task_events: vec![event],
+            ..RuntimeStepInput::default()
+        },
+        options,
+    );
+    assert!(matches!(
+        completed.fiber_status,
+        arcweft_core::engine::FlowFiberStatus::Done(
+            arcweft_core::engine::FlowExit::Return(ref value)
+        ) if value == "custom-done"
+    ));
+    assert!(executor.restartable_dispatches().is_empty());
+}
+
+#[test]
+fn bundle_file_runner_executes_decoded_need_producer_awbc() {
+    let path = temp_bundle_path("decoded-need-producer", "awfb");
+    fs::write(
+        &path,
+        custom_echo_bundle()
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("typed producer bundle encodes as AWFB"),
+    )
+    .expect("fixture writes");
+    let registrars: [NativeAdapterRegistrar; 1] =
+        [|_, builder| builder.register(CustomEchoAdapter::new())];
+    let result = run_bundle_file_with_native_adapters(
+        &path,
+        &BundleRunnerOptions {
+            steps: 8,
+            mode: BundleRunnerStepMode::Drain,
+            ..BundleRunnerOptions::default()
+        },
+        &registrars,
+    );
+    let _ = fs::remove_file(&path);
+    let report = result.expect("decoded producer bundle runs");
+
+    assert_eq!(
+        report.native_io.completed_tasks, 1,
+        "decoded producer run did not complete its task: {report:?}"
+    );
     assert_eq!(report.native_io.failed_tasks, 0);
     assert_eq!(report.final_status, "done return custom-done");
     assert!(report.steps.iter().any(|step| step.task_requests == 1));
@@ -134,9 +249,9 @@ fn bundle_file_runner_rejects_json_bytes_in_awfb_path() {
 
     assert!(matches!(
         error,
-        BundleRunnerError::DecodeBundle(arcweft_bundle::BundleCodecError::DecodeAwfb {
-            message
-        }) if message.contains("magic")
+        BundleRunnerError::ContainerArtifactIdentity(
+            arcweft_bundle::container::ContainerError::BadMagic
+        )
     ));
 }
 
@@ -170,9 +285,45 @@ impl CustomEchoAdapter {
     fn new() -> Self {
         Self {
             manifest: AdapterManifest::new("custom-echo", "Custom Echo")
-                .with_host_call(AdapterHostCall::new("custom.echo", [])),
+                .with_host_call(custom_echo_host_call()),
         }
     }
+}
+
+fn custom_echo_host_call() -> AdapterHostCall {
+    let signature = AdapterFunctionSignature::try_new(
+        vec![
+            AdapterParameterGroup::try_new(
+                AdapterCallableGroupIndex::try_from_usize(0).expect("initial group index fits"),
+                vec![
+                    AdapterFunctionParam::try_new(
+                        AdapterCallableParameterIndex::try_from_usize(0)
+                            .expect("initial parameter index fits"),
+                        None,
+                        AdapterTypeKind::String,
+                        AdapterParameterPassing::PositionalOnly,
+                        AdapterParameterPresence::Required,
+                    )
+                    .expect("custom echo positional parameter is valid"),
+                ],
+            )
+            .expect("custom echo parameter group is valid"),
+        ],
+        AdapterTypeKind::Need {
+            item: Box::new(AdapterTypeKind::String),
+        },
+    )
+    .expect("typed host-call signature is valid");
+    AdapterHostCall::with_signature("custom.echo", signature, [])
+}
+
+fn custom_echo_payload_type() -> RuntimeSemanticTypeId {
+    HostAdapterRegistry::builder()
+        .register(CustomEchoAdapter::new())
+        .expect("custom echo adapter registers")
+        .build()
+        .host_call_result_type("custom.echo")
+        .expect("custom echo result type is registered")
 }
 
 impl HostAdapter for CustomEchoAdapter {
@@ -203,41 +354,69 @@ impl HostAdapter for CustomEchoAdapter {
     }
 }
 
-fn custom_echo_bundle() -> ArcweftBundle {
-    let string_ty = RuntimeSemanticTypeId::from_bytes([1; 32]);
+fn custom_echo_plan() -> RuntimePlan {
+    let string_ty = custom_echo_payload_type();
+    let need_ty = RuntimeSemanticTypeId::from_bytes([2; 32]);
+    let host_contract = custom_echo_host_call().contract_digest();
+    let producer_plan = NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes(*host_contract.as_bytes()),
+        NeedProducerSiteDigest::from_bytes([0x4b; 32]),
+        NeedProducerRequestProjection::ExternCapability {
+            capability: HostCapabilityId("custom".to_owned()),
+            operation: "echo".to_owned(),
+            contract: host_contract,
+            argument_names: Box::new([None]),
+        },
+        vec![string_ty].into_boxed_slice(),
+        string_ty,
+        TaskPolicy::AlwaysStart,
+        HostRestartPolicy::Restartable,
+        TaskClass::Io,
+        TaskPriority(0),
+        CancelScopeId("flow.custom".to_owned()),
+    )
+    .expect("custom host Need producer plan is valid");
     let flow = flow_id("flow.custom");
     let mut builder = RuntimePlanBuilder::new();
-    builder
+    let admitted = builder
         .admit_type_batch(
-            [RuntimePlanTypeSeed::new(
-                string_ty,
-                RuntimePlanTypeProjection::String,
-            )],
-            [],
+            [
+                RuntimePlanTypeSeed::new(string_ty, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
+            ],
+            [RuntimeLocalDeclarationSeed::new(need_ty)],
         )
         .expect("string type admits");
+    let need_local = admitted.local_ids()[0].clone();
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_ty,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need_local.clone(),
+                        },
+                    ),
+                    target: RuntimeNeedProducerStartTargetSeed {
+                        plan: producer_plan,
+                        arguments: vec![RuntimeExprSeed::new(
+                            string_ty,
+                            RuntimeExprSeedKind::Value(RuntimeValue::String("hello".to_owned())),
+                        )],
+                    },
+                },
                 RuntimeFlowOpSeed::Await {
                     binding: None,
                     target: RuntimeAwaitTargetSeed {
-                        need: NeedId("need.custom.echo".to_owned()),
-                        task: TaskId("task.custom.echo".to_owned()),
-                        outcome: TaskOutcomeContract::new(RuntimeCheckedType::String),
-                        request: RuntimeHostTaskRequestTemplateSeed {
-                            capability: HostCapabilityId("custom".to_owned()),
-                            operation: "echo".to_owned(),
-                            args: vec![RuntimeHostArgumentSeed::Positional(RuntimeExprSeed::new(
-                                string_ty,
-                                RuntimeExprSeedKind::Value(RuntimeValue::String(
-                                    "hello".to_owned(),
-                                )),
-                            ))],
-                        },
+                        source: RuntimeExprSeed::new(
+                            need_ty,
+                            RuntimeExprSeedKind::Local(need_local),
+                        ),
                     },
                     observers: Vec::new(),
                 },
@@ -261,7 +440,11 @@ fn custom_echo_bundle() -> ArcweftBundle {
     builder
         .push_entry(cli_entry("entry.custom", "flow.custom"))
         .expect("custom entry admits");
-    let plan = builder.finish().expect("custom bundle plan is valid");
+    builder.finish().expect("custom bundle plan is valid")
+}
+
+fn custom_echo_bundle() -> ArcweftBundle {
+    let plan = custom_echo_plan();
     let dialogue_content = DialogueContentCatalog::new();
     let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "custom.arcw")
         .lower()
@@ -286,7 +469,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
         },
         source_map(
             "custom.arcw",
-            "flow custom { await custom.echo(\"hello\") return \"custom-done\" }",
+            "flow custom { let pending = custom.echo(\"hello\") await pending return \"custom-done\" }",
         ),
         product_awbc,
         dialogue_content,

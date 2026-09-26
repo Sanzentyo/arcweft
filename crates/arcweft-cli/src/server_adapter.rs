@@ -216,6 +216,7 @@ fn run_route_flow(
         RuntimeStepOptions {
             mode: RuntimeStepMode::Server,
             budget: RuntimeStepBudget { max_ops },
+            ..RuntimeStepOptions::default()
         },
         &mut pure,
     );
@@ -243,7 +244,6 @@ fn run_route_flow(
             FlowFiberStatus::Failed(message) => NativeHttpResponse::new(500, message.clone()),
             FlowFiberStatus::Running
             | FlowFiberStatus::Dialogue(_)
-            | FlowFiberStatus::Waiting(_)
             | FlowFiberStatus::NeedWaiting(_)
             | FlowFiberStatus::WaitingMany(_)
             | FlowFiberStatus::HostCall(_)

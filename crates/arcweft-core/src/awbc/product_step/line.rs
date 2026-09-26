@@ -2296,6 +2296,7 @@ impl super::ProductLineTaskExecutionBatch {
         self.child_fibers.push_back(super::ProductChildFiber {
             owner,
             fiber: child,
+            runtime_generation: executor.runtime_generation,
             pending_host_call: None,
         });
         Ok(())

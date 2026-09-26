@@ -8,7 +8,7 @@
 
 use arcweft_core::task::GenerationId;
 
-use crate::swap::ProgramGeneration;
+use crate::swap::{BundleSessionArtifactIdentity, ProgramGeneration};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -52,6 +52,12 @@ impl<R> GenerationRuntimeImage<R> {
     /// Returns the stable generation id.
     pub fn generation_id(&self) -> GenerationId {
         self.generation.id
+    }
+
+    /// Returns the complete artifact identity owned by this runtime image's
+    /// generation, including identities for retired generations.
+    pub fn artifact_identity(&self) -> BundleSessionArtifactIdentity {
+        self.generation.artifact_identity
     }
 
     /// Returns the generation-local runtime payload.
@@ -169,13 +175,24 @@ impl<R> GenerationRuntimeTable<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_bundle::container::BundleDigest;
+    use crate::swap::BundleSessionArtifactIdentity;
+    use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleKind};
 
     fn generation(id: u64) -> Arc<ProgramGeneration> {
+        let content_root = BundleDigest::of(&id.to_le_bytes());
+        let manifest_digest = BundleDigest::of(&id.wrapping_add(1).to_le_bytes());
         Arc::new(ProgramGeneration::empty(
             GenerationId::new(id),
-            BundleDigest::of(&id.to_le_bytes()),
-            BundleDigest::of(&id.to_le_bytes()),
+            BundleSessionArtifactIdentity::AwfbContainer {
+                identity: ArtifactIdentity::new(
+                    1,
+                    BundleKind::Program,
+                    content_root,
+                    manifest_digest,
+                ),
+            },
+            content_root,
+            BundleDigest::of(&id.wrapping_add(2).to_le_bytes()),
         ))
     }
 
@@ -194,6 +211,13 @@ mod tests {
         assert_eq!(
             table.get(GenerationId::new(1)).expect("next").runtime(),
             &"next"
+        );
+        assert_eq!(
+            table
+                .get(GenerationId::new(0))
+                .expect("active")
+                .artifact_identity(),
+            generation(0).artifact_identity
         );
         assert_eq!(table.len(), 2);
         assert_eq!(

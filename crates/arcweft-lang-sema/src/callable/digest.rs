@@ -600,6 +600,11 @@ impl CanonicalEncoder {
                 arcweft_core::task::TaskPolicy::JoinSameKey => 0,
                 arcweft_core::task::TaskPolicy::AlwaysStart => 1,
             });
+            self.tag(match role.restart() {
+                arcweft_core::task::HostRestartPolicy::MustBeQuiescent => 0,
+                arcweft_core::task::HostRestartPolicy::Restartable => 1,
+            });
+            self.string(role.request_argument_name());
         }
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {
@@ -894,6 +899,8 @@ mod tests {
                         kind: arcweft_core::task::AssetLoadKind::Voice,
                     },
                     arcweft_core::task::TaskPolicy::AlwaysStart,
+                    arcweft_core::task::HostRestartPolicy::MustBeQuiescent,
+                    "voice",
                 ),
                 1_u16,
                 1_u16,
@@ -907,6 +914,17 @@ mod tests {
             expected.extend_from_slice(&0_u16.to_le_bytes());
             expected.extend_from_slice(&kind_tag.to_le_bytes());
             expected.extend_from_slice(&policy_tag.to_le_bytes());
+            expected.extend_from_slice(
+                &u16::from(role.restart() == arcweft_core::task::HostRestartPolicy::Restartable)
+                    .to_le_bytes(),
+            );
+            let argument_name = role.request_argument_name().as_bytes();
+            expected.extend_from_slice(
+                &u32::try_from(argument_name.len())
+                    .expect("test argument name fits u32")
+                    .to_le_bytes(),
+            );
+            expected.extend_from_slice(argument_name);
             assert_eq!(
                 actual.into_bytes().expect("canonical producer encoding"),
                 expected

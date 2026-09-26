@@ -20,10 +20,10 @@ use arcweft_core::plan::{
     RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureHelperSeed, RuntimePureOutputType, RuntimePureProgramBindingSeed,
+    RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+    RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
+    RuntimePureProgramBindingSeed,
 };
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionRequest, RuntimePureCallBackend, VmPureFunctionBackend,
@@ -33,8 +33,9 @@ use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
 use arcweft_core::task::{
-    HostCapabilityId, LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId, TaskOutcomeContract,
-    TaskSequence,
+    GenerationId, HostRestartPolicy, LogicalEpoch, NeedProducerContractDigest,
+    NeedProducerRequestProjection, NeedProducerSiteDigest, NeedProducerTaskPlan, TaskEvent,
+    TaskEventKind, TaskPolicy, TaskPriority, TaskPublicationRevision, TaskSequence,
 };
 use arcweft_core::value::{
     Progress, RuntimeBinaryOp, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
@@ -443,53 +444,84 @@ fn plan_with_return(value: &str) -> RuntimePlan {
 fn plan_with_await_observer() -> RuntimePlan {
     let flow = flow_id("parity.await_observer");
     let progress_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
+    let need_type = RuntimeSemanticTypeId::from_bytes([5; 32]);
+    let contract = NeedProducerContractDigest::from_bytes([0x63; 32]);
+    let producer_plan = NeedProducerTaskPlan::try_new(
+        contract,
+        NeedProducerSiteDigest::from_bytes([0x64; 32]),
+        NeedProducerRequestProjection::ExternCapability {
+            capability: arcweft_core::task::HostCapabilityId("probe".to_owned()),
+            operation: "read".to_owned(),
+            contract: arcweft_core::step::HostCallContractDigest::from_bytes([0x63; 32]),
+            argument_names: Box::new([]),
+        },
+        Box::new([]),
+        STRING_TYPE,
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::Restartable,
+        arcweft_core::task::TaskClass::Io,
+        TaskPriority(0),
+        arcweft_core::task::CancelScopeId(flow.to_string()),
+    )
+    .expect("Await observer producer plan is internally consistent");
     let mut builder = RuntimePlanBuilder::new();
-    builder
+    let admitted = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(STRING_TYPE, RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
+                RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(STRING_TYPE)),
             ],
-            [],
+            [RuntimeLocalDeclarationSeed::new(need_type)],
         )
         .expect("Await observer facts admit");
+    let need_local = admitted.local_ids()[0].clone();
     admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
             arcweft_core::plan::RuntimeEffectSet::empty(),
-            vec![RuntimeFlowOpSeed::Await {
-                binding: None,
-                target: RuntimeAwaitTargetSeed {
-                    need: NeedId("need.parity.observe".to_owned()),
-                    task: TaskId("task.parity.observe".to_owned()),
-                    outcome: TaskOutcomeContract::new(
-                        arcweft_core::pattern::RuntimeCheckedType::String,
+            vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_type,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need_local.clone(),
+                        },
                     ),
-                    request: RuntimeHostTaskRequestTemplateSeed {
-                        capability: HostCapabilityId("test".to_owned()),
-                        operation: "observe".to_owned(),
-                        args: Vec::new(),
+                    target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                        plan: producer_plan,
+                        arguments: Vec::new(),
                     },
                 },
-                observers: vec![
-                    RuntimeAwaitPendingObserverSeed {
-                        pattern: RuntimePatternSeed::new(
-                            progress_type,
-                            RuntimePatternSeedKind::Discard,
+                RuntimeFlowOpSeed::Await {
+                    binding: None,
+                    target: RuntimeAwaitTargetSeed {
+                        source: RuntimeExprSeed::new(
+                            need_type,
+                            RuntimeExprSeedKind::Local(need_local),
                         ),
-                        ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
                     },
-                    RuntimeAwaitPendingObserverSeed {
-                        pattern: RuntimePatternSeed::new(
-                            progress_type,
-                            RuntimePatternSeedKind::Discard,
-                        ),
-                        ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
-                    },
-                ],
-            }],
+                    observers: vec![
+                        RuntimeAwaitPendingObserverSeed {
+                            pattern: RuntimePatternSeed::new(
+                                progress_type,
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
+                        },
+                        RuntimeAwaitPendingObserverSeed {
+                            pattern: RuntimePatternSeed::new(
+                                progress_type,
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
+                        },
+                    ],
+                },
+            ],
         ))
         .expect("Await observer flow admits");
     builder
@@ -519,6 +551,7 @@ fn options() -> RuntimeStepOptions {
     RuntimeStepOptions {
         mode: RuntimeStepMode::Drain,
         budget: RuntimeStepBudget { max_ops: 32 },
+        ..RuntimeStepOptions::default()
     }
 }
 
@@ -601,12 +634,36 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
         .expect("runtime-plan entry starts");
     let mut product = ArcweftRuntimeExecutor::from_awbc_product(program, AwbcEntryId(0))
         .expect("AWBC product builds");
-    let _ = native.step(RuntimeStepInput::default(), options());
-    let _ = product.step(RuntimeStepInput::default(), options());
+    let native_started = native.step(RuntimeStepInput::default(), options());
+    let product_started = product.step(RuntimeStepInput::default(), options());
+    assert_eq!(
+        native_started.output.requests.tasks,
+        product_started.output.requests.tasks
+    );
+    let task = native_started
+        .output
+        .requests
+        .tasks
+        .first()
+        .expect("Need producer emits one task")
+        .clone();
+    let native_dispatch = native
+        .restartable_dispatches()
+        .into_iter()
+        .find(|dispatch| dispatch.task_id == task.id)
+        .expect("native Need producer is registered");
+    let product_dispatch = product
+        .restartable_dispatches()
+        .into_iter()
+        .find(|dispatch| dispatch.task_id == task.id)
+        .expect("Product Need producer is registered");
+    assert_eq!(native_dispatch.need_id, product_dispatch.need_id);
     let publication = TaskEvent {
+        generation: GenerationId::new(0),
         logical_epoch: LogicalEpoch(1),
-        task_id: TaskId("task.parity.observe".to_owned()),
+        task_id: task.id,
         sequence: TaskSequence(1),
+        publication_revision: TaskPublicationRevision::FIRST,
         kind: TaskEventKind::Progress(Progress::new(0.5).expect("fixture Progress is valid")),
     };
 
@@ -619,7 +676,7 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
     );
     let product_result = product.step(
         RuntimeStepInput {
-            task_events: vec![publication],
+            task_events: vec![publication.clone()],
             ..RuntimeStepInput::default()
         },
         options(),
@@ -645,6 +702,25 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
             result.fiber_status,
             result.output.diagnostics
         );
+    }
+
+    let duplicate_native = native.step(
+        RuntimeStepInput {
+            task_events: vec![publication.clone()],
+            ..RuntimeStepInput::default()
+        },
+        options(),
+    );
+    let duplicate_product = product.step(
+        RuntimeStepInput {
+            task_events: vec![publication],
+            ..RuntimeStepInput::default()
+        },
+        options(),
+    );
+    for result in [&duplicate_native, &duplicate_product] {
+        assert!(result.output.flow_events.is_empty());
+        assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
     }
 }
 

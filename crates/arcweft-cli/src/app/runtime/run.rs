@@ -8,6 +8,7 @@ use super::profile::report_path;
 use super::script_bench::script_bench_selection;
 use super::script_test::script_test_selection;
 use super::serve::{RuntimeServeSelectionConfig, runtime_serve_selection};
+use super::source::compile_source_runtime_program;
 use super::steps::{
     NativeRunHost, NativeRunSource, run_runtime_flow_steps, run_runtime_steps,
     runtime_step_run_config_from_run_options,
@@ -20,9 +21,8 @@ use crate::app::diagnostics::emit_diagnostics;
 use crate::app::progress::{CliProgress, CliProgressStatus};
 use crate::app::project::ProfileOptions;
 use crate::app::project::{
-    CheckedModule, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
-    resolve_source_selection_or_default_profile, runtime_pure_config_for_selection,
-    verify_compiled_project,
+    SourceSelection, resolve_source_selection_or_default_profile,
+    runtime_pure_config_for_selection, verify_compiled_project,
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
@@ -150,25 +150,26 @@ fn runtime_run_headless_command(
         }
     }
 
-    let checked = load_and_check_selection(selection, None)?;
-    require_runtime_verification_safety(&checked)?;
-    let host_policy = native_host_policy_for_selection(selection)?;
-    let plan = checked.runtime_plan().plan.clone();
+    let mut phases = Vec::new();
+    let runtime = compile_source_runtime_program(selection, None, &mut phases)?;
+    require_runtime_verification_safety(&runtime.compiled, &runtime.source_document)?;
+    let plan = runtime.plan.clone();
     let file_roots = selection.native_file_roots();
     let host = NativeRunHost {
         source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-        policy: &host_policy,
+        bundle_assets: Some(runtime.bundle_assets()),
+        policy: &runtime.host_policy,
         adapter_registrars,
         cli_args: &[],
     };
     let config = runtime_step_run_config_from_run_options(options, pure_config);
     let trace = if let Some(flow) = options.flow.as_deref() {
         let invocation = seal_named_flow_invocation(plan, flow, &options.values)?;
-        run_runtime_flow_steps(invocation, host, config, &checked.execution_diagnostics)?
+        run_runtime_flow_steps(invocation, host, config, &runtime.execution_diagnostics)?
     } else {
         let entry = selection.command_entry(options.entry.as_deref())?;
         let entry = select_runtime_entry(&plan, entry)?;
-        run_runtime_steps(plan, &entry, host, config, &checked.execution_diagnostics)?
+        run_runtime_steps(plan, &entry, host, config, &runtime.execution_diagnostics)?
     };
     let report = RuntimeRunReport {
         host_system: host_system_info(),
@@ -218,9 +219,12 @@ fn print_runtime_run_report(
     Ok(())
 }
 
-fn require_runtime_verification_safety(checked: &CheckedModule) -> Result<(), ExitCode> {
+fn require_runtime_verification_safety(
+    compiled: &arcweft_compiler::project::CompiledProject,
+    source_document: &arcweft_source::SourceDocument,
+) -> Result<(), ExitCode> {
     let verification = verify_compiled_project(
-        &checked.compiled,
+        compiled,
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
@@ -228,7 +232,7 @@ fn require_runtime_verification_safety(checked: &CheckedModule) -> Result<(), Ex
         },
     )?;
     if verification.has_blocking_runtime_safety_gaps() {
-        emit_runtime_verification_diagnostics(&checked.source_document, &verification);
+        emit_runtime_verification_diagnostics(source_document, &verification);
         return Err(ExitCode::FAILURE);
     }
     Ok(())

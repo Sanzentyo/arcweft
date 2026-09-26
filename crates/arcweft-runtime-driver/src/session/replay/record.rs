@@ -94,7 +94,7 @@ impl RootReplayRecorderV1 {
             trace: RootReplayTraceV1 {
                 schema_version: ROOT_REPLAY_SCHEMA_VERSION,
                 engine_identity: ROOT_REPLAY_ENGINE_IDENTITY.to_owned(),
-                artifact: session.active_artifact_identity,
+                artifact: session.active_generation().artifact_identity,
                 entry: entry.runtime_id.clone(),
                 entry_kind,
                 binding: entry.binding,
@@ -264,7 +264,7 @@ impl RootReplayRecorderV1 {
         &self,
         session: &BundleSession,
     ) -> Result<(), RootReplayRecordingError> {
-        if session.active_artifact_identity != self.trace.artifact {
+        if session.active_generation().artifact_identity != self.trace.artifact {
             return Err(RootReplayRecordingError::SessionIdentityChanged);
         }
         let active = session

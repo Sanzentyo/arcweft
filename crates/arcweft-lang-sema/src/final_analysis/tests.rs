@@ -82,6 +82,8 @@ mod accepted_rust_nominal;
 mod call_diagnostics;
 #[path = "tests/callable_values.rs"]
 mod callable_values;
+#[path = "tests/collections.rs"]
+mod collections;
 #[path = "tests/compile_time_scalars.rs"]
 mod compile_time_scalars;
 #[path = "tests/content_callables.rs"]
@@ -2665,15 +2667,29 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
     else {
         panic!("accepted ImageHandle uses the exact core opaque owner")
     };
-    let value = owner
-        .try_wrap(RuntimeValue::Unit)
-        .expect("an exact opaque owner constructs its value");
+    assert!(owner.try_wrap(RuntimeValue::Unit).is_err());
+    let binding = arcweft_core::value::RuntimeBundleAssetBinding::try_new(
+        arcweft_core::value::RuntimeBundleAssetContext::new(
+            arcweft_core::task::GenerationId::new(0),
+            arcweft_core::value::RuntimeBundleAssetArtifactDigest::try_from_bytes([1; 32])
+                .expect("fixture artifact digest is nonzero"),
+        ),
+        arcweft_core::value::RuntimeBundleAssetResourceId::try_new("asset.bg.room")
+            .expect("fixture resource has the Asset family"),
+        arcweft_core::value::RuntimeAssetContentDigest::try_for_bytes(b"fixture image bytes")
+            .expect("fixture bytes have a digest"),
+    )
+    .expect("fixture handle binding is valid");
+    let value = arcweft_core::value::RuntimeImageHandleValue::from_binding(binding)
+        .into_runtime_value()
+        .expect("typed image handle constructs its exact opaque value");
     admission
         .validate_live_value(&value)
         .expect("the exact accepted opaque carrier accepts its live value");
-    admission
-        .try_digest(&value, 1_024)
-        .expect("the exact accepted opaque value has canonical identity");
+    assert!(
+        admission.try_digest(&value, 1_024).is_err(),
+        "a loaded image handle is snapshot-only, not a plan constant"
+    );
     let snapshot = admission
         .try_snapshot(&value)
         .expect("the exact accepted opaque value snapshots");
@@ -2775,10 +2791,7 @@ fn load_voice_resource(asset: Ref<Voice>) -> Result<AudioHandle, VoiceError> {
     };
     assert_eq!(owner.producer().as_str(), "std.audio_handle");
     assert_eq!(owner.value_class(), RuntimeOpaqueValueClass::Plain);
-    assert_eq!(
-        owner.persistence(),
-        RuntimeOpaquePersistence::ConstantAndSnapshot
-    );
+    assert_eq!(owner.persistence(), RuntimeOpaquePersistence::SnapshotOnly);
 }
 
 #[test]

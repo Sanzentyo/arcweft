@@ -14,6 +14,7 @@ fn main() {
         operation: String::new(),
         args: Vec::new(),
         named_args: Vec::new(),
+        manifest_contract: None,
         policy: (),
     };
 }

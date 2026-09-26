@@ -60,24 +60,65 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
 }
 
 #[test]
+fn task_dispatch_start_continues_the_saved_revision_frontier() {
+    let identity = TaskDispatchIdentity::new(
+        GenerationId::new(2),
+        LogicalEpoch(4),
+        TaskSequence(7),
+        TaskId("task.resume".to_owned()),
+    );
+    let initial = TaskDispatchStart::new(identity.clone(), None);
+    assert_eq!(
+        initial.next_publication_revision(),
+        Some(TaskPublicationRevision::FIRST)
+    );
+
+    let last =
+        TaskPublicationRevision::new(std::num::NonZeroU64::new(2).expect("revision is nonzero"));
+    let resumed = TaskDispatchStart::new(identity.clone(), Some(last));
+    assert_eq!(resumed.identity(), &identity);
+    assert_eq!(resumed.last_publication_revision(), Some(last));
+    assert_eq!(
+        resumed
+            .next_publication_revision()
+            .map(TaskPublicationRevision::get),
+        Some(3)
+    );
+
+    let exhausted = TaskDispatchStart::new(
+        identity,
+        Some(TaskPublicationRevision::new(
+            std::num::NonZeroU64::new(u64::MAX).expect("maximum revision is nonzero"),
+        )),
+    );
+    assert_eq!(exhausted.next_publication_revision(), None);
+}
+
+#[test]
 fn normalizes_task_events_by_replay_stable_keys() {
     let events = vec![
         TaskEvent {
+            generation: GenerationId::new(0),
             logical_epoch: LogicalEpoch(1),
             task_id: TaskId("b".to_owned()),
             sequence: TaskSequence(0),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind: TaskEventKind::Ready(RuntimePayload::from("b")),
         },
         TaskEvent {
+            generation: GenerationId::new(0),
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("z".to_owned()),
             sequence: TaskSequence(9),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind: TaskEventKind::Ready(RuntimePayload::from("z")),
         },
         TaskEvent {
+            generation: GenerationId::new(0),
             logical_epoch: LogicalEpoch(1),
             task_id: TaskId("a".to_owned()),
             sequence: TaskSequence(1),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind: TaskEventKind::Ready(RuntimePayload::from("a")),
         },
     ];
@@ -107,15 +148,19 @@ fn normalizes_task_events_by_replay_stable_keys() {
 fn detects_already_normalized_task_events_without_reordering() {
     let events = vec![
         TaskEvent {
+            generation: GenerationId::new(0),
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("a".to_owned()),
             sequence: TaskSequence(0),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind: TaskEventKind::Ready(RuntimePayload::from("a")),
         },
         TaskEvent {
+            generation: GenerationId::new(0),
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId("b".to_owned()),
             sequence: TaskSequence(1),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind: TaskEventKind::Ready(RuntimePayload::from("b")),
         },
     ];

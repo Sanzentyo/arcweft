@@ -2,16 +2,13 @@ use super::entry::select_runtime_entry;
 use super::executor::RuntimeExecutorInstance;
 use super::options::RuntimeProfileOptions;
 use super::profile::{compile_profile_runtime_plan, report_path, run_profile_phase};
+use super::source::source_runtime_program_from_compiled;
 use super::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use crate::app::project::{
-    native_host_policy_for_selection_with_adapter, resolve_source_selection,
-    runtime_pure_config_for_selection, semantic_context_for_selection,
+    resolve_source_selection, runtime_pure_config_for_selection, semantic_context_for_selection,
 };
 use crate::app::shared::{is_arcw_path, print_json};
-use crate::output::{
-    AotProfileStats, AwbcProfileStats, FinalSemanticProfileStats, RuntimeExecutorTier,
-    RuntimePlanProfileStats, RuntimeProfileCompiler, RuntimeProfileReport, RuntimeProfileRuntime,
-};
+use crate::output::{RuntimeExecutorTier, RuntimeProfileReport, RuntimeProfileRuntime};
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
 use std::process::ExitCode;
@@ -32,8 +29,6 @@ pub(in crate::app) fn runtime_profile_command(
         options.math_wgpu_min_elements,
     );
     let semantic = semantic_context_for_selection(&selection, options.adapter.as_deref())?;
-    let host_policy =
-        native_host_policy_for_selection_with_adapter(&selection, options.adapter.as_deref())?;
     if !is_arcw_path(selection.path()) {
         eprintln!(
             "error: {} is not an .arcw source file",
@@ -43,8 +38,9 @@ pub(in crate::app) fn runtime_profile_command(
     }
 
     let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)?;
-    let execution_diagnostics = compiled.execution_diagnostics.clone();
-    let plan = compiled.plan;
+    let runtime =
+        source_runtime_program_from_compiled(&selection, compiled, options.adapter.as_deref())?;
+    let plan = runtime.plan.clone();
     let entry = selection.command_entry(options.entry.as_deref())?;
     let entry = select_runtime_entry(&plan, entry)?;
     let mut executor = run_profile_phase(&mut phases, "executor_prepare", || {
@@ -62,30 +58,23 @@ pub(in crate::app) fn runtime_profile_command(
             &mut executor,
             NativeRunHost {
                 source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-                policy: &host_policy,
+                bundle_assets: Some(runtime.bundle_assets()),
+                policy: &runtime.host_policy,
                 adapter_registrars,
                 cli_args: &[],
             },
             options.steps,
             options.mode,
             options.max_ops,
-            &execution_diagnostics,
+            &runtime.execution_diagnostics,
         )
     })?;
     let final_status = trace.final_status.status_label(FlowStatusLabelStyle::Debug);
     let report = RuntimeProfileReport {
         source: report_path(selection.path()),
-        syntax_warnings: compiled.syntax_warnings,
-        line_task_groups: compiled.line_task_groups,
-        compiler: RuntimeProfileCompiler {
-            syntax: compiled.syntax_stats.into(),
-            semantic: FinalSemanticProfileStats::from(
-                compiled.compiled.analysis_lease().final_analysis().as_ref(),
-            ),
-            runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            awbc: AwbcProfileStats::from(&compiled.product_awbc),
-            aot: AotProfileStats::from(&compiled.aot_stats),
-        },
+        syntax_warnings: runtime.syntax_warnings,
+        line_task_groups: runtime.line_task_groups,
+        compiler: runtime.compiler,
         phases,
         runtime: RuntimeProfileRuntime {
             host_system: host_system_info(),

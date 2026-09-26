@@ -161,6 +161,7 @@ pub(in crate::app) fn step_options(mode: CliRuntimeStepMode, max_ops: usize) -> 
     RuntimeStepOptions {
         mode: mode.into(),
         budget: RuntimeStepBudget { max_ops },
+        ..RuntimeStepOptions::default()
     }
 }
 

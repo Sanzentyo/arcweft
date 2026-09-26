@@ -1,8 +1,7 @@
 use super::diagnostics::emit_diagnostics;
 use super::project::{
     CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
-    native_host_policy_for_selection, resolve_source_selection, runtime_pure_config_for_selection,
-    verify_compiled_project,
+    resolve_source_selection, runtime_pure_config_for_selection, verify_compiled_project,
 };
 use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
@@ -13,6 +12,7 @@ use super::runtime::options::{
 use super::runtime::parse::parse_runtime_pure_workers;
 use super::runtime::profile::report_path;
 use super::runtime::profile::run_profile_phase;
+use super::runtime::source::{SourceRuntimeProgram, compile_source_runtime_program};
 use super::runtime::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use super::shared::print_json;
 use crate::output::{
@@ -93,8 +93,35 @@ pub(super) fn verify_types_command(
         return Err(ExitCode::from(2));
     }
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let mut checked = load_and_check_selection(&selection, None)?;
-    let (runtime_plan, entry) = verify_types_runtime_plan(&mut checked, &selection, options)?;
+    let mut phases = Vec::new();
+    let source_runtime = if options.run {
+        Some(compile_source_runtime_program(
+            &selection,
+            None,
+            &mut phases,
+        )?)
+    } else {
+        None
+    };
+    let mut checked = source_runtime.as_ref().map_or_else(
+        || load_and_check_selection(&selection, None),
+        |runtime| {
+            Ok(CheckedModule {
+                compiled: std::sync::Arc::clone(&runtime.compiled),
+                execution_diagnostics: std::sync::Arc::clone(&runtime.execution_diagnostics),
+                source_document: std::sync::Arc::clone(&runtime.source_document),
+                syntax_warnings: runtime.syntax_warnings,
+                phases,
+            })
+        },
+    )?;
+    let (runtime_plan, entry) = if let Some(runtime) = source_runtime.as_ref() {
+        let entry = selection.command_entry(options.entry.as_deref())?;
+        let entry = select_runtime_entry(&runtime.plan, entry)?;
+        (runtime.plan.clone(), entry)
+    } else {
+        verify_types_runtime_plan(&mut checked, &selection, options)?
+    };
     let line_task_groups = runtime_plan.line_task_groups().len();
     let verification = verify_types_semantics(&mut checked, options.mode)?;
     let runtime = verify_types_runtime_self_check(
@@ -104,6 +131,7 @@ pub(super) fn verify_types_command(
         options,
         &mut checked,
         adapter_registrars,
+        source_runtime.as_ref(),
     )?;
     let runtime_failed = runtime
         .as_ref()
@@ -179,6 +207,7 @@ fn verify_types_runtime_self_check(
     options: &VerifyTypesOptions,
     checked: &mut CheckedModule,
     adapter_registrars: &[NativeAdapterRegistrar],
+    source_runtime: Option<&SourceRuntimeProgram>,
 ) -> Result<Option<VerifyTypesRuntimeSelfCheck>, ExitCode> {
     if !options.run {
         return Ok(None);
@@ -203,21 +232,25 @@ fn verify_types_runtime_self_check(
             },
         )
     })?;
-    let host_policy = native_host_policy_for_selection(selection)?;
+    let runtime = source_runtime.ok_or_else(|| {
+        eprintln!("error: source runtime assets were not prepared for the runtime self-check");
+        ExitCode::FAILURE
+    })?;
     let file_roots = selection.native_file_roots();
     let trace = run_profile_phase(&mut checked.phases, "run", || {
         run_runtime_steps_with_executor(
             &mut executor,
             NativeRunHost {
                 source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-                policy: &host_policy,
+                bundle_assets: Some(runtime.bundle_assets()),
+                policy: &runtime.host_policy,
                 adapter_registrars,
                 cli_args: &[],
             },
             options.steps,
             options.runtime_mode,
             options.max_ops,
-            &checked.execution_diagnostics,
+            &runtime.execution_diagnostics,
         )
     })?;
     Ok(Some(VerifyTypesRuntimeSelfCheck {

@@ -1,5 +1,6 @@
 //! Sans I/O bundle data model and deterministic codecs.
 
+pub mod bundle_artifact_identity;
 mod character_dialogue_generation;
 pub mod character_package;
 pub mod container;
@@ -49,6 +50,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 use std::path::Path;
 use thiserror::Error;
+
+pub use bundle_artifact_identity::BundleArtifactIdentity;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]

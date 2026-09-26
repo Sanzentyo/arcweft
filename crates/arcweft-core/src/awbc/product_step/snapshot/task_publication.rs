@@ -1,12 +1,17 @@
-use crate::task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskId, TaskSequence};
+use crate::task::{
+    GenerationId, LogicalEpoch, TaskEvent, TaskEventKind, TaskId, TaskPublicationRevision,
+    TaskSequence,
+};
 use crate::value::{AwbcRuntimeValueSnapshot, RuntimePayload};
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcProductTaskEventSaveSnapshot {
+    pub generation: GenerationId,
     pub logical_epoch: LogicalEpoch,
     pub task_id: TaskId,
     pub sequence: TaskSequence,
+    pub publication_revision: TaskPublicationRevision,
     pub kind: AwbcProductTaskEventKindSaveSnapshot,
 }
 
@@ -21,9 +26,11 @@ pub enum AwbcProductTaskEventKindSaveSnapshot {
 impl AwbcProductTaskEventSaveSnapshot {
     pub(super) fn from_live(event: &TaskEvent) -> Result<Self, String> {
         Ok(Self {
+            generation: event.generation,
             logical_epoch: event.logical_epoch,
             task_id: event.task_id.clone(),
             sequence: event.sequence,
+            publication_revision: event.publication_revision,
             kind: match &event.kind {
                 TaskEventKind::Ready(value) => AwbcProductTaskEventKindSaveSnapshot::Ready(
                     AwbcRuntimeValueSnapshot::from_runtime_value(value.value())
@@ -45,9 +52,11 @@ impl AwbcProductTaskEventSaveSnapshot {
         owner: &crate::task::RuntimeProgramOwner,
     ) -> Result<TaskEvent, String> {
         Ok(TaskEvent {
+            generation: self.generation,
             logical_epoch: self.logical_epoch,
             task_id: self.task_id,
             sequence: self.sequence,
+            publication_revision: self.publication_revision,
             kind: match self.kind {
                 AwbcProductTaskEventKindSaveSnapshot::Ready(value) => {
                     TaskEventKind::Ready(RuntimePayload::from(

@@ -15,8 +15,8 @@ use crate::awbc::schema::{
     AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence,
     AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcRegisterId,
     AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-    AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcSignatureId, AwbcTaskPlanKind, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId,
+    AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{
@@ -800,7 +800,14 @@ fn apply_instruction(
                 return invalid_type(&at, "exact std.reduction opaque type with one argument");
             }
             let state_ty = read_register(verifier, function, block, *value, state)?;
-            require_compatible(program, arguments[0], state_ty, &at)?;
+            // References are erased when represented as RuntimeValue. Match the
+            // RuntimePlan and structured-evaluator rule: Reduction.unchanged
+            // materializes one referenced layer as its payload value.
+            let materialized_state_ty = match runtime_shape(program, state_ty) {
+                Some(AwbcRuntimeTypeShape::Reference(inner)) => *inner,
+                _ => state_ty,
+            };
+            require_compatible(program, arguments[0], materialized_state_ty, &at)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, &at)?;
             write_register(verifier, function, block, *dst, state)?;
@@ -1382,9 +1389,15 @@ fn apply_instruction(
             verify_apply_group(verifier, function, block, *dst, *callee, args, &at)?;
             write_register(verifier, function, block, *dst, state)?;
         }
-        AwbcInstruction::StartTask { dst, plan, args } => {
+        AwbcInstruction::StartNeed { dst, plan, args } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
             let task = &program.task_plans[plan.index()];
+            if !matches!(&task.kind, AwbcTaskPlanKind::NeedProducer { .. }) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "StartNeed requires a NeedProducer task plan".to_owned(),
+                });
+            }
             verify_call_args(
                 verifier,
                 function,
@@ -1393,17 +1406,16 @@ fn apply_instruction(
                 args,
                 state,
                 &at,
-                &format!("task plan {}", task.public_id.0),
+                &format!("Need producer plan {}", plan.0),
             )?;
-            require_type_kind(
-                verifier,
-                function,
-                block,
-                *dst,
-                is_task_handle,
-                "task handle",
-                &at,
-            )?;
+            let Some(AwbcRuntimeTypeShape::Need(item)) =
+                runtime_shape(program, register_type(verifier, function, block, *dst)?)
+            else {
+                return invalid_type(&at, "Need<T> producer destination");
+            };
+            if *item != task.payload_type {
+                return invalid_type(&at, "Need<T> matching producer payload type");
+            }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::SpawnFiber {
@@ -2043,13 +2055,7 @@ fn apply_terminator(
                 return invalid_type(&at, "task or need handle");
             };
             let result_ty = match handle_shape {
-                AwbcRuntimeTypeShape::Need(item) | AwbcRuntimeTypeShape::Task(item) => *item,
-                AwbcRuntimeTypeShape::Dynamic => {
-                    dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "await binding requires Dynamic runtime type".to_owned(),
-                    })?
-                }
+                AwbcRuntimeTypeShape::Need(item) => *item,
                 _ => return invalid_type(&at, "task or need handle"),
             };
             if !is_await_handle(Some(handle_shape)) {
@@ -2109,7 +2115,10 @@ fn apply_terminator(
             resume,
         } => {
             check_index(program.task_plans.len(), plan.0, "task_plans", &at)?;
-            if program.task_plans[plan.index()].many.is_none() {
+            if !matches!(
+                &program.task_plans[plan.index()].kind,
+                AwbcTaskPlanKind::AwaitMany { .. }
+            ) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "await-many references a single-task plan".to_owned(),
@@ -3821,25 +3830,15 @@ fn is_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
 }
 
 fn is_await_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
-    matches!(
-        ty,
-        Some(
-            AwbcRuntimeTypeShape::Task(_)
-                | AwbcRuntimeTypeShape::Need(_)
-                | AwbcRuntimeTypeShape::Dynamic
-        )
-    )
+    matches!(ty, Some(AwbcRuntimeTypeShape::Need(_)))
+}
+
+fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+    matches!(ty, Some(AwbcRuntimeTypeShape::Task(_)))
 }
 
 fn is_progress(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(ty, Some(AwbcRuntimeTypeShape::Progress))
-}
-
-fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
-    matches!(
-        ty,
-        Some(AwbcRuntimeTypeShape::Task(_) | AwbcRuntimeTypeShape::Dynamic)
-    )
 }
 
 fn is_dynamic_target(ty: Option<&AwbcRuntimeTypeShape>) -> bool {

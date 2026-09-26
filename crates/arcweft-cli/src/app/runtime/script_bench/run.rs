@@ -147,6 +147,7 @@ fn bench_expectation_failures(
         &entry,
         NativeRunHost {
             source: Some(NativeRunSource::new(source_path, runtime.file_roots)),
+            bundle_assets: Some(runtime.bundle_assets),
             policy: runtime.host_policy,
             adapter_registrars: runtime.adapter_registrars,
             cli_args: &[],
@@ -307,6 +308,7 @@ fn run_bench_flow_section(
         let trace = run_runtime_bench_steps_with_pure(
             executor,
             Some(NativeRunSource::new(source_path, runtime.file_roots)),
+            runtime.bundle_assets,
             RuntimeStepRunConfig {
                 steps: options.steps,
                 mode: options.mode,

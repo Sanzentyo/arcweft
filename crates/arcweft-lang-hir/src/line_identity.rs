@@ -283,14 +283,13 @@ impl HirDialogueLineSite {
         builder::resolve_explicit_line_id(module, self, reference)
     }
 
-    /// Resolves an authored absolute text-key coordinate as typed evidence.
-    pub fn resolve_explicit_text_key(&self, reference: &HirIdRef) -> Option<DialogueTextKey> {
-        let HirIdRef::Absolute(reference) = reference else {
-            return None;
-        };
-        (reference.segments().next() == Some(DialogueTextKey::family_prefix()))
-            .then(|| DialogueTextKey::try_new(reference.as_str().to_owned()).ok())
-            .flatten()
+    /// Resolves an authored text-key coordinate against this line's owner and scopes.
+    pub fn resolve_explicit_text_key(
+        &self,
+        module: &HirModuleKey,
+        reference: &HirIdRef,
+    ) -> Option<DialogueTextKey> {
+        builder::resolve_explicit_text_key(module, self, reference)
     }
 }
 

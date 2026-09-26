@@ -10,8 +10,8 @@ use crate::awbc::schema::{
     AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId,
     AwbcFunctionKind, AwbcLineOperation, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram,
     AwbcRoute, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
-    AwbcTypeId,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTaskPlanKind, AwbcTaskRequestProjection,
+    AwbcTraitMethod, AwbcTraitReceiverMode, AwbcTypeId,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{
@@ -1022,10 +1022,6 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
     }
     for (index, task) in program.task_plans.iter().enumerate() {
         let at = format!("task plan {index}");
-        check_string(program, task.public_id, &at)?;
-        check_string(program, task.need_id, &at)?;
-        check_capability(verifier, task.capability, &at)?;
-        check_string(program, task.operation, &at)?;
         check_string(program, task.cancel_scope, &at)?;
         check_index(
             program.signatures.len(),
@@ -1048,11 +1044,64 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
                 message: "task argument descriptors must match signature arity".to_owned(),
             });
         }
-        if task.many.as_ref().is_some_and(|many| many.limit == 0) {
-            return Err(AwbcVerifyError::InvalidInvariant {
-                at,
-                message: "await-many task limit must be non-zero".to_owned(),
-            });
+        match &task.request {
+            AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
+                check_string(program, *argument_name, &at)?
+            }
+            AwbcTaskRequestProjection::ExternCapability {
+                capability,
+                operation,
+                ..
+            }
+            | AwbcTaskRequestProjection::CustomCapability {
+                capability,
+                operation,
+            } => {
+                check_capability(verifier, *capability, &at)?;
+                check_string(program, *operation, &at)?;
+            }
+        }
+        match &task.kind {
+            AwbcTaskPlanKind::NeedProducer { .. } => {
+                if task.arguments.iter().any(|argument| argument.spread) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "Need producer argument rows cannot contain spreads".to_owned(),
+                    });
+                }
+                task.need_producer_plan(program).map_err(|message| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message,
+                    }
+                })?;
+            }
+            AwbcTaskPlanKind::AwaitMany {
+                public_id,
+                need_id,
+                limit,
+                ..
+            } => {
+                if !matches!(
+                    &task.request,
+                    AwbcTaskRequestProjection::CustomCapability { .. }
+                ) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message:
+                            "AwaitMany task plans require an explicit custom capability request"
+                                .to_owned(),
+                    });
+                }
+                check_string(program, *public_id, &at)?;
+                check_string(program, *need_id, &at)?;
+                if *limit == 0 {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "await-many task limit must be non-zero".to_owned(),
+                    });
+                }
+            }
         }
     }
     for (index, effect) in program.effect_plans.iter().enumerate() {
@@ -2745,7 +2794,7 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
         )?;
         if !matches!(
             program.functions[executable.function.index()].kind,
-            AwbcFunctionKind::PureHelper | AwbcFunctionKind::Flow
+            AwbcFunctionKind::Ordinary | AwbcFunctionKind::PureHelper | AwbcFunctionKind::Flow
         ) {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
@@ -2883,9 +2932,17 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                     };
                     let function = &program.functions[executable.function.index()];
                     let signature = &program.signatures[function.signature.index()];
-                    if function.kind != AwbcFunctionKind::PureHelper
+                    let effect_free = program
+                        .effect_sets
+                        .get(signature.effects.index())
+                        .is_some_and(|effects| effects.effects.is_empty());
+                    if function.kind != AwbcFunctionKind::Ordinary
                         || signature.params.len() != arity
                         || signature.result.is_none()
+                        || !effect_free
+                        || function
+                            .flags
+                            .contains(crate::awbc::schema::AwbcFunctionFlag::MaySuspend)
                     {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at: at.clone(),

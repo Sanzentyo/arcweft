@@ -8,7 +8,7 @@ use crate::runtime_id::DialogueActivationId;
 use crate::step::RuntimeDialogueContentEvent;
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
-use crate::value::ownership::RuntimeOwnedSlotId;
+use crate::value::{RuntimeValue, ownership::RuntimeOwnedSlotId};
 use std::collections::BTreeMap;
 
 /// Product adapter over the executor-neutral dialogue registry. Product owns
@@ -47,6 +47,42 @@ impl ProductDialogueStore {
         self.active_activation()
             .as_ref()
             .and_then(|activation| self.registry.active_line(activation))
+    }
+
+    pub(super) fn visit_runtime_values<E>(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Some(frame) = self.active_frame() {
+            visit_value_graph(frame.target.payload(), &mut visitor)?;
+            visit_value_slice(&frame.captures, &mut visitor)?;
+            visit_value_slice(&frame.task_inputs, &mut visitor)?;
+            for binding in frame.values.iter() {
+                visit_value_graph(&binding.value, &mut visitor)?;
+            }
+            for effect in frame.effect_callbacks.iter() {
+                visit_value_slice(effect.callback().retained(), &mut visitor)?;
+            }
+            match &frame.phase {
+                super::ProductDialoguePhase::Activating { fiber, pending } => {
+                    fiber.visit_runtime_values(&mut visitor)?;
+                    visit_pending_line_operation(pending.as_ref(), &mut visitor)?;
+                }
+                super::ProductDialoguePhase::Reducing { .. }
+                | super::ProductDialoguePhase::Publishing { .. } => {}
+                super::ProductDialoguePhase::Closing(closing) => match &closing.state {
+                    super::ProductDialogueClosingState::Activation { fiber, pending } => {
+                        fiber.visit_runtime_values(&mut visitor)?;
+                        visit_pending_line_operation(pending.as_ref(), &mut visitor)?;
+                    }
+                    super::ProductDialogueClosingState::LineTask { .. } => {}
+                },
+            }
+        }
+        if let Some(line) = self.active_line() {
+            line.visit_runtime_values(&mut visitor)?;
+        }
+        Ok(())
     }
 
     pub(super) fn begin_active_transaction(
@@ -271,4 +307,35 @@ impl ProductDialogueStore {
         }
         Ok(Self { registry })
     }
+}
+
+fn visit_value_graph<E>(
+    value: &RuntimeValue,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))
+}
+
+fn visit_value_slice<E>(
+    values: &[RuntimeValue],
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    for value in values {
+        visit_value_graph(value, visitor)?;
+    }
+    Ok(())
+}
+
+fn visit_pending_line_operation<E>(
+    pending: Option<&super::ProductPendingLineOperation>,
+    visitor: &mut impl FnMut(&RuntimeValue) -> Result<(), E>,
+) -> Result<(), E> {
+    if let Some(
+        super::ProductPendingLineOperation::AcquireActor { value, .. }
+        | super::ProductPendingLineOperation::ActorLook { value, .. },
+    ) = pending
+    {
+        visit_value_graph(value, visitor)?;
+    }
+    Ok(())
 }

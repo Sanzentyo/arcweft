@@ -68,6 +68,7 @@ use arcweft_runtime_driver::{
     },
     task::HostTaskDispatch,
 };
+use arcweft_runtime_host::NativeTaskDispatch;
 use arcweft_text_model::{Milli, RichTextParam};
 use arcweft_tooling::runtime_diagnostic::project_runtime_assertion_fault;
 use capture::capture_player_observation_frame;
@@ -158,20 +159,51 @@ pub(super) fn native_player_runtime_state_for_options(
         eprintln!("error: player-backed observe session failed: {error}");
         ExitCode::FAILURE
     })?;
-    let host_policy = native_host_policy_for_selection(&selection)?;
+    let mut host_policy = native_host_policy_for_selection(&selection)?;
+    if compiled
+        .bundle
+        .manifest
+        .required_host_calls
+        .iter()
+        .any(|call| matches!(call.as_str(), "asset.image" | "asset.voice"))
+    {
+        host_policy = host_policy.union(arcweft_host_adapter::HostCallPolicy::from_manifests([
+            arcweft_adapter_context::standard::bundle_asset_manifest(),
+        ]));
+    }
     let file_roots = selection.native_file_roots();
-    let host = NativeTaskBridge::try_new(
-        selection.path(),
-        file_roots,
-        &[],
-        host_policy,
-        adapter_registrars,
+    let generation = session.active_generation();
+    let bundle_assets = arcweft_runtime_host::BundleAssetAdapter::try_new(
+        generation.bundle_asset_context(),
+        generation.artifact_identity,
+        std::sync::Arc::new(compiled.bundle.clone()),
     )
-    .map(Some)
     .map_err(|error| {
-        eprintln!("error: failed to create native task bridge: {error}");
+        eprintln!("error: failed to bind player bundle assets: {error}");
         ExitCode::FAILURE
     })?;
+    let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(file_roots, &[])
+        .map_err(|error| {
+            eprintln!("error: failed to create native task registry: {error}");
+            ExitCode::FAILURE
+        })?;
+    let registry = adapter_registrars
+        .iter()
+        .try_fold(builder, |builder, register| {
+            register(selection.path(), builder)
+        })
+        .and_then(|builder| builder.register(bundle_assets))
+        .map(arcweft_host_adapter::HostAdapterRegistryBuilder::build)
+        .map_err(|error| {
+            eprintln!("error: failed to register native task adapters: {error}");
+            ExitCode::FAILURE
+        })?;
+    let host = NativeTaskBridge::try_with_registry(host_policy, registry)
+        .map(Some)
+        .map_err(|error| {
+            eprintln!("error: failed to create native task bridge: {error}");
+            ExitCode::FAILURE
+        })?;
     Ok(NativeAgentRuntimeState {
         session,
         images,
@@ -418,29 +450,17 @@ fn complete_player_runtime_tasks(
     let Some(host) = host else {
         return Ok(Vec::new());
     };
-    let tasks = requested_tasks
+    let dispatches = requested_tasks
         .iter()
-        .map(|dispatch| dispatch.task.clone())
+        .map(|dispatch| {
+            NativeTaskDispatch::new(
+                dispatch.dispatch_start(),
+                dispatch.task.clone(),
+                dispatch.bundle_asset_context(),
+            )
+        })
         .collect::<Vec<_>>();
-    Ok(host
-        .complete_tasks(program, tasks)?
-        .into_iter()
-        .map(|event| align_player_task_event(event, requested_tasks))
-        .collect())
-}
-
-fn align_player_task_event(
-    mut event: TaskEvent,
-    requested_tasks: &[HostTaskDispatch],
-) -> TaskEvent {
-    if let Some(dispatch) = requested_tasks
-        .iter()
-        .find(|dispatch| dispatch.task.id == event.task_id)
-    {
-        event.logical_epoch = dispatch.logical_epoch;
-        event.sequence = dispatch.sequence;
-    }
-    event
+    host.complete_tasks_with_dispatches(program, dispatches)
 }
 
 fn prepare_player_runtime_frame(

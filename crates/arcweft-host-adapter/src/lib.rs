@@ -10,9 +10,13 @@ use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder,
 };
 use arcweft_core::step::RuntimeHostCallMode;
-use arcweft_core::task::{BoundTaskOutcome, HostTaskRequest, NamedHostArg, TaskId, TaskSpec};
+use arcweft_core::task::{
+    BoundTaskOutcome, HostTaskRequest, NamedHostArg, Progress, TaskId, TaskPolicy,
+    TaskPublicationRevision, TaskSpec,
+};
 use arcweft_core::value::{
-    RuntimePayload, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeBundleAssetContext, RuntimePayload, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeValue,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -32,7 +36,12 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
     }
 
     /// Starts one task and reports whether it completed or remains pending.
-    fn submit(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskSubmission> {
+    fn submit(
+        &self,
+        task: &TaskSpec,
+        outcome: &BoundTaskOutcome,
+        _context: HostTaskSubmissionContext,
+    ) -> Option<HostTaskSubmission> {
         self.complete(task, outcome)
             .map(HostTaskSubmission::Completed)
     }
@@ -56,6 +65,41 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
     fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool;
 }
 
+/// Revision an adapter must use for the next publication from this task
+/// dispatch. A restored Restartable request receives the checked successor of
+/// its saved frontier instead of restarting at revision one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HostTaskSubmissionContext {
+    next_publication_revision: TaskPublicationRevision,
+    bundle_asset_context: Option<RuntimeBundleAssetContext>,
+}
+
+impl HostTaskSubmissionContext {
+    #[must_use]
+    pub const fn new(next_publication_revision: TaskPublicationRevision) -> Self {
+        Self {
+            next_publication_revision,
+            bundle_asset_context: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_bundle_asset_context(mut self, context: RuntimeBundleAssetContext) -> Self {
+        self.bundle_asset_context = Some(context);
+        self
+    }
+
+    #[must_use]
+    pub const fn next_publication_revision(self) -> TaskPublicationRevision {
+        self.next_publication_revision
+    }
+
+    #[must_use]
+    pub const fn bundle_asset_context(self) -> Option<RuntimeBundleAssetContext> {
+        self.bundle_asset_context
+    }
+}
+
 /// Result of starting one host adapter task.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostTaskSubmission {
@@ -67,6 +111,9 @@ pub enum HostTaskSubmission {
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostAdapterCompletion {
     pub task_id: TaskId,
+    /// Host-issued monotone revision within this task dispatch. Completion
+    /// arrival order is never used to invent publication identity.
+    pub publication_revision: TaskPublicationRevision,
     pub outcome: HostTaskOutcome,
 }
 
@@ -108,14 +155,16 @@ pub struct HostTaskOutcome {
     pub metrics: HostTaskMetrics,
 }
 
-/// Typed terminal result of a host task.
+/// Typed publication from a host task.
 ///
 /// `Ready` carries the complete payload selected by the task's
 /// [`arcweft_core::task::TaskOutcomeContract`]. A domain error is therefore a
 /// `Result::Err` value inside `Ready`. `Failed` is reserved for a host or
-/// adapter failure that cannot be represented by that contract.
+/// adapter failure that cannot be represented by that contract. `Progress`
+/// is nonterminal and carries host-defined progress data.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostTaskCompletion {
+    Progress(Progress),
     Ready(RuntimePayload),
     Failed(String),
 }
@@ -307,15 +356,59 @@ impl HostAdapterRegistry {
         &self,
         task: &TaskSpec,
         outcome: &BoundTaskOutcome,
+        context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
-        self.calls
-            .get(&task.request.host_call_id())
-            .and_then(|call| call.adapter.submit(task, outcome))
+        let call = self.calls.get(&task.request.host_call_id())?;
+        if let HostTaskRequest::Custom {
+            manifest_contract: Some(contract),
+            ..
+        } = &task.request
+            && (*contract != call.contract.digest
+                || call.contract.mode != RuntimeHostCallMode::Suspend
+                || task.outcome.program_payload() != Some(call.contract.result)
+                || task.policy != TaskPolicy::AlwaysStart)
+        {
+            return None;
+        }
+        call.adapter.submit(task, outcome, context)
+    }
+
+    /// Starts a direct, checked host-call request using its selected modality.
+    /// Ordinary task submission keeps the stricter Need-producer `Suspend`
+    /// contract; this entry point preserves checked `Immediate` host calls
+    /// without weakening that task boundary.
+    pub fn submit_runtime_host_call(
+        &self,
+        task: &TaskSpec,
+        outcome: &BoundTaskOutcome,
+        mode: RuntimeHostCallMode,
+        context: HostTaskSubmissionContext,
+    ) -> Option<HostTaskSubmission> {
+        let call = self.calls.get(&task.request.host_call_id())?;
+        let HostTaskRequest::Custom {
+            manifest_contract: Some(contract),
+            ..
+        } = &task.request
+        else {
+            return None;
+        };
+        if *contract != call.contract.digest
+            || call.contract.mode != mode
+            || task.outcome.program_payload() != Some(call.contract.result)
+            || task.policy != TaskPolicy::AlwaysStart
+        {
+            return None;
+        }
+        call.adapter.submit(task, outcome, context)
     }
 
     /// Synchronous helper. Pending work returns `None`.
     pub fn dispatch(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
-        match self.submit(task, outcome)? {
+        match self.submit(
+            task,
+            outcome,
+            HostTaskSubmissionContext::new(TaskPublicationRevision::FIRST),
+        )? {
             HostTaskSubmission::Completed(outcome) => Some(outcome),
             HostTaskSubmission::Pending => None,
         }

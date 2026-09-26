@@ -25,8 +25,10 @@ use crate::stream::{
     RuntimeStreamEvent, StreamMatchArm, StreamOp, StreamRuntimeId, StreamRuntimeState,
 };
 use crate::task::{
-    AwaitManyTarget, AwaitTarget, CancelScopeId, NeedId, TaskEvent, TaskEventKind, TaskId, TaskKey,
-    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_task_events,
+    AwaitManyInvocationIdentity, AwaitManyTarget, CancelScopeId, GenerationId, NeedId,
+    NeedProducerRegistry, RuntimeNeedPublication, TaskEvent, TaskEventKind, TaskId, TaskKey,
+    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_runtime_need_states,
+    normalize_task_events,
 };
 use crate::value::{
     RuntimeCallableValue, RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError,
@@ -52,12 +54,18 @@ pub mod suspend;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Engine {
     plan: Arc<RuntimePlan>,
+    generation: GenerationId,
+    need_producers: NeedProducerRegistry,
+    task_request_quota_remaining: usize,
+    need_publications: BTreeMap<NeedId, VecDeque<RuntimeNeedPublication>>,
+    latest_need_publications: BTreeMap<NeedId, RuntimeNeedPublication>,
+    need_publication_frontiers: BTreeMap<NeedId, TaskPublicationCursor>,
+    await_many_invocations: BTreeMap<(GenerationId, RuntimePersistentFiberId), u64>,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<RootRuntime>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
-    task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
     next_fiber_id: u64,
     dialogue_occurrences: BTreeMap<
         (
@@ -374,9 +382,8 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
 pub enum FlowFiberStatus {
     Running,
     Dialogue(DialogueActivationId),
-    Waiting(Box<AwaitState>),
-    NeedWaiting(NeedId),
-    WaitingMany(Box<AwaitManyState>),
+    NeedWaiting(Box<AwaitState>),
+    WaitingMany(WaitingManyStatus),
     HostCall(HostCallState),
     Choice(ChoiceState),
     Done(FlowExit),
@@ -398,11 +405,20 @@ pub enum FlowStatusLabelStyle {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
-    pub target: AwaitTarget,
+    pub need: NeedId,
+    pub item_type: AwaitItemType,
     pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     pub resume: Option<FlowCursor>,
     pub observed_through: Option<TaskPublicationCursor>,
-    pub queued: VecDeque<TaskEvent>,
+    pub queued: VecDeque<RuntimeNeedPublication>,
+}
+
+/// Typed Ready payload identity carried by a suspended Await across execution
+/// tiers. Plan and AWBC type IDs are kept in their owning domains.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AwaitItemType {
+    Plan(RuntimePlanTypeId),
+    Awbc(AwbcTypeId),
 }
 
 /// Suspended bounded fanout await state.
@@ -410,6 +426,7 @@ pub struct AwaitState {
 pub struct AwaitManyState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitManyTarget,
+    pub invocation: AwaitManyInvocationIdentity,
     pub resume: Option<FlowCursor>,
     pub items: Vec<RuntimeValue>,
     pub next_index: usize,
@@ -423,6 +440,43 @@ pub struct AwaitManyInFlight {
     pub index: usize,
     pub task: TaskId,
     pub need: NeedId,
+}
+
+/// Shared status projection for both native and Product AwaitMany execution.
+/// Native retains its complete continuation; Product reports a display-only
+/// summary while its verified AWBC fiber remains the continuation authority.
+#[derive(Clone, Debug, PartialEq)]
+pub enum WaitingManyStatus {
+    Native(Box<AwaitManyState>),
+    Observed(AwaitManyProgress),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AwaitManyProgress {
+    pub task: TaskId,
+    pub completed: usize,
+    pub total: usize,
+}
+
+impl WaitingManyStatus {
+    fn runtime_status_label(&self) -> String {
+        match self {
+            Self::Native(state) => format!(
+                "waiting_many {} {}/{}",
+                state.target.task.0,
+                state.results.iter().filter(|value| value.is_some()).count(),
+                state.results.len()
+            ),
+            Self::Observed(progress) => format!(
+                "waiting_many {} {}/{}",
+                progress.task.0, progress.completed, progress.total
+            ),
+        }
+    }
+
+    fn debug_status_label(&self) -> String {
+        self.runtime_status_label()
+    }
 }
 
 /// Suspended direct host call awaiting a typed host result.
@@ -469,14 +523,8 @@ impl FlowFiberStatus {
         match self {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
-            Self::Waiting(state) => format!("waiting {}", state.target.task.0),
-            Self::NeedWaiting(need) => format!("need_waiting {}", need.0),
-            Self::WaitingMany(state) => format!(
-                "waiting_many {} {}/{}",
-                state.target.task.0,
-                state.results.iter().filter(|value| value.is_some()).count(),
-                state.results.len()
-            ),
+            Self::NeedWaiting(state) => format!("need_waiting {}", state.need.0),
+            Self::WaitingMany(state) => state.runtime_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
                 format!("choice {}", state.id.as_deref().unwrap_or("-"))
@@ -490,14 +538,8 @@ impl FlowFiberStatus {
         match self {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
-            Self::Waiting(state) => format!("waiting {}", state.target.task.0),
-            Self::NeedWaiting(need) => format!("need_waiting {}", need.0),
-            Self::WaitingMany(state) => format!(
-                "waiting_many {} {}/{}",
-                state.target.task.0,
-                state.results.iter().filter(|value| value.is_some()).count(),
-                state.results.len()
-            ),
+            Self::NeedWaiting(state) => format!("need_waiting {}", state.need.0),
+            Self::WaitingMany(state) => state.debug_status_label(),
             Self::HostCall(state) => format!("host_call {}", state.id.0),
             Self::Choice(state) => {
                 format!("choice {}", state.id.as_deref().unwrap_or("-"))
@@ -511,7 +553,6 @@ impl FlowFiberStatus {
         match self {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
-            Self::Waiting(_) => "waiting".to_owned(),
             Self::NeedWaiting(_) => "need_waiting".to_owned(),
             Self::WaitingMany(_) => "waiting_many".to_owned(),
             Self::HostCall(_) => "host_call".to_owned(),
@@ -570,6 +611,30 @@ fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
 }
 
 impl Engine {
+    #[must_use]
+    pub const fn generation(&self) -> GenerationId {
+        self.generation
+    }
+
+    #[must_use]
+    pub fn restartable_dispatches(&self) -> Vec<crate::task::RuntimeNeedProducerDispatch> {
+        self.need_producers.restartable_dispatches()
+    }
+
+    #[must_use]
+    pub fn quiescence_blocking_needs(&self) -> Vec<crate::task::NeedId> {
+        self.need_producers.quiescence_blocking_needs()
+    }
+
+    #[must_use]
+    pub fn need_producer_generation_for_task(&self, task: &TaskId) -> Option<GenerationId> {
+        self.need_producers.generation_for_task(task)
+    }
+
+    pub(crate) fn rebind_generation(&mut self, generation: GenerationId) {
+        self.generation = generation;
+    }
+
     /// Retains the exact executable type authority for an asynchronous host result.
     pub fn program_plan(&self) -> Arc<RuntimePlan> {
         Arc::clone(&self.plan)
@@ -600,6 +665,13 @@ impl Engine {
     /// [`Self::start_entry`] is called. Plans that contain only line tasks,
     /// streams remain directly executable.
     pub fn new(plan: RuntimePlan) -> Self {
+        Self::new_with_generation(plan, GenerationId::new(0))
+    }
+
+    /// Creates an engine bound to one host-owned generation slot. Runtime
+    /// owners that can hot-swap plans must supply the active slot so stale
+    /// task events cannot publish into a later generation.
+    pub fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
         let plan = Arc::new(plan);
         let flow_positions: BTreeMap<_, _> = plan
             .flows
@@ -626,6 +698,13 @@ impl Engine {
         let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
             plan,
+            generation,
+            need_producers: NeedProducerRegistry::default(),
+            task_request_quota_remaining: usize::MAX,
+            need_publications: BTreeMap::new(),
+            latest_need_publications: BTreeMap::new(),
+            need_publication_frontiers: BTreeMap::new(),
+            await_many_invocations: BTreeMap::new(),
             flow_positions,
             main_started,
             root: None,
@@ -649,7 +728,6 @@ impl Engine {
                 status,
             },
             child_fibers: VecDeque::new(),
-            task_publications: BTreeMap::new(),
             next_fiber_id: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),
@@ -666,20 +744,38 @@ impl Engine {
 
     /// Creates an engine and selects the requested flow exactly.
     pub fn for_flow(plan: RuntimePlan, flow: &FlowRuntimeId) -> Result<Self, EngineStartError> {
+        Self::for_flow_with_generation(plan, flow, GenerationId::new(0))
+    }
+
+    /// Creates an engine, generation-bound, and selects the requested flow.
+    pub fn for_flow_with_generation(
+        plan: RuntimePlan,
+        flow: &FlowRuntimeId,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
         let invocation = plan
             .seal_flow_invocation(flow.clone(), [])
             .map_err(|error| EngineStartError::InvalidFlowInvocation {
                 message: error.to_string(),
             })?;
-        Self::for_flow_invocation(invocation)
+        Self::for_flow_invocation_with_generation(invocation, generation)
     }
 
     /// Creates an engine from one complete plan-owned Flow invocation.
     pub fn for_flow_invocation(
         invocation: crate::plan::RuntimeFlowInvocation,
     ) -> Result<Self, EngineStartError> {
+        Self::for_flow_invocation_with_generation(invocation, GenerationId::new(0))
+    }
+
+    /// Creates an engine from one complete plan-owned Flow invocation and
+    /// the host generation that owns any emitted Need producer tasks.
+    pub fn for_flow_invocation_with_generation(
+        invocation: crate::plan::RuntimeFlowInvocation,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
         let (plan, flow, bindings) = invocation.into_parts();
-        let mut engine = Self::new(plan);
+        let mut engine = Self::new_with_generation(plan, generation);
         engine.start_flow_cursor(&flow)?;
         let admitted = engine
             .admit_current_flow_parameter_bindings(bindings.iter())
@@ -694,7 +790,16 @@ impl Engine {
 
     /// Creates an engine and selects the requested entry exactly.
     pub fn for_entry(plan: RuntimePlan, entry: &EntryRuntimeId) -> Result<Self, EngineStartError> {
-        let mut engine = Self::new(plan);
+        Self::for_entry_with_generation(plan, entry, GenerationId::new(0))
+    }
+
+    /// Creates a generation-bound engine and selects the requested entry.
+    pub fn for_entry_with_generation(
+        plan: RuntimePlan,
+        entry: &EntryRuntimeId,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
+        let mut engine = Self::new_with_generation(plan, generation);
         engine.start_entry(entry)?;
         Ok(engine)
     }
@@ -949,6 +1054,111 @@ impl Engine {
         self.child_fibers.len()
     }
 
+    fn latch_need_publications(
+        &mut self,
+        states: &[crate::task::RuntimeNeedState],
+        events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+    ) {
+        for state in states {
+            if self.need_producers.launch_for_need(state.need()).is_some() {
+                match self.need_producers.publish_need_state(state) {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(error) => {
+                        let message = format!("invalid Need publication: {error}");
+                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        output.diagnostics.push(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Host,
+                            message,
+                        ));
+                        return;
+                    }
+                }
+            }
+            if !self.enqueue_need_publication(
+                RuntimeNeedPublication::State {
+                    need: state.need().clone(),
+                    state: state.state().clone(),
+                    cursor: TaskPublicationCursor::from_need_state(state),
+                },
+                output,
+            ) {
+                return;
+            }
+        }
+        for event in events {
+            let Some(publication) = self.need_producers.publication_for_task_event(event) else {
+                continue;
+            };
+            match self.need_producers.publish_task_event(event) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(error) => {
+                    let message = format!("invalid Need task publication: {error}");
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
+                    return;
+                }
+            }
+            if !self.enqueue_need_publication(publication, output) {
+                return;
+            }
+        }
+    }
+
+    fn enqueue_need_publication(
+        &mut self,
+        publication: RuntimeNeedPublication,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let need = publication.need().clone();
+        let cursor = publication.cursor();
+        if let Some(previous) = self.need_publication_frontiers.get(&need).copied() {
+            match previous.compare_same_source(cursor) {
+                Some(std::cmp::Ordering::Greater) => return true,
+                Some(std::cmp::Ordering::Equal) => {
+                    if self.latest_need_publications.get(&need) == Some(&publication) {
+                        return true;
+                    }
+                    let message = format!(
+                        "Need {need:?} received conflicting publications at {:?}",
+                        cursor
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
+                    return false;
+                }
+                Some(std::cmp::Ordering::Less) => {}
+                None => {
+                    let message = format!(
+                        "Need {need:?} changed publication authority between external state and a local task"
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
+                    return false;
+                }
+            }
+        }
+        self.need_publication_frontiers.insert(need.clone(), cursor);
+        self.latest_need_publications
+            .insert(need.clone(), publication.clone());
+        self.need_publications
+            .entry(need)
+            .or_default()
+            .push_back(publication);
+        true
+    }
+
     pub fn step(
         &mut self,
         input: RuntimeStepInput,
@@ -965,12 +1175,15 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         let mut output = RuntimeStepOutput::default();
+        self.task_request_quota_remaining = options.max_new_task_requests;
         let mut executed_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.pending_ops_len();
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
-        let need_states_in = input.need_states.len();
+        let need_states = normalize_runtime_need_states(std::mem::take(&mut input.need_states));
+        let need_states_in = need_states.len();
+        input.need_states = need_states.clone();
         output
             .requests
             .root_events_next_step
@@ -1053,6 +1266,7 @@ impl Engine {
                 event.task_id.0, event.sequence.0
             ))
         }));
+        self.latch_need_publications(&need_states, &events, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
@@ -1166,7 +1380,7 @@ impl Engine {
             self.step_next_child_fiber(input, events, output, pure_backend);
             return;
         }
-        self.latch_active_await_observer_events(events);
+        self.latch_active_await_observer_publications();
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -2068,7 +2282,7 @@ impl Engine {
             self.close_active_line_task_fiber(output, pure_backend);
             return;
         }
-        self.latch_active_await_observer_events(events);
+        self.latch_active_await_observer_publications();
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -2163,7 +2377,6 @@ impl Engine {
             && matches!(
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
-                    | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
                     | FlowFiberStatus::HostCall(_)
@@ -2182,7 +2395,6 @@ impl Engine {
             && matches!(
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
-                    | FlowFiberStatus::Waiting(_)
                     | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
                     | FlowFiberStatus::HostCall(_)
@@ -2201,7 +2413,6 @@ impl Engine {
                 RuntimeStepStopReason::Blocked
             }),
             FlowFiberStatus::Dialogue(_)
-            | FlowFiberStatus::Waiting(_)
             | FlowFiberStatus::WaitingMany(_)
             | FlowFiberStatus::Choice(_) => Some(if has_presentation_visible_output(output) {
                 RuntimeStepStopReason::Output

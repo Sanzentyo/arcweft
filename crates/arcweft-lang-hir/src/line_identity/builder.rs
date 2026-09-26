@@ -143,6 +143,40 @@ pub(crate) fn resolve_explicit_line_id(
     DialogueLineId::try_new(value).ok().map(|id| (id, origin))
 }
 
+/// Resolves a text-key coordinate through the same owner and scope prefix as
+/// a line ID, then projects it into the text-key family.
+pub(crate) fn resolve_explicit_text_key(
+    module: &HirModuleKey,
+    site: &HirDialogueLineSite,
+    reference: &HirIdRef,
+) -> Option<DialogueTextKey> {
+    match reference {
+        HirIdRef::Absolute(reference)
+            if reference.segments().next() == Some(DialogueTextKey::family_prefix()) =>
+        {
+            DialogueTextKey::try_new(reference.as_str().to_owned()).ok()
+        }
+        HirIdRef::Relative(relative) => {
+            let prefix = explicit_relative_prefix(module, site, relative.parent_depth())?;
+            DialogueLineId::try_new(prefix.append(relative.suffix().as_str()).ok()?)
+                .ok()?
+                .generated_text_key()
+                .ok()
+        }
+        HirIdRef::FamilyRelative(relative)
+            if relative.family().as_str() == DialogueTextKey::family_prefix() =>
+        {
+            let relative = relative.relative();
+            let prefix = explicit_relative_prefix(module, site, relative.parent_depth())?;
+            DialogueLineId::try_new(prefix.append(relative.suffix().as_str()).ok()?)
+                .ok()?
+                .generated_text_key()
+                .ok()
+        }
+        _ => None,
+    }
+}
+
 fn explicit_relative_prefix(
     module: &HirModuleKey,
     site: &HirDialogueLineSite,
@@ -431,12 +465,17 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
                 })?;
                 return Ok(None);
             }
-            Some(HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_)) => {
-                self.push_diagnostic(DialogueLineDiagnostic::InvalidTextKeyFamily {
-                    found: None,
-                    span: span.clone(),
-                })?;
-                return Ok(None);
+            Some(reference @ (HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_))) => {
+                return match resolve_explicit_text_key(self.module, site, reference) {
+                    Some(key) => Ok(Some((key, DialogueTextKeyOrigin::Explicit))),
+                    None => {
+                        self.push_diagnostic(DialogueLineDiagnostic::InvalidTextKeyFamily {
+                            found: None,
+                            span: span.clone(),
+                        })?;
+                        Ok(None)
+                    }
+                };
             }
         };
         match DialogueTextKey::try_new(value) {

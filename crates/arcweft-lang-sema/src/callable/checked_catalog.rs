@@ -27,10 +27,10 @@ use crate::{
 use super::{
     CallableAccess, CallableAttachedContentExecution, CallableAttachedContentPolicy,
     CallableCandidateId, CallableEffectSchema, CallableGroupIndex, CallableName,
-    CallableParameterPassing, CallableParameterPresence, CallableRecord, CallableResultSchema,
-    CheckedCallableContext, CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId,
-    CheckedContentRole, EnvironmentCallablePublicationDigest, ReceiverMethodKey,
-    RegisteredCallableCatalog, RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
+    CallableParameterPresence, CallableRecord, CallableResultSchema, CheckedCallableContext,
+    CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId, CheckedContentRole,
+    EnvironmentCallablePublicationDigest, ReceiverMethodKey, RegisteredCallableCatalog,
+    RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
 };
 
 /// Exact generation shared by every record in one frozen checked catalog.

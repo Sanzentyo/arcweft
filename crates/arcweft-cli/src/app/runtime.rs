@@ -14,4 +14,5 @@ pub mod run;
 pub mod script_bench;
 pub mod script_test;
 pub mod serve;
+pub mod source;
 pub mod steps;

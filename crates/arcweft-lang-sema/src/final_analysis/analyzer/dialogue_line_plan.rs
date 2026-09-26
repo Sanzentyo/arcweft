@@ -1652,11 +1652,13 @@ impl Analyzer<'_, '_, '_> {
                         reference,
                     ),
                 ) => {
-                    let key = site.resolve_explicit_text_key(&reference).ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
+                    let key = site
+                        .resolve_explicit_text_key(module.key(), &reference)
+                        .ok_or_else(|| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::WrongPayloadFamily,
+                            )
+                        })?;
                     (
                         crate::callable::DialogueApplicationMetadataCoordinate::TextKey,
                         TypeKind::entity_ref(EntityKind::Text),

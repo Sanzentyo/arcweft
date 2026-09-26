@@ -1,6 +1,7 @@
 use crate::aot::AotProgram;
 use crate::awbc::product_step::{
-    AwbcProductExecutorSnapshot, AwbcProductStepBuildError, AwbcProductStepExecutor,
+    AwbcProductExecutorSnapshot, AwbcProductSaveError, AwbcProductStepBuildError,
+    AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{Engine, EngineStartError, FlowFiber};
@@ -11,6 +12,7 @@ use crate::root::{
     RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
 };
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
+use crate::task::{GenerationId, NeedId, RuntimeNeedProducerDispatch, TaskId};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -91,6 +93,8 @@ pub enum ArcweftRuntimeExecutorSnapshotError {
         snapshot: &'static str,
         actual: &'static str,
     },
+    #[error("Product save requires quiescence for Need identities {needs:?}")]
+    NeedsQuiescence { needs: Vec<NeedId> },
     #[error("product AWBC snapshot error: {message}")]
     ProductAwbc { message: String },
 }
@@ -99,6 +103,14 @@ pub enum ArcweftRuntimeExecutorSnapshotError {
 pub enum ArcweftRuntimeExecutorBuildError {
     #[error("execution tier `{tier}` requires an AWBC product")]
     TierRequiresAwbc { tier: &'static str },
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ArcweftRuntimeExecutorGenerationError {
+    #[error("runtime generation cannot move backward (current {current}, requested {requested})")]
+    Backward { current: u64, requested: u64 },
+    #[error("Product AWBC generation rebind failed: {message}")]
+    ProductAwbc { message: String },
 }
 
 /// Shared runtime executor facade used by application-facing crates.
@@ -120,15 +132,27 @@ enum ArcweftRuntimeExecutorInner {
 
 impl VmExecutor {
     pub(crate) fn new(plan: RuntimePlan) -> Self {
+        Self::new_with_generation(plan, GenerationId::new(0))
+    }
+
+    pub(crate) fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
         Self {
-            engine: Engine::new(plan),
+            engine: Engine::new_with_generation(plan, generation),
         }
     }
 
     pub(crate) fn from_flow_invocation(
         invocation: RuntimeFlowInvocation,
     ) -> Result<Self, EngineStartError> {
-        Engine::for_flow_invocation(invocation).map(|engine| Self { engine })
+        Self::from_flow_invocation_with_generation(invocation, GenerationId::new(0))
+    }
+
+    pub(crate) fn from_flow_invocation_with_generation(
+        invocation: RuntimeFlowInvocation,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
+        Engine::for_flow_invocation_with_generation(invocation, generation)
+            .map(|engine| Self { engine })
     }
 
     pub(crate) const fn engine(&self) -> &Engine {
@@ -156,8 +180,12 @@ impl VmExecutor {
 
 impl AotExecutor {
     pub(crate) fn new(plan: RuntimePlan) -> Self {
+        Self::new_with_generation(plan, GenerationId::new(0))
+    }
+
+    pub(crate) fn new_with_generation(plan: RuntimePlan, generation: GenerationId) -> Self {
         let program = AotProgram::from_runtime_plan(&plan);
-        let vm = VmExecutor::new(plan);
+        let vm = VmExecutor::new_with_generation(plan, generation);
         Self {
             program,
             vm,
@@ -168,8 +196,15 @@ impl AotExecutor {
     pub(crate) fn from_flow_invocation(
         invocation: RuntimeFlowInvocation,
     ) -> Result<Self, EngineStartError> {
+        Self::from_flow_invocation_with_generation(invocation, GenerationId::new(0))
+    }
+
+    pub(crate) fn from_flow_invocation_with_generation(
+        invocation: RuntimeFlowInvocation,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
         let program = AotProgram::from_runtime_plan(invocation.plan());
-        let vm = VmExecutor::from_flow_invocation(invocation)?;
+        let vm = VmExecutor::from_flow_invocation_with_generation(invocation, generation)?;
         Ok(Self {
             program,
             vm,
@@ -208,9 +243,10 @@ impl AotExecutor {
 }
 
 impl AwbcProductExecutor {
-    #[must_use]
-    pub(crate) fn snapshot(&self) -> AwbcProductExecutorSnapshot {
-        self.vm.snapshot()
+    pub(crate) fn snapshot_for_save(
+        &self,
+    ) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        self.vm.snapshot_for_save()
     }
 
     pub(crate) fn restore_snapshot(
@@ -226,13 +262,25 @@ impl ArcweftRuntimeExecutor {
         plan: RuntimePlan,
         tier: ArcweftExecutionTier,
     ) -> Result<Self, ArcweftRuntimeExecutorBuildError> {
+        Self::from_runtime_plan_with_generation(plan, tier, GenerationId::new(0))
+    }
+
+    pub fn from_runtime_plan_with_generation(
+        plan: RuntimePlan,
+        tier: ArcweftExecutionTier,
+        generation: GenerationId,
+    ) -> Result<Self, ArcweftRuntimeExecutorBuildError> {
         Ok(match tier {
-            ArcweftExecutionTier::RuntimePlanVm => Self::from_inner(
-                ArcweftRuntimeExecutorInner::RuntimePlanVm(VmExecutor::new(plan)),
-            ),
-            ArcweftExecutionTier::StructuredAot => Self::from_inner(
-                ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor::new(plan)),
-            ),
+            ArcweftExecutionTier::RuntimePlanVm => {
+                Self::from_inner(ArcweftRuntimeExecutorInner::RuntimePlanVm(
+                    VmExecutor::new_with_generation(plan, generation),
+                ))
+            }
+            ArcweftExecutionTier::StructuredAot => {
+                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
+                    AotExecutor::new_with_generation(plan, generation),
+                ))
+            }
             ArcweftExecutionTier::AwbcProduct => {
                 return Err(ArcweftRuntimeExecutorBuildError::TierRequiresAwbc {
                     tier: tier.as_str(),
@@ -245,13 +293,25 @@ impl ArcweftRuntimeExecutor {
         invocation: RuntimeFlowInvocation,
         tier: ArcweftExecutionTier,
     ) -> Result<Self, EngineStartError> {
+        Self::from_runtime_flow_invocation_with_generation(invocation, tier, GenerationId::new(0))
+    }
+
+    pub fn from_runtime_flow_invocation_with_generation(
+        invocation: RuntimeFlowInvocation,
+        tier: ArcweftExecutionTier,
+        generation: GenerationId,
+    ) -> Result<Self, EngineStartError> {
         match tier {
-            ArcweftExecutionTier::RuntimePlanVm => VmExecutor::from_flow_invocation(invocation)
-                .map(ArcweftRuntimeExecutorInner::RuntimePlanVm)
-                .map(Self::from_inner),
-            ArcweftExecutionTier::StructuredAot => AotExecutor::from_flow_invocation(invocation)
-                .map(ArcweftRuntimeExecutorInner::StructuredAot)
-                .map(Self::from_inner),
+            ArcweftExecutionTier::RuntimePlanVm => {
+                VmExecutor::from_flow_invocation_with_generation(invocation, generation)
+                    .map(ArcweftRuntimeExecutorInner::RuntimePlanVm)
+                    .map(Self::from_inner)
+            }
+            ArcweftExecutionTier::StructuredAot => {
+                AotExecutor::from_flow_invocation_with_generation(invocation, generation)
+                    .map(ArcweftRuntimeExecutorInner::StructuredAot)
+                    .map(Self::from_inner)
+            }
             ArcweftExecutionTier::AwbcProduct => Err(EngineStartError::InvalidFlowInvocation {
                 message: "RuntimePlan Flow invocation cannot initialize a Product AWBC executor"
                     .to_owned(),
@@ -272,7 +332,16 @@ impl ArcweftRuntimeExecutor {
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let vm = AwbcProductStepExecutor::for_entry_arc(program, entry, 64)?;
+        Self::from_awbc_product_arc_with_generation(program, entry, GenerationId::new(0))
+    }
+
+    pub fn from_awbc_product_arc_with_generation(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm =
+            AwbcProductStepExecutor::for_entry_arc_with_generation(program, entry, 64, generation)?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -285,9 +354,24 @@ impl ArcweftRuntimeExecutor {
         entry: AwbcEntryId,
         proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let vm = AwbcProductStepExecutor::for_entry_arc_with_plain_text_context_proof(
-            program, entry, 64, proof,
-        )?;
+        Self::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
+            program,
+            entry,
+            proof,
+            GenerationId::new(0),
+        )
+    }
+
+    pub fn from_awbc_product_arc_with_plain_text_context_proof_and_generation(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm =
+            AwbcProductStepExecutor::for_entry_arc_with_plain_text_context_proof_and_generation(
+                program, entry, 64, generation, proof,
+            )?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -298,7 +382,28 @@ impl ArcweftRuntimeExecutor {
         entry: AwbcEntryId,
         function: AwbcFunctionId,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let vm = AwbcProductStepExecutor::for_function(program, entry, function, 64)?;
+        Self::from_awbc_product_function_with_generation(
+            program,
+            entry,
+            function,
+            GenerationId::new(0),
+        )
+    }
+
+    pub fn from_awbc_product_function_with_generation(
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        let vm = AwbcProductStepExecutor::for_function_invocation_with_generation(
+            program,
+            entry,
+            function,
+            [],
+            64,
+            generation,
+        )?;
         Ok(Self::from_inner(ArcweftRuntimeExecutorInner::AwbcProduct(
             Box::new(AwbcProductExecutor { vm }),
         )))
@@ -309,6 +414,112 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_) => ArcweftExecutionTier::RuntimePlanVm,
             ArcweftRuntimeExecutorInner::StructuredAot(_) => ArcweftExecutionTier::StructuredAot,
             ArcweftRuntimeExecutorInner::AwbcProduct(_) => ArcweftExecutionTier::AwbcProduct,
+        }
+    }
+
+    #[must_use]
+    pub fn generation(&self) -> GenerationId {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.engine.generation(),
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.vm.engine.generation(),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.runtime_generation(),
+        }
+    }
+
+    /// Returns active Restartable Need producer requests with their exact task
+    /// identity and generation pin. Hosts keep these rows alongside ordinary
+    /// task dispatches until a terminal Need publication is accepted.
+    #[must_use]
+    pub fn restartable_dispatches(&self) -> Vec<RuntimeNeedProducerDispatch> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.restartable_dispatches()
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.restartable_dispatches()
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .restartable_dispatches()
+                .into_iter()
+                .map(|dispatch| RuntimeNeedProducerDispatch {
+                    generation: dispatch.generation,
+                    need_id: dispatch.need_id,
+                    task_id: dispatch.task_id,
+                    task_spec: dispatch.task_spec,
+                    restart: dispatch.restart,
+                    publication: dispatch.publication,
+                    needs_reensure: dispatch.needs_reensure,
+                })
+                .collect(),
+        }
+    }
+
+    /// Returns the owning generation for a producer task request. Ordinary
+    /// AwaitMany requests have no registry launch and use the current pin.
+    #[must_use]
+    pub fn task_generation(&self, task: &TaskId) -> Option<GenerationId> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.need_producer_generation_for_task(task)
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.need_producer_generation_for_task(task)
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.task_generation(task),
+        }
+    }
+
+    /// Reports active producer Needs that must finish before a session save.
+    /// Native VM tiers expose the same typed blocker even though their current
+    /// executor snapshot tier is unsupported.
+    #[must_use]
+    pub fn quiescence_blocking_needs(&self) -> Vec<NeedId> {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.quiescence_blocking_needs()
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.quiescence_blocking_needs()
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.quiescence_blocking_needs()
+            }
+        }
+    }
+
+    /// Rebinds the generation used by future Need producer admissions.
+    /// Existing launches retain their original generation and identifiers.
+    /// Rebinding to the current generation is an idempotent no-op.
+    pub fn rebind_generation(
+        &mut self,
+        generation: GenerationId,
+    ) -> Result<(), ArcweftRuntimeExecutorGenerationError> {
+        let current = self.generation();
+        if generation < current {
+            return Err(ArcweftRuntimeExecutorGenerationError::Backward {
+                current: current.get(),
+                requested: generation.get(),
+            });
+        }
+        if generation == current {
+            return Ok(());
+        }
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine_mut().rebind_generation(generation);
+                Ok(())
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine_mut().rebind_generation(generation);
+                Ok(())
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .rebind_generation(generation)
+                .map_err(|error| ArcweftRuntimeExecutorGenerationError::ProductAwbc {
+                    message: error.to_string(),
+                }),
         }
     }
 
@@ -412,9 +623,17 @@ impl ArcweftRuntimeExecutor {
         &self,
     ) -> Result<ArcweftRuntimeExecutorSnapshot, ArcweftRuntimeExecutorSnapshotError> {
         match &self.inner {
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Ok(
-                ArcweftRuntimeExecutorSnapshot::AwbcProduct(executor.snapshot()),
-            ),
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                match executor.snapshot_for_save() {
+                    Ok(snapshot) => Ok(ArcweftRuntimeExecutorSnapshot::AwbcProduct(snapshot)),
+                    Err(AwbcProductSaveError::NeedsQuiescence { needs }) => {
+                        Err(ArcweftRuntimeExecutorSnapshotError::NeedsQuiescence { needs })
+                    }
+                    Err(AwbcProductSaveError::InvalidSnapshot { message }) => {
+                        Err(ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message })
+                    }
+                }
+            }
             ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
                 Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {

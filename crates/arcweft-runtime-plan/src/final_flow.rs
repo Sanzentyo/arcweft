@@ -37,8 +37,7 @@ use arcweft_core::plan::{
     RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
     RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed, RuntimeLineId,
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
@@ -51,7 +50,6 @@ use arcweft_core::plan::{
     RuntimeTraitMethodSeedId,
 };
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
-use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::{
     RuntimeCallArgumentMode, RuntimeIntrinsic, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
     RuntimeValue,
@@ -107,7 +105,8 @@ use crate::semantic_facts::{
     RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectFunctionParameterSource,
     RuntimeProjectFunctionTypeOwner, RuntimeProjectFunctionTypeProjection,
     RuntimeResolvedAttachedContent, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-    RuntimeResolvedCallOperandProjection, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+    RuntimeResolvedCallOperandSource, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
     RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
     RuntimeScopedExecutableSemanticFactView, RuntimeSemanticFactsError, RuntimeTraitIdentity,
     RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
@@ -4495,8 +4494,8 @@ struct FinalFlowLowerer<'a> {
     scope_continuations: Vec<scopes::ScopeContinuationFrame>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
-    await_ordinal: u32,
     assertion_sites: Vec<RuntimeAssertionSite>,
+    flow_tail_worklists: Vec<FlowTailWorklist>,
 }
 
 #[derive(Clone)]
@@ -4526,6 +4525,10 @@ enum RuntimeFlowValueContinuation {
         owner: ExprId,
         outer: Box<Self>,
     },
+    Await {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
     Compose {
         owner: ExprId,
         child: ExprId,
@@ -4550,11 +4553,13 @@ enum RuntimeFlowTail {
     #[default]
     None,
     StatementsWithTail {
-        statements: Box<[StmtId]>,
+        statements: Arc<[StmtId]>,
+        next: usize,
         tail: Box<RuntimeFlowTail>,
     },
     ThreadItems {
-        items: Box<[HirThreadFlowItem]>,
+        items: Arc<[HirThreadFlowItem]>,
+        next: usize,
         tail: Box<Self>,
     },
     Value {
@@ -4565,6 +4570,174 @@ enum RuntimeFlowTail {
         value: RuntimeExprSeed,
         continuation: Box<RuntimeFlowValueContinuation>,
     },
+}
+
+/// Deferred continuation work keeps long source-order tails off the native
+/// Rust call stack. Jobs are drained depth-first while the owning lexical
+/// scope/carrier frames are still active, then their result trees are spliced
+/// into the exact continuation holes that scheduled them.
+#[derive(Default)]
+struct FlowTailWorklist {
+    next_id: usize,
+    pending: Vec<FlowTailJob>,
+    resolved: BTreeMap<usize, Vec<RuntimeFlowOpSeed>>,
+}
+
+#[derive(Clone)]
+struct FlowTailJob {
+    id: usize,
+    tail: RuntimeFlowTail,
+    scope_continuations: Vec<scopes::ScopeContinuationFrame>,
+    carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
+}
+
+struct FlowTailFrame {
+    id: Option<usize>,
+    ops: Vec<RuntimeFlowOpSeed>,
+    children: Vec<FlowTailJob>,
+    next_child: usize,
+}
+
+fn resolve_flow_tail_holes(
+    ops: Vec<RuntimeFlowOpSeed>,
+    child_ids: &[usize],
+    child_cursor: &mut usize,
+    resolved: &mut BTreeMap<usize, Vec<RuntimeFlowOpSeed>>,
+) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+    let mut output = Vec::with_capacity(ops.len());
+    for op in ops {
+        match op {
+            RuntimeFlowOpSeed::Noop => {
+                let id = child_ids.get(*child_cursor).copied().ok_or_else(|| {
+                    RuntimePlanLowerError::new(
+                        "flow continuation contains an unowned internal Noop hole",
+                    )
+                })?;
+                *child_cursor += 1;
+                output.extend(resolved.remove(&id).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "flow continuation job {id} was not resolved before its parent"
+                    ))
+                })?);
+            }
+            RuntimeFlowOpSeed::LetElse {
+                pattern,
+                expr,
+                else_ops,
+            } => output.push(RuntimeFlowOpSeed::LetElse {
+                pattern,
+                expr,
+                else_ops: resolve_flow_tail_holes(else_ops, child_ids, child_cursor, resolved)?,
+            }),
+            RuntimeFlowOpSeed::Await {
+                binding,
+                target,
+                observers,
+            } => {
+                let mut resolved_observers = Vec::with_capacity(observers.len());
+                for observer in observers {
+                    resolved_observers.push(RuntimeAwaitPendingObserverSeed {
+                        pattern: observer.pattern,
+                        ops: resolve_flow_tail_holes(
+                            observer.ops,
+                            child_ids,
+                            child_cursor,
+                            resolved,
+                        )?,
+                    });
+                }
+                output.push(RuntimeFlowOpSeed::Await {
+                    binding,
+                    target,
+                    observers: resolved_observers,
+                });
+            }
+            RuntimeFlowOpSeed::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => output.push(RuntimeFlowOpSeed::If {
+                condition,
+                then_ops: resolve_flow_tail_holes(then_ops, child_ids, child_cursor, resolved)?,
+                else_ops: resolve_flow_tail_holes(else_ops, child_ids, child_cursor, resolved)?,
+            }),
+            RuntimeFlowOpSeed::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_ops,
+                else_ops,
+            } => output.push(RuntimeFlowOpSeed::IfLet {
+                pattern,
+                expr,
+                guard,
+                then_ops: resolve_flow_tail_holes(then_ops, child_ids, child_cursor, resolved)?,
+                else_ops: resolve_flow_tail_holes(else_ops, child_ids, child_cursor, resolved)?,
+            }),
+            RuntimeFlowOpSeed::Match { scrutinee, arms } => {
+                let mut resolved_arms = Vec::with_capacity(arms.len());
+                for arm in arms {
+                    resolved_arms.push(RuntimeFlowMatchArmSeed {
+                        pattern: arm.pattern,
+                        guard: arm.guard,
+                        ops: resolve_flow_tail_holes(arm.ops, child_ids, child_cursor, resolved)?,
+                    });
+                }
+                output.push(RuntimeFlowOpSeed::Match {
+                    scrutinee,
+                    arms: resolved_arms,
+                });
+            }
+            RuntimeFlowOpSeed::Loop { result, body } => {
+                output.push(RuntimeFlowOpSeed::Loop {
+                    result,
+                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                });
+            }
+            RuntimeFlowOpSeed::While { condition, body } => {
+                output.push(RuntimeFlowOpSeed::While {
+                    condition,
+                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                });
+            }
+            RuntimeFlowOpSeed::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body,
+            } => output.push(RuntimeFlowOpSeed::WhileLet {
+                pattern,
+                expr,
+                guard,
+                body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+            }),
+            RuntimeFlowOpSeed::For {
+                pattern,
+                source,
+                evidence,
+                body,
+            } => output.push(RuntimeFlowOpSeed::For {
+                pattern,
+                source,
+                evidence,
+                body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+            }),
+            RuntimeFlowOpSeed::Thread { name, body } => {
+                output.push(RuntimeFlowOpSeed::Thread {
+                    name,
+                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                });
+            }
+            RuntimeFlowOpSeed::Scope { identity, body } => {
+                output.push(RuntimeFlowOpSeed::Scope {
+                    identity,
+                    body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                });
+            }
+            terminal_or_leaf => output.push(terminal_or_leaf),
+        }
+    }
+    Ok(output)
 }
 
 impl<'a> FinalFlowLowerer<'a> {
@@ -4599,8 +4772,8 @@ impl<'a> FinalFlowLowerer<'a> {
             scope_continuations: Vec::new(),
             assertion_owner,
             assertion_ordinal: 0,
-            await_ordinal: 0,
             assertion_sites: Vec::new(),
+            flow_tail_worklists: Vec::new(),
         }
     }
 
@@ -4719,7 +4892,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<Vec<ExprId>, RuntimePlanLowerError> {
-        let callee = if let Some(call) = self.call(expression) {
+        let evaluated_call_target = if let Some(call) = self.call(expression) {
             let hir = self
                 .module
                 .resolve_expr(expression)
@@ -4731,29 +4904,70 @@ impl<'a> FinalFlowLowerer<'a> {
                 }
                 _ => None,
             };
-            invocation
-                .and_then(|invocation| invocation.callee().value_expression())
-                .map(|callee| (callee, call.evaluates_callee(callee)))
+            if let Some(invocation) = invocation {
+                let callee = invocation.callee().value_expression();
+                let receiver = self
+                    .module
+                    .resolve_call_value_receiver(invocation)
+                    .map_err(|error| {
+                        RuntimePlanLowerError::new(format!(
+                            "cannot resolve runtime receiver for call {expression:?}: {error}"
+                        ))
+                    })?;
+                callee.and_then(|callee| {
+                    if call.evaluates_callee(callee) {
+                        Some((callee, callee))
+                    } else {
+                        receiver
+                            .filter(|receiver| {
+                                call.operands().iter().any(|operand| {
+                                    matches!(
+                                        (operand.origin(), operand.source()),
+                                        (
+                                            RuntimeResolvedCallOperandOrigin::Receiver,
+                                            RuntimeResolvedCallOperandSource::Expression(source)
+                                        ) if source == *receiver
+                                    )
+                                })
+                            })
+                            .map(|receiver| (callee, receiver))
+                    }
+                })
+            } else {
+                None
+            }
         } else {
             None
         };
         let children = self.expression_children(expression)?;
         let mut evaluated = Vec::with_capacity(children.len());
-        if let Some((callee, true)) = callee {
-            if !children.contains(&callee) {
+        let selector = evaluated_call_target.map(|(selector, target)| {
+            if selector == target && !children.contains(&selector) {
                 return Err(RuntimePlanLowerError::new(format!(
-                    "evaluated callee {callee:?} is absent from its checked expression graph"
+                    "evaluated call selector {selector:?} is absent from its checked expression graph"
                 )));
             }
-            evaluated.push(callee);
-        }
+            evaluated.push(target);
+            Ok(selector)
+        }).transpose()?;
         evaluated.extend(
             children
                 .iter()
                 .copied()
-                .filter(|child| callee.is_none_or(|(callee, _)| *child != callee)),
+                .filter(|child| Some(*child) != selector),
         );
         Ok(evaluated)
+    }
+
+    fn value_expression_children(
+        &self,
+        expression: ExprId,
+    ) -> Result<Vec<ExprId>, RuntimePlanLowerError> {
+        if self.call(expression).is_some() {
+            self.evaluated_expression_children(expression)
+        } else {
+            Ok(self.expression_children(expression)?.to_vec())
+        }
     }
 
     fn evaluated_effect_children(
@@ -4841,8 +5055,8 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         body: &HirThreadBody,
     ) -> Result<Vec<RuntimeFlowOpSeed>, Vec<RuntimePlanLowerError>> {
-        self.lower_thread_items(body.items())
-            .map_err(|error| vec![error])
+        let lowered = self.lower_thread_items(body.items());
+        lowered.map_err(|error| vec![error])
     }
 
     fn lower_thread_items(
@@ -4857,16 +5071,35 @@ impl<'a> FinalFlowLowerer<'a> {
         items: &[HirThreadFlowItem],
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let Some((item, remaining)) = items.split_first() else {
+        let prior_worklist_depth = self.flow_tail_worklists.len();
+        self.flow_tail_worklists.push(FlowTailWorklist::default());
+        let items: Arc<[HirThreadFlowItem]> = Arc::from(items);
+        let result = self
+            .lower_thread_items_with_tail_inline(items, 0, tail)
+            .and_then(|ops| self.resolve_flow_tail_worklist(ops));
+        self.flow_tail_worklists.truncate(prior_worklist_depth);
+        result
+    }
+
+    fn lower_thread_items_with_tail_inline(
+        &mut self,
+        items: Arc<[HirThreadFlowItem]>,
+        next_index: usize,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some(item) = items.get(next_index).cloned() else {
             return self.lower_flow_tail(tail);
         };
-        self.lower_thread_item(
-            item,
+        let next = if next_index + 1 < items.len() {
             RuntimeFlowTail::ThreadItems {
-                items: remaining.into(),
+                items: Arc::clone(&items),
+                next: next_index + 1,
                 tail: Box::new(tail),
-            },
-        )
+            }
+        } else {
+            tail
+        };
+        self.lower_thread_item(&item, next)
     }
 
     fn lower_thread_item(
@@ -5370,6 +5603,7 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.call(expression).is_some_and(|call| {
             call.project_function().is_some()
                 || matches!(call.dispatch(), RuntimeResolvedCallDispatch::Value { .. })
+                || call.need_producer().is_some()
         }) {
             return Ok(true);
         }
@@ -5406,8 +5640,8 @@ impl<'a> FinalFlowLowerer<'a> {
         ) {
             return Ok(true);
         }
-        for child in self.expression_children(expression)? {
-            if self.contains_flow_value_expression(*child)? {
+        for child in self.value_expression_children(expression)? {
+            if self.contains_flow_value_expression(child)? {
                 return Ok(true);
             }
         }
@@ -5539,6 +5773,7 @@ impl<'a> FinalFlowLowerer<'a> {
                             _
                         ))
                     )
+                    || call.need_producer().is_some()
             })
             .cloned()
         {
@@ -5555,6 +5790,9 @@ impl<'a> FinalFlowLowerer<'a> {
                         BTreeMap::new(),
                     );
                 }
+            }
+            if call.need_producer().is_some() {
+                return self.lower_need_producer_value(expression, &call, continuation, overrides);
             }
             if matches!(
                 call.dispatch(),
@@ -5612,23 +5850,14 @@ impl<'a> FinalFlowLowerer<'a> {
                 },
                 overrides,
             ),
-            HirExprKind::Await(awaited) => {
-                for child in self.evaluated_expression_children(awaited.operand())? {
-                    if !overrides.contains_key(&child) {
-                        return self.lower_flow_value_with_overrides(
-                            child,
-                            RuntimeFlowValueContinuation::Compose {
-                                owner: expression,
-                                child,
-                                overrides,
-                                outer: Box::new(continuation),
-                            },
-                            BTreeMap::new(),
-                        );
-                    }
-                }
-                self.lower_await_value(expression, awaited, &continuation, overrides)
-            }
+            HirExprKind::Await(awaited) => self.lower_flow_value_with_overrides(
+                awaited.operand(),
+                RuntimeFlowValueContinuation::Await {
+                    owner: expression,
+                    outer: Box::new(continuation),
+                },
+                overrides,
+            ),
             HirExprKind::Choice(choice) => {
                 self.lower_choice_value(expression, choice, continuation)
             }
@@ -5758,6 +5987,69 @@ impl<'a> FinalFlowLowerer<'a> {
             }
         };
         let mut ops = vec![operation];
+        ops.extend(self.apply_value_continuation(local_seed(&result_type, local), continuation)?);
+        Ok(ops)
+    }
+
+    fn lower_need_producer_value(
+        &mut self,
+        expression: ExprId,
+        call: &RuntimeResolvedCall,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let producer = call.need_producer().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Need producer call {expression:?} has no selected runtime plan"
+            ))
+        })?;
+        let result_type = self.expression_source_type(expression)?.clone();
+        if result_type != *producer.need_type() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Need producer call {expression:?} result differs from its selected instantiated Need<T>"
+            )));
+        }
+        let local = self
+            .control
+            .expression_values
+            .get(&expression)
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "Need producer call {expression:?} has no admitted result local"
+                ))
+            })?;
+        let plan = producer.plan().clone();
+        if call.operands().len() != plan.argument_types().len() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Need producer call {expression:?} source row differs from its selected argument signature"
+            )));
+        }
+        let lowerer = self.expr_lowerer().with_overrides(overrides);
+        let arguments = call
+            .operands()
+            .iter()
+            .zip(plan.argument_types())
+            .map(|(operand, expected)| {
+                if operand.ty().identity() != *expected
+                    || !matches!(
+                        operand.projection(),
+                        RuntimeResolvedCallOperandProjection::Scalar
+                    )
+                {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "Need producer call {expression:?} has an unchecked runtime argument"
+                    )));
+                }
+                lowerer
+                    .lower_scalar_operand_source(operand.source(), operand.ty())
+                    .map_err(RuntimePlanLowerError::new)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut ops = vec![RuntimeFlowOpSeed::StartNeedProducer {
+            binding: bind_seed(&result_type, local.clone()),
+            target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed { plan, arguments },
+        }];
         ops.extend(self.apply_value_continuation(local_seed(&result_type, local), continuation)?);
         Ok(ops)
     }
@@ -6324,13 +6616,22 @@ impl<'a> FinalFlowLowerer<'a> {
         lowered
     }
 
-    fn lower_await_value(
+    fn lower_await_continuation(
         &mut self,
         expression: ExprId,
-        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        continuation: &RuntimeFlowValueContinuation,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        source: RuntimeExprSeed,
+        continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let resolved = self.module.resolve_expr(expression).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "cannot resolve Await expression {expression:?}: {error}"
+            ))
+        })?;
+        let HirExprKind::Await(awaited) = resolved.kind() else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Await continuation owner {expression:?} is not an Await expression"
+            )));
+        };
         let fact = self.awaited(expression).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "Await expression {expression:?} has no checked runtime fact"
@@ -6346,59 +6647,19 @@ impl<'a> FinalFlowLowerer<'a> {
                     "Await expression {expression:?} has no admitted continuation locals"
                 ))
             })?;
-        let await_op =
-            self.lower_await_operation(expression, awaited, &fact, &locals, overrides)?;
-        let payload = self.expression_source_type(expression)?.clone();
-        let mut ops = vec![await_op];
-        ops.extend(self.apply_value_continuation(
-            local_seed(&payload, locals.payload),
-            continuation.clone(),
-        )?);
-        Ok(ops)
-    }
-
-    fn lower_await_operation(
-        &mut self,
-        expression: ExprId,
-        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        fact: &RuntimeAwaitFact,
-        locals: &AwaitLocalSeeds,
-        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
-    ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
-        let operand = self
-            .module
-            .resolve_expr(awaited.operand())
-            .map_err(|error| {
-                RuntimePlanLowerError::new(format!(
-                    "cannot resolve Await operand {:?}: {error}",
-                    awaited.operand()
-                ))
-            })?;
-        let HirExprKind::Call(call) = operand.kind() else {
+        let source_type = self.expression_type(awaited.operand())?;
+        let RuntimeTypeShape::Need(item_type) = source_type.shape() else {
             return Err(RuntimePlanLowerError::new(format!(
-                "Await operand {:?} is not a checked host call",
+                "Await operand {:?} is not a checked Need<T> value",
                 awaited.operand()
             )));
         };
-        let lowerer = self.expr_lowerer().with_overrides(overrides);
-        let target = lowerer
-            .lower_host_call_target(awaited.operand(), call)
-            .map_err(RuntimePlanLowerError::new)?
-            .ok_or_else(|| {
-                RuntimePlanLowerError::new(format!(
-                    "Await operand {:?} is not a typed host call",
-                    awaited.operand()
-                ))
-            })?;
-        let ordinal = self.await_ordinal;
-        self.await_ordinal = self
-            .await_ordinal
-            .checked_add(1)
-            .ok_or_else(|| RuntimePlanLowerError::new("runtime Await ordinal overflow"))?;
-        let owner = self.assertion_owner.label();
-        let task = TaskId(format!("{owner}.await.{ordinal}"));
-        let need = NeedId(format!("{owner}.need.{ordinal}"));
         let payload = self.expression_source_type(expression)?.clone();
+        if source.ty() != source_type.identity() || payload.identity() != item_type.identity() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} source or result type differs from its checked Need<T> contract"
+            )));
+        }
         if awaited.branches().len() != fact.observers().len() {
             return Err(RuntimePlanLowerError::new(format!(
                 "Await expression {expression:?} has {} authored observers but {} checked observers",
@@ -6416,20 +6677,16 @@ impl<'a> FinalFlowLowerer<'a> {
                 ops: self.lower_contextual_body(authored.body())?,
             });
         }
-        Ok(RuntimeFlowOpSeed::Await {
+        let await_op = RuntimeFlowOpSeed::Await {
             binding: Some(bind_seed(&payload, locals.payload.clone())),
-            target: arcweft_core::plan::RuntimeAwaitTargetSeed {
-                need,
-                task,
-                outcome: TaskOutcomeContract::program(payload.identity()),
-                request: RuntimeHostTaskRequestTemplateSeed {
-                    capability: HostCapabilityId(target.capability),
-                    operation: target.operation,
-                    args: target.args,
-                },
-            },
+            target: arcweft_core::plan::RuntimeAwaitTargetSeed { source },
             observers,
-        })
+        };
+        let mut ops = vec![await_op];
+        ops.extend(
+            self.apply_value_continuation(local_seed(&payload, locals.payload), continuation)?,
+        );
+        Ok(ops)
     }
 
     fn apply_value_continuation(
@@ -6480,6 +6737,9 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail)?,
             RuntimeFlowValueContinuation::Try { owner, outer } => {
                 return self.lower_try_continuation(owner, value, *outer);
+            }
+            RuntimeFlowValueContinuation::Await { owner, outer } => {
+                return self.lower_await_continuation(owner, value, *outer);
             }
             RuntimeFlowValueContinuation::WrapCarrier { owner, outer } => {
                 let boundary = self.expression_type(owner)?;
@@ -6706,13 +6966,41 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        if matches!(tail, RuntimeFlowTail::None) {
+            return Ok(Vec::new());
+        }
+        let Some(worklist) = self.flow_tail_worklists.last_mut() else {
+            return self.lower_flow_tail_inline(tail);
+        };
+        let id = worklist.next_id;
+        worklist.next_id = id
+            .checked_add(1)
+            .ok_or_else(|| RuntimePlanLowerError::new("flow continuation worklist id overflow"))?;
+        worklist.pending.push(FlowTailJob {
+            id,
+            tail,
+            scope_continuations: self.scope_continuations.clone(),
+            carrier_continuations: self.carrier_continuations.clone(),
+        });
+        // Noop is a private construction hole while this lowerer owns an
+        // active worklist. resolve_flow_tail_worklist replaces every such hole
+        // before the seed can leave final-flow lowering.
+        Ok(vec![RuntimeFlowOpSeed::Noop])
+    }
+
+    fn lower_flow_tail_inline(
+        &mut self,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match tail {
             RuntimeFlowTail::None => Ok(Vec::new()),
-            RuntimeFlowTail::StatementsWithTail { statements, tail } => {
-                self.lower_statement_ids_with_tail(&statements, *tail)
-            }
-            RuntimeFlowTail::ThreadItems { items, tail } => {
-                self.lower_thread_items_with_tail(&items, *tail)
+            RuntimeFlowTail::StatementsWithTail {
+                statements,
+                next,
+                tail,
+            } => self.lower_statement_ids_with_tail_inline(statements, next, *tail),
+            RuntimeFlowTail::ThreadItems { items, next, tail } => {
+                self.lower_thread_items_with_tail_inline(items, next, *tail)
             }
             RuntimeFlowTail::Value {
                 expression,
@@ -6722,6 +7010,94 @@ impl<'a> FinalFlowLowerer<'a> {
                 value,
                 continuation,
             } => self.apply_value_continuation(value, *continuation),
+        }
+    }
+
+    fn resolve_flow_tail_worklist(
+        &mut self,
+        root_ops: Vec<RuntimeFlowOpSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let root_children = std::mem::take(
+            &mut self
+                .flow_tail_worklists
+                .last_mut()
+                .ok_or_else(|| RuntimePlanLowerError::new("flow worklist frame is absent"))?
+                .pending,
+        );
+        let mut frames = vec![FlowTailFrame {
+            id: None,
+            ops: root_ops,
+            children: root_children,
+            next_child: 0,
+        }];
+
+        loop {
+            let next_child = frames.last_mut().and_then(|frame| {
+                let job = frame.children.get(frame.next_child).cloned()?;
+                frame.next_child += 1;
+                Some(job)
+            });
+            if let Some(job) = next_child {
+                let previous_scopes =
+                    std::mem::replace(&mut self.scope_continuations, job.scope_continuations);
+                let previous_carriers =
+                    std::mem::replace(&mut self.carrier_continuations, job.carrier_continuations);
+                let lowered = self.lower_flow_tail_inline(job.tail);
+                self.scope_continuations = previous_scopes;
+                self.carrier_continuations = previous_carriers;
+                let child_ops = lowered?;
+                let child_jobs = std::mem::take(
+                    &mut self
+                        .flow_tail_worklists
+                        .last_mut()
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new("flow worklist frame disappeared")
+                        })?
+                        .pending,
+                );
+                frames.push(FlowTailFrame {
+                    id: Some(job.id),
+                    ops: child_ops,
+                    children: child_jobs,
+                    next_child: 0,
+                });
+                continue;
+            }
+
+            let frame = frames
+                .pop()
+                .ok_or_else(|| RuntimePlanLowerError::new("flow worklist frame underflow"))?;
+            let child_ids = frame
+                .children
+                .iter()
+                .map(|child| child.id)
+                .collect::<Vec<_>>();
+            let worklist = self
+                .flow_tail_worklists
+                .last_mut()
+                .ok_or_else(|| RuntimePlanLowerError::new("flow worklist frame disappeared"))?;
+            let mut child_cursor = 0;
+            let resolved = resolve_flow_tail_holes(
+                frame.ops,
+                &child_ids,
+                &mut child_cursor,
+                &mut worklist.resolved,
+            )?;
+            if child_cursor != child_ids.len() {
+                return Err(RuntimePlanLowerError::new(
+                    "flow continuation worklist did not consume every child job",
+                ));
+            }
+            if let Some(id) = frame.id {
+                worklist.resolved.insert(id, resolved);
+            } else {
+                if !worklist.pending.is_empty() || !worklist.resolved.is_empty() {
+                    return Err(RuntimePlanLowerError::new(
+                        "flow continuation worklist retained unresolved internal jobs",
+                    ));
+                }
+                return Ok(resolved);
+            }
         }
     }
 
@@ -7034,19 +7410,36 @@ impl<'a> FinalFlowLowerer<'a> {
         statements: &[StmtId],
         tail: RuntimeFlowTail,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let Some((statement, remaining)) = statements.split_first() else {
+        let prior_worklist_depth = self.flow_tail_worklists.len();
+        self.flow_tail_worklists.push(FlowTailWorklist::default());
+        let statements: Arc<[StmtId]> = Arc::from(statements);
+        let result = self
+            .lower_statement_ids_with_tail_inline(statements, 0, tail)
+            .and_then(|ops| self.resolve_flow_tail_worklist(ops));
+        self.flow_tail_worklists.truncate(prior_worklist_depth);
+        result
+    }
+
+    fn lower_statement_ids_with_tail_inline(
+        &mut self,
+        statements: Arc<[StmtId]>,
+        next_index: usize,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some(statement) = statements.get(next_index).copied() else {
             return self.lower_flow_tail(tail);
         };
-        let kind = self.resolve_statement(*statement)?.kind().clone();
-        let next = if remaining.is_empty() {
-            tail
-        } else {
+        let kind = self.resolve_statement(statement)?.kind().clone();
+        let next = if next_index + 1 < statements.len() {
             RuntimeFlowTail::StatementsWithTail {
-                statements: remaining.to_vec().into_boxed_slice(),
+                statements: Arc::clone(&statements),
+                next: next_index + 1,
                 tail: Box::new(tail),
             }
+        } else {
+            tail
         };
-        self.lower_statement_with_tail(*statement, &kind, next)
+        self.lower_statement_with_tail(statement, &kind, next)
     }
 
     fn lower_contextual_body(

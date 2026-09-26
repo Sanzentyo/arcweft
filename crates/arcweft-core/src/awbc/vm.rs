@@ -249,9 +249,14 @@ pub enum VmObservation {
         args: Vec<RuntimeValue>,
     },
     EnsureContent(AwbcContentUnitId),
-    TaskStarted {
+    /// A selected Need producer start awaiting the Product transaction.
+    /// The instruction remains current until Product admits the producer,
+    /// writes the assigned Need handle, and commits this exact cursor.
+    NeedProducerStarted {
+        cursor: FiberCursor,
+        fiber: crate::runtime_id::RuntimePersistentFiberId,
+        dst: AwbcRegisterId,
         plan: AwbcTaskPlanId,
-        handle: RuntimeValue,
         args: Vec<RuntimeValue>,
     },
     Goto(AwbcFunctionId),
@@ -1540,24 +1545,18 @@ fn execute_instruction(
             };
             return apply_runtime_callable(program, fiber, context, &callable, &args, *dst);
         }
-        AwbcInstruction::StartTask { dst, plan, args } => {
+        AwbcInstruction::StartNeed { dst, plan, args } => {
             let args = register_values(fiber, args)?;
-            let handle = RuntimeValue::String(
-                program
-                    .task_plans
-                    .get(plan.index())
-                    .and_then(|plan| program.strings.get(plan.public_id.index()))
-                    .cloned()
-                    .unwrap_or_else(|| format!("awbc.task.{}", plan.0)),
-            );
-            fiber
-                .active_frame_mut()?
-                .set_register(*dst, handle.clone())?;
-            observations.push(VmObservation::TaskStarted {
+            observations.push(VmObservation::NeedProducerStarted {
+                cursor: fiber.cursor,
+                fiber: crate::runtime_id::RuntimePersistentFiberId::from_allocated(
+                    fiber.instance.get().get(),
+                ),
+                dst: *dst,
                 plan: *plan,
-                handle,
                 args,
             });
+            return Ok(InstructionControl::Yield);
         }
         AwbcInstruction::SpawnFiber {
             dst,
@@ -2091,6 +2090,7 @@ fn execute_terminator(
                 FiberSuspensionReason::AwaitMany(FiberAwaitManyState {
                     plan: *plan,
                     binding: *binding,
+                    invocation: None,
                     items,
                     next_index: 0,
                     in_flight: Vec::new(),
@@ -2652,11 +2652,8 @@ fn await_target(
                 runtime_value_label(&value)
             ))),
         },
-        AwbcRuntimeTypeShape::Task(_) | AwbcRuntimeTypeShape::Dynamic => {
-            Ok(FiberAwaitTarget::Task(value))
-        }
         _ => Err(VmError::Runtime(
-            "await register is neither a task handle nor a Need handle".to_owned(),
+            "await register is not a Need handle".to_owned(),
         )),
     }
 }

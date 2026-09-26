@@ -20,7 +20,7 @@ use arcweft_desktop_host::{
 };
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistryBuilder,
-    HostTaskSubmission,
+    HostTaskSubmission, HostTaskSubmissionContext,
 };
 use std::collections::BTreeMap;
 use std::fmt;
@@ -44,6 +44,7 @@ enum RequestDomain {
 #[derive(Clone, Debug)]
 struct PendingTask {
     arcweft_task: TaskId,
+    next_publication_revision: arcweft_core::task::TaskPublicationRevision,
     request: DesktopRequest,
     outcome: BoundTaskOutcome,
 }
@@ -151,6 +152,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
         &self,
         task: &TaskSpec,
         outcome_contract: &BoundTaskOutcome,
+        context: HostTaskSubmissionContext,
     ) -> Option<HostTaskSubmission> {
         if !self.domains.contains_key(&task.request.host_call_id()) {
             return None;
@@ -180,6 +182,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                     desktop_task,
                     PendingTask {
                         arcweft_task: task.id.clone(),
+                        next_publication_revision: context.next_publication_revision(),
                         request,
                         outcome: outcome_contract.clone(),
                     },
@@ -197,6 +200,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                 let pending = self.pending().remove(&desktop_task)?;
                 Some(HostAdapterCompletion {
                     task_id: pending.arcweft_task,
+                    publication_revision: pending.next_publication_revision,
                     outcome: outcome(&pending.request, &pending.outcome, result),
                 })
             })

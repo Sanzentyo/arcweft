@@ -17,6 +17,9 @@ use crate::runtime_id::{
     RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
     RuntimeLocalDeclarationId,
 };
+use crate::task::{
+    AssetLoadKind, NeedProducerContractDigest, NeedProducerSiteDigest, TaskPlanSemanticDigest,
+};
 use crate::value::{
     RuntimeAgentConstructor, RuntimeDialoguePlainTextContextTemplateRef, RuntimeEntityReference,
     RuntimeHandleKind, RuntimeRecordFieldId,
@@ -481,13 +484,33 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
         }
     }
     for task in &mut program.task_plans {
-        visit_string_id(&mut task.public_id, visitor);
-        visit_string_id(&mut task.need_id, visitor);
-        visit_string_id(&mut task.capability, visitor);
-        visit_string_id(&mut task.operation, visitor);
         visit_string_id(&mut task.cancel_scope, visitor);
+        match &mut task.request {
+            AwbcTaskRequestProjection::AssetLoad { argument_name, .. } => {
+                visit_string_id(argument_name, visitor);
+            }
+            AwbcTaskRequestProjection::ExternCapability {
+                capability,
+                operation,
+                ..
+            }
+            | AwbcTaskRequestProjection::CustomCapability {
+                capability,
+                operation,
+            } => {
+                visit_string_id(capability, visitor);
+                visit_string_id(operation, visitor);
+            }
+        }
         for argument in &mut task.arguments {
             visit_optional_string_id(&mut argument.name, visitor);
+        }
+        if let AwbcTaskPlanKind::AwaitMany {
+            public_id, need_id, ..
+        } = &mut task.kind
+        {
+            visit_string_id(public_id, visitor);
+            visit_string_id(need_id, visitor);
         }
     }
     for effect in &mut program.effect_plans {
@@ -1552,7 +1575,7 @@ pub enum AwbcOpcode {
     MakeDialogueContent = 0x28,
     CharacterDialogue = 0x29,
     EmitEffect = 0x25,
-    StartTask = 0x26,
+    StartNeed = 0x26,
     SpawnFiber = 0x27,
     StreamYield = 0x32,
     StreamClose = 0x34,
@@ -1618,7 +1641,7 @@ impl AwbcOpcode {
         Self::ApplyGroup,
         Self::EnsureContent,
         Self::EmitEffect,
-        Self::StartTask,
+        Self::StartNeed,
         Self::SpawnFiber,
         Self::MakeDialogueContent,
         Self::CharacterDialogue,
@@ -1717,7 +1740,7 @@ impl AwbcOpcode {
             | Self::MakeDialogueContent
             | Self::CharacterDialogue
             | Self::EmitEffect
-            | Self::StartTask
+            | Self::StartNeed
             | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
             Self::StreamYield
             | Self::StreamClose
@@ -1920,7 +1943,7 @@ pub enum AwbcInstruction {
         effect: AwbcEffectPlanId,
         args: Vec<AwbcRegisterId>,
     },
-    StartTask {
+    StartNeed {
         dst: AwbcRegisterId,
         plan: AwbcTaskPlanId,
         args: Vec<AwbcRegisterId>,
@@ -2063,7 +2086,7 @@ impl AwbcInstruction {
             Self::MakeDialogueContent { .. } => AwbcOpcode::MakeDialogueContent,
             Self::CharacterDialogue { .. } => AwbcOpcode::CharacterDialogue,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
-            Self::StartTask { .. } => AwbcOpcode::StartTask,
+            Self::StartNeed { .. } => AwbcOpcode::StartNeed,
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,
             Self::StreamYield { .. } => AwbcOpcode::StreamYield,
             Self::StreamClose { .. } => AwbcOpcode::StreamClose,
@@ -2468,14 +2491,13 @@ awbc_u8_enum! {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcTaskPlan {
-    pub public_id: AwbcStringId,
-    /// Stable need identifier reported at the shared runtime boundary.
-    pub need_id: AwbcStringId,
-    pub capability: AwbcStringId,
-    pub operation: AwbcStringId,
     pub signature: AwbcSignatureId,
+    /// The single checked request projection shared by the closed task-plan
+    /// kinds. Producer plans use the selected manifest projection; AwaitMany
+    /// retains the host request it fans out.
+    pub request: AwbcTaskRequestProjection,
     pub class: AwbcTaskClass,
     pub priority: i32,
     pub cancel_scope: AwbcStringId,
@@ -2483,7 +2505,166 @@ pub struct AwbcTaskPlan {
     /// Checked type of the unary temporal Ready payload.
     pub payload_type: AwbcTypeId,
     pub arguments: Vec<AwbcHostArgument>,
-    pub many: Option<AwbcAwaitManyPolicy>,
+    pub kind: AwbcTaskPlanKind,
+}
+
+/// Request shape is recorded exactly once on the common task-plan row.
+/// NeedProducer verification admits only selected asset-load or manifest
+/// capability requests; AwaitMany may additionally use an explicit custom
+/// capability request without a manifest contract.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AwbcTaskRequestProjection {
+    AssetLoad {
+        kind: AssetLoadKind,
+        argument_name: AwbcStringId,
+    },
+    ExternCapability {
+        capability: AwbcStringId,
+        operation: AwbcStringId,
+        contract: crate::step::HostCallContractDigest,
+    },
+    CustomCapability {
+        capability: AwbcStringId,
+        operation: AwbcStringId,
+    },
+}
+
+/// A task plan is either a dynamic Need producer identity or the separate
+/// static AwaitMany base task. The closed variant prevents static task IDs
+/// from becoming a fallback identity for Need producers.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum AwbcTaskPlanKind {
+    NeedProducer {
+        contract: NeedProducerContractDigest,
+        site: NeedProducerSiteDigest,
+        semantic_digest: TaskPlanSemanticDigest,
+        restart: AwbcTaskRestartPolicy,
+    },
+    AwaitMany {
+        public_id: AwbcStringId,
+        /// Stable need identifier reported at the shared runtime boundary.
+        need_id: AwbcStringId,
+        item_binding: AwbcRegisterId,
+        limit: u32,
+    },
+}
+
+impl AwbcTaskPlan {
+    /// Reconstructs the Core producer authority from this typed AWBC row.
+    /// Callers use this only after verifying the program; the reconstructed
+    /// digest must still match the digest retained by the sealed row.
+    pub fn need_producer_plan(
+        &self,
+        program: &AwbcProgram,
+    ) -> Result<crate::task::NeedProducerTaskPlan, String> {
+        let AwbcTaskPlanKind::NeedProducer {
+            contract,
+            site,
+            semantic_digest,
+            restart,
+        } = &self.kind
+        else {
+            return Err("task plan is not a NeedProducer row".to_owned());
+        };
+        let string = |id: AwbcStringId| {
+            program
+                .strings
+                .get(id.index())
+                .cloned()
+                .ok_or_else(|| format!("task plan string {} is absent", id.0))
+        };
+        let request = match &self.request {
+            AwbcTaskRequestProjection::AssetLoad {
+                kind,
+                argument_name,
+            } => crate::task::NeedProducerRequestProjection::AssetLoad {
+                kind: *kind,
+                argument_name: string(*argument_name)?,
+            },
+            AwbcTaskRequestProjection::ExternCapability {
+                capability,
+                operation,
+                contract,
+            } => crate::task::NeedProducerRequestProjection::ExternCapability {
+                capability: crate::task::HostCapabilityId(string(*capability)?),
+                operation: string(*operation)?,
+                contract: *contract,
+                argument_names: self
+                    .arguments
+                    .iter()
+                    .map(|argument| argument.name.map(&string).transpose())
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            },
+            AwbcTaskRequestProjection::CustomCapability { .. } => {
+                return Err("NeedProducer cannot use an unmanifested custom request".to_owned());
+            }
+        };
+        let payload_type = program
+            .runtime_types
+            .get(self.payload_type.index())
+            .map(AwbcRuntimeType::semantic_identity)
+            .ok_or_else(|| format!("task payload type {} is absent", self.payload_type.0))?;
+        let signature = program
+            .signatures
+            .get(self.signature.index())
+            .ok_or_else(|| format!("task signature {} is absent", self.signature.0))?;
+        let argument_types = signature
+            .params
+            .iter()
+            .map(|parameter| {
+                program
+                    .runtime_types
+                    .get(parameter.index())
+                    .map(AwbcRuntimeType::semantic_identity)
+                    .ok_or_else(|| format!("task argument type {} is absent", parameter.0))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        let plan = crate::task::NeedProducerTaskPlan::try_new(
+            *contract,
+            *site,
+            request,
+            argument_types,
+            payload_type,
+            match self.policy {
+                AwbcTaskPolicy::JoinSameKey => crate::task::TaskPolicy::JoinSameKey,
+                AwbcTaskPolicy::AlwaysStart => crate::task::TaskPolicy::AlwaysStart,
+            },
+            match restart {
+                AwbcTaskRestartPolicy::MustBeQuiescent => {
+                    crate::task::HostRestartPolicy::MustBeQuiescent
+                }
+                AwbcTaskRestartPolicy::Restartable => crate::task::HostRestartPolicy::Restartable,
+            },
+            awbc_task_class(self.class),
+            crate::task::TaskPriority(self.priority),
+            crate::task::CancelScopeId(string(self.cancel_scope)?),
+        )
+        .map_err(|error| format!("invalid Need producer plan: {error}"))?;
+        if plan.semantic_digest() != *semantic_digest {
+            return Err("Need producer semantic digest does not match its typed row".to_owned());
+        }
+        Ok(plan)
+    }
+}
+
+const fn awbc_task_class(class: AwbcTaskClass) -> crate::task::TaskClass {
+    match class {
+        AwbcTaskClass::LocalView => crate::task::TaskClass::LocalView,
+        AwbcTaskClass::Io => crate::task::TaskClass::Io,
+        AwbcTaskClass::Cpu => crate::task::TaskClass::Cpu,
+        AwbcTaskClass::GpuPrepare => crate::task::TaskClass::GpuPrepare,
+        AwbcTaskClass::ShaderCompile => crate::task::TaskClass::ShaderCompile,
+        AwbcTaskClass::WasmCall => crate::task::TaskClass::WasmCall,
+        AwbcTaskClass::AssetDecode => crate::task::TaskClass::AssetDecode,
+        AwbcTaskClass::AudioDecode => crate::task::TaskClass::AudioDecode,
+        AwbcTaskClass::AudioRender => crate::task::TaskClass::AudioRender,
+        AwbcTaskClass::TtsSynthesis => crate::task::TaskClass::TtsSynthesis,
+        AwbcTaskClass::BgmPrecompose => crate::task::TaskClass::BgmPrecompose,
+        AwbcTaskClass::Lsp => crate::task::TaskClass::Lsp,
+        AwbcTaskClass::Background => crate::task::TaskClass::Background,
+    }
 }
 
 awbc_u8_enum! {
@@ -2511,16 +2692,17 @@ awbc_u8_enum! {
     }
 }
 
+awbc_u8_enum! {
+    pub enum AwbcTaskRestartPolicy {
+        MustBeQuiescent = 0,
+        Restartable = 1,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcHostArgument {
     pub name: Option<AwbcStringId>,
     pub spread: bool,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcAwaitManyPolicy {
-    pub item_binding: AwbcRegisterId,
-    pub limit: u32,
 }
 
 /// Effect-local argument index used by typed AWBC audio payloads.

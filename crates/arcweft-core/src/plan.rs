@@ -54,14 +54,14 @@ pub use construction::{
     RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
     RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
-    RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent, RuntimePlanSemanticAdmission,
-    RuntimePlanTable, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
-    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
-    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
-    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
+    RuntimePlanBuilder, RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent,
+    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
@@ -146,7 +146,9 @@ use crate::runtime_id::{
 };
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
-use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, RuntimeHostArgumentTemplate, TaskId};
+use crate::task::{
+    AwaitManyTarget, NeedId, NeedProducerTaskPlan, RuntimeHostArgumentTemplate, TaskId,
+};
 
 struct CheckedTypeTraversal<'a> {
     memo: &'a mut BTreeMap<RuntimePlanTypeId, Option<RuntimeCheckedType>>,
@@ -1154,8 +1156,12 @@ pub enum FlowOp {
     },
     Await {
         binding: Option<RuntimePattern>,
-        target: AwaitTarget,
+        target: RuntimeNeedAwaitTarget,
         observers: Vec<RuntimeAwaitPendingObserver>,
+    },
+    StartNeedProducer {
+        binding: RuntimePattern,
+        target: RuntimeNeedProducerStartTarget,
     },
     AwaitMany {
         binding: Option<RuntimePattern>,
@@ -1282,6 +1288,64 @@ pub enum FlowOp {
         expr: RuntimeExpr,
     },
     Noop,
+}
+
+/// Runtime source of a general typed `Need<T>` Await. The executor evaluates
+/// this once and retains the resulting handle across observer fallthrough.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeNeedAwaitTarget {
+    source: RuntimeExpr,
+}
+
+impl RuntimeNeedAwaitTarget {
+    #[must_use]
+    pub const fn new(source: RuntimeExpr) -> Self {
+        Self { source }
+    }
+
+    #[must_use]
+    pub const fn source(&self) -> &RuntimeExpr {
+        &self.source
+    }
+}
+
+/// Checked producer plan and already source-ordered argument expressions.
+/// Core construction validates the argument types before this enters a plan.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeNeedProducerStartTarget {
+    plan: NeedProducerTaskPlan,
+    arguments: Box<[RuntimeExpr]>,
+}
+
+impl RuntimeNeedProducerStartTarget {
+    pub fn try_new(
+        plan: NeedProducerTaskPlan,
+        arguments: Vec<RuntimeExpr>,
+    ) -> Result<Self, RuntimeNeedProducerStartTargetError> {
+        if arguments.len() != plan.argument_count() {
+            return Err(RuntimeNeedProducerStartTargetError::ArgumentCountMismatch);
+        }
+        Ok(Self {
+            plan,
+            arguments: arguments.into_boxed_slice(),
+        })
+    }
+
+    #[must_use]
+    pub const fn plan(&self) -> &NeedProducerTaskPlan {
+        &self.plan
+    }
+
+    #[must_use]
+    pub fn arguments(&self) -> &[RuntimeExpr] {
+        &self.arguments
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum RuntimeNeedProducerStartTargetError {
+    #[error("Need producer start arguments do not match the selected request signature")]
+    ArgumentCountMismatch,
 }
 
 /// Typed operation executable only inside its owning dialogue activation.
@@ -1431,7 +1495,7 @@ pub enum FlowEvent {
     },
     AwaitStarted {
         need: NeedId,
-        task: TaskId,
+        task: Option<TaskId>,
     },
     AwaitReady {
         need: NeedId,

@@ -44,12 +44,13 @@ pub use seed::{
     RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
     RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
     RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
+    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
+    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
+    RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -143,6 +144,8 @@ pub enum RuntimePlanBuildError {
     NominalSchema(#[from] RuntimePlanNominalSchemaError),
     #[error("runtime-plan construction is poisoned by an earlier post-admission failure")]
     Poisoned,
+    #[error("internal flow construction invariant failed: {context}")]
+    FlowLoweringInvariant { context: &'static str },
     #[error(transparent)]
     TypeGraph(#[from] RuntimePlanTypeTableError),
     #[error(transparent)]
@@ -179,6 +182,8 @@ pub enum RuntimePlanBuildError {
     ProjectCall(#[from] super::RuntimeProjectCallPlanError),
     #[error(transparent)]
     ProjectCallSites(#[from] super::RuntimeProjectCallSiteTableError),
+    #[error(transparent)]
+    NeedProducerStartTarget(#[from] super::RuntimeNeedProducerStartTargetError),
     #[error("project-call {context} has an invalid typed ABI")]
     InvalidProjectCallAbi { context: &'static str },
     #[error("semantic type {semantic_identity:?} is absent from the transaction type graph")]

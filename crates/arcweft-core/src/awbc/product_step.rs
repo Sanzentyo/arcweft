@@ -33,8 +33,9 @@ pub use self::snapshot::{
     AwbcProductLineTaskFiberPhaseSnapshot, AwbcProductLineTaskJoinSnapshot,
     AwbcProductLineTaskLiveSnapshot, AwbcProductLineTaskNodeStateSnapshot,
     AwbcProductLineTaskPhaseSnapshot, AwbcProductLineTaskWorkSnapshot,
-    AwbcProductLineTaskWorkTagSnapshot, AwbcProductPendingHostCallSnapshot,
+    AwbcProductLineTaskWorkTagSnapshot, AwbcProductPendingHostCallSnapshot, AwbcProductSaveError,
     AwbcProductTaskEventKindSaveSnapshot, AwbcProductTaskEventSaveSnapshot,
+    AwbcRestartableDispatch,
 };
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
@@ -45,15 +46,15 @@ use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
     AwbcEntryId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId,
     AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId,
-    AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
+    AwbcStreamPlanId, AwbcTrapCode, AwbcTypeId,
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{
     VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
 };
 use crate::engine::{
-    AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
-    HostCallState,
+    AwaitItemType, AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner,
+    FlowFiberStatus, HostCallState,
 };
 use crate::line_task::{
     AcceptedLineTaskContentEvents, ChildCancelPolicy, ChildJoinPolicy, LineRuntimeError,
@@ -74,9 +75,9 @@ use crate::step::{
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
-    AwaitTarget, HostTaskRequestTemplate, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind,
-    TaskId, TaskKey, TaskPublicationCursor, TaskSequence, normalize_runtime_need_states,
-    normalize_task_events, resolved_runtime_need_state,
+    GenerationId, NeedId, NeedProducerRegistry, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId,
+    TaskPublicationCursor, TaskSequence, normalize_runtime_need_states, normalize_task_events,
+    resolved_runtime_need_state,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -172,6 +173,10 @@ pub enum AwbcProductStepBuildError {
     RestoreSnapshot { message: String },
     #[error("failed to derive the accepted product AWBC artifact identity: {message}")]
     ArtifactIdentity { message: String },
+    #[error(
+        "cannot rebind product AWBC generation backwards (current {current}, requested {requested})"
+    )]
+    GenerationRegression { current: u64, requested: u64 },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -515,6 +520,7 @@ enum ProductLineTaskFiberPhase {
 struct ProductChildFiber {
     owner: ProductChildFiberOwner,
     fiber: FiberState,
+    runtime_generation: GenerationId,
     pending_host_call: Option<PendingHostCall>,
 }
 
@@ -850,6 +856,9 @@ pub struct AwbcProductStepExecutor {
     plain_text_context_template_proof:
         Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     fiber: FiberState,
+    /// Generation used by future producer admissions. Existing fibers and
+    /// launches retain their own creation generation across compatible swaps.
+    runtime_generation: GenerationId,
     facade_fiber: FlowFiber,
     entry_bound: bool,
     dialogues: ProductDialogueStore,
@@ -857,7 +866,10 @@ pub struct AwbcProductStepExecutor {
     pending_host_call: Option<PendingHostCall>,
     started_tasks: BTreeSet<TaskId>,
     task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
-    need_publications: BTreeMap<NeedId, TaskPublicationCursor>,
+    need_publications:
+        BTreeMap<(crate::runtime_id::RuntimePersistentFiberId, NeedId), TaskPublicationCursor>,
+    need_producers: NeedProducerRegistry,
+    remaining_new_task_requests: usize,
     queued_task_events: VecDeque<TaskEvent>,
     emitted_content: BTreeSet<AwbcContentUnitId>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
@@ -880,6 +892,118 @@ pub struct AwbcProductStepExecutor {
 }
 
 impl AwbcProductStepExecutor {
+    #[must_use]
+    pub const fn runtime_generation(&self) -> GenerationId {
+        self.runtime_generation
+    }
+
+    /// Rebinds only the generation used for future Need producer starts.
+    /// Existing fibers, saved await state, and admitted launches keep their
+    /// original identities. Repeating the current pin is an idempotent no-op.
+    pub fn rebind_generation(
+        &mut self,
+        generation: GenerationId,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        if generation < self.runtime_generation {
+            return Err(AwbcProductStepBuildError::GenerationRegression {
+                current: self.runtime_generation.get(),
+                requested: generation.get(),
+            });
+        }
+        self.runtime_generation = generation;
+        Ok(())
+    }
+
+    /// Returns the authoritative generation for a locally produced Need task.
+    /// The task identifier is only a lookup key; generation comes from the
+    /// accepted producer registry record, never from parsing its spelling.
+    #[must_use]
+    pub fn need_producer_generation_for_task(&self, task: &TaskId) -> Option<GenerationId> {
+        let need = self.need_producers.need_for_task(task)?;
+        self.need_producers
+            .launch_for_need(need)
+            .map(|launch| launch.generation())
+    }
+
+    #[must_use]
+    pub fn task_generation(&self, task: &TaskId) -> Option<GenerationId> {
+        self.need_producer_generation_for_task(task)
+    }
+
+    pub(super) fn awbc_type_id_for_semantic_identity(
+        &self,
+        identity: crate::pattern::RuntimeSemanticTypeId,
+    ) -> Option<AwbcTypeId> {
+        let mut matches = self
+            .program
+            .runtime_types
+            .iter()
+            .enumerate()
+            .filter(|(_, runtime_type)| runtime_type.semantic_identity() == identity);
+        let index = matches.next()?.0;
+        if matches.next().is_some() {
+            return None;
+        }
+        u32::try_from(index).ok().map(AwbcTypeId)
+    }
+
+    /// Returns active Restartable Need producer requests, including restored
+    /// rows which still need their exact TaskSpec re-issued once.
+    #[must_use]
+    pub fn restartable_dispatches(&self) -> Vec<AwbcRestartableDispatch> {
+        self.need_producers
+            .launches()
+            .filter(|launch| {
+                launch.restart() == crate::task::HostRestartPolicy::Restartable
+                    && !launch.task_terminal()
+                    && !launch.state().is_terminal()
+                    && launch.task_fault().is_none()
+            })
+            .map(|launch| AwbcRestartableDispatch {
+                generation: launch.generation(),
+                need_id: launch.need().clone(),
+                task_id: launch.task().clone(),
+                task_spec: launch.task_spec().clone(),
+                restart: launch.restart(),
+                publication: launch.publication(),
+                needs_reensure: !launch.task_submitted(),
+            })
+            .collect()
+    }
+
+    /// Needs whose active producer contract requires the host task to finish
+    /// before this Product state can cross a save boundary.
+    #[must_use]
+    pub fn quiescence_blocking_needs(&self) -> Vec<NeedId> {
+        self.need_producers
+            .launches()
+            .filter(|launch| {
+                launch.restart() == crate::task::HostRestartPolicy::MustBeQuiescent
+                    && !launch.task_terminal()
+                    && !launch.state().is_terminal()
+                    && launch.task_fault().is_none()
+            })
+            .map(|launch| launch.need().clone())
+            .collect()
+    }
+
+    /// Captures a complete save-safe Product snapshot. A live
+    /// MustBeQuiescent producer is reported as a typed deferral; Sans-I/O
+    /// Product code never waits for a host task.
+    pub fn snapshot_for_save(&self) -> Result<AwbcProductExecutorSnapshot, AwbcProductSaveError> {
+        let needs = self.quiescence_blocking_needs();
+        if !needs.is_empty() {
+            return Err(AwbcProductSaveError::NeedsQuiescence { needs });
+        }
+        let snapshot = self.snapshot();
+        self.validate_snapshot(&snapshot).map_err(|error| {
+            AwbcProductSaveError::InvalidSnapshot {
+                message: error.to_string(),
+            }
+        })?;
+        Ok(snapshot)
+    }
+
     fn artifact_fingerprint(
         program: &AwbcProgram,
     ) -> Result<crate::effect::RuntimeArtifactFingerprint, AwbcProductStepBuildError> {
@@ -971,7 +1095,17 @@ impl AwbcProductStepExecutor {
         entry: AwbcEntryId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        Self::for_entry_arc_with_context_proof(program, entry, budget_quantum, None)
+        Self::for_entry_arc_with_generation(program, entry, budget_quantum, GenerationId::new(0))
+    }
+
+    /// Starts an AWBC executor pinned to the owning runtime generation.
+    pub fn for_entry_arc_with_generation(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_entry_arc_with_context_proof(program, entry, budget_quantum, generation, None)
     }
 
     /// Starts against a bundle-certified context-template proof. Standalone
@@ -983,13 +1117,36 @@ impl AwbcProductStepExecutor {
         budget_quantum: u64,
         proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        Self::for_entry_arc_with_context_proof(program, entry, budget_quantum, Some(proof))
+        Self::for_entry_arc_with_context_proof(
+            program,
+            entry,
+            budget_quantum,
+            GenerationId::new(0),
+            Some(proof),
+        )
+    }
+
+    pub fn for_entry_arc_with_plain_text_context_proof_and_generation(
+        program: Arc<AwbcProgram>,
+        entry: AwbcEntryId,
+        budget_quantum: u64,
+        generation: GenerationId,
+        proof: crate::value::RuntimeDialoguePlainTextContextTemplateProof,
+    ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_entry_arc_with_context_proof(
+            program,
+            entry,
+            budget_quantum,
+            generation,
+            Some(proof),
+        )
     }
 
     fn for_entry_arc_with_context_proof(
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
         budget_quantum: u64,
+        generation: GenerationId,
         proof: Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     ) -> Result<Self, AwbcProductStepBuildError> {
         program
@@ -1016,7 +1173,8 @@ impl AwbcProductStepExecutor {
                     std::num::NonZeroU64::MIN,
                 ),
                 next_frame_instance: crate::runtime_id::RuntimeIdCursor::initial(),
-                generation: 0,
+                next_await_many_ordinal: 0,
+                generation: generation.get(),
                 entry,
                 cursor: FiberCursor {
                     function: AwbcFunctionId::default(),
@@ -1035,11 +1193,10 @@ impl AwbcProductStepExecutor {
                 streams: Vec::new(),
             }
         } else {
-            FiberState::for_entry(&program, entry, 0, budget_quantum.max(1)).map_err(|error| {
-                AwbcProductStepBuildError::FiberState {
+            FiberState::for_entry(&program, entry, generation.get(), budget_quantum.max(1))
+                .map_err(|error| AwbcProductStepBuildError::FiberState {
                     message: error.to_string(),
-                }
-            })?
+                })?
         };
         root::bind_startup(&program, &mut fiber, root_startup.as_ref())?;
         if root_startup.is_none() && !fiber.frames.is_empty() {
@@ -1050,7 +1207,7 @@ impl AwbcProductStepExecutor {
                 })?;
         }
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint);
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
         executor.plain_text_context_template_proof = proof;
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
@@ -1077,6 +1234,24 @@ impl AwbcProductStepExecutor {
         bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_function_invocation_with_generation(
+            program,
+            entry,
+            function,
+            bindings,
+            budget_quantum,
+            GenerationId::new(0),
+        )
+    }
+
+    pub fn for_function_invocation_with_generation(
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
+        budget_quantum: u64,
+        generation: GenerationId,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
@@ -1087,7 +1262,7 @@ impl AwbcProductStepExecutor {
             &program,
             entry,
             function,
-            0,
+            generation.get(),
             budget_quantum.max(1),
         )
         .map_err(|error| AwbcProductStepBuildError::FiberState {
@@ -1100,7 +1275,7 @@ impl AwbcProductStepExecutor {
                 message: error.to_string(),
             })?;
         let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
-        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint);
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint, generation);
         executor.entry_bound = true;
         Ok(executor)
     }
@@ -1109,6 +1284,7 @@ impl AwbcProductStepExecutor {
         program: Arc<AwbcProgram>,
         fiber: FiberState,
         artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
+        runtime_generation: GenerationId,
     ) -> Self {
         let mut next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
         let main_fiber_instance = next_fiber_instance
@@ -1152,6 +1328,7 @@ impl AwbcProductStepExecutor {
             artifact_fingerprint,
             plain_text_context_template_proof: None,
             fiber,
+            runtime_generation,
             facade_fiber,
             entry_bound: false,
             dialogues: ProductDialogueStore::default(),
@@ -1160,6 +1337,8 @@ impl AwbcProductStepExecutor {
             started_tasks: BTreeSet::new(),
             task_publications: BTreeMap::new(),
             need_publications: BTreeMap::new(),
+            need_producers: NeedProducerRegistry::default(),
+            remaining_new_task_requests: usize::MAX,
             queued_task_events: VecDeque::new(),
             emitted_content: BTreeSet::new(),
             stream_sequences: BTreeMap::new(),
@@ -1205,12 +1384,13 @@ impl AwbcProductStepExecutor {
             self.fiber.entry,
             callback,
             instance,
-            self.fiber.generation,
+            self.runtime_generation.get(),
             self.fiber.budget.quantum.max(1),
         )?;
         Ok(ProductChildFiber {
             owner: ProductChildFiberOwner::Independent,
             fiber,
+            runtime_generation: self.runtime_generation,
             pending_host_call: None,
         })
     }
@@ -1270,6 +1450,7 @@ impl AwbcProductStepExecutor {
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
+        self.remaining_new_task_requests = options.max_new_task_requests;
         let pure_before = pure_backend.stats();
         let local_pure_before = self.compact_pure_stats;
         let mut output = RuntimeStepOutput::default();
@@ -1349,7 +1530,8 @@ impl AwbcProductStepExecutor {
         let need_states_in = need_states.len();
         let task_events_in = task_events.len();
         Self::append_task_event_diagnostics(&mut output, &task_events);
-        self.latch_task_events(&task_events);
+        self.latch_task_events(&task_events, &mut output);
+        self.emit_pending_need_reensure(&mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
         if matches!(
@@ -2269,8 +2451,16 @@ impl AwbcProductStepExecutor {
                 binding,
                 observer,
             } => match target {
-                FiberAwaitTarget::Task(task) => self.ensure_await_started(&task, output),
                 FiberAwaitTarget::Need { id, item_type, .. } => {
+                    let task = self
+                        .need_producers
+                        .launches()
+                        .find(|launch| launch.need() == &id)
+                        .map(|launch| launch.task().clone());
+                    output.flow_events.push(FlowEvent::AwaitStarted {
+                        need: id.clone(),
+                        task,
+                    });
                     if let Some(resume) = declared_resume {
                         self.resume_need(
                             &id,
@@ -2347,9 +2537,6 @@ impl AwbcProductStepExecutor {
                 binding,
                 observer,
             } => match target {
-                FiberAwaitTarget::Task(task) => {
-                    self.resume_await(&task, binding, observer, resume, task_events, output)
-                }
                 FiberAwaitTarget::Need { id, item_type, .. } => self.resume_need(
                     &id,
                     item_type,

@@ -4,6 +4,7 @@ use super::{
     RuntimeExecutorInstance, bundle_host_policy, bundle_runner_runtime_program,
     run_bundle_runner_phase, step_options, validate_bundle_image_assets, validate_bundle_kind,
 };
+use crate::bundle_asset::BundleAssetAdapter;
 use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registry_builder};
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
@@ -14,7 +15,7 @@ use arcweft_core::{
 };
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
-use std::{path::Path, time::Instant};
+use std::{path::Path, sync::Arc, time::Instant};
 
 /// One incremental bundle-runtime step executed by an embedding event loop.
 #[derive(Clone, Debug)]
@@ -39,6 +40,7 @@ pub struct BundleRunnerSession {
     phases: Vec<BundleRunnerPhase>,
     executor: RuntimeExecutorInstance,
     host: NativeTaskBridge,
+    bundle_asset_context: arcweft_core::value::RuntimeBundleAssetContext,
     task_events: Vec<TaskEvent>,
     host_call_results: Vec<RuntimeHostCallResult>,
     audio_events: Vec<AudioEvent>,
@@ -81,6 +83,10 @@ impl BundleRunnerSession {
         let program = run_bundle_runner_phase(&mut phases, "runtime_decode", || {
             bundle_runner_runtime_program(bundle, options)
         })?;
+        let artifact_identity = super::logical_bundle_artifact_identity(bundle)?;
+        let executor = RuntimeExecutorInstance::from_awbc_product(program)?;
+        let bundle_asset_context =
+            super::bundle_asset_context(executor.generation(), artifact_identity)?;
 
         let policy = bundle_host_policy(bundle);
         let run_started = Instant::now();
@@ -89,12 +95,20 @@ impl BundleRunnerSession {
             &[],
         )
         .map_err(BundleRunnerError::NativeAdapter)?;
+        let asset_adapter = BundleAssetAdapter::try_new(
+            bundle_asset_context,
+            artifact_identity,
+            Arc::new(bundle.clone()),
+        )
+        .map_err(BundleRunnerError::BundleAssetAdapter)?;
+        let builder = builder
+            .register(asset_adapter)
+            .map_err(BundleRunnerError::NativeAdapter)?;
         let registry = install(workspace.source_path(), builder)
             .map(HostAdapterRegistryBuilder::build)
             .map_err(BundleRunnerError::NativeAdapter)?;
         let host = NativeTaskBridge::try_with_registry(policy, registry)
             .map_err(BundleRunnerError::NativeAdapter)?;
-        let executor = RuntimeExecutorInstance::from_awbc_product(program)?;
 
         Ok(Self {
             _workspace: workspace,
@@ -104,6 +118,7 @@ impl BundleRunnerSession {
             phases,
             executor,
             host,
+            bundle_asset_context,
             task_events: Vec::new(),
             host_call_results: Vec::new(),
             audio_events: Vec::new(),
@@ -157,7 +172,13 @@ impl BundleRunnerSession {
         if !runtime_finished {
             self.task_events.extend(
                 self.host
-                    .complete_tasks(self.executor.program_owner(), task_requests)?,
+                    .complete_tasks_with_generation_and_bundle_asset_context(
+                        self.executor.program_owner(),
+                        self.executor.generation(),
+                        super::logical_epoch(index)?,
+                        task_requests,
+                        Some(self.bundle_asset_context),
+                    )?,
             );
             self.host_call_results.extend(
                 self.host

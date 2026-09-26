@@ -5,8 +5,8 @@ mod array;
 mod callable_specialization;
 mod record_shapes;
 use super::fiber::{
-    AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
-    FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
+    AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
+    FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
@@ -1901,7 +1901,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::ApplyGroup, 0x23, CallTask),
         (AwbcOpcode::EnsureContent, 0x24, CallTask),
         (AwbcOpcode::EmitEffect, 0x25, CallTask),
-        (AwbcOpcode::StartTask, 0x26, CallTask),
+        (AwbcOpcode::StartNeed, 0x26, CallTask),
         (AwbcOpcode::SpawnFiber, 0x27, CallTask),
         (AwbcOpcode::MakeDialogueContent, 0x28, CallTask),
         (AwbcOpcode::CharacterDialogue, 0x29, CallTask),
@@ -5074,6 +5074,380 @@ fn reduction_unchanged_instruction_roundtrips_verifies_and_constructs_typed_valu
 }
 
 #[test]
+fn reduction_unchanged_materializes_one_reference_layer_without_widening_other_ops() {
+    let mut program = minimal_program();
+    program.strings.extend([
+        "std.reduction".to_owned(),
+        "GameState".to_owned(),
+        "started".to_owned(),
+    ]);
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Bool),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id: AwbcStringId(2),
+                layout: [2; 32],
+                arguments: Vec::new(),
+                shape: crate::entry::RuntimeNominalRecordShape::Record,
+                fields: vec![AwbcRecordField {
+                    field: crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0)
+                        .expect("field id fits"),
+                    name: Some(AwbcStringId(3)),
+                    ty: AwbcTypeId(0),
+                }],
+            },
+        ),
+        runtime_type(3, AwbcRuntimeTypeShape::Reference(AwbcTypeId(1))),
+        runtime_type(4, AwbcRuntimeTypeShape::Reference(AwbcTypeId(0))),
+        runtime_type(
+            5,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(1),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: vec![AwbcTypeId(1)],
+            },
+        ),
+    ];
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(2)],
+        result: Some(AwbcTypeId(4)),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        scopes: Vec::new(),
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(4),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    });
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(1, 1),
+        entry_block: AwbcBlockId(1),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(1)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program
+        .instructions
+        .push(AwbcInstruction::MakeReductionUnchanged {
+            dst: AwbcRegisterId(1),
+            ty: AwbcTypeId(4),
+            state: AwbcRegisterId(0),
+        });
+    program.canonicalize_string_table();
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("Reduction.unchanged accepts a borrowed GameState payload");
+    assert!(
+        !super::verify::types_compatible(&program, AwbcTypeId(1), AwbcTypeId(2)),
+        "Reference<GameState> remains distinct in ordinary type compatibility"
+    );
+
+    let mut wrong_referent = program.clone();
+    wrong_referent.signatures[1].params[0] = AwbcTypeId(3);
+    wrong_referent.frame_layouts[1].slots[0].ty = AwbcTypeId(3);
+    let error = wrong_referent
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("a reference to the wrong payload type must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::TypeMismatch { at, expected: 1, actual: 0 }
+            if at == "instruction 0"),
+        "{error:?}"
+    );
+
+    let mut ordinary_move = program;
+    ordinary_move.instructions[0] = AwbcInstruction::Move {
+        dst: AwbcRegisterId(2),
+        src: AwbcRegisterId(0),
+    };
+    let error = ordinary_move
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("ordinary Move must retain exact reference typing");
+    assert!(
+        matches!(&error, AwbcVerifyError::TypeMismatch { at, expected: 1, actual: 2 }
+            if at == "instruction 0"),
+        "{error:?}"
+    );
+}
+
+fn stateful_entry_with_function_site_callables() -> AwbcProgram {
+    let mut program = minimal_program();
+    program.strings.extend([
+        "GameState".to_owned(),
+        "GameEvent".to_owned(),
+        "std.reduction".to_owned(),
+        "std.reducer_error".to_owned(),
+        "Ok".to_owned(),
+        "Err".to_owned(),
+    ]);
+    program.runtime_types = vec![
+        runtime_type(
+            11,
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id: AwbcStringId(1),
+                layout: [11; 32],
+                arguments: Vec::new(),
+                shape: crate::entry::RuntimeNominalRecordShape::Unit,
+                fields: Vec::new(),
+            },
+        ),
+        runtime_type(
+            12,
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id: AwbcStringId(2),
+                layout: [12; 32],
+                arguments: Vec::new(),
+                shape: crate::entry::RuntimeNominalRecordShape::Unit,
+                fields: Vec::new(),
+            },
+        ),
+        runtime_type(13, AwbcRuntimeTypeShape::Reference(AwbcTypeId(0))),
+        runtime_type(
+            14,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(3),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: vec![AwbcTypeId(0)],
+            },
+        ),
+        runtime_type(
+            15,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(4),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: Vec::new(),
+            },
+        ),
+        runtime_type(16, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(3)])),
+        runtime_type(17, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(4)])),
+        runtime_type(
+            18,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+                ),
+                arguments: Vec::new(),
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(5),
+                        payload: Some(AwbcTypeId(5)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(6),
+                        payload: Some(AwbcTypeId(6)),
+                    },
+                ],
+            },
+        ),
+    ];
+    program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Parameter,
+        scope_depth: 0,
+    });
+    program.signatures.extend([
+        AwbcSignature {
+            params: Vec::new(),
+            result: Some(AwbcTypeId(0)),
+            effects: AwbcEffectSetId(0),
+        },
+        AwbcSignature {
+            params: vec![AwbcTypeId(2), AwbcTypeId(1)],
+            result: Some(AwbcTypeId(7)),
+            effects: AwbcEffectSetId(0),
+        },
+    ]);
+    program.frame_layouts.extend([
+        AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            scopes: Vec::new(),
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(2),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(1),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        },
+    ]);
+    let trap = || AwbcTerminator::Trap {
+        code: AwbcTrapCode::ExplicitPanic,
+        message: None,
+    };
+    program.functions.extend([
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(1),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(1, 1),
+            entry_block: AwbcBlockId(1),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(2),
+            frame_layout: AwbcFrameLayoutId(2),
+            blocks: AwbcTableRange::new(2, 1),
+            entry_block: AwbcBlockId(2),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+    ]);
+    program.blocks.extend([
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: trap(),
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(2),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: trap(),
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ]);
+    let initializer = crate::entry::RuntimeCallableRole {
+        callable: crate::entry::RuntimeCallableId::try_new("game.initialize")
+            .expect("callable identity is valid"),
+        contract: crate::entry::CallableContractHash::from_bytes([31; 32]),
+    };
+    let reducer = crate::entry::RuntimeCallableRole {
+        callable: crate::entry::RuntimeCallableId::try_new("game.reduce")
+            .expect("callable identity is valid"),
+        contract: crate::entry::CallableContractHash::from_bytes([32; 32]),
+    };
+    let binding = crate::entry::EntryBindingIdentity::from_bytes([33; 32]);
+    program.callable_executables = vec![
+        AwbcCallableExecutable {
+            role: initializer.clone(),
+            function: AwbcFunctionId(1),
+        },
+        AwbcCallableExecutable {
+            role: reducer.clone(),
+            function: AwbcFunctionId(2),
+        },
+    ];
+    program.entries[0].kind = AwbcEntryKind::Game;
+    program.entries[0].binding = binding;
+    program.entries[0].roles = crate::entry::RuntimeEntryRoles::Stateful(Box::new(
+        crate::entry::RuntimeStatefulEntryRoles {
+            binding,
+            state: crate::entry::RuntimeNominalRole {
+                identity: crate::entry::RuntimeNominalTypeId::try_new("GameState")
+                    .expect("nominal identity is valid"),
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([11; 32]),
+                layout: crate::entry::TypeLayoutHash::from_bytes([11; 32]),
+            },
+            initializer,
+            event: crate::entry::RuntimeNominalRole {
+                identity: crate::entry::RuntimeNominalTypeId::try_new("GameEvent")
+                    .expect("nominal identity is valid"),
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([12; 32]),
+                layout: crate::entry::TypeLayoutHash::from_bytes([12; 32]),
+            },
+            reducer,
+            initial_flow: crate::entry::RuntimeFlowRole {
+                flow: FlowRuntimeId::canonical("main").expect("test Flow ID is valid"),
+                contract: FlowContractHash::from_bytes([0x5a; 32]),
+            },
+            command_policy: crate::entry::RuntimeCommandPolicy::deny_all(
+                crate::entry::RootExecutionLimits::engine_default(),
+            ),
+        },
+    ));
+    program.canonicalize_string_table();
+    program
+}
+
+#[test]
+fn stateful_entry_roles_accept_only_pure_ordinary_function_sites() {
+    let program = stateful_entry_with_function_site_callables();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("entry initializer and reducer FunctionSites lower as ordinary functions");
+
+    let mut non_callable = program.clone();
+    non_callable.functions[1].kind = AwbcFunctionKind::Synthetic;
+    let error = non_callable
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("entry role cannot target a synthetic function");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { at, message }
+            if at == "callable executable 0"
+                && message == "role callable maps to a non-callable Product AWBC function"),
+        "{error:?}"
+    );
+
+    let mut effectful = program;
+    let effects = add_effect_set(&mut effectful, &["fs.read"]);
+    effectful.signatures[1].effects = effects;
+    effectful.canonicalize_string_table();
+    let error = effectful
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("entry role FunctionSites must have an empty effect row");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { at, message }
+            if at == "entry 0 runtime contract"
+                && message == "initializer role does not map to the required pure callable shape"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
     let (mut program, _exact, wide) = opaque_program();
     program.constants.push(AwbcConstant::Unit);
@@ -5932,90 +6306,6 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
         super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
     );
     assert_eq!(fiber.frames.len(), 1);
-}
-
-#[test]
-fn expression_apply_surfaces_await_from_the_dynamic_callee() {
-    let mut await_program = expression_apply_program(
-        vec![AwbcInstruction::LoadConst {
-            dst: AwbcRegisterId(0),
-            constant: AwbcConstantId(1),
-        }],
-        vec![
-            (
-                AwbcTerminator::Await {
-                    handle: AwbcRegisterId(0),
-                    binding: None,
-                    observer: None,
-                    resume: AwbcResumePointId(0),
-                },
-                AwbcSafePointKind::CallableBoundary,
-            ),
-            (
-                AwbcTerminator::Return { value: None },
-                AwbcSafePointKind::None,
-            ),
-        ],
-        vec![AwbcResumePoint {
-            function: AwbcFunctionId(1),
-            block: AwbcBlockId(2),
-            frame_layout: AwbcFrameLayoutId(1),
-            kind: AwbcSafePointKind::Await,
-        }],
-    );
-    await_program.strings.push("task.dynamic".to_owned());
-    await_program
-        .constants
-        .push(AwbcConstant::String(AwbcStringId(1)));
-    await_program
-        .runtime_types
-        .push(runtime_type(67, AwbcRuntimeTypeShape::Task(AwbcTypeId(1))));
-    await_program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
-    let await_program = std::sync::Arc::new(await_program);
-
-    let mut fiber = FiberState::for_entry(&await_program, AwbcEntryId(0), 0, 64)
-        .expect("create await expression apply fiber");
-    let output = step_with_callable_context(
-        &await_program,
-        &mut fiber,
-        super::vm::VmStepOptions {
-            max_instructions: 16,
-        },
-    )
-    .expect("dynamic callee reaches await");
-    assert!(matches!(
-        output.exit,
-        super::vm::VmExit::Suspended(FiberSuspensionReason::Await {
-            target: FiberAwaitTarget::Task(RuntimeValue::String(ref task)),
-            binding: None,
-            observer: None,
-        }) if task == "task.dynamic"
-    ));
-    assert_eq!(
-        fiber
-            .suspension
-            .as_ref()
-            .and_then(FiberSuspension::declared_resume),
-        Some(AwbcResumePointId(0))
-    );
-    fiber
-        .validate_for_program(&await_program)
-        .expect("awaiting dynamic callee snapshot validates");
-    fiber
-        .resume_at(&await_program, AwbcResumePointId(0))
-        .expect("resume await dynamic callee");
-    assert_eq!(
-        step_with_callable_context(
-            &await_program,
-            &mut fiber,
-            super::vm::VmStepOptions {
-                max_instructions: 16,
-            },
-        )
-        .expect("finish await dynamic callee")
-        .exit,
-        super::vm::VmExit::Returned(Some(RuntimeValue::Unit))
-    );
 }
 
 #[test]

@@ -15,7 +15,10 @@ use arcweft_core::{
         RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
         RuntimeStepOptions,
     },
-    task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence},
+    task::{
+        LogicalEpoch, TaskDispatchIdentity, TaskEvent, TaskEventKind, TaskPublicationRevision,
+        TaskSequence,
+    },
 };
 use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
@@ -541,6 +544,7 @@ where
             budget: RuntimeStepBudget {
                 max_ops: config.max_ops_per_step,
             },
+            ..RuntimeStepOptions::default()
         };
         let mut report = AgentControllerRunReport {
             steps: 0,
@@ -615,12 +619,19 @@ where
                             ),
                         )
                     })?;
-                task_events.push(TaskEvent {
-                    logical_epoch: LogicalEpoch(0),
-                    task_id: task.id.clone(),
-                    sequence: TaskSequence(report.host_calls as u64),
-                    kind: TaskEventKind::Ready(response),
-                });
+                let generation = executor
+                    .task_generation(&task.id)
+                    .unwrap_or_else(|| executor.generation());
+                task_events.push(TaskEvent::from_dispatch(
+                    TaskDispatchIdentity::new(
+                        generation,
+                        LogicalEpoch(0),
+                        TaskSequence(report.host_calls as u64),
+                        task.id.clone(),
+                    ),
+                    TaskPublicationRevision::FIRST,
+                    TaskEventKind::Ready(response),
+                ));
                 report.host_calls += 1;
                 report.responses.push(host_report.response);
                 report.events_emitted = host_report.events_emitted;
@@ -680,7 +691,6 @@ where
                 }
                 FlowFiberStatus::Running
                 | FlowFiberStatus::Dialogue(_)
-                | FlowFiberStatus::Waiting(_)
                 | FlowFiberStatus::NeedWaiting(_)
                 | FlowFiberStatus::WaitingMany(_)
                 | FlowFiberStatus::HostCall(_)

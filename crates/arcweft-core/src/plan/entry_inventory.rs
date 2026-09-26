@@ -925,6 +925,7 @@ impl RuntimePlan {
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }
+                | FlowOp::StartNeedProducer { .. }
                 | FlowOp::HostCall { .. }
                 | FlowOp::ApplyGroup { .. }
                 | FlowOp::Break(_)

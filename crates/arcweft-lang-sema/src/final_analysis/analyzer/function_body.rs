@@ -1,6 +1,8 @@
 //! Atomic closure of contextual body results and selected execution roles.
 
-use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
+use super::expression_error::{
+    AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionRejection,
+};
 use super::items::function_body_roles;
 use super::preparation::append_function_body_result_expectations;
 use super::state::{
@@ -151,7 +153,30 @@ impl Analyzer<'_, '_, '_> {
         append_function_body_result_expectations(module, body, expected, &mut expectations)
             .map_err(AnalyzerExpressionError::fatal)?;
         for (owner, expected) in &expectations {
-            let value = self.evaluate_expression(context, *owner, Some(expected))?;
+            let value = match self.evaluate_expression(context, *owner, Some(expected)) {
+                Ok(value) => value,
+                Err(error) => {
+                    if matches!(
+                        error,
+                        AnalyzerExpressionError::Rejected(
+                            AnalyzerExpressionRejection::Unavailable { owner: rejected }
+                        ) if rejected == *owner
+                    ) && self
+                        .has_unselected_call_diagnostic(context, *owner)
+                        .map_err(AnalyzerExpressionError::fact)?
+                    {
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
+            if value.value_type().is_none()
+                && self
+                    .has_unselected_call_diagnostic(context, *owner)
+                    .map_err(AnalyzerExpressionError::fact)?
+            {
+                continue;
+            }
             if value
                 .value_type()
                 .is_none_or(|actual| !expected.accepts(actual))

@@ -41,7 +41,11 @@ impl BundleSession {
         compatibility_floor: SwapCompatibility,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let next_id = GenerationId::new(self.next_generation_id);
-        let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
+        let next_generation = Arc::new(ProgramGeneration::from_bundle(
+            next_id,
+            next_artifact_identity,
+            bundle,
+        )?);
         let active_entry = self
             .executor
             .product_active_entry_snapshot_identity()
@@ -55,13 +59,17 @@ impl BundleSession {
             classify_swap_for_entry(self.swap.active(), &next_generation, &active_entry.id)
                 .max(compatibility_floor);
         if compatibility == SwapCompatibility::ContentOnly
-            && next_artifact_identity == self.active_artifact_identity
+            && next_artifact_identity == self.active_generation().artifact_identity
         {
             return Ok(BundleHotSwapReport {
                 generation: self.active_generation().id,
                 compatibility,
             });
         }
+        let following_generation_id = self
+            .next_generation_id
+            .checked_add(1)
+            .ok_or(BundleHotSwapError::GenerationIdExhausted)?;
         let compatibility = if self.presentation_generation.id != self.swap.active_generation_id() {
             // A prior generational swap left the installed presentation on its
             // original product. Compatibility with the new-entry generation
@@ -99,14 +107,17 @@ impl BundleSession {
             });
         }
 
-        let mut next_runtime = build_session_runtime(bundle, &self.options)?;
+        let mut next_runtime = build_session_runtime(bundle, &self.options, next_id)?;
         let compatibility =
             compatibility.max(self.view_replacement_compatibility(&next_runtime.view_runtime));
         if matches!(
             compatibility,
             SwapCompatibility::ContentOnly | SwapCompatibility::CodeCompatible
         ) {
-            next_runtime.retain_executor_state(&self.executor)?;
+            next_runtime.retain_executor_state(
+                &self.executor,
+                compatibility == SwapCompatibility::CodeCompatible,
+            )?;
         }
         let mut next_environment = self.environment.clone();
         if matches!(
@@ -233,7 +244,6 @@ impl BundleSession {
                 .fx
                 .validate_for_definitions(&next_runtime.fx_definitions)
         {
-            self.presentation.record_fx_error(&error);
             return Err(error.into());
         }
 
@@ -299,8 +309,7 @@ impl BundleSession {
             self.runtime_generation_pin = Some(self.swap.pin_active_generation());
         }
         self.retire_unused_generations();
-        self.next_generation_id = self.next_generation_id.saturating_add(1);
-        self.active_artifact_identity = next_artifact_identity;
+        self.next_generation_id = following_generation_id;
         Ok(BundleHotSwapReport {
             generation: next_id,
             compatibility: committed,
@@ -336,7 +345,8 @@ impl BundleSession {
         materialized: &PatchMaterializedTarget,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
         let active_identity = self
-            .active_artifact_identity
+            .active_generation()
+            .artifact_identity
             .awfb_container()
             .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
         let base_identity = materialized.report().base_artifact;
@@ -409,7 +419,8 @@ impl BundleSession {
             .validate()
             .map_err(BundleHotSwapError::InvalidPatch)?;
         let active_container_identity = self
-            .active_artifact_identity
+            .active_generation()
+            .artifact_identity
             .awfb_container()
             .ok_or(BundleHotSwapError::MissingActiveContainerIdentity)?;
         if artifact.manifest.base_artifact != active_container_identity {

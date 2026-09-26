@@ -1,0 +1,21 @@
+[package]
+name = "arcweft-bundle-assets"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+arcweft-audio-codec = { workspace = true }
+arcweft-bundle = { workspace = true, default-features = false }
+arcweft-core = { workspace = true }
+arcweft-image = { workspace = true }
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

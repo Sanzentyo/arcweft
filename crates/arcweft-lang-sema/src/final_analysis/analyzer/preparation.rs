@@ -15,13 +15,14 @@ use crate::{
 };
 
 use super::super::report::merge_type_resolution_fact;
+use super::expression_error::AnalyzerExpressionContext;
 use super::state::SemanticFactState;
 use super::{
     Analyzer, BTreeMap, BTreeSet, ExprId, FinalSemanticAnalysisError, GenericTypeScope,
     HirCallArgument, HirExprKind, HirFunctionBody, HirImplMember, HirItemKind, HirModule,
     HirPatternKind, HirPredicateBody, HirProofBody, HirStmtKind, NominalResolutionLimits,
-    PatternId, ProjectNominalType, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId,
-    TypeKind, TypeResolutionInput,
+    PatternId, ProjectNominalType, Rc, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId,
+    TypeId, TypeKind, TypeResolutionInput,
     expression_types::literal_type,
     patterns::{PatternSeedContext, seed_item_parameter_types, seed_pattern_locals},
     resolve_type_ref,
@@ -870,11 +871,35 @@ impl Analyzer<'_, '_, '_> {
             _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
         }
         for (owner, expected) in expectations {
-            let checked = self.check_expression_published(owner, Some(&expected))?;
-            let checked_type = checked
-                .value_type()
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-            if !expected.accepts(checked_type) {
+            let checked = self.check_expression_published(owner, Some(&expected));
+            let context = AnalyzerExpressionContext::published(Rc::clone(&self.call_frames));
+            let checked_type = match checked {
+                Ok(checked) => match checked.value_type() {
+                    Some(ty) => ty.to_owned(),
+                    None => {
+                        if self
+                            .has_unselected_call_diagnostic(&context, owner)
+                            .map_err(FinalSemanticAnalysisError::from)?
+                        {
+                            continue;
+                        }
+                        return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                            owner,
+                        });
+                    }
+                },
+                Err(error @ FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. }) => {
+                    if self
+                        .has_unselected_call_diagnostic(&context, owner)
+                        .map_err(FinalSemanticAnalysisError::from)?
+                    {
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(error) => return Err(error),
+            };
+            if !expected.accepts(&checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
         }

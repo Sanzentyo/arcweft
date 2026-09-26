@@ -2,16 +2,16 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef,
-    AwbcAwaitManyPolicy, AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice,
-    AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
-    AwbcEffectPlanId, AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode,
-    AwbcIntrinsic, AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineCleanupPolicy,
-    AwbcLineHandleSite, AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcParallelPolicy, AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin,
-    AwbcReduceOp, AwbcRegisterId, AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId,
-    AwbcSignatureId, AwbcStreamPlan, AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan,
-    AwbcTaskPolicy, AwbcTypeId,
+    AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceOption,
+    AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
+    AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode, AwbcIntrinsic,
+    AwbcLineActivationExport, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineHandleSite,
+    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
+    AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
+    AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
+    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanKind, AwbcTaskPolicy,
+    AwbcTaskRequestProjection, AwbcTaskRestartPolicy, AwbcTypeId,
 };
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
@@ -130,37 +130,185 @@ impl Wire for AwbcHostCallMode {
 
 impl Wire for AwbcTaskPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.public_id.write_wire(writer)?;
-        self.need_id.write_wire(writer)?;
-        self.capability.write_wire(writer)?;
-        self.operation.write_wire(writer)?;
         self.signature.write_wire(writer)?;
+        self.request.write_wire(writer)?;
         self.class.write_wire(writer)?;
         self.priority.write_wire(writer)?;
         self.cancel_scope.write_wire(writer)?;
         self.policy.write_wire(writer)?;
         self.payload_type.write_wire(writer)?;
         self.arguments.write_wire(writer)?;
-        self.many.write_wire(writer)
+        self.kind.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            public_id: AwbcStringId::read_wire(reader)?,
-            need_id: AwbcStringId::read_wire(reader)?,
-            capability: AwbcStringId::read_wire(reader)?,
-            operation: AwbcStringId::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
+            request: AwbcTaskRequestProjection::read_wire(reader)?,
             class: AwbcTaskClass::read_wire(reader)?,
             priority: i32::read_wire(reader)?,
             cancel_scope: AwbcStringId::read_wire(reader)?,
             policy: AwbcTaskPolicy::read_wire(reader)?,
             payload_type: AwbcTypeId::read_wire(reader)?,
             arguments: Vec::<AwbcHostArgument>::read_wire(reader)?,
-            many: Option::<AwbcAwaitManyPolicy>::read_wire(reader)?,
+            kind: AwbcTaskPlanKind::read_wire(reader)?,
         })
     }
 }
+
+impl Wire for AwbcTaskRequestProjection {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::AssetLoad {
+                kind,
+                argument_name,
+            } => {
+                writer.write_u8(0);
+                kind.write_wire(writer)?;
+                argument_name.write_wire(writer)?;
+            }
+            Self::ExternCapability {
+                capability,
+                operation,
+                contract,
+            } => {
+                writer.write_u8(1);
+                capability.write_wire(writer)?;
+                operation.write_wire(writer)?;
+                contract.write_wire(writer)?;
+            }
+            Self::CustomCapability {
+                capability,
+                operation,
+            } => {
+                writer.write_u8(2);
+                capability.write_wire(writer)?;
+                operation.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::AssetLoad {
+                kind: crate::task::AssetLoadKind::read_wire(reader)?,
+                argument_name: AwbcStringId::read_wire(reader)?,
+            }),
+            1 => Ok(Self::ExternCapability {
+                capability: AwbcStringId::read_wire(reader)?,
+                operation: AwbcStringId::read_wire(reader)?,
+                contract: crate::step::HostCallContractDigest::read_wire(reader)?,
+            }),
+            2 => Ok(Self::CustomCapability {
+                capability: AwbcStringId::read_wire(reader)?,
+                operation: AwbcStringId::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "task request projection",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for crate::task::AssetLoadKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(match self {
+            Self::Image => 0,
+            Self::Voice => 1,
+        });
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Image),
+            1 => Ok(Self::Voice),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "asset-load kind",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for AwbcTaskPlanKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::NeedProducer {
+                contract,
+                site,
+                semantic_digest,
+                restart,
+            } => {
+                writer.write_u8(0);
+                contract.write_wire(writer)?;
+                site.write_wire(writer)?;
+                semantic_digest.write_wire(writer)?;
+                restart.write_wire(writer)?;
+            }
+            Self::AwaitMany {
+                public_id,
+                need_id,
+                item_binding,
+                limit,
+            } => {
+                writer.write_u8(1);
+                public_id.write_wire(writer)?;
+                need_id.write_wire(writer)?;
+                item_binding.write_wire(writer)?;
+                limit.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::NeedProducer {
+                contract: crate::task::NeedProducerContractDigest::read_wire(reader)?,
+                site: crate::task::NeedProducerSiteDigest::read_wire(reader)?,
+                semantic_digest: crate::task::TaskPlanSemanticDigest::read_wire(reader)?,
+                restart: AwbcTaskRestartPolicy::read_wire(reader)?,
+            }),
+            1 => Ok(Self::AwaitMany {
+                public_id: AwbcStringId::read_wire(reader)?,
+                need_id: AwbcStringId::read_wire(reader)?,
+                item_binding: AwbcRegisterId::read_wire(reader)?,
+                limit: u32::read_wire(reader)?,
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "task plan kind",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+macro_rules! impl_task_semantic_digest_wire {
+    ($ty:ty) => {
+        impl Wire for $ty {
+            fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+                self.as_bytes().write_wire(writer)
+            }
+
+            fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+                <[u8; 32]>::read_wire(reader).map(Self::from_bytes)
+            }
+        }
+    };
+}
+
+impl_task_semantic_digest_wire!(crate::task::NeedProducerContractDigest);
+impl_task_semantic_digest_wire!(crate::task::NeedProducerSiteDigest);
+impl_task_semantic_digest_wire!(crate::task::TaskPlanSemanticDigest);
 
 impl Wire for AwbcTaskClass {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -196,6 +344,23 @@ impl Wire for AwbcTaskPolicy {
     }
 }
 
+impl Wire for AwbcTaskRestartPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "task restart policy",
+            tag,
+            offset,
+        })
+    }
+}
+
 impl Wire for AwbcHostArgument {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.name.write_wire(writer)?;
@@ -206,20 +371,6 @@ impl Wire for AwbcHostArgument {
         Ok(Self {
             name: Option::<AwbcStringId>::read_wire(reader)?,
             spread: bool::read_wire(reader)?,
-        })
-    }
-}
-
-impl Wire for AwbcAwaitManyPolicy {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.item_binding.write_wire(writer)?;
-        self.limit.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            item_binding: AwbcRegisterId::read_wire(reader)?,
-            limit: u32::read_wire(reader)?,
         })
     }
 }

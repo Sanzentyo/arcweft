@@ -18,6 +18,7 @@ use super::{
 #[derive(Clone, Debug)]
 pub(super) struct SessionRuntime {
     pub(super) source_label: String,
+    pub(super) generation: GenerationId,
     pub(super) program: Arc<AwbcProgram>,
     pub(super) entry: AwbcEntryId,
     pub(super) plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
@@ -113,8 +114,8 @@ impl BundleSession {
         engine_resource_types: Arc<arcweft_resource_model::registry::ResourceTypeRegistry>,
         active_artifact_identity: BundleSessionArtifactIdentity,
     ) -> Result<Self, BundleSessionError> {
-        let generation = Arc::new(initial_generation(bundle)?);
-        let runtime = build_session_runtime(bundle, &options)?;
+        let generation = Arc::new(initial_generation(bundle, active_artifact_identity)?);
+        let runtime = build_session_runtime(bundle, &options, generation.id)?;
         let executor = runtime.executor.clone();
         let dialogue_content = runtime.dialogue_content.clone();
         let character_presentation = runtime.character_presentation.clone();
@@ -180,57 +181,74 @@ impl BundleSession {
             presentation_generation: Arc::clone(&generation),
             runtime_generation_pin: Some(generation),
             task_generation_pins: BTreeMap::new(),
+            pending_restartable_reensure: BTreeMap::new(),
             tasks: RuntimeTaskRegistry::default(),
             next_generation_id: 1,
-            active_artifact_identity,
         })
     }
 }
 
-fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
-    ProgramGeneration::from_bundle(GenerationId::new(0), bundle).map_err(|error| match error {
-        GenerationBuildError::UnsupportedBundleKind(kind) => {
-            BundleSessionError::UnsupportedBundleKind(kind)
-        }
-        GenerationBuildError::ProductAwbcVerification { message } => {
-            BundleSessionError::ProductAwbcVerification { message }
-        }
-        GenerationBuildError::EncodeFingerprint(error) => {
-            BundleSessionError::GenerationFingerprint {
-                message: error.to_string(),
+fn initial_generation(
+    bundle: &ArcweftBundle,
+    artifact_identity: BundleSessionArtifactIdentity,
+) -> Result<ProgramGeneration, BundleSessionError> {
+    ProgramGeneration::from_bundle(GenerationId::new(0), artifact_identity, bundle).map_err(
+        |error| match error {
+            GenerationBuildError::UnsupportedBundleKind(kind) => {
+                BundleSessionError::UnsupportedBundleKind(kind)
             }
-        }
-        GenerationBuildError::ProductAwbcIdentity { message }
-        | GenerationBuildError::AdapterRequirementFingerprint { message } => {
-            BundleSessionError::GenerationFingerprint { message }
-        }
-        GenerationBuildError::InvalidEntryKind { entry } => {
-            BundleSessionError::ProductAwbcVerification {
-                message: format!("failed to decode executable entry kind for `{entry}`"),
+            GenerationBuildError::ProductAwbcVerification { message } => {
+                BundleSessionError::ProductAwbcVerification { message }
             }
-        }
-    })
+            GenerationBuildError::EncodeFingerprint(error) => {
+                BundleSessionError::GenerationFingerprint {
+                    message: error.to_string(),
+                }
+            }
+            GenerationBuildError::ProductAwbcIdentity { message }
+            | GenerationBuildError::AdapterRequirementFingerprint { message } => {
+                BundleSessionError::GenerationFingerprint { message }
+            }
+            GenerationBuildError::InvalidEntryKind { entry } => {
+                BundleSessionError::ProductAwbcVerification {
+                    message: format!("failed to decode executable entry kind for `{entry}`"),
+                }
+            }
+            GenerationBuildError::BundleAssetBinding(error) => {
+                BundleSessionError::GenerationFingerprint {
+                    message: error.to_string(),
+                }
+            }
+        },
+    )
 }
 
 impl SessionRuntime {
     fn new(
         source_label: String,
+        generation: GenerationId,
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
         plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
         let executor = if let Some(proof) = plain_text_context_proof {
-            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof(
+            ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
                 Arc::clone(&program),
                 entry,
                 proof,
+                generation,
             )?
         } else {
-            ArcweftRuntimeExecutor::from_awbc_product_arc(Arc::clone(&program), entry)?
+            ArcweftRuntimeExecutor::from_awbc_product_arc_with_generation(
+                Arc::clone(&program),
+                entry,
+                generation,
+            )?
         };
         Ok(Self::with_executor(
             source_label,
+            generation,
             program,
             entry,
             plain_text_context_proof,
@@ -241,6 +259,7 @@ impl SessionRuntime {
 
     fn with_executor(
         source_label: String,
+        generation: GenerationId,
         program: Arc<AwbcProgram>,
         entry: AwbcEntryId,
         plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
@@ -249,6 +268,7 @@ impl SessionRuntime {
     ) -> Self {
         Self {
             source_label,
+            generation,
             program,
             entry,
             plain_text_context_proof,
@@ -286,6 +306,7 @@ impl SessionRuntime {
         validate_root_command_host_call_catalog(&self.program, entry, root_command_host_calls)?;
         Self::new(
             self.source_label.clone(),
+            self.generation,
             self.program.clone(),
             entry,
             self.plain_text_context_proof,
@@ -313,6 +334,7 @@ impl SessionRuntime {
     pub(super) fn retain_executor_state(
         &mut self,
         current: &ArcweftRuntimeExecutor,
+        rebind_generation: bool,
     ) -> Result<(), BundleSessionError> {
         let mut executor = current.clone();
         if let Some(proof) = self.plain_text_context_proof {
@@ -323,6 +345,9 @@ impl SessionRuntime {
         } else {
             executor.replace_product_awbc_program_arc(Arc::clone(&self.program))?;
         }
+        if rebind_generation {
+            executor.rebind_generation(self.generation)?;
+        }
         self.executor = executor;
         Ok(())
     }
@@ -331,6 +356,7 @@ impl SessionRuntime {
 pub(super) fn build_session_runtime(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
+    generation: GenerationId,
 ) -> Result<SessionRuntime, BundleSessionError> {
     if bundle.bundle_kind != BundleKind::Game {
         return Err(BundleSessionError::UnsupportedBundleKind(
@@ -443,6 +469,7 @@ pub(super) fn build_session_runtime(
     };
     SessionRuntime::new(
         bundle.source_display_name().to_owned(),
+        generation,
         program,
         entry,
         plain_text_context_proof,

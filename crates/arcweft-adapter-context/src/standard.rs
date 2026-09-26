@@ -28,6 +28,9 @@ pub const SYSTEM_INFO_ADAPTER_ID: &str = "system-info";
 /// Adapter id for native filesystem access.
 pub const NATIVE_FILE_ADAPTER_ID: &str = "native-file";
 
+/// Adapter id for resources embedded in one Arcweft bundle.
+pub const BUNDLE_ASSET_ADAPTER_ID: &str = "bundle-assets";
+
 /// Adapter id for host math accelerators.
 pub const MATH_ADAPTER_ID: &str = "math";
 
@@ -40,6 +43,7 @@ pub fn standard_registry() -> AdapterRegistry {
         inference_tensor_manifest(),
         system_info_manifest(),
         native_file_manifest(),
+        bundle_asset_manifest(),
         math_manifest(),
     ])
 }
@@ -412,6 +416,35 @@ pub fn native_file_manifest() -> AdapterManifest {
         ))
 }
 
+/// Manifest for bundle-bound image and voice resource loading.
+pub fn bundle_asset_manifest() -> AdapterManifest {
+    let asset_error = standard_nominal(["AssetError"]);
+    let voice_error = standard_nominal(["VoiceError"]);
+    AdapterManifest::new(BUNDLE_ASSET_ADAPTER_ID, "Bundle Assets")
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "asset.image",
+                signature(
+                    [("asset", standard_ref("Asset"))],
+                    fallible_need(standard_nominal(["ImageHandle"]), asset_error.clone()),
+                ),
+                [],
+            )
+            .with_domain_error(asset_error),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "asset.voice",
+                signature(
+                    [("voice", standard_ref("Voice"))],
+                    fallible_need(standard_nominal(["AudioHandle"]), voice_error.clone()),
+                ),
+                [],
+            )
+            .with_domain_error(voice_error),
+        )
+}
+
 /// Host math accelerator manifest.
 pub fn math_manifest() -> AdapterManifest {
     AdapterManifest::new(MATH_ADAPTER_ID, "Math")
@@ -494,6 +527,17 @@ fn standard_nominal<const N: usize>(segments: [&str; N]) -> AdapterTypeKind {
             [],
         )
         .expect("standard nominal references are valid"),
+    }
+}
+
+fn standard_ref(entity: &str) -> AdapterTypeKind {
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::Standard,
+            nominal_path_segments(["Ref"]),
+            [standard_nominal([entity])],
+        )
+        .expect("standard entity references are valid"),
     }
 }
 
@@ -639,6 +683,7 @@ mod tests {
             INFERENCE_TENSOR_ADAPTER_ID,
             SYSTEM_INFO_ADAPTER_ID,
             NATIVE_FILE_ADAPTER_ID,
+            BUNDLE_ASSET_ADAPTER_ID,
             MATH_ADAPTER_ID,
         ] {
             assert!(ids.contains(&id));
@@ -670,6 +715,53 @@ mod tests {
                     .iter()
                     .any(|effect| effect.as_str() == "fs.write")
         }));
+    }
+
+    #[test]
+    fn bundle_asset_manifest_owns_exact_suspended_resource_signatures() {
+        let manifest = bundle_asset_manifest();
+        assert_eq!(manifest.id().as_str(), BUNDLE_ASSET_ADAPTER_ID);
+
+        for (call_id, parameter, reference, success, domain_error) in [
+            (
+                "asset.image",
+                "asset",
+                standard_ref("Asset"),
+                standard_nominal(["ImageHandle"]),
+                standard_nominal(["AssetError"]),
+            ),
+            (
+                "asset.voice",
+                "voice",
+                standard_ref("Voice"),
+                standard_nominal(["AudioHandle"]),
+                standard_nominal(["VoiceError"]),
+            ),
+        ] {
+            let call = manifest
+                .host_calls()
+                .iter()
+                .find(|call| call.id() == call_id)
+                .expect("bundle resource host call");
+            let signature = call.signature();
+            let [group] = signature.groups() else {
+                panic!("bundle resource host call has one parameter group");
+            };
+            let [parameter_row] = group.parameters() else {
+                panic!("bundle resource host call has one typed resource parameter");
+            };
+            assert_eq!(
+                parameter_row.name().map(AdapterCallableName::as_str),
+                Some(parameter)
+            );
+            assert_eq!(parameter_row.ty(), &reference);
+            assert_eq!(
+                signature.return_type(),
+                &fallible_need(success, domain_error.clone())
+            );
+            assert_eq!(call.domain_error(), Some(&domain_error));
+            assert!(call.effects().is_empty());
+        }
     }
 
     #[test]

@@ -239,14 +239,15 @@ flow main(background: Ref<Asset>) -> i64 {
         panic!("one selected asset producer call is projected")
     };
 
-    assert_eq!(
-        producer.operation(),
-        arcweft_core::task::NeedProducerOperation::AssetLoad {
+    assert!(matches!(
+        producer.plan().request(),
+        arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
             kind: arcweft_core::task::AssetLoadKind::Image,
+            ..
         }
-    );
+    ));
     assert_eq!(
-        producer.policy(),
+        producer.plan().policy(),
         arcweft_core::task::TaskPolicy::JoinSameKey
     );
     assert_eq!(
@@ -1638,10 +1639,24 @@ flow main() -> Result<i64, String> {
             bound_extern_need_calls += 1;
             assert!(host.contract().is_some());
             assert_eq!(host.mode(), arcweft_core::step::RuntimeHostCallMode::Suspend);
-            assert!(call.need_producer().is_none());
+            let producer = call
+                .need_producer()
+                .expect("manifest-bound suspended Need call has one producer plan");
+            assert!(matches!(
+                producer.plan().request(),
+                arcweft_core::task::NeedProducerRequestProjection::ExternCapability {
+                    capability,
+                    operation,
+                    contract,
+                    ..
+                } if capability.0 == host.capability()
+                    && operation == host.operation()
+                    && Some(*contract) == host.contract()
+            ));
             let result = semantics
                 .expression_source_type(owner)
                 .expect("suspending extern call retains its selected result type");
+            assert_eq!(producer.need_type(), result);
             let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(item) = result.shape()
             else {
                 panic!("manifest-bound extern call result remains Need<T>")

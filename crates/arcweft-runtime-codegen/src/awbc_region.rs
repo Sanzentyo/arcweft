@@ -185,7 +185,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::Drop => true,
         AwbcOpcode::EnsureContent
         | AwbcOpcode::EmitEffect
-        | AwbcOpcode::StartTask
+        | AwbcOpcode::StartNeed
         | AwbcOpcode::SpawnFiber
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,

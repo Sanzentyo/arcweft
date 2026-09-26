@@ -22,7 +22,7 @@ use crate::runtime_id::{
 use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamRuntimeId;
-use crate::task::{HostCapabilityId, NamedHostArg, NeedId, TaskId};
+use crate::task::{HostCapabilityId, NamedHostArg, NeedId, NeedProducerTaskPlan, TaskId};
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentField, RuntimeBinaryOp, RuntimeCallArgumentMode,
     RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeUnaryOp,
@@ -440,6 +440,10 @@ pub enum RuntimeFlowOpSeed {
         target: RuntimeAwaitTargetSeed,
         observers: Vec<RuntimeAwaitPendingObserverSeed>,
     },
+    StartNeedProducer {
+        binding: RuntimePatternSeed,
+        target: RuntimeNeedProducerStartTargetSeed,
+    },
     AwaitMany {
         binding: Option<RuntimePatternSeed>,
         target: RuntimeAwaitManyTargetSeed,
@@ -754,7 +758,7 @@ fn collect_binding_or_host_free_locals(
             target,
             observers,
         } => {
-            collect_host_argument_free_locals(&target.request.args, bound, locals);
+            target.source.collect_free_locals(bound, locals);
             for observer in observers {
                 let mut observer_bound = bound.clone();
                 observer.pattern.collect_binding_locals(&mut observer_bound);
@@ -763,6 +767,12 @@ fn collect_binding_or_host_free_locals(
             if let Some(binding) = binding {
                 binding.collect_binding_locals(bound);
             }
+        }
+        RuntimeFlowOpSeed::StartNeedProducer { binding, target } => {
+            for argument in &target.arguments {
+                argument.collect_free_locals(bound, locals);
+            }
+            binding.collect_binding_locals(bound);
         }
         RuntimeFlowOpSeed::AwaitMany {
             binding,
@@ -943,6 +953,7 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::Dialogue { .. }
         | RuntimeFlowOpSeed::LineOperation { .. }
         | RuntimeFlowOpSeed::Await { .. }
+        | RuntimeFlowOpSeed::StartNeedProducer { .. }
         | RuntimeFlowOpSeed::AwaitMany { .. }
         | RuntimeFlowOpSeed::HostCall { .. }
         | RuntimeFlowOpSeed::ProjectCall { .. }
@@ -1114,10 +1125,13 @@ pub struct RuntimeChoiceOptionSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeAwaitTargetSeed {
-    pub need: NeedId,
-    pub task: TaskId,
-    pub outcome: crate::task::TaskOutcomeContract,
-    pub request: RuntimeHostTaskRequestTemplateSeed,
+    pub source: RuntimeExprSeed,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeNeedProducerStartTargetSeed {
+    pub plan: NeedProducerTaskPlan,
+    pub arguments: Vec<RuntimeExprSeed>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

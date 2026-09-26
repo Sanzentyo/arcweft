@@ -2467,6 +2467,10 @@ pub enum RuntimeOpaqueValueError {
         producer: RuntimeOpaqueTypeProducerId,
         semantic_identity: RuntimeSemanticTypeId,
     },
+    #[error("standard opaque type `{producer:?}` rejected its producer-owned payload shape")]
+    InvalidStandardPayload {
+        producer: RuntimeOpaqueTypeProducerId,
+    },
 }
 
 #[cfg(test)]

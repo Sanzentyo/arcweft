@@ -1351,9 +1351,9 @@ mod tests {
     #[test]
     fn result_error_context_round_trip_preserves_exact_typed_cause() {
         let cause = RuntimeValue::Opaque(crate::value::RuntimeOpaqueValue::new_exact(
-            &runtime_standard_opaque_type(&["AssetError"])
+            &runtime_standard_opaque_type(&["ContentLoadError"])
                 .and_then(|spec| spec.monomorphic_owner())
-                .expect("AssetError owner"),
+                .expect("ContentLoadError owner"),
             RuntimeValue::String("missing".to_owned()),
         ));
         let error = RuntimeArcError::context_from_result(
@@ -1411,9 +1411,9 @@ mod tests {
         );
 
         let cause = RuntimeValue::Opaque(crate::value::RuntimeOpaqueValue::new_exact(
-            &runtime_standard_opaque_type(&["AssetError"])
+            &runtime_standard_opaque_type(&["ContentLoadError"])
                 .and_then(|spec| spec.monomorphic_owner())
-                .expect("AssetError owner"),
+                .expect("ContentLoadError owner"),
             RuntimeValue::String("missing".to_owned()),
         ));
         let message = content_message();
@@ -1546,9 +1546,9 @@ mod tests {
 
     #[test]
     fn decoder_rejects_wrong_owner_and_enforces_shared_limits() {
-        let foreign_owner = runtime_standard_opaque_type(&["AssetError"])
+        let foreign_owner = runtime_standard_opaque_type(&["ContentLoadError"])
             .and_then(|spec| spec.monomorphic_owner())
-            .expect("AssetError owner");
+            .expect("ContentLoadError owner");
         let wrong_owner = foreign_owner
             .try_wrap(RuntimeValue::Unit)
             .expect("opaque value");

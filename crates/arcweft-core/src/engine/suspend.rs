@@ -1,10 +1,10 @@
 use super::dialogue::{DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
-    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState, Engine,
-    FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput, RuntimeStepOutput,
-    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskPublicationCursor, TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
+    AwaitItemType, AwaitManyInFlight, AwaitManyState, AwaitState, CancelScopeId, ChoiceState,
+    Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
+    RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
+    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec, WaitingManyStatus, runtime_sequence_values, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
     cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
@@ -15,11 +15,12 @@ use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
     FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
-    HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest, RuntimeHostArgumentTemplate,
-    ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest,
-    WasmCallRequest,
+    HttpFetchRequest, HttpRespondRequest, NeedProducerRuntimeArgument, NeedProducerTaskDisposition,
+    ProcessRunRequest, RuntimeHostArgumentTemplate, RuntimeNeedPublication, ShaderRequest,
+    SystemInfoKind, SystemInfoRequest, TaskId, TaskOutcomeContract, TtsRequest, WasmCallRequest,
 };
 use crate::value::{DenseSeq, RuntimeFieldValue, RuntimeVirtualPath};
+use arcweft_need::Need;
 
 impl Engine {
     fn task_outcome_accepts_live_value(
@@ -73,17 +74,17 @@ impl Engine {
                 );
                 true
             }
-            FlowFiberStatus::Waiting(state) => {
-                self.resume_await_state(*state, events, output);
+            FlowFiberStatus::NeedWaiting(state) => {
+                self.resume_await_state(*state, output);
                 true
             }
-            FlowFiberStatus::NeedWaiting(need) => {
-                self.fiber.status = FlowFiberStatus::NeedWaiting(need);
-                false
-            }
-            FlowFiberStatus::WaitingMany(state) => {
+            FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(state)) => {
                 self.resume_await_many_state(*state, events, output, pure_backend);
                 true
+            }
+            waiting @ FlowFiberStatus::WaitingMany(WaitingManyStatus::Observed(_)) => {
+                self.fiber.status = waiting;
+                false
             }
             FlowFiberStatus::HostCall(state) => {
                 self.resume_host_call_state(state, input, output);
@@ -358,91 +359,125 @@ impl Engine {
     pub(super) fn resume_await_state(
         &mut self,
         mut state: AwaitState,
-        events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
     ) {
-        let event = state.queued.pop_front().or_else(|| {
-            events
-                .iter()
-                .find(|event| {
-                    event.task_id == state.target.task
-                        && state
-                            .observed_through
-                            .is_none_or(|cursor| TaskPublicationCursor::from_event(event) > cursor)
+        let publication = state.queued.pop_front().or_else(|| {
+            self.need_publications
+                .get(&state.need)
+                .and_then(|publications| {
+                    publications.iter().find(|publication| {
+                        state.observed_through.is_none_or(|cursor| {
+                            publication.cursor().compare_same_source(cursor)
+                                == Some(std::cmp::Ordering::Greater)
+                        })
+                    })
                 })
                 .cloned()
         });
-        let Some(event) = event else {
-            self.fiber.status = FlowFiberStatus::Waiting(Box::new(state));
+        let Some(publication) = publication else {
+            self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
             return;
         };
-        let event_cursor = TaskPublicationCursor::from_event(&event);
-        state.observed_through = Some(
-            state
-                .observed_through
-                .map_or(event_cursor, |cursor| cursor.max(event_cursor)),
-        );
-        self.task_publications.insert(
-            state.target.task.clone(),
-            state.observed_through.unwrap_or(event_cursor),
-        );
-        match event.kind {
-            TaskEventKind::Ready(value) => {
-                if !self.task_outcome_accepts_live_value(&state.target.outcome, value.value()) {
-                    let message = format!(
-                        "await task {} published a payload outside its checked outcome contract",
-                        state.target.task.0
-                    );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Host,
-                        message,
-                    ));
+        let publication_cursor = publication.cursor();
+        if let Some(queued_cursor) = state.queued.back().map(RuntimeNeedPublication::cursor) {
+            match state.observed_through {
+                None => state.observed_through = Some(queued_cursor),
+                Some(cursor) => match cursor.compare_same_source(queued_cursor) {
+                    Some(std::cmp::Ordering::Less) => state.observed_through = Some(queued_cursor),
+                    Some(_) => {}
+                    None => {
+                        self.fail_eval("Await publication changed cursor authority", output);
+                        return;
+                    }
+                },
+            }
+        }
+        match state.observed_through {
+            None => state.observed_through = Some(publication_cursor),
+            Some(cursor) => match cursor.compare_same_source(publication_cursor) {
+                Some(std::cmp::Ordering::Less) => state.observed_through = Some(publication_cursor),
+                Some(_) => {}
+                None => {
+                    self.fail_eval("Await publication changed cursor authority", output);
                     return;
                 }
-                if let Some(binding) = &state.binding {
-                    match self.try_bind_pattern(binding, value.value()) {
-                        Ok(true) => {}
-                        Ok(false) => {
-                            self.fiber.status = FlowFiberStatus::Failed(
-                                "await result did not match binding pattern".to_owned(),
-                            );
-                            output.diagnostics.push(RuntimeDiagnostic::new(
-                                "await result did not match binding pattern".to_owned(),
-                            ));
-                            return;
-                        }
-                        Err(error) => {
-                            self.fail_eval(error, output);
-                            return;
-                        }
-                    }
-                }
-                output.flow_events.push(FlowEvent::AwaitReady {
-                    need: state.target.need,
-                    value,
-                });
-                self.fiber.cursor = state.resume;
-                self.fiber.status = FlowFiberStatus::Running;
-            }
-            TaskEventKind::Progress(progress) => {
-                output.flow_events.push(FlowEvent::AwaitProgress {
-                    need: state.target.need.clone(),
-                    progress: progress.clone(),
-                });
-                self.start_await_pending_observer(state, progress, output);
-            }
-            TaskEventKind::Failed(error) => {
-                let message = format!("await task {} failed: {error}", state.target.task.0);
+            },
+        }
+        match publication {
+            RuntimeNeedPublication::Failed { need, message, .. } => {
+                let message = format!("await Need {} failed: {message}", need.0);
                 self.fiber.status = FlowFiberStatus::Failed(message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
                     RuntimeDiagnosticCategory::Host,
                     message,
                 ));
             }
-            TaskEventKind::Cancelled => {
-                self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
-            }
+            RuntimeNeedPublication::State {
+                state: need_state, ..
+            } => match &need_state {
+                Need::NotStarted => {
+                    self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
+                }
+                Need::Pending(progress) => {
+                    output.flow_events.push(FlowEvent::AwaitProgress {
+                        need: state.need.clone(),
+                        progress: progress.clone(),
+                    });
+                    self.start_await_pending_observer(state, progress.clone(), output);
+                }
+                Need::Ready(value) => {
+                    let type_matches = match state.item_type {
+                        AwaitItemType::Plan(item_type) => self
+                            .plan
+                            .validate_live_value(
+                                item_type,
+                                value.value(),
+                                crate::entry::RuntimeSchemaLimits::engine_default(),
+                            )
+                            .is_ok(),
+                        AwaitItemType::Awbc(_) => false,
+                    };
+                    if !type_matches {
+                        let message = format!(
+                            "await Need {} published a payload outside its checked item type",
+                            state.need.0
+                        );
+                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        output.diagnostics.push(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Host,
+                            message,
+                        ));
+                        return;
+                    }
+                    if let Some(binding) = &state.binding {
+                        match self.try_bind_pattern(binding, value.value()) {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                self.fiber.status = FlowFiberStatus::Failed(
+                                    "await result did not match binding pattern".to_owned(),
+                                );
+                                output.diagnostics.push(RuntimeDiagnostic::new(
+                                    "await result did not match binding pattern".to_owned(),
+                                ));
+                                return;
+                            }
+                            Err(error) => {
+                                self.fail_eval(error, output);
+                                return;
+                            }
+                        }
+                    }
+                    output.flow_events.push(FlowEvent::AwaitReady {
+                        need: state.need,
+                        value: value.clone(),
+                    });
+                    self.fiber.cursor = state.resume;
+                    self.fiber.status = FlowFiberStatus::Running;
+                }
+                Need::Cancelled => {
+                    self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+                }
+            },
         }
     }
 
@@ -469,34 +504,68 @@ impl Engine {
                 }
             }
         }
-        self.fiber.status = FlowFiberStatus::Waiting(Box::new(state));
+        self.fiber.status = FlowFiberStatus::NeedWaiting(Box::new(state));
     }
 
-    pub(super) fn latch_active_await_observer_events(&mut self, events: &[TaskEvent]) {
+    pub(super) fn latch_active_await_observer_publications(&mut self) {
         let Some(state) = self.fiber.await_observer.as_mut() else {
             return;
         };
-        for event in events {
-            if event.task_id != state.target.task
-                || state
-                    .observed_through
-                    .is_some_and(|cursor| TaskPublicationCursor::from_event(event) <= cursor)
-            {
-                continue;
-            }
-            state.observed_through = Some(TaskPublicationCursor::from_event(event));
-            self.task_publications.insert(
-                state.target.task.clone(),
-                TaskPublicationCursor::from_event(event),
-            );
-            state.queued.push_back(event.clone());
-            if matches!(
-                event.kind,
-                TaskEventKind::Ready(_) | TaskEventKind::Failed(_) | TaskEventKind::Cancelled
-            ) {
-                break;
-            }
+        let queued_cursor = state.queued.back().map(RuntimeNeedPublication::cursor);
+        let queued_through = match (state.observed_through, queued_cursor) {
+            (None, cursor) | (cursor, None) => cursor,
+            (Some(observed), Some(queued)) => match observed.compare_same_source(queued) {
+                Some(std::cmp::Ordering::Less) => Some(queued),
+                Some(_) => Some(observed),
+                None => Some(observed),
+            },
+        };
+        let additions = self
+            .need_publications
+            .get(&state.need)
+            .into_iter()
+            .flat_map(|publications| publications.iter())
+            .filter(|publication| {
+                queued_through.is_none_or(|cursor| {
+                    cursor.compare_same_source(publication.cursor())
+                        == Some(std::cmp::Ordering::Less)
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for publication in additions {
+            let cursor = publication.cursor();
+            state.observed_through = Some(match state.observed_through {
+                None => cursor,
+                Some(previous) => match previous.compare_same_source(cursor) {
+                    Some(std::cmp::Ordering::Less) => cursor,
+                    Some(_) => previous,
+                    None => previous,
+                },
+            });
+            state.queued.push_back(publication);
         }
+    }
+
+    pub(super) fn reserve_new_task_request(&mut self) -> bool {
+        if self.task_request_quota_remaining == 0 {
+            return false;
+        }
+        self.task_request_quota_remaining -= 1;
+        true
+    }
+
+    pub(super) fn fail_task_request_quota(
+        &mut self,
+        message: impl Into<String>,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let message = message.into();
+        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+        output.diagnostics.push(RuntimeDiagnostic::categorized(
+            RuntimeDiagnosticCategory::Budget,
+            message,
+        ));
     }
 
     pub(super) fn resume_host_call_state(
@@ -632,31 +701,172 @@ impl Engine {
         }
     }
 
-    pub(super) fn await_task_spec(
+    pub(super) fn start_need_await(
         &mut self,
-        target: &AwaitTarget,
+        binding: Option<crate::pattern::RuntimePattern>,
+        target: crate::plan::RuntimeNeedAwaitTarget,
+        observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
+        resume: Option<crate::engine::FlowCursor>,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Option<TaskSpec> {
-        let request = match self.evaluate_host_task_request(target, pure_backend) {
-            Ok(request) => request,
+    ) {
+        let value = match self.evaluate_expr_with_backend(target.source(), pure_backend) {
+            Ok(value) => value,
             Err(error) => {
                 self.fail_eval(error, output);
-                return None;
+                return;
             }
         };
-        Some(
-            TaskSpec::new(
-                target.task.clone(),
-                TaskKey(target.task.0.clone()),
-                request.task_class(),
-                TaskPriority(0),
-                CancelScopeId("flow".to_owned()),
-                TaskPolicy::JoinSameKey,
-                request,
-            )
-            .with_outcome(target.outcome.clone()),
-        )
+        let need = match value {
+            RuntimeValue::Need(need) if !need.0.is_empty() => need,
+            RuntimeValue::Need(_) => {
+                self.fail_eval("Await source contains an empty Need identity", output);
+                return;
+            }
+            value => {
+                self.fail_eval(
+                    format!(
+                        "Await source produced {}, expected Need<T>",
+                        super::runtime_value_label(&value)
+                    ),
+                    output,
+                );
+                return;
+            }
+        };
+        let item_type = match self
+            .plan
+            .type_table()
+            .get(target.source().ty())
+            .map(|declaration| declaration.projection())
+        {
+            Some(crate::plan::RuntimePlanTypeProjection::Need(item)) => *item,
+            _ => {
+                self.fail_eval("Await source type is not a checked Need<T>", output);
+                return;
+            }
+        };
+        let task = self
+            .need_producers
+            .launch_for_need(&need)
+            .map(|launch| launch.task().clone());
+        output.flow_events.push(FlowEvent::AwaitStarted {
+            need: need.clone(),
+            task,
+        });
+        let queued = self
+            .need_publications
+            .get(&need)
+            .map(|publications| publications.iter().cloned().collect())
+            .unwrap_or_default();
+        let state = AwaitState {
+            binding,
+            need,
+            item_type: AwaitItemType::Plan(item_type),
+            observers,
+            resume,
+            observed_through: None,
+            queued,
+        };
+        self.resume_await_state(state, output);
+    }
+
+    pub(super) fn start_need_producer(
+        &mut self,
+        binding: crate::pattern::RuntimePattern,
+        target: crate::plan::RuntimeNeedProducerStartTarget,
+        next_op_index: Option<usize>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let plan = target.plan().clone();
+        let mut arguments = Vec::with_capacity(target.arguments().len());
+        for (index, expression) in target.arguments().iter().enumerate() {
+            let Some(expected) = plan.argument_types().get(index).copied() else {
+                self.fail_eval("Need producer argument type row is incomplete", output);
+                return;
+            };
+            let actual = self
+                .plan
+                .type_table()
+                .get(expression.ty())
+                .map(|declaration| declaration.semantic_identity());
+            if actual != Some(expected) {
+                self.fail_eval(
+                    format!("Need producer argument {index} differs from its checked source type"),
+                    output,
+                );
+                return;
+            }
+            let value = match self.evaluate_expr_with_backend(expression, pure_backend) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+            let Some(name) = plan.argument_name(index) else {
+                self.fail_eval("Need producer argument name row is incomplete", output);
+                return;
+            };
+            arguments.push(NeedProducerRuntimeArgument {
+                name: name.map(str::to_owned),
+                value,
+            });
+        }
+        let mut candidate_registry = self.need_producers.clone();
+        let invocation = match candidate_registry.begin_invocation(
+            self.generation,
+            self.fiber.persistent_id,
+            plan.site(),
+        ) {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let admission = match candidate_registry.admit_start(invocation, plan, arguments) {
+            Ok(admission) => admission,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let launch = admission.launch();
+        let need_value = RuntimeValue::Need(launch.need().clone());
+        let bindings =
+            match crate::pattern::match_runtime_pattern(&self.plan, &binding, &need_value) {
+                Ok(Some(bindings)) => bindings,
+                Ok(None) => {
+                    self.fail_eval(
+                        "Need producer result did not match its checked binding",
+                        output,
+                    );
+                    return;
+                }
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+        if admission.disposition() == NeedProducerTaskDisposition::Ensure {
+            if !self.reserve_new_task_request() {
+                self.fail_task_request_quota(
+                    "Need producer start exceeds the remaining task request quota",
+                    output,
+                );
+                return;
+            }
+        }
+        let task_spec = (admission.disposition() == NeedProducerTaskDisposition::Ensure)
+            .then(|| launch.task_spec().clone());
+        self.need_producers = candidate_registry;
+        self.fiber.env.bind_all(bindings);
+        self.advance_if_needed(next_op_index);
+        if let Some(task_spec) = task_spec {
+            output.requests.tasks.push(task_spec);
+        }
     }
 
     pub(super) fn start_await_many_state(
@@ -683,9 +893,17 @@ impl Engine {
                 return;
             }
         };
+        let invocation = match self.allocate_await_many_invocation() {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.fail_task_request_quota(error.to_string(), output);
+                return;
+            }
+        };
         let mut state = AwaitManyState {
             binding,
             target,
+            invocation,
             resume,
             next_index: 0,
             in_flight: Vec::new(),
@@ -695,6 +913,22 @@ impl Engine {
         if self.fill_await_many_queue(&mut state, output, pure_backend) {
             self.commit_await_many_state(state, output);
         }
+    }
+
+    fn allocate_await_many_invocation(
+        &mut self,
+    ) -> Result<crate::task::AwaitManyInvocationIdentity, crate::task::AwaitManyIdentityError> {
+        let key = (self.generation, self.fiber.persistent_id);
+        let ordinal = self.await_many_invocations.get(&key).copied().unwrap_or(0);
+        let next = ordinal
+            .checked_add(1)
+            .ok_or(crate::task::AwaitManyIdentityError::InvocationOrdinalOverflow)?;
+        self.await_many_invocations.insert(key, next);
+        Ok(crate::task::AwaitManyInvocationIdentity::new(
+            self.generation,
+            self.fiber.persistent_id,
+            ordinal,
+        ))
     }
 
     pub(super) fn resume_await_many_state(
@@ -772,18 +1006,50 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         while state.in_flight.len() < state.target.limit && state.next_index < state.items.len() {
+            if self.task_request_quota_remaining == 0 {
+                if state.in_flight.is_empty() {
+                    self.fail_task_request_quota(
+                        "AwaitMany requires another task request after the task quota was exhausted",
+                        output,
+                    );
+                    return false;
+                }
+                return true;
+            }
             let index = state.next_index;
             let item = state.items[index].clone();
-            let need = indexed_need_id(&state.target.need, index);
-            let task = indexed_task_id(&state.target.task, index);
+            let need = match state.invocation.need_id(&state.target.need, index) {
+                Ok(need) => need,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return false;
+                }
+            };
+            let task = match state.invocation.task_id(&state.target.task, index) {
+                Ok(task) => task,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return false;
+                }
+            };
             let Some(spec) =
                 self.await_many_task_spec(&state.target, index, &item, &task, output, pure_backend)
             else {
                 return false;
             };
+            if !self.reserve_new_task_request() {
+                if state.in_flight.is_empty() {
+                    self.fail_task_request_quota(
+                        "AwaitMany requires another task request after the task quota was exhausted",
+                        output,
+                    );
+                    return false;
+                }
+                return true;
+            }
             output.flow_events.push(FlowEvent::AwaitStarted {
                 need: need.clone(),
-                task: task.clone(),
+                task: Some(task.clone()),
             });
             output.requests.tasks.push(spec);
             state
@@ -796,7 +1062,8 @@ impl Engine {
 
     fn commit_await_many_state(&mut self, state: AwaitManyState, output: &mut RuntimeStepOutput) {
         if !state.in_flight.is_empty() || state.results.iter().any(Option::is_none) {
-            self.fiber.status = FlowFiberStatus::WaitingMany(Box::new(state));
+            self.fiber.status =
+                FlowFiberStatus::WaitingMany(WaitingManyStatus::Native(Box::new(state)));
             return;
         }
         let values = state
@@ -852,7 +1119,9 @@ impl Engine {
         Some(
             TaskSpec::new(
                 task.clone(),
-                TaskKey(request.debug_label()),
+                // The occurrence-scoped key keeps AwaitMany visits and runtime
+                // generations from joining under a request-only identity.
+                TaskKey(task.0.clone()),
                 request.task_class(),
                 TaskPriority(0),
                 CancelScopeId("flow".to_owned()),
@@ -861,14 +1130,6 @@ impl Engine {
             )
             .with_outcome(target.outcome.clone()),
         )
-    }
-
-    fn evaluate_host_task_request(
-        &mut self,
-        target: &AwaitTarget,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<HostTaskRequest, String> {
-        self.evaluate_host_task_request_template(&target.request, pure_backend)
     }
 
     fn evaluate_host_task_request_template(
@@ -1022,14 +1283,6 @@ fn lower_evaluated_host_request(call: &EvaluatedHostCall<'_>) -> Result<HostTask
 
 fn system_info_request(kind: SystemInfoKind) -> HostTaskRequest {
     HostTaskRequest::SystemInfo(SystemInfoRequest { kind })
-}
-
-fn indexed_need_id(base: &NeedId, index: usize) -> NeedId {
-    NeedId(format!("{}.{}", base.0, index))
-}
-
-fn indexed_task_id(base: &TaskId, index: usize) -> TaskId {
-    TaskId(format!("{}.{}", base.0, index))
 }
 
 fn lower_file_write_request(args: &[EvaluatedHostArg]) -> Result<HostTaskRequest, String> {

@@ -2,23 +2,23 @@ use crate::awbc_lower::audio::constant_audio_command;
 use crate::awbc_lower::pattern::intern_runtime_type;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAgentTypeShape, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId,
-    AwbcAwaitManyPolicy, AwbcBlock, AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup,
-    AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit,
-    AwbcContentUnitId, AwbcDialogueContentEffectSlot, AwbcDialogueContentSlot,
-    AwbcDialogueContentTemplate, AwbcDialogueValueRole, AwbcDisplayMapEntry, AwbcEffectKind,
-    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind,
-    AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument,
-    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId,
-    AwbcLineCleanupPolicy, AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId,
-    AwbcPresentationCleanup, AwbcProgram, AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
-    AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcSignedIntKind, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId,
-    AwbcStructuralRuntimeTypeKind, AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass,
-    AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId, AwbcTypeId,
-    AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcBlock,
+    AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup, AwbcChoice, AwbcChoiceId,
+    AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
+    AwbcDialogueContentEffectSlot, AwbcDialogueContentSlot, AwbcDialogueContentTemplate,
+    AwbcDialogueValueRole, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
+    AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
+    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
+    AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
+    AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
+    AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcStructuralRuntimeTypeKind,
+    AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
+    AwbcTaskPlanKind, AwbcTaskPolicy, AwbcTaskRequestProjection, AwbcTaskRestartPolicy,
+    AwbcTerminator, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
 use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole, RuntimeEntryRoles};
@@ -41,9 +41,10 @@ use arcweft_core::runtime_id::{
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{
-    HostTaskRequestTemplate, RuntimeHostArgumentTemplate, TaskOutcomeContract,
+    HostRestartPolicy, HostTaskRequestTemplate, NeedProducerRequestProjection,
+    NeedProducerTaskPlan, RuntimeHostArgumentTemplate, TaskClass, TaskOutcomeContract, TaskPolicy,
 };
-use arcweft_core::value::{RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
+use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 
@@ -148,7 +149,7 @@ pub struct AwbcInventory {
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
     effects: BTreeMap<String, AwbcEffectPlanId>,
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
-    tasks: BTreeMap<String, AwbcTaskPlanId>,
+    tasks: BTreeMap<AwbcTaskPlan, AwbcTaskPlanId>,
     host_calls: BTreeMap<AwbcHostCall, AwbcHostCallId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
@@ -183,20 +184,6 @@ pub(crate) enum PendingAwbcClosure {
         body: RuntimeFunctionSiteBody,
         path: String,
     },
-}
-
-#[derive(Clone, Copy, Debug)]
-struct NamedTaskSpec<'a> {
-    public_id: &'a str,
-    need_id: &'a str,
-    capability: &'a str,
-    operation: &'a str,
-    args: &'a [RuntimeHostArgumentTemplate],
-    class: AwbcTaskClass,
-    priority: i32,
-    cancel_scope: &'a str,
-    policy: AwbcTaskPolicy,
-    outcome: &'a TaskOutcomeContract,
 }
 
 impl AwbcInventory {
@@ -1600,42 +1587,6 @@ impl AwbcInventory {
         self.pending_closures.pop()
     }
 
-    /// Attaches bounded fan-out semantics to an owned task plan.
-    pub fn set_await_many_policy(
-        &mut self,
-        plan: AwbcTaskPlanId,
-        item_binding: AwbcRegisterId,
-        limit: usize,
-    ) -> Result<(), AwbcLowerDiagnostic> {
-        let limit = u32::try_from(limit).map_err(|_| {
-            AwbcLowerDiagnostic::error(
-                format!("task_plan.{}", plan.0),
-                format!("AwaitMany limit {limit} exceeds the u32 AWBC domain"),
-            )
-        })?;
-        if limit == 0 {
-            return Err(AwbcLowerDiagnostic::error(
-                format!("task_plan.{}", plan.0),
-                "AwaitMany limit must be positive",
-            ));
-        }
-        let task = self
-            .program
-            .task_plans
-            .get_mut(plan.index())
-            .ok_or_else(|| {
-                AwbcLowerDiagnostic::error(
-                    format!("task_plan.{}", plan.0),
-                    "AwaitMany policy references an absent AWBC task plan",
-                )
-            })?;
-        task.many = Some(AwbcAwaitManyPolicy {
-            item_binding,
-            limit,
-        });
-        Ok(())
-    }
-
     pub fn intern_content_unit(
         &mut self,
         application: &RuntimeDialogueContentApplicationKey,
@@ -1781,25 +1732,161 @@ impl AwbcInventory {
         id
     }
 
-    pub fn intern_host_task_with_outcome(
+    pub fn intern_await_many_task(
         &mut self,
         need_id: &str,
         task_id: &str,
         request: &HostTaskRequestTemplate,
         outcome: &TaskOutcomeContract,
+        item_binding: AwbcRegisterId,
+        limit: usize,
     ) -> Option<AwbcTaskPlanId> {
-        self.intern_named_task(NamedTaskSpec {
-            public_id: task_id,
-            need_id,
-            capability: &request.capability.0,
-            operation: &request.operation,
-            args: &request.args,
+        let limit = match u32::try_from(limit) {
+            Ok(limit) if limit > 0 => limit,
+            _ => {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("await_many.{task_id}"),
+                    format!("AwaitMany limit {limit} must be a positive u32"),
+                ));
+                return None;
+            }
+        };
+        let signature = self.intern_signature(
+            vec![self.dynamic_ty(); request.args.len()],
+            None,
+            AwbcEffectSetId(0),
+        );
+        let arguments = self.intern_host_arguments(&request.args);
+        let payload_type = self.intern_task_outcome_payload(outcome)?;
+        let row = AwbcTaskPlan {
+            signature,
+            request: AwbcTaskRequestProjection::CustomCapability {
+                capability: self.intern_string(&request.capability.0),
+                operation: self.intern_string(&request.operation),
+            },
             class: AwbcTaskClass::Io,
             priority: 0,
-            cancel_scope: "flow",
+            cancel_scope: self.intern_string("flow"),
             policy: AwbcTaskPolicy::JoinSameKey,
-            outcome,
-        })
+            payload_type,
+            arguments,
+            kind: AwbcTaskPlanKind::AwaitMany {
+                public_id: self.intern_string(task_id),
+                need_id: self.intern_string(need_id),
+                item_binding,
+                limit,
+            },
+        };
+        Some(self.intern_task_plan(row))
+    }
+
+    /// Interns the closed typed producer row used by both StartNeed and
+    /// Product snapshot re-projection. Argument descriptors are derived from
+    /// the sealed request binding, and their types come from the checked
+    /// source-order expressions lowered by the caller.
+    pub fn intern_need_producer_task(
+        &mut self,
+        plan: &NeedProducerTaskPlan,
+        expressions: &[RuntimeExpr],
+    ) -> Option<AwbcTaskPlanId> {
+        let names = match plan.request() {
+            NeedProducerRequestProjection::AssetLoad { argument_name, .. } => {
+                vec![Some(argument_name.clone())]
+            }
+            NeedProducerRequestProjection::ExternCapability { argument_names, .. } => {
+                argument_names.to_vec()
+            }
+        };
+        if names.len() != expressions.len() {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "need_producer.arguments",
+                format!(
+                    "selected producer plan binds {} arguments but the call has {} expressions",
+                    names.len(),
+                    expressions.len()
+                ),
+            ));
+            return None;
+        }
+        let mut params = Vec::with_capacity(expressions.len());
+        for (index, expression) in expressions.iter().enumerate() {
+            let Some(ty) = self.plan_type(expression.ty()) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("need_producer.argument.{index}"),
+                    "Need producer argument type was not admitted by AWBC type preflight",
+                ));
+                return None;
+            };
+            let argument_identity = self.program.runtime_types[ty.index()].semantic_identity();
+            if plan.argument_types().get(index) != Some(&argument_identity) {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("need_producer.argument.{index}"),
+                    "selected producer argument type identity differs from the checked call expression",
+                ));
+                return None;
+            }
+            params.push(ty);
+        }
+        let signature = self.intern_signature(params, None, AwbcEffectSetId(0));
+        let arguments = names
+            .iter()
+            .map(|name| AwbcHostArgument {
+                name: name.as_deref().map(|name| self.intern_string(name)),
+                spread: false,
+            })
+            .collect();
+        let payload_type = match self.semantic_type(plan.payload_type()) {
+            Some(ty) => ty,
+            None => {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "need_producer.payload",
+                    format!(
+                        "selected Need payload type {:?} was not admitted by AWBC type preflight",
+                        plan.payload_type()
+                    ),
+                ));
+                return None;
+            }
+        };
+        let request = match plan.request() {
+            NeedProducerRequestProjection::AssetLoad {
+                kind,
+                argument_name,
+            } => AwbcTaskRequestProjection::AssetLoad {
+                kind: *kind,
+                argument_name: self.intern_string(argument_name),
+            },
+            NeedProducerRequestProjection::ExternCapability {
+                capability,
+                operation,
+                contract,
+                ..
+            } => AwbcTaskRequestProjection::ExternCapability {
+                capability: self.intern_string(&capability.0),
+                operation: self.intern_string(operation),
+                contract: *contract,
+            },
+        };
+        let row = AwbcTaskPlan {
+            signature,
+            request,
+            class: awbc_task_class(plan.class()),
+            priority: plan.priority().0,
+            cancel_scope: self.intern_string(&plan.cancel_scope().0),
+            policy: awbc_task_policy(plan.policy()),
+            payload_type,
+            arguments,
+            kind: AwbcTaskPlanKind::NeedProducer {
+                contract: plan.contract(),
+                site: plan.site(),
+                semantic_digest: plan.semantic_digest(),
+                restart: match plan.restart() {
+                    HostRestartPolicy::MustBeQuiescent => AwbcTaskRestartPolicy::MustBeQuiescent,
+                    HostRestartPolicy::Restartable => AwbcTaskRestartPolicy::Restartable,
+                },
+            },
+        };
+        Some(self.intern_task_plan(row))
     }
 
     pub(crate) fn intern_host_call(
@@ -1858,42 +1945,9 @@ impl AwbcInventory {
         Some((id, result_type))
     }
 
-    fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> Option<AwbcTaskPlanId> {
-        let NamedTaskSpec {
-            public_id,
-            need_id,
-            capability,
-            operation,
-            args,
-            class,
-            priority,
-            cancel_scope,
-            policy,
-            outcome,
-        } = spec;
-        let key = format!(
-            "task:{public_id}:{need_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}:{outcome:?}"
-        );
-        if let Some(id) = self.tasks.get(&key).copied() {
-            return Some(id);
-        }
-        let id = AwbcTaskPlanId(table_index(self.program.task_plans.len()));
-        let public_id = self.intern_string(public_id);
-        let need_id = self.intern_string(need_id);
-        let capability = self.intern_string(capability);
-        let operation = self.intern_string(operation);
-        let signature = self.intern_signature(
-            vec![self.dynamic_ty(); args.len()],
-            None,
-            AwbcEffectSetId(0),
-        );
-        let cancel_scope = self.intern_string(cancel_scope);
-        let arguments = args
-            .iter()
-            .map(|arg| self.intern_host_argument(arg))
-            .collect();
-        let payload_type = match outcome {
-            TaskOutcomeContract::Standalone { payload } => intern_runtime_type(self, payload),
+    fn intern_task_outcome_payload(&mut self, outcome: &TaskOutcomeContract) -> Option<AwbcTypeId> {
+        match outcome {
+            TaskOutcomeContract::Standalone { payload } => Some(intern_runtime_type(self, payload)),
             TaskOutcomeContract::Program { payload } => {
                 let Some(ty) = self.semantic_type(*payload) else {
                     self.diagnostic(AwbcLowerDiagnostic::error(
@@ -1902,25 +1956,19 @@ impl AwbcInventory {
                     ));
                     return None;
                 };
-                ty
+                Some(ty)
             }
-        };
-        self.program.task_plans.push(AwbcTaskPlan {
-            public_id,
-            need_id,
-            capability,
-            operation,
-            signature,
-            class,
-            priority,
-            cancel_scope,
-            policy,
-            payload_type,
-            arguments,
-            many: None,
-        });
-        self.tasks.insert(key, id);
-        Some(id)
+        }
+    }
+
+    fn intern_task_plan(&mut self, row: AwbcTaskPlan) -> AwbcTaskPlanId {
+        if let Some(id) = self.tasks.get(&row).copied() {
+            return id;
+        }
+        let id = AwbcTaskPlanId(table_index(self.program.task_plans.len()));
+        self.program.task_plans.push(row.clone());
+        self.tasks.insert(row, id);
+        id
     }
 
     fn intern_host_arguments(
@@ -2354,6 +2402,31 @@ fn optional_string_constant(inventory: &mut AwbcInventory, value: Option<&str>) 
     match value {
         Some(value) => inventory.constant_string(value),
         None => inventory.constant_unit(),
+    }
+}
+
+fn awbc_task_class(class: &TaskClass) -> AwbcTaskClass {
+    match class {
+        TaskClass::LocalView => AwbcTaskClass::LocalView,
+        TaskClass::Io => AwbcTaskClass::Io,
+        TaskClass::Cpu => AwbcTaskClass::Cpu,
+        TaskClass::GpuPrepare => AwbcTaskClass::GpuPrepare,
+        TaskClass::ShaderCompile => AwbcTaskClass::ShaderCompile,
+        TaskClass::WasmCall => AwbcTaskClass::WasmCall,
+        TaskClass::AssetDecode => AwbcTaskClass::AssetDecode,
+        TaskClass::AudioDecode => AwbcTaskClass::AudioDecode,
+        TaskClass::AudioRender => AwbcTaskClass::AudioRender,
+        TaskClass::TtsSynthesis => AwbcTaskClass::TtsSynthesis,
+        TaskClass::BgmPrecompose => AwbcTaskClass::BgmPrecompose,
+        TaskClass::Lsp => AwbcTaskClass::Lsp,
+        TaskClass::Background => AwbcTaskClass::Background,
+    }
+}
+
+const fn awbc_task_policy(policy: TaskPolicy) -> AwbcTaskPolicy {
+    match policy {
+        TaskPolicy::JoinSameKey => AwbcTaskPolicy::JoinSameKey,
+        TaskPolicy::AlwaysStart => AwbcTaskPolicy::AlwaysStart,
     }
 }
 

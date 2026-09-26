@@ -5,10 +5,10 @@
 //! binding; it deliberately has no nested schema marker or legacy identity.
 
 use crate::display::{ActiveSessionLocale, BundlePresentationSnapshot};
+use crate::task::RuntimeTaskStatus;
 use crate::view_runtime::BundleViewRuntimeSnapshot;
-use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
+use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_bundle::logical_identity::LogicalBundleIdentity;
 use arcweft_character::presentation_name::{
     CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
 };
@@ -21,12 +21,18 @@ use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
-use arcweft_core::task::{GenerationId, RuntimeProgramOwner};
+use arcweft_core::task::{
+    GenerationId, LogicalEpoch, NeedId, RuntimeProgramOwner, TaskId, TaskPublicationRevision,
+    TaskSequence,
+};
+use arcweft_core::value::RuntimeBundleAssetOpaqueRole;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
+
+pub use crate::swap::BundleSessionArtifactIdentity;
 
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
 pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
@@ -84,7 +90,8 @@ impl BundleSessionSavePayload {
             runtime: snapshot.runtime.clone(),
             executor: BundleSessionExecutorSavePayload {
                 generation: snapshot.executor.generation,
-                state: AwbcProductExecutorSaveSnapshot::from_live(&snapshot.executor.state)?,
+                state: AwbcProductExecutorSaveSnapshot::from_live(&snapshot.executor.state)
+                    .map_err(|error| error.to_string())?,
             },
             presentation: snapshot.presentation.clone(),
             view_virtualization: snapshot.view_virtualization.clone(),
@@ -130,28 +137,6 @@ pub struct BundleSessionGenerationSnapshot {
     pub adapter_requirements: BundleDigest,
 }
 
-/// Identity required to restore a session against the artifact that created it.
-///
-/// Both variants cover complete state: logical bundle identity includes the
-/// typed manifest and resources, while AWFB identity includes the manifest
-/// digest and section content root. There is no root-only identity variant.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum BundleSessionArtifactIdentity {
-    LogicalBundle { identity: LogicalBundleIdentity },
-    AwfbContainer { identity: ArtifactIdentity },
-}
-
-impl BundleSessionArtifactIdentity {
-    #[must_use]
-    pub(crate) const fn awfb_container(self) -> Option<ArtifactIdentity> {
-        match self {
-            Self::AwfbContainer { identity } => Some(identity),
-            Self::LogicalBundle { .. } => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleSessionRuntimeSnapshot {
     pub source_label: String,
@@ -161,6 +146,20 @@ pub struct BundleSessionRuntimeSnapshot {
     pub next_generation_id: u64,
     #[serde(deserialize_with = "deserialize_required_option")]
     pub runtime_generation_pin: Option<GenerationId>,
+    /// Driver-owned dispatch tuple for each active, Product-verified Restartable Need.
+    pub restartable_tasks: Vec<BundleSessionTaskDispatchSnapshot>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleSessionTaskDispatchSnapshot {
+    pub need_id: NeedId,
+    pub generation: GenerationId,
+    pub logical_epoch: LogicalEpoch,
+    pub sequence: TaskSequence,
+    pub task_id: TaskId,
+    pub last_publication_revision: Option<TaskPublicationRevision>,
+    pub status: RuntimeTaskStatus,
 }
 
 fn deserialize_required_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -266,6 +265,10 @@ pub enum BundleSessionSaveError {
     },
     #[error("unsupported executor tier `{tier}` for bundle session save")]
     UnsupportedExecutorTier { tier: String },
+    #[error("session save requires quiescence for active Need identities {needs:?}")]
+    NeedsQuiescence { needs: Vec<NeedId> },
+    #[error("invalid Restartable Need dispatch in session save: {message}")]
+    TaskDispatch { message: String },
     #[error("bundle session save generation mismatch for {field}: saved {saved}, actual {actual}")]
     GenerationMismatch {
         field: &'static str,
@@ -284,6 +287,10 @@ pub enum BundleSessionSaveError {
     Root { message: String },
     #[error("invalid runtime value in session save at {path}: {message}")]
     InvalidRuntimeValue { path: String, message: String },
+    #[error("bundle asset value {role:?} requires a catalog validator before session restore")]
+    BundleAssetCatalogValidatorRequired { role: RuntimeBundleAssetOpaqueRole },
+    #[error("saved runtime value failed catalog validation: {message}")]
+    RuntimeValueValidation { message: String },
     #[error("invalid retained View virtualization snapshot: {message}")]
     ViewVirtualization { message: String },
     #[error("invalid executable View runtime snapshot: {message}")]
@@ -304,6 +311,9 @@ impl From<ArcweftRuntimeExecutorSnapshotError> for BundleSessionSaveError {
                 Self::UnsupportedExecutorTier {
                     tier: tier.to_owned(),
                 }
+            }
+            ArcweftRuntimeExecutorSnapshotError::NeedsQuiescence { needs } => {
+                Self::NeedsQuiescence { needs }
             }
             ArcweftRuntimeExecutorSnapshotError::ProductAwbc { message } => Self::Fiber { message },
         }

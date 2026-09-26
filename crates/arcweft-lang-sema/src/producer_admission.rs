@@ -26,6 +26,7 @@ use crate::{
     semantic_coordinate::StableCheckedValueCoordinate,
     types::{GenericScopeError, SemanticTypeDigest, TypeKind},
 };
+use arcweft_core::task::NeedProducerSiteDigest;
 
 /// Stable digest proving that the exact source-ordered Need producer values
 /// are retainable. Producer identity and task identity deliberately do not
@@ -72,12 +73,18 @@ impl CheckedProducerArgumentAdmission {
 /// identity are deliberately outside this certificate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedNeedProducerAdmission {
+    site: NeedProducerSiteDigest,
     arguments: Box<[CheckedProducerArgumentAdmission]>,
     ownership: CheckedOwnershipCertificate,
     digest: CheckedNeedProducerAdmissionDigest,
 }
 
 impl CheckedNeedProducerAdmission {
+    #[must_use]
+    pub const fn site(&self) -> NeedProducerSiteDigest {
+        self.site
+    }
+
     pub fn arguments(&self) -> &[CheckedProducerArgumentAdmission] {
         &self.arguments
     }
@@ -117,6 +124,8 @@ pub enum CheckedNeedProducerAdmissionError {
     UnsupportedArgumentInventory,
     #[error("producer admission work limit exceeded")]
     WorkLimit,
+    #[error("selected Need producer call site has no canonical checked coordinate")]
+    SiteEncoding,
 }
 
 impl From<crate::final_analysis::FinalSemanticAnalysisError> for CheckedNeedProducerAdmissionError {
@@ -151,7 +160,8 @@ impl FinalSemanticAnalysis {
         call: ExprId,
         limits: CheckedOwnershipLimits,
     ) -> Result<CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionError> {
-        let values = self.checked_producer_argument_values(project, symbols, call, limits)?;
+        let (site, values) =
+            self.checked_producer_argument_values(project, symbols, call, limits)?;
         let types = values.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
         let (dispositions, ownership) =
             classify_checked_producer_arguments(self, world, &types, limits)?;
@@ -169,6 +179,7 @@ impl FinalSemanticAnalysis {
             .into_boxed_slice();
         let digest = need_producer_admission_digest(&arguments, ownership.evidence())?;
         Ok(CheckedNeedProducerAdmission {
+            site,
             arguments,
             ownership,
             digest,
@@ -181,8 +192,13 @@ impl FinalSemanticAnalysis {
         symbols: &ProjectSymbolTable,
         call: ExprId,
         limits: CheckedOwnershipLimits,
-    ) -> Result<Vec<(StableCheckedValueCoordinate, &'a TypeKind)>, CheckedNeedProducerAdmissionError>
-    {
+    ) -> Result<
+        (
+            NeedProducerSiteDigest,
+            Vec<(StableCheckedValueCoordinate, &'a TypeKind)>,
+        ),
+        CheckedNeedProducerAdmissionError,
+    > {
         self.validate_generation(project, symbols)
             .map_err(CheckedNeedProducerAdmissionError::from)?;
         let facts = self
@@ -192,6 +208,19 @@ impl FinalSemanticAnalysis {
             return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
         };
         let core = application.core();
+        let site_bytes = core
+            .stable_site()
+            .canonical_bytes()
+            .map_err(|_| CheckedNeedProducerAdmissionError::SiteEncoding)?;
+        let mut site_hasher = blake3::Hasher::new();
+        site_hasher.update(b"arcweft.need.producer-site.v1\0");
+        site_hasher.update(
+            &u32::try_from(site_bytes.len())
+                .map_err(|_| CheckedNeedProducerAdmissionError::SiteEncoding)?
+                .to_le_bytes(),
+        );
+        site_hasher.update(&site_bytes);
+        let site = NeedProducerSiteDigest::from_bytes(*site_hasher.finalize().as_bytes());
         self.checked_callable_join(call)
             .map_err(|_| CheckedNeedProducerAdmissionError::MissingCallableJoin)?;
         if !matches!(core.callee(), CheckedCallCalleeExecution::Direct) {
@@ -236,7 +265,7 @@ impl FinalSemanticAnalysis {
             // annotation/inference carrier.
             values.push((slot.source().coordinate().clone(), slot.inferred()));
         }
-        Ok(values)
+        Ok((site, values))
     }
 }
 

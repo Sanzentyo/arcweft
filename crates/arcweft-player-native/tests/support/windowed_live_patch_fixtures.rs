@@ -8,15 +8,21 @@ use arcweft_bundle::{
     BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlan,
+    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId,
+    RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
-use arcweft_core::task::{GenerationId, HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::task::{
+    AssetLoadKind, CancelScopeId, GenerationId, HostRestartPolicy, NeedProducerContractDigest,
+    NeedProducerRequestProjection, NeedProducerSiteDigest, NeedProducerTaskPlan, TaskClass,
+    TaskPolicy, TaskPriority,
+};
+use arcweft_core::value::{RuntimeEntityReference, RuntimePayload, RuntimeValue};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
-use arcweft_id::TextKey;
+use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, TextKey};
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
 };
@@ -586,12 +592,13 @@ pub fn code_generational_task_smoke_report(
     );
     let outcomes = harness.render_then_drain_patch_boundary()?;
     let after_commit = harness.snapshot("code-generational-task-after-commit");
-    let task_generation_after_commit =
-        harness
-            .runtime()
-            .session()
-            .task_generation(task_sequence)
-            .ok_or_else(|| "await task generation disappeared before completion".to_owned())?;
+    let task_generation_after_commit = harness
+        .runtime()
+        .session()
+        .task_generation(task_sequence)
+        .ok_or_else(|| {
+        format!("await task generation disappeared before completion; patch outcomes: {outcomes:?}")
+    })?;
     let started = harness
         .runtime_mut()
         .session_mut()
@@ -1221,13 +1228,6 @@ fn fixture_string_type() -> arcweft_core::pattern::RuntimeSemanticTypeId {
     arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([1; 32])
 }
 
-fn fixture_string_value(value: &str) -> RuntimeExprSeed {
-    RuntimeExprSeed::new(
-        fixture_string_type(),
-        RuntimeExprSeedKind::Value(RuntimeValue::String(value.to_owned())),
-    )
-}
-
 fn dialogue_content_catalog(
     line: RuntimeLineId,
     display_text: &str,
@@ -1333,23 +1333,72 @@ fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>
 fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
     let mut builder = fixture_plan_builder();
+    let entity_reference_type = RuntimeSemanticTypeId::from_bytes([0x81; 32]);
+    let need_type = RuntimeSemanticTypeId::from_bytes([0x82; 32]);
+    let type_admission = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    entity_reference_type,
+                    RuntimePlanTypeProjection::EntityReference,
+                ),
+                RuntimePlanTypeSeed::new(
+                    need_type,
+                    RuntimePlanTypeProjection::Need(fixture_string_type()),
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(need_type)],
+        )
+        .expect("typed Need producer types and binding admit");
+    let need_local = type_admission.local_ids()[0].clone();
+    let asset_path = AssetVirtualPath::try_new("bg/room.png").expect("asset path is valid");
+    let asset_id = AssetId::try_from(&asset_path).expect("asset identity derives");
+    let asset_reference = RuntimeEntityReference::try_project(
+        DeclarationIdentityFamily::Asset,
+        asset_id.into_public_id(),
+    )
+    .expect("asset reference has the exact family");
+    let contract_bytes = [0x83; 32];
+    let producer_plan = NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes(contract_bytes),
+        NeedProducerSiteDigest::from_bytes([0x84; 32]),
+        NeedProducerRequestProjection::AssetLoad {
+            kind: AssetLoadKind::Image,
+            argument_name: "asset".to_owned(),
+        },
+        Box::new([entity_reference_type]),
+        fixture_string_type(),
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::Restartable,
+        TaskClass::AssetDecode,
+        TaskPriority(0),
+        CancelScopeId("flow".to_owned()),
+    )
+    .expect("selected asset Need producer plan is consistent");
     push_fixture_flow(
         &mut builder,
         main.clone(),
         vec![
+            RuntimeFlowOpSeed::StartNeedProducer {
+                binding: RuntimePatternSeed::new(
+                    need_type,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: need_local.clone(),
+                    },
+                ),
+                target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                    plan: producer_plan,
+                    arguments: vec![RuntimeExprSeed::new(
+                        entity_reference_type,
+                        RuntimeExprSeedKind::EntityRef(asset_reference),
+                    )],
+                },
+            },
             RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: arcweft_core::plan::RuntimeAwaitTargetSeed {
-                    need: NeedId("need.bg".to_owned()),
-                    task: TaskId("task.bg".to_owned()),
-                    outcome: TaskOutcomeContract::default(),
-                    request: arcweft_core::plan::RuntimeHostTaskRequestTemplateSeed {
-                        capability: HostCapabilityId("asset".to_owned()),
-                        operation: "image".to_owned(),
-                        args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
-                            fixture_string_value("asset.bg.room"),
-                        )],
-                    },
+                    source: RuntimeExprSeed::new(need_type, RuntimeExprSeedKind::Local(need_local)),
                 },
                 observers: Vec::new(),
             },
@@ -1399,6 +1448,24 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
 fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
     let mut builder = fixture_plan_builder();
+    // The code-generational target keeps the entry's accepted runtime type
+    // layout even though its new flow no longer starts a Need. Removing the
+    // declarations would correctly classify this patch as a restart.
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    RuntimeSemanticTypeId::from_bytes([0x81; 32]),
+                    RuntimePlanTypeProjection::EntityReference,
+                ),
+                RuntimePlanTypeSeed::new(
+                    RuntimeSemanticTypeId::from_bytes([0x82; 32]),
+                    RuntimePlanTypeProjection::Need(fixture_string_type()),
+                ),
+            ],
+            [],
+        )
+        .expect("replacement preserves the accepted Need runtime types");
     push_fixture_flow(
         &mut builder,
         main.clone(),

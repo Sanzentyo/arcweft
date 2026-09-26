@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-bundle-assets = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = false }
 arcweft-core = { workspace = true }
 arcweft-glyphon = { workspace = true }
@@ -27,7 +28,9 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-audio-core = { workspace = true }
 arcweft-compiler = { workspace = true }
+arcweft-interaction-model = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }

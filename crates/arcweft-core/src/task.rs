@@ -1,11 +1,14 @@
-use crate::entry::RuntimeValueDigest;
 use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_need::{Need, Progress};
+use arcweft_need::Need;
+pub use arcweft_need::Progress;
 use serde::{Deserialize, Serialize};
 
 use crate::runtime_id::RuntimeLocalDeclarationId;
-use std::num::NonZeroU32;
+use crate::runtime_id::RuntimePersistentFiberId;
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::num::{NonZeroU32, NonZeroU64};
 use thiserror::Error;
 
 pub mod outcome;
@@ -35,265 +38,12 @@ impl GenerationId {
     }
 }
 
-/// Source-independent ordinal assigned to one launch of a producer instance.
-/// Join uses the zero ordinal; positive `AlwaysStart` candidates remain journal
-/// authority and are not exposed as raw constructors.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct TaskLaunchOrdinal(u64);
-
-impl TaskLaunchOrdinal {
-    pub const JOIN: Self = Self(0);
-
-    #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0
-    }
-}
-
-macro_rules! semantic_digest {
-    ($name:ident) => {
-        #[derive(
-            Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
-        )]
-        #[repr(transparent)]
-        pub struct $name([u8; 32]);
-
-        impl $name {
-            #[must_use]
-            pub const fn from_bytes(bytes: [u8; 32]) -> Self {
-                Self(bytes)
-            }
-
-            #[must_use]
-            pub const fn as_bytes(&self) -> &[u8; 32] {
-                &self.0
-            }
-        }
-    };
-}
-
-semantic_digest!(NeedProducerContractDigest);
-semantic_digest!(TaskPlanSemanticDigest);
-semantic_digest!(RuntimeTypeSemanticDigest);
-semantic_digest!(NeedTimeoutContractDigest);
-
-/// Typed operation selected by one callable contract that produces a
-/// `Need<Result<_, _>>` for a host asset.
-///
-/// The operation is an execution identity. The request's payload identity is
-/// still derived from the selected callable's instantiated result type.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub enum NeedProducerOperation {
-    AssetLoad { kind: AssetLoadKind },
-}
-
-/// Asset load family retained in the selected producer contract and request.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub enum AssetLoadKind {
-    Image,
-    Voice,
-}
-
-impl AssetLoadKind {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Image => "image",
-            Self::Voice => "voice",
-        }
-    }
-}
-
-/// Closed producer family used by the canonical instance-key transcript.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum NeedProducerFamily {
-    StructuredTaskPlan,
-    AwbcTaskPlan,
-    ViewMatchSubscription,
-    AwaitManyBase,
-    AwaitManyChild,
-    Timeout,
-    LineTask,
-    HostAdapterTask,
-    MakeNeedHandle,
-}
-
-impl NeedProducerFamily {
-    const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::StructuredTaskPlan => 0,
-            Self::AwbcTaskPlan => 1,
-            Self::ViewMatchSubscription => 2,
-            Self::AwaitManyBase => 3,
-            Self::AwaitManyChild => 4,
-            Self::Timeout => 5,
-            Self::LineTask => 6,
-            Self::HostAdapterTask => 7,
-            Self::MakeNeedHandle => 8,
-        }
-    }
-}
-
-/// Complete typed producer contract used as the sole source of its instance
-/// identity.  The individual semantic fields are intentionally not exposed as
-/// an alternate task/Need identity authority.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NeedProducerSpec {
-    family: NeedProducerFamily,
-    contract: NeedProducerContractDigest,
-    plan: TaskPlanSemanticDigest,
-    producer_site: u32,
-    payload_type: RuntimeTypeSemanticDigest,
-    arguments: RuntimeValueDigest,
-}
-
-/// First-error identity failures shared by the standalone Cut 4 substrate.
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum TaskIdentityError {
-    #[error("a fixed runtime identity may not be all zero")]
-    ZeroFixedIdentity,
-}
-
-impl NeedProducerSpec {
-    #[must_use]
-    pub const fn new(
-        family: NeedProducerFamily,
-        contract: NeedProducerContractDigest,
-        plan: TaskPlanSemanticDigest,
-        producer_site: u32,
-        payload_type: RuntimeTypeSemanticDigest,
-        arguments: RuntimeValueDigest,
-    ) -> Self {
-        Self {
-            family,
-            contract,
-            plan,
-            producer_site,
-            payload_type,
-            arguments,
-        }
-    }
-
-    /// Derives the fixed producer-instance identity from this complete spec.
-    pub fn instance_key(&self) -> Result<NeedProducerInstanceKey, TaskIdentityError> {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft.need.producer-instance.v1\0");
-        hasher.update(&[self.family.semantic_tag()]);
-        hasher.update(self.contract.as_bytes());
-        hasher.update(self.plan.as_bytes());
-        hasher.update(&self.producer_site.to_le_bytes());
-        hasher.update(self.payload_type.as_bytes());
-        hasher.update(self.arguments.as_bytes());
-        let bytes = *hasher.finalize().as_bytes();
-        if bytes == [0; 32] {
-            return Err(TaskIdentityError::ZeroFixedIdentity);
-        }
-        Ok(NeedProducerInstanceKey(bytes))
-    }
-
-    pub const fn family(&self) -> NeedProducerFamily {
-        self.family
-    }
-
-    pub const fn contract(&self) -> NeedProducerContractDigest {
-        self.contract
-    }
-
-    pub const fn plan(&self) -> TaskPlanSemanticDigest {
-        self.plan
-    }
-
-    pub const fn producer_site(&self) -> u32 {
-        self.producer_site
-    }
-
-    pub const fn payload_type(&self) -> RuntimeTypeSemanticDigest {
-        self.payload_type
-    }
-
-    pub const fn arguments(&self) -> RuntimeValueDigest {
-        self.arguments
-    }
-}
-
-/// Fixed identity of a complete producer spec.  It has no public raw-byte
-/// constructor; only `NeedProducerSpec::instance_key` can issue it.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-#[repr(transparent)]
-pub struct NeedProducerInstanceKey([u8; 32]);
-
-impl NeedProducerInstanceKey {
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-/// Sans-I/O protocol implemented by the accepted upper View product owner.
-/// Core validates only the typed request projection and never copies View
-/// catalog rows or depends on `arcweft-view`.
-pub trait ViewTaskPlanAuthority {
-    fn validate_view_task_plan(
-        &self,
-        request: ViewTaskPlanValidation<'_>,
-    ) -> Result<(), ViewTaskPlanValidationError>;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct ViewTaskPlanValidation<'a> {
-    pub generation: GenerationId,
-    pub producer: &'a NeedProducerSpec,
-    pub outcome: &'a TaskOutcomeContract,
-    pub request: &'a HostTaskRequest,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum ViewTaskPlanValidationError {
-    #[error("View task-plan validation rejected the generation")]
-    GenerationMismatch,
-    #[error("View task-plan validation rejected the producer")]
-    ProducerMismatch,
-    #[error("View task-plan validation rejected the outcome")]
-    OutcomeMismatch,
-    #[error("View task-plan validation rejected the Host request")]
-    RequestMismatch,
-}
+mod producer;
+pub use producer::*;
 
 #[cfg(test)]
 mod identity_tests {
     use super::*;
-
-    #[test]
-    fn generation_zero_and_join_ordinal_are_valid_values() {
-        assert_eq!(GenerationId::new(0).get(), 0);
-        assert_eq!(TaskLaunchOrdinal::JOIN.get(), 0);
-    }
-
-    #[test]
-    fn producer_instance_key_commits_every_typed_spec_field() {
-        let base = NeedProducerSpec::new(
-            NeedProducerFamily::StructuredTaskPlan,
-            NeedProducerContractDigest::from_bytes([1; 32]),
-            TaskPlanSemanticDigest::from_bytes([2; 32]),
-            7,
-            RuntimeTypeSemanticDigest::from_bytes([3; 32]),
-            RuntimeValueDigest::from_bytes([4; 32]),
-        );
-        let changed = NeedProducerSpec::new(
-            NeedProducerFamily::StructuredTaskPlan,
-            NeedProducerContractDigest::from_bytes([1; 32]),
-            TaskPlanSemanticDigest::from_bytes([2; 32]),
-            8,
-            RuntimeTypeSemanticDigest::from_bytes([3; 32]),
-            RuntimeValueDigest::from_bytes([4; 32]),
-        );
-        assert_ne!(
-            base.instance_key().expect("base key").as_bytes(),
-            changed.instance_key().expect("changed key").as_bytes()
-        );
-    }
-
     #[test]
     fn host_catalog_owns_canonical_order_and_lookup() {
         let contract = HostTaskRequestContract::try_new(
@@ -383,21 +133,267 @@ pub struct LogicalEpoch(pub u64);
 )]
 pub struct TaskSequence(pub u64);
 
-/// Replay-stable position of one publication from a single task.
-#[derive(
-    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
-)]
-pub struct TaskPublicationCursor {
+/// Monotone publication revision within one task dispatch, issued by the
+/// runtime or host adapter boundary. Revision one is first; zero is invalid.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct TaskPublicationRevision(NonZeroU64);
+
+impl TaskPublicationRevision {
+    pub const FIRST: Self = Self(NonZeroU64::MIN);
+
+    #[must_use]
+    pub const fn new(value: NonZeroU64) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0.get()
+    }
+
+    #[must_use]
+    pub fn checked_next(self) -> Option<Self> {
+        self.get()
+            .checked_add(1)
+            .and_then(NonZeroU64::new)
+            .map(Self)
+    }
+}
+
+/// Exact host dispatch identity carried back with every publication. Request
+/// sequence is never reused as the within-dispatch publication revision.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct TaskDispatchIdentity {
+    pub generation: GenerationId,
     pub logical_epoch: LogicalEpoch,
     pub sequence: TaskSequence,
+    pub task_id: TaskId,
+}
+
+impl TaskDispatchIdentity {
+    #[must_use]
+    pub const fn new(
+        generation: GenerationId,
+        logical_epoch: LogicalEpoch,
+        sequence: TaskSequence,
+        task_id: TaskId,
+    ) -> Self {
+        Self {
+            generation,
+            logical_epoch,
+            sequence,
+            task_id,
+        }
+    }
+}
+
+/// Starting point for one task dispatch and its publication journal. Restored
+/// re-ensure supplies the last accepted revision so the adapter continues the
+/// same dispatch at its checked successor instead of restarting at revision 1.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TaskDispatchStart {
+    identity: TaskDispatchIdentity,
+    last_publication_revision: Option<TaskPublicationRevision>,
+}
+
+impl TaskDispatchStart {
+    #[must_use]
+    pub const fn new(
+        identity: TaskDispatchIdentity,
+        last_publication_revision: Option<TaskPublicationRevision>,
+    ) -> Self {
+        Self {
+            identity,
+            last_publication_revision,
+        }
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> &TaskDispatchIdentity {
+        &self.identity
+    }
+
+    #[must_use]
+    pub const fn last_publication_revision(&self) -> Option<TaskPublicationRevision> {
+        self.last_publication_revision
+    }
+
+    #[must_use]
+    pub fn next_publication_revision(&self) -> Option<TaskPublicationRevision> {
+        self.last_publication_revision.map_or(
+            Some(TaskPublicationRevision::FIRST),
+            TaskPublicationRevision::checked_next,
+        )
+    }
+}
+
+/// One checked occurrence of an AwaitMany invocation. Item Needs and tasks
+/// derive from this same generation/fiber/ordinal tuple so revisiting a loop
+/// cannot alias an earlier in-flight dispatch.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct AwaitManyInvocationIdentity {
+    generation: GenerationId,
+    fiber: RuntimePersistentFiberId,
+    ordinal: u64,
+}
+
+impl AwaitManyInvocationIdentity {
+    #[must_use]
+    pub const fn new(
+        generation: GenerationId,
+        fiber: RuntimePersistentFiberId,
+        ordinal: u64,
+    ) -> Self {
+        Self {
+            generation,
+            fiber,
+            ordinal,
+        }
+    }
+
+    #[must_use]
+    pub const fn generation(self) -> GenerationId {
+        self.generation
+    }
+
+    #[must_use]
+    pub const fn fiber(self) -> RuntimePersistentFiberId {
+        self.fiber
+    }
+
+    #[must_use]
+    pub const fn ordinal(self) -> u64 {
+        self.ordinal
+    }
+
+    pub fn need_id(
+        self,
+        base: &NeedId,
+        item_index: usize,
+    ) -> Result<NeedId, AwaitManyIdentityError> {
+        await_many_item_id(b"Arcweft.AwaitMany.Need.v1", self, &base.0, item_index)
+            .map(|id| NeedId(format!("need.await_many.{id}")))
+    }
+
+    pub fn task_id(
+        self,
+        base: &TaskId,
+        item_index: usize,
+    ) -> Result<TaskId, AwaitManyIdentityError> {
+        await_many_item_id(b"Arcweft.AwaitMany.Task.v1", self, &base.0, item_index)
+            .map(|id| TaskId(format!("task.await_many.{id}")))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum AwaitManyIdentityError {
+    #[error("AwaitMany invocation ordinal is exhausted")]
+    InvocationOrdinalOverflow,
+    #[error("AwaitMany item identity exceeds the supported ordinal range")]
+    ItemIndexOverflow,
+}
+
+fn await_many_item_id(
+    domain: &[u8],
+    identity: AwaitManyInvocationIdentity,
+    base: &str,
+    item_index: usize,
+) -> Result<String, AwaitManyIdentityError> {
+    let item_index =
+        u64::try_from(item_index).map_err(|_| AwaitManyIdentityError::ItemIndexOverflow)?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(domain);
+    hasher.update(&identity.generation.get().to_le_bytes());
+    hasher.update(&identity.fiber.get().to_le_bytes());
+    hasher.update(&identity.ordinal.to_le_bytes());
+    hasher.update(&item_index.to_le_bytes());
+    hasher.update(
+        &u64::try_from(base.len())
+            .map_err(|_| AwaitManyIdentityError::ItemIndexOverflow)?
+            .to_le_bytes(),
+    );
+    hasher.update(base.as_bytes());
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Replay-stable position of one publication. External Need-state publication
+/// sequence and a local task-event dispatch/revision are separate authorities;
+/// callers must never compare cursors from different sources.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum TaskPublicationCursor {
+    ExternalNeedState {
+        logical_epoch: LogicalEpoch,
+        sequence: TaskSequence,
+    },
+    LocalTaskEvent {
+        generation: GenerationId,
+        logical_epoch: LogicalEpoch,
+        dispatch_sequence: TaskSequence,
+        publication_revision: TaskPublicationRevision,
+    },
 }
 
 impl TaskPublicationCursor {
     #[must_use]
     pub const fn from_event(event: &TaskEvent) -> Self {
-        Self {
+        Self::LocalTaskEvent {
+            generation: event.generation,
             logical_epoch: event.logical_epoch,
-            sequence: event.sequence,
+            dispatch_sequence: event.sequence,
+            publication_revision: event.publication_revision,
+        }
+    }
+
+    #[must_use]
+    pub const fn from_need_state(state: &RuntimeNeedState) -> Self {
+        Self::ExternalNeedState {
+            logical_epoch: state.logical_epoch,
+            sequence: state.sequence,
+        }
+    }
+
+    #[must_use]
+    pub fn compare_same_source(self, other: Self) -> Option<Ordering> {
+        match (self, other) {
+            (
+                Self::ExternalNeedState {
+                    logical_epoch: left_epoch,
+                    sequence: left_sequence,
+                },
+                Self::ExternalNeedState {
+                    logical_epoch: right_epoch,
+                    sequence: right_sequence,
+                },
+            ) => Some(match left_epoch.cmp(&right_epoch) {
+                Ordering::Equal => left_sequence.cmp(&right_sequence),
+                ordering => ordering,
+            }),
+            (
+                Self::LocalTaskEvent {
+                    generation: left_generation,
+                    logical_epoch: left_epoch,
+                    dispatch_sequence: left_dispatch,
+                    publication_revision: left_revision,
+                },
+                Self::LocalTaskEvent {
+                    generation: right_generation,
+                    logical_epoch: right_epoch,
+                    dispatch_sequence: right_dispatch,
+                    publication_revision: right_revision,
+                },
+            ) => Some(match left_generation.cmp(&right_generation) {
+                Ordering::Equal => match left_epoch.cmp(&right_epoch) {
+                    Ordering::Equal => match left_dispatch.cmp(&right_dispatch) {
+                        Ordering::Equal => left_revision.cmp(&right_revision),
+                        ordering => ordering,
+                    },
+                    ordering => ordering,
+                },
+                ordering => ordering,
+            }),
+            _ => None,
         }
     }
 }
@@ -415,6 +411,38 @@ pub struct RuntimeNeedState {
     need: NeedId,
     sequence: TaskSequence,
     state: Need<RuntimePayload>,
+}
+
+/// One normalized publication consumed by Await. A host task failure is an
+/// infrastructure fault rather than a fabricated `Need<T>` payload.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeNeedPublication {
+    State {
+        need: NeedId,
+        state: Need<RuntimePayload>,
+        cursor: TaskPublicationCursor,
+    },
+    Failed {
+        need: NeedId,
+        cursor: TaskPublicationCursor,
+        message: String,
+    },
+}
+
+impl RuntimeNeedPublication {
+    #[must_use]
+    pub const fn need(&self) -> &NeedId {
+        match self {
+            Self::State { need, .. } | Self::Failed { need, .. } => need,
+        }
+    }
+
+    #[must_use]
+    pub const fn cursor(&self) -> TaskPublicationCursor {
+        match self {
+            Self::State { cursor, .. } | Self::Failed { cursor, .. } => *cursor,
+        }
+    }
 }
 
 /// The exact payload type a host task may publish through temporal `Ready`.
@@ -628,7 +656,7 @@ pub struct SchedulerBudget {
     pub max_events: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TaskClass {
     LocalView,
     Io,
@@ -839,7 +867,7 @@ impl HostSpreadContract {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum HostRestartPolicy {
     MustBeQuiescent,
     Restartable,
@@ -1208,6 +1236,8 @@ pub enum HostTaskRequest {
         args: Vec<RuntimePayload>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         named_args: Vec<NamedHostArg<RuntimePayload>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        manifest_contract: Option<crate::step::HostCallContractDigest>,
     },
 }
 
@@ -1300,10 +1330,40 @@ pub enum SystemInfoKind {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskEvent {
+    pub generation: GenerationId,
     pub logical_epoch: LogicalEpoch,
     pub task_id: TaskId,
     pub sequence: TaskSequence,
+    pub publication_revision: TaskPublicationRevision,
     pub kind: TaskEventKind,
+}
+
+impl TaskEvent {
+    #[must_use]
+    pub fn from_dispatch(
+        dispatch: TaskDispatchIdentity,
+        publication_revision: TaskPublicationRevision,
+        kind: TaskEventKind,
+    ) -> Self {
+        Self {
+            generation: dispatch.generation,
+            logical_epoch: dispatch.logical_epoch,
+            task_id: dispatch.task_id,
+            sequence: dispatch.sequence,
+            publication_revision,
+            kind,
+        }
+    }
+
+    #[must_use]
+    pub fn dispatch_identity(&self) -> TaskDispatchIdentity {
+        TaskDispatchIdentity {
+            generation: self.generation,
+            logical_epoch: self.logical_epoch,
+            sequence: self.sequence,
+            task_id: self.task_id.clone(),
+        }
+    }
 }
 
 /// A completion publication does not belong to one live scheduler owner.
@@ -1311,6 +1371,12 @@ pub struct TaskEvent {
 pub enum TaskCompletionError {
     #[error("completion references unknown task {task_id:?}")]
     UnknownTask { task_id: TaskId },
+    #[error("task {task_id:?} completion does not match its registered dispatch identity")]
+    DispatchMismatch { task_id: TaskId },
+    #[error("task {task_id:?} publication revision is stale or duplicated")]
+    StalePublication { task_id: TaskId },
+    #[error("task {task_id:?} cannot accept a nonterminal publication at the maximum revision")]
+    PublicationRevisionExhausted { task_id: TaskId },
     #[error("joined waiter {task_id:?} cannot publish directly for owner {owner_id:?}")]
     JoinedWaiterDirectCompletion { task_id: TaskId, owner_id: TaskId },
     #[error("task {task_id:?} received more than one terminal completion")]
@@ -1470,6 +1536,7 @@ impl HostTaskRequest {
             operation: operation.into(),
             args: args.into_iter().collect(),
             named_args: Vec::new(),
+            manifest_contract: None,
         }
     }
 
@@ -1487,7 +1554,26 @@ impl HostTaskRequest {
                 .into_iter()
                 .map(|(name, value)| NamedHostArg { name, value })
                 .collect(),
+            manifest_contract: None,
         }
+    }
+
+    pub fn custom_with_named_args_and_manifest_contract(
+        capability: impl Into<String>,
+        operation: impl Into<String>,
+        args: impl IntoIterator<Item = RuntimePayload>,
+        named_args: impl IntoIterator<Item = (String, RuntimePayload)>,
+        manifest_contract: crate::step::HostCallContractDigest,
+    ) -> Self {
+        let mut request = Self::custom_with_named_args(capability, operation, args, named_args);
+        if let Self::Custom {
+            manifest_contract: selected,
+            ..
+        } = &mut request
+        {
+            *selected = Some(manifest_contract);
+        }
+        request
     }
 
     pub fn debug_label(&self) -> String {
@@ -1606,8 +1692,10 @@ pub fn task_events_are_normalized(events: &[TaskEvent]) -> bool {
 pub fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ordering {
     left.logical_epoch
         .cmp(&right.logical_epoch)
+        .then_with(|| left.generation.cmp(&right.generation))
         .then_with(|| left.task_id.cmp(&right.task_id))
         .then_with(|| left.sequence.cmp(&right.sequence))
+        .then_with(|| left.publication_revision.cmp(&right.publication_revision))
 }
 
 /// Returns producer-owned Need states in replay-stable publication order.

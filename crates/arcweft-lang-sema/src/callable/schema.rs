@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_core::task::{AssetLoadKind, NeedProducerOperation, TaskPolicy};
+use arcweft_core::task::{AssetLoadKind, HostRestartPolicy, NeedProducerOperation, TaskPolicy};
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
 use arcweft_presentation::rich_text::{
     PresentationContentAttachedBodyPolicy, PresentationContentCallableDefinition,
@@ -2100,6 +2100,8 @@ pub enum CallableValidator {
 pub struct CallableNeedProducerRole {
     operation: NeedProducerOperation,
     policy: TaskPolicy,
+    restart: HostRestartPolicy,
+    request_argument_name: &'static str,
 }
 
 impl CallableNeedProducerRole {
@@ -2110,6 +2112,8 @@ impl CallableNeedProducerRole {
                 kind: AssetLoadKind::Image,
             },
             policy: TaskPolicy::JoinSameKey,
+            restart: HostRestartPolicy::Restartable,
+            request_argument_name: "asset",
         }
     }
 
@@ -2120,12 +2124,24 @@ impl CallableNeedProducerRole {
                 kind: AssetLoadKind::Voice,
             },
             policy: TaskPolicy::JoinSameKey,
+            restart: HostRestartPolicy::Restartable,
+            request_argument_name: "voice",
         }
     }
 
     #[must_use]
-    pub const fn new(operation: NeedProducerOperation, policy: TaskPolicy) -> Self {
-        Self { operation, policy }
+    pub const fn new(
+        operation: NeedProducerOperation,
+        policy: TaskPolicy,
+        restart: HostRestartPolicy,
+        request_argument_name: &'static str,
+    ) -> Self {
+        Self {
+            operation,
+            policy,
+            restart,
+            request_argument_name,
+        }
     }
 
     #[must_use]
@@ -2136,6 +2152,16 @@ impl CallableNeedProducerRole {
     #[must_use]
     pub const fn policy(self) -> TaskPolicy {
         self.policy
+    }
+
+    #[must_use]
+    pub const fn restart(self) -> HostRestartPolicy {
+        self.restart
+    }
+
+    #[must_use]
+    pub const fn request_argument_name(self) -> &'static str {
+        self.request_argument_name
     }
 }
 

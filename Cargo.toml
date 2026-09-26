@@ -57,6 +57,7 @@ members = [
     "crates/arcweft-runtime-accelerator",
     "crates/arcweft-browser-bench",
     "crates/arcweft-bundle",
+    "crates/arcweft-bundle-assets",
     "crates/arcweft-runtime-driver",
     "crates/arcweft-render-wgpu",
     "crates/arcweft-player-scene",
@@ -129,6 +130,7 @@ arcweft-audio-device-cpal = { path = "crates/arcweft-audio-device-cpal" }
 arcweft-audio-mixer = { path = "crates/arcweft-audio-mixer" }
 arcweft-browser-bench = { path = "crates/arcweft-browser-bench" }
 arcweft-bundle = { path = "crates/arcweft-bundle", default-features = false }
+arcweft-bundle-assets = { path = "crates/arcweft-bundle-assets" }
 arcweft-character = { path = "crates/arcweft-character" }
 arcweft-character-psd = { path = "crates/arcweft-character-psd" }
 arcweft-character-view = { path = "crates/arcweft-character-view" }

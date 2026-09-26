@@ -1,6 +1,7 @@
 //! Foreground runtime activation and atomic session snapshot persistence.
 
 use arcweft_core::plan::RuntimeDialogueContentApplicationKey;
+use arcweft_core::value::{RuntimeBundleAssetOpaqueRole, RuntimeValue};
 
 use super::{
     Arc, ArcweftRuntimeExecutorSnapshot, BUNDLE_SESSION_SAVE_SCHEMA_ID,
@@ -15,6 +16,73 @@ use super::{
     validate_presentation_snapshot, validate_product_awbc_snapshot,
     validate_virtual_list_scroll_owner,
 };
+
+struct SessionRestoreValueValidator<'a> {
+    callback: Option<&'a mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
+    missing_catalog_role: Option<RuntimeBundleAssetOpaqueRole>,
+}
+
+impl<'a> SessionRestoreValueValidator<'a> {
+    fn new(callback: Option<&'a mut dyn FnMut(&RuntimeValue) -> Result<(), String>>) -> Self {
+        Self {
+            callback,
+            missing_catalog_role: None,
+        }
+    }
+
+    fn validate_value(&mut self, value: &RuntimeValue) -> Result<(), String> {
+        if self.callback.is_none()
+            && let Some(role) = arcweft_core::value::runtime_bundle_asset_opaque_role(value)
+        {
+            self.missing_catalog_role = Some(role);
+            return Err(format!(
+                "bundle asset value {role:?} requires a catalog validator"
+            ));
+        }
+        if let Some(callback) = self.callback.as_deref_mut() {
+            callback(value)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn finish(&mut self, result: Result<(), String>) -> Result<(), BundleSessionSaveError> {
+        if let Some(role) = self.missing_catalog_role.take() {
+            return Err(BundleSessionSaveError::BundleAssetCatalogValidatorRequired { role });
+        }
+        result.map_err(|message| BundleSessionSaveError::RuntimeValueValidation { message })
+    }
+
+    fn visit_root(
+        &mut self,
+        root: Option<&crate::session_save::RootStateSnapshotV1>,
+    ) -> Result<(), BundleSessionSaveError> {
+        let result = root.map_or(Ok(()), |root| {
+            arcweft_core::value::visit_runtime_value_graph(&root.value.0, |value| {
+                self.validate_value(value)
+            })
+        });
+        self.finish(result)
+    }
+
+    fn visit_product(
+        &mut self,
+        product: &arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let result = product
+            .visit_runtime_values(|value| self.validate_value(value))
+            .map_err(|error| error.to_string());
+        self.finish(result)
+    }
+
+    fn visit_view_runtime(
+        &mut self,
+        runtime: &BundleViewRuntime,
+    ) -> Result<(), BundleSessionSaveError> {
+        let result = runtime.visit_runtime_values(|value| self.validate_value(value));
+        self.finish(result)
+    }
+}
 
 impl BundleSession {
     /// Starts a fresh foreground entry on the currently committed active generation.
@@ -50,10 +118,21 @@ impl BundleSession {
 
     pub fn snapshot_session(&self) -> Result<BundleSessionSnapshot, BundleSessionSaveError> {
         self.validate_live_session_save_generations()?;
+        let needs = self.executor.quiescence_blocking_needs();
+        if !needs.is_empty() {
+            return Err(BundleSessionSaveError::NeedsQuiescence { needs });
+        }
         let blockers = self.session_save_blockers();
         if !blockers.is_empty() {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
         }
+        let restartable_tasks = self
+            .tasks
+            .snapshot_restartable(
+                &self.executor.restartable_dispatches(),
+                self.next_task_sequence,
+            )
+            .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
         validate_dialogue_content_frames(&self.dialogue_content, &self.presentation)?;
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
@@ -96,7 +175,7 @@ impl BundleSession {
         Ok(BundleSessionSnapshot {
             generation: BundleSessionGenerationSnapshot {
                 active_generation: active.id,
-                artifact: self.active_artifact_identity,
+                artifact: active.artifact_identity,
                 dialogue_content: active.dialogue_content,
                 awbc_abi: active.awbc_abi,
                 adapter_requirements: active.adapter_requirements,
@@ -111,6 +190,7 @@ impl BundleSession {
                 next_dialogue_input_sequence: self.next_dialogue_input_sequence,
                 next_generation_id: self.next_generation_id,
                 runtime_generation_pin: self.runtime_generation_pin.as_ref().map(|pin| pin.id),
+                restartable_tasks,
             },
             executor,
             presentation: self.presentation.clone(),
@@ -214,6 +294,32 @@ impl BundleSession {
         bytes: &[u8],
         options: &arcweft_save::SaveDecodeOptions,
     ) -> Result<(), BundleSessionSaveError> {
+        self.import_session_save_bytes_with_optional_value_validator(bytes, options, None)
+    }
+
+    /// Imports a session save after the generation-pinned executor has
+    /// admitted every RuntimeValue and before the session facade is committed.
+    /// The supplied validator should verify bundle-owned handles against the
+    /// exact retained catalog for each artifact identity carried by the value.
+    pub fn import_session_save_bytes_with_value_validator(
+        &mut self,
+        bytes: &[u8],
+        options: &arcweft_save::SaveDecodeOptions,
+        mut validator: impl FnMut(&RuntimeValue) -> Result<(), String>,
+    ) -> Result<(), BundleSessionSaveError> {
+        self.import_session_save_bytes_with_optional_value_validator(
+            bytes,
+            options,
+            Some(&mut validator),
+        )
+    }
+
+    fn import_session_save_bytes_with_optional_value_validator(
+        &mut self,
+        bytes: &[u8],
+        options: &arcweft_save::SaveDecodeOptions,
+        validator: Option<&mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
+    ) -> Result<(), BundleSessionSaveError> {
         let payload = arcweft_save::decode_strict_typed_json_save::<BundleSessionSavePayload>(
             bytes,
             &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
@@ -236,16 +342,34 @@ impl BundleSession {
         let snapshot = payload
             .into_snapshot(&program_owner)
             .map_err(|message| BundleSessionSaveError::Decode { message })?;
-        self.restore_session_snapshot(snapshot)
+        self.restore_session_snapshot_with_optional_value_validator(snapshot, validator)
+    }
+
+    pub fn restore_session_snapshot(
+        &mut self,
+        snapshot: BundleSessionSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        self.restore_session_snapshot_with_optional_value_validator(snapshot, None)
+    }
+
+    /// Restores a decoded snapshot after owner-aware Core admission and
+    /// invokes `validator` on every retained RuntimeValue before facade commit.
+    pub fn restore_session_snapshot_with_value_validator(
+        &mut self,
+        snapshot: BundleSessionSnapshot,
+        mut validator: impl FnMut(&RuntimeValue) -> Result<(), String>,
+    ) -> Result<(), BundleSessionSaveError> {
+        self.restore_session_snapshot_with_optional_value_validator(snapshot, Some(&mut validator))
     }
 
     #[expect(
         clippy::too_many_lines,
         reason = "session restore validates every candidate subsystem before committing the facade state atomically"
     )]
-    pub fn restore_session_snapshot(
+    fn restore_session_snapshot_with_optional_value_validator(
         &mut self,
         snapshot: BundleSessionSnapshot,
+        validator: Option<&mut dyn FnMut(&RuntimeValue) -> Result<(), String>>,
     ) -> Result<(), BundleSessionSaveError> {
         self.validate_session_save_generation(&snapshot.generation)?;
         let expected_character_presentation = self.character_presentation_identity()?;
@@ -278,7 +402,15 @@ impl BundleSession {
             next_dialogue_input_sequence,
             next_generation_id,
             runtime_generation_pin,
+            restartable_tasks,
         } = snapshot.runtime;
+        if next_generation_id <= active_generation.get() {
+            return Err(BundleSessionSaveError::GenerationMismatch {
+                field: "next_generation_id",
+                saved: next_generation_id.to_string(),
+                actual: format!("greater than active generation {}", active_generation.get()),
+            });
+        }
         let next_step_index = usize::try_from(next_step_index).map_err(|_| {
             BundleSessionSaveError::CounterOutOfRange {
                 field: "next_step_index",
@@ -310,6 +442,47 @@ impl BundleSession {
             .map_err(|error| BundleSessionSaveError::Root {
                 message: error.to_string(),
             })?;
+        let restored_launches = restored_executor.restartable_dispatches();
+        let restored_tasks = RuntimeTaskRegistry::restore_restartable(
+            &restartable_tasks,
+            &restored_launches,
+            next_task_sequence,
+        )
+        .map_err(|message| BundleSessionSaveError::TaskDispatch { message })?;
+        let mut restored_task_pins = std::collections::BTreeMap::new();
+        let mut restored_reensure = std::collections::BTreeMap::new();
+        for row in &restartable_tasks {
+            let image = self.runtime_images.get(row.generation).map_err(|_| {
+                BundleSessionSaveError::GenerationMismatch {
+                    field: "restartable_task_runtime_image",
+                    saved: format!("{:?}", row.generation),
+                    actual: "runtime image unavailable for exact restart".to_owned(),
+                }
+            })?;
+            let generation = Arc::clone(image.generation());
+            let launch = restored_launches
+                .iter()
+                .find(|launch| launch.need_id == row.need_id)
+                .expect("registry restore matched each Need identity");
+            let task = launch.task_spec.clone();
+            let bundle_asset_context = matches!(
+                &task.request,
+                arcweft_core::task::HostTaskRequest::AssetLoad(_)
+            )
+            .then(|| image.generation().bundle_asset_context());
+            restored_task_pins.insert(row.sequence, generation);
+            restored_reensure.insert(
+                row.task_id.clone(),
+                super::HostTaskDispatch {
+                    generation: row.generation,
+                    logical_epoch: row.logical_epoch,
+                    sequence: row.sequence,
+                    task,
+                    last_publication_revision: row.last_publication_revision,
+                    bundle_asset_context,
+                },
+            );
+        }
         let restored_view_virtualization = ViewVirtualizationRuntime::from_snapshot(
             &snapshot.view_virtualization,
         )
@@ -379,6 +552,13 @@ impl BundleSession {
             &snapshot.presentation,
             &restored_executor.fiber().status,
         )?;
+        let ArcweftRuntimeExecutorSnapshot::AwbcProduct(restored_product_snapshot) =
+            restored_executor.snapshot()?;
+        let mut value_validator = SessionRestoreValueValidator::new(validator);
+        value_validator.visit_root(snapshot.root.as_ref())?;
+        value_validator.visit_product(&restored_product_snapshot)?;
+        value_validator.visit_view_runtime(&restored_view_runtime)?;
+
         self.source_label = source_label;
         self.next_step_index = next_step_index;
         self.next_task_sequence = next_task_sequence;
@@ -395,8 +575,9 @@ impl BundleSession {
         self.pending_deferred_root_events.clear();
         self.pending_root_command_results.clear();
         self.waiting_action_receive_calls.clear();
-        self.task_generation_pins.clear();
-        self.tasks = RuntimeTaskRegistry::default();
+        self.task_generation_pins = restored_task_pins;
+        self.tasks = restored_tasks;
+        self.pending_restartable_reensure = restored_reensure;
         self.presentation = snapshot.presentation;
         self.view_virtualization = restored_view_virtualization;
         self.view_runtime = restored_view_runtime;
@@ -450,13 +631,25 @@ impl BundleSession {
         }
         let active_tasks = self.tasks.list(RuntimeTaskListOptions::default()).len();
         let queued_task_events = self.tasks.queued_task_event_count();
-        if active_tasks > 0 || queued_task_events > 0 {
+        let restartable = self.executor.restartable_dispatches();
+        let task_rows = self
+            .tasks
+            .snapshot_restartable(&restartable, self.next_task_sequence);
+        if task_rows.is_err() || queued_task_events > 0 {
             blockers.push(BundleSessionPendingBlocker::HostTasks {
                 active: active_tasks,
                 queued_events: queued_task_events,
             });
         }
-        if !self.task_generation_pins.is_empty() {
+        let pins_match = task_rows.as_ref().is_ok_and(|rows| {
+            rows.len() == self.task_generation_pins.len()
+                && rows.iter().all(|row| {
+                    self.task_generation_pins
+                        .get(&row.sequence)
+                        .is_some_and(|pin| pin.id == row.generation)
+                })
+        });
+        if !pins_match {
             blockers.push(BundleSessionPendingBlocker::TaskGenerationPins {
                 count: self.task_generation_pins.len(),
             });
@@ -523,7 +716,7 @@ impl BundleSession {
                 actual: format!("{:?}", active.id),
             });
         }
-        let actual_artifact = self.active_artifact_identity;
+        let actual_artifact = active.artifact_identity;
         if snapshot.artifact != actual_artifact {
             return Err(BundleSessionSaveError::GenerationMismatch {
                 field: "artifact",

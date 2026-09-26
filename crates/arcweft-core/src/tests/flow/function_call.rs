@@ -6,6 +6,7 @@ use super::*;
 fn executable_function_value_retains_captures_and_return_binding_across_await() {
     let string = string_type();
     let function = RuntimeSemanticTypeId::from_bytes([0x79; 32]);
+    let need_string = RuntimeSemanticTypeId::from_bytes([0x7a; 32]);
     let entry = flow_id("flow.callback_await");
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
@@ -20,22 +21,34 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                         result: string,
                     },
                 ),
+                RuntimePlanTypeSeed::new(need_string, RuntimePlanTypeProjection::Need(string)),
             ],
             [
                 RuntimeLocalDeclarationSeed::new(string),
                 RuntimeLocalDeclarationSeed::new(string),
+                RuntimeLocalDeclarationSeed::new(need_string),
+                RuntimeLocalDeclarationSeed::new(need_string),
             ],
         )
         .expect("callback ABI admits");
     let capture = admission.local_ids()[0].clone();
     let result = admission.local_ids()[1].clone();
+    let need_capture = admission.local_ids()[2].clone();
+    let need_argument = admission.local_ids()[3].clone();
     let site = builder
         .reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-            inputs: Box::new([RuntimeFunctionInputBindingSeed {
-                source: RuntimeFunctionInputSource::Capture { position: 0 },
-                input_local: capture.clone(),
-                pattern: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
-            }]),
+            inputs: Box::new([
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Capture { position: 0 },
+                    input_local: capture.clone(),
+                    pattern: RuntimePatternSeed::new(string, RuntimePatternSeedKind::Discard),
+                },
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Capture { position: 1 },
+                    input_local: need_capture.clone(),
+                    pattern: RuntimePatternSeed::new(need_string, RuntimePatternSeedKind::Discard),
+                },
+            ]),
             result: string,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
             effects: RuntimeEffectSet::empty(),
@@ -50,16 +63,10 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                     RuntimeFlowOpSeed::Await {
                         binding: None,
                         target: RuntimeAwaitTargetSeed {
-                            need: NeedId("need.callback".to_owned()),
-                            task: TaskId("task.callback".to_owned()),
-                            outcome: TaskOutcomeContract::new(
-                                crate::pattern::RuntimeCheckedType::String,
+                            source: RuntimeExprSeed::new(
+                                need_string,
+                                RuntimeExprSeedKind::Local(need_capture),
                             ),
-                            request: RuntimeHostTaskRequestTemplateSeed {
-                                capability: HostCapabilityId("test".to_owned()),
-                                operation: "callback".to_owned(),
-                                args: Vec::new(),
-                            },
                         },
                         observers: Vec::new(),
                     },
@@ -72,12 +79,20 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         )
         .expect("callback body admits");
     builder
-        .push_flow_schema(flow_schema(&entry))
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: entry.clone(),
+            parameters: vec![crate::entry::RuntimeFlowExecutableParameter {
+                coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
+                name: "pending".to_owned(),
+                mode: crate::entry::RuntimeFlowParameterMode::Owned,
+                semantic_identity: need_string,
+            }],
+        })
         .expect("caller schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
-            [],
+            [need_argument.clone()],
             crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ApplyFunction {
@@ -85,7 +100,13 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
                         function,
                         RuntimeExprSeedKind::Function {
                             site,
-                            captures: Box::new([string_value("captured")]),
+                            captures: Box::new([
+                                string_value("captured"),
+                                RuntimeExprSeed::new(
+                                    need_string,
+                                    RuntimeExprSeedKind::Local(need_argument),
+                                ),
+                            ]),
                         },
                     ),
                     args: Box::new([]),
@@ -105,11 +126,20 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         ))
         .expect("caller application admits");
     let plan = builder.finish().expect("callback plan seals");
-    let mut engine = Engine::for_flow(plan, &entry).expect("caller starts");
+    let invocation = plan
+        .seal_flow_invocation(
+            entry,
+            [crate::value::RuntimeFlowParameterBinding {
+                parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                value: RuntimeValue::Need(NeedId("need.callback".to_owned())),
+            }],
+        )
+        .expect("callback Need argument admits");
+    let mut engine = Engine::for_flow_invocation(invocation).expect("caller starts");
     for _ in 0..8 {
         let started = step(&mut engine);
         assert!(started.diagnostics.is_empty(), "{:?}", started.diagnostics);
-        if matches!(engine.fiber().status, FlowFiberStatus::Waiting(_)) {
+        if matches!(engine.fiber().status, FlowFiberStatus::NeedWaiting(_)) {
             break;
         }
         assert!(
@@ -119,19 +149,19 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         );
     }
     assert!(
-        matches!(engine.fiber().status, FlowFiberStatus::Waiting(_)),
+        matches!(engine.fiber().status, FlowFiberStatus::NeedWaiting(_)),
         "{:?}",
         engine.fiber().status
     );
     let resumed = engine
         .step(
             RuntimeStepInput {
-                task_events: vec![TaskEvent {
-                    logical_epoch: LogicalEpoch(1),
-                    task_id: TaskId("task.callback".to_owned()),
-                    sequence: TaskSequence(1),
-                    kind: TaskEventKind::Ready(crate::value::RuntimePayload::from("ready")),
-                }],
+                need_states: vec![RuntimeNeedState::new(
+                    LogicalEpoch(1),
+                    NeedId("need.callback".to_owned()),
+                    TaskSequence(1),
+                    arcweft_need::Need::Ready(crate::value::RuntimePayload::from("ready")),
+                )],
                 ..RuntimeStepInput::default()
             },
             RuntimeStepOptions::default(),

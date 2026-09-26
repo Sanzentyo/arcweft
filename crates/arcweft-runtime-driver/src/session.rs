@@ -55,7 +55,8 @@ use arcweft_core::awbc::{
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{
-    ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+    ArcweftRuntimeExecutor, ArcweftRuntimeExecutorGenerationError, ArcweftRuntimeExecutorSnapshot,
+    RuntimeExecutor,
 };
 use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
@@ -68,7 +69,7 @@ use arcweft_core::step::{
 };
 use arcweft_core::task::GenerationId;
 use arcweft_core::task::{
-    CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskSequence,
+    CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
 use arcweft_core::value::{
     RuntimeBinding, RuntimeDialoguePlainTextContextTemplateProof, RuntimePayload, RuntimeValue,
@@ -310,9 +311,9 @@ pub struct BundleSession {
     presentation_generation: Arc<ProgramGeneration>,
     runtime_generation_pin: Option<Arc<ProgramGeneration>>,
     task_generation_pins: BTreeMap<TaskSequence, Arc<ProgramGeneration>>,
+    pending_restartable_reensure: BTreeMap<TaskId, HostTaskDispatch>,
     tasks: RuntimeTaskRegistry,
     next_generation_id: u64,
-    active_artifact_identity: BundleSessionArtifactIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -324,6 +325,8 @@ struct PendingActionReceiveCall {
 /// Error raised before a portable session can start.
 #[derive(Debug, Error, PartialEq)]
 pub enum BundleSessionError {
+    #[error(transparent)]
+    ExecutorGeneration(#[from] ArcweftRuntimeExecutorGenerationError),
     #[error("bundle kind `{0:?}` is not supported by the game session")]
     UnsupportedBundleKind(BundleKind),
     #[error("an exact entry selection is required to start a bundle session")]
@@ -409,6 +412,8 @@ pub struct BundlePatchReadinessReport {
 
 #[derive(Debug, Error)]
 pub enum BundleHotSwapError {
+    #[error("bundle session generation identity space is exhausted")]
+    GenerationIdExhausted,
     #[error("failed to build bundle generation: {0}")]
     BuildGeneration(#[from] GenerationBuildError),
     #[error("failed to prepare hot swap: {0}")]
@@ -743,6 +748,8 @@ impl BundleSession {
                 budget: RuntimeStepBudget {
                     max_ops: self.options.max_ops,
                 },
+                max_new_task_requests: usize::try_from(u64::MAX - self.next_task_sequence)
+                    .unwrap_or(usize::MAX),
             },
             &mut pure_backend,
         );
@@ -906,8 +913,14 @@ impl BundleSession {
             &mut input.root_events,
             &mut diagnostics,
         );
-        input.task_events.extend(self.tasks.drain_task_events());
-        let task_events = self.tasks.apply_task_events(input.task_events);
+        // Local cancellation has already changed the registry status. Host
+        // events still need exact dispatch correlation before reaching Core.
+        let submitted_task_events = input.task_events.len();
+        let mut task_events = self.tasks.apply_task_events(input.task_events);
+        if submitted_task_events > 0 && task_events.is_empty() {
+            diagnostics.push("runtime task publication batch was rejected".to_owned());
+        }
+        task_events.extend(self.tasks.drain_task_events());
         self.release_completed_task_generation_pins(&task_events);
         input.input_events.append(&mut self.pending_input_events);
         input
@@ -1275,15 +1288,73 @@ impl BundleSession {
         clock: RuntimeClockStep,
         tasks: Vec<arcweft_core::task::TaskSpec>,
     ) -> Vec<HostTaskDispatch> {
-        let generation = self
+        let count = u64::try_from(
+            tasks
+                .iter()
+                .filter(|task| !self.pending_restartable_reensure.contains_key(&task.id))
+                .count(),
+        )
+        .expect("an addressable task batch fits the task sequence counter");
+        let next_sequence = self
+            .next_task_sequence
+            .checked_add(count)
+            .expect("Core emitted no more task requests than the supplied sequence quota");
+        let first_sequence = self.next_task_sequence;
+        for offset in 0..count {
+            let sequence = TaskSequence(first_sequence + offset);
+            assert!(
+                !self.task_generation_pins.contains_key(&sequence)
+                    && !self.tasks.contains_sequence(sequence),
+                "task dispatch sequence must be unused before batch publication"
+            );
+        }
+        let default_generation = self
             .runtime_generation_pin
-            .clone()
-            .unwrap_or_else(|| self.swap.pin_active_generation());
-        tasks
+            .as_ref()
+            .map_or_else(|| self.swap.active_generation_id(), |pin| pin.id);
+        let tasks = tasks
             .into_iter()
             .map(|task| {
-                let sequence = TaskSequence(self.next_task_sequence);
-                self.next_task_sequence = self.next_task_sequence.saturating_add(1);
+                if let Some(saved) = self.pending_restartable_reensure.get(&task.id) {
+                    assert_eq!(
+                        &saved.task, &task,
+                        "Product re-ensure must preserve its sealed TaskSpec"
+                    );
+                    assert_eq!(
+                        self.executor.task_generation(&task.id),
+                        Some(saved.generation),
+                        "Product re-ensure must preserve its owning generation"
+                    );
+                    return (task, None);
+                }
+                let launch_generation = self
+                    .executor
+                    .task_generation(&task.id)
+                    .unwrap_or(default_generation);
+                let generation = Arc::clone(
+                    self.runtime_images
+                        .get(launch_generation)
+                        .expect("producer task generation must have a retained runtime image")
+                        .generation(),
+                );
+                (task, Some(generation))
+            })
+            .collect::<Vec<_>>();
+        let mut new_offset = 0_u64;
+        let dispatches = tasks
+            .into_iter()
+            .map(|(task, generation)| {
+                if let Some(saved) = self.pending_restartable_reensure.remove(&task.id) {
+                    return saved;
+                }
+                let generation = generation.expect("fresh task has a generation pin");
+                let sequence = TaskSequence(first_sequence + new_offset);
+                new_offset += 1;
+                let bundle_asset_context = matches!(
+                    &task.request,
+                    arcweft_core::task::HostTaskRequest::AssetLoad(_)
+                )
+                .then(|| generation.bundle_asset_context());
                 self.task_generation_pins
                     .insert(sequence, generation.clone());
                 let dispatch = HostTaskDispatch {
@@ -1291,11 +1362,16 @@ impl BundleSession {
                     logical_epoch: LogicalEpoch(clock.tick().0),
                     sequence,
                     task,
+                    last_publication_revision: None,
+                    bundle_asset_context,
                 };
                 self.tasks.register_dispatch(&dispatch);
                 dispatch
             })
-            .collect()
+            .collect();
+        assert_eq!(new_offset, count, "prechecked fresh task count is exact");
+        self.next_task_sequence = next_sequence;
+        dispatches
     }
 
     fn capture_view_host_calls(
@@ -1349,7 +1425,16 @@ impl BundleSession {
             if matches!(event.kind, TaskEventKind::Progress(_)) {
                 continue;
             }
-            self.task_generation_pins.remove(&event.sequence);
+            let Some(generation) = self.tasks.generation_for_event(event) else {
+                continue;
+            };
+            if self
+                .task_generation_pins
+                .get(&event.sequence)
+                .is_some_and(|pinned| pinned.id == generation)
+            {
+                self.task_generation_pins.remove(&event.sequence);
+            }
         }
         self.retire_unused_generations();
     }

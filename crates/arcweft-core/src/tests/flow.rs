@@ -14,10 +14,10 @@ use crate::{
         RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableStateDefinition,
         RuntimeCallableStateSeedId, RuntimeCallableTransition, RuntimeEffectSet,
         RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
-        RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
-        RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
-        RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
-        RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed,
+        RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
+        RuntimeFlowSeed, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource,
+        RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
+        RuntimeFunctionSiteDeclarationSeed, RuntimeLocalDeclarationSeed,
         RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
         RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
@@ -27,10 +27,7 @@ use crate::{
         RuntimeProjectCallRestMaterializationSeed, RuntimeRecordFieldSeedId,
     },
     step::{RuntimeStepInput, RuntimeStepOptions},
-    task::{
-        HostCapabilityId, LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId,
-        TaskOutcomeContract, TaskSequence,
-    },
+    task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence},
     value::{RuntimeBinaryOp, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue},
 };
 use arcweft_id::DeclarationName;
@@ -161,6 +158,48 @@ fn finish_plan(flows: impl IntoIterator<Item = RuntimeFlowSeed>) -> crate::plan:
         builder.push_flow_seed(flow).expect("typed flow admission");
     }
     builder.finish().expect("valid typed runtime plan")
+}
+
+#[test]
+fn deeply_nested_match_flow_seed_lowers_and_validates_without_recursion() {
+    let unit = unit_type();
+    let mut ops = vec![RuntimeFlowOpSeed::ReturnExpr(unit_value())];
+    for _ in 0..256 {
+        ops = vec![RuntimeFlowOpSeed::Match {
+            scrutinee: unit_value(),
+            arms: vec![RuntimeFlowMatchArmSeed {
+                pattern: RuntimePatternSeed::new(unit, RuntimePatternSeedKind::Discard),
+                guard: None,
+                ops,
+            }],
+        }];
+    }
+
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [RuntimePlanTypeSeed::new(
+                unit,
+                RuntimePlanTypeProjection::Unit,
+            )],
+            [],
+        )
+        .expect("unit type admission");
+    let flow = RuntimeFlowSeed::new(
+        flow_id("deep-match"),
+        Vec::new(),
+        RuntimeEffectSet::empty(),
+        ops,
+    );
+    builder
+        .push_flow_schema(flow_schema(flow.id()))
+        .expect("deep match schema admission");
+    builder
+        .push_flow_seed(flow)
+        .expect("deep match seed lowers and validates");
+    builder
+        .finish()
+        .expect("deep match plan seals without recursive traversal");
 }
 
 fn step(engine: &mut Engine) -> crate::step::RuntimeStepOutput {
@@ -1589,36 +1628,47 @@ fn native_nominal_field_pop_front_drains_a_vec_and_handles_an_empty_field() {
 #[test]
 fn await_progress_runs_only_the_first_matching_observer() {
     let progress_type = RuntimeSemanticTypeId::from_bytes([3; 32]);
+    let need_string_type = RuntimeSemanticTypeId::from_bytes([4; 32]);
+    let need_id = NeedId("need.observe".to_owned());
     let entry = flow_id("flow.await_observer");
     let mut builder = RuntimePlanBuilder::new();
-    builder
+    let admission = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
+                RuntimePlanTypeSeed::new(
+                    need_string_type,
+                    RuntimePlanTypeProjection::Need(string_type()),
+                ),
             ],
-            [],
+            [RuntimeLocalDeclarationSeed::new(need_string_type)],
         )
         .expect("Await observer types admit");
+    let need_local = admission.local_ids()[0].clone();
     builder
-        .push_flow_schema(flow_schema(&entry))
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: entry.clone(),
+            parameters: vec![crate::entry::RuntimeFlowExecutableParameter {
+                coordinate: crate::entry::FlowParameterCoordinate::from_position(0),
+                name: "pending".to_owned(),
+                mode: crate::entry::RuntimeFlowParameterMode::Owned,
+                semantic_identity: need_string_type,
+            }],
+        })
         .expect("Await observer flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
-            [],
+            [need_local.clone()],
             crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {
-                    need: NeedId("need.observe".to_owned()),
-                    task: TaskId("task.observe".to_owned()),
-                    outcome: TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::String),
-                    request: RuntimeHostTaskRequestTemplateSeed {
-                        capability: HostCapabilityId("test".to_owned()),
-                        operation: "observe".to_owned(),
-                        args: Vec::new(),
-                    },
+                    source: RuntimeExprSeed::new(
+                        need_string_type,
+                        RuntimeExprSeedKind::Local(need_local),
+                    ),
                 },
                 observers: vec![
                     RuntimeAwaitPendingObserverSeed {
@@ -1640,19 +1690,26 @@ fn await_progress_runs_only_the_first_matching_observer() {
         ))
         .expect("Await observer flow admits");
     let plan = builder.finish().expect("valid Await observer plan");
-    let mut engine = Engine::for_flow(plan, &entry).expect("Await observer flow exists");
+    let invocation = plan
+        .seal_flow_invocation(
+            entry,
+            [crate::value::RuntimeFlowParameterBinding {
+                parameter: crate::entry::FlowParameterCoordinate::from_position(0),
+                value: RuntimeValue::Need(need_id.clone()),
+            }],
+        )
+        .expect("Await observer Need argument admits");
+    let mut engine = Engine::for_flow_invocation(invocation).expect("Await observer flow exists");
     let _started = step(&mut engine);
 
     let result = engine.step(
         RuntimeStepInput {
-            task_events: vec![TaskEvent {
-                logical_epoch: LogicalEpoch(1),
-                task_id: TaskId("task.observe".to_owned()),
-                sequence: TaskSequence(1),
-                kind: TaskEventKind::Progress(
-                    Progress::new(0.5).expect("fixture Progress is valid"),
-                ),
-            }],
+            need_states: vec![RuntimeNeedState::new(
+                LogicalEpoch(1),
+                need_id,
+                TaskSequence(1),
+                arcweft_need::Need::Pending(Progress::new(0.5).expect("fixture Progress is valid")),
+            )],
             ..RuntimeStepInput::default()
         },
         RuntimeStepOptions::default(),

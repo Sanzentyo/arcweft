@@ -15,17 +15,15 @@ use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeDialogueContentPlanSeed, RuntimeDialogueContentTemplateManifestSeed, RuntimeEntryKind,
     RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-    RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeHttpMethod, RuntimeLineTaskCancelRuleSeed,
-    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLocalDeclarationSeed,
-    RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-    RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
-    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
-    RuntimeReceiverMode, RuntimeRoutePath, RuntimeRoutePathSegment, RuntimeRouteSpec,
-    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
+    RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed, RuntimeHttpMethod,
+    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeRoutePath, RuntimeRoutePathSegment,
+    RuntimeRouteSpec, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
 };
 use arcweft_core::step::RuntimeHostCallMode;
-use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::RuntimeValue;
 use std::sync::Arc;
 
@@ -1821,40 +1819,39 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
 fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
     let main = flow_id("await.observer");
     let progress_type = type_id(4);
+    let need_type = type_id(5);
     let mut builder = RuntimePlanBuilder::new();
-    builder
+    let admission = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
                 RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
+                RuntimePlanTypeSeed::new(need_type, RuntimePlanTypeProjection::Need(type_id(1))),
             ],
-            [],
+            [RuntimeLocalDeclarationSeed::new(need_type)],
         )
         .expect("Await observer types admit");
+    let need_local = admission.local_ids()[0].clone();
     builder
-        .push_flow_executable(flow_executable(&main))
-        .expect("Await observer flow executable admits");
-    builder
-        .push_flow_schema(flow_schema(&main))
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: main.clone(),
+            parameters: vec![arcweft_core::entry::RuntimeFlowExecutableParameter {
+                coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
+                name: "pending".to_owned(),
+                mode: arcweft_core::entry::RuntimeFlowParameterMode::Owned,
+                semantic_identity: need_type,
+            }],
+        })
         .expect("Await observer flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
-            [],
+            [need_local.clone()],
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {
-                    need: NeedId("need.observe".to_owned()),
-                    task: TaskId("task.observe".to_owned()),
-                    outcome: TaskOutcomeContract::new(
-                        arcweft_core::pattern::RuntimeCheckedType::String,
-                    ),
-                    request: RuntimeHostTaskRequestTemplateSeed {
-                        capability: HostCapabilityId("test".to_owned()),
-                        operation: "observe".to_owned(),
-                        args: Vec::new(),
-                    },
+                    source: RuntimeExprSeed::new(need_type, RuntimeExprSeedKind::Local(need_local)),
                 },
                 observers: vec![RuntimeAwaitPendingObserverSeed {
                     pattern: RuntimePatternSeed::new(
@@ -1866,8 +1863,23 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
             }],
         ))
         .expect("Await observer flow admits");
+    let launch = flow_id("await.launch");
     builder
-        .push_entry(flow_entry("await.observer", main))
+        .push_flow_executable(flow_executable(&launch))
+        .expect("zero-argument launch flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&launch))
+        .expect("zero-argument launch flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            launch.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![RuntimeFlowOpSeed::Noop],
+        ))
+        .expect("zero-argument launch flow admits");
+    builder
+        .push_entry(flow_entry("await.observer", launch))
         .expect("Await observer entry admits");
     let report = lower_plan(&builder.finish().expect("Await observer plan seals"));
     let (await_index, observer) = report

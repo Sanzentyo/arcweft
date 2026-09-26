@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-adapter-context = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
+arcweft-bundle-assets = { workspace = true }
 arcweft-core = { workspace = true }
 arcweft-host-adapter = { workspace = true }
 arcweft-id = { workspace = true }
@@ -25,6 +26,7 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-audio-core = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-render-text = { workspace = true }

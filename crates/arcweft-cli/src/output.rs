@@ -1134,7 +1134,11 @@ fn flow_event_label(event: &FlowEvent) -> String {
         FlowEvent::ChoiceSelected { id, option } => {
             format!("choice_selected {} {option}", id.as_deref().unwrap_or("-"))
         }
-        FlowEvent::AwaitStarted { need, task } => format!("await_started {} {}", need.0, task.0),
+        FlowEvent::AwaitStarted { need, task } => format!(
+            "await_started {} {}",
+            need.0,
+            task.as_ref().map_or("-", |task| task.0.as_str())
+        ),
         FlowEvent::AwaitReady { need, value } => {
             format!("await_ready {} {}", need.0, value.label())
         }

@@ -1,10 +1,14 @@
 use super::executor::RuntimeExecutorCore;
 use super::parse::step_options;
-use super::steps::{NativeRunSource, RuntimeStepRunConfig};
+use super::steps::{
+    NativeRunHost, NativeRunSource, RuntimeBundleAssets, RuntimeStepRunConfig,
+    build_native_task_bridge,
+};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepInput, RuntimeStepResult, RuntimeStepStats,
 };
+use arcweft_core::task::{GenerationId, LogicalEpoch};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAccelerator;
 use arcweft_runtime_host::{
@@ -16,6 +20,7 @@ use std::process::ExitCode;
 pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     mut executor: RuntimeExecutorCore,
     source: Option<NativeRunSource<'_>>,
+    bundle_assets: RuntimeBundleAssets<'_>,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
@@ -25,7 +30,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
     let mut totals = RuntimeBenchStepTotals::default();
-    for _ in 0..config.steps {
+    for step_index in 0..config.steps {
         if let Some(host) = host.as_mut() {
             host.pump_main_thread().map_err(|error| {
                 eprintln!("error: {error}");
@@ -67,12 +72,15 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
         {
             if host.is_none() {
                 host = Some(
-                    NativeTaskBridge::try_new(
-                        source.path(),
-                        source.file_roots().clone(),
-                        &[],
-                        host_policy.clone(),
-                        adapter_registrars,
+                    build_native_task_bridge(
+                        source,
+                        NativeRunHost {
+                            source: Some(source),
+                            bundle_assets: Some(bundle_assets),
+                            policy: host_policy,
+                            adapter_registrars,
+                            cli_args: &[],
+                        },
                     )
                     .map_err(|error| {
                         eprintln!("error: {error}");
@@ -82,7 +90,16 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             }
             if let Some(host) = host.as_mut() {
                 task_events = host
-                    .complete_tasks(executor.program_owner(), task_requests)
+                    .complete_tasks_with_generation_and_bundle_asset_context(
+                        executor.program_owner(),
+                        GenerationId::new(0),
+                        LogicalEpoch(u64::try_from(step_index).map_err(|_| {
+                            eprintln!("error: runtime step index exceeds task epoch range");
+                            ExitCode::FAILURE
+                        })?),
+                        task_requests,
+                        Some(bundle_assets.context),
+                    )
                     .map_err(|error| {
                         eprintln!("error: {error}");
                         ExitCode::FAILURE

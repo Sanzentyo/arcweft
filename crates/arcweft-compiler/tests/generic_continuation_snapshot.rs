@@ -43,6 +43,7 @@ fn native_generic_continuation_keeps_its_scheme_origin_position_and_prefix() {
     let options = RuntimeStepOptions {
         mode: RuntimeStepMode::OneOp,
         budget: RuntimeStepBudget { max_ops: 1 },
+        ..RuntimeStepOptions::default()
     };
 
     let mut observed_prefix = false;

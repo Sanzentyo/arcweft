@@ -1,8 +1,9 @@
 //! Session identity, generation ownership, task access, and environment entrypoints.
 
 use super::{
-    Arc, ArtifactIdentity, BundleDigest, BundlePresentationSnapshot, BundleSession, GenerationId,
-    PresentationEnvironment, PresentationEnvironmentField, PresentationEnvironmentUpdate,
+    Arc, ArtifactIdentity, BundleDigest, BundlePresentationSnapshot, BundleSession,
+    BundleSessionArtifactIdentity, GenerationId, PresentationEnvironment,
+    PresentationEnvironmentField, PresentationEnvironmentUpdate,
     PresentationEnvironmentUpdateError, PresentationEnvironmentValue,
     PresentationEnvironmentValues, ProgramGeneration, RuntimeTaskCancelOutcome,
     RuntimeTaskCancelTarget, RuntimeTaskListOptions, RuntimeTaskOwner, RuntimeTaskRecord,
@@ -23,6 +24,27 @@ impl BundleSession {
 
     pub fn active_generation(&self) -> &ProgramGeneration {
         self.swap.active()
+    }
+
+    /// Returns the exact identity assigned to the next committed generation.
+    /// Patch owners can bind candidate resources before the endpoint commits.
+    #[must_use]
+    pub const fn next_generation_id(&self) -> GenerationId {
+        GenerationId::new(self.next_generation_id)
+    }
+
+    /// Returns the complete artifact identity retained for one generation.
+    /// The lookup follows the runtime image so old task dispatches keep their
+    /// original identity after a generational swap.
+    #[must_use]
+    pub fn artifact_identity_for_generation(
+        &self,
+        generation: GenerationId,
+    ) -> Option<BundleSessionArtifactIdentity> {
+        self.runtime_images
+            .get(generation)
+            .ok()
+            .map(|image| image.artifact_identity())
     }
 
     /// Returns the generation currently bound to the active runtime fiber.
@@ -72,16 +94,16 @@ impl BundleSession {
         self.prune_runtime_images();
     }
 
-    pub const fn active_container_content_root(&self) -> Option<BundleDigest> {
-        match self.active_artifact_identity.awfb_container() {
+    pub fn active_container_content_root(&self) -> Option<BundleDigest> {
+        match self.active_generation().artifact_identity.awfb_container() {
             Some(identity) => Some(identity.content_root),
             None => None,
         }
     }
 
     /// Returns the logical identity of the active AWFB container, when present.
-    pub const fn active_container_artifact_identity(&self) -> Option<ArtifactIdentity> {
-        self.active_artifact_identity.awfb_container()
+    pub fn active_container_artifact_identity(&self) -> Option<ArtifactIdentity> {
+        self.swap.active().artifact_identity.awfb_container()
     }
 
     pub const fn presentation(&self) -> &BundlePresentationSnapshot {

@@ -156,3 +156,31 @@ fn literal_builder_uses_the_same_choice_rule_and_preserves_runtime_only_values()
         assert!(admitted(&sealed, tag, &value).is_err());
     }
 }
+
+#[test]
+fn need_handle_is_live_input_and_never_a_plan_constant() {
+    let types = || [seed(1, Type::String), seed(2, Type::Need(semantic(1)))];
+    let value = RuntimeValue::Need(crate::task::NeedId("need.input".to_owned()));
+    let mut builder = RuntimePlanBuilder::new();
+    builder.admit_type_batch(types(), []).unwrap();
+    assert!(matches!(
+        builder.lower_expression(RuntimeExprSeed::new(
+            semantic(2),
+            RuntimeExprSeedKind::Value(value.clone()),
+        )),
+        Err(RuntimePlanBuildError::InvalidValueType { .. })
+    ));
+
+    let sealed = plan(types());
+    let ty = sealed.type_table().id_for_semantic(semantic(2)).unwrap();
+    assert!(
+        sealed
+            .validate_live_value(
+                ty,
+                &value,
+                crate::entry::RuntimeSchemaLimits::engine_default()
+            )
+            .is_ok()
+    );
+    assert!(admitted(&sealed, 2, &value).is_err());
+}

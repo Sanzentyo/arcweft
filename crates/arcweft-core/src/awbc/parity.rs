@@ -30,7 +30,7 @@ pub enum ParityEvent {
     },
     AwaitStarted {
         need: String,
-        task: String,
+        task: Option<String>,
     },
     AwaitReady {
         need: String,
@@ -148,7 +148,7 @@ fn flow_event(event: &FlowEvent) -> ParityEvent {
         },
         FlowEvent::AwaitStarted { need, task } => ParityEvent::AwaitStarted {
             need: need.0.clone(),
-            task: task.0.clone(),
+            task: task.as_ref().map(|task| task.0.clone()),
         },
         FlowEvent::AwaitReady { need, .. } => ParityEvent::AwaitReady {
             need: need.0.clone(),
@@ -179,9 +179,8 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         } => ParityEvent::Effect {
             id: format!("effect#{id}"),
         },
-        VmObservation::TaskStarted { plan, .. } => ParityEvent::AwaitStarted {
-            need: format!("task#{}", plan.0),
-            task: format!("task#{}", plan.0),
+        VmObservation::NeedProducerStarted { plan, .. } => ParityEvent::Effect {
+            id: format!("need-producer-admission#{}", plan.0),
         },
         VmObservation::Goto(function) => ParityEvent::Effect {
             id: format!("goto#{}", function.0),
@@ -247,7 +246,6 @@ fn fiber_status(status: &FlowFiberStatus) -> String {
     match status {
         FlowFiberStatus::Running => "running".to_owned(),
         FlowFiberStatus::Dialogue(_) => "dialogue".to_owned(),
-        FlowFiberStatus::Waiting(_) => "waiting".to_owned(),
         FlowFiberStatus::NeedWaiting(_) => "need_waiting".to_owned(),
         FlowFiberStatus::WaitingMany(_) => "waiting_many".to_owned(),
         FlowFiberStatus::HostCall(_) => "host_call".to_owned(),

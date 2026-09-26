@@ -167,6 +167,7 @@ pub(crate) fn agent_host_request_from_task(
         operation,
         args,
         named_args,
+        ..
     } = request
     else {
         return Err(AgentHostRequestAdmissionError::UnsupportedEffect {

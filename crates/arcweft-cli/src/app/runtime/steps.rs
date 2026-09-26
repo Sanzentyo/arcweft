@@ -2,14 +2,17 @@ use super::executor::RuntimeExecutorInstance;
 use super::options::{CliRuntimeExecutorTier, CliRuntimeStepMode, RuntimeRunOptions};
 use super::parse::step_options;
 use crate::output::RuntimeStepRunSummary;
+use arcweft_bundle::{ArcweftBundle, BundleArtifactIdentity};
 use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::RuntimeStepInput;
+use arcweft_core::task::{GenerationId, LogicalEpoch};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
+use arcweft_runtime_host::native_task::standard_cli_registry_builder;
 use arcweft_runtime_host::{
-    NativeAdapterRegistrar, NativeFileRoots, NativeTaskBridge, NativeTaskStats,
+    BundleAssetAdapter, NativeAdapterRegistrar, NativeFileRoots, NativeTaskBridge, NativeTaskStats,
     RuntimeExecutorStats,
 };
 use std::path::Path;
@@ -100,15 +103,7 @@ fn try_run_runtime_steps_with_executor(
 ) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
     let mut host = host_config
         .source
-        .map(|source| {
-            NativeTaskBridge::try_new(
-                source.path,
-                source.file_roots.clone(),
-                host_config.cli_args,
-                host_config.policy.clone(),
-                host_config.adapter_registrars,
-            )
-        })
+        .map(|source| build_native_task_bridge(source, host_config))
         .transpose()?;
     let mut task_events = Vec::new();
     let mut host_call_results = Vec::new();
@@ -143,7 +138,16 @@ fn try_run_runtime_steps_with_executor(
             break;
         }
         if let Some(host) = host.as_mut() {
-            task_events = host.complete_tasks(executor.program_owner(), task_requests)?;
+            task_events = host.complete_tasks_with_generation_and_bundle_asset_context(
+                executor.program_owner(),
+                GenerationId::new(0),
+                LogicalEpoch(
+                    u64::try_from(step_index)
+                        .map_err(|_| RuntimeStepRunError::LogicalEpochOverflow)?,
+                ),
+                task_requests,
+                host_config.bundle_assets.map(|assets| assets.context),
+            )?;
             host_call_results =
                 host.complete_host_calls(executor.program_owner(), host_call_requests);
         }
@@ -158,14 +162,42 @@ fn try_run_runtime_steps_with_executor(
     })
 }
 
+pub(in crate::app) fn build_native_task_bridge(
+    source: NativeRunSource<'_>,
+    host_config: NativeRunHost<'_>,
+) -> Result<NativeTaskBridge, RuntimeStepRunError> {
+    let builder = standard_cli_registry_builder(source.file_roots().clone(), host_config.cli_args)?;
+    let builder = host_config
+        .adapter_registrars
+        .iter()
+        .try_fold(builder, |builder, register| {
+            register(source.path(), builder)
+        })?;
+    let builder = if let Some(assets) = host_config.bundle_assets {
+        builder.register(BundleAssetAdapter::try_new(
+            assets.context,
+            assets.artifact_identity,
+            std::sync::Arc::clone(assets.bundle),
+        )?)?
+    } else {
+        builder
+    };
+    NativeTaskBridge::try_with_registry(host_config.policy.clone(), builder.build())
+        .map_err(Into::into)
+}
+
 #[derive(Debug, Error)]
-enum RuntimeStepRunError {
+pub(in crate::app) enum RuntimeStepRunError {
     #[error(transparent)]
     Host(#[from] arcweft_host_adapter::HostAdapterError),
     #[error(transparent)]
     NativeTask(#[from] arcweft_runtime_host::native_task::NativeTaskBridgeError),
     #[error("fresh runtime assertion identity projection failed: {0}")]
     Assertion(#[from] arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError),
+    #[error(transparent)]
+    BundleAsset(#[from] arcweft_runtime_host::BundleAssetAdapterError),
+    #[error("runtime step index does not fit a task logical epoch")]
+    LogicalEpochOverflow,
 }
 
 pub(in crate::app) struct RuntimeRunTrace {
@@ -178,9 +210,17 @@ pub(in crate::app) struct RuntimeRunTrace {
 #[derive(Clone, Copy)]
 pub(in crate::app) struct NativeRunHost<'a> {
     pub(in crate::app) source: Option<NativeRunSource<'a>>,
+    pub(in crate::app) bundle_assets: Option<RuntimeBundleAssets<'a>>,
     pub(in crate::app) policy: &'a HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
     pub(in crate::app) cli_args: &'a [String],
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::app) struct RuntimeBundleAssets<'a> {
+    pub(in crate::app) bundle: &'a std::sync::Arc<ArcweftBundle>,
+    pub(in crate::app) artifact_identity: BundleArtifactIdentity,
+    pub(in crate::app) context: arcweft_core::value::RuntimeBundleAssetContext,
 }
 
 #[derive(Clone, Copy)]

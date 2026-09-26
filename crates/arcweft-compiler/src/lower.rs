@@ -144,7 +144,6 @@ use arcweft_lang_sema::{
         CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken,
         CheckedRichTextAction, CheckedRichTextReport, CheckedVoiceSource,
     },
-    effects::EffectId,
     entry::{CheckedCallableRole, CheckedEntryBinding},
     env::nominal::AcceptedNominalId,
     env::nominal::AcceptedNominalSemantics,
@@ -6088,7 +6087,48 @@ fn runtime_call(
         owner,
         reason: error.to_string(),
     })?;
-    let call = if let CallableValidator::NeedProducer(role) = selected.schema().validator() {
+    let producer_role = match selected.schema().validator() {
+        CallableValidator::NeedProducer(role) => Some(*role),
+        _ => None,
+    };
+    let extern_host = match call.dispatch() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host))
+            if matches!(
+                host.owner(),
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
+                    _
+                )
+            ) =>
+        {
+            Some(host)
+        }
+        _ => None,
+    };
+    let selected_result =
+        application
+            .result()
+            .value_type()
+            .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "selected runtime call has no checked value result".to_owned(),
+            })?;
+    let need_type = runtime_type_under(selected_result, enclosing, symbols, world, analysis)?;
+    let is_need_result = matches!(
+        need_type.shape(),
+        arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(_)
+    );
+    let manifest_need_producer = extern_host.is_some() && is_need_result;
+    if manifest_need_producer {
+        let host = extern_host.expect("manifest producer has an extern host target");
+        if host.contract().is_none() || host.mode() != RuntimeHostCallMode::Suspend {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "extern Need producer requires a suspended manifest host contract"
+                    .to_owned(),
+            });
+        }
+    }
+    let call = if producer_role.is_some() || manifest_need_producer {
         let admission = analysis
             .checked_need_producer_admission_for_call(
                 project,
@@ -6146,44 +6186,91 @@ fn runtime_call(
                 });
             }
         }
-        let result_type = application.result().value_type().ok_or_else(|| {
-            RuntimeSemanticProjectionError::Call {
-                owner,
-                reason: "selected Need producer has no checked value result".to_owned(),
-            }
-        })?;
-        let need_type = runtime_type_under(result_type, enclosing, symbols, world, analysis)?;
-        if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) =
-            call.dispatch()
-            && matches!(
-                host.owner(),
-                arcweft_runtime_plan::semantic_facts::RuntimeResolvedHostCallOwner::ExternCapability(
-                    _
-                )
-            )
-        {
-            let manifest_result = selected.schema().value_type().ok_or_else(|| {
-                RuntimeSemanticProjectionError::Call {
-                    owner,
-                    reason: "manifest-bound Need producer has no callable result type".to_owned(),
+        let argument_names = call
+            .operands()
+            .iter()
+            .map(|operand| match operand.binding() {
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Positional => None,
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandBinding::Named(name) => {
+                    Some(name.clone())
                 }
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let (contract, request, policy, restart, class) = if let Some(role) = producer_role {
+            let request = match role.operation() {
+                arcweft_core::task::NeedProducerOperation::AssetLoad { kind } => {
+                    arcweft_core::task::NeedProducerRequestProjection::AssetLoad {
+                        kind,
+                        argument_name: role.request_argument_name().to_owned(),
+                    }
+                }
+            };
+            (
+                arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                    *selected.schema().semantic_digest().as_bytes(),
+                ),
+                request,
+                role.policy(),
+                role.restart(),
+                arcweft_core::task::TaskClass::AssetDecode,
+            )
+        } else {
+            let host = extern_host.ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "manifest Need producer has no selected extern host target".to_owned(),
             })?;
-            let manifest_result =
-                runtime_type_under(manifest_result, enclosing, symbols, world, analysis)?;
-            if host.contract().is_none()
-                || host.mode() != RuntimeHostCallMode::Suspend
-                || manifest_result != need_type
-                || !matches!(manifest_result.shape(), arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(_))
-            {
-                return Err(RuntimeSemanticProjectionError::Call {
-                    owner,
-                    reason: "extern Need producer manifest result must match the exact suspended Need<T> call result"
-                        .to_owned(),
-                });
-            }
-        }
+            let host_contract =
+                host.contract()
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                        owner,
+                        reason: "manifest Need producer has no selected host contract".to_owned(),
+                    })?;
+            (
+                arcweft_core::task::NeedProducerContractDigest::from_bytes(
+                    *host_contract.as_bytes(),
+                ),
+                arcweft_core::task::NeedProducerRequestProjection::ExternCapability {
+                    capability: arcweft_core::task::HostCapabilityId(host.capability().to_owned()),
+                    operation: host.operation().to_owned(),
+                    contract: host_contract,
+                    argument_names,
+                },
+                arcweft_core::task::TaskPolicy::AlwaysStart,
+                arcweft_core::task::HostRestartPolicy::MustBeQuiescent,
+                arcweft_core::task::TaskClass::Background,
+            )
+        };
+        let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Need(payload_type) =
+            need_type.shape()
+        else {
+            return Err(RuntimeSemanticProjectionError::Call {
+                owner,
+                reason: "selected Need producer result has no Need<T> item".to_owned(),
+            });
+        };
+        let plan = arcweft_core::task::NeedProducerTaskPlan::try_new(
+            contract,
+            admission.site(),
+            request,
+            call.operands()
+                .iter()
+                .map(|operand| operand.ty().identity())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            payload_type.identity(),
+            policy,
+            restart,
+            class,
+            arcweft_core::task::TaskPriority(0),
+            arcweft_core::task::CancelScopeId("flow".to_owned()),
+        )
+        .map_err(|error| RuntimeSemanticProjectionError::Call {
+            owner,
+            reason: format!("selected Need producer plan is invalid: {error}"),
+        })?;
         let producer =
-            RuntimeResolvedNeedProducer::try_new(*role, need_type, admission).map_err(|error| {
+            RuntimeResolvedNeedProducer::try_new(plan, need_type, admission).map_err(|error| {
                 RuntimeSemanticProjectionError::Call {
                     owner,
                     reason: error.to_string(),
@@ -8495,13 +8582,19 @@ fn runtime_call_target(
                         .to_owned(),
                 });
             }
-            let effects = checked.exposed_row().closed_value().ok_or_else(|| {
+            checked.exposed_row().closed_value().ok_or_else(|| {
                 RuntimeSemanticProjectionError::Call {
                     owner,
                     reason: "extern capability requires a closed manifest effect row".to_owned(),
                 }
             })?;
-            let mode = if effects.iter().any(EffectId::is_control_suspend) {
+            let result = checked.signature().value_type().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "extern capability has no declared result type".to_owned(),
+                }
+            })?;
+            let mode = if matches!(result, TypeKind::Need(_)) {
                 RuntimeHostCallMode::Suspend
             } else {
                 RuntimeHostCallMode::Immediate

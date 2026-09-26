@@ -22,10 +22,15 @@ use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
 };
+use arcweft_runtime_driver::swap::ProgramGeneration;
 use arcweft_runtime_driver::task::HostTaskDispatch;
-use arcweft_runtime_host::{NativeTaskBridge, NativeTaskBridgeError};
+use arcweft_runtime_host::{
+    BundleAssetAdapter, BundleAssetAdapterError, NativeTaskBridge, NativeTaskBridgeError,
+    NativeTaskDispatch,
+};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -130,6 +135,10 @@ pub enum WindowedRuntimeOwnerError {
     #[error(transparent)]
     NativeTaskBridge(#[from] NativeTaskBridgeError),
     #[error(transparent)]
+    BundleAssets(#[from] BundleAssetAdapterError),
+    #[error(transparent)]
+    BundleAssetContext(#[from] arcweft_core::value::RuntimeBundleAssetValueError),
+    #[error(transparent)]
     PatchEndpoint(#[from] NativePatchEndpointError),
     #[error(transparent)]
     ImageCatalog(#[from] BundleImageCatalogError),
@@ -163,10 +172,11 @@ pub struct WindowedRuntimeOwner {
     images: BundleImageCatalog,
     patch_queue: WindowedPatchQueue,
     _workspace: WindowedRuntimeWorkspace,
+    base_registry: HostAdapterRegistryBuilder,
+    bundle_assets: BundleAssetAdapter,
     host: NativeTaskBridge,
     pending_task_events: Vec<TaskEvent>,
     pending_audio_events: Vec<AudioEvent>,
-    pending_host_dispatches: Vec<HostTaskDispatch>,
 }
 
 impl WindowedRuntimeOwner {
@@ -230,17 +240,30 @@ impl WindowedRuntimeOwner {
         ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
     {
         let workspace = WindowedRuntimeWorkspace::create(bundle)?;
-        let host = windowed_native_task_bridge(bundle, workspace.source_path(), install)?;
         let endpoint = NativePatchEndpoint::from_awfb_bytes(awfb_bytes, options)?;
+        let generation = endpoint.session().active_generation();
+        let bundle_assets = BundleAssetAdapter::try_new(
+            generation.bundle_asset_context(),
+            generation.artifact_identity,
+            Arc::new(bundle.clone()),
+        )?;
+        let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(
+            arcweft_runtime_host::NativeFileRoots::for_bundle_workspace(workspace.source_path()),
+            &[],
+        )?;
+        let base_registry = install(workspace.source_path(), builder)?;
+        let host =
+            windowed_native_task_bridge(bundle, base_registry.clone(), bundle_assets.clone())?;
         Ok(Self {
             endpoint,
             images,
             patch_queue: WindowedPatchQueue::default(),
             _workspace: workspace,
+            base_registry,
+            bundle_assets,
             host,
             pending_task_events: Vec::new(),
             pending_audio_events: Vec::new(),
-            pending_host_dispatches: Vec::new(),
         })
     }
 
@@ -277,14 +300,31 @@ impl WindowedRuntimeOwner {
         self.endpoint.session_mut()
     }
 
+    /// Restores a session only after every saved bundle asset value has been
+    /// checked against the retained generation catalog and its encoded bytes.
+    pub fn import_session_save_bytes(
+        &mut self,
+        bytes: &[u8],
+        options: &arcweft_save::SaveDecodeOptions,
+    ) -> Result<(), arcweft_runtime_driver::session_save::BundleSessionSaveError> {
+        let assets = self.bundle_assets.resolver();
+        self.endpoint
+            .session_mut()
+            .import_session_save_bytes_with_value_validator(bytes, options, move |value| {
+                assets
+                    .validate_owned_value(value)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            })
+    }
+
     /// Runs queued host-main-thread adapter work and stores deterministic task
     /// events for the next runtime step.
     pub fn pump_main_thread(&mut self) -> Result<usize, WindowedRuntimeOwnerError> {
         self.host.pump_main_thread()?;
         let completions = self.host.poll_completions()?;
         let completion_count = completions.len();
-        let events = self.normalize_host_events(completions);
-        self.pending_task_events.extend(events);
+        self.pending_task_events.extend(completions);
         Ok(completion_count)
     }
 
@@ -315,35 +355,17 @@ impl WindowedRuntimeOwner {
             return Ok(());
         }
         let tasks = dispatches
-            .iter()
-            .map(|dispatch| dispatch.task.clone())
+            .into_iter()
+            .map(|dispatch| {
+                let context = dispatch.bundle_asset_context();
+                NativeTaskDispatch::new(dispatch.dispatch_start(), dispatch.task, context)
+            })
             .collect::<Vec<_>>();
         let events = self
             .host
-            .complete_tasks(self.endpoint.session().program_owner(), tasks)?;
-        self.pending_host_dispatches.extend(dispatches);
-        let events = self.normalize_host_events(events);
+            .complete_tasks_with_dispatches(self.endpoint.session().program_owner(), tasks)?;
         self.pending_task_events.extend(events);
         Ok(())
-    }
-
-    fn normalize_host_events(&mut self, events: Vec<TaskEvent>) -> Vec<TaskEvent> {
-        events
-            .into_iter()
-            .map(|event| self.normalize_host_event(event))
-            .collect()
-    }
-
-    fn normalize_host_event(&mut self, event: TaskEvent) -> TaskEvent {
-        let Some(index) = self
-            .pending_host_dispatches
-            .iter()
-            .position(|dispatch| dispatch.task.id == event.task_id)
-        else {
-            return event;
-        };
-        let dispatch = self.pending_host_dispatches.remove(index);
-        dispatch.into_event(event.kind)
     }
 
     /// Returns the active image catalog used by the renderer.
@@ -443,12 +465,68 @@ impl WindowedRuntimeOwner {
         bytes: &[u8],
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
         let prepared = self.endpoint.prepare_patch_bytes(bytes)?;
-        let target_images = images_from_awfb_bytes(
+        let target_bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
             prepared.target_awfb_bytes(),
             self.endpoint.options().engine_resource_types.as_ref(),
+        )
+        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
+            message: error.to_string(),
+        })?;
+        let target_images = BundleImageCatalog::from_bundle(&target_bundle)?;
+        let restart_candidate = NativePatchEndpoint::from_awfb_bytes(
+            prepared.target_awfb_bytes().to_vec(),
+            self.endpoint.options().clone(),
         )?;
-        let outcome = self.endpoint.apply_prepared_patch(prepared)?;
+        let (restart_assets, restart_host) =
+            self.restarted_host_for(&restart_candidate, &target_bundle)?;
+        let target_policy = windowed_host_policy(&target_bundle);
+        self.host.validate_policy_extension(target_policy.clone())?;
+        let candidate_generation = self.endpoint.session().next_generation_id();
+        let target_identity = prepared.target_artifact_identity();
+        let candidate_context =
+            ProgramGeneration::bundle_asset_context_for(candidate_generation, target_identity)?;
+        if !prepared.is_noop() {
+            self.bundle_assets.bind_generation(
+                candidate_context,
+                target_identity,
+                Arc::new(target_bundle.clone()),
+            )?;
+        }
+        let outcome = match self.endpoint.apply_prepared_patch(prepared) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.bundle_assets.retire_generation(candidate_generation)?;
+                return Err(error.into());
+            }
+        };
         let outcome = windowed_outcome_from_native(outcome, source);
+        match &outcome {
+            WindowedRuntimeOutcome::Applied { .. } => {
+                self.host
+                    .try_allow_policy(target_policy)
+                    .expect("immutable registry accepted the target policy before patch commit");
+                let generation = self.endpoint.session().active_generation();
+                debug_assert_eq!(generation.id, candidate_generation);
+                debug_assert_eq!(generation.bundle_asset_context(), candidate_context);
+            }
+            WindowedRuntimeOutcome::Restarted { .. } => {
+                debug_assert_eq!(
+                    self.endpoint
+                        .session()
+                        .active_generation()
+                        .artifact_identity,
+                    restart_candidate
+                        .session()
+                        .active_generation()
+                        .artifact_identity
+                );
+                self.install_restarted_host(restart_assets, restart_host);
+            }
+            WindowedRuntimeOutcome::Noop { .. } => {}
+            WindowedRuntimeOutcome::Rejected { .. } => {
+                unreachable!("native patch commits no rejection outcome")
+            }
+        }
         if outcome.refreshes_image_catalog() {
             self.images = target_images;
         }
@@ -477,17 +555,53 @@ impl WindowedRuntimeOwner {
         )?;
         let endpoint =
             NativePatchEndpoint::from_awfb_bytes(bytes, self.endpoint.options().clone())?;
+        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+            endpoint.active_awfb_bytes(),
+            endpoint.options().engine_resource_types.as_ref(),
+        )
+        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
+            message: error.to_string(),
+        })?;
         let generation = endpoint.session().active_generation().id;
         let content_root = endpoint
             .active_content_root()
             .unwrap_or_else(|| endpoint.session().active_generation().content_root);
+        let (bundle_assets, host) = self.restarted_host_for(&endpoint, &bundle)?;
         self.endpoint = endpoint;
+        self.install_restarted_host(bundle_assets, host);
         self.images = images;
         Ok(WindowedRuntimeOutcome::Restarted {
             generation,
             compatibility: PatchCompatibility::RestartRequired,
             content_root,
         })
+    }
+
+    fn restarted_host_for(
+        &self,
+        endpoint: &NativePatchEndpoint,
+        bundle: &ArcweftBundle,
+    ) -> Result<(BundleAssetAdapter, NativeTaskBridge), WindowedRuntimeOwnerError> {
+        let generation = endpoint.session().active_generation();
+        let bundle_assets = BundleAssetAdapter::try_new(
+            generation.bundle_asset_context(),
+            generation.artifact_identity,
+            Arc::new(bundle.clone()),
+        )?;
+        let host =
+            windowed_native_task_bridge(bundle, self.base_registry.clone(), bundle_assets.clone())?;
+        Ok((bundle_assets, host))
+    }
+
+    fn install_restarted_host(
+        &mut self,
+        bundle_assets: BundleAssetAdapter,
+        host: NativeTaskBridge,
+    ) {
+        self.pending_task_events.clear();
+        self.pending_audio_events.clear();
+        self.host = host;
+        self.bundle_assets = bundle_assets;
     }
 
     fn record_success(&mut self, source: PatchEventSource, outcome: &WindowedRuntimeOutcome) {
@@ -618,22 +732,12 @@ impl Drop for WindowedRuntimeWorkspace {
     }
 }
 
-fn windowed_native_task_bridge<F>(
+fn windowed_native_task_bridge(
     bundle: &ArcweftBundle,
-    source_path: &Path,
-    install: F,
-) -> Result<NativeTaskBridge, WindowedRuntimeOwnerError>
-where
-    F: FnOnce(
-        &Path,
-        HostAdapterRegistryBuilder,
-    ) -> Result<HostAdapterRegistryBuilder, HostAdapterError>,
-{
-    let builder = arcweft_runtime_host::native_task::standard_cli_registry_builder(
-        arcweft_runtime_host::NativeFileRoots::for_bundle_workspace(source_path),
-        &[],
-    )?;
-    let registry = install(source_path, builder)?.build();
+    base_registry: HostAdapterRegistryBuilder,
+    bundle_assets: BundleAssetAdapter,
+) -> Result<NativeTaskBridge, WindowedRuntimeOwnerError> {
+    let registry = base_registry.register(bundle_assets)?.build();
     NativeTaskBridge::try_with_registry(windowed_host_policy(bundle), registry)
         .map_err(WindowedRuntimeOwnerError::NativeAdapter)
 }
@@ -691,7 +795,7 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), WindowedRuntimeOwne
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::windowed_patch::{WindowedPatchEvent, WindowedPatchState};
+    use crate::windowed_patch::{RestartReason, WindowedPatchEvent, WindowedPatchState};
     use arcweft_bundle::container::{BundleView, ReadBudget};
     use arcweft_bundle::patch::{BundlePatchArtifact, encode_patch_bundle};
     use arcweft_bundle::resource_codec::SourceMapSection;
@@ -835,6 +939,34 @@ mod tests {
         );
         assert_eq!(rendered_rgba(&owner), vec![0, 0, 255, 255]);
         assert_eq!(owner.last_patch_report().state, WindowedPatchState::Applied);
+    }
+
+    #[test]
+    fn explicit_restart_rebinds_asset_catalog_to_new_awfb_identity() {
+        let old = fixture_bundle_with("Old text", RED_PNG);
+        let new = fixture_bundle_with("New text", BLUE_PNG);
+        let mut owner = WindowedRuntimeOwner::from_bundle(&old, BundleSessionOptions::default())
+            .expect("owner starts");
+        let old_context = owner.session().active_generation().bundle_asset_context();
+
+        owner.push_patch_event(WindowedPatchEvent::RestartWithBundle {
+            bytes: awfb_bytes(&new),
+            source: PatchEventSource::EmbeddingApi,
+            reason: RestartReason::Manual,
+        });
+        let outcomes = owner
+            .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)
+            .expect("restart is processed");
+
+        assert!(matches!(
+            outcomes.as_slice(),
+            [WindowedRuntimeOutcome::Restarted { .. }]
+        ));
+        assert_ne!(
+            owner.session().active_generation().bundle_asset_context(),
+            old_context
+        );
+        assert_eq!(rendered_rgba(&owner), vec![0, 0, 255, 255]);
     }
 
     fn rendered_rgba(owner: &WindowedRuntimeOwner) -> Vec<u8> {

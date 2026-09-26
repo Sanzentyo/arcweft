@@ -5,9 +5,9 @@
 //! actual I/O, worker pools, clocks, and OS integration.
 
 use arcweft_core::task::{
-    BoundTaskSpec, CancelScopeId, SchedulerBudget, TaskClass, TaskCompletionError, TaskEnsureError,
-    TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy, compare_task_events,
-    task_events_are_normalized,
+    BoundTaskSpec, CancelScopeId, GenerationId, LogicalEpoch, SchedulerBudget, TaskClass,
+    TaskCompletionError, TaskEnsureError, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskPolicy,
+    TaskPublicationRevision, TaskSequence, compare_task_events, task_events_are_normalized,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,7 +29,17 @@ pub struct RuntimeScheduler {
     accepted_specs: BTreeMap<TaskId, BoundTaskSpec>,
     joined_waiters: BTreeMap<TaskId, Vec<TaskId>>,
     joined_waiter_owners: BTreeMap<TaskId, TaskId>,
+    joined_publication_revisions: BTreeMap<TaskId, TaskPublicationRevision>,
     terminal_task_ids: BTreeSet<TaskId>,
+    publication_cursors: BTreeMap<
+        TaskId,
+        (
+            GenerationId,
+            LogicalEpoch,
+            TaskSequence,
+            TaskPublicationRevision,
+        ),
+    >,
     cancel_scopes: BTreeSet<CancelScopeId>,
     stats: RuntimeSchedulerStats,
 }
@@ -161,7 +171,9 @@ impl RuntimeScheduler {
             accepted_specs: BTreeMap::new(),
             joined_waiters: BTreeMap::new(),
             joined_waiter_owners: BTreeMap::new(),
+            joined_publication_revisions: BTreeMap::new(),
             terminal_task_ids: BTreeSet::new(),
+            publication_cursors: BTreeMap::new(),
             cancel_scopes: BTreeSet::new(),
             stats: RuntimeSchedulerStats {
                 submitted: 0,
@@ -318,6 +330,15 @@ impl RuntimeScheduler {
 
         let mut joined_events = None;
         for event in &events {
+            self.publication_cursors.insert(
+                event.task_id.clone(),
+                (
+                    event.generation,
+                    event.logical_epoch,
+                    event.sequence,
+                    event.publication_revision,
+                ),
+            );
             let completed = self.complete_one(event);
             if !completed.is_empty() {
                 joined_events.get_or_insert_with(Vec::new).extend(completed);
@@ -426,6 +447,7 @@ impl RuntimeScheduler {
         let mut ordered = events.to_vec();
         ordered.sort_by(compare_task_events);
         let mut terminal_in_batch = BTreeSet::new();
+        let mut batch_cursors = BTreeMap::new();
 
         for event in &ordered {
             if let Some(owner_id) = self.joined_waiter_owners.get(&event.task_id) {
@@ -455,6 +477,41 @@ impl RuntimeScheduler {
                 });
             }
 
+            if let Some((generation, epoch, sequence, revision)) = batch_cursors
+                .get(&event.task_id)
+                .or_else(|| self.publication_cursors.get(&event.task_id))
+            {
+                if (*generation, *epoch, *sequence)
+                    != (event.generation, event.logical_epoch, event.sequence)
+                {
+                    return Err(TaskCompletionError::DispatchMismatch {
+                        task_id: event.task_id.clone(),
+                    });
+                }
+                if event.publication_revision <= *revision {
+                    return Err(TaskCompletionError::StalePublication {
+                        task_id: event.task_id.clone(),
+                    });
+                }
+            }
+            batch_cursors.insert(
+                event.task_id.clone(),
+                (
+                    event.generation,
+                    event.logical_epoch,
+                    event.sequence,
+                    event.publication_revision,
+                ),
+            );
+
+            if matches!(event.kind, TaskEventKind::Progress(_))
+                && event.publication_revision.checked_next().is_none()
+            {
+                return Err(TaskCompletionError::PublicationRevisionExhausted {
+                    task_id: event.task_id.clone(),
+                });
+            }
+
             if is_terminal_event(&event.kind) {
                 terminal_in_batch.insert(event.task_id.clone());
             }
@@ -477,14 +534,18 @@ impl RuntimeScheduler {
         }
     }
 
-    fn progress_joined_waiters(&self, event: &TaskEvent) -> Vec<TaskEvent> {
+    fn progress_joined_waiters(&mut self, event: &TaskEvent) -> Vec<TaskEvent> {
         self.joined_waiters
             .get(&event.task_id)
             .into_iter()
             .flatten()
             .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
             .map(|task_id| TaskEvent {
+                generation: event.generation,
                 logical_epoch: event.logical_epoch,
+                publication_revision: self.next_joined_publication_revision(&task_id),
                 task_id,
                 sequence: event.sequence,
                 kind: event.kind.clone(),
@@ -501,7 +562,9 @@ impl RuntimeScheduler {
         waiters
             .into_iter()
             .map(|task_id| TaskEvent {
+                generation: event.generation,
                 logical_epoch: event.logical_epoch,
+                publication_revision: self.next_joined_publication_revision(&task_id),
                 task_id: {
                     self.joined_waiter_owners.remove(&task_id);
                     self.terminal_task_ids.insert(task_id.clone());
@@ -511,6 +574,19 @@ impl RuntimeScheduler {
                 kind: event.kind.clone(),
             })
             .collect()
+    }
+
+    fn next_joined_publication_revision(&mut self, task_id: &TaskId) -> TaskPublicationRevision {
+        let revision = self
+            .joined_publication_revisions
+            .get(task_id)
+            .map_or(Some(TaskPublicationRevision::FIRST), |last| {
+                last.checked_next()
+            })
+            .expect("owner cannot publish more revisions than the waiter frontier supports");
+        self.joined_publication_revisions
+            .insert(task_id.clone(), revision);
+        revision
     }
 
     fn refresh_in_flight_stats(&mut self) {
@@ -787,8 +863,9 @@ mod tests {
             .submit([task("waiter-b", "asset.bg", TaskPolicy::JoinSameKey, 0)])
             .expect("second waiter shares the owner's contract");
         let terminal = scheduler
-            .complete([event(
+            .complete([event_at_revision(
                 "owner",
+                1,
                 2,
                 TaskEventKind::Ready(RuntimePayload::from("done")),
             )])
@@ -800,6 +877,13 @@ mod tests {
                 .map(|event| event.task_id.0.as_str())
                 .collect::<Vec<_>>(),
             ["owner", "waiter-a", "waiter-b"]
+        );
+        assert_eq!(
+            terminal
+                .iter()
+                .map(|event| event.publication_revision.get())
+                .collect::<Vec<_>>(),
+            [2, 2, 1]
         );
         assert_eq!(scheduler.stats().in_flight, 0);
         assert_eq!(scheduler.stats().completed, 1);
@@ -1003,6 +1087,89 @@ mod tests {
     }
 
     #[test]
+    fn shuffled_progress_and_ready_revisions_are_normalized_before_commit() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler
+            .submit([task("owner", "asset.bg", TaskPolicy::AlwaysStart, 0)])
+            .unwrap();
+        scheduler.dispatch(SchedulerBudget { max_events: 8 });
+
+        let progress = |revision| {
+            event_at_revision(
+                "owner",
+                1,
+                revision,
+                TaskEventKind::Progress(arcweft_core::value::Progress::new(0.5).unwrap()),
+            )
+        };
+        let events = scheduler
+            .complete([
+                event_at_revision(
+                    "owner",
+                    1,
+                    3,
+                    TaskEventKind::Ready(RuntimePayload::from("ok")),
+                ),
+                progress(2),
+                progress(1),
+            ])
+            .unwrap();
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.publication_revision.get())
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert_eq!(scheduler.stats().completed, 1);
+    }
+
+    #[test]
+    fn repeated_or_mismatched_publications_reject_atomically() {
+        let mut scheduler = RuntimeScheduler::default();
+        scheduler
+            .submit([task("owner", "asset.bg", TaskPolicy::AlwaysStart, 0)])
+            .unwrap();
+        scheduler.dispatch(SchedulerBudget { max_events: 8 });
+        let progress = |revision| {
+            event_at_revision(
+                "owner",
+                1,
+                revision,
+                TaskEventKind::Progress(arcweft_core::value::Progress::new(0.5).unwrap()),
+            )
+        };
+        scheduler.complete([progress(2)]).unwrap();
+        let before = scheduler.clone();
+        assert_eq!(
+            scheduler.complete([progress(2)]),
+            Err(TaskCompletionError::StalePublication {
+                task_id: TaskId("owner".to_owned())
+            })
+        );
+        assert_eq!(scheduler, before);
+        assert_eq!(
+            scheduler.complete([event_at_revision(
+                "owner",
+                2,
+                3,
+                TaskEventKind::Ready(RuntimePayload::from("ok"))
+            )]),
+            Err(TaskCompletionError::DispatchMismatch {
+                task_id: TaskId("owner".to_owned())
+            })
+        );
+        assert_eq!(scheduler, before);
+        assert_eq!(
+            scheduler.complete([progress(u64::MAX)]),
+            Err(TaskCompletionError::PublicationRevisionExhausted {
+                task_id: TaskId("owner".to_owned()),
+            })
+        );
+        assert_eq!(scheduler, before);
+    }
+
+    #[test]
     fn cancellation_requests_are_dispatched_once() {
         let mut scheduler = RuntimeScheduler::default();
         scheduler.cancel_scope(CancelScopeId("flow".to_owned()));
@@ -1041,10 +1208,21 @@ mod tests {
 
     fn event(id: &str, sequence: u64, kind: TaskEventKind) -> TaskEvent {
         TaskEvent {
+            generation: GenerationId::new(1),
             logical_epoch: LogicalEpoch(0),
             task_id: TaskId(id.to_owned()),
             sequence: TaskSequence(sequence),
+            publication_revision: TaskPublicationRevision::FIRST,
             kind,
         }
+    }
+
+    fn event_at_revision(id: &str, sequence: u64, revision: u64, kind: TaskEventKind) -> TaskEvent {
+        use std::num::NonZeroU64;
+
+        let mut event = event(id, sequence, kind);
+        event.publication_revision =
+            TaskPublicationRevision::new(NonZeroU64::new(revision).unwrap());
+        event
     }
 }

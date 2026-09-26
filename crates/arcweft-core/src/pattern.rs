@@ -230,12 +230,12 @@ pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
     RuntimeStandardOpaqueTypeSpec::new(&["ArcError"], 0, "std.arc_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["ReducerError"], 0, "std.reducer_error"),
     RUNTIME_STANDARD_AGENT_ERROR,
-    RuntimeStandardOpaqueTypeSpec::new(&["AssetError"], 0, "std.asset_error"),
+    RuntimeStandardOpaqueTypeSpec::snapshot_only(&["AssetError"], "std.asset_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["ContentLoadError"], 0, "std.content_load_error"),
     RuntimeStandardOpaqueTypeSpec::new(&["DialogueText"], 0, "std.dialogue_text"),
-    RuntimeStandardOpaqueTypeSpec::new(&["ImageHandle"], 0, "std.image_handle"),
-    RuntimeStandardOpaqueTypeSpec::new(&["AudioHandle"], 0, "std.audio_handle"),
-    RuntimeStandardOpaqueTypeSpec::new(&["VoiceError"], 0, "std.voice_error"),
+    RuntimeStandardOpaqueTypeSpec::snapshot_only(&["ImageHandle"], "std.image_handle"),
+    RuntimeStandardOpaqueTypeSpec::snapshot_only(&["AudioHandle"], "std.audio_handle"),
+    RuntimeStandardOpaqueTypeSpec::snapshot_only(&["VoiceError"], "std.voice_error"),
 ];
 
 /// Resolves one exact standard opaque source path.
@@ -400,6 +400,7 @@ impl RuntimeOpaqueTypeOwner {
             && self.persistence == actual.persistence()
             && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 || self.semantic_identity == actual.semantic_identity())
+            && crate::value::standard_asset_opaque_payload_is_valid(self, actual.payload())
     }
 
     pub fn try_wrap(&self, payload: RuntimeValue) -> Result<RuntimeValue, RuntimeOpaqueValueError> {
@@ -407,6 +408,11 @@ impl RuntimeOpaqueTypeOwner {
             return Err(RuntimeOpaqueValueError::NonConcreteOwner {
                 producer: self.producer.clone(),
                 semantic_identity: self.semantic_identity,
+            });
+        }
+        if !crate::value::standard_asset_opaque_payload_is_valid(self, &payload) {
+            return Err(RuntimeOpaqueValueError::InvalidStandardPayload {
+                producer: self.producer.clone(),
             });
         }
         Ok(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
@@ -1500,7 +1506,20 @@ pub(crate) fn match_runtime_pattern(
     value: &RuntimeValue,
 ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
     validate_runtime_pattern(plan, pattern)?;
-    if !plan.value_matches_type(pattern.ty(), value)? {
+    let need_handle = plan
+        .type_table()
+        .get(pattern.ty())
+        .is_some_and(|declaration| {
+            matches!(declaration.projection(), RuntimePlanTypeProjection::Need(_))
+        });
+    if need_handle {
+        // Need is an affine runtime handle, not an ordinary admitted payload.
+        // Its item identity comes from the checked local type; the value only
+        // carries the nonempty registry-issued handle used by Await.
+        if !matches!(value, RuntimeValue::Need(need) if !need.0.is_empty()) {
+            return Ok(None);
+        }
+    } else if !plan.value_matches_type(pattern.ty(), value)? {
         return Ok(None);
     }
     let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
@@ -2107,6 +2126,7 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
         | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))
         | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
+        | (RuntimePlanTypeProjection::Need(_), RuntimeValue::Need(_))
         | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
         | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_)) => true,
         (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Callable(value)) => {
@@ -2384,18 +2404,27 @@ mod tests {
         assert_eq!(spec.arity(), 0);
         assert_eq!(spec.producer(), "std.audio_handle");
         assert_eq!(spec.value_class(), RuntimeOpaqueValueClass::Plain);
-        assert_eq!(
-            spec.persistence(),
-            RuntimeOpaquePersistence::ConstantAndSnapshot
-        );
+        assert_eq!(spec.persistence(), RuntimeOpaquePersistence::SnapshotOnly);
 
         let owner = spec
             .monomorphic_owner()
             .expect("AudioHandle is monomorphic");
         assert_eq!(owner.admission(), RuntimeOpaqueTypeAdmission::ExactIdentity);
-        let value = owner
-            .try_wrap(RuntimeValue::Unit)
-            .expect("the exact standard owner wraps a generic test payload");
+        let binding = crate::value::RuntimeBundleAssetBinding::try_new(
+            crate::value::RuntimeBundleAssetContext::new(
+                crate::task::GenerationId::new(1),
+                crate::value::RuntimeBundleAssetArtifactDigest::try_from_bytes([1; 32])
+                    .expect("artifact digest"),
+            ),
+            crate::value::RuntimeBundleAssetResourceId::try_new("asset.voice.opening")
+                .expect("asset id"),
+            crate::value::RuntimeAssetContentDigest::try_for_bytes(b"audio")
+                .expect("content digest"),
+        )
+        .expect("bundle binding");
+        let value = crate::value::RuntimeAudioHandleValue::from_binding(binding)
+            .into_runtime_value()
+            .expect("typed audio handle");
         let checked = RuntimeCheckedType::Opaque {
             owner: owner.clone(),
         };

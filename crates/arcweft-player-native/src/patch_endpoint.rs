@@ -1,5 +1,6 @@
 //! In-process dev patch endpoint for native player hosts.
 
+use arcweft_bundle::BundleArtifactIdentity;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::{
     PatchBundleError, PatchCompatibility, PatchMaterializedTarget, apply_patch_bundle,
@@ -39,6 +40,12 @@ pub struct NativePreparedPatch {
 }
 
 impl NativePreparedPatch {
+    /// Returns whether target materialization was accepted as a no-op.
+    #[must_use]
+    pub const fn is_noop(&self) -> bool {
+        self.is_noop
+    }
+
     /// Returns the verified target AWFB bytes.
     #[must_use]
     pub fn target_awfb_bytes(&self) -> &[u8] {
@@ -49,6 +56,14 @@ impl NativePreparedPatch {
     #[must_use]
     pub const fn target_content_root(&self) -> BundleDigest {
         self.materialized.report().target_artifact.content_root
+    }
+
+    /// Returns the exact verified AWFB identity of the materialized target.
+    #[must_use]
+    pub const fn target_artifact_identity(&self) -> BundleArtifactIdentity {
+        BundleArtifactIdentity::AwfbContainer {
+            identity: self.materialized.report().target_artifact,
+        }
     }
 
     /// Returns compatibility derived during target materialization.
@@ -274,7 +289,7 @@ impl NativePatchEndpoint {
         &self.options
     }
 
-    pub const fn active_content_root(&self) -> Option<BundleDigest> {
+    pub fn active_content_root(&self) -> Option<BundleDigest> {
         self.session.active_container_content_root()
     }
 

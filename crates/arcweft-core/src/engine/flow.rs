@@ -3,10 +3,10 @@ mod function_call;
 
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
-    AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
-    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
-    RuntimeValue, runtime_value_label,
+    ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor, FlowEvent,
+    FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic, RuntimeEvalError,
+    RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput, RuntimeValue,
+    runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
 use crate::pattern::pattern_binding_capacity;
@@ -313,23 +313,17 @@ impl Engine {
                 target,
                 observers,
             } => {
-                output.flow_events.push(FlowEvent::AwaitStarted {
-                    need: target.need.clone(),
-                    task: target.task.clone(),
-                });
-                let Some(task) = self.await_task_spec(&target, output, pure_backend) else {
-                    return;
-                };
-                output.requests.tasks.push(task);
-                let observed_through = self.task_publications.get(&target.task).copied();
-                self.fiber.status = FlowFiberStatus::Waiting(Box::new(AwaitState {
+                self.start_need_await(
                     binding,
                     target,
                     observers,
-                    resume: self.resume_cursor(next_op_index),
-                    observed_through,
-                    queued: std::collections::VecDeque::new(),
-                }));
+                    self.resume_cursor(next_op_index),
+                    output,
+                    pure_backend,
+                );
+            }
+            FlowOp::StartNeedProducer { binding, target } => {
+                self.start_need_producer(binding, target, next_op_index, output, pure_backend);
             }
             FlowOp::AwaitMany {
                 binding,
@@ -735,7 +729,7 @@ impl Engine {
                     ));
                     return;
                 };
-                self.fiber.status = FlowFiberStatus::Waiting(Box::new(*state));
+                self.fiber.status = FlowFiberStatus::NeedWaiting(state);
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {

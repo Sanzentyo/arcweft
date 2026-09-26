@@ -35,12 +35,23 @@ use arcweft_core::{
         RuntimeCallableStateDefinition, RuntimeCallableTransition, RuntimeEntryKind,
         RuntimeEntrySpec, RuntimeEntryTarget, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
         RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionTypeContract,
+        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     runtime_id::RuntimeCallableStateId,
-    task::RuntimeProgramOwner,
-    value::{RuntimeCallableValue, RuntimeValue},
+    task::{
+        AssetLoadKind, CancelScopeId, HostRestartPolicy, NeedProducerContractDigest,
+        NeedProducerRequestProjection, NeedProducerSiteDigest, NeedProducerTaskPlan,
+        RuntimeProgramOwner, TaskClass, TaskPolicy, TaskPriority,
+    },
+    value::{
+        RuntimeAssetContentDigest, RuntimeBinding, RuntimeBundleAssetArtifactDigest,
+        RuntimeBundleAssetBinding, RuntimeBundleAssetContext, RuntimeBundleAssetOpaqueRole,
+        RuntimeBundleAssetResourceId, RuntimeCallableValue, RuntimeEntityReference,
+        RuntimeImageHandleValue, RuntimeValue,
+    },
 };
+use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily};
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
@@ -55,7 +66,10 @@ use arcweft_runtime_driver::{
         PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
         PresentationResourceState,
     },
-    session::{BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput},
+    session::{
+        BundleHotSwapError, BundleSession, BundleSessionError, BundleSessionOptions,
+        BundleStepInput,
+    },
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
@@ -288,6 +302,89 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
 }
 
 #[test]
+fn default_session_import_requires_catalog_validator_for_asset_handles() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let save =
+        session_save_with_view_binding(&session, image_handle_for_bytes(b"saved image bytes"));
+
+    let error = session
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("standard bundle-owned handles require catalog validation");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::BundleAssetCatalogValidatorRequired {
+            role: RuntimeBundleAssetOpaqueRole::ImageHandle
+        }
+    ));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("rejected import leaves session valid"),
+        before
+    );
+}
+
+#[test]
+fn supplied_session_value_validator_rejects_forged_asset_digest_before_commit() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let before = session.snapshot_session().expect("live snapshot exports");
+    let save =
+        session_save_with_view_binding(&session, image_handle_for_bytes(b"forged image bytes"));
+    let catalog_digest = RuntimeAssetContentDigest::try_for_bytes(b"catalog image bytes")
+        .expect("catalog digest fits");
+    let mut saw_image = false;
+
+    let error = session
+        .import_session_save_bytes_with_value_validator(
+            &save,
+            &arcweft_save::SaveDecodeOptions::default(),
+            |value| match arcweft_core::value::runtime_bundle_asset_opaque_role(value) {
+                Some(RuntimeBundleAssetOpaqueRole::ImageHandle) => {
+                    saw_image = true;
+                    let image = RuntimeImageHandleValue::try_from_runtime_value(value)
+                        .map_err(|error| error.to_string())?;
+                    if image.binding().content_digest() == catalog_digest {
+                        Ok(())
+                    } else {
+                        Err("saved image content digest differs from the accepted catalog".into())
+                    }
+                }
+                Some(role) => Err(format!("unexpected bundle asset role {role:?}")),
+                None => Ok(()),
+            },
+        )
+        .expect_err("catalog validator rejects a forged content digest");
+
+    assert!(
+        saw_image,
+        "the typed callback receives the retained image handle"
+    );
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::RuntimeValueValidation { message }
+            if message.contains("content digest differs")
+    ));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("rejected import leaves session valid"),
+        before
+    );
+}
+
+#[test]
 fn awbc_product_session_save_preserves_exact_same_label_flow_identity() {
     let first = FlowRuntimeId::from_checked_declaration_digest([0x81; 32], "flow.main")
         .expect("first checked Flow identity");
@@ -438,6 +535,56 @@ fn fx_instances_and_logical_time_restore_atomically_with_the_session() {
             .expect("rejected restore leaves state unchanged"),
         before_rejection
     );
+}
+
+#[test]
+fn rejected_content_patch_keeps_active_fx_presentation_unchanged() {
+    let definition = fx_definition();
+    let base = product_bundle_with_label("entry.main", "fx-patch.arcw")
+        .with_fx_definitions(FxDefinitions::try_new([definition.clone()]).expect("Fx inventory"));
+    let mut session =
+        BundleSession::new(&base, BundleSessionOptions::default()).expect("Product session starts");
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 250).expect("clock"),
+        BundleStepInput::default(),
+    );
+    session
+        .retain_fx_instance(
+            FxInstanceIdentity::new(
+                definition.id(),
+                FxInstanceOwnerKey::from_view_canonical_bytes(b"view-node-fx-patch"),
+                0,
+            ),
+            vec![FxRuntimeValue::F32(FiniteF32::ONE)],
+            FxGraphChildPath::try_new(vec![2]).expect("child path"),
+            None,
+        )
+        .expect("Fx activates");
+    let before = session.presentation().clone();
+    let before_generation = session.active_generation().id;
+    let incompatible = FxDefinition::new(
+        definition.id().clone(),
+        vec![
+            FxDefinitionParameter::try_new(
+                0,
+                "speed",
+                FxDefinitionParameterType::Runtime(FxRuntimeType::I32),
+                None,
+            )
+            .expect("incompatible Fx parameter"),
+        ],
+        FxGraph::default(),
+    )
+    .expect("incompatible Fx definition");
+    let target = product_bundle_with_label("entry.main", "fx-patch.arcw")
+        .with_fx_definitions(FxDefinitions::try_new([incompatible]).expect("target Fx inventory"));
+
+    let error = session
+        .hot_swap_bundle(&target)
+        .expect_err("incompatible content patch is rejected");
+    assert!(matches!(error, BundleHotSwapError::FxRuntime(_)));
+    assert_eq!(session.active_generation().id, before_generation);
+    assert_eq!(session.presentation(), &before);
 }
 
 #[test]
@@ -1043,6 +1190,146 @@ fn product_session_from_bytes(bytes: &[u8]) -> BundleSession {
         .expect("AWBC product session starts")
 }
 
+#[test]
+fn restartable_need_session_save_reensures_the_exact_dispatch_once() {
+    let bytes = restartable_need_awfb_bytes();
+    let mut original = product_session_from_bytes(&bytes);
+    let first = original.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let [dispatch] = first.requested_tasks.as_slice() else {
+        panic!(
+            "Need producer emits one host task: {:?}",
+            first.requested_tasks
+        );
+    };
+    let dispatch = dispatch.clone();
+    let asset_context = dispatch
+        .bundle_asset_context()
+        .expect("AssetLoad dispatch has a complete artifact context");
+    assert_eq!(asset_context.generation(), dispatch.generation);
+    let artifact = original
+        .artifact_identity_for_generation(dispatch.generation)
+        .expect("dispatch generation image is retained");
+    assert_eq!(
+        asset_context.artifact().as_bytes(),
+        &artifact.binding_digest().as_bytes()
+    );
+    let saved = original
+        .snapshot_session()
+        .expect("Restartable Need can be saved");
+    assert_eq!(saved.runtime.restartable_tasks.len(), 1);
+    assert_eq!(
+        saved.runtime.restartable_tasks[0].sequence,
+        dispatch.sequence
+    );
+    let encoded = original
+        .export_session_save_bytes()
+        .expect("session save encodes");
+
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
+        .expect("exact pending Need restores");
+    let reensure = restored.step_with_clock(
+        RuntimeClockStep::from_millis(2, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(reensure.requested_tasks, [dispatch.clone()]);
+    assert_eq!(
+        reensure.requested_tasks[0].bundle_asset_context(),
+        Some(asset_context)
+    );
+    let once = restored.step_with_clock(
+        RuntimeClockStep::from_millis(3, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert!(once.requested_tasks.is_empty());
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("pending Need remains saveable")
+            .runtime
+            .next_task_sequence,
+        saved.runtime.next_task_sequence,
+    );
+
+    for (tick, ratio) in [(4, 0.25), (5, 0.75)] {
+        restored.step_with_clock(
+            RuntimeClockStep::from_millis(tick, 16).expect("clock"),
+            BundleStepInput {
+                task_events: vec![dispatch.clone().into_event_at_revision(
+                    arcweft_core::task::TaskPublicationRevision::new(
+                        std::num::NonZeroU64::new(tick - 3).expect("revision"),
+                    ),
+                    arcweft_core::task::TaskEventKind::Progress(
+                        arcweft_core::value::Progress::new(ratio).expect("progress"),
+                    ),
+                )],
+                ..BundleStepInput::default()
+            },
+        );
+    }
+    let progressed = restored
+        .snapshot_session()
+        .expect("Progress frontier remains saveable");
+    assert_eq!(
+        progressed.runtime.restartable_tasks[0]
+            .last_publication_revision
+            .expect("Progress has revision")
+            .get(),
+        2
+    );
+    let progressed_bytes = restored
+        .export_session_save_bytes()
+        .expect("Progress save encodes");
+    let mut resumed = product_session_from_bytes(&bytes);
+    resumed
+        .import_session_save_bytes(
+            &progressed_bytes,
+            &arcweft_save::SaveDecodeOptions::default(),
+        )
+        .expect("Progress frontier restores");
+    let reensure = resumed.step_with_clock(
+        RuntimeClockStep::from_millis(6, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let [resumed_dispatch] = reensure.requested_tasks.as_slice() else {
+        panic!("one exact Restartable Need re-ensure is required");
+    };
+    assert_eq!(resumed_dispatch.identity(), dispatch.identity());
+    assert_eq!(resumed_dispatch.task, dispatch.task);
+    assert_eq!(
+        resumed_dispatch
+            .dispatch_start()
+            .last_publication_revision()
+            .expect("Progress frontier is retained")
+            .get(),
+        2,
+    );
+    let ready = resumed_dispatch
+        .clone()
+        .into_event(arcweft_core::task::TaskEventKind::Ready(
+            arcweft_core::value::RuntimePayload::new(RuntimeValue::String("ready".to_owned())),
+        ));
+    resumed.step_with_clock(
+        RuntimeClockStep::from_millis(7, 16).expect("clock"),
+        BundleStepInput {
+            task_events: vec![ready],
+            ..BundleStepInput::default()
+        },
+    );
+    assert!(
+        resumed
+            .snapshot_session()
+            .expect("terminal Need remains saveable")
+            .runtime
+            .restartable_tasks
+            .is_empty()
+    );
+}
+
 fn exported_session_json(session: &BundleSession) -> serde_json::Value {
     let encoded = session
         .export_session_save_bytes()
@@ -1081,8 +1368,142 @@ fn encode_session_json_value(value: &serde_json::Value) -> Vec<u8> {
     .expect("save envelope encodes")
 }
 
+fn session_save_with_view_binding(session: &BundleSession, value: RuntimeValue) -> Vec<u8> {
+    let mut payload = exported_session_json(session);
+    payload["view_runtime"]["view_root_bindings"] = serde_json::to_value([RuntimeBinding {
+        name: "asset-image".to_owned(),
+        value,
+    }])
+    .expect("view runtime binding serializes");
+    encode_session_json_value(&payload)
+}
+
+fn image_handle_for_bytes(bytes: &[u8]) -> RuntimeValue {
+    let artifact = RuntimeBundleAssetArtifactDigest::try_from_bytes([0x83; 32])
+        .expect("fixture artifact digest is nonzero");
+    let context = RuntimeBundleAssetContext::new(GenerationId::new(0), artifact);
+    let resource = RuntimeBundleAssetResourceId::try_new("asset.bg.room")
+        .expect("fixture asset identity is canonical");
+    let content_digest =
+        RuntimeAssetContentDigest::try_for_bytes(bytes).expect("fixture content digest fits");
+    let binding = RuntimeBundleAssetBinding::try_new(context, resource, content_digest)
+        .expect("fixture asset binding is valid");
+    RuntimeImageHandleValue::from_binding(binding)
+        .into_runtime_value()
+        .expect("fixture ImageHandle is a standard opaque value")
+}
+
 fn product_awfb_bytes(entry: &str) -> Vec<u8> {
     product_awfb_bytes_with_label(entry, "awbc-session.arcw")
+}
+
+fn restartable_need_awfb_bytes() -> Vec<u8> {
+    let flow = FlowRuntimeId::from_runtime_target_value("flow.restartable_need")
+        .expect("fixture flow ID is valid");
+    let string_ty = RuntimeSemanticTypeId::from_bytes([0x91; 32]);
+    let asset_ty = RuntimeSemanticTypeId::from_bytes([0x92; 32]);
+    let need_ty = RuntimeSemanticTypeId::from_bytes([0x93; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admitted = builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(string_ty, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(asset_ty, RuntimePlanTypeProjection::EntityReference),
+                RuntimePlanTypeSeed::new(need_ty, RuntimePlanTypeProjection::Need(string_ty)),
+            ],
+            [RuntimeLocalDeclarationSeed::new(need_ty)],
+        )
+        .expect("Need types and local admit");
+    let need_local = admitted.local_ids()[0].clone();
+    let asset_path = AssetVirtualPath::try_new("save/restartable.png").expect("asset path");
+    let asset = AssetId::try_from(&asset_path).expect("asset ID");
+    let reference = RuntimeEntityReference::try_project(
+        DeclarationIdentityFamily::Asset,
+        asset.into_public_id(),
+    )
+    .expect("asset reference");
+    let plan = NeedProducerTaskPlan::try_new(
+        NeedProducerContractDigest::from_bytes([0x94; 32]),
+        NeedProducerSiteDigest::from_bytes([0x95; 32]),
+        NeedProducerRequestProjection::AssetLoad {
+            kind: AssetLoadKind::Image,
+            argument_name: "asset".to_owned(),
+        },
+        Box::new([asset_ty]),
+        string_ty,
+        TaskPolicy::JoinSameKey,
+        HostRestartPolicy::Restartable,
+        TaskClass::AssetDecode,
+        TaskPriority(0),
+        CancelScopeId("flow".to_owned()),
+    )
+    .expect("producer plan admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            vec![
+                RuntimeFlowOpSeed::StartNeedProducer {
+                    binding: RuntimePatternSeed::new(
+                        need_ty,
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: need_local.clone(),
+                        },
+                    ),
+                    target: arcweft_core::plan::RuntimeNeedProducerStartTargetSeed {
+                        plan,
+                        arguments: vec![RuntimeExprSeed::new(
+                            asset_ty,
+                            RuntimeExprSeedKind::EntityRef(reference),
+                        )],
+                    },
+                },
+                RuntimeFlowOpSeed::Await {
+                    binding: None,
+                    target: arcweft_core::plan::RuntimeAwaitTargetSeed {
+                        source: RuntimeExprSeed::new(
+                            need_ty,
+                            RuntimeExprSeedKind::Local(need_local),
+                        ),
+                    },
+                    observers: Vec::new(),
+                },
+                RuntimeFlowOpSeed::Return("done".to_owned()),
+            ],
+        ))
+        .expect("Need flow admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("Need Flow schema admits");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x96; 32]),
+            controller: None,
+        })
+        .expect("Need Flow executable admits");
+    builder
+        .push_entry(RuntimeEntrySpec {
+            id: EntryRuntimeId::from_source_entity_body("entry.main").expect("entry ID"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([0x97; 32]),
+            target: RuntimeEntryTarget::Flow(flow),
+            roles: RuntimeEntryRoles::None,
+        })
+        .expect("Need entry admits");
+    let plan = builder.finish().expect("Need plan seals");
+    let program = AwbcLowerer::new(&plan, &DialogueContentCatalog::new(), "need-session.arcw")
+        .lower()
+        .expect("Need AWBC lowers")
+        .program;
+    product_bundle_with_program("entry.main", "need-session.arcw", program)
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("Need bundle encodes")
 }
 
 fn assertion_product_bundle(condition: bool) -> ArcweftBundle {

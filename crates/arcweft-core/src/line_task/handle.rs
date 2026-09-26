@@ -345,6 +345,42 @@ pub struct RuntimeDialogueActivationState<T> {
     prepared_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
 }
 
+impl<T> RuntimeDialogueActivationState<T> {
+    /// Visits every runtime value retained by active dialogue result, defer,
+    /// and scheduled-capture custody.
+    pub(crate) fn visit_runtime_values<E>(
+        &self,
+        mut visitor: impl FnMut(&RuntimeValue) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match &self.result {
+            RuntimeDialogueResultState::Committed { value, .. }
+            | RuntimeDialogueResultState::Selected { value, .. }
+            | RuntimeDialogueResultState::Publishing { value, .. } => {
+                crate::value::visit_runtime_value_graph(value, |nested| visitor(nested))?;
+            }
+            RuntimeDialogueResultState::Uncommitted
+            | RuntimeDialogueResultState::Published
+            | RuntimeDialogueResultState::Abandoned => {}
+        }
+        for deferred in &self.deferred {
+            for capture in deferred.captures() {
+                crate::value::visit_runtime_value_graph(capture, |nested| visitor(nested))?;
+            }
+        }
+        for scheduled in &self.scheduled {
+            let captures = match &scheduled.custody {
+                RuntimeScheduledCaptureCustody::Packet(captures)
+                | RuntimeScheduledCaptureCustody::LineScope(captures) => captures,
+                RuntimeScheduledCaptureCustody::ChildFiber(_) => continue,
+            };
+            for binding in captures.iter() {
+                crate::value::visit_runtime_value_graph(&binding.value, |nested| visitor(nested))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// Post-publication affine authority retained only while parent-owned handles
 /// remain live. Executable dialogue frame, reducer, schedule, and result state
 /// are deliberately absent.

@@ -525,6 +525,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-bundle-assets"
+version = "0.1.0"
+dependencies = [
+ "arcweft-audio-codec",
+ "arcweft-bundle",
+ "arcweft-core",
+ "arcweft-image",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-character"
 version = "0.1.0"
 dependencies = [
@@ -1216,12 +1227,15 @@ dependencies = [
 name = "arcweft-player-web"
 version = "0.1.0"
 dependencies = [
+ "arcweft-audio-core",
  "arcweft-bundle",
+ "arcweft-bundle-assets",
  "arcweft-compiler",
  "arcweft-core",
  "arcweft-glyphon",
  "arcweft-id",
  "arcweft-image",
+ "arcweft-interaction-model",
  "arcweft-lang-sema",
  "arcweft-layout",
  "arcweft-player-scene",
@@ -1493,7 +1507,9 @@ name = "arcweft-runtime-host"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-audio-core",
  "arcweft-bundle",
+ "arcweft-bundle-assets",
  "arcweft-character",
  "arcweft-core",
  "arcweft-dialogue",

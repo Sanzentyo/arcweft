@@ -3,16 +3,12 @@ mod samples;
 
 use super::options::ScriptBenchOptions;
 use super::profile::{compile_profile_runtime_plan, report_path};
+use super::source::source_runtime_program_from_compiled;
 use crate::app::project::{
-    SourceSelection, native_host_policy_for_selection, require_profile_kind,
-    resolve_source_selection, runtime_pure_config_for_selection, semantic_context_for_selection,
+    SourceSelection, require_profile_kind, resolve_source_selection,
+    runtime_pure_config_for_selection, semantic_context_for_selection,
 };
 use crate::app::shared::print_json;
-use crate::output::{
-    AotProfileStats, AwbcProfileStats, FinalSemanticProfileStats, RuntimePlanProfileStats,
-    RuntimeProfileCompiler,
-};
-use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{NativeAdapterRegistrar, NativeFileRoots};
@@ -23,9 +19,10 @@ use std::process::ExitCode;
 #[derive(Clone, Copy)]
 pub(in crate::app) struct BenchRuntimeContext<'a> {
     pub(in crate::app) pure_config: RuntimePureAcceleratorConfig,
-    pub(in crate::app) host_policy: &'a HostCallPolicy,
+    pub(in crate::app) host_policy: &'a arcweft_host_adapter::HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
     pub(in crate::app) file_roots: &'a NativeFileRoots,
+    pub(in crate::app) bundle_assets: super::steps::RuntimeBundleAssets<'a>,
     pub(in crate::app) execution_diagnostics:
         &'a arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
 }
@@ -56,37 +53,37 @@ pub(in crate::app) fn script_bench_selection(
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, None)?;
     let compiled = compile_profile_runtime_plan(selection, &semantic, &mut phases)?;
-    let host_policy = native_host_policy_for_selection(selection)?;
+    let source_runtime = source_runtime_program_from_compiled(selection, compiled, None)?;
     let file_roots = selection.native_file_roots();
-    let manifest = collect_script_tests(compiled.compiled.analysis_lease().hir_project());
+    let manifest = collect_script_tests(source_runtime.compiled.analysis_lease().hir_project());
     let runtime = BenchRuntimeContext {
         pure_config,
-        host_policy: &host_policy,
+        host_policy: &source_runtime.host_policy,
         adapter_registrars,
         file_roots: &file_roots,
-        execution_diagnostics: &compiled.execution_diagnostics,
+        bundle_assets: source_runtime.bundle_assets(),
+        execution_diagnostics: &source_runtime.execution_diagnostics,
     };
+    let benches = manifest
+        .benches
+        .iter()
+        .map(|bench| {
+            run_script_bench(
+                bench,
+                &source_runtime.plan,
+                selection.path(),
+                options,
+                runtime,
+            )
+        })
+        .collect();
     let output = crate::output::ScriptBenchRunReport {
         source: report_path(selection.path()),
-        syntax_warnings: compiled.syntax_warnings,
-        line_task_groups: compiled.line_task_groups,
-        compiler: RuntimeProfileCompiler {
-            syntax: compiled.syntax_stats.into(),
-            semantic: FinalSemanticProfileStats::from(
-                compiled.compiled.analysis_lease().final_analysis().as_ref(),
-            ),
-            runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            awbc: AwbcProfileStats::from(&compiled.product_awbc),
-            aot: AotProfileStats::from(&compiled.aot_stats),
-        },
+        syntax_warnings: source_runtime.syntax_warnings,
+        line_task_groups: source_runtime.line_task_groups,
+        compiler: source_runtime.compiler,
         phases,
-        benches: manifest
-            .benches
-            .iter()
-            .map(|bench| {
-                run_script_bench(bench, &compiled.plan, selection.path(), options, runtime)
-            })
-            .collect(),
+        benches,
     };
     let failed = output.benches.iter().any(|bench| bench.status == "failed");
     if options.json {

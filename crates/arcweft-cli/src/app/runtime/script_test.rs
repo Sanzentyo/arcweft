@@ -2,10 +2,11 @@ use super::expectations::{
     script_command_diagnostics, script_commands, test_expectation_failures, test_goto_flow,
 };
 use super::options::ScriptTestOptions;
+use super::source::compile_source_runtime_program;
 use super::steps::{NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
-    SourceSelection, load_and_check_selection, native_host_policy_for_selection,
-    require_profile_kind, resolve_source_selection, runtime_pure_config_for_selection,
+    SourceSelection, require_profile_kind, resolve_source_selection,
+    runtime_pure_config_for_selection,
 };
 use crate::app::shared::print_json;
 use crate::output::{
@@ -53,12 +54,13 @@ pub(in crate::app) fn script_test_selection(
     adapter_registrars: &[NativeAdapterRegistrar],
     json: bool,
 ) -> Result<(), ExitCode> {
-    let checked = load_and_check_selection(selection, None)?;
-    let host_policy = native_host_policy_for_selection(selection)?;
-    let manifest = collect_script_tests(checked.compiled.analysis_lease().hir_project());
-    let plan = checked.runtime_plan().plan.clone();
+    let mut phases = Vec::new();
+    let runtime = compile_source_runtime_program(selection, None, &mut phases)?;
+    let manifest = collect_script_tests(runtime.compiled.analysis_lease().hir_project());
+    let plan = runtime.plan.clone();
     let file_roots = selection.native_file_roots();
     let source = NativeRunSource::new(selection.path(), &file_roots);
+    let bundle_assets = runtime.bundle_assets();
     let output = ScriptTestRunReport {
         tests: manifest
             .tests
@@ -69,12 +71,13 @@ pub(in crate::app) fn script_test_selection(
                     &plan,
                     NativeRunHost {
                         source: Some(source),
-                        policy: &host_policy,
+                        bundle_assets: Some(bundle_assets),
+                        policy: &runtime.host_policy,
                         adapter_registrars,
                         cli_args: &[],
                     },
                     config,
-                    &checked.execution_diagnostics,
+                    &runtime.execution_diagnostics,
                 )
             })
             .collect(),
@@ -233,7 +236,6 @@ fn run_script_test(
         }
         FlowFiberStatus::Running
         | FlowFiberStatus::Dialogue(_)
-        | FlowFiberStatus::Waiting(_)
         | FlowFiberStatus::NeedWaiting(_)
         | FlowFiberStatus::WaitingMany(_)
         | FlowFiberStatus::HostCall(_)

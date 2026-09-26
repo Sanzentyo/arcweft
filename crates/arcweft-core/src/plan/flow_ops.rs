@@ -87,6 +87,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::AwaitMany { .. }
+            | FlowOp::StartNeedProducer { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::ProjectCall { .. }
             | FlowOp::ApplyGroup { .. }
