@@ -13,6 +13,7 @@ use crate::dialogue_application::{
 };
 use crate::expr::{
     HirCallInvocation, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
+    HirSelectedMember,
 };
 use crate::identity::{ExprId, HirModuleId, ItemId, SyntheticOwner, TypeId};
 use crate::module::HirModule;
@@ -135,6 +136,15 @@ impl HirSelectedCallArgument {
 pub enum HirSelectedCallExpressionDisposition {
     Structural,
     Callable(HirSelectedCallExpressionInventory),
+}
+
+/// Accepted HIR Select whose target is a static nominal-variant qualifier.
+///
+/// The checked variant expression remains an evaluated value; only the
+/// qualifier subtree is omitted from the selected expression graph.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirSelectedSelectTargetDisposition {
+    StaticVariantQualifier,
 }
 
 impl HirSelectedCallExpressionInventory {
@@ -405,7 +415,7 @@ struct HirSelectedExpressionTraversal {
     type_roots: BTreeSet<TypeId>,
 }
 
-struct SelectedExpressionTraversalInput<'a, Postfix, Calls, Disposition> {
+struct SelectedExpressionTraversalInput<'a, Postfix, Calls, SelectTarget, Disposition> {
     domain: SelectedExpressionDomain,
     topology: &'a HirProjectEvaluationTopology,
     root_partition: HirSelectedExpressionRootPartition,
@@ -413,6 +423,7 @@ struct SelectedExpressionTraversalInput<'a, Postfix, Calls, Disposition> {
     execution_roots: &'a [ExprId],
     selected_postfix: Postfix,
     selected_call_edges: Calls,
+    selected_select_target: SelectTarget,
     expression_disposition: Disposition,
 }
 
@@ -502,6 +513,25 @@ impl HirAnalysisProjectView<'_> {
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<HirSelectedDeclarationExpressionGraph, HirSelectedExpressionInventoryError> {
+        self.selected_declaration_expression_graph_with_select_target_disposition(
+            topology,
+            declaration,
+            selected_postfix,
+            selected_call_edges,
+            |_| None,
+        )
+    }
+
+    /// Selects one body's expression edges and applies accepted static
+    /// qualifier decisions supplied by the checked semantic owner.
+    pub fn selected_declaration_expression_graph_with_select_target_disposition(
+        self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        declaration: &CallableDeclarationKey,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+        selected_select_target: impl FnMut(ExprId) -> Option<HirSelectedSelectTargetDisposition>,
+    ) -> Result<HirSelectedDeclarationExpressionGraph, HirSelectedExpressionInventoryError> {
         let body = topology
             .declaration(declaration)
             .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
@@ -526,6 +556,7 @@ impl HirAnalysisProjectView<'_> {
                 execution_roots: &[],
                 selected_postfix,
                 selected_call_edges,
+                selected_select_target,
                 expression_disposition: |_| {
                     Some(HirRuntimeExpressionProjection::Structural {
                         value: HirRuntimeValueRetention::Retain,
@@ -605,6 +636,25 @@ impl HirAnalysisProjectView<'_> {
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<HirSelectedExpressionGraph, HirSelectedExpressionInventoryError> {
+        self.selected_expression_graph_in_partition_with_select_target_disposition(
+            topology,
+            root_partition,
+            selected_postfix,
+            selected_call_edges,
+            |_| None,
+        )
+    }
+
+    /// Selects one semantic expression graph under an explicit typed root
+    /// partition, including accepted static variant-qualifier decisions.
+    pub fn selected_expression_graph_in_partition_with_select_target_disposition(
+        self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        root_partition: HirSelectedExpressionRootPartition,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+        selected_select_target: impl FnMut(ExprId) -> Option<HirSelectedSelectTargetDisposition>,
+    ) -> Result<HirSelectedExpressionGraph, HirSelectedExpressionInventoryError> {
         let traversal =
             self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
                 domain: SelectedExpressionDomain::SemanticAnalysis,
@@ -614,6 +664,7 @@ impl HirAnalysisProjectView<'_> {
                 execution_roots: &[],
                 selected_postfix,
                 selected_call_edges,
+                selected_select_target,
                 expression_disposition: |_| {
                     Some(HirRuntimeExpressionProjection::Structural {
                         value: HirRuntimeValueRetention::Retain,
@@ -732,6 +783,7 @@ impl HirAnalysisProjectView<'_> {
         execution_roots: &[ExprId],
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+        selected_select_target: impl FnMut(ExprId) -> Option<HirSelectedSelectTargetDisposition>,
         expression_disposition: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
         let traversal =
@@ -743,6 +795,7 @@ impl HirAnalysisProjectView<'_> {
                 execution_roots,
                 selected_postfix,
                 selected_call_edges,
+                selected_select_target,
                 expression_disposition,
             })?;
         Ok(HirSelectedRuntimeExpressionOwners {
@@ -756,13 +809,14 @@ impl HirAnalysisProjectView<'_> {
         clippy::too_many_lines,
         reason = "one traversal keeps selected-call projection, ownership, and fail-closed completeness atomic"
     )]
-    fn selected_expression_owners_in_domain<Postfix, Calls, Disposition>(
+    fn selected_expression_owners_in_domain<Postfix, Calls, SelectTarget, Disposition>(
         self,
-        input: SelectedExpressionTraversalInput<'_, Postfix, Calls, Disposition>,
+        input: SelectedExpressionTraversalInput<'_, Postfix, Calls, SelectTarget, Disposition>,
     ) -> Result<HirSelectedExpressionTraversal, HirSelectedExpressionInventoryError>
     where
         Postfix: FnMut(ExprId) -> Option<ExprId>,
         Calls: FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+        SelectTarget: FnMut(ExprId) -> Option<HirSelectedSelectTargetDisposition>,
         Disposition: FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     {
         let SelectedExpressionTraversalInput {
@@ -773,6 +827,7 @@ impl HirAnalysisProjectView<'_> {
             execution_roots,
             mut selected_postfix,
             mut selected_call_edges,
+            mut selected_select_target,
             mut expression_disposition,
         } = input;
         validate_selection_topology(self, topology)?;
@@ -848,6 +903,11 @@ impl HirAnalysisProjectView<'_> {
                 selected_edges.insert(owner, followed_edges.into_boxed_slice());
                 continue;
             }
+            let select_target_disposition = if matches!(kind, HirExprKind::Select(_)) {
+                selected_select_target(owner)
+            } else {
+                None
+            };
             let projection = if domain == SelectedExpressionDomain::RuntimeType {
                 expression_disposition(owner).ok_or(
                     HirSelectedExpressionInventoryError::MissingRuntimeExpressionProjection {
@@ -935,6 +995,23 @@ impl HirAnalysisProjectView<'_> {
                 }
                 (_, HirRuntimeExpressionProjection::Structural { value }) => value,
             };
+            if let (
+                HirExprKind::Select(select),
+                Some(HirSelectedSelectTargetDisposition::StaticVariantQualifier),
+            ) = (kind, select_target_disposition)
+            {
+                if !matches!(select.member(), HirSelectedMember::Name(_)) {
+                    return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+                }
+                if value == HirRuntimeValueRetention::Retain {
+                    selected.insert(owner);
+                }
+                // A checked nominal variant uses its Select target only as a
+                // static type qualifier. Do not fabricate a value fact or
+                // runtime child edge for that qualifier path.
+                selected_edges.insert(owner, Vec::new().into_boxed_slice());
+                continue;
+            }
             match kind {
                 HirExprKind::PostfixBracket(postfix) => {
                     let candidate = selected_postfix(owner).ok_or(

@@ -1191,6 +1191,14 @@ impl PreparedExpressionFact {
         }
     }
 
+    pub(crate) const fn is_variant_expression(&self) -> bool {
+        matches!(self, Self::Variant(_))
+            || matches!(
+                self.checked_resolution(),
+                Some(CheckedExpressionResolution::Variant(_))
+            )
+    }
+
     pub(crate) fn reusable_for_parametric_expectation(&self, expected: &TypeKind) -> bool {
         let Some(value_type) = self.value_type() else {
             return false;

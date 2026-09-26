@@ -813,11 +813,39 @@ impl<'project> HirAnalysisProjectView<'project> {
         self,
         input: HirRuntimeSemanticReachabilityInput,
         topology: &super::HirProjectEvaluationTopology,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<super::HirSelectedCallExpressionDisposition>,
+        expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
+    ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
+        self.runtime_semantic_reachability_with_select_target_disposition(
+            input,
+            topology,
+            selected_postfix,
+            selected_call_edges,
+            |_| None,
+            expression_projection,
+        )
+    }
+
+    /// Builds runtime reachability using checked static-qualifier decisions
+    /// for nominal variant Select expressions.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one atomic transaction validates the generation, closes structural owners, and records deterministic paths"
+    )]
+    pub fn runtime_semantic_reachability_with_select_target_disposition(
+        self,
+        input: HirRuntimeSemanticReachabilityInput,
+        topology: &super::HirProjectEvaluationTopology,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         mut selected_call_edges: impl FnMut(
             ExprId,
         )
             -> Option<super::HirSelectedCallExpressionDisposition>,
+        mut selected_select_target: impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedSelectTargetDisposition>,
         mut expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
         self.validate_reachability_generation(&input, topology)?;
@@ -875,6 +903,7 @@ impl<'project> HirAnalysisProjectView<'project> {
                 &execution_expression_roots,
                 &mut selected_postfix,
                 &mut selected_call_edges,
+                &mut selected_select_target,
                 &mut expression_projection,
             )?;
             let mut selected_children = BTreeMap::new();

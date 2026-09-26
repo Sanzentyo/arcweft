@@ -11,6 +11,7 @@ use arcweft_lang_hir::{
         HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
         HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
         HirRuntimeValueRetention, HirSelectedCallExpressionDisposition,
+        HirSelectedSelectTargetDisposition,
     },
     scope::HirScopeOwner,
     source_index::HirCallableSourceOwner,
@@ -221,7 +222,7 @@ pub fn project_runtime_reachability<'project>(
             .cloned()
             .map(HirSelectedCallExpressionDisposition::Callable)
     };
-    let reachability = project.runtime_semantic_reachability(
+    let reachability = project.runtime_semantic_reachability_with_select_target_disposition(
         input,
         analysis.hir_topology().as_ref(),
         |owner| {
@@ -235,6 +236,7 @@ pub fn project_runtime_reachability<'project>(
             Some(resolution.candidate())
         },
         &mut selected_call_edges,
+        |owner| runtime_select_target_disposition(analysis, owner),
         &mut expression_projection,
     );
     if let Some(error) = projection_error {
@@ -321,7 +323,7 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             .cloned()
             .map(HirSelectedCallExpressionDisposition::Callable)
     };
-    let reachability = project.runtime_semantic_reachability(
+    let reachability = project.runtime_semantic_reachability_with_select_target_disposition(
         input,
         analysis.hir_topology().as_ref(),
         |owner| {
@@ -333,6 +335,7 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             Some(resolution.candidate())
         },
         &mut selected_call_edges,
+        |owner| runtime_select_target_disposition(analysis, owner),
         &mut expression_projection,
     );
     if let Some(error) = projection_error {
@@ -701,6 +704,17 @@ fn runtime_expression_projection_for_owner(
             })
         }
     }
+}
+
+fn runtime_select_target_disposition(
+    analysis: &FinalSemanticAnalysis,
+    owner: ExprId,
+) -> Option<HirSelectedSelectTargetDisposition> {
+    matches!(
+        analysis.expression(owner)?.resolution(),
+        CheckedExpressionResolution::Variant(_)
+    )
+    .then_some(HirSelectedSelectTargetDisposition::StaticVariantQualifier)
 }
 
 fn validate_checked_executable_edges(

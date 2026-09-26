@@ -82,6 +82,75 @@ flow @flow.root root {
 }
 
 #[test]
+fn fmt_on_error_fully_qualified_discard_selects_the_inline_failure_type() {
+    let fixture = fixture(
+        r#"
+pub enum DialogueMood { Calm, Bright }
+
+fn dialogue_mood() -> DialogueMood { DialogueMood.Bright }
+fn fallback_policy() -> InlineFailure {
+    InlineFailure.fallback(InlineFallback.value_plain)
+}
+
+pub character alice { display = "Alice" }
+
+flow @flow.root root {
+    let score: i64 = 42i64
+    alice(id=@say.story.greeting)[#[fmt(score, on_error=InlineFailure.discard)][p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("fully qualified InlineFailure case is accepted");
+    let discard = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Variant(variant)
+                if variant.selected().diagnostic_name() == Some("discard") =>
+            {
+                Some(expression)
+            }
+            _ => None,
+        })
+        .expect("discard retains its checked variant fact");
+    assert!(matches!(
+        discard.value_type(),
+        Some(crate::types::TypeKind::Named(name)) if name == "InlineFailure"
+    ));
+    let bright = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Variant(variant)
+                if variant.selected().diagnostic_name() == Some("Bright") =>
+            {
+                Some(expression)
+            }
+            _ => None,
+        })
+        .expect("project enum case retains its checked variant fact");
+    assert!(matches!(
+        bright.value_type(),
+        Some(crate::types::TypeKind::ProjectNominal(nominal))
+            if nominal.declaration().name().as_str() == "DialogueMood"
+    ));
+    let plain = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Variant(variant)
+                if variant.selected().diagnostic_name() == Some("value_plain") =>
+            {
+                Some(expression)
+            }
+            _ => None,
+        })
+        .expect("policy graph unit case retains its checked variant fact");
+    assert!(matches!(
+        plain.value_type(),
+        Some(crate::types::TypeKind::Named(name)) if name == "InlineFallback"
+    ));
+}
+
+#[test]
 fn presentation_content_calls_publish_typed_emissions_and_operands() {
     let fixture = fixture(
         r#"

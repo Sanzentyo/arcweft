@@ -23,6 +23,7 @@ use arcweft_lang_hir::{
         HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
         HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
         HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
+        HirSelectedSelectTargetDisposition,
     },
     symbol::CallableDeclarationKey,
 };
@@ -261,11 +262,17 @@ impl CheckedSelectedExpressionGraph {
         selected_call: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let graph = project
-            .selected_expression_graph_in_partition(
+            .selected_expression_graph_in_partition_with_select_target_disposition(
                 &topology,
                 root_partition,
                 |owner| expressions.get(&owner)?.selected_postfix_candidate(),
                 selected_call,
+                |owner| {
+                    expressions
+                        .get(&owner)
+                        .is_some_and(super::PreparedExpressionFact::is_variant_expression)
+                        .then_some(HirSelectedSelectTargetDisposition::StaticVariantQualifier)
+                },
             )
             .map_err(|error| {
                 match error {

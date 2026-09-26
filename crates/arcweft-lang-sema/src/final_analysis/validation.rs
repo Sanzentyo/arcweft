@@ -6,8 +6,10 @@ use std::{
 };
 
 use arcweft_lang_hir::scope::LocalLookup;
+use arcweft_lang_hir::symbol::{ProjectTypeLookupError, ProjectTypeTarget};
 use arcweft_lang_hir::{
-    expr::{HirCallCallee, HirPlaceholderKind},
+    expr::{HirCallCallee, HirPlaceholderKind, HirSelectExpr, HirSelectedMember},
+    leaf::{HirPathRoot, HirPathSegment, HirPathValue},
     project::HirProjectEvaluationTopology,
     source_index::{
         HirExprSourceRole, HirLocalSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
@@ -608,6 +610,11 @@ pub(super) fn validate_expressions(
                 )?,
             });
         }
+        if let (HirExprKind::Select(select), CheckedExpressionResolution::Variant(variant)) =
+            (expression.kind(), fact.resolution())
+        {
+            validate_qualified_variant_select(symbols, modules, owner, select, variant)?;
+        }
         if !expression_resolution_matches(expression.kind(), fact.resolution())
             && !nominal_fallback_receiver_matches(owner, fact, modules, calls)?
         {
@@ -829,6 +836,7 @@ fn expression_resolution_matches(
             HirExprKind::Path(_) | HirExprKind::ShortVariant(_),
             CheckedExpressionResolution::Variant(_),
         )
+        | (HirExprKind::Select(_), CheckedExpressionResolution::Variant(_))
         | (HirExprKind::ShortVariant(_), CheckedExpressionResolution::StageLook(_))
         | (
             HirExprKind::Path(_) | HirExprKind::Select(_) | HirExprKind::Call(_),
@@ -942,6 +950,63 @@ fn expression_resolution_matches(
         }
         (kind, CheckedExpressionResolution::Structural) => structural_resolution_matches(kind),
         _ => false,
+    }
+}
+
+fn validate_qualified_variant_select(
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    select: &HirSelectExpr,
+    variant: &CheckedVariantResolution,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let HirSelectedMember::Name(selected_member) = select.member() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if variant.selected().diagnostic_name() != Some(selected_member.as_str()) {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+
+    let module = resolve_module(modules, owner.module())?;
+    let target = module
+        .resolve_expr(select.target())
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::Path(HirPathValue::Resolved(type_path)) = target.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let source = required_expression_source(module, select.target(), HirExprSourceRole::Whole)?;
+    if !matches!(
+        module.lookup_path_local(target.scope(), type_path, &source),
+        Ok(LocalLookup::NotFound)
+    ) {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+
+    match symbols.resolve_hir_type_target(module.key().path(), type_path, source) {
+        Ok(ProjectTypeTarget::Nominal(declaration)) => variant
+            .owner()
+            .project()
+            .is_some_and(|nominal| nominal.declaration() == declaration.id())
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+        Err(ProjectTypeLookupError::Unknown { .. }) => {
+            let [HirPathSegment::Identifier(type_name)] = type_path.segments() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let owner_is_closed_environment = matches!(
+                variant.owner().kind(),
+                CheckedVariantOwnerKind::BuiltinClosed { .. }
+                    | CheckedVariantOwnerKind::RuntimeBuiltin { .. }
+            );
+            (type_path.root() == HirPathRoot::ImplicitCrate
+                && owner_is_closed_environment
+                && variant.owner().ty().source_label() == type_name.as_str())
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
+        Ok(ProjectTypeTarget::External(_)) | Err(_) => {
+            Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+        }
     }
 }
 

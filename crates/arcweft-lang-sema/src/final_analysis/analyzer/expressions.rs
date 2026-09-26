@@ -45,8 +45,9 @@ use crate::registration::RegisteredExternalOwner;
 use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyKind};
 use arcweft_lang_hir::expr::{
     HirChoicePlanItem, HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirPlaceholderKind,
+    HirSelectExpr,
 };
-use arcweft_lang_hir::leaf::HirStringLiteral;
+use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
 
 use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
 use super::state::{
@@ -1148,8 +1149,14 @@ impl Analyzer<'_, '_, '_> {
                 .map(Some)
             }
             HirExprKind::Select(select) => self
-                .check_select_expression(context, owner, select)
-                .map(Some),
+                .prepare_qualified_variant_select(module, owner, select, expected)?
+                .map_or_else(
+                    || {
+                        self.check_select_expression(context, owner, select)
+                            .map(Some)
+                    },
+                    |variant| Ok(Some(variant)),
+                ),
             _ => Ok(None),
         }
     }
@@ -3341,6 +3348,140 @@ impl Analyzer<'_, '_, '_> {
             CheckedExpressionResolution::Select(resolution),
         )
         .into())
+    }
+
+    fn prepare_qualified_variant_select(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        select: &HirSelectExpr,
+        expected: Option<&TypeKind>,
+    ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
+        let HirSelectedMember::Name(case_name) = select.member() else {
+            return Ok(None);
+        };
+        let target_expression = module.resolve_expr(select.target()).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+        })?;
+        let HirExprKind::Path(HirPathValue::Resolved(type_path)) = target_expression.kind() else {
+            return Ok(None);
+        };
+
+        let source =
+            expression_span(module, select.target()).map_err(AnalyzerExpressionError::fatal)?;
+        match module.lookup_path_local(target_expression.scope(), type_path, &source) {
+            Ok(LocalLookup::NotFound) => {}
+            Ok(LocalLookup::Found(_) | LocalLookup::AmbiguousPoisoned(_)) => return Ok(None),
+            Err(_) => {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::ValueResolutionFailed { owner },
+                ));
+            }
+        }
+        match self
+            .symbols
+            .resolve_hir_type_target(module.key().path(), type_path, source.clone())
+        {
+            Ok(ProjectTypeTarget::Nominal(declaration)) => {
+                let ProjectNominalBody::Enum { variants } = declaration.body() else {
+                    return Ok(None);
+                };
+                let Some((ordinal, selected)) = variants
+                    .iter()
+                    .enumerate()
+                    .find(|(_, variant)| variant.name().as_str() == case_name.as_str())
+                else {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                };
+                if !matches!(
+                    selected.payload(),
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalVariantPayload::Unit
+                ) {
+                    return Err(AnalyzerExpressionError::rejected(owner));
+                }
+                let nominal = match expected {
+                    Some(TypeKind::ProjectNominal(nominal))
+                        if nominal.declaration() == declaration.id() =>
+                    {
+                        nominal.clone()
+                    }
+                    _ if declaration.type_parameters().is_empty() => {
+                        ProjectNominalType::new(declaration.id().clone(), Vec::<TypeKind>::new())
+                    }
+                    _ => return Err(AnalyzerExpressionError::rejected(owner)),
+                };
+                let ty = TypeKind::ProjectNominal(nominal.clone());
+                let seed = self.prepare_project_variant_owner(owner, &nominal)?;
+                let ordinal = u32::try_from(ordinal).map_err(|_| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
+                })?;
+                let prepared = super::PreparedVariantExpression::try_new(
+                    PreparedExpressionShell::value(
+                        ty,
+                        CheckedTypeSelection::Inferred,
+                        EffectSet::new(),
+                    ),
+                    seed,
+                    ordinal,
+                )
+                .ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
+                })?;
+                Ok(Some(PreparedExpressionFact::from(prepared)))
+            }
+            Ok(ProjectTypeTarget::External(_)) => Ok(None),
+            Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::Unknown { .. }) => {
+                self.prepare_environment_variant_select(owner, type_path, case_name.as_str())
+            }
+            Err(arcweft_lang_hir::symbol::ProjectTypeLookupError::WrongKind { .. }) => Ok(None),
+            Err(_) => Err(AnalyzerExpressionError::rejected(owner)),
+        }
+    }
+
+    fn prepare_environment_variant_select(
+        &self,
+        owner: ExprId,
+        type_path: &HirPath,
+        case_name: &str,
+    ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
+        let [HirPathSegment::Identifier(type_name)] = type_path.segments() else {
+            return Ok(None);
+        };
+        if type_path.root() != HirPathRoot::ImplicitCrate {
+            return Ok(None);
+        }
+        let environment = self.catalogs.world.environment().typecheck_env();
+        let Some((declared_ty, schema)) = environment.closed_enum_by_owner(type_name.as_str())
+        else {
+            return Ok(None);
+        };
+        let Some((ordinal, selected)) = schema
+            .variants()
+            .iter()
+            .enumerate()
+            .find(|(_, variant)| variant.name() == case_name)
+        else {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        };
+        if !matches!(selected.payload(), crate::env::EnumVariantPayload::Unit) {
+            return Err(AnalyzerExpressionError::rejected(owner));
+        }
+        let ty = declared_ty.clone();
+        let seed = super::PreparedVariantOwnerSeed::try_environment(schema, &ty).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
+        })?;
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::AccountingOverflow)
+        })?;
+        let prepared = super::PreparedVariantExpression::try_new(
+            PreparedExpressionShell::value(ty, CheckedTypeSelection::Inferred, EffectSet::new()),
+            seed,
+            ordinal,
+        )
+        .ok_or_else(|| {
+            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
+        })?;
+        Ok(Some(PreparedExpressionFact::from(prepared)))
     }
 
     fn check_view_call_expression(
