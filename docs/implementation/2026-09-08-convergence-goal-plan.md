@@ -1917,7 +1917,8 @@ compiler は選択済み `CheckedFmtCall` と authored source を Format target 
 
 Sema `content_callables` 35/35、compiler lib 115/115、runtime-plan lib
 90/90、compiler/runtime-plan all-target Clippy、`cargo fmt --all`、staged
-diff check が通過した。Clippy は既存 warning あり。compiler tests の
+diff check が通過した。push 済み HEAD の workspace all-target/all-feature
+check も既存 warning ありで通過した。Clippy は既存 warning あり。compiler tests の
 generic dialogue 3 回帰は、開いた generic を早期拒否していた問題を
 閉じた instance での検査に移して解消した。053 fixture はまだ `fmt`
 実行式の Core/native/AWBC 評価がないため未受理。project `DisplayText`
