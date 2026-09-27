@@ -1970,3 +1970,14 @@ canonical な非 Option variant を `unwrap` に渡した場合は panic せず 
 692/692、workspace all-target/all-feature check、Core all-target Clippy、
 fmt、cached diff check が既存 warning ありで通過した。formatter style 等の
 失敗はこの expression error に混ぜず、専用の formatted outcome で扱う。
+
+`dfcb8f08f30b6ccb2e080c053630af36866beb37` は AWBC の失敗由来を
+型付きで保持する。compact pure helper の `RuntimeEvalError` を文字列化せず
+`VmError::Evaluation` へ渡し、実際の pattern mismatch と dynamic Flow target
+lookup を専用 error にし、`Runtime(String)` の部分文字列から trap code を
+推定する経路を削除した。nested pure helper と trait method の非値 exit も
+共通の in-memory `VmNestedCallExit` へ投影する。変更後の Core lib 692/692、
+Core all-target check と all-feature Clippy correctness、rustfmt、cached diff
+check が既存 warning ありで通過した。独立 fiber に入る既存 helper/trait の
+budget と中断の同一 fiber 継続は未完であり、formatter の protected operand
+実行受理をこの commit だけで主張しない。
