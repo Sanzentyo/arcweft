@@ -3300,6 +3300,12 @@ impl VmError {
                 Some(crate::value::RuntimeExpressionFailure::DivisionByZero) => {
                     AwbcTrapCode::DivisionByZero
                 }
+                Some(crate::value::RuntimeExpressionFailure::OptionUnwrapNone) => {
+                    AwbcTrapCode::ExplicitPanic
+                }
+                Some(crate::value::RuntimeExpressionFailure::IndexOutOfBounds { .. }) => {
+                    AwbcTrapCode::InvalidIndex
+                }
                 None => AwbcTrapCode::InternalInvariant,
             }),
             Self::Runtime(message) => Some(if message.contains("division by zero") {

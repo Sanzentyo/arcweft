@@ -2193,6 +2193,10 @@ pub enum RuntimeEvalError {
 pub enum RuntimeExpressionFailure {
     #[error("division by zero")]
     DivisionByZero,
+    #[error("core.option.unwrap called on None")]
+    OptionUnwrapNone,
+    #[error("index {index} is outside length {length}")]
+    IndexOutOfBounds { index: String, length: usize },
 }
 
 impl RuntimeEvalError {
@@ -2403,23 +2407,42 @@ pub fn evaluate_index_intrinsic(
             "expected a target and an integer index",
         ));
     };
-    let index = match index {
+    let length = match target {
+        RuntimeValue::Seq(sequence) => sequence.len(),
+        RuntimeValue::String(value) => value.chars().count(),
+        _ => {
+            return Err(index_intrinsic_error(
+                "target is not an indexable runtime value",
+            ));
+        }
+    };
+    let numeric_index = match index {
         RuntimeValue::Int(value) => usize::try_from(value.as_i128()).ok(),
         RuntimeValue::UInt(value) => usize::try_from(value.as_u128()).ok(),
-        _ => None,
-    }
-    .ok_or_else(|| index_intrinsic_error("index is negative or outside the host index range"))?;
+        _ => {
+            return Err(index_intrinsic_error(
+                "index is not an integer runtime value",
+            ));
+        }
+    };
+    let Some(numeric_index) = numeric_index.filter(|index| *index < length) else {
+        return Err(RuntimeExpressionFailure::IndexOutOfBounds {
+            index: runtime_value_label(index),
+            length,
+        }
+        .into());
+    };
     match target {
-        RuntimeValue::Seq(sequence) if index < sequence.len() => Ok(Some(sequence.value_at(index))),
-        RuntimeValue::String(value) => value
-            .chars()
-            .nth(index)
-            .map(RuntimeValue::Char)
-            .map(Some)
-            .ok_or_else(|| index_intrinsic_error("String index is out of bounds")),
-        RuntimeValue::Seq(_) => Err(index_intrinsic_error("sequence index is out of bounds")),
+        RuntimeValue::Seq(sequence) => Ok(Some(sequence.value_at(numeric_index))),
+        RuntimeValue::String(value) => Ok(Some(
+            value
+                .chars()
+                .nth(numeric_index)
+                .map(RuntimeValue::Char)
+                .ok_or_else(|| index_intrinsic_error("String index changed during evaluation"))?,
+        )),
         _ => Err(index_intrinsic_error(
-            "target is not an indexable runtime value",
+            "indexable target changed during evaluation",
         )),
     }
 }

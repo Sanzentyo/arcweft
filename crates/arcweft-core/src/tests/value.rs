@@ -538,10 +538,16 @@ fn runtime_call_keeps_intrinsic_failure_as_an_error() {
     );
     assert_eq!(
         result,
-        Err(RuntimeEvalError::ExpectedBracketSeq(
-            "core.option.unwrap called on None".to_owned(),
+        Err(RuntimeEvalError::RecoverableExpression(
+            RuntimeExpressionFailure::OptionUnwrapNone,
         )),
     );
+    assert!(matches!(
+        crate::value::evaluate_core_option_unwrap_intrinsic(RuntimeValue::result_ok(
+            RuntimeValue::Unit
+        )),
+        Err(RuntimeEvalError::ExpectedBracketSeq(_))
+    ));
 }
 
 #[test]
@@ -1320,4 +1326,36 @@ fn index_intrinsic_reads_logical_sequence_and_string_values() {
         .expect("String index evaluates by scalar value"),
         Some(RuntimeValue::Char('β'))
     );
+}
+
+#[test]
+fn index_intrinsic_distinguishes_bounds_failure_from_invalid_operands() {
+    let out_of_bounds = evaluate_index_intrinsic(
+        RuntimeIntrinsic::CoreIndex,
+        &[RuntimeValue::String("a".to_owned()), RuntimeValue::i64(2)],
+    );
+    assert!(matches!(
+        out_of_bounds,
+        Err(RuntimeEvalError::RecoverableExpression(
+            RuntimeExpressionFailure::IndexOutOfBounds { length: 1, .. }
+        ))
+    ));
+    let negative = evaluate_index_intrinsic(
+        RuntimeIntrinsic::CoreIndex,
+        &[RuntimeValue::String("a".to_owned()), RuntimeValue::i64(-1)],
+    );
+    assert!(matches!(
+        negative,
+        Err(RuntimeEvalError::RecoverableExpression(
+            RuntimeExpressionFailure::IndexOutOfBounds { length: 1, .. }
+        ))
+    ));
+    let invalid_target = evaluate_index_intrinsic(
+        RuntimeIntrinsic::CoreIndex,
+        &[RuntimeValue::Bool(true), RuntimeValue::i64(2)],
+    );
+    assert!(matches!(
+        invalid_target,
+        Err(RuntimeEvalError::UnsupportedPure { .. })
+    ));
 }

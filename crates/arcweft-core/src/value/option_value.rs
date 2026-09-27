@@ -55,10 +55,12 @@ pub fn evaluate_core_option_unwrap_intrinsic(
 ) -> Result<RuntimeValue, RuntimeEvalError> {
     match value.try_into_builtin_variant_case() {
         Ok((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(payload))) => Ok(payload),
-        Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Err(
-            RuntimeEvalError::ExpectedBracketSeq("core.option.unwrap called on None".to_owned()),
-        ),
-        Ok(_) => unreachable!("Option builtin schema fixes payload presence"),
+        Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => {
+            Err(crate::value::RuntimeExpressionFailure::OptionUnwrapNone.into())
+        }
+        Ok(_) => Err(RuntimeEvalError::ExpectedBracketSeq(
+            "core.option.unwrap expected Option".to_owned(),
+        )),
         Err(value) => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
             "core.option.unwrap expected Option, found {}",
             runtime_value_label(&value)
