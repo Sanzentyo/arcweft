@@ -1609,6 +1609,7 @@ impl Analyzer<'_, '_, '_> {
                 checked_bracket_sequence_expression(
                     owner,
                     expected,
+                    expectation.complete_type(),
                     item,
                     sequence.elements().len(),
                     if expected.is_some() {
@@ -1625,6 +1626,7 @@ impl Analyzer<'_, '_, '_> {
                 checked_bracket_sequence_expression(
                     owner,
                     expected,
+                    expectation.complete_type(),
                     item,
                     sequence.elements().len(),
                     if sequence.common_suffix().is_some() {
@@ -1657,7 +1659,10 @@ impl Analyzer<'_, '_, '_> {
                     item: Box::new(value_type),
                     len: ArrayLength::Const(length),
                 };
-                if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+                if expectation
+                    .complete_type()
+                    .is_some_and(|expected| !expected.accepts(&ty))
+                {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
                 Ok(structural_expression(
@@ -4472,12 +4477,13 @@ fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> Check
 
 fn checked_bracket_sequence_expression(
     owner: ExprId,
-    expected: Option<&TypeKind>,
+    contextual_shape: Option<&TypeKind>,
+    complete_type: Option<&TypeKind>,
     item: TypeKind,
     element_count: usize,
     selection: CheckedTypeSelection,
 ) -> Result<CheckedExpression, AnalyzerExpressionError> {
-    let ty = if matches!(expected, Some(TypeKind::Array { .. })) {
+    let ty = if matches!(contextual_shape, Some(TypeKind::Array { .. })) {
         TypeKind::Array {
             item: Box::new(item),
             len: ArrayLength::Const(element_count),
@@ -4485,7 +4491,7 @@ fn checked_bracket_sequence_expression(
     } else {
         TypeKind::Vec(Box::new(item))
     };
-    if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+    if complete_type.is_some_and(|expected| !expected.accepts(&ty)) {
         return Err(AnalyzerExpressionError::rejected(owner));
     }
     Ok(structural_expression(ty, selection))

@@ -376,7 +376,25 @@ fn contextual_effect_rows_survive_value_expression_boundaries() {
             "sequence",
             "Vec<i64 -> i64>",
             "[|value| writer(value)]",
-            TypeKind::Vec(Box::new(callback)),
+            TypeKind::Vec(Box::new(callback.clone())),
+        ),
+        (
+            "array",
+            "Array<i64 -> i64, 1>",
+            "[|value| writer(value)]",
+            TypeKind::Array {
+                item: Box::new(callback.clone()),
+                len: crate::types::ArrayLength::Const(1),
+            },
+        ),
+        (
+            "array repeat",
+            "Array<i64 -> i64, 1>",
+            "[|value| writer(value); 1u64]",
+            TypeKind::Array {
+                item: Box::new(callback),
+                len: crate::types::ArrayLength::Const(1),
+            },
         ),
     ] {
         let source = format!(
@@ -410,6 +428,17 @@ fn contextual_effect_rows_survive_value_expression_boundaries() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn contextual_effect_rows_do_not_hide_array_length_mismatches() {
+    let fixture = fixture(
+        "fn writer(value: i64) -> i64 effects { fs.write } { value }\n\
+         fn ignore(unused: Array<i64 -> i64, 2>, value: i64) -> i64 { value }\n\
+         flow main() -> i64 { return ignore([|value| writer(value)], 42i64) }",
+        None,
+    );
+    assert!(analyze(&fixture).is_err());
 }
 
 #[test]
