@@ -252,6 +252,78 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
     program
 }
 
+#[derive(Clone, Copy)]
+enum NestedValueCall {
+    PureHelper,
+    TraitMethod,
+}
+
+fn nested_format_program(call: NestedValueCall, value_thunk: ValueThunk) -> AwbcProgram {
+    let mut program = format_program(value_thunk);
+    let body = program.instructions[2..4].to_vec();
+    let call_instruction = match call {
+        NestedValueCall::PureHelper => AwbcInstruction::CallPureHelper {
+            dst: AwbcRegisterId(2),
+            helper: AwbcPureHelperId(0),
+            args: vec![AwbcRegisterId(0)],
+        },
+        NestedValueCall::TraitMethod => AwbcInstruction::CallTraitMethod {
+            dst: AwbcRegisterId(2),
+            method: AwbcTraitMethodId(0),
+            receiver: AwbcRegisterId(0),
+            args: Vec::new(),
+            receiver_out: None,
+        },
+    };
+    program.instructions.splice(2..4, [call_instruction]);
+    program.instructions.extend(body);
+    program.blocks[1].instructions = AwbcTableRange::new(2, 1);
+    program.blocks[2].instructions = AwbcTableRange::new(3, 1);
+    let nested_terminator = std::mem::replace(
+        &mut program.blocks[1].terminator,
+        AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(2)),
+        },
+    );
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(3),
+        instructions: AwbcTableRange::new(4, 2),
+        terminator: nested_terminator,
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.frame_layouts.push(program.frame_layouts[1].clone());
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: match call {
+            NestedValueCall::PureHelper => AwbcFunctionKind::PureHelper,
+            NestedValueCall::TraitMethod => AwbcFunctionKind::TraitMethod,
+        },
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(3),
+        blocks: AwbcTableRange::new(3, 1),
+        entry_block: AwbcBlockId(3),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    match call {
+        NestedValueCall::PureHelper => program.pure_helpers.push(AwbcPureHelper {
+            public_id: AwbcStringId(1),
+            signature: AwbcSignatureId(1),
+            function: AwbcFunctionId(3),
+            scalar_eval_supported: false,
+            origin: AwbcPureHelperOrigin::EngineOwned,
+        }),
+        NestedValueCall::TraitMethod => program.trait_methods.push(AwbcTraitMethod {
+            public_id: AwbcStringId(1),
+            signature: AwbcSignatureId(1),
+            function: AwbcFunctionId(3),
+            receiver: AwbcTraitReceiverMode::Owned,
+            receiver_state_slot: None,
+        }),
+    }
+    program
+}
+
 fn verify(program: AwbcProgram) -> std::sync::Arc<AwbcProgram> {
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -423,4 +495,119 @@ fn format_content_vm_propagates_a_fatal_operand_trap_without_running_later_style
             ..
         }
     )));
+}
+
+#[test]
+fn formatter_recovers_nested_helper_and_trait_errors_after_a_saved_budget_yield() {
+    for call in [NestedValueCall::PureHelper, NestedValueCall::TraitMethod] {
+        let program = verify(nested_format_program(
+            call,
+            ValueThunk::RecoversFromDivisionByZero,
+        ));
+        let mut fiber = fiber(&program);
+        for _ in 0..8 {
+            if fiber.cursor.function == AwbcFunctionId(3) {
+                break;
+            }
+            assert!(matches!(
+                step(&program, &mut fiber, 1).exit,
+                crate::awbc::vm::VmExit::Running
+            ));
+        }
+        assert_eq!(fiber.cursor.function, AwbcFunctionId(3));
+        assert_eq!(fiber.frames.len(), 3);
+        fiber.budget.remaining = 0;
+        assert!(matches!(
+            step(&program, &mut fiber, 1).exit,
+            crate::awbc::vm::VmExit::BudgetYield(_)
+        ));
+        let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).expect("nested call snapshots");
+        let encoded = serde_json::to_vec(&snapshot).expect("nested call snapshot serializes");
+        let decoded: AwbcFiberStateSnapshot =
+            serde_json::from_slice(&encoded).expect("snapshot decodes");
+        let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+        let mut forged = decoded.clone();
+        let return_to = forged.frames[2]
+            .return_to
+            .as_mut()
+            .expect("nested return point");
+        let crate::awbc::fiber::AwbcFiberReturnContinuationSnapshot::InstructionCall { site } =
+            &mut return_to.continuation
+        else {
+            panic!("nested call has a typed continuation");
+        };
+        site.instruction_offset += 1;
+        assert!(
+            forged
+                .into_live_for_program(&owner)
+                .expect("value projection succeeds")
+                .validate_for_program(&program)
+                .is_err()
+        );
+
+        let mut restored = decoded
+            .into_live_for_program(&owner)
+            .expect("exact nested call restores");
+        restored
+            .validate_for_program(&program)
+            .expect("nested call validates");
+        restored
+            .resume_budget_yield(&program)
+            .expect("nested budget yield resumes");
+        restored.replenish_budget();
+        let mut style_instructions = 0;
+        let content = loop {
+            let output = step(&program, &mut restored, 1);
+            style_instructions += output
+                .observations
+                .iter()
+                .filter(|observation| {
+                    matches!(
+                        observation,
+                        crate::awbc::vm::VmObservation::Instruction {
+                            function: AwbcFunctionId(2),
+                            ..
+                        }
+                    )
+                })
+                .count();
+            match output.exit {
+                crate::awbc::vm::VmExit::Running => {}
+                crate::awbc::vm::VmExit::Returned(_) => break returned_content(output),
+                exit => panic!("nested formatter must finish: {exit:?}"),
+            }
+        };
+        assert_eq!(style_instructions, 1);
+        let slot =
+            crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot ID");
+        let Some(crate::value::RuntimeDialogueContentBinding::Formatted { value, .. }) =
+            content.binding(slot)
+        else {
+            panic!("Content has a Formatted slot");
+        };
+        assert!(
+            matches!(value.outcome(), crate::value::RuntimeDialogueFormattedOutcome::Failure { reason, .. } if reason.contains("division by zero"))
+        );
+    }
+}
+
+#[test]
+fn formatter_does_not_recover_nested_helper_or_trait_traps() {
+    for call in [NestedValueCall::PureHelper, NestedValueCall::TraitMethod] {
+        let program = verify(nested_format_program(call, ValueThunk::Traps));
+        let mut fiber = fiber(&program);
+        let output = run_to_completion(&program, &mut fiber);
+        let crate::awbc::vm::VmExit::Trapped(trap) = output.exit else {
+            panic!("nested fatal trap stays fatal");
+        };
+        assert_eq!(trap.code, AwbcTrapCode::ExplicitPanic);
+        assert_eq!(
+            fiber.frames[0]
+                .format
+                .as_ref()
+                .expect("incomplete formatter")
+                .next_operand(),
+            0
+        );
+    }
 }

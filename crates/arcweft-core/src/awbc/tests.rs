@@ -4,6 +4,7 @@ mod agent_projection;
 mod array;
 mod callable_specialization;
 mod format_content_execution;
+mod instruction_call_execution;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,

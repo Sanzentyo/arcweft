@@ -687,8 +687,8 @@ pub trait RuntimePureCallBackend {
 
     /// Optionally evaluates a canonical compact-AWBC helper directly.
     ///
-    /// Returning `None` selects the verified compact VM fallback owned by the
-    /// product executor. Returning `Some` preserves backend selection and
+    /// Returning `None` selects the verified helper frame on the current AWBC
+    /// fiber. Returning `Some` preserves backend selection and
     /// deterministic success/failure at the shared runtime boundary.
     fn call_compact_values(
         &mut self,

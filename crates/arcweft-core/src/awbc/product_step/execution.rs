@@ -119,12 +119,12 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         .map_err(VmError::Evaluation)
     }
 
-    fn call_pure_helper(
+    fn try_call_pure_helper(
         &mut self,
         program: &AwbcProgram,
         helper: crate::awbc::schema::AwbcPureHelperId,
         args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, VmError> {
+    ) -> Result<Option<RuntimeValue>, VmError> {
         let record = program
             .pure_helpers
             .get(helper.index())
@@ -142,12 +142,12 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             scalar_eval_supported: record.scalar_eval_supported,
         };
         if let Some(result) = self.backend.call_compact_values(&descriptor, args) {
-            return result.map_err(VmError::Evaluation);
+            return result.map(Some).map_err(VmError::Evaluation);
         }
         self.fallback_stats.pure_calls = self.fallback_stats.pure_calls.saturating_add(1);
         self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
         self.fallback_stats.fallbacks = self.fallback_stats.fallbacks.saturating_add(1);
-        run_function_with_host(program, record.function, args, self.context.clone(), self)
+        Ok(None)
     }
 }
 
@@ -349,6 +349,45 @@ fn semantic_type_for_awbc(
         .get(ty.index())
         .map(|runtime_type| runtime_type.semantic_identity())
         .ok_or(VmError::MissingType(ty))
+}
+
+#[cfg(test)]
+mod same_fiber_tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_compact_backend_returns_to_the_vm_with_one_fallback_charge() {
+        let mut program = AwbcProgram::default();
+        program.strings.push("helper".to_owned());
+        program
+            .pure_helpers
+            .push(crate::awbc::schema::AwbcPureHelper {
+                public_id: crate::awbc::schema::AwbcStringId(0),
+                signature: crate::awbc::schema::AwbcSignatureId(0),
+                function: AwbcFunctionId(0),
+                scalar_eval_supported: false,
+                origin: crate::awbc::schema::AwbcPureHelperOrigin::EngineOwned,
+            });
+        let program = Arc::new(program);
+        let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x31; 32])
+            .expect("nonzero artifact fingerprint");
+        let mut backend = crate::pure::VmRuntimePureCallBackend::default();
+        let mut fallback_stats = crate::step::RuntimePureCallStats::default();
+        let mut host = ProductVmHost {
+            backend: &mut backend,
+            fallback_stats: &mut fallback_stats,
+            context: VmExecutionContext::for_program(artifact, Arc::clone(&program)),
+            program_owner: RuntimeProgramOwner::Awbc(Arc::clone(&program)),
+        };
+        assert_eq!(
+            host.try_call_pure_helper(&program, crate::awbc::schema::AwbcPureHelperId(0), &[])
+                .expect("backend absence selects the VM frame"),
+            None
+        );
+        assert_eq!(fallback_stats.pure_calls, 1);
+        assert_eq!(fallback_stats.vm_calls, 1);
+        assert_eq!(fallback_stats.fallbacks, 1);
+    }
 }
 
 pub(super) fn stream_id_for(program: &AwbcProgram, stream: AwbcStreamPlanId) -> StreamRuntimeId {

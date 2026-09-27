@@ -19,8 +19,8 @@ use super::schema::{
     AwbcProjectCallAttachedPresence, AwbcProjectCallOperandMode,
     AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTraitReceiverMode,
-    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId,
+    AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
@@ -370,6 +370,8 @@ pub enum VmError {
     MissingType(AwbcTypeId),
     #[error("AWBC intrinsic {0:?} was not resolved by the VM host")]
     MissingIntrinsic(AwbcIntrinsicId),
+    #[error("AWBC pure helper {0:?} does not exist")]
+    MissingPureHelper(AwbcPureHelperId),
     #[error("AWBC trait method {0:?} does not exist")]
     MissingTraitMethod(AwbcTraitMethodId),
     #[error("function application expected {expected} arguments, received {actual}")]
@@ -401,6 +403,24 @@ enum InstructionControl {
     Yield,
 }
 
+fn instruction_call_return_point(
+    site: FiberCursor,
+    destination: AwbcRegisterId,
+) -> Result<FiberReturnPoint, VmError> {
+    let instruction_offset = site
+        .instruction_offset
+        .checked_add(1)
+        .ok_or_else(|| VmError::Runtime("AWBC instruction call cursor overflowed".to_owned()))?;
+    Ok(FiberReturnPoint {
+        cursor: FiberCursor {
+            instruction_offset,
+            ..site
+        },
+        destination: Some(destination),
+        continuation: FiberReturnContinuation::InstructionCall { site },
+    })
+}
+
 pub trait VmHost {
     fn call_intrinsic(
         &mut self,
@@ -409,12 +429,14 @@ pub trait VmHost {
         args: &[RuntimeValue],
     ) -> Result<Option<RuntimeValue>, VmError>;
 
-    fn call_pure_helper(
+    /// Returns a backend result when one is available. The VM enters the
+    /// verified helper body on the current fiber when this returns `None`.
+    fn try_call_pure_helper(
         &mut self,
         program: &AwbcProgram,
         helper: AwbcPureHelperId,
         args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, VmError>;
+    ) -> Result<Option<RuntimeValue>, VmError>;
 
     fn produce_character_dialogue(
         &mut self,
@@ -443,16 +465,13 @@ impl VmHost for RejectingVmHost {
         Err(VmError::MissingIntrinsic(intrinsic))
     }
 
-    fn call_pure_helper(
+    fn try_call_pure_helper(
         &mut self,
         _program: &AwbcProgram,
-        helper: AwbcPureHelperId,
+        _helper: AwbcPureHelperId,
         _args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, VmError> {
-        Err(VmError::Runtime(format!(
-            "pure helper {} is not bound",
-            helper.0
-        )))
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        Ok(None)
     }
 }
 
@@ -1228,12 +1247,19 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::CallPureHelper { dst, helper, args } => {
-            let args = args
-                .iter()
-                .map(|arg| register(fiber, *arg).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
-            let value = host.call_pure_helper(program, *helper, &args)?;
-            fiber.active_frame_mut()?.set_register(*dst, value)?;
+            let args = register_values(fiber, args)?;
+            if let Some(value) = host.try_call_pure_helper(program, *helper, &args)? {
+                fiber.active_frame_mut()?.set_register(*dst, value)?;
+            } else {
+                let function = program
+                    .pure_helpers
+                    .get(helper.index())
+                    .ok_or(VmError::MissingPureHelper(*helper))?
+                    .function;
+                let return_to = instruction_call_return_point(fiber.cursor, *dst)?;
+                fiber.push_call_frame_with_continuation(program, function, return_to, &args)?;
+                return Ok(InstructionControl::Transferred);
+            }
         }
         AwbcInstruction::AssignRecordField {
             target,
@@ -1260,23 +1286,23 @@ fn execute_instruction(
             method,
             receiver,
             args,
-            receiver_out,
+            receiver_out: _,
         } => {
-            let outcome =
-                execute_trait_method_call(program, fiber, host, context, *method, *receiver, args)?;
-            let TraitMethodCallOutcome::Completed(outcome) = outcome else {
-                return Ok(InstructionControl::Transferred);
-            };
-            fiber
-                .active_frame_mut()?
-                .set_register(*dst, outcome.value)?;
-            if let (Some(register), Some(updated_receiver)) =
-                (*receiver_out, outcome.updated_receiver)
-            {
-                fiber
-                    .active_frame_mut()?
-                    .set_register(register, updated_receiver)?;
-            }
+            let method = program
+                .trait_methods
+                .get(method.index())
+                .ok_or(VmError::MissingTraitMethod(*method))?;
+            let mut values = Vec::with_capacity(args.len() + 1);
+            values.push(register(fiber, *receiver)?.clone());
+            values.extend(register_values(fiber, args)?);
+            let return_to = instruction_call_return_point(fiber.cursor, *dst)?;
+            fiber.push_call_frame_with_continuation(
+                program,
+                method.function,
+                return_to,
+                &values,
+            )?;
+            return Ok(InstructionControl::Transferred);
         }
         AwbcInstruction::CallIntrinsic {
             dst,
@@ -1911,125 +1937,6 @@ fn invocation_values(invocation: RuntimeCallableInvocation) -> Result<Vec<Runtim
     Ok(values)
 }
 
-#[derive(Debug)]
-struct TraitMethodVmOutcome {
-    value: RuntimeValue,
-    updated_receiver: Option<RuntimeValue>,
-}
-
-#[derive(Debug)]
-enum TraitMethodCallOutcome {
-    Completed(TraitMethodVmOutcome),
-    BudgetYield,
-}
-
-fn execute_trait_method_call(
-    program: &AwbcProgram,
-    caller: &mut FiberState,
-    host: &mut impl VmHost,
-    context: Option<&VmExecutionContext>,
-    method: AwbcTraitMethodId,
-    receiver: AwbcRegisterId,
-    args: &[AwbcRegisterId],
-) -> Result<TraitMethodCallOutcome, VmError> {
-    const TRAIT_METHOD_BUDGET: u64 = 4_096;
-
-    let method_record = program
-        .trait_methods
-        .get(method.index())
-        .ok_or(VmError::MissingTraitMethod(method))?;
-    let mut values = Vec::with_capacity(args.len() + 1);
-    values.push(register(caller, receiver)?.clone());
-    values.extend(register_values(caller, args)?);
-
-    let mut method_fiber = FiberState::for_function(
-        program,
-        caller.entry,
-        method_record.function,
-        caller.generation,
-        TRAIT_METHOD_BUDGET,
-    )?;
-    method_fiber
-        .active_frame_mut()?
-        .bind_positional_arguments(program, &values)?;
-
-    let mut executed = 0_u64;
-    loop {
-        let output = step_with_host_context_optional(
-            program,
-            &mut method_fiber,
-            VmStepOptions {
-                max_instructions: TRAIT_METHOD_BUDGET,
-            },
-            context,
-            host,
-        )?;
-        executed = executed.saturating_add(output.executed);
-        match output.exit {
-            VmExit::Running if executed < TRAIT_METHOD_BUDGET => {}
-            VmExit::Returned(Some(value)) => {
-                if executed > 0 && !caller.consume_budget(executed) {
-                    let safe_point = caller.safe_point(None)?;
-                    caller.suspend(FiberSuspension {
-                        resume: FiberResumeTarget::Exact(safe_point.cursor),
-                        reason: FiberSuspensionReason::BudgetYield,
-                    })?;
-                    return Ok(TraitMethodCallOutcome::BudgetYield);
-                }
-                let updated_receiver = if method_record.receiver == AwbcTraitReceiverMode::MutRef {
-                    let slot = method_record.receiver_state_slot.ok_or_else(|| {
-                        VmError::Runtime(
-                            "mut trait method is missing receiver state slot".to_owned(),
-                        )
-                    })?;
-                    Some(method_fiber.active_frame()?.register(slot)?.clone())
-                } else {
-                    None
-                };
-                return Ok(TraitMethodCallOutcome::Completed(TraitMethodVmOutcome {
-                    value,
-                    updated_receiver,
-                }));
-            }
-            VmExit::Returned(None) => {
-                return Err(VmError::Runtime(
-                    "trait method returned unit where a value was required".to_owned(),
-                ));
-            }
-            VmExit::DialogueResultSelected(value) => {
-                return Err(VmError::NestedCallExit(Box::new(
-                    VmNestedCallExit::DialogueResultSelected(value),
-                )));
-            }
-            VmExit::Trapped(trap) => {
-                return Err(VmError::NestedCallExit(Box::new(
-                    VmNestedCallExit::Trapped(trap),
-                )));
-            }
-            VmExit::Cancelled => {
-                return Err(VmError::NestedCallExit(Box::new(
-                    VmNestedCallExit::Cancelled,
-                )));
-            }
-            VmExit::Suspended(reason) => {
-                return Err(VmError::NestedCallExit(Box::new(
-                    VmNestedCallExit::Suspended(reason),
-                )));
-            }
-            VmExit::BudgetYield(point) => {
-                return Err(VmError::NestedCallExit(Box::new(
-                    VmNestedCallExit::BudgetYield(point),
-                )));
-            }
-            VmExit::Running => {
-                return Err(VmError::Runtime(
-                    "trait method did not complete within deterministic call budget".to_owned(),
-                ));
-            }
-        }
-    }
-}
-
 fn set_record_field_value(
     target: &mut RuntimeValue,
     field: u32,
@@ -2300,7 +2207,8 @@ fn execute_terminator(
                 if let Some(return_to) = return_to {
                     match return_to.continuation.clone() {
                         FiberReturnContinuation::Ordinary
-                        | FiberReturnContinuation::FormatOperand { .. } => {}
+                        | FiberReturnContinuation::FormatOperand { .. }
+                        | FiberReturnContinuation::InstructionCall { .. } => {}
                         continuation => {
                             complete_project_call_return(
                                 program,
@@ -2619,7 +2527,9 @@ fn complete_project_call_return(
         FiberReturnContinuation::ProjectCallDefault { site, .. }
         | FiberReturnContinuation::ProjectCallTarget { site } => *site,
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(),
-        FiberReturnContinuation::Ordinary | FiberReturnContinuation::FormatOperand { .. } => {
+        FiberReturnContinuation::Ordinary
+        | FiberReturnContinuation::FormatOperand { .. }
+        | FiberReturnContinuation::InstructionCall { .. } => {
             return Ok(());
         }
     };
@@ -2730,8 +2640,9 @@ fn complete_project_call_return(
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(
             "apply-group default return is handled before looking up a project-call site"
         ),
-        FiberReturnContinuation::FormatOperand { .. } => {
-            unreachable!("formatter operand return is handled by the fiber return continuation")
+        FiberReturnContinuation::FormatOperand { .. }
+        | FiberReturnContinuation::InstructionCall { .. } => {
+            unreachable!("instruction return is handled by the fiber return continuation")
         }
         FiberReturnContinuation::Ordinary => {}
     }
@@ -3482,6 +3393,7 @@ impl VmError {
             | Self::MissingString(_)
             | Self::MissingPattern(_)
             | Self::MissingType(_)
+            | Self::MissingPureHelper(_)
             | Self::MissingTraitMethod(_) => None,
         }
     }

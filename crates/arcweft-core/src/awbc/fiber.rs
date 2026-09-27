@@ -5,8 +5,8 @@ use super::schema::{
     AwbcEntryId, AwbcEntryTarget, AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId,
     AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcPatternId, AwbcProgram, AwbcRegisterId,
     AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
-    AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTraitReceiverMode,
+    AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use crate::entry::{FlowParameterCoordinate, RuntimeNominalTypeId};
 use crate::pattern::RuntimeSemanticTypeId;
@@ -141,6 +141,11 @@ pub enum FiberReturnContinuation {
     FormatOperand {
         site: FiberCursor,
         ordinal: usize,
+    },
+    /// A verified instruction call returns to the following cursor. The
+    /// program instruction at `site` owns the target and any receiver update.
+    InstructionCall {
+        site: FiberCursor,
     },
 }
 
@@ -419,6 +424,9 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     FormatOperand {
         site: FiberCursor,
         ordinal: usize,
+    },
+    InstructionCall {
+        site: FiberCursor,
     },
 }
 
@@ -771,6 +779,9 @@ impl AwbcFiberReturnContinuationSnapshot {
                 site: *site,
                 ordinal: *ordinal,
             },
+            FiberReturnContinuation::InstructionCall { site } => {
+                Self::InstructionCall { site: *site }
+            }
         })
     }
 
@@ -803,6 +814,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             Self::FormatOperand { site, ordinal } => {
                 FiberReturnContinuation::FormatOperand { site, ordinal }
             }
+            Self::InstructionCall { site } => FiberReturnContinuation::InstructionCall { site },
         })
     }
 }
@@ -1325,7 +1337,8 @@ impl FiberState {
                 match &return_to.continuation {
                     FiberReturnContinuation::Ordinary
                     | FiberReturnContinuation::ProjectCallTarget { .. }
-                    | FiberReturnContinuation::FormatOperand { .. } => {}
+                    | FiberReturnContinuation::FormatOperand { .. }
+                    | FiberReturnContinuation::InstructionCall { .. } => {}
                     FiberReturnContinuation::ProjectCallDefault { logical_values, .. } => {
                         visit_value_slice(logical_values, &mut visitor)?;
                     }
@@ -2025,7 +2038,7 @@ impl FiberState {
             .iter()
             .any(FiberFrame::has_pending_cleanup)
         {
-            return Err(FiberStateError::InvalidFrame);
+            return Ok(false);
         }
         self.frames.truncate(child_index);
         self.cursor = site;
@@ -2247,12 +2260,14 @@ impl FiberState {
         args: &[RuntimeValue],
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
-        if matches!(
-            return_to.continuation,
-            FiberReturnContinuation::FormatOperand { .. }
-        ) && self.cursor != return_to.cursor
-        {
-            return Err(FiberStateError::InvalidFrame);
+        match return_to.continuation {
+            FiberReturnContinuation::FormatOperand { .. } if self.cursor != return_to.cursor => {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            FiberReturnContinuation::InstructionCall { site } if self.cursor != site => {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            _ => {}
         }
         validate_return_point(program, self.active_frame()?, function, &return_to)?;
         let function_record = program
@@ -2391,6 +2406,16 @@ impl FiberState {
             .return_to
             .clone()
             .ok_or(FiberStateError::InvalidFrame)?;
+        let caller_frame = self
+            .frames
+            .get(self.frames.len() - 2)
+            .ok_or(FiberStateError::MissingFrame)?;
+        if matches!(
+            return_to.continuation,
+            FiberReturnContinuation::InstructionCall { .. }
+        ) {
+            validate_return_point(program, caller_frame, returning_frame.function, &return_to)?;
+        }
         let signature = program
             .functions
             .get(returning_frame.function.index())
@@ -2414,10 +2439,6 @@ impl FiberState {
             return Err(FiberStateError::ReturnValueMismatch);
         }
         if let (Some(destination), Some(value)) = (return_to.destination, return_value.as_ref()) {
-            let caller_frame = self
-                .frames
-                .get(self.frames.len() - 2)
-                .ok_or(FiberStateError::MissingFrame)?;
             if destination.index() >= caller_frame.registers.len() {
                 return Err(FiberStateError::RegisterOutOfBounds {
                     register: destination.0,
@@ -2434,6 +2455,12 @@ impl FiberState {
                 return Err(FiberStateError::ReturnValueMismatch);
             }
         }
+        let receiver_update = instruction_call_receiver_update(
+            program,
+            caller_frame,
+            returning_frame,
+            &return_to.continuation,
+        )?;
         let popped = self
             .pop_call_frame(program)?
             .ok_or(FiberStateError::InvalidFrame)?;
@@ -2449,6 +2476,9 @@ impl FiberState {
             return Ok(false);
         }
         if let (Some(destination), Some(value)) = (return_to.destination, return_value) {
+            self.active_frame_mut()?.set_register(destination, value)?;
+        }
+        if let Some((destination, value)) = receiver_update {
             self.active_frame_mut()?.set_register(destination, value)?;
         }
         Ok(false)
@@ -2619,10 +2649,10 @@ fn validate_cursor(program: &AwbcProgram, cursor: FiberCursor) -> Result<(), Fib
     Ok(())
 }
 
-fn format_operands_at_site(
+fn instruction_at_site(
     program: &AwbcProgram,
     site: FiberCursor,
-) -> Result<&[super::schema::AwbcFormatOperand], FiberStateError> {
+) -> Result<&AwbcInstruction, FiberStateError> {
     validate_cursor(program, site)?;
     let block = &program.blocks[site.block.index()];
     if site.instruction_offset >= block.instructions.len {
@@ -2634,7 +2664,15 @@ fn format_operands_at_site(
         .checked_add(site.instruction_offset)
         .and_then(|index| program.instructions.get(index as usize))
         .ok_or(FiberStateError::InvalidFrame)?;
-    let AwbcInstruction::FormatContent { operands, .. } = instruction else {
+    Ok(instruction)
+}
+
+fn format_operands_at_site(
+    program: &AwbcProgram,
+    site: FiberCursor,
+) -> Result<&[super::schema::AwbcFormatOperand], FiberStateError> {
+    let AwbcInstruction::FormatContent { operands, .. } = instruction_at_site(program, site)?
+    else {
         return Err(FiberStateError::InvalidFrame);
     };
     Ok(operands)
@@ -3136,6 +3174,15 @@ fn validate_return_continuation(
                 *ordinal,
             );
         }
+        FiberReturnContinuation::InstructionCall { site } => {
+            return validate_instruction_call_return(
+                program,
+                caller,
+                returning_function,
+                return_to,
+                *site,
+            );
+        }
         FiberReturnContinuation::ProjectCallDefault {
             site,
             logical_values,
@@ -3281,6 +3328,98 @@ fn validate_format_operand_return(
         return Err(FiberStateError::InvalidFrame);
     }
     Ok(())
+}
+
+fn validate_instruction_call_return(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    returning_function: AwbcFunctionId,
+    return_to: &FiberReturnPoint,
+    site: FiberCursor,
+) -> Result<(), FiberStateError> {
+    let next_offset = site
+        .instruction_offset
+        .checked_add(1)
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if site.function != caller.function
+        || return_to.cursor
+            != (FiberCursor {
+                instruction_offset: next_offset,
+                ..site
+            })
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let (destination, function, receiver_out) = match instruction_at_site(program, site)? {
+        AwbcInstruction::CallPureHelper { dst, helper, .. } => {
+            let function = program
+                .pure_helpers
+                .get(helper.index())
+                .ok_or(FiberStateError::InvalidFrame)?
+                .function;
+            (*dst, function, None)
+        }
+        AwbcInstruction::CallTraitMethod {
+            dst,
+            method,
+            receiver_out,
+            ..
+        } => {
+            let method = program
+                .trait_methods
+                .get(method.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if receiver_out.is_some() != (method.receiver == AwbcTraitReceiverMode::MutRef) {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            (*dst, method.function, *receiver_out)
+        }
+        _ => return Err(FiberStateError::InvalidFrame),
+    };
+    if return_to.destination != Some(destination)
+        || returning_function != function
+        || receiver_out.is_some_and(|register| register.index() >= caller.registers.len())
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    Ok(())
+}
+
+fn instruction_call_receiver_update(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    callee: &FiberFrame,
+    continuation: &FiberReturnContinuation,
+) -> Result<Option<(AwbcRegisterId, RuntimeValue)>, FiberStateError> {
+    let FiberReturnContinuation::InstructionCall { site } = continuation else {
+        return Ok(None);
+    };
+    let AwbcInstruction::CallTraitMethod {
+        method,
+        receiver_out: Some(destination),
+        ..
+    } = instruction_at_site(program, *site)?
+    else {
+        return Ok(None);
+    };
+    let method = program
+        .trait_methods
+        .get(method.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let slot = method
+        .receiver_state_slot
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let value = callee.register(slot)?.clone();
+    let expected = program
+        .frame_layouts
+        .get(caller.layout.index())
+        .and_then(|layout| layout.slots.get(destination.index()))
+        .map(|slot| slot.ty)
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if !runtime_value_matches_type(program, &value, expected, 0) {
+        return Err(FiberStateError::ReturnValueMismatch);
+    }
+    Ok(Some((*destination, value)))
 }
 
 fn validate_project_call_stage_values(
@@ -4805,6 +4944,47 @@ mod tests {
                 .recover_format_operand(&program, "unrelated".to_owned())
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn format_operand_recovery_preserves_pending_cleanup_for_normal_unwind() {
+        let program = format_entry_program();
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+        fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
+        let site = fiber.cursor;
+        fiber.begin_format_content(&program).unwrap();
+        fiber
+            .push_call_frame_with_continuation(
+                &program,
+                AwbcFunctionId(1),
+                format_operand_return(site, 0),
+                &[RuntimeValue::Unit],
+            )
+            .unwrap();
+        fiber
+            .active_frame_mut()
+            .unwrap()
+            .root_cleanups
+            .push(FiberScopeCleanup {
+                key: "cleanup".to_owned(),
+                effect: AwbcEffectPlanId(0),
+                args: vec![RuntimeValue::Unit],
+            });
+        let before = fiber.clone();
+        assert!(
+            !fiber
+                .recover_format_operand(&program, "failure".to_owned())
+                .unwrap()
+        );
+        assert_eq!(fiber, before);
+        let output = crate::awbc::vm::cancel_fiber(&mut fiber);
+        assert!(output.observations.iter().any(|observation| matches!(
+            observation,
+            crate::awbc::vm::VmObservation::Effect {
+                effect: AwbcEffectPlanId(0),
+                args,
+            } if args == &[RuntimeValue::Unit]
+        )));
     }
 
     #[test]

@@ -341,16 +341,13 @@ impl VmHost for CharacterDialogueVmHost<'_> {
         Err(VmError::MissingIntrinsic(intrinsic))
     }
 
-    fn call_pure_helper(
+    fn try_call_pure_helper(
         &mut self,
         _program: &AwbcProgram,
-        helper: arcweft_core::awbc::schema::AwbcPureHelperId,
+        _helper: arcweft_core::awbc::schema::AwbcPureHelperId,
         _args: &[RuntimeValue],
-    ) -> Result<RuntimeValue, VmError> {
-        Err(VmError::Runtime(format!(
-            "pure helper {} is not bound",
-            helper.0
-        )))
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        Ok(None)
     }
 
     fn produce_character_dialogue(
