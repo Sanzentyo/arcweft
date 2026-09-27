@@ -97,7 +97,20 @@ pub fn finish_format_content_attempt(
     let outcome = if let Some(reason) = first_recoverable {
         RuntimeDialogueFormattedOutcome::Failure {
             reason: reason.to_owned(),
-            value_plain: None,
+            value_plain: values[RuntimeFmtParameterId::Value.index()]
+                .and_then(|primary| {
+                    let none_text = match values[RuntimeFmtParameterId::NoneValue.index()] {
+                        Some(RuntimeValue::String(text)) => Some(text.as_str()),
+                        _ => None,
+                    };
+                    render_primary(primary_kind, primary, none_text)
+                        .ok()
+                        .and_then(Result::ok)
+                })
+                .and_then(|rendered| match rendered {
+                    RuntimeDialogueFormattedSuccess::Text(text) => Some(text),
+                    RuntimeDialogueFormattedSuccess::Content(_) => None,
+                }),
         }
     } else {
         format_success(primary_kind, &values)?
@@ -243,6 +256,43 @@ mod tests {
             &RuntimeDialogueFormattedOutcome::Failure {
                 reason: "fmt Locale option is not supported by Core formatting".to_owned(),
                 value_plain: Some("42".to_owned()),
+            }
+        );
+    }
+
+    #[test]
+    fn recoverable_option_failure_retains_plain_evaluated_primary() {
+        let primary_kind = RuntimeFormatPrimaryKind::Scalar(
+            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest(),
+        );
+        let formatted = finish_format_content_attempt(
+            primary_kind,
+            &[
+                (RuntimeFmtParameterId::Value, Some(RuntimeValue::i64(42))),
+                (RuntimeFmtParameterId::Style, None),
+            ],
+            Some("style evaluation failed"),
+        )
+        .expect("recoverable formatter failure remains a value");
+        assert_eq!(
+            formatted.outcome(),
+            &RuntimeDialogueFormattedOutcome::Failure {
+                reason: "style evaluation failed".to_owned(),
+                value_plain: Some("42".to_owned()),
+            }
+        );
+
+        let missing_primary = finish_format_content_attempt(
+            primary_kind,
+            &[(RuntimeFmtParameterId::Value, None)],
+            Some("primary evaluation failed"),
+        )
+        .expect("failed primary remains a formatted failure");
+        assert_eq!(
+            missing_primary.outcome(),
+            &RuntimeDialogueFormattedOutcome::Failure {
+                reason: "primary evaluation failed".to_owned(),
+                value_plain: None,
             }
         );
     }
