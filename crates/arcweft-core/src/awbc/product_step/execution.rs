@@ -1,7 +1,8 @@
 use crate::awbc::fiber::FiberState;
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
 use crate::awbc::vm::{
-    VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions, step_with_host_context,
+    VmError, VmExecutionContext, VmExit, VmHost, VmNestedPureExit, VmStepOptions,
+    step_with_host_context,
 };
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, RuntimeExternalCallContext};
 use crate::step::{
@@ -296,30 +297,30 @@ fn run_function_with_host(
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
-            VmExit::DialogueResultSelected(_) => {
-                return Err(VmError::Runtime(
-                    "pure helper selected a dialogue result".to_owned(),
-                ));
-            }
-            VmExit::Cancelled => {
-                return Err(VmError::Runtime(
-                    "pure helper execution was cancelled".to_owned(),
-                ));
-            }
-            VmExit::Trapped(trap) => {
-                return Err(VmError::Runtime(trap.message.unwrap_or_else(|| {
-                    format!("AWBC pure helper trap {:?}", trap.code)
-                })));
-            }
-            VmExit::Suspended(reason) => {
-                return Err(VmError::Runtime(format!(
-                    "pure helper suspended at {reason:?}"
+            VmExit::DialogueResultSelected(value) => {
+                return Err(VmError::NestedPureExit(Box::new(
+                    VmNestedPureExit::DialogueResultSelected(value),
                 )));
             }
-            VmExit::BudgetYield(_) => {
-                return Err(VmError::Runtime(
-                    "pure helper exhausted compact VM budget".to_owned(),
-                ));
+            VmExit::Cancelled => {
+                return Err(VmError::NestedPureExit(Box::new(
+                    VmNestedPureExit::Cancelled,
+                )));
+            }
+            VmExit::Trapped(trap) => {
+                return Err(VmError::NestedPureExit(Box::new(
+                    VmNestedPureExit::Trapped(trap),
+                )));
+            }
+            VmExit::Suspended(reason) => {
+                return Err(VmError::NestedPureExit(Box::new(
+                    VmNestedPureExit::Suspended(reason),
+                )));
+            }
+            VmExit::BudgetYield(point) => {
+                return Err(VmError::NestedPureExit(Box::new(
+                    VmNestedPureExit::BudgetYield(point),
+                )));
             }
         }
     }

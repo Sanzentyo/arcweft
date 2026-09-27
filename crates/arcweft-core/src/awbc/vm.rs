@@ -343,6 +343,8 @@ pub enum VmExit {
 pub enum VmError {
     #[error(transparent)]
     Evaluation(#[from] crate::value::RuntimeEvalError),
+    #[error("nested AWBC pure helper exited without a value: {0:?}")]
+    NestedPureExit(Box<VmNestedPureExit>),
     #[error("AWBC VM fiber error: {0}")]
     Fiber(#[from] FiberStateError),
     #[error("AWBC function {0:?} does not exist")]
@@ -369,6 +371,17 @@ pub enum VmError {
     FunctionArgumentCount { expected: usize, actual: usize },
     #[error("runtime error: {0}")]
     Runtime(String),
+}
+
+/// Fatal non-value exit of a nested pure helper. This remains in-memory and
+/// retains budget, cancellation, and trap provenance without a string decoder.
+#[derive(Clone, Debug, PartialEq)]
+pub enum VmNestedPureExit {
+    DialogueResultSelected(RuntimeValue),
+    Cancelled,
+    Trapped(FiberTrap),
+    Suspended(FiberSuspensionReason),
+    BudgetYield(FiberSafePoint),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3276,6 +3289,13 @@ fn source_map_for_location(
 impl VmError {
     fn runtime_trap_code(&self) -> Option<AwbcTrapCode> {
         match self {
+            Self::NestedPureExit(exit) => Some(match exit.as_ref() {
+                VmNestedPureExit::Trapped(trap) => trap.code,
+                VmNestedPureExit::Suspended(_)
+                | VmNestedPureExit::DialogueResultSelected(_)
+                | VmNestedPureExit::Cancelled
+                | VmNestedPureExit::BudgetYield(_) => AwbcTrapCode::InternalInvariant,
+            }),
             Self::Evaluation(error) => Some(match error.recoverable_expression() {
                 Some(crate::value::RuntimeExpressionFailure::DivisionByZero) => {
                     AwbcTrapCode::DivisionByZero
