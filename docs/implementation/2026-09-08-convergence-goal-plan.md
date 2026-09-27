@@ -1954,3 +1954,11 @@ AWBC が共有する `evaluate_runtime_call` を typed `Result` に変えた。
 all-target/all-feature check、Core all-target Clippy、fmt、cached diff
 check が既存 warning ありで通過した。nested AWBC pure-helper の
 trap/budget/cancel の文字列化と `Format` 専用式はまだ未完である。
+
+`a83dfeed66bc128c41586c504f89bca90d4049ca` は nested AWBC pure
+helper の非値終了を `VmNestedPureExit` へ移し、trap code・budget safe point・
+cancel・suspend を in-memory の型付き値で保持する。Core lib 691/691、
+workspace all-target/all-feature check、Core all-target Clippy、fmt、cached
+diff check は既存 warning ありで通過した。formatter が受け取る回復可能な
+`VmError::Evaluation` とは区別できるが、残る `VmError::Runtime(String)` の
+message-based trap 分類と protected formatter operand は未完である。
