@@ -2016,3 +2016,31 @@ scanner で検出されなかった。
 locale/currency data、project `DisplayText` conformance、
 `InlineFallback.value_plain` の適切な失敗、AWBC の pure-helper/trait-method
 別 fiber 経路の同一継続化は残る。
+
+## 053 follow-up と workspace gate — 2026-09-27
+
+Supersedes: 直前の 053 substrate note に記録した `just test-workspace` の
+2件失敗は、現時点の gate 状態としては解消した。失敗の観測自体は履歴として
+残す。確認した HEAD は `edf3a37cb777953ec30e957b8fb356ba7f24b67e`、
+working tree は clean。
+
+`7d99658768bb7390e9684c1ff3a6cfe213d65530` は Capacity の選択済み
+`USize` schema に古い `Unchecked` assertion を合わせ直した。focused 1/1。
+`edf3a37cb777953ec30e957b8fb356ba7f24b67e` は contextual effect row
+を持つ sequence/array の子 closure を、未解決の contextual shape だけで
+直接拒否せず、完全な期待型がある場合にだけ container を確定比較する。
+array repeat と長さ不一致拒否を含む focused 2/2、sema changed-crate
+check/Clippy を通した。
+
+`de6d314b460eef36b4d2ba486fee8dd7b531db82` は評価済み primary の
+unstyled text を formatter option failure 時の `value_plain` に保持し、
+値を得られなかった `InlineFallback.value_plain` を空表示へ黙って落とさず
+typed materialization error とした。Core と text-model の focused test
+各1/1、workspace check/Clippy を通した。
+
+これらの push 後、`just test-workspace` の全レシピ、workspace
+all-target/all-feature check と Clippy、`cargo fmt --all -- --check`、
+`git diff --check` は既存 warning ありで終了コード 0。前述の structure gate
+も、この一連で dependency/owner 変更を追加しておらず、blocking 0 の
+証拠を維持する。053 の残る locale/currency、project `DisplayText`、
+数値 style、AWBC nested helper/trait の同一 fiber 化は未受理のまま。
