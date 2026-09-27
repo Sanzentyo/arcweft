@@ -99,6 +99,71 @@ fn minimal_program() -> AwbcProgram {
 }
 
 #[test]
+fn binary_division_by_zero_traps_with_typed_code() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![runtime_type(
+        1,
+        AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64),
+    )];
+    program.signatures[0].result = Some(AwbcTypeId(0));
+    program.frame_layouts[0].slots = (0..3)
+        .map(|_| AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        })
+        .collect();
+    let int = |value: i64| {
+        let mut bits = [0; 16];
+        bits[..8].copy_from_slice(&value.to_le_bytes());
+        AwbcConstant::Int {
+            kind: AwbcSignedIntKind::I64,
+            bits,
+        }
+    };
+    program.constants = vec![int(1), int(0)];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        },
+        AwbcInstruction::Binary {
+            dst: AwbcRegisterId(2),
+            op: AwbcBinaryOp::Div,
+            lhs: AwbcRegisterId(0),
+            rhs: AwbcRegisterId(1),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(2)),
+    };
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("integer division is well typed before execution");
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("division fiber initializes");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .expect("typed division failure is a VM trap");
+    let super::vm::VmExit::Trapped(trap) = output.exit else {
+        panic!("division by zero must trap");
+    };
+    assert_eq!(trap.code, AwbcTrapCode::DivisionByZero);
+    assert_eq!(trap.message.as_deref(), Some("division by zero"));
+}
+
+#[test]
 fn forged_repeat_sequence_rejects_runtime_length_mismatch_for_fixed_array() {
     let mut program = minimal_program();
     program.runtime_types = vec![

@@ -1995,6 +1995,8 @@ struct RuntimeScope {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error(transparent)]
+    RecoverableExpression(#[from] RuntimeExpressionFailure),
     #[error("runtime fiber/execution identity space is exhausted")]
     FiberIdentityOverflow,
     #[error("scheduled dialogue callback has an invalid runtime lifecycle state")]
@@ -2185,6 +2187,23 @@ pub enum RuntimeEvalError {
     },
 }
 
+/// A checked language-expression failure that a selected formatter may retain
+/// as a failed display attempt. Other runtime errors remain fatal.
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RuntimeExpressionFailure {
+    #[error("division by zero")]
+    DivisionByZero,
+}
+
+impl RuntimeEvalError {
+    pub const fn recoverable_expression(&self) -> Option<&RuntimeExpressionFailure> {
+        match self {
+            Self::RecoverableExpression(failure) => Some(failure),
+            _ => None,
+        }
+    }
+}
+
 impl RuntimePayload {
     pub const fn new(value: RuntimeValue) -> Self {
         Self(value)
@@ -2287,10 +2306,10 @@ pub(crate) fn evaluate_binary(
                 evaluate_unsigned_integer_op(lhs, op, rhs).map(RuntimeValue::UInt)
             }
             (RuntimeValue::F32(lhs), RuntimeValue::F32(rhs)) => {
-                Ok(RuntimeValue::F32(evaluate_f32_op(lhs, op, rhs)))
+                evaluate_f32_op(lhs, op, rhs).map(RuntimeValue::F32)
             }
             (RuntimeValue::F64(lhs), RuntimeValue::F64(rhs)) => {
-                Ok(RuntimeValue::F64(evaluate_f64_op(lhs, op, rhs)))
+                evaluate_f64_op(lhs, op, rhs).map(RuntimeValue::F64)
             }
             (lhs, rhs) => Err(op.unsupported_error(&lhs, &rhs)),
         },
@@ -2757,22 +2776,22 @@ fn evaluate_signed_integer_op(
 ) -> Result<RuntimeInt, RuntimeEvalError> {
     match (lhs, rhs) {
         (RuntimeInt::I8(lhs), RuntimeInt::I8(rhs)) => {
-            Ok(RuntimeInt::I8(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::I8)
         }
         (RuntimeInt::I16(lhs), RuntimeInt::I16(rhs)) => {
-            Ok(RuntimeInt::I16(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::I16)
         }
         (RuntimeInt::I32(lhs), RuntimeInt::I32(rhs)) => {
-            Ok(RuntimeInt::I32(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::I32)
         }
         (RuntimeInt::I64(lhs), RuntimeInt::I64(rhs)) => {
-            Ok(RuntimeInt::I64(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::I64)
         }
         (RuntimeInt::I128(lhs), RuntimeInt::I128(rhs)) => {
-            Ok(RuntimeInt::I128(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::I128)
         }
         (RuntimeInt::ISize(lhs), RuntimeInt::ISize(rhs)) => {
-            Ok(RuntimeInt::ISize(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeInt::ISize)
         }
         (lhs, rhs) => Err(op.unsupported_error(&RuntimeValue::Int(lhs), &RuntimeValue::Int(rhs))),
     }
@@ -2785,32 +2804,32 @@ fn evaluate_unsigned_integer_op(
 ) -> Result<RuntimeUInt, RuntimeEvalError> {
     match (lhs, rhs) {
         (RuntimeUInt::U8(lhs), RuntimeUInt::U8(rhs)) => {
-            Ok(RuntimeUInt::U8(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::U8)
         }
         (RuntimeUInt::U16(lhs), RuntimeUInt::U16(rhs)) => {
-            Ok(RuntimeUInt::U16(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::U16)
         }
         (RuntimeUInt::U32(lhs), RuntimeUInt::U32(rhs)) => {
-            Ok(RuntimeUInt::U32(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::U32)
         }
         (RuntimeUInt::U64(lhs), RuntimeUInt::U64(rhs)) => {
-            Ok(RuntimeUInt::U64(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::U64)
         }
         (RuntimeUInt::U128(lhs), RuntimeUInt::U128(rhs)) => {
-            Ok(RuntimeUInt::U128(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::U128)
         }
         (RuntimeUInt::USize(lhs), RuntimeUInt::USize(rhs)) => {
-            Ok(RuntimeUInt::USize(evaluate_numeric_op(lhs, op, rhs)))
+            evaluate_numeric_op(lhs, op, rhs).map(RuntimeUInt::USize)
         }
         (lhs, rhs) => Err(op.unsupported_error(&RuntimeValue::UInt(lhs), &RuntimeValue::UInt(rhs))),
     }
 }
 
-fn evaluate_f32_op(lhs: f32, op: RuntimeBinaryOp, rhs: f32) -> f32 {
+fn evaluate_f32_op(lhs: f32, op: RuntimeBinaryOp, rhs: f32) -> Result<f32, RuntimeEvalError> {
     evaluate_numeric_op(lhs, op, rhs)
 }
 
-fn evaluate_f64_op(lhs: f64, op: RuntimeBinaryOp, rhs: f64) -> f64 {
+fn evaluate_f64_op(lhs: f64, op: RuntimeBinaryOp, rhs: f64) -> Result<f64, RuntimeEvalError> {
     evaluate_numeric_op(lhs, op, rhs)
 }
 
@@ -2818,7 +2837,7 @@ pub(crate) trait RuntimeDeterministicNumeric: Copy {
     fn add(lhs: Self, rhs: Self) -> Self;
     fn sub(lhs: Self, rhs: Self) -> Self;
     fn mul(lhs: Self, rhs: Self) -> Self;
-    fn div(lhs: Self, rhs: Self) -> Self;
+    fn div(lhs: Self, rhs: Self) -> Option<Self>;
 }
 
 macro_rules! impl_wrapping_numeric {
@@ -2837,8 +2856,8 @@ macro_rules! impl_wrapping_numeric {
                     lhs.wrapping_mul(rhs)
                 }
 
-                fn div(lhs: Self, rhs: Self) -> Self {
-                    lhs.wrapping_div(rhs)
+                fn div(lhs: Self, rhs: Self) -> Option<Self> {
+                    (rhs != 0).then(|| lhs.wrapping_div(rhs))
                 }
             }
         )*
@@ -2861,8 +2880,8 @@ macro_rules! impl_float_numeric {
                     lhs * rhs
                 }
 
-                fn div(lhs: Self, rhs: Self) -> Self {
-                    lhs / rhs
+                fn div(lhs: Self, rhs: Self) -> Option<Self> {
+                    Some(lhs / rhs)
                 }
             }
         )*
@@ -2885,8 +2904,8 @@ impl RuntimeDeterministicNumeric for RuntimeISizeValue {
         Self(lhs.0.wrapping_mul(rhs.0))
     }
 
-    fn div(lhs: Self, rhs: Self) -> Self {
-        Self(lhs.0.wrapping_div(rhs.0))
+    fn div(lhs: Self, rhs: Self) -> Option<Self> {
+        (rhs.0 != 0).then(|| Self(lhs.0.wrapping_div(rhs.0)))
     }
 }
 
@@ -2903,8 +2922,8 @@ impl RuntimeDeterministicNumeric for RuntimeUSizeValue {
         Self(lhs.0.wrapping_mul(rhs.0))
     }
 
-    fn div(lhs: Self, rhs: Self) -> Self {
-        Self(lhs.0.wrapping_div(rhs.0))
+    fn div(lhs: Self, rhs: Self) -> Option<Self> {
+        (rhs.0 != 0).then(|| Self(lhs.0.wrapping_div(rhs.0)))
     }
 }
 
@@ -2912,14 +2931,15 @@ pub(crate) fn evaluate_numeric_op<T: RuntimeDeterministicNumeric>(
     lhs: T,
     op: RuntimeBinaryOp,
     rhs: T,
-) -> T {
-    match op {
-        RuntimeBinaryOp::Add => T::add(lhs, rhs),
-        RuntimeBinaryOp::Sub => T::sub(lhs, rhs),
-        RuntimeBinaryOp::Mul => T::mul(lhs, rhs),
+) -> Result<T, RuntimeEvalError> {
+    let value = match op {
+        RuntimeBinaryOp::Add => Some(T::add(lhs, rhs)),
+        RuntimeBinaryOp::Sub => Some(T::sub(lhs, rhs)),
+        RuntimeBinaryOp::Mul => Some(T::mul(lhs, rhs)),
         RuntimeBinaryOp::Div => T::div(lhs, rhs),
         _ => unreachable!(),
-    }
+    };
+    value.ok_or(RuntimeExpressionFailure::DivisionByZero.into())
 }
 
 pub(crate) fn sum_i64_sequence_ref(items: &[RuntimeValue]) -> Result<i64, RuntimeEvalError> {

@@ -8,12 +8,12 @@ use crate::{
     time::LogicalDuration,
     value::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
-        RuntimeEntityReference, RuntimeEnv, RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding,
-        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        RuntimeValueNestingError, evaluate_capacity_intrinsic,
-        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
-        evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
-        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        RuntimeEntityReference, RuntimeEnv, RuntimeEvalError, RuntimeExpressionFailure,
+        RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordValue,
+        RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
+        evaluate_binary, evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
+        evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -480,6 +480,50 @@ fn runtime_operator_display_uses_surface_labels() {
     assert_eq!(RuntimeUnaryOp::Not.to_string(), "!");
     assert_eq!(RuntimeBinaryOp::Add.to_string(), "+");
     assert_eq!(RuntimeBinaryOp::And.to_string(), "&&");
+}
+
+#[test]
+fn integer_division_by_zero_is_a_typed_failure_for_every_width() {
+    let cases = [
+        (RuntimeValue::i8(1), RuntimeValue::i8(0)),
+        (RuntimeValue::i16(1), RuntimeValue::i16(0)),
+        (RuntimeValue::i32(1), RuntimeValue::i32(0)),
+        (RuntimeValue::i64(1), RuntimeValue::i64(0)),
+        (RuntimeValue::i128(1), RuntimeValue::i128(0)),
+        (RuntimeValue::isize(1), RuntimeValue::isize(0)),
+        (RuntimeValue::u8(1), RuntimeValue::u8(0)),
+        (RuntimeValue::u16(1), RuntimeValue::u16(0)),
+        (RuntimeValue::u32(1), RuntimeValue::u32(0)),
+        (RuntimeValue::u64(1), RuntimeValue::u64(0)),
+        (RuntimeValue::u128(1), RuntimeValue::u128(0)),
+        (RuntimeValue::usize(1), RuntimeValue::usize(0)),
+    ];
+    for (lhs, rhs) in cases {
+        assert_eq!(
+            evaluate_binary(lhs, RuntimeBinaryOp::Div, rhs),
+            Err(RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero,
+            ))
+        );
+    }
+    assert_eq!(
+        evaluate_binary(
+            RuntimeValue::i8(i8::MIN),
+            RuntimeBinaryOp::Div,
+            RuntimeValue::i8(-1),
+        ),
+        Ok(RuntimeValue::i8(i8::MIN)),
+        "signed overflow keeps its deterministic wrapping result"
+    );
+    assert_eq!(
+        evaluate_binary(
+            RuntimeValue::f32(1.0),
+            RuntimeBinaryOp::Div,
+            RuntimeValue::f32(0.0),
+        ),
+        Ok(RuntimeValue::f32(f32::INFINITY)),
+        "floating division retains IEEE behavior"
+    );
 }
 
 #[test]

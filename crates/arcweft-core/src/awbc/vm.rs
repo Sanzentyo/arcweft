@@ -341,6 +341,8 @@ pub enum VmExit {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum VmError {
+    #[error(transparent)]
+    Evaluation(#[from] crate::value::RuntimeEvalError),
     #[error("AWBC VM fiber error: {0}")]
     Fiber(#[from] FiberStateError),
     #[error("AWBC function {0:?} does not exist")]
@@ -1184,15 +1186,13 @@ fn execute_instruction(
         }
         AwbcInstruction::Unary { dst, op, src } => {
             let value = register(fiber, *src)?.clone();
-            let value = evaluate_unary(unary_op(*op), value)
-                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            let value = evaluate_unary(unary_op(*op), value).map_err(VmError::Evaluation)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Binary { dst, op, lhs, rhs } => {
             let lhs = register(fiber, *lhs)?.clone();
             let rhs = register(fiber, *rhs)?.clone();
-            let value = evaluate_binary(lhs, binary_op(*op), rhs)
-                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            let value = evaluate_binary(lhs, binary_op(*op), rhs).map_err(VmError::Evaluation)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::CallPureHelper { dst, helper, args } => {
@@ -3276,6 +3276,12 @@ fn source_map_for_location(
 impl VmError {
     fn runtime_trap_code(&self) -> Option<AwbcTrapCode> {
         match self {
+            Self::Evaluation(error) => Some(match error.recoverable_expression() {
+                Some(crate::value::RuntimeExpressionFailure::DivisionByZero) => {
+                    AwbcTrapCode::DivisionByZero
+                }
+                None => AwbcTrapCode::InternalInvariant,
+            }),
             Self::Runtime(message) => Some(if message.contains("division by zero") {
                 AwbcTrapCode::DivisionByZero
             } else if message.contains("pattern") {

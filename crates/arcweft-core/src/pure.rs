@@ -1677,47 +1677,47 @@ fn evaluate_scalar_arithmetic(
 ) -> Result<RuntimePureScalar, RuntimeEvalError> {
     match (lhs, rhs) {
         (RuntimePureScalar::I8(lhs), RuntimePureScalar::I8(rhs)) => {
-            Ok(RuntimePureScalar::I8(evaluate_scalar_numeric(lhs, op, rhs)))
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::I8)
         }
-        (RuntimePureScalar::I16(lhs), RuntimePureScalar::I16(rhs)) => Ok(RuntimePureScalar::I16(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::I32(lhs), RuntimePureScalar::I32(rhs)) => Ok(RuntimePureScalar::I32(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::I64(lhs), RuntimePureScalar::I64(rhs)) => Ok(RuntimePureScalar::I64(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::I128(lhs), RuntimePureScalar::I128(rhs)) => Ok(
-            RuntimePureScalar::I128(evaluate_scalar_numeric(lhs, op, rhs)),
-        ),
-        (RuntimePureScalar::ISize(lhs), RuntimePureScalar::ISize(rhs)) => Ok(
-            RuntimePureScalar::ISize(evaluate_scalar_numeric(lhs, op, rhs)),
-        ),
+        (RuntimePureScalar::I16(lhs), RuntimePureScalar::I16(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::I16)
+        }
+        (RuntimePureScalar::I32(lhs), RuntimePureScalar::I32(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::I32)
+        }
+        (RuntimePureScalar::I64(lhs), RuntimePureScalar::I64(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::I64)
+        }
+        (RuntimePureScalar::I128(lhs), RuntimePureScalar::I128(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::I128)
+        }
+        (RuntimePureScalar::ISize(lhs), RuntimePureScalar::ISize(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::ISize)
+        }
         (RuntimePureScalar::U8(lhs), RuntimePureScalar::U8(rhs)) => {
-            Ok(RuntimePureScalar::U8(evaluate_scalar_numeric(lhs, op, rhs)))
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::U8)
         }
-        (RuntimePureScalar::U16(lhs), RuntimePureScalar::U16(rhs)) => Ok(RuntimePureScalar::U16(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::U32(lhs), RuntimePureScalar::U32(rhs)) => Ok(RuntimePureScalar::U32(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::U64(lhs), RuntimePureScalar::U64(rhs)) => Ok(RuntimePureScalar::U64(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::U128(lhs), RuntimePureScalar::U128(rhs)) => Ok(
-            RuntimePureScalar::U128(evaluate_scalar_numeric(lhs, op, rhs)),
-        ),
-        (RuntimePureScalar::USize(lhs), RuntimePureScalar::USize(rhs)) => Ok(
-            RuntimePureScalar::USize(evaluate_scalar_numeric(lhs, op, rhs)),
-        ),
-        (RuntimePureScalar::F32(lhs), RuntimePureScalar::F32(rhs)) => Ok(RuntimePureScalar::F32(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
-        (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => Ok(RuntimePureScalar::F64(
-            evaluate_scalar_numeric(lhs, op, rhs),
-        )),
+        (RuntimePureScalar::U16(lhs), RuntimePureScalar::U16(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::U16)
+        }
+        (RuntimePureScalar::U32(lhs), RuntimePureScalar::U32(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::U32)
+        }
+        (RuntimePureScalar::U64(lhs), RuntimePureScalar::U64(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::U64)
+        }
+        (RuntimePureScalar::U128(lhs), RuntimePureScalar::U128(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::U128)
+        }
+        (RuntimePureScalar::USize(lhs), RuntimePureScalar::USize(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::USize)
+        }
+        (RuntimePureScalar::F32(lhs), RuntimePureScalar::F32(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::F32)
+        }
+        (RuntimePureScalar::F64(lhs), RuntimePureScalar::F64(rhs)) => {
+            evaluate_scalar_numeric(lhs, op, rhs).map(RuntimePureScalar::F64)
+        }
         (lhs, rhs) => Err(RuntimeEvalError::UnsupportedBinary {
             op: op.as_label(),
             lhs: lhs.label(),
@@ -1750,7 +1750,7 @@ fn evaluate_scalar_numeric<T: crate::value::RuntimeDeterministicNumeric>(
     lhs: T,
     op: RuntimeBinaryOp,
     rhs: T,
-) -> T {
+) -> Result<T, RuntimeEvalError> {
     evaluate_numeric_op(lhs, op, rhs)
 }
 

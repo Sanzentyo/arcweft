@@ -156,7 +156,7 @@ impl PureFunctionBackend for AotPureFunctionBackend {
         &self,
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
-        let (value, stats) = self.compile_i64(request)?.call();
+        let (value, stats) = self.compile_i64(request)?.call()?;
         Ok(PureFunctionResult {
             backend: self.kind(),
             value: RuntimeValue::i64(value),
@@ -200,7 +200,7 @@ impl AotPureI64Plan {
     }
 
     /// Calls the compiled helper and returns the integer value plus evaluation stats.
-    pub fn call(&self) -> (i64, PureFunctionStats) {
+    pub fn call(&self) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
         self.evaluate_with_slots(self.initial_slots.clone())
     }
 
@@ -223,7 +223,7 @@ impl AotPureI64Plan {
         for (slot, value) in self.input_slots.iter().zip(inputs.iter().copied()) {
             slots[*slot] = value;
         }
-        Ok(self.evaluate_with_slots(slots))
+        self.evaluate_with_slots(slots)
     }
 
     /// Calls the compiled helper with caller-owned slot storage.
@@ -246,7 +246,7 @@ impl AotPureI64Plan {
         for (slot, value) in self.input_slots.iter().zip(inputs.iter().copied()) {
             slots[*slot] = value;
         }
-        Ok(self.evaluate_with_slot_slice(slots))
+        self.evaluate_with_slot_slice(slots)
     }
 
     fn reset_scratch_slots(&self, slots: &mut Vec<i64>) {
@@ -261,18 +261,24 @@ impl AotPureI64Plan {
         }
     }
 
-    fn evaluate_with_slots(&self, mut slots: Vec<i64>) -> (i64, PureFunctionStats) {
+    fn evaluate_with_slots(
+        &self,
+        mut slots: Vec<i64>,
+    ) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
         self.evaluate_with_slot_slice(&mut slots)
     }
 
-    fn evaluate_with_slot_slice(&self, slots: &mut [i64]) -> (i64, PureFunctionStats) {
+    fn evaluate_with_slot_slice(
+        &self,
+        slots: &mut [i64],
+    ) -> Result<(i64, PureFunctionStats), RuntimeEvalError> {
         let mut evaluator = AotI64Evaluator {
             slots,
             stats: PureFunctionStats::default(),
             scope_stack: Vec::new(),
         };
-        let value = evaluator.eval_i64(&self.expr);
-        (value, evaluator.stats)
+        let value = evaluator.eval_i64(&self.expr)?;
+        Ok((value, evaluator.stats))
     }
 
     /// Helper name captured from the original request.
@@ -586,13 +592,13 @@ struct AotI64Evaluator<'a> {
 }
 
 impl AotI64Evaluator<'_> {
-    fn eval_i64(&mut self, expr: &AotI64Expr) -> i64 {
+    fn eval_i64(&mut self, expr: &AotI64Expr) -> Result<i64, RuntimeEvalError> {
         self.stats.evaluated_exprs += 1;
         match expr {
-            AotI64Expr::Const(value) => *value,
-            AotI64Expr::Local(slot) => self.slots[*slot],
+            AotI64Expr::Const(value) => Ok(*value),
+            AotI64Expr::Local(slot) => Ok(self.slots[*slot]),
             AotI64Expr::Let { slot, expr, body } => {
-                let value = self.eval_i64(expr);
+                let value = self.eval_i64(expr)?;
                 let previous = self.slots[*slot];
                 self.slots[*slot] = value;
                 let result = self.eval_i64(body);
@@ -607,21 +613,25 @@ impl AotI64Evaluator<'_> {
             }
             AotI64Expr::AddCall { lhs, rhs } => {
                 self.stats.evaluated_calls += 1;
-                self.eval_i64(lhs).wrapping_add(self.eval_i64(rhs))
+                let lhs = self.eval_i64(lhs)?;
+                let rhs = self.eval_i64(rhs)?;
+                Ok(lhs.wrapping_add(rhs))
             }
             AotI64Expr::Unary { op, expr } => match op {
-                RuntimeUnaryOp::Neg => self.eval_i64(expr).wrapping_neg(),
+                RuntimeUnaryOp::Neg => Ok(self.eval_i64(expr)?.wrapping_neg()),
                 RuntimeUnaryOp::Not => unreachable!("bool unary is not compiled as i64"),
             },
             AotI64Expr::Binary { lhs, op, rhs } => {
                 self.stats.evaluated_binary_ops += 1;
-                let lhs = self.eval_i64(lhs);
-                let rhs = self.eval_i64(rhs);
+                let lhs = self.eval_i64(lhs)?;
+                let rhs = self.eval_i64(rhs)?;
                 match op {
-                    RuntimeBinaryOp::Add => lhs.wrapping_add(rhs),
-                    RuntimeBinaryOp::Sub => lhs.wrapping_sub(rhs),
-                    RuntimeBinaryOp::Mul => lhs.wrapping_mul(rhs),
-                    RuntimeBinaryOp::Div => lhs.wrapping_div(rhs),
+                    RuntimeBinaryOp::Add => Ok(lhs.wrapping_add(rhs)),
+                    RuntimeBinaryOp::Sub => Ok(lhs.wrapping_sub(rhs)),
+                    RuntimeBinaryOp::Mul => Ok(lhs.wrapping_mul(rhs)),
+                    RuntimeBinaryOp::Div => (rhs != 0)
+                        .then(|| lhs.wrapping_div(rhs))
+                        .ok_or(crate::value::RuntimeExpressionFailure::DivisionByZero.into()),
                     RuntimeBinaryOp::Eq
                     | RuntimeBinaryOp::Ne
                     | RuntimeBinaryOp::Lt
@@ -637,7 +647,7 @@ impl AotI64Evaluator<'_> {
                 then_expr,
                 else_expr,
             } => {
-                if self.eval_bool(condition) {
+                if self.eval_bool(condition)? {
                     self.eval_i64(then_expr)
                 } else {
                     self.eval_i64(else_expr)
@@ -646,10 +656,10 @@ impl AotI64Evaluator<'_> {
         }
     }
 
-    fn eval_bool(&mut self, expr: &AotBoolExpr) -> bool {
+    fn eval_bool(&mut self, expr: &AotBoolExpr) -> Result<bool, RuntimeEvalError> {
         self.stats.evaluated_exprs += 1;
         match expr {
-            AotBoolExpr::Const(value) => *value,
+            AotBoolExpr::Const(value) => Ok(*value),
             AotBoolExpr::Scope { identity, body } => {
                 self.scope_stack.push(identity.clone());
                 let result = self.eval_bool(body);
@@ -658,9 +668,9 @@ impl AotI64Evaluator<'_> {
             }
             AotBoolExpr::Compare { lhs, op, rhs } => {
                 self.stats.evaluated_binary_ops += 1;
-                let lhs = self.eval_i64(lhs);
-                let rhs = self.eval_i64(rhs);
-                match op {
+                let lhs = self.eval_i64(lhs)?;
+                let rhs = self.eval_i64(rhs)?;
+                Ok(match op {
                     RuntimeBinaryOp::Eq => lhs == rhs,
                     RuntimeBinaryOp::Ne => lhs != rhs,
                     RuntimeBinaryOp::Lt => lhs < rhs,
@@ -673,7 +683,7 @@ impl AotI64Evaluator<'_> {
                     | RuntimeBinaryOp::Div
                     | RuntimeBinaryOp::And
                     | RuntimeBinaryOp::Or => unreachable!("non-comparison op in AOT bool expr"),
-                }
+                })
             }
         }
     }
@@ -1073,5 +1083,32 @@ fn unsupported_aot(name: &str, reason: impl Into<String>) -> RuntimeEvalError {
     RuntimeEvalError::UnsupportedPure {
         name: name.to_owned(),
         reason: reason.into(),
+    }
+}
+
+#[cfg(test)]
+mod division_tests {
+    use super::{AotI64Evaluator, AotI64Expr, PureFunctionStats};
+    use crate::value::{RuntimeBinaryOp, RuntimeEvalError, RuntimeExpressionFailure};
+
+    #[test]
+    fn aot_division_by_zero_returns_the_shared_expression_failure() {
+        let mut slots = [];
+        let mut evaluator = AotI64Evaluator {
+            slots: &mut slots,
+            stats: PureFunctionStats::default(),
+            scope_stack: Vec::new(),
+        };
+        let divide = AotI64Expr::Binary {
+            lhs: Box::new(AotI64Expr::Const(1)),
+            op: RuntimeBinaryOp::Div,
+            rhs: Box::new(AotI64Expr::Const(0)),
+        };
+        assert_eq!(
+            evaluator.eval_i64(&divide),
+            Err(RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero,
+            ))
+        );
     }
 }
