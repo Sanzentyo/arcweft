@@ -2076,3 +2076,26 @@ check と Clippy、`cargo fmt --all -- --check`、cached diff check は終了コ
 operand から到達可能だが、Product host でなお別 fiber に入る。project
 `DisplayText` の選択済み適合・実行、session locale と固定書式データを用いた
 number/currency 整形も未完了である。
+
+## 053 locale identity の単一化 — 2026-09-27
+
+確認した HEAD は `bbef315cf0e34a64a60f36a6eb5a980eedfdcc01`、push 後の
+working tree は clean。Core の独立 `LocaleId`/canonicalizer を削除し、
+Dialogue、render-text、resource model/manifest の locale 値を
+`arcweft-id::LocaleTag` に統合した。authored text の正規化は明示的な
+`canonicalize`、型付き値と serde 復元は canonical spelling を要求する
+`try_new` に分けた。LocaleTag owner の後続 subtag 重複検査から primary
+language を除き、`de-de` → `de-DE` を受理しつつ `en-US-us` 等の真の
+後続重複は拒否する。
+
+6 変更 crate の tests・all-target check/Clippy、workspace
+all-target/all-feature check/Clippy、`just test-workspace`、fmt と cached diff
+check は終了コード 0（既存 warning あり）。`just structure-audit-gate` は
+2640 files / 97 packages / 339 review triggers / blocking 0。旧 Core owner を
+消して既存の `arcweft-id` owner を使ったため、依存辺や重複 authority は
+増やしていない。
+
+この cut は runtime locale 選択の受理ではない。維持仕様の root `[locale]`
+は現行 manifest decoder に未接続で、Character catalog の default active
+locale は別 authority のまま。session locale、formatter data、number/currency
+整形と保存・replay の一貫性を次の境界で閉じる。
