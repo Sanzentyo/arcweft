@@ -145,14 +145,20 @@ fn format_success(
             }
         }
     }
-    let rendered = if let Some(parameter) = unsupported {
-        Err(format!(
-            "fmt {:?} option is not supported by Core formatting",
-            parameter
-        ))
-    } else {
-        render_primary(primary_kind, primary, none_text)?
-    };
+    let rendered = render_primary(primary_kind, primary, none_text)?;
+    if let Some(parameter) = unsupported {
+        let value_plain = match rendered {
+            Ok(RuntimeDialogueFormattedSuccess::Text(text)) => Some(text),
+            Ok(RuntimeDialogueFormattedSuccess::Content(_)) | Err(_) => None,
+        };
+        return Ok(RuntimeDialogueFormattedOutcome::Failure {
+            reason: format!(
+                "fmt {:?} option is not supported by Core formatting",
+                parameter
+            ),
+            value_plain,
+        });
+    }
     Ok(match rendered {
         Ok(value) => RuntimeDialogueFormattedOutcome::Success { value, color },
         Err(reason) => RuntimeDialogueFormattedOutcome::Failure {
@@ -207,5 +213,37 @@ fn render_primary(
             },
         ),
         RuntimeFormatPrimaryKind::OptionScalar(_) => unreachable!("Option was decoded above"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pattern::RuntimeCheckedType;
+    use crate::value::RuntimeSignedIntWidth;
+
+    #[test]
+    fn unsupported_dynamic_format_option_retains_plain_evaluated_value() {
+        let formatted = finish_format_content_attempt(
+            RuntimeFormatPrimaryKind::Scalar(
+                RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest(),
+            ),
+            &[
+                (RuntimeFmtParameterId::Value, Some(RuntimeValue::i64(42))),
+                (
+                    RuntimeFmtParameterId::Locale,
+                    Some(RuntimeValue::String("invalid-locale".to_owned())),
+                ),
+            ],
+            None,
+        )
+        .expect("formatter failure remains a value");
+        assert_eq!(
+            formatted.outcome(),
+            &RuntimeDialogueFormattedOutcome::Failure {
+                reason: "fmt Locale option is not supported by Core formatting".to_owned(),
+                value_plain: Some("42".to_owned()),
+            }
+        );
     }
 }

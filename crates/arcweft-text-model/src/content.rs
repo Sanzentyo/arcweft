@@ -799,6 +799,10 @@ pub enum DialogueContentMaterializationError {
         slot: RuntimeDialogueValueSlotId,
         reason: String,
     },
+    #[error(
+        "formatted Content slot {slot} cannot use value_plain fallback without a rendered value"
+    )]
+    MissingFormattedPlainValue { slot: RuntimeDialogueValueSlotId },
     #[error("content node {node} references an unrebased slot {slot}")]
     UnrebasedSlot {
         node: usize,
@@ -1534,7 +1538,15 @@ fn apply_formatted_failure(
                 InlineFallback::Text { text, .. } => Some(text.clone()),
                 InlineFallback::ExprSource { .. } => Some(value_source.to_owned()),
                 InlineFallback::CallSource { .. } => Some(call_source.to_owned()),
-                InlineFallback::ValuePlain => value_plain.map(ToOwned::to_owned),
+                InlineFallback::ValuePlain => Some(
+                    value_plain
+                        .ok_or(
+                            DialogueContentMaterializationError::MissingFormattedPlainValue {
+                                slot,
+                            },
+                        )?
+                        .to_owned(),
+                ),
             };
             Ok(text
                 .map(|text| vec![RichTextNode::Text { text }])
@@ -1838,6 +1850,27 @@ mod tests {
                 }]
             );
         }
+
+        let missing_plain = formatted_value(
+            artifact,
+            catalog.find(template_id(0)).expect("template"),
+            RuntimeDialogueFormattedOutcome::Failure {
+                reason: "primary expression failed".to_owned(),
+                value_plain: None,
+            },
+            RuntimeDialogueFormattedFailureSelection::Inherit,
+        );
+        assert_eq!(
+            DialogueContentMaterializer::new(&catalog).materialize_with_policy(
+                &missing_plain,
+                &InlineFailurePolicy::fallback_value_plain(),
+            ),
+            Err(
+                DialogueContentMaterializationError::MissingFormattedPlainValue {
+                    slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot"),
+                }
+            )
+        );
     }
 
     #[test]
