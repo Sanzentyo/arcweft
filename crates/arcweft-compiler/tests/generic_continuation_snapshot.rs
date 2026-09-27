@@ -458,6 +458,7 @@ fn awfb_bytes(artifact_fingerprint: [u8; 32]) -> Vec<u8> {
         BundleManifest {
             profile_id: None,
             profile_kind: None,
+            locale: Default::default(),
             entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),

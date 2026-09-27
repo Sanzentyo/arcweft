@@ -1,19 +1,21 @@
 //! Bundle product validation, runtime construction, and initial session assembly.
 
 use super::{
-    AcceptedCharacterPresentationCatalog, ActiveSessionLocale, Arc, ArcweftBundle,
-    ArcweftRuntimeExecutor, AwbcEntryId, AwbcProductStepBuildError, AwbcProgram, BTreeMap,
-    BundleEntryStart, BundleEntryStartError, BundleImageObject, BundleKind,
-    BundlePresentationSnapshot, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
-    BundleSessionOptions, BundleView, BundleViewRuntime, BundleViewRuntimeError,
-    DialogueContentCatalog, EntryRuntimeId, FxDefinitions, GenerationBuildError, GenerationId,
-    GenerationRuntimeImage, GenerationRuntimeTable, PresentationEnvironmentOverrides,
-    ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
-    RuntimeDialoguePlainTextContextTemplateProof, RuntimeTaskRegistry, SessionEnvironmentState,
-    SwapSession, SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton,
-    ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    AcceptedCharacterPresentationCatalog, Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId,
+    AwbcProductStepBuildError, AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError,
+    BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
+    BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
+    BundleViewRuntime, BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId,
+    FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
+    GenerationRuntimeTable, PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget,
+    RootCommandHostCallCatalog, RuntimeDialoguePlainTextContextTemplateProof, RuntimeTaskRegistry,
+    SessionEnvironmentState, SwapSession, SystemPaletteSet, ViewProgramResource,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
+    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
+use arcweft_core::value::RuntimeFormatContext;
+use arcweft_id::LocaleTag;
+use arcweft_manifest_model::ProjectLocaleSpec;
 
 #[derive(Clone, Debug)]
 pub(super) struct SessionRuntime {
@@ -27,7 +29,8 @@ pub(super) struct SessionRuntime {
     pub(super) character_dialogue_schema:
         Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
     pub(super) character_presentation: Option<AcceptedCharacterPresentationCatalog>,
-    pub(super) active_locale: Option<ActiveSessionLocale>,
+    pub(super) project_locale: ProjectLocaleSpec,
+    pub(super) active_locale: LocaleTag,
     pub(super) image_objects: Vec<BundleImageObject>,
     pub(super) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(super) action_buttons: Vec<ViewRuntimeActionButton>,
@@ -46,7 +49,8 @@ struct SessionRuntimeResources {
     dialogue_content: DialogueContentCatalog,
     character_dialogue_schema: Option<Arc<arcweft_dialogue::CharacterDialogueRuntimeSchema>>,
     character_presentation: Option<AcceptedCharacterPresentationCatalog>,
-    active_locale: Option<ActiveSessionLocale>,
+    project_locale: ProjectLocaleSpec,
+    active_locale: LocaleTag,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -115,10 +119,15 @@ impl BundleSession {
         active_artifact_identity: BundleSessionArtifactIdentity,
     ) -> Result<Self, BundleSessionError> {
         let generation = Arc::new(initial_generation(bundle, active_artifact_identity)?);
-        let runtime = build_session_runtime(bundle, &options, generation.id)?;
+        let active_locale = options
+            .active_locale
+            .clone()
+            .unwrap_or_else(|| bundle.manifest.locale.default_locale().clone());
+        let runtime = build_session_runtime(bundle, &options, generation.id, active_locale)?;
         let executor = runtime.executor.clone();
         let dialogue_content = runtime.dialogue_content.clone();
         let character_presentation = runtime.character_presentation.clone();
+        let project_locale = runtime.project_locale.clone();
         let active_locale = runtime.active_locale.clone();
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
@@ -149,6 +158,7 @@ impl BundleSession {
             )),
             dialogue_content,
             character_presentation,
+            project_locale,
             active_locale,
             image_objects,
             text_inputs,
@@ -232,7 +242,7 @@ impl SessionRuntime {
         plain_text_context_proof: Option<RuntimeDialoguePlainTextContextTemplateProof>,
         resources: SessionRuntimeResources,
     ) -> Result<Self, AwbcProductStepBuildError> {
-        let executor = if let Some(proof) = plain_text_context_proof {
+        let mut executor = if let Some(proof) = plain_text_context_proof {
             ArcweftRuntimeExecutor::from_awbc_product_arc_with_plain_text_context_proof_and_generation(
                 Arc::clone(&program),
                 entry,
@@ -246,6 +256,7 @@ impl SessionRuntime {
                 generation,
             )?
         };
+        executor.set_format_context(RuntimeFormatContext::new(resources.active_locale.clone()));
         Ok(Self::with_executor(
             source_label,
             generation,
@@ -276,6 +287,7 @@ impl SessionRuntime {
             dialogue_content: resources.dialogue_content,
             character_dialogue_schema: resources.character_dialogue_schema,
             character_presentation: resources.character_presentation,
+            project_locale: resources.project_locale,
             active_locale: resources.active_locale,
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
@@ -314,6 +326,7 @@ impl SessionRuntime {
                 dialogue_content: self.dialogue_content.clone(),
                 character_dialogue_schema: self.character_dialogue_schema.clone(),
                 character_presentation: self.character_presentation.clone(),
+                project_locale: self.project_locale.clone(),
                 active_locale: self.active_locale.clone(),
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
@@ -357,6 +370,7 @@ pub(super) fn build_session_runtime(
     bundle: &ArcweftBundle,
     options: &BundleSessionOptions,
     generation: GenerationId,
+    active_locale: LocaleTag,
 ) -> Result<SessionRuntime, BundleSessionError> {
     if bundle.bundle_kind != BundleKind::Game {
         return Err(BundleSessionError::UnsupportedBundleKind(
@@ -449,11 +463,12 @@ pub(super) fn build_session_runtime(
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
-    let (character_presentation, active_locale) = accepted_character_presentation(bundle)?;
+    let character_presentation = accepted_character_presentation(bundle)?;
     let resources = SessionRuntimeResources {
         dialogue_content: bundle.dialogue_content.clone(),
         character_dialogue_schema,
         character_presentation,
+        project_locale: bundle.manifest.locale.clone(),
         active_locale,
         image_objects: bundle.image_objects.clone(),
         text_inputs,
@@ -480,13 +495,7 @@ pub(super) fn build_session_runtime(
 
 fn accepted_character_presentation(
     bundle: &ArcweftBundle,
-) -> Result<
-    (
-        Option<AcceptedCharacterPresentationCatalog>,
-        Option<ActiveSessionLocale>,
-    ),
-    BundleSessionError,
-> {
+) -> Result<Option<AcceptedCharacterPresentationCatalog>, BundleSessionError> {
     let catalog = bundle
         .character_presentation
         .clone()
@@ -502,10 +511,7 @@ fn accepted_character_presentation(
                     .to_owned(),
         });
     }
-    let active_locale = catalog
-        .as_ref()
-        .map(|catalog| ActiveSessionLocale::new(catalog.data().policy().default_active()));
-    Ok((catalog, active_locale))
+    Ok(catalog)
 }
 
 fn validate_root_command_host_call_catalog(

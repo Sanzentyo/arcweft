@@ -3,8 +3,7 @@
 use arcweft_character::{
     id::CharacterId,
     presentation_name::{
-        CharacterPresentationCatalogGeneration, CharacterPresentationLocalePolicyDigest,
-        CharacterPresentationSemanticDigest,
+        CharacterPresentationCatalogGeneration, CharacterPresentationSemanticDigest,
     },
 };
 use arcweft_core::entry::RuntimeValueDigest;
@@ -68,7 +67,6 @@ impl<'de> Deserialize<'de> for CharacterPresentationTargetEvidence {
 pub struct CheckedCharacterPresentationPlan {
     target: CharacterPresentationTargetEvidence,
     semantic_digest: CharacterPresentationSemanticDigest,
-    locale_policy_digest: CharacterPresentationLocalePolicyDigest,
 }
 
 /// Failure to verify a checked Character presentation plan at an artifact or
@@ -79,11 +77,6 @@ pub enum CheckedCharacterPresentationPlanError {
     StaleSemanticDigest {
         expected: CharacterPresentationSemanticDigest,
         actual: CharacterPresentationSemanticDigest,
-    },
-    #[error("Character presentation locale-policy digest is stale")]
-    StaleLocalePolicyDigest {
-        expected: CharacterPresentationLocalePolicyDigest,
-        actual: CharacterPresentationLocalePolicyDigest,
     },
     #[error("runtime CharacterDialogue generation does not match the checked target")]
     DialogueGenerationMismatch,
@@ -104,7 +97,6 @@ impl CheckedCharacterPresentationPlan {
         Ok(Self {
             target,
             semantic_digest: generation.semantic_digest(),
-            locale_policy_digest: generation.locale_policy_digest(),
         })
     }
 
@@ -117,11 +109,6 @@ impl CheckedCharacterPresentationPlan {
     pub const fn semantic_digest(&self) -> CharacterPresentationSemanticDigest {
         self.semantic_digest
     }
-
-    #[must_use]
-    pub const fn locale_policy_digest(&self) -> CharacterPresentationLocalePolicyDigest {
-        self.locale_policy_digest
-    }
 }
 
 #[cfg(test)]
@@ -131,19 +118,17 @@ mod tests {
         id::CharacterId,
         presentation_name::{
             CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
-            CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+            CharacterPresentationSemanticDigest,
         },
     };
     use arcweft_core::entry::RuntimeValueDigest;
 
     #[test]
-    fn exact_target_binds_both_catalog_digests() {
+    fn exact_target_binds_catalog_semantics() {
         let semantic = CharacterPresentationSemanticDigest::from_bytes([1; 32]);
-        let policy = CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]);
         let generation = CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             semantic,
-            policy,
         );
         let target = CharacterPresentationTargetEvidence::Exact(
             CharacterId::try_new("character.alice").unwrap(),
@@ -152,7 +137,6 @@ mod tests {
         let plan = CheckedCharacterPresentationPlan::try_new(target.clone(), generation).unwrap();
         assert_eq!(plan.target(), &target);
         assert_eq!(plan.semantic_digest(), semantic);
-        assert_eq!(plan.locale_policy_digest(), policy);
     }
 
     #[test]
@@ -175,7 +159,6 @@ mod tests {
         let generation = CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             CharacterPresentationSemanticDigest::from_bytes([8; 32]),
-            CharacterPresentationLocalePolicyDigest::from_bytes([9; 32]),
         );
 
         let plan = CheckedCharacterPresentationPlan::try_new(target.clone(), generation).unwrap();

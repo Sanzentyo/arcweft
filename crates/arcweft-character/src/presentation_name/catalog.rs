@@ -3,15 +3,14 @@
 use super::{
     CharacterDeclarationNameFallback, CharacterDisplayNameEntry, CharacterDisplayNameInput,
     CharacterDisplayNameKey, CharacterDisplayNameKeyError, CharacterDisplayNameValue,
-    CharacterNameLocale, CharacterNameLocalePolicy, CharacterNameLocalePolicyError,
-    CharacterNameSourceLocale, CharacterPresentationLimitKind,
-    CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+    CharacterNameLocale, CharacterNameResolutionLocales, CharacterNameSourceLocale,
+    CharacterPresentationLimitKind, CharacterPresentationSemanticDigest,
     LocalizedCharacterDisplayName, LocalizedCharacterDisplayNameInput,
     limits::{
         MAX_CATALOG_CHARACTERS, MAX_CATALOG_LOCALIZED_ENTRIES, MAX_CHARACTER_ID_BYTES,
         MAX_LOCALIZED_NAMES_PER_CHARACTER,
     },
-    transcript::{locale_policy_digest, semantic_digest},
+    transcript::semantic_digest,
 };
 use crate::id::CharacterId;
 use core::num::NonZeroU64;
@@ -53,17 +52,14 @@ pub struct CharacterDisplayNameRecord {
 /// Typed input consumed by the sole accepted catalog constructor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterPresentationCatalogInput {
-    policy: CharacterNameLocalePolicy,
     records: Vec<CharacterDisplayNameRecordInput>,
 }
 
 /// Canonical accepted catalog data independent of process publication order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CharacterPresentationCatalogData {
-    policy: CharacterNameLocalePolicy,
     records: Box<[CharacterDisplayNameRecord]>,
     semantic_digest: CharacterPresentationSemanticDigest,
-    locale_policy_digest: CharacterPresentationLocalePolicyDigest,
 }
 
 /// Monotonic process-local accepted catalog revision.
@@ -75,7 +71,6 @@ pub struct CharacterPresentationCatalogRevision(NonZeroU64);
 pub struct CharacterPresentationCatalogGeneration {
     revision: CharacterPresentationCatalogRevision,
     semantic_digest: CharacterPresentationSemanticDigest,
-    locale_policy_digest: CharacterPresentationLocalePolicyDigest,
 }
 
 /// An immutable catalog generation ready for transactional publication.
@@ -89,8 +84,9 @@ pub struct AcceptedCharacterPresentationCatalog {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CharacterDisplayNameResolutionSource {
     ActiveLocale,
-    ProjectFallback { ordinal: u8 },
+    ProjectFallback { ordinal: usize },
     CharacterSourceLocale,
+    ProjectSourceLocale,
     Base,
     DeclarationName,
 }
@@ -143,8 +139,6 @@ pub enum CharacterPresentationCatalogError {
     NarratorRequiresBase { character: CharacterId },
     #[error("narrator `{character}` may not have a declaration-name fallback")]
     NarratorForbidsDeclarationFallback { character: CharacterId },
-    #[error(transparent)]
-    InvalidFallbackPolicy(#[from] CharacterNameLocalePolicyError),
     #[error(transparent)]
     InvalidGeneratedKey(#[from] CharacterDisplayNameKeyError),
 }
@@ -320,7 +314,6 @@ impl CharacterDisplayNameRecord {
 
 impl CharacterPresentationCatalogInput {
     pub fn try_new(
-        policy: CharacterNameLocalePolicy,
         records: Vec<CharacterDisplayNameRecordInput>,
     ) -> Result<Self, CharacterPresentationCatalogError> {
         validate_catalog_counts(&records)?;
@@ -337,12 +330,7 @@ impl CharacterPresentationCatalogInput {
             }
         }
 
-        Ok(Self { policy, records })
-    }
-
-    #[must_use]
-    pub const fn policy(&self) -> &CharacterNameLocalePolicy {
-        &self.policy
+        Ok(Self { records })
     }
 
     #[must_use]
@@ -355,10 +343,7 @@ impl CharacterPresentationCatalogData {
     pub fn try_from_inputs(
         input: CharacterPresentationCatalogInput,
     ) -> Result<Self, CharacterPresentationCatalogError> {
-        let CharacterPresentationCatalogInput {
-            policy,
-            mut records,
-        } = input;
+        let CharacterPresentationCatalogInput { mut records } = input;
         records.sort_by(|left, right| left.character.cmp(&right.character));
 
         let mut generated_keys = BTreeSet::new();
@@ -401,18 +386,10 @@ impl CharacterPresentationCatalogData {
         }
 
         let semantic_digest = semantic_digest(&accepted_records)?;
-        let locale_policy_digest = locale_policy_digest(&policy)?;
         Ok(Self {
-            policy,
             records: accepted_records.into_boxed_slice(),
             semantic_digest,
-            locale_policy_digest,
         })
-    }
-
-    #[must_use]
-    pub const fn policy(&self) -> &CharacterNameLocalePolicy {
-        &self.policy
     }
 
     #[must_use]
@@ -423,11 +400,6 @@ impl CharacterPresentationCatalogData {
     #[must_use]
     pub const fn semantic_digest(&self) -> CharacterPresentationSemanticDigest {
         self.semantic_digest
-    }
-
-    #[must_use]
-    pub const fn locale_policy_digest(&self) -> CharacterPresentationLocalePolicyDigest {
-        self.locale_policy_digest
     }
 
     pub fn record(
@@ -446,15 +418,16 @@ impl CharacterPresentationCatalogData {
     pub fn resolve(
         &self,
         id: &CharacterId,
-        active: &CharacterNameLocale,
+        locales: CharacterNameResolutionLocales<'_>,
     ) -> Result<ResolvedCharacterDisplayName, CharacterDisplayNameLookupError> {
         let record = self.record(id)?;
         let mut seen = BTreeSet::new();
         let mut attempted = Vec::new();
+        let active = CharacterNameLocale::new(locales.active().clone());
 
         if let Some(resolved) = probe_locale(
             record,
-            active,
+            &active,
             CharacterDisplayNameResolutionSource::ActiveLocale,
             &mut seen,
             &mut attempted,
@@ -462,29 +435,39 @@ impl CharacterPresentationCatalogData {
             return Ok(resolved);
         }
 
-        let mut ordinal = 0_u8;
-        for fallback in self.policy.fallbacks() {
+        for (ordinal, fallback) in locales.project_fallbacks().iter().enumerate() {
             if let Some(resolved) = probe_locale(
                 record,
-                fallback.locale(),
+                &CharacterNameLocale::new(fallback.clone()),
                 CharacterDisplayNameResolutionSource::ProjectFallback { ordinal },
                 &mut seen,
                 &mut attempted,
             ) {
                 return Ok(resolved);
             }
-            ordinal = ordinal.saturating_add(1);
         }
 
-        if let Some(source_locale) = record.source_locale()
-            && let Some(resolved) = probe_locale(
-                record,
-                source_locale.locale(),
-                CharacterDisplayNameResolutionSource::CharacterSourceLocale,
-                &mut seen,
-                &mut attempted,
-            )
-        {
+        let (source_locale, source_kind) = record.source_locale().map_or_else(
+            || {
+                (
+                    CharacterNameLocale::new(locales.project_source().clone()),
+                    CharacterDisplayNameResolutionSource::ProjectSourceLocale,
+                )
+            },
+            |source| {
+                (
+                    source.locale().clone(),
+                    CharacterDisplayNameResolutionSource::CharacterSourceLocale,
+                )
+            },
+        );
+        if let Some(resolved) = probe_locale(
+            record,
+            &source_locale,
+            source_kind,
+            &mut seen,
+            &mut attempted,
+        ) {
             return Ok(resolved);
         }
 
@@ -505,7 +488,7 @@ impl CharacterPresentationCatalogData {
 
         Err(CharacterDisplayNameLookupError::MissingAcceptedName {
             character: id.clone(),
-            active: active.clone(),
+            active,
             attempted_locales: attempted.into_boxed_slice(),
             has_base: record.base().is_some(),
             has_declaration: record.declaration_fallback().is_some(),
@@ -535,12 +518,10 @@ impl CharacterPresentationCatalogGeneration {
     pub const fn new(
         revision: CharacterPresentationCatalogRevision,
         semantic_digest: CharacterPresentationSemanticDigest,
-        locale_policy_digest: CharacterPresentationLocalePolicyDigest,
     ) -> Self {
         Self {
             revision,
             semantic_digest,
-            locale_policy_digest,
         }
     }
 
@@ -552,11 +533,6 @@ impl CharacterPresentationCatalogGeneration {
     #[must_use]
     pub const fn semantic_digest(self) -> CharacterPresentationSemanticDigest {
         self.semantic_digest
-    }
-
-    #[must_use]
-    pub const fn locale_policy_digest(self) -> CharacterPresentationLocalePolicyDigest {
-        self.locale_policy_digest
     }
 }
 
@@ -582,11 +558,7 @@ impl AcceptedCharacterPresentationCatalog {
 
     #[must_use]
     pub fn generation(&self) -> CharacterPresentationCatalogGeneration {
-        CharacterPresentationCatalogGeneration::new(
-            self.revision,
-            self.data.semantic_digest(),
-            self.data.locale_policy_digest(),
-        )
+        CharacterPresentationCatalogGeneration::new(self.revision, self.data.semantic_digest())
     }
 
     pub fn candidate_replacement(

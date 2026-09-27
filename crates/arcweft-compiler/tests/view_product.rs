@@ -227,6 +227,7 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
         BundleManifest {
             profile_id: None,
             profile_kind: None,
+            locale: compiled.locale().clone(),
             entry: Some("entry.main".to_owned()),
             adapter: None,
             adapter_manifest_ids: Vec::new(),

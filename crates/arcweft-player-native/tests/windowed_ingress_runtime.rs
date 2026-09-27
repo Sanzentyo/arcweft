@@ -348,6 +348,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {

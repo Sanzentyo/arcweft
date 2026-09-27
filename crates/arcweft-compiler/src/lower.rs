@@ -69,7 +69,6 @@ use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
-        CharacterNameFallbackLocale, CharacterNameLocale, CharacterNameLocalePolicy,
         CharacterPresentationCatalogData, CharacterPresentationCatalogGeneration,
         CharacterPresentationCatalogInput, CharacterPresentationCatalogRevision,
         CharacterPresentationRole,
@@ -174,7 +173,6 @@ use arcweft_lang_sema::{
         TypeKind, VariantPayloadTypeShape,
     },
 };
-use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_presentation::fx::{FxDefinition, FxTarget};
 use arcweft_presentation::rich_text::{
     Jlreq, LayoutDirection, PresentationContentCallableDefinitionId,
@@ -470,7 +468,6 @@ pub fn project_runtime_semantic_facts(
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue_profile: Option<&CheckedDialogueProfile>,
-    character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<(RuntimePlanSemanticFacts, Arc<[FxDefinition]>), RuntimeSemanticProjectionError> {
     let fx_catalog = crate::fx_catalog::CompiledFxCatalog::lower(analysis).map_err(|error| {
@@ -487,7 +484,6 @@ pub fn project_runtime_semantic_facts(
         None,
         &[],
         dialogue_profile,
-        character_name_policy,
         &fx_catalog,
         instantiation_control,
     )?;
@@ -508,7 +504,6 @@ pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
     view_value_owners: &HirRuntimeSemanticReachability<'_>,
     pure_programs: &[crate::view::CheckedViewHandlerProgram],
     dialogue_profile: Option<&CheckedDialogueProfile>,
-    character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
@@ -521,7 +516,6 @@ pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
         Some(view_value_owners),
         pure_programs,
         dialogue_profile,
-        character_name_policy,
         fx_catalog,
         instantiation_control,
     )
@@ -536,7 +530,6 @@ fn project_runtime_semantic_fact_inventories(
     view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
     pure_programs: &[crate::view::CheckedViewHandlerProgram],
     dialogue_profile: Option<&CheckedDialogueProfile>,
-    character_name_policy: Option<&CharacterNameLocalePolicySpec>,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
     instantiation_control: &ProjectInstantiationControl,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
@@ -642,7 +635,6 @@ fn project_runtime_semantic_fact_inventories(
         analysis,
         dialogue_profile,
         character_dialogue_generation.as_deref(),
-        character_name_policy,
         runtime_owners,
         &discovered_instances,
         fx_catalog,
@@ -1847,7 +1839,6 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
     producer_generation: Option<
         &arcweft_dialogue::CharacterDialogueGenerationDeclaration<RuntimeNormalizedType>,
     >,
-    policy: Option<&CharacterNameLocalePolicySpec>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     instances: &'analysis DiscoveredProjectInstances,
     fx_catalog: &crate::fx_catalog::CompiledFxCatalog,
@@ -1936,17 +1927,10 @@ fn project_runtime_dialogue_projection_catalog<'analysis>(
             reason: "an executable dialogue product requires one admitted producer generation"
                 .to_owned(),
         })?;
-    let policy = policy
-        .map(character_name_locale_policy)
-        .transpose()?
-        .unwrap_or_else(CharacterNameLocalePolicy::engine_default);
-    let character_catalog = Arc::new(build_character_presentation_catalog(
-        project, analysis, policy,
-    )?);
+    let character_catalog = Arc::new(build_character_presentation_catalog(project, analysis)?);
     let generation = CharacterPresentationCatalogGeneration::new(
         CharacterPresentationCatalogRevision::INITIAL,
         character_catalog.semantic_digest(),
-        character_catalog.locale_policy_digest(),
     );
     let presentation = DialoguePresentationSnapshot::new(
         dialogue_profile.presentation().clone(),
@@ -2385,39 +2369,19 @@ fn expression_belongs_to_non_product_plan(
 fn build_character_presentation_catalog(
     project: HirAnalysisProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
-    policy: CharacterNameLocalePolicy,
 ) -> Result<CharacterPresentationCatalogData, RuntimeSemanticProjectionError> {
     let records = project
         .items()
         .filter(|item| matches!(item.item().kind(), HirItemKind::Character(_)))
         .map(|item| character_presentation_record(item, analysis))
         .collect::<Result<Vec<_>, _>>()?;
-    let input = CharacterPresentationCatalogInput::try_new(policy, records).map_err(|error| {
+    let input = CharacterPresentationCatalogInput::try_new(records).map_err(|error| {
         RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason: error.to_string(),
         }
     })?;
     CharacterPresentationCatalogData::try_from_inputs(input).map_err(|error| {
-        RuntimeSemanticProjectionError::Dialogue {
-            owner: None,
-            reason: error.to_string(),
-        }
-    })
-}
-
-fn character_name_locale_policy(
-    policy: &CharacterNameLocalePolicySpec,
-) -> Result<CharacterNameLocalePolicy, RuntimeSemanticProjectionError> {
-    let active = CharacterNameLocale::new(policy.active().clone());
-    let fallbacks = policy
-        .fallbacks()
-        .iter()
-        .cloned()
-        .map(CharacterNameLocale::new)
-        .map(CharacterNameFallbackLocale::new)
-        .collect();
-    CharacterNameLocalePolicy::try_new(active, fallbacks).map_err(|error| {
         RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason: error.to_string(),

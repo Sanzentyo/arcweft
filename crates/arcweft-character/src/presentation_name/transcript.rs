@@ -1,13 +1,11 @@
 //! Canonical digest transcripts for accepted presentation catalog data.
 
 use super::{
-    CharacterDisplayNameEntry, CharacterDisplayNameRecord, CharacterNameLocalePolicy,
-    CharacterPresentationCatalogError, CharacterPresentationLocalePolicyDigest,
+    CharacterDisplayNameEntry, CharacterDisplayNameRecord, CharacterPresentationCatalogError,
     CharacterPresentationRole, CharacterPresentationSemanticDigest,
 };
 
 const SEMANTIC_DIGEST_DOMAIN: &[u8] = b"arcweft.character-presentation.semantic.v1\0";
-const LOCALE_POLICY_DIGEST_DOMAIN: &[u8] = b"arcweft.character-presentation.locale-policy.v1\0";
 
 pub(super) fn semantic_digest(
     records: &[CharacterDisplayNameRecord],
@@ -74,36 +72,6 @@ pub(super) fn semantic_digest(
     }
 
     Ok(CharacterPresentationSemanticDigest::from_bytes(
-        *hasher.finalize().as_bytes(),
-    ))
-}
-
-pub(super) fn locale_policy_digest(
-    policy: &CharacterNameLocalePolicy,
-) -> Result<CharacterPresentationLocalePolicyDigest, CharacterPresentationCatalogError> {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(LOCALE_POLICY_DIGEST_DOMAIN);
-    put_bytes(
-        &mut hasher,
-        policy
-            .default_active()
-            .locale_tag()
-            .canonical_identity_bytes(),
-        "locale-policy default active bytes",
-    )?;
-    put_u32(
-        &mut hasher,
-        policy.fallbacks().len(),
-        "locale-policy fallback count",
-    )?;
-    for fallback in policy.fallbacks() {
-        put_bytes(
-            &mut hasher,
-            fallback.locale().locale_tag().canonical_identity_bytes(),
-            "locale-policy fallback bytes",
-        )?;
-    }
-    Ok(CharacterPresentationLocalePolicyDigest::from_bytes(
         *hasher.finalize().as_bytes(),
     ))
 }

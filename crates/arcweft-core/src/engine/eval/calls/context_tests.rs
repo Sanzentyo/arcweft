@@ -8,7 +8,10 @@ use crate::{
     effect::RuntimeArtifactFingerprint,
     engine::{Engine, RuntimeEvalError},
     entry::RuntimeDialogueContentTemplateDigest,
-    pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId, runtime_standard_opaque_type},
+    pattern::{
+        RuntimeCheckedType, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
+        runtime_standard_opaque_type,
+    },
     plan::{
         RuntimeCallableAttachedContract, RuntimeCallablePosition, RuntimeCallableStateSeed,
         RuntimeCallableTransition, RuntimeDialogueContentSlotSeed,
@@ -28,7 +31,8 @@ use crate::{
         RuntimeDialogueFormattedOutcome, RuntimeDialogueOpaqueRole,
         RuntimeDialoguePlainTextContextTemplateProof, RuntimeDialoguePlainTextContextTemplateRef,
         RuntimeExpr, RuntimeExprKind, RuntimeExpressionFailure, RuntimeFmtParameterId,
-        RuntimeFormatContentOperand, RuntimeIntrinsic, RuntimeValue,
+        RuntimeFormatContentOperand, RuntimeFormatContext, RuntimeIntrinsic, RuntimeSignedIntWidth,
+        RuntimeValue,
     },
 };
 
@@ -42,6 +46,7 @@ const CALLBACK: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([0x16;
 #[derive(Clone, Copy)]
 struct ContextTypes {
     content: RuntimeSemanticTypeId,
+    i64: RuntimeSemanticTypeId,
     result_string_error: RuntimeSemanticTypeId,
     result_arc_error: RuntimeSemanticTypeId,
     option_string: RuntimeSemanticTypeId,
@@ -76,6 +81,8 @@ fn context_plan(with_proof: bool, with_callback: bool) -> ContextPlan {
     let content_owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
     let arc_error = arc_error_owner.semantic_identity();
     let content = content_owner.semantic_identity();
+    let i64_type =
+        RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest();
     let error_arc_tuple = RuntimeSemanticTypeId::from_bytes([0x18; 32]);
 
     let template_id = RuntimeDialogueContentTemplateId::from_zero_based(0)
@@ -101,6 +108,10 @@ fn context_plan(with_proof: bool, with_callback: bool) -> ContextPlan {
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(STRING, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    i64_type,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
                 RuntimePlanTypeSeed::new(
                     STRING_TUPLE,
                     RuntimePlanTypeProjection::Tuple(Box::new([STRING])),
@@ -223,6 +234,7 @@ fn context_plan(with_proof: bool, with_callback: bool) -> ContextPlan {
         plan,
         types: ContextTypes {
             content,
+            i64: i64_type,
             result_string_error: RESULT_STRING_ERROR,
             result_arc_error: RESULT_ARC_ERROR,
             option_string: OPTION_STRING,
@@ -634,6 +646,53 @@ fn format_content_expression(
             ],
         },
     )
+}
+
+#[test]
+fn native_formatter_uses_selected_locale_for_number_style() {
+    let context = context_plan(true, false);
+    let mut engine = Engine::new(context.plan);
+    engine.set_format_context(RuntimeFormatContext::new(
+        arcweft_id::LocaleTag::try_new("de-DE").unwrap(),
+    ));
+    let type_table = engine.plan.type_table();
+    let expression = RuntimeExpr::from_admitted_parts(
+        type_table.id_for_semantic(context.types.content).unwrap(),
+        RuntimeExprKind::FormatContent {
+            template: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+            operands: vec![
+                RuntimeFormatContentOperand::from_admitted_parts(
+                    RuntimeFmtParameterId::Value,
+                    RuntimeExpr::from_admitted_parts(
+                        type_table.id_for_semantic(context.types.i64).unwrap(),
+                        RuntimeExprKind::Value(RuntimeValue::i64(12345)),
+                    ),
+                ),
+                RuntimeFormatContentOperand::from_admitted_parts(
+                    RuntimeFmtParameterId::Style,
+                    RuntimeExpr::from_admitted_parts(
+                        type_table.id_for_semantic(STRING).unwrap(),
+                        RuntimeExprKind::Value(RuntimeValue::String("number".to_owned())),
+                    ),
+                ),
+            ],
+        },
+    );
+    let value = engine
+        .evaluate_expr_with_backend(&expression, &mut VmRuntimePureCallBackend::default())
+        .unwrap();
+    let content = RuntimeDialogueContentValue::try_from_runtime_value(&value).unwrap();
+    let formatted = content
+        .binding(RuntimeDialogueValueSlotId::from_zero_based(0).unwrap())
+        .and_then(|binding| binding.formatted())
+        .unwrap();
+    assert_eq!(
+        formatted.outcome(),
+        &RuntimeDialogueFormattedOutcome::Success {
+            value: crate::value::RuntimeDialogueFormattedSuccess::Text("12.345".to_owned()),
+            color: None,
+        }
+    );
 }
 
 #[test]

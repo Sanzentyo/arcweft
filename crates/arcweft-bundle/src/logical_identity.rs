@@ -27,7 +27,7 @@ impl ArcweftBundle {
         // representation is the bounded AWFB section below.
         self.validate_kind()?;
         let bytes = serde_json::to_vec_pretty(self).map_err(BundleCodecError::Encode)?;
-        let mut transcript = Vec::with_capacity(DOMAIN.len() + bytes.len() + 73);
+        let mut transcript = Vec::with_capacity(DOMAIN.len() + bytes.len() + 74);
         transcript.extend_from_slice(DOMAIN);
         let byte_len = u64::try_from(bytes.len())
             .map_err(|_| BundleCodecError::LogicalIdentityLengthOverflow)?;
@@ -38,7 +38,6 @@ impl ArcweftBundle {
             Some(catalog) => {
                 transcript.push(1);
                 transcript.extend_from_slice(catalog.semantic_digest().as_bytes());
-                transcript.extend_from_slice(catalog.locale_policy_digest().as_bytes());
             }
         }
         match self.character_dialogue_generation.as_ref() {

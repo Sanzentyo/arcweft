@@ -4,9 +4,9 @@ use super::{
     error::CharacterPresentationCatalogCodecError,
     wire::{
         CHARACTER_RECORD_LEN, FIELD_CATALOG_HEADER, FIELD_CHARACTER_RECORDS,
-        FIELD_FALLBACK_LOCALES, FIELD_LOCALIZED_RECORDS, LOCALIZED_RECORD_LEN, MAX_CATALOG_RECORDS,
-        MISSING_REF, STRING_ID_LEN, WireCatalogHeader, WireCharacterRecord, WireLocalizedRecord,
-        codec_budget, require_multiple_length,
+        FIELD_LOCALIZED_RECORDS, LOCALIZED_RECORD_LEN, MAX_CATALOG_RECORDS, MISSING_REF,
+        WireCatalogHeader, WireCharacterRecord, WireLocalizedRecord, codec_budget,
+        require_multiple_length,
     },
 };
 use crate::resource_codec::{
@@ -17,12 +17,11 @@ use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterDisplayNameInput, CharacterDisplayNameKey, CharacterDisplayNameRecordInput,
-        CharacterDisplayNameValue, CharacterNameFallbackLocale, CharacterNameLocale,
-        CharacterNameLocalePolicy, CharacterNameSourceLocale, CharacterPresentationCatalogData,
-        CharacterPresentationCatalogInput, CharacterPresentationLocalePolicyDigest,
+        CharacterDisplayNameValue, CharacterNameLocale, CharacterNameSourceLocale,
+        CharacterPresentationCatalogData, CharacterPresentationCatalogInput,
         CharacterPresentationRole, CharacterPresentationSemanticDigest,
         LocalizedCharacterDisplayNameInput, MAX_CATALOG_CHARACTERS, MAX_CATALOG_LOCALIZED_ENTRIES,
-        MAX_FALLBACK_LOCALES, MAX_LOCALIZED_NAMES_PER_CHARACTER,
+        MAX_LOCALIZED_NAMES_PER_CHARACTER,
     },
 };
 use arcweft_id::LocaleTag;
@@ -33,21 +32,15 @@ pub(super) fn decode(
     let envelope = decode_envelope(bytes)?;
     let layout = CatalogLayout::validate(&envelope)?;
     let mut tables = DecodeTables::new(&envelope.strings, &envelope.public_ids);
-    let policy = decode_policy(&layout, &mut tables)?;
     let records = decode_records(&layout, &mut tables)?;
     tables.require_exact_references()?;
 
-    let input = CharacterPresentationCatalogInput::try_new(policy, records)?;
+    let input = CharacterPresentationCatalogInput::try_new(records)?;
     let catalog = CharacterPresentationCatalogData::try_from_inputs(input)?;
     if catalog.semantic_digest()
         != CharacterPresentationSemanticDigest::from_bytes(layout.header.semantic_digest)
     {
         return Err(CharacterPresentationCatalogCodecError::SemanticDigestMismatch);
-    }
-    if catalog.locale_policy_digest()
-        != CharacterPresentationLocalePolicyDigest::from_bytes(layout.header.locale_policy_digest)
-    {
-        return Err(CharacterPresentationCatalogCodecError::LocalePolicyDigestMismatch);
     }
     Ok(catalog)
 }
@@ -57,7 +50,6 @@ fn decode_envelope(
 ) -> Result<ProductResourceEnvelope, CharacterPresentationCatalogCodecError> {
     let registry = FieldRegistry::new([
         FieldSpec::required(FIELD_CATALOG_HEADER, ResourceWireType::Bytes),
-        FieldSpec::required(FIELD_FALLBACK_LOCALES, ResourceWireType::Bytes),
         FieldSpec::required(FIELD_CHARACTER_RECORDS, ResourceWireType::Bytes),
         FieldSpec::required(FIELD_LOCALIZED_RECORDS, ResourceWireType::Bytes),
     ])?;
@@ -79,10 +71,8 @@ fn decode_envelope(
 
 struct CatalogLayout<'a> {
     header: WireCatalogHeader,
-    fallback_payload: &'a [u8],
     character_payload: &'a [u8],
     localized_payload: &'a [u8],
-    fallback_count: usize,
     character_count: usize,
 }
 
@@ -90,7 +80,7 @@ impl<'a> CatalogLayout<'a> {
     fn validate(
         envelope: &'a ProductResourceEnvelope,
     ) -> Result<Self, CharacterPresentationCatalogCodecError> {
-        require_header_value("field_count", 4, envelope.header.field_count)?;
+        require_header_value("field_count", 3, envelope.header.field_count)?;
         require_header_value("enum_registry_len", 0, envelope.header.enum_registry_len)?;
         if !envelope.enums.is_empty() {
             return Err(CharacterPresentationCatalogCodecError::HeaderValue {
@@ -110,14 +100,9 @@ impl<'a> CatalogLayout<'a> {
         if header.reserved != 0 {
             return Err(CharacterPresentationCatalogCodecError::NonzeroReserved {
                 field: FIELD_CATALOG_HEADER,
-                offset: 20,
+                offset: 12,
             });
         }
-        require_limit(
-            "fallback",
-            header.fallback_count,
-            checked_u32(MAX_FALLBACK_LOCALES, "fallback limit")?,
-        )?;
         require_limit(
             "Character",
             header.character_count,
@@ -134,18 +119,10 @@ impl<'a> CatalogLayout<'a> {
             envelope.header.public_id_table_len,
         )?;
 
-        let fallback_count = checked_usize(header.fallback_count, "fallback count")?;
         let character_count = checked_usize(header.character_count, "Character count")?;
         let localized_count = checked_usize(header.localized_count, "localized count")?;
-        let fallback_payload = field(&envelope.fields, FIELD_FALLBACK_LOCALES)?;
         let character_payload = field(&envelope.fields, FIELD_CHARACTER_RECORDS)?;
         let localized_payload = field(&envelope.fields, FIELD_LOCALIZED_RECORDS)?;
-        require_multiple_length(
-            FIELD_FALLBACK_LOCALES,
-            fallback_payload,
-            fallback_count,
-            STRING_ID_LEN,
-        )?;
         require_multiple_length(
             FIELD_CHARACTER_RECORDS,
             character_payload,
@@ -160,8 +137,7 @@ impl<'a> CatalogLayout<'a> {
         )?;
 
         let expected_records = 1_u32
-            .checked_add(header.fallback_count)
-            .and_then(|count| count.checked_add(header.character_count))
+            .checked_add(header.character_count)
             .and_then(|count| count.checked_add(header.localized_count))
             .ok_or(CharacterPresentationCatalogCodecError::ArithmeticOverflow {
                 operation: "LocaleCatalog record count",
@@ -178,33 +154,11 @@ impl<'a> CatalogLayout<'a> {
         )?;
         Ok(Self {
             header,
-            fallback_payload,
             character_payload,
             localized_payload,
-            fallback_count,
             character_count,
         })
     }
-}
-
-fn decode_policy(
-    layout: &CatalogLayout<'_>,
-    tables: &mut DecodeTables<'_>,
-) -> Result<CharacterNameLocalePolicy, CharacterPresentationCatalogCodecError> {
-    let default_active = decode_locale(tables, layout.header.default_active_locale)?;
-    let mut fallbacks = Vec::with_capacity(layout.fallback_count);
-    for index in 0..layout.fallback_count {
-        let offset = checked_mul(index, STRING_ID_LEN, "fallback record offset")?;
-        let reference = u32::from_le_bytes(
-            layout.fallback_payload[offset..offset + STRING_ID_LEN]
-                .try_into()
-                .expect("validated fallback record length"),
-        );
-        fallbacks.push(CharacterNameFallbackLocale::new(decode_locale(
-            tables, reference,
-        )?));
-    }
-    CharacterNameLocalePolicy::try_new(default_active, fallbacks).map_err(Into::into)
 }
 
 fn decode_records(

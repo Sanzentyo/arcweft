@@ -5,7 +5,7 @@ use arcweft_manifest_model::{
     ActivityBindingSpec, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     BuildSpec, ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId,
     ExternalModuleImportSpec, LaunchKind, ManifestSchemaVersion, NormalizedProjectPath,
-    PackageSpec, ProfileContentSpec, ProfileId, ProfileLocalizationSpec,
+    PackageSpec, ProfileContentSpec, ProfileId, ProjectLocaleSpec,
 };
 use arcweft_view::{ViewId, ViewStyleSheetId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -21,6 +21,8 @@ pub struct ArcweftManifestDocument {
     pub(crate) build: BuildSpec,
     #[serde(default)]
     pub(crate) resource_type_manifest: Option<NormalizedProjectPath>,
+    #[serde(default)]
+    pub(crate) locale: ProjectLocaleSpec,
     #[serde(default)]
     pub(crate) content_units: BTreeMap<ContentUnitId, ContentUnitSpec>,
     #[serde(default)]
@@ -50,6 +52,10 @@ impl ArcweftManifestDocument {
     pub const fn resource_type_manifest(&self) -> Option<&NormalizedProjectPath> {
         self.resource_type_manifest.as_ref()
     }
+
+    pub const fn locale(&self) -> &ProjectLocaleSpec {
+        &self.locale
+    }
 }
 
 /// Strict authored launch facts for one selected profile.
@@ -68,8 +74,6 @@ pub(crate) struct ProfileSpec {
     pub(crate) activity_bindings: Vec<ActivityBindingSpec>,
     #[serde(default, skip_serializing_if = "DialogueProfileSpec::is_empty")]
     pub(crate) dialogue: DialogueProfileSpec,
-    #[serde(default)]
-    pub(crate) localization: ProfileLocalizationSpec,
     #[serde(default)]
     pub(crate) listen: Option<LaunchListenAddress>,
     #[serde(default)]

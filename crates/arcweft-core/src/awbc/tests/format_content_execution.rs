@@ -100,7 +100,7 @@ fn format_program(value_thunk: ValueThunk) -> AwbcProgram {
         ValueThunk::Succeeds | ValueThunk::Traps => 1,
     };
     program.constants = vec![
-        int_constant(17),
+        int_constant(12345),
         int_constant(denominator),
         AwbcConstant::String(style),
     ];
@@ -342,11 +342,25 @@ fn step(
     fiber: &mut FiberState,
     max_instructions: u64,
 ) -> crate::awbc::vm::VmStepOutput {
+    step_with_format_context(
+        program,
+        fiber,
+        max_instructions,
+        crate::value::RuntimeFormatContext::default(),
+    )
+}
+
+fn step_with_format_context(
+    program: &std::sync::Arc<AwbcProgram>,
+    fiber: &mut FiberState,
+    max_instructions: u64,
+    format_context: crate::value::RuntimeFormatContext,
+) -> crate::awbc::vm::VmStepOutput {
     crate::awbc::vm::step_with_host_context(
         program,
         fiber,
         crate::awbc::vm::VmStepOptions { max_instructions },
-        &context(program),
+        &context(program).with_format_context(format_context),
         &mut crate::awbc::vm::RejectingVmHost,
     )
     .expect("verified formatter program executes")
@@ -379,11 +393,29 @@ fn run_to_completion(
     panic!("verified formatter did not finish within the instruction bound");
 }
 
+fn run_to_completion_with_format_context(
+    program: &std::sync::Arc<AwbcProgram>,
+    fiber: &mut FiberState,
+    context: crate::value::RuntimeFormatContext,
+) -> crate::awbc::vm::VmStepOutput {
+    for _ in 0..16 {
+        let output = step_with_format_context(program, fiber, 64, context.clone());
+        if !matches!(output.exit, crate::awbc::vm::VmExit::Running) {
+            return output;
+        }
+    }
+    panic!("verified formatter did not finish within the instruction bound");
+}
+
 #[test]
 fn format_content_vm_executes_value_then_style_and_returns_formatted_content() {
     let program = verify(format_program(ValueThunk::Succeeds));
     let mut fiber = fiber(&program);
-    let content = returned_content(run_to_completion(&program, &mut fiber));
+    let context =
+        crate::value::RuntimeFormatContext::new(arcweft_id::LocaleTag::try_new("de-DE").unwrap());
+    let content = returned_content(run_to_completion_with_format_context(
+        &program, &mut fiber, context,
+    ));
 
     let slot = crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot ID");
     let Some(crate::value::RuntimeDialogueContentBinding::Formatted { value, .. }) =
@@ -394,7 +426,62 @@ fn format_content_vm_executes_value_then_style_and_returns_formatted_content() {
     assert_eq!(
         value.outcome(),
         &crate::value::RuntimeDialogueFormattedOutcome::Success {
-            value: crate::value::RuntimeDialogueFormattedSuccess::Text("17".to_owned()),
+            value: crate::value::RuntimeDialogueFormattedSuccess::Text("12.345".to_owned()),
+            color: None,
+        }
+    );
+}
+
+#[test]
+fn formatter_snapshot_keeps_start_locale_across_ambient_change() {
+    let program = verify(format_program(ValueThunk::Succeeds));
+    let mut fiber = fiber(&program);
+    let en_us =
+        crate::value::RuntimeFormatContext::new(arcweft_id::LocaleTag::try_new("en-US").unwrap());
+    let de_de =
+        crate::value::RuntimeFormatContext::new(arcweft_id::LocaleTag::try_new("de-DE").unwrap());
+    for _ in 0..8 {
+        if fiber.frames[0].format.is_some() {
+            break;
+        }
+        assert!(matches!(
+            step_with_format_context(&program, &mut fiber, 1, en_us.clone()).exit,
+            crate::awbc::vm::VmExit::Running
+        ));
+    }
+    assert_eq!(
+        fiber.frames[0]
+            .format
+            .as_ref()
+            .unwrap()
+            .format_context()
+            .active_locale(),
+        en_us.active_locale()
+    );
+    let snapshot = AwbcFiberStateSnapshot::from_live(&fiber).unwrap();
+    let bytes = serde_json::to_vec(&snapshot).unwrap();
+    let mut corrupted: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    corrupted["frames"][0]["format"]["format_context"]["data_identity"] =
+        serde_json::Value::String("unknown-locale-data".to_owned());
+    assert!(serde_json::from_value::<AwbcFiberStateSnapshot>(corrupted).is_err());
+    let decoded: AwbcFiberStateSnapshot = serde_json::from_slice(&bytes).unwrap();
+    let owner = RuntimeProgramOwner::Awbc(std::sync::Arc::clone(&program));
+    let mut restored = decoded.into_live_for_program(&owner).unwrap();
+    let output = (0..16)
+        .map(|_| step_with_format_context(&program, &mut restored, 64, de_de.clone()))
+        .find(|output| !matches!(&output.exit, crate::awbc::vm::VmExit::Running))
+        .expect("formatted value returns");
+    let content = returned_content(output);
+    let slot = crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).unwrap();
+    let Some(crate::value::RuntimeDialogueContentBinding::Formatted { value, .. }) =
+        content.binding(slot)
+    else {
+        panic!("Content has the Formatted slot");
+    };
+    assert_eq!(
+        value.outcome(),
+        &crate::value::RuntimeDialogueFormattedOutcome::Success {
+            value: crate::value::RuntimeDialogueFormattedSuccess::Text("12,345".to_owned()),
             color: None,
         }
     );

@@ -491,67 +491,6 @@ compression = "none"
     }
 
     #[test]
-    fn character_name_token_paths_are_bound_to_the_accepted_document_revision() {
-        let source = r#"schema = 1
-[package]
-id = "org.arcweft.test"
-version = "1.0.0"
-[profiles.dev]
-kind = "game"
-source = "src/main.arcw"
-[profiles.dev.localization.character_names]
-active = "ja-JP"
-fallbacks = ["en", "fr"]
-"#;
-        let document = Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new("localization-manifest").expect("document id"),
-                SourceName::Memory,
-                source,
-            )
-            .expect("source document"),
-        );
-        let accepted =
-            SourceBackedManifest::decode(Arc::clone(&document)).expect("accepted manifest");
-        let profile = ProfileId::new("dev").expect("profile id");
-
-        for (path, slot, expected) in [
-            (
-                ManifestTokenPath::ProfileCharacterNamesTable {
-                    profile: profile.clone(),
-                },
-                ManifestTokenSlot::TableHeader,
-                "[profiles.dev.localization.character_names]",
-            ),
-            (
-                ManifestTokenPath::ProfileCharacterNamesActive {
-                    profile: profile.clone(),
-                },
-                ManifestTokenSlot::Value,
-                "\"ja-JP\"",
-            ),
-            (
-                ManifestTokenPath::ProfileCharacterNamesFallback {
-                    profile,
-                    ordinal: 1,
-                },
-                ManifestTokenSlot::Value,
-                "\"fr\"",
-            ),
-        ] {
-            let span = accepted
-                .manifest_token_span(&path, slot)
-                .expect("manifest token span");
-            let start = source.find(expected).expect("fixture substring");
-            assert_eq!(
-                span.range(),
-                arcweft_source::SourceRange::new(start, start + expected.len())
-            );
-            assert_eq!(span.source(), document.identity());
-        }
-    }
-
-    #[test]
     #[allow(clippy::too_many_lines)]
     fn dialogue_token_paths_publish_the_exact_accepted_document_spans() {
         let style_element = "{ value = { Record = [] } }";

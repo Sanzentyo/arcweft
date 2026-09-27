@@ -54,6 +54,7 @@ pub struct PureFunctionRequest {
     plan: Arc<RuntimePlan>,
     helper: RuntimePureHelperId,
     bindings: Box<[RuntimeLocalBinding]>,
+    format_context: crate::value::RuntimeFormatContext,
 }
 
 /// Result of one pure helper backend evaluation.
@@ -731,6 +732,7 @@ pub struct VmPureFunctionBackend;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct VmPureFunctionScratch {
     env: RuntimeEnv,
+    format_context: crate::value::RuntimeFormatContext,
 }
 
 /// AOT backend for deterministic pure helpers.
@@ -771,6 +773,11 @@ impl RuntimeExternalCallBackend for NoRuntimeExternalCalls {
 }
 
 impl<E> VmRuntimePureCallBackend<E> {
+    /// Selects the session locale for helpers called through this backend.
+    pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
+        self.scratch.set_format_context(context);
+    }
+
     /// Installs the caller-owned implementation of registered pure Rust calls.
     /// Core retains no I/O service or globally registered default provider.
     pub fn with_external_calls<X: RuntimeExternalCallBackend>(
@@ -855,7 +862,15 @@ impl PureFunctionRequest {
             plan,
             helper,
             bindings: bindings.into_boxed_slice(),
+            format_context: crate::value::RuntimeFormatContext::default(),
         })
+    }
+
+    /// Binds a host-selected locale to this deterministic pure request.
+    #[must_use]
+    pub fn with_format_context(mut self, context: crate::value::RuntimeFormatContext) -> Self {
+        self.format_context = context;
+        self
     }
 
     #[must_use]
@@ -995,7 +1010,8 @@ impl PureFunctionBackend for VmPureFunctionBackend {
         request: &PureFunctionRequest,
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
         let helper = request.helper_ref()?.declaration();
-        let mut evaluator = PureEvaluator::new_ref(&request.plan, &request.bindings);
+        let mut evaluator = PureEvaluator::new_ref(&request.plan, &request.bindings)
+            .with_format_context(request.format_context.clone());
         let value = evaluator.evaluate_expr(&helper.expr)?;
         Ok(PureFunctionResult {
             backend: self.kind(),
@@ -1066,6 +1082,16 @@ impl VmPureFunctionBackend {
 }
 
 impl VmPureFunctionScratch {
+    /// Selects the session locale for subsequent pure helper evaluations.
+    pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
+        self.format_context = context;
+    }
+
+    #[must_use]
+    pub const fn format_context(&self) -> &crate::value::RuntimeFormatContext {
+        &self.format_context
+    }
+
     /// Evaluates a capture-free structured function-site body for an Entry
     /// root callable. Function-site input rows are the sole ABI authority:
     /// each logical parameter is installed at its synthetic input local and
@@ -1140,7 +1166,8 @@ impl VmPureFunctionScratch {
             }
         };
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = evaluator.evaluate_expr(body);
         self.env = evaluator.into_env();
         result
@@ -1165,7 +1192,8 @@ impl VmPureFunctionScratch {
         let bindings =
             prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::i32))?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1207,7 +1235,8 @@ impl VmPureFunctionScratch {
             );
         }
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1242,7 +1271,8 @@ impl VmPureFunctionScratch {
         let bindings =
             prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::i64))?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1268,7 +1298,8 @@ impl VmPureFunctionScratch {
         let bindings =
             prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::F32))?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1294,7 +1325,8 @@ impl VmPureFunctionScratch {
         let bindings =
             prepare_helper_bindings(plan, helper, args.iter().copied().map(RuntimeValue::F64))?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1319,7 +1351,8 @@ impl VmPureFunctionScratch {
         let helper = resolve_validated_pure_helper(plan, helper)?;
         let bindings = prepare_helper_bindings(plan, helper, args.iter().cloned())?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         let result = validate_helper_result(
             plan,
             helper,
@@ -1423,6 +1456,7 @@ struct PureEvaluator<'a> {
     env: RuntimeEnv,
     stats: PureFunctionStats,
     external: Option<&'a mut dyn RuntimeExternalCallBackend>,
+    format_context: crate::value::RuntimeFormatContext,
 }
 
 impl RuntimePureScalar {
@@ -1873,6 +1907,7 @@ impl<'a> PureEvaluator<'a> {
             env,
             stats: PureFunctionStats::default(),
             external: None,
+            format_context: crate::value::RuntimeFormatContext::default(),
         }
     }
 
@@ -1882,7 +1917,13 @@ impl<'a> PureEvaluator<'a> {
             env,
             stats: PureFunctionStats::default(),
             external: None,
+            format_context: crate::value::RuntimeFormatContext::default(),
         }
+    }
+
+    fn with_format_context(mut self, context: crate::value::RuntimeFormatContext) -> Self {
+        self.format_context = context;
+        self
     }
 
     fn into_env(self) -> RuntimeEnv {
@@ -2195,6 +2236,7 @@ impl<'a> PureEvaluator<'a> {
             _ => crate::value::RuntimeFormatPrimaryKind::Scalar(primary_type.semantic_identity()),
         };
         let formatted = crate::value::finish_format_content_attempt(
+            &self.format_context,
             primary_kind,
             &evaluated,
             first_recoverable.as_deref(),

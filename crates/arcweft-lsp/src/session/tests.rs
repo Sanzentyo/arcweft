@@ -1599,10 +1599,6 @@ version = "0.1.0"
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
-
-[profiles.dev.localization.character_names]
-active = "ja-JP"
-fallbacks = []
 "#,
     );
     let root_source = r"use crate.side.child_helper
@@ -1696,10 +1692,6 @@ version = "0.1.0"
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
-
-[profiles.dev.localization.character_names]
-active = "ja-JP"
-fallbacks = []
 "#,
     );
     project.write("src/main.arcw", source);

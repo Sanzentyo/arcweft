@@ -15,7 +15,7 @@ use arcweft_lang_sema::{
     },
 };
 use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
-use arcweft_manifest_model::ProfileId;
+use arcweft_manifest_model::{ProfileId, ProjectLocaleSpec};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::SourceSetRevision;
 use std::sync::Arc;
@@ -62,6 +62,7 @@ pub struct ProjectCompilationContext {
     previous: Option<Arc<RegisteredTypeCheckEnv>>,
     entry_selection: Option<ProjectEntrySelection>,
     accepted_launch_profile: Option<AcceptedLaunchProfileInput>,
+    project_locale: ProjectLocaleSpec,
     command_policy: Option<RuntimeCommandPolicy>,
     assertion_build_profile: AssertionBuildProfile,
     instantiation_control: crate::lower::ProjectInstantiationControl,
@@ -149,6 +150,7 @@ impl ProjectCompilationContext {
             previous,
             entry_selection,
             accepted_launch_profile: None,
+            project_locale: ProjectLocaleSpec::default(),
             command_policy: None,
             assertion_build_profile: AssertionBuildProfile::Debug,
             instantiation_control: crate::lower::ProjectInstantiationControl::default(),
@@ -158,8 +160,21 @@ impl ProjectCompilationContext {
     /// Supplies the immutable launch-profile objects accepted by the loader.
     #[must_use]
     pub fn with_accepted_launch_profile(mut self, input: AcceptedLaunchProfileInput) -> Self {
+        self.project_locale = input.resolved_profile().locale().clone();
         self.accepted_launch_profile = Some(input);
         self
+    }
+
+    /// Selects the accepted project-wide locale for compilation without a
+    /// launch profile.
+    #[must_use]
+    pub fn with_project_locale(mut self, locale: ProjectLocaleSpec) -> Self {
+        self.project_locale = locale;
+        self
+    }
+
+    pub const fn project_locale(&self) -> &ProjectLocaleSpec {
+        &self.project_locale
     }
 
     /// Selects the explicit runtime/adapter command policy for stateful entries.

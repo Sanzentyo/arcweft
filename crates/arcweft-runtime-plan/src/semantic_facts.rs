@@ -8209,10 +8209,7 @@ impl RuntimePlanSemanticFacts {
                 });
             }
         }
-        if application.content().character().semantic_digest() != catalog.semantic_digest()
-            || application.content().character().locale_policy_digest()
-                != catalog.locale_policy_digest()
-        {
+        if application.content().character().semantic_digest() != catalog.semantic_digest() {
             return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
                 expression: owner,
             });
@@ -12140,8 +12137,6 @@ fn validate_project_instance_dialogue_applications(
                     || accepted.text_key().as_str() != application.content().text_key().as_str()
                     || application.content().character().semantic_digest()
                         != catalog.semantic_digest()
-                    || application.content().character().locale_policy_digest()
-                        != catalog.locale_policy_digest()
                 {
                     return Err(RuntimeSemanticFactsError::DialogueTemplateMismatch {
                         expression: owner,

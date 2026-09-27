@@ -506,6 +506,7 @@ impl Engine {
             _ => crate::value::RuntimeFormatPrimaryKind::Scalar(primary_type.semantic_identity()),
         };
         let formatted = crate::value::finish_format_content_attempt(
+            &self.format_context,
             primary_kind,
             &evaluated,
             first_recoverable.as_deref(),

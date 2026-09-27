@@ -127,6 +127,7 @@ pub fn compile_checked_agent_bundle(
     .map_err(CompileAgentError::ProductAwbc)?;
     let mut bundle = ArcweftBundle::try_new(
         BundleManifest {
+            locale: compiled.locale().clone(),
             profile_id: None,
             profile_kind: None,
             entry: Some(manifest.entry_id.as_str().to_owned()),

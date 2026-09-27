@@ -108,6 +108,7 @@ pub(crate) fn decode(document: Arc<SourceDocument>) -> Result<DecodedManifest, M
             package,
             build,
             resource_type_manifest,
+            locale: sections.locale,
             content_units: sections.content_units,
             external_modules: sections.external_modules,
             activity_implementations: sections.activity_implementations,

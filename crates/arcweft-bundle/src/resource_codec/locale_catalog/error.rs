@@ -5,7 +5,7 @@ use arcweft_character::{
     id::CharacterIdError,
     presentation_name::{
         CharacterDisplayNameKeyError, CharacterDisplayNameValueError,
-        CharacterNameLocalePolicyError, CharacterPresentationCatalogError,
+        CharacterPresentationCatalogError,
     },
 };
 use arcweft_id::LocaleTagError;
@@ -18,8 +18,6 @@ pub enum CharacterPresentationCatalogCodecError {
     Envelope(#[from] SectionCodecError),
     #[error(transparent)]
     Catalog(#[from] CharacterPresentationCatalogError),
-    #[error(transparent)]
-    LocalePolicy(#[from] CharacterNameLocalePolicyError),
     #[error("LocaleCatalog arithmetic overflow while computing {operation}")]
     ArithmeticOverflow { operation: &'static str },
     #[error("LocaleCatalog field {field:?} has {actual} bytes; expected {expected}")]
@@ -95,6 +93,4 @@ pub enum CharacterPresentationCatalogCodecError {
     PublicIdReferenceCount { index: u32, actual: u32 },
     #[error("LocaleCatalog semantic digest does not match its canonical records")]
     SemanticDigestMismatch,
-    #[error("LocaleCatalog locale-policy digest does not match its canonical policy")]
-    LocalePolicyDigestMismatch,
 }

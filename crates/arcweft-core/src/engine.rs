@@ -54,6 +54,7 @@ pub mod suspend;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Engine {
     plan: Arc<RuntimePlan>,
+    format_context: crate::value::RuntimeFormatContext,
     generation: GenerationId,
     need_producers: NeedProducerRegistry,
     task_request_quota_remaining: usize,
@@ -698,6 +699,7 @@ impl Engine {
         let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
             plan,
+            format_context: crate::value::RuntimeFormatContext::default(),
             generation,
             need_producers: NeedProducerRegistry::default(),
             task_request_quota_remaining: usize::MAX,
@@ -740,6 +742,16 @@ impl Engine {
             next_audio_sequence: 0,
             next_host_call_sequence: 0,
         }
+    }
+
+    /// Selects the session locale for subsequent native `fmt` evaluations.
+    pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
+        self.format_context = context;
+    }
+
+    #[must_use]
+    pub const fn format_context(&self) -> &crate::value::RuntimeFormatContext {
+        &self.format_context
     }
 
     /// Creates an engine and selects the requested flow exactly.

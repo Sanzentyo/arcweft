@@ -95,6 +95,8 @@ impl RootReplayRecorderV1 {
                 schema_version: ROOT_REPLAY_SCHEMA_VERSION,
                 engine_identity: ROOT_REPLAY_ENGINE_IDENTITY.to_owned(),
                 artifact: session.active_generation().artifact_identity,
+                active_locale: session.active_locale.clone(),
+                format_data_identity: session.executor.format_context().data_identity(),
                 entry: entry.runtime_id.clone(),
                 entry_kind,
                 binding: entry.binding,
@@ -264,7 +266,10 @@ impl RootReplayRecorderV1 {
         &self,
         session: &BundleSession,
     ) -> Result<(), RootReplayRecordingError> {
-        if session.active_generation().artifact_identity != self.trace.artifact {
+        if session.active_generation().artifact_identity != self.trace.artifact
+            || session.active_locale != self.trace.active_locale
+            || session.executor.format_context().data_identity() != self.trace.format_data_identity
+        {
             return Err(RootReplayRecordingError::SessionIdentityChanged);
         }
         let active = session

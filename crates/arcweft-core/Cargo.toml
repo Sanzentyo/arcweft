@@ -18,6 +18,10 @@ arcweft-interaction-model.workspace = true
 arcweft-need = { workspace = true }
 arcweft-source = { workspace = true }
 blake3.workspace = true
+fixed_decimal.workspace = true
+icu_decimal.workspace = true
+icu_experimental.workspace = true
+icu_locale.workspace = true
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true
 thiserror.workspace = true

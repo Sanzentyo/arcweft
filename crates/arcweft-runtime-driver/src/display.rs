@@ -22,7 +22,7 @@ use arcweft_bundle::{
     BundleImageObjectPlayback, BundleImageObjectTransform,
 };
 use arcweft_character::presentation_name::{
-    AcceptedCharacterPresentationCatalog, CharacterNameLocale,
+    AcceptedCharacterPresentationCatalog, CharacterNameResolutionLocales,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
@@ -42,6 +42,7 @@ use arcweft_dialogue::{
 use arcweft_id::{DeclarationIdentityFamily, LocaleTag};
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
+use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_presentation::{
     BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
 };
@@ -59,27 +60,6 @@ use thiserror::Error;
 
 mod viewport;
 use viewport::viewport_fit_from_effects;
-
-/// Canonical Character-name locale selected for the current runtime session.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(transparent)]
-pub struct ActiveSessionLocale(LocaleTag);
-
-impl ActiveSessionLocale {
-    #[must_use]
-    pub fn new(locale: &CharacterNameLocale) -> Self {
-        Self(locale.locale_tag().clone())
-    }
-
-    #[must_use]
-    pub const fn locale_tag(&self) -> &LocaleTag {
-        &self.0
-    }
-
-    pub(crate) fn character_name_locale(&self) -> CharacterNameLocale {
-        CharacterNameLocale::new(self.0.clone())
-    }
-}
 
 /// Choice metadata shared by native and Web presentation hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -120,7 +100,8 @@ pub trait DialogueRuntimeContextProvider {
 /// Runtime view over one accepted Character catalog generation and locale.
 pub(crate) struct CatalogDialogueRuntimeContextProvider<'a> {
     catalog: &'a AcceptedCharacterPresentationCatalog,
-    active_locale: &'a ActiveSessionLocale,
+    active_locale: &'a LocaleTag,
+    project_locale: &'a ProjectLocaleSpec,
     schema: Option<&'a CharacterDialogueRuntimeSchema>,
     style_program: Option<&'a ViewStyleProgram>,
 }
@@ -129,13 +110,15 @@ impl<'a> CatalogDialogueRuntimeContextProvider<'a> {
     #[must_use]
     pub(crate) const fn new(
         catalog: &'a AcceptedCharacterPresentationCatalog,
-        active_locale: &'a ActiveSessionLocale,
+        active_locale: &'a LocaleTag,
+        project_locale: &'a ProjectLocaleSpec,
         schema: Option<&'a CharacterDialogueRuntimeSchema>,
         style_program: Option<&'a ViewStyleProgram>,
     ) -> Self {
         Self {
             catalog,
             active_locale,
+            project_locale,
             schema,
             style_program,
         }
@@ -150,9 +133,7 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
         values: &[RuntimeDialogueValueBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError> {
         let generation = self.catalog.generation();
-        if content.character().semantic_digest() != generation.semantic_digest()
-            || content.character().locale_policy_digest() != generation.locale_policy_digest()
-        {
+        if content.character().semantic_digest() != generation.semantic_digest() {
             return Err(DialogueRuntimeContextError::Rejected {
                 line: content.line().clone(),
                 reason: "Character presentation plan is stale for the active catalog generation"
@@ -214,7 +195,14 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
         let resolved = self
             .catalog
             .data()
-            .resolve(character, &self.active_locale.character_name_locale())
+            .resolve(
+                character,
+                CharacterNameResolutionLocales::new(
+                    self.active_locale,
+                    self.project_locale.source(),
+                    self.project_locale.fallback(),
+                ),
+            )
             .map_err(|error| DialogueRuntimeContextError::Rejected {
                 line: content.line().clone(),
                 reason: error.to_string(),

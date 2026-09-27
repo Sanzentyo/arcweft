@@ -645,7 +645,7 @@ fn dialogue_manifest_document(name: &str) -> Arc<SourceDocument> {
                 .expect("manifest document ID"),
             SourceName::path("arcw.toml"),
             format!(
-                "schema = 1\n[package]\nid = \"org.arcweft.{name}\"\nversion = \"0.1.0\"\n\n[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\n[profiles.dev.localization.character_names]\nactive = \"ja-JP\"\nfallbacks = []\n"
+                "schema = 1\n[package]\nid = \"org.arcweft.{name}\"\nversion = \"0.1.0\"\n\n[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n"
             ),
         )
         .expect("dialogue manifest document"),
@@ -841,7 +841,6 @@ fn runtime_dialogue_projection_keeps_the_admitted_profile_product_lease() {
         analysis.final_analysis(),
         &runtime_owners,
         Some(&profile),
-        None,
         &lower::ProjectInstantiationControl::default(),
     )
     .expect("the retained checked profile is accepted by runtime projection");

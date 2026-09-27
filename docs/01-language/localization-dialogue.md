@@ -19,11 +19,6 @@ Related:
 source = "ja-JP"
 default = "ja-JP"
 fallback = ["ja-JP"]
-
-[locale.extraction]
-default_mode = "inline_source"
-id_storage = "registry"      # registry | inline | hybrid
-show_inlay = true
 ```
 
 Meaning:
@@ -32,12 +27,24 @@ Meaning:
 source = "ja-JP"
   Text written directly in .arcw is Japanese source text.
 
-id_storage = "registry"
-  Text IDs are stored in .arcweft/dialogue-lines.toml instead of cluttering source.
+default = "ja-JP"
+  The project default runtime locale is Japanese.
 
-show_inlay = true
-  LSP shows line IDs, text keys, translation status, and voice keys as inlay hints.
+fallback = ["ja-JP"]
+  Resource lookup tries these locales in order. Entries must be unique; the
+  default locale is allowed in this list. At most 16 fallback locales are
+  accepted.
 ```
+
+If the `[locale]` table is absent, source and default locales are both `ja-JP`
+and the fallback list is empty. An omitted `source` or `default` uses the same
+canonical `ja-JP` value. Locale tags must already use Arcweft's canonical
+spelling.
+
+The root table accepts only `source`, `default`, and `fallback`. Locale
+extraction settings such as `[locale.extraction]` are not part of the accepted
+manifest shape yet; they are rejected as unknown nested tables rather than
+silently retained as inert configuration.
 
 ---
 

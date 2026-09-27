@@ -183,7 +183,8 @@ impl VmPureFunctionScratch {
         let helper = resolve_validated_pure_helper(plan, helper)?;
         let bindings = prepare_helper_bindings(plan, helper, args.iter().cloned())?;
         self.env.replace_scopes_with_bindings([bindings]);
-        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env))
+            .with_format_context(self.format_context.clone());
         evaluator.external = Some(backend);
         let result = validate_helper_result(plan, helper, evaluator.evaluate_expr(&helper.expr));
         self.env = evaluator.into_env();

@@ -14,7 +14,7 @@ use arcweft_dialogue::DialoguePresentationProfile;
 use arcweft_manifest_model::{
     ActivityId, ActivityImplementationId, ActivityImplementationSpec, AdapterProfileId,
     ContentUnitId, ContentUnitSpec, EntityIdRef, ExternalModuleImportId, ExternalModuleImportSpec,
-    LaunchKind, NormalizedProjectPath, ProfileContentSpec, ProfileId, ProfileLocalizationSpec,
+    LaunchKind, NormalizedProjectPath, ProfileContentSpec, ProfileId, ProjectLocaleSpec,
 };
 use arcweft_source::SourceSpan;
 use arcweft_view::ViewId;
@@ -45,7 +45,7 @@ pub struct ResolvedLaunchProfile {
     external_modules: BTreeMap<ExternalModuleImportId, ExternalModuleImportSpec>,
     activity_bindings: BTreeMap<ActivityId, ResolvedActivityBinding>,
     dialogue: DialoguePresentationProfile,
-    localization: ProfileLocalizationSpec,
+    locale: ProjectLocaleSpec,
     listen: Option<LaunchListenAddress>,
     pure: Option<LaunchPureProfileSpec>,
     content: BTreeMap<ContentUnitId, ResolvedProfileContent>,
@@ -107,8 +107,8 @@ impl ResolvedLaunchProfile {
         &self.dialogue
     }
 
-    pub const fn localization(&self) -> &ProfileLocalizationSpec {
-        &self.localization
+    pub const fn locale(&self) -> &ProjectLocaleSpec {
+        &self.locale
     }
 
     pub const fn listen(&self) -> Option<LaunchListenAddress> {
@@ -180,7 +180,7 @@ pub(super) fn resolve_profile(
             profile.dialogue.style.clone(),
             profile.dialogue.inline_failure.clone().unwrap_or_default(),
         ),
-        localization: profile.localization.clone(),
+        locale: accepted.manifest().locale().clone(),
         listen: profile.listen,
         pure: profile.pure.clone(),
         content,
@@ -515,6 +515,7 @@ mod tests {
         LaunchProfileSelection, accepted::SourceBackedManifest, diagnostic::ManifestDiagnosticCode,
     };
     use arcweft_dialogue::InlineFailurePolicy;
+    use arcweft_id::LocaleTag;
     use arcweft_manifest_model::{ActivityId, ContentUnitId, ExternalModuleImportId, ProfileId};
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::sync::Arc;
@@ -590,6 +591,35 @@ mod tests {
         assert_eq!(
             resolved.dialogue().inline_failure(),
             &InlineFailurePolicy::FailLine
+        );
+    }
+
+    #[test]
+    fn selected_profile_carries_project_locale_policy() {
+        let manifest = accepted(&minimal(
+            "[locale]\nsource = \"ja-JP\"\ndefault = \"en-US\"\nfallback = [\"en-US\", \"fr-FR\"]\n\
+             [profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n",
+        ));
+        let resolved = manifest
+            .resolve_profile(LaunchProfileSelection::Explicit("dev"))
+            .expect("selected launch profile");
+
+        assert_eq!(
+            resolved.locale().source(),
+            &LocaleTag::try_new("ja-JP").unwrap()
+        );
+        assert_eq!(
+            resolved.locale().default_locale(),
+            &LocaleTag::try_new("en-US").unwrap()
+        );
+        assert_eq!(
+            resolved
+                .locale()
+                .fallback()
+                .iter()
+                .map(LocaleTag::as_str)
+                .collect::<Vec<_>>(),
+            ["en-US", "fr-FR"]
         );
     }
 

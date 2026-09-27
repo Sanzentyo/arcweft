@@ -84,7 +84,12 @@ impl BundleRunnerSession {
             bundle_runner_runtime_program(bundle, options)
         })?;
         let artifact_identity = super::logical_bundle_artifact_identity(bundle)?;
-        let executor = RuntimeExecutorInstance::from_awbc_product(program)?;
+        let active_locale = options
+            .active_locale
+            .as_ref()
+            .unwrap_or(bundle.manifest.locale.default_locale())
+            .clone();
+        let executor = RuntimeExecutorInstance::from_awbc_product(program, active_locale)?;
         let bundle_asset_context =
             super::bundle_asset_context(executor.generation(), artifact_identity)?;
 

@@ -2,7 +2,7 @@ use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
-        CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+        CharacterPresentationSemanticDigest,
     },
 };
 use arcweft_dialogue::character_presentation::{
@@ -21,7 +21,6 @@ pub fn character_plan() -> CheckedCharacterPresentationPlan {
         CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             CharacterPresentationSemanticDigest::from_bytes([1; 32]),
-            CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
         ),
     )
     .unwrap()

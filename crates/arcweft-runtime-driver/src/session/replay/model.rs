@@ -9,6 +9,8 @@ use arcweft_core::entry::{
 };
 use arcweft_core::plan::RuntimeEntryKind;
 use arcweft_core::root::TransitionSequence;
+use arcweft_core::value::RuntimeFormatDataIdentity;
+use arcweft_id::LocaleTag;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use thiserror::Error;
@@ -22,6 +24,8 @@ pub struct RootReplayTraceV1 {
     pub schema_version: u32,
     pub engine_identity: String,
     pub artifact: BundleSessionArtifactIdentity,
+    pub active_locale: LocaleTag,
+    pub format_data_identity: RuntimeFormatDataIdentity,
     pub entry: EntryRuntimeId,
     pub entry_kind: RuntimeEntryKind,
     pub binding: EntryBindingIdentity,
@@ -145,6 +149,10 @@ pub enum RootReplayError {
     ArtifactInspection { message: String },
     #[error("root replay artifact identity does not match the selected artifact")]
     ArtifactMismatch,
+    #[error("root replay active locale does not match the requested locale")]
+    LocaleMismatch,
+    #[error("root replay locale data identity does not match this engine")]
+    FormatDataMismatch,
     #[error("root replay entry `{recorded}` does not equal selected entry `{selected}`")]
     EntryMismatch { recorded: String, selected: String },
     #[error("selected root replay entry kind does not match the trace")]

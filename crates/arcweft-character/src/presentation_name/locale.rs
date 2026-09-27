@@ -1,10 +1,7 @@
-//! Nominal Character-name locale roles and fallback policy.
+//! Nominal Character-name locale roles and borrowed resolution input.
 
-use super::limits::MAX_FALLBACK_LOCALES;
 use arcweft_id::LocaleTag;
 use core::fmt;
-use std::collections::BTreeMap;
-use thiserror::Error;
 
 /// Locale identity used by Character display-name metadata.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -14,37 +11,15 @@ pub struct CharacterNameLocale(LocaleTag);
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CharacterNameSourceLocale(CharacterNameLocale);
 
-/// One authored locale in the ordered project fallback policy.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CharacterNameFallbackLocale(CharacterNameLocale);
-
-/// Ordered Character display-name locale policy.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CharacterNameLocalePolicy {
-    default_active: CharacterNameLocale,
-    fallbacks: Box<[CharacterNameFallbackLocale]>,
-}
-
-/// Invalid Character display-name locale policy.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum CharacterNameLocalePolicyError {
-    #[error("Character-name fallback count {observed} exceeds maximum {maximum}")]
-    TooManyFallbacks { observed: usize, maximum: usize },
-    #[error("Character-name fallback `{locale}` at ordinal {duplicate} duplicates ordinal {first}")]
-    DuplicateFallback {
-        locale: CharacterNameLocale,
-        first: u32,
-        duplicate: u32,
-    },
-    #[error(
-        "Character-name fallback `{locale}` at ordinal {ordinal} repeats the default active locale"
-    )]
-    RepeatsDefaultActive {
-        locale: CharacterNameLocale,
-        ordinal: u32,
-    },
-    #[error("Character-name fallback ordinal exceeds the supported diagnostic range")]
-    OrdinalOverflow,
+/// One lookup's session locale and accepted project fallback chain.
+///
+/// This borrows the project policy rather than retaining a second Character
+/// policy. A record's explicit source locale supersedes `project_source`.
+#[derive(Clone, Copy, Debug)]
+pub struct CharacterNameResolutionLocales<'a> {
+    active: &'a LocaleTag,
+    project_source: &'a LocaleTag,
+    project_fallbacks: &'a [LocaleTag],
 }
 
 impl CharacterNameLocale {
@@ -71,12 +46,6 @@ impl fmt::Display for CharacterNameSourceLocale {
     }
 }
 
-impl fmt::Display for CharacterNameFallbackLocale {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.locale().fmt(formatter)
-    }
-}
-
 impl CharacterNameSourceLocale {
     #[must_use]
     pub const fn new(value: CharacterNameLocale) -> Self {
@@ -89,80 +58,32 @@ impl CharacterNameSourceLocale {
     }
 }
 
-impl CharacterNameFallbackLocale {
+impl<'a> CharacterNameResolutionLocales<'a> {
     #[must_use]
-    pub const fn new(value: CharacterNameLocale) -> Self {
-        Self(value)
-    }
-
-    #[must_use]
-    pub const fn locale(&self) -> &CharacterNameLocale {
-        &self.0
-    }
-}
-
-impl CharacterNameLocalePolicy {
-    /// Returns the language-owned Japanese-first policy used when a selected
-    /// launch profile does not override Character-name localization.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if the language-owned `ja-JP` constant stops satisfying the
-    /// shared canonical locale invariant.
-    #[must_use]
-    pub fn engine_default() -> Self {
-        let default_active = LocaleTag::try_new("ja-JP")
-            .map(CharacterNameLocale::new)
-            .expect("the language-owned Japanese locale is canonical");
+    pub const fn new(
+        active: &'a LocaleTag,
+        project_source: &'a LocaleTag,
+        project_fallbacks: &'a [LocaleTag],
+    ) -> Self {
         Self {
-            default_active,
-            fallbacks: Box::new([]),
+            active,
+            project_source,
+            project_fallbacks,
         }
-    }
-
-    pub fn try_new(
-        default_active: CharacterNameLocale,
-        fallbacks: Vec<CharacterNameFallbackLocale>,
-    ) -> Result<Self, CharacterNameLocalePolicyError> {
-        if fallbacks.len() > MAX_FALLBACK_LOCALES {
-            return Err(CharacterNameLocalePolicyError::TooManyFallbacks {
-                observed: fallbacks.len(),
-                maximum: MAX_FALLBACK_LOCALES,
-            });
-        }
-
-        let mut first_ordinals = BTreeMap::new();
-        for (ordinal, fallback) in fallbacks.iter().enumerate() {
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| CharacterNameLocalePolicyError::OrdinalOverflow)?;
-            if fallback.locale() == &default_active {
-                return Err(CharacterNameLocalePolicyError::RepeatsDefaultActive {
-                    locale: fallback.locale().clone(),
-                    ordinal,
-                });
-            }
-            if let Some(first) = first_ordinals.insert(fallback.locale().clone(), ordinal) {
-                return Err(CharacterNameLocalePolicyError::DuplicateFallback {
-                    locale: fallback.locale().clone(),
-                    first,
-                    duplicate: ordinal,
-                });
-            }
-        }
-
-        Ok(Self {
-            default_active,
-            fallbacks: fallbacks.into_boxed_slice(),
-        })
     }
 
     #[must_use]
-    pub const fn default_active(&self) -> &CharacterNameLocale {
-        &self.default_active
+    pub const fn active(&self) -> &LocaleTag {
+        self.active
     }
 
     #[must_use]
-    pub fn fallbacks(&self) -> &[CharacterNameFallbackLocale] {
-        &self.fallbacks
+    pub const fn project_source(&self) -> &LocaleTag {
+        self.project_source
+    }
+
+    #[must_use]
+    pub const fn project_fallbacks(&self) -> &[LocaleTag] {
+        self.project_fallbacks
     }
 }

@@ -32,6 +32,7 @@ arcweft-audio-core = { workspace = true }
 arcweft-compiler = { workspace = true }
 arcweft-interaction-model = { workspace = true }
 arcweft-lang-sema = { workspace = true }
+arcweft-manifest-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }

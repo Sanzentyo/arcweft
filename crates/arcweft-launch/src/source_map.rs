@@ -16,6 +16,11 @@ pub(crate) struct ManifestSourceMap {
 /// Revision-bound semantic coordinate in one accepted manifest document.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ManifestTokenPath {
+    ProjectLocaleTable,
+    ProjectLocaleSource,
+    ProjectLocaleDefault,
+    ProjectLocaleFallbacks,
+    ProjectLocaleFallback { ordinal: u16 },
     ProfileTable { profile: ProfileId },
     ProfileDialogueTable { profile: ProfileId },
     ProfileDialogueView { profile: ProfileId },
@@ -29,9 +34,6 @@ pub enum ManifestTokenPath {
     ProfileDialogueInlineFallbackStyleKind { profile: ProfileId },
     ProfileDialogueInlineFallbackStyles { profile: ProfileId },
     ProfileDialogueInlineFallbackStyleElement { profile: ProfileId, ordinal: u16 },
-    ProfileCharacterNamesTable { profile: ProfileId },
-    ProfileCharacterNamesActive { profile: ProfileId },
-    ProfileCharacterNamesFallback { profile: ProfileId, ordinal: u16 },
 }
 
 /// Source-token role requested for a [`ManifestTokenPath`].
@@ -65,6 +67,11 @@ impl ManifestSourceMap {
 impl ManifestTokenPath {
     pub(crate) fn source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
         match self {
+            Self::ProjectLocaleTable
+            | Self::ProjectLocaleSource
+            | Self::ProjectLocaleDefault
+            | Self::ProjectLocaleFallbacks
+            | Self::ProjectLocaleFallback { .. } => self.project_locale_source_key(slot),
             Self::ProfileTable { .. }
             | Self::ProfileDialogueTable { .. }
             | Self::ProfileDialogueView { .. }
@@ -80,10 +87,41 @@ impl ManifestTokenPath {
             | Self::ProfileDialogueInlineFallbackStyleElement { .. } => {
                 self.inline_failure_source_key(slot)
             }
-            Self::ProfileCharacterNamesTable { .. }
-            | Self::ProfileCharacterNamesActive { .. }
-            | Self::ProfileCharacterNamesFallback { .. } => self.character_name_source_key(slot),
         }
+    }
+
+    fn project_locale_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
+        let (path, source_slot) = match self {
+            Self::ProjectLocaleTable => (
+                ManifestPath::new([ManifestPathSegment::Root(ManifestRootField::Locale)]),
+                table_header_slot(slot)?,
+            ),
+            Self::ProjectLocaleSource => (
+                project_locale_path(ProjectLocaleField::Source),
+                field_slot(slot)?,
+            ),
+            Self::ProjectLocaleDefault => (
+                project_locale_path(ProjectLocaleField::Default),
+                field_slot(slot)?,
+            ),
+            Self::ProjectLocaleFallbacks => (
+                project_locale_path(ProjectLocaleField::Fallback),
+                field_slot(slot)?,
+            ),
+            Self::ProjectLocaleFallback { ordinal } => {
+                if slot != ManifestTokenSlot::Value {
+                    return None;
+                }
+                (
+                    project_locale_path(ProjectLocaleField::Fallback),
+                    ManifestSourceSlot::ArrayElement {
+                        index: u32::from(*ordinal),
+                    },
+                )
+            }
+            _ => return None,
+        };
+        Some(token_key(path, source_slot))
     }
 
     fn profile_dialogue_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
@@ -186,41 +224,6 @@ impl ManifestTokenPath {
         };
         Some(token_key(path, source_slot))
     }
-
-    fn character_name_source_key(&self, slot: ManifestTokenSlot) -> Option<ManifestSourceKey> {
-        let (path, source_slot) = match self {
-            Self::ProfileCharacterNamesTable { profile } => {
-                (character_names_path(profile, []), table_header_slot(slot)?)
-            }
-            Self::ProfileCharacterNamesActive { profile } => (
-                character_names_path(
-                    profile,
-                    [ManifestPathSegment::CharacterNames(
-                        CharacterNamesField::Active,
-                    )],
-                ),
-                field_slot(slot)?,
-            ),
-            Self::ProfileCharacterNamesFallback { profile, ordinal } => {
-                if slot != ManifestTokenSlot::Value {
-                    return None;
-                }
-                (
-                    character_names_path(
-                        profile,
-                        [ManifestPathSegment::CharacterNames(
-                            CharacterNamesField::Fallbacks,
-                        )],
-                    ),
-                    ManifestSourceSlot::ArrayElement {
-                        index: u32::from(*ordinal),
-                    },
-                )
-            }
-            _ => return None,
-        };
-        Some(token_key(path, source_slot))
-    }
 }
 
 fn token_key(path: ManifestPath, slot: ManifestSourceSlot) -> ManifestSourceKey {
@@ -297,18 +300,11 @@ fn fallback_style_path(
     )
 }
 
-fn character_names_path(
-    profile: &ProfileId,
-    tail: impl IntoIterator<Item = ManifestPathSegment>,
-) -> ManifestPath {
-    let mut segments = vec![
-        ManifestPathSegment::Root(ManifestRootField::Profiles),
-        ManifestPathSegment::Profile(profile.clone()),
-        ManifestPathSegment::ProfileField(ProfileField::Localization),
-        ManifestPathSegment::Localization(LocalizationField::CharacterNames),
-    ];
-    segments.extend(tail);
-    ManifestPath::new(segments)
+fn project_locale_path(field: ProjectLocaleField) -> ManifestPath {
+    ManifestPath::new([
+        ManifestPathSegment::Root(ManifestRootField::Locale),
+        ManifestPathSegment::ProjectLocale(field),
+    ])
 }
 
 /// A typed location within one accepted manifest document.
@@ -348,6 +344,7 @@ impl ManifestPath {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ManifestPathSegment {
     Root(ManifestRootField),
+    ProjectLocale(ProjectLocaleField),
     Package(PackageField),
     Build(BuildField),
     ContentUnit(ContentUnitId),
@@ -358,8 +355,6 @@ pub(crate) enum ManifestPathSegment {
     ActivityImplementationField(ActivityImplementationField),
     Profile(ProfileId),
     ProfileField(ProfileField),
-    Localization(LocalizationField),
-    CharacterNames(CharacterNamesField),
     Dialogue(DialogueField),
     InlineFailure(InlineFailureField),
     InlineFallback(InlineFallbackField),
@@ -379,12 +374,20 @@ pub(crate) enum ManifestRootField {
     Schema,
     Package,
     Build,
+    Locale,
     ResourceTypeManifest,
     ContentUnits,
     ExternalModules,
     ActivityImplementations,
     DefaultProfile,
     Profiles,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ProjectLocaleField {
+    Source,
+    Default,
+    Fallback,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -436,22 +439,10 @@ pub(crate) enum ProfileField {
     ExternalModules,
     ActivityBindings,
     Dialogue,
-    Localization,
     Listen,
     Pure,
     Content,
     Player,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum LocalizationField {
-    CharacterNames,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum CharacterNamesField {
-    Active,
-    Fallbacks,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

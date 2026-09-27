@@ -143,6 +143,7 @@ pub(super) fn native_player_runtime_state_for_options(
         &compiled.bundle,
         BundleSessionOptions {
             entry: Some(entry),
+            active_locale: None,
             mode: options.mode.into(),
             max_ops: options.max_ops,
             view_root_bindings: options.view_values.clone(),

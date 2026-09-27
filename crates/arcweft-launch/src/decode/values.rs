@@ -5,19 +5,21 @@ use super::{
     value,
 };
 use crate::{
-    diagnostic::{ManifestDiagnostic, ManifestDiagnosticCode},
+    diagnostic::{ManifestDiagnostic, ManifestDiagnosticCode, ManifestRelatedSpan},
     manifest::ProfileSpec,
     source_map::{
         ActivityImplementationField, ContentUnitField, ExternalModuleField, ManifestPath,
-        ManifestPathSegment, ManifestRootField, ManifestSourceKey,
+        ManifestPathSegment, ManifestRootField, ManifestSourceKey, ProjectLocaleField,
     },
 };
+use arcweft_id::LocaleTag;
 use arcweft_manifest_model::{
     ActivityImplementationId, ActivityImplementationSpec, AdapterExportId, AdapterFamily,
     ContentRootRef, ContentUnitId, ContentUnitSpec, DependencyDemand, EntityIdRef,
-    ExternalModuleId, ExternalModuleImportId, ExternalModuleImportSpec, ManifestVisibility,
-    ModuleMountPath, NonEmptyVec, NormalizedProjectPath, PackageId, PackageVersion, ProfileId,
-    RawDigest, SemanticDigest,
+    ExternalModuleId, ExternalModuleImportId, ExternalModuleImportSpec,
+    MAX_PROJECT_LOCALE_FALLBACKS, ManifestVisibility, ModuleMountPath, NonEmptyVec,
+    NormalizedProjectPath, PackageId, PackageVersion, ProfileId, ProjectLocaleSpec,
+    ProjectLocaleSpecError, RawDigest, SemanticDigest,
 };
 use arcweft_source::{SourceDocument, SourceSpan};
 use std::{collections::BTreeMap, str::FromStr};
@@ -25,6 +27,7 @@ use std::{collections::BTreeMap, str::FromStr};
 mod profile;
 
 pub(super) struct DecodedSections {
+    pub(super) locale: ProjectLocaleSpec,
     pub(super) content_units: BTreeMap<ContentUnitId, ContentUnitSpec>,
     pub(super) external_modules: BTreeMap<ExternalModuleImportId, ExternalModuleImportSpec>,
     pub(super) activity_implementations:
@@ -40,6 +43,7 @@ pub(super) fn decode_sections(
     diagnostics: &mut Vec<ManifestDiagnostic>,
 ) -> DecodedSections {
     DecodedSections {
+        locale: decode_project_locale(document, index, source_entries, diagnostics),
         content_units: decode_content_units(document, index, source_entries, diagnostics),
         external_modules: decode_external_modules(index, source_entries, diagnostics),
         activity_implementations: decode_activity_implementations(
@@ -50,6 +54,199 @@ pub(super) fn decode_sections(
         default_profile: decode_default_profile(index, source_entries, diagnostics),
         profiles: profile::decode_profiles(document, index, source_entries, diagnostics),
     }
+}
+
+fn decode_project_locale(
+    document: &SourceDocument,
+    index: &ManifestIndex,
+    source_entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
+    diagnostics: &mut Vec<ManifestDiagnostic>,
+) -> ProjectLocaleSpec {
+    record_root_table(index, source_entries, "locale", ManifestRootField::Locale);
+    if reject_scalar_root(index, "locale", diagnostics) {
+        return ProjectLocaleSpec::default();
+    }
+
+    let default_policy = ProjectLocaleSpec::default();
+    let source = decode_project_locale_tag(
+        index.field(&["locale", "source"]),
+        ProjectLocaleField::Source,
+        "project source locale",
+        source_entries,
+        diagnostics,
+    )
+    .unwrap_or_else(|| default_policy.source().clone());
+    let default = decode_project_locale_tag(
+        index.field(&["locale", "default"]),
+        ProjectLocaleField::Default,
+        "project default locale",
+        source_entries,
+        diagnostics,
+    )
+    .unwrap_or_else(|| default_policy.default_locale().clone());
+
+    let fallback_path = ["locale", "fallback"];
+    let Some(fallback_field) = index.field(&fallback_path) else {
+        return ProjectLocaleSpec::try_new(source, default, Vec::new()).unwrap_or_else(|error| {
+            project_locale_invariant_failure(error, document, index, diagnostics)
+        });
+    };
+    value::record_field(
+        source_entries,
+        project_locale_path(ProjectLocaleField::Fallback),
+        fallback_field,
+    );
+    let Some(elements) = value::array_elements(
+        document,
+        fallback_field,
+        "project fallback locales",
+        diagnostics,
+    ) else {
+        return ProjectLocaleSpec::default();
+    };
+
+    let mut fallback = Vec::with_capacity(elements.len().min(MAX_PROJECT_LOCALE_FALLBACKS));
+    let mut first_occurrences = BTreeMap::<LocaleTag, (u16, SourceSpan)>::new();
+    let mut policy_failed = false;
+    for (index, (node, span)) in elements.into_iter().enumerate() {
+        let Some(source_index) = value::bounded_array_index(index, &span, diagnostics) else {
+            policy_failed = true;
+            continue;
+        };
+        value::record_array_element(
+            source_entries,
+            project_locale_path(ProjectLocaleField::Fallback),
+            source_index,
+            span.clone(),
+        );
+        if index >= MAX_PROJECT_LOCALE_FALLBACKS {
+            if index == MAX_PROJECT_LOCALE_FALLBACKS {
+                diagnostics.push(value::diagnostic(
+                    ManifestDiagnosticCode::ProjectLocaleFallbackLimit,
+                    format!(
+                        "project fallback count exceeds maximum {MAX_PROJECT_LOCALE_FALLBACKS}"
+                    ),
+                    span,
+                    Vec::new(),
+                ));
+            }
+            policy_failed = true;
+            continue;
+        }
+
+        let Some(raw) = value::node_text(
+            &node,
+            &span,
+            ManifestDiagnosticCode::ProjectLocaleInvalid,
+            "project fallback locale",
+            diagnostics,
+        ) else {
+            policy_failed = true;
+            continue;
+        };
+        let fallback_locale = match LocaleTag::try_new(&raw) {
+            Ok(locale) => locale,
+            Err(error) => {
+                diagnostics.push(value::diagnostic(
+                    ManifestDiagnosticCode::ProjectLocaleInvalid,
+                    format!("project fallback locale `{raw}` is invalid: {error}"),
+                    span,
+                    Vec::new(),
+                ));
+                policy_failed = true;
+                continue;
+            }
+        };
+        let ordinal = u16::try_from(index).expect("fallback count is source-bounded");
+        match first_occurrences.entry(fallback_locale.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert((ordinal, span));
+                fallback.push(fallback_locale);
+            }
+            std::collections::btree_map::Entry::Occupied(first) => {
+                diagnostics.push(value::diagnostic(
+                    ManifestDiagnosticCode::ProjectLocaleFallbackDuplicate,
+                    format!(
+                        "project fallback `{fallback_locale}` at ordinal {ordinal} duplicates ordinal {}",
+                        first.get().0
+                    ),
+                    span,
+                    vec![ManifestRelatedSpan::new(
+                        "first fallback declared here",
+                        first.get().1.clone(),
+                    )],
+                ));
+                policy_failed = true;
+            }
+        }
+    }
+
+    if policy_failed {
+        return ProjectLocaleSpec::default();
+    }
+    ProjectLocaleSpec::try_new(source, default, fallback).unwrap_or_else(|error| {
+        project_locale_invariant_failure(error, document, index, diagnostics)
+    })
+}
+
+fn decode_project_locale_tag(
+    field: Option<&IndexedField>,
+    project_field: ProjectLocaleField,
+    expectation: &str,
+    source_entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
+    diagnostics: &mut Vec<ManifestDiagnostic>,
+) -> Option<LocaleTag> {
+    let field = field?;
+    value::record_field(source_entries, project_locale_path(project_field), field);
+    let raw = value::text(
+        field,
+        ManifestDiagnosticCode::ProjectLocaleInvalid,
+        expectation,
+        diagnostics,
+    )?;
+    LocaleTag::try_new(&raw).map_or_else(
+        |error| {
+            diagnostics.push(value::diagnostic(
+                ManifestDiagnosticCode::ProjectLocaleInvalid,
+                format!("{expectation} `{raw}` is invalid: {error}"),
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        },
+        Some,
+    )
+}
+
+fn project_locale_invariant_failure(
+    error: ProjectLocaleSpecError,
+    document: &SourceDocument,
+    index: &ManifestIndex,
+    diagnostics: &mut Vec<ManifestDiagnostic>,
+) -> ProjectLocaleSpec {
+    let (code, span) = match &error {
+        ProjectLocaleSpecError::TooManyFallbacks { .. } => (
+            ManifestDiagnosticCode::ProjectLocaleFallbackLimit,
+            index
+                .field(&["locale", "fallback"])
+                .map_or_else(|| document.start_span(), |field| field.value_span.clone()),
+        ),
+        ProjectLocaleSpecError::DuplicateFallback { .. } => (
+            ManifestDiagnosticCode::ProjectLocaleFallbackDuplicate,
+            index
+                .field(&["locale", "fallback"])
+                .map_or_else(|| document.start_span(), |field| field.value_span.clone()),
+        ),
+    };
+    diagnostics.push(value::diagnostic(code, error.to_string(), span, Vec::new()));
+    ProjectLocaleSpec::default()
+}
+
+fn project_locale_path(field: ProjectLocaleField) -> ManifestPath {
+    ManifestPath::new([
+        ManifestPathSegment::Root(ManifestRootField::Locale),
+        ManifestPathSegment::ProjectLocale(field),
+    ])
 }
 
 fn decode_content_units(

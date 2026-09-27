@@ -1285,6 +1285,7 @@ fn bundle_from_runtime_parts(
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
@@ -1427,6 +1428,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
@@ -1493,6 +1495,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {

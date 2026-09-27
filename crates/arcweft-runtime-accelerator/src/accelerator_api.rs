@@ -18,6 +18,11 @@ use super::{
 };
 
 impl RuntimePureAccelerator {
+    /// Pins locale formatting for the VM fallback used by pure helpers.
+    pub fn set_format_context(&mut self, context: arcweft_core::value::RuntimeFormatContext) {
+        self.vm_scratch.set_format_context(context);
+    }
+
     /// Creates an accelerator for the selected pure-function backend.
     pub fn new(mode: RuntimePureBackendMode, plan: &std::sync::Arc<RuntimePlan>) -> Self {
         Self::with_config(

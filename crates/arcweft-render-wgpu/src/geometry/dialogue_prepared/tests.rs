@@ -2,7 +2,7 @@ use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
-        CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+        CharacterPresentationSemanticDigest,
     },
 };
 use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
@@ -59,7 +59,6 @@ fn test_character_plan() -> CheckedCharacterPresentationPlan {
         CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             CharacterPresentationSemanticDigest::from_bytes([1; 32]),
-            CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
         ),
     )
     .expect("checked Character presentation plan")

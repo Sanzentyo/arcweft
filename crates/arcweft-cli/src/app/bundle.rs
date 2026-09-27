@@ -160,6 +160,7 @@ fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptio
         })?;
     Ok(BundleRunnerOptions {
         entry,
+        active_locale: None,
         steps: options.steps,
         mode: options.mode.into(),
         max_ops: options.max_ops,
@@ -480,6 +481,7 @@ fn bundle_manifest(
     adapter_override: Option<&str>,
 ) -> BundleManifest {
     BundleManifest {
+        locale: compiled.compiled.locale().clone(),
         profile_id: selection
             .profile()
             .map(|profile| profile.id().as_str().to_owned()),

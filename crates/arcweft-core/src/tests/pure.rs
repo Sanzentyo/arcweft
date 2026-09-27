@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use crate::pattern::RuntimeSemanticTypeId;
+use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::plan::{
-    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
+    RuntimeCallArgumentSeed, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueValueRole, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId, RuntimeLocalDeclarationSeed,
     RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
@@ -16,10 +18,119 @@ use crate::pure::{
 };
 use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeExprKind, RuntimeSeq,
+    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeDialogueContentValue,
+    RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess, RuntimeDialogueOpaqueRole,
+    RuntimeEvalError, RuntimeExprKind, RuntimeFmtParameterId, RuntimeFormatContext, RuntimeSeq,
     RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
 };
-use arcweft_id::DeclarationName;
+use arcweft_id::{DeclarationName, LocaleTag};
+
+#[test]
+fn pure_format_content_uses_selected_ambient_locale() {
+    let int_type =
+        RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest();
+    let string_type = RuntimeCheckedType::String.semantic_identity_digest();
+    let content_owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
+    let content_type = content_owner.semantic_identity();
+    let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap();
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_type_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    int_type,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(string_type, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    content_type,
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: content_owner.producer().clone(),
+                        admission: content_owner.admission(),
+                        value_class: content_owner.value_class(),
+                        persistence: content_owner.persistence(),
+                        arguments: Box::new([]),
+                    },
+                ),
+            ],
+            [],
+        )
+        .unwrap();
+    builder
+        .register_plain_text_context_template_seed(RuntimeDialogueContentTemplateManifestSeed {
+            id: template,
+            digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x32; 32]),
+            slots: vec![RuntimeDialogueContentSlotSeed {
+                slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).unwrap(),
+                role: RuntimeDialogueValueRole::Formatted,
+                semantic_type: content_type,
+            }]
+            .into_boxed_slice(),
+            effects: Box::new([]),
+        })
+        .unwrap();
+    let body = RuntimeExprSeed::format_content(
+        content_type,
+        template,
+        [
+            RuntimeFormatContentOperandSeed::new(
+                RuntimeFmtParameterId::Value,
+                RuntimeExprSeed::new(
+                    int_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::i64(12345)),
+                ),
+            ),
+            RuntimeFormatContentOperandSeed::new(
+                RuntimeFmtParameterId::Style,
+                RuntimeExprSeed::new(
+                    string_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::String("number".to_owned())),
+                ),
+            ),
+        ],
+    );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "localized_number".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::Value,
+            body,
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .unwrap();
+    let mut plan = builder.finish().unwrap();
+    plan.bind_artifact(
+        crate::effect::RuntimeArtifactFingerprint::try_from_bytes([0x4a; 32]).unwrap(),
+    )
+    .unwrap();
+    let plan = Arc::new(plan);
+    let helper = plan.pure_helpers()[0].id;
+    let context = RuntimeFormatContext::new(LocaleTag::try_new("de-DE").unwrap());
+    let request = PureFunctionRequest::try_new(Arc::clone(&plan), helper, [])
+        .unwrap()
+        .with_format_context(context.clone());
+    let evaluated = VmPureFunctionBackend.evaluate(&request).unwrap();
+    let content = RuntimeDialogueContentValue::try_from_runtime_value(&evaluated.value).unwrap();
+    let value = content
+        .binding(crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).unwrap())
+        .and_then(|binding| binding.formatted())
+        .unwrap();
+    assert_eq!(
+        value.outcome(),
+        &RuntimeDialogueFormattedOutcome::Success {
+            value: RuntimeDialogueFormattedSuccess::Text("12.345".to_owned()),
+            color: None,
+        }
+    );
+    let mut scratch = VmPureFunctionScratch::default();
+    scratch.set_format_context(context);
+    assert_eq!(
+        scratch.evaluate_values(&plan, helper, &[]).unwrap(),
+        evaluated.value
+    );
+}
 
 const I64_SEMANTIC_MARKER: u8 = 1;
 const BOOL_SEMANTIC_MARKER: u8 = 2;

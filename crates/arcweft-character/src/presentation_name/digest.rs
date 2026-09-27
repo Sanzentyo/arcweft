@@ -1,4 +1,4 @@
-//! Nominal BLAKE3 identities for catalog semantics and locale policy.
+//! Nominal BLAKE3 identity for catalog semantics.
 
 use core::{fmt, str::FromStr};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
@@ -7,10 +7,6 @@ use thiserror::Error;
 /// BLAKE3 identity of accepted Character display-name records.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CharacterPresentationSemanticDigest([u8; 32]);
-
-/// BLAKE3 identity of the accepted Character-name locale policy.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CharacterPresentationLocalePolicyDigest([u8; 32]);
 
 /// Invalid canonical lowercase digest text.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -96,7 +92,6 @@ macro_rules! impl_digest {
 }
 
 impl_digest!(CharacterPresentationSemanticDigest);
-impl_digest!(CharacterPresentationLocalePolicyDigest);
 
 const fn hex_value(byte: u8) -> u8 {
     match byte {

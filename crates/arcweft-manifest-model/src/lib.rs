@@ -4,9 +4,9 @@
 mod canonical;
 mod digest;
 mod identity;
-mod localization;
 mod opaque_producer;
 mod path;
+mod project_locale;
 mod schema;
 
 pub use canonical::{CanonicalJsonError, canonical_json_bytes};
@@ -17,12 +17,9 @@ pub use identity::{
     FieldName, FunctionName, GeneratorName, IdentifierError, ModuleMountPath, PackageId,
     PackageVersion, ProfileId, TargetTriple, TypeReference, WitWorldId,
 };
-pub use localization::{
-    CharacterNameLocalePolicySpec, CharacterNameLocalePolicySpecError,
-    MAX_PROFILE_CHARACTER_NAME_FALLBACKS, ProfileLocalizationSpec,
-};
 pub use opaque_producer::{AdapterOpaqueTypeProducerId, AdapterOpaqueTypeProducerIdError};
 pub use path::{NormalizedProjectPath, NormalizedProjectPathError};
+pub use project_locale::{MAX_PROJECT_LOCALE_FALLBACKS, ProjectLocaleSpec, ProjectLocaleSpecError};
 pub use schema::{
     ActivityBindingSpec, ActivityImplementationSpec, AdapterFamily, BuildSpec, ContentCompression,
     ContentPlacement, ContentResidency, ContentRootRef, ContentUnitSpec, DependencyDemand,

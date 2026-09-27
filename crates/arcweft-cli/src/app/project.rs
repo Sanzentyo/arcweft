@@ -1090,6 +1090,7 @@ pub(in crate::app) fn project_compilation_context(
         semantic,
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
     )
+    .map(|context| context.with_project_locale(loaded.manifest().manifest().locale().clone()))
 }
 
 pub(in crate::app) fn profile_project_compilation_context(

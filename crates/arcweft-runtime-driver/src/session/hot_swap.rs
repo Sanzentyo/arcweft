@@ -107,7 +107,8 @@ impl BundleSession {
             });
         }
 
-        let mut next_runtime = build_session_runtime(bundle, &self.options, next_id)?;
+        let mut next_runtime =
+            build_session_runtime(bundle, &self.options, next_id, self.active_locale.clone())?;
         let compatibility =
             compatibility.max(self.view_replacement_compatibility(&next_runtime.view_runtime));
         if matches!(
@@ -152,28 +153,28 @@ impl BundleSession {
                 (Some(current), Some(candidate)) => current.data() != candidate.data(),
                 (None, None) => false,
                 _ => true,
-            } || self.active_locale != next_runtime.active_locale;
-            if catalog_changed && !next_presentation.dialogue.is_empty() {
+            };
+            if (catalog_changed || self.project_locale != next_runtime.project_locale)
+                && !next_presentation.dialogue.is_empty()
+            {
                 let catalog = next_runtime.character_presentation.as_ref().ok_or_else(|| {
                     BundleHotSwapError::CharacterPresentation {
                         message: "replacement removed the Character catalog required by retained dialogue"
                             .to_owned(),
                     }
                 })?;
-                let active_locale = next_runtime.active_locale.as_ref().ok_or_else(|| {
-                    BundleHotSwapError::CharacterPresentation {
-                        message:
-                            "replacement removed the active locale required by retained dialogue"
-                                .to_owned(),
-                    }
-                })?;
-                let locale = active_locale.character_name_locale();
+                let locales =
+                    arcweft_character::presentation_name::CharacterNameResolutionLocales::new(
+                        &next_runtime.active_locale,
+                        next_runtime.project_locale.source(),
+                        next_runtime.project_locale.fallback(),
+                    );
                 let changed = next_presentation
                     .dialogue
                     .reproject_character_display_names(|character| {
                         catalog
                             .data()
-                            .resolve(character, &locale)
+                            .resolve(character, locales)
                             .map(|resolved| resolved.value().to_owned())
                             .map_err(|error| error.to_string())
                     })
@@ -261,6 +262,7 @@ impl BundleSession {
                     .clone_into(&mut self.source_label);
                 self.dialogue_content = bundle.dialogue_content.clone();
                 self.character_presentation = next_runtime.character_presentation.clone();
+                self.project_locale = next_runtime.project_locale.clone();
                 self.active_locale = next_runtime.active_locale.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);

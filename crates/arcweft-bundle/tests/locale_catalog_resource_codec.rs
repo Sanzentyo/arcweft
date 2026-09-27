@@ -1,20 +1,82 @@
 use arcweft_bundle::resource_codec::{
     CharacterPresentationCatalogCodecError, CharacterPresentationCatalogSection, FieldId,
-    FieldRequirement, ProductSectionCodecKind, SectionCodecError,
+    FieldRequirement, ProductSectionCodecKind, SectionCodecError, SourceMapSection,
     product_catalog::migrated_product_catalog_section_compatibility,
 };
-use arcweft_bundle::{container::BundleSectionKind, patch::PatchCompatibility};
+use arcweft_bundle::{
+    ArcweftBundle, BundleManifest, BundleRuntimeSummary, container::BundleSectionKind,
+    patch::PatchCompatibility,
+};
 use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
-        CharacterNameFallbackLocale, CharacterNameLocale, CharacterNameLocalePolicy,
-        CharacterNameSourceLocale, CharacterPresentationCatalogData,
+        CharacterNameLocale, CharacterNameSourceLocale, CharacterPresentationCatalogData,
         CharacterPresentationCatalogInput, CharacterPresentationRole,
         LocalizedCharacterDisplayNameInput,
     },
 };
+use arcweft_core::{awbc::schema::AwbcProgram, effect::RuntimeArtifactFingerprint};
 use arcweft_id::LocaleTag;
+use arcweft_manifest_model::ProjectLocaleSpec;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
+
+#[test]
+fn bundle_logical_identity_binds_project_locale_without_reencoding_character_catalog() {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("locale-catalog-identity.arcw").unwrap(),
+        SourceName::Memory,
+        "",
+    )
+    .unwrap();
+    let map = SourceMapSection::try_from_documents(&[&source]).unwrap();
+    let mut bundle = ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            entry: None,
+            adapter: None,
+            locale: ProjectLocaleSpec::default(),
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x53; 32])
+                    .unwrap(),
+                entry_flow: None,
+                flows: 0,
+                bytecode_instructions: 0,
+                line_task_groups: 0,
+                stream_plans: 0,
+            },
+        },
+        map,
+        AwbcProgram::default(),
+        DialogueContentCatalog::new(),
+    )
+    .unwrap()
+    .with_character_presentation_catalog(fixture_catalog());
+    let catalog_bytes = CharacterPresentationCatalogSection::encode_canonical(
+        bundle.character_presentation.as_ref().unwrap(),
+    )
+    .unwrap();
+    let original = bundle.logical_identity().unwrap();
+
+    bundle.manifest.locale = ProjectLocaleSpec::try_new(
+        LocaleTag::try_new("ja-JP").unwrap(),
+        LocaleTag::try_new("en-US").unwrap(),
+        [LocaleTag::try_new("fr-FR").unwrap()],
+    )
+    .unwrap();
+    assert_ne!(bundle.logical_identity().unwrap(), original);
+    assert_eq!(
+        CharacterPresentationCatalogSection::encode_canonical(
+            bundle.character_presentation.as_ref().unwrap(),
+        )
+        .unwrap(),
+        catalog_bytes
+    );
+}
 
 #[test]
 fn locale_catalog_round_trips_the_only_canonical_compact_family() {
@@ -28,22 +90,9 @@ fn locale_catalog_round_trips_the_only_canonical_compact_family() {
     assert_eq!(read_u32(&bytes, 8), 1);
     assert_eq!(read_u32(&bytes, 12), 14);
     assert_eq!(read_u32(&bytes, 24), 0);
-    assert_eq!(read_u32(&bytes, 28), 4);
+    assert_eq!(read_u32(&bytes, 28), 3);
     assert_eq!(decoded.records().len(), 2);
-    assert_eq!(
-        decoded
-            .policy()
-            .fallbacks()
-            .iter()
-            .map(|fallback| fallback.locale().locale_tag().as_str())
-            .collect::<Vec<_>>(),
-        ["en", "fr"]
-    );
     assert_eq!(decoded.semantic_digest(), catalog.semantic_digest());
-    assert_eq!(
-        decoded.locale_policy_digest(),
-        catalog.locale_policy_digest()
-    );
     assert_eq!(
         CharacterPresentationCatalogSection::encode_canonical(&decoded)
             .expect("decoded catalog re-encodes"),
@@ -59,7 +108,7 @@ fn locale_catalog_rejects_reordered_fields_and_wrong_requirement_flags() {
     let mut reordered = canonical.clone();
     let first = reordered[blocks[0].0..blocks[0].1].to_vec();
     let second = reordered[blocks[1].0..blocks[1].1].to_vec();
-    assert_eq!(first.len(), 100);
+    assert_eq!(first.len(), 60);
     let mut replacement = Vec::with_capacity(first.len() + second.len());
     replacement.extend_from_slice(&second);
     replacement.extend_from_slice(&first);
@@ -96,7 +145,7 @@ fn locale_catalog_rejects_digest_key_reference_and_size_tampering() {
 
     let mut stale_digest = canonical.clone();
     let header_payload = field_payload_offset(&stale_digest, 1);
-    stale_digest[header_payload + 24] ^= 1;
+    stale_digest[header_payload + 16] ^= 1;
     assert_eq!(
         CharacterPresentationCatalogSection::decode_canonical(&stale_digest)
             .expect_err("stale digest rejects"),
@@ -114,7 +163,7 @@ fn locale_catalog_rejects_digest_key_reference_and_size_tampering() {
     )
     .expect("record");
     let key_catalog = CharacterPresentationCatalogData::try_from_inputs(
-        CharacterPresentationCatalogInput::try_new(policy("ja-JP", &[]), vec![key]).expect("input"),
+        CharacterPresentationCatalogInput::try_new(vec![key]).expect("input"),
     )
     .expect("catalog");
     let expected_key = key_catalog.records()[0]
@@ -186,7 +235,7 @@ fn locale_catalog_rejects_truncation_trailing_bytes_and_invalid_character_family
 }
 
 #[test]
-fn locale_catalog_rejects_header_table_and_locale_policy_tampering() {
+fn locale_catalog_rejects_header_and_table_tampering() {
     let canonical =
         CharacterPresentationCatalogSection::encode_canonical(&fixture_catalog()).expect("encodes");
 
@@ -250,14 +299,16 @@ fn locale_catalog_rejects_header_table_and_locale_policy_tampering() {
         Err(CharacterPresentationCatalogCodecError::InvalidLocale { .. })
     ));
 
-    let mut stale_policy = canonical;
-    let header_payload = field_payload_offset(&stale_policy, 1);
-    stale_policy[header_payload + 56] ^= 1;
-    assert_eq!(
-        CharacterPresentationCatalogSection::decode_canonical(&stale_policy)
-            .expect_err("stale policy digest rejects"),
-        CharacterPresentationCatalogCodecError::LocalePolicyDigestMismatch
-    );
+    let mut stale_reserved = canonical;
+    let header_payload = field_payload_offset(&stale_reserved, 1);
+    stale_reserved[header_payload + 12] ^= 1;
+    assert!(matches!(
+        CharacterPresentationCatalogSection::decode_canonical(&stale_reserved),
+        Err(CharacterPresentationCatalogCodecError::NonzeroReserved {
+            field: FieldId(1),
+            offset: 12,
+        })
+    ));
 }
 
 #[test]
@@ -279,35 +330,32 @@ fn locale_catalog_rejects_public_id_record_order_span_and_field_tampering() {
     );
 
     let order_catalog = CharacterPresentationCatalogData::try_from_inputs(
-        CharacterPresentationCatalogInput::try_new(
-            policy("ja-JP", &[]),
-            vec![
-                CharacterDisplayNameRecordInput::try_new(
-                    character("character.alice"),
-                    CharacterPresentationRole::Character,
-                    None,
-                    Some(CharacterDisplayNameInput::Hidden),
-                    Vec::new(),
-                    None,
-                )
-                .expect("Alice order record"),
-                CharacterDisplayNameRecordInput::try_new(
-                    character("character.bobxx"),
-                    CharacterPresentationRole::Character,
-                    None,
-                    Some(CharacterDisplayNameInput::Hidden),
-                    Vec::new(),
-                    None,
-                )
-                .expect("Bob order record"),
-            ],
-        )
+        CharacterPresentationCatalogInput::try_new(vec![
+            CharacterDisplayNameRecordInput::try_new(
+                character("character.alice"),
+                CharacterPresentationRole::Character,
+                None,
+                Some(CharacterDisplayNameInput::Hidden),
+                Vec::new(),
+                None,
+            )
+            .expect("Alice order record"),
+            CharacterDisplayNameRecordInput::try_new(
+                character("character.bobxx"),
+                CharacterPresentationRole::Character,
+                None,
+                Some(CharacterDisplayNameInput::Hidden),
+                Vec::new(),
+                None,
+            )
+            .expect("Bob order record"),
+        ])
         .expect("order catalog input"),
     )
     .expect("order catalog");
     let mut character_order =
         CharacterPresentationCatalogSection::encode_canonical(&order_catalog).expect("encodes");
-    let character_payload = field_payload_offset(&character_order, 3);
+    let character_payload = field_payload_offset(&character_order, 2);
     let first = character_order[character_payload..character_payload + 36].to_vec();
     let second = character_order[character_payload + 36..character_payload + 72].to_vec();
     character_order[character_payload..character_payload + 36].copy_from_slice(&second);
@@ -319,7 +367,7 @@ fn locale_catalog_rejects_public_id_record_order_span_and_field_tampering() {
     );
 
     let mut localized_order = canonical.clone();
-    let localized_payload = field_payload_offset(&localized_order, 4);
+    let localized_payload = field_payload_offset(&localized_order, 3);
     let first = localized_order[localized_payload..localized_payload + 16].to_vec();
     let second = localized_order[localized_payload + 16..localized_payload + 32].to_vec();
     localized_order[localized_payload..localized_payload + 16].copy_from_slice(&second);
@@ -331,7 +379,7 @@ fn locale_catalog_rejects_public_id_record_order_span_and_field_tampering() {
     );
 
     let mut invalid_span = canonical.clone();
-    let character_payload = field_payload_offset(&invalid_span, 3);
+    let character_payload = field_payload_offset(&invalid_span, 2);
     write_u32(&mut invalid_span, character_payload + 28, 1);
     assert_eq!(
         CharacterPresentationCatalogSection::decode_canonical(&invalid_span)
@@ -341,19 +389,19 @@ fn locale_catalog_rejects_public_id_record_order_span_and_field_tampering() {
 
     let blocks = field_blocks(&canonical);
     let mut unknown_field = canonical.clone();
-    unknown_field[blocks[3].0..blocks[3].0 + 2].copy_from_slice(&5_u16.to_le_bytes());
+    unknown_field[blocks[2].0..blocks[2].0 + 2].copy_from_slice(&4_u16.to_le_bytes());
     assert_eq!(
         CharacterPresentationCatalogSection::decode_canonical(&unknown_field)
             .expect_err("unknown closed-family field rejects"),
         CharacterPresentationCatalogCodecError::Envelope(SectionCodecError::UnknownRequiredField(
-            FieldId(5)
+            FieldId(4)
         ))
     );
 
     let mut missing_field = canonical;
-    let removed = blocks[3].1 - blocks[3].0;
-    missing_field.truncate(blocks[3].0);
-    write_u32(&mut missing_field, 28, 3);
+    let removed = blocks[2].1 - blocks[2].0;
+    missing_field.truncate(blocks[2].0);
+    write_u32(&mut missing_field, 28, 2);
     let body_len = read_u64(&missing_field, 40);
     write_u64(
         &mut missing_field,
@@ -364,7 +412,7 @@ fn locale_catalog_rejects_public_id_record_order_span_and_field_tampering() {
         CharacterPresentationCatalogSection::decode_canonical(&missing_field)
             .expect_err("missing field rejects"),
         CharacterPresentationCatalogCodecError::Envelope(SectionCodecError::MissingRequiredField(
-            FieldId(4)
+            FieldId(3)
         ))
     );
 }
@@ -416,6 +464,7 @@ fn fixture_catalog() -> CharacterPresentationCatalogData {
                 locale("en"),
                 CharacterDisplayNameInput::Hidden,
             ),
+            LocalizedCharacterDisplayNameInput::new(locale("fr"), visible("Alicia")),
             LocalizedCharacterDisplayNameInput::new(locale("ja-JP"), visible("アリス")),
         ],
         Some(name("Alice declaration")),
@@ -431,11 +480,7 @@ fn fixture_catalog() -> CharacterPresentationCatalogData {
     )
     .expect("narrator record");
     CharacterPresentationCatalogData::try_from_inputs(
-        CharacterPresentationCatalogInput::try_new(
-            policy("ja-JP", &["en", "fr"]),
-            vec![narrator, alice],
-        )
-        .expect("catalog input"),
+        CharacterPresentationCatalogInput::try_new(vec![narrator, alice]).expect("catalog input"),
     )
     .expect("accepted catalog")
 }
@@ -446,17 +491,6 @@ fn character(value: &str) -> CharacterId {
 
 fn locale(value: &str) -> CharacterNameLocale {
     CharacterNameLocale::new(LocaleTag::try_new(value).expect("locale"))
-}
-
-fn policy(active: &str, fallbacks: &[&str]) -> CharacterNameLocalePolicy {
-    CharacterNameLocalePolicy::try_new(
-        locale(active),
-        fallbacks
-            .iter()
-            .map(|fallback| CharacterNameFallbackLocale::new(locale(fallback)))
-            .collect(),
-    )
-    .expect("policy")
 }
 
 fn name(value: &str) -> CharacterDisplayNameValue {

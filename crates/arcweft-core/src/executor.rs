@@ -258,6 +258,35 @@ impl AwbcProductExecutor {
 }
 
 impl ArcweftRuntimeExecutor {
+    /// Selects the ambient locale for subsequent native or Product AWBC
+    /// formatter attempts. In-flight AWBC attempts retain their start locale.
+    pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
+        match &mut self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.set_format_context(context);
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.set_format_context(context);
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
+                executor.vm.set_format_context(context);
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn format_context(&self) -> &crate::value::RuntimeFormatContext {
+        match &self.inner {
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine.format_context()
+            }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.vm.engine.format_context()
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.format_context(),
+        }
+    }
+
     pub fn from_runtime_plan(
         plan: RuntimePlan,
         tier: ArcweftExecutionTier,
@@ -772,6 +801,7 @@ impl RuntimeExecutor for AotExecutor {
             .can_start_aot_linear_step(&self.program, &input)
         {
             let mut pure_backend = crate::pure::VmRuntimePureCallBackend::default();
+            pure_backend.set_format_context(self.vm.engine.format_context().clone());
             let (result, fast_path_ops) = self
                 .vm
                 .engine_mut()

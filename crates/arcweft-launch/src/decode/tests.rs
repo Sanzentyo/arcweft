@@ -1,15 +1,15 @@
 use super::decode;
 use crate::{
-    LaunchMathBackend, LaunchPlayerViewportFit, LaunchPureBackend,
+    LaunchMathBackend, LaunchPlayerViewportFit, LaunchPureBackend, ManifestTokenPath,
+    ManifestTokenSlot,
     diagnostic::{ManifestDiagnostic, ManifestDiagnosticCode},
     manifest::LaunchPureWorkers,
     source_map::{
-        ActivityBindingField, ActivityImplementationField, BuildField, CharacterNamesField,
-        ContentUnitField, DialogueField, ExternalModuleField, FallbackStyleField,
-        InlineFailureField, InlineFallbackField, LocalizationField, ManifestPath,
-        ManifestPathSegment, ManifestRootField, ManifestSourceKey, ManifestSourceMap,
-        ManifestSourceSlot, PackageField, PlayerField, ProfileContentField, ProfileField,
-        PureField, ViewportField,
+        ActivityBindingField, ActivityImplementationField, BuildField, ContentUnitField,
+        DialogueField, ExternalModuleField, FallbackStyleField, InlineFailureField,
+        InlineFallbackField, ManifestPath, ManifestPathSegment, ManifestRootField,
+        ManifestSourceKey, ManifestSourceMap, ManifestSourceSlot, PackageField, PlayerField,
+        ProfileContentField, ProfileField, ProjectLocaleField, PureField, ViewportField,
     },
 };
 use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
@@ -158,6 +158,167 @@ fn resource_type_manifest_reuses_the_normalized_contained_path_boundary() {
         let report = decode(document(&source)).unwrap_err();
         assert_eq!(report.diagnostics()[0].code(), expected);
     }
+}
+
+#[test]
+fn project_locale_defaults_to_japanese_and_maps_each_authored_token() {
+    let absent = decode(document(&minimal(""))).expect("project locale defaults");
+    assert_eq!(absent.manifest.locale().source().as_str(), "ja-JP");
+    assert_eq!(absent.manifest.locale().default_locale().as_str(), "ja-JP");
+    assert!(absent.manifest.locale().fallback().is_empty());
+
+    let source = minimal(
+        "[locale]\nsource = \"ja-JP\"\ndefault = \"en-US\"\nfallback = [\"en-US\", \"fr-FR\"]\n",
+    );
+    let source_document = document(&source);
+    let decoded = decode(Arc::clone(&source_document)).expect("typed project locale");
+    let locale = decoded.manifest.locale();
+    assert_eq!(locale.source().as_str(), "ja-JP");
+    assert_eq!(locale.default_locale().as_str(), "en-US");
+    assert_eq!(
+        locale
+            .fallback()
+            .iter()
+            .map(arcweft_id::LocaleTag::as_str)
+            .collect::<Vec<_>>(),
+        ["en-US", "fr-FR"]
+    );
+
+    for (path, slot, expected, occurrence) in [
+        (
+            ManifestTokenPath::ProjectLocaleTable,
+            ManifestTokenSlot::TableHeader,
+            "[locale]",
+            0,
+        ),
+        (
+            ManifestTokenPath::ProjectLocaleSource,
+            ManifestTokenSlot::Value,
+            "\"ja-JP\"",
+            0,
+        ),
+        (
+            ManifestTokenPath::ProjectLocaleDefault,
+            ManifestTokenSlot::Value,
+            "\"en-US\"",
+            0,
+        ),
+        (
+            ManifestTokenPath::ProjectLocaleFallbacks,
+            ManifestTokenSlot::FieldKey,
+            "fallback",
+            0,
+        ),
+        (
+            ManifestTokenPath::ProjectLocaleFallback { ordinal: 0 },
+            ManifestTokenSlot::Value,
+            "\"en-US\"",
+            1,
+        ),
+        (
+            ManifestTokenPath::ProjectLocaleFallback { ordinal: 1 },
+            ManifestTokenSlot::Value,
+            "\"fr-FR\"",
+            0,
+        ),
+    ] {
+        let key = path.source_key(slot).expect("project-locale source key");
+        let span = decoded
+            .source_map
+            .get(&key)
+            .expect("project-locale token span");
+        assert_eq!(span.range(), range_of(&source, expected, occurrence));
+        assert_eq!(span.source(), source_document.identity());
+    }
+
+    for (field, expected) in [
+        (ProjectLocaleField::Source, "\"ja-JP\""),
+        (ProjectLocaleField::Default, "\"en-US\""),
+    ] {
+        let span = decoded
+            .source_map
+            .get(&source_key(
+                [
+                    ManifestPathSegment::Root(ManifestRootField::Locale),
+                    ManifestPathSegment::ProjectLocale(field),
+                ],
+                ManifestSourceSlot::ScalarValue,
+            ))
+            .expect("project locale field source map");
+        assert_eq!(span.range(), range_of(&source, expected, 0));
+    }
+}
+
+#[test]
+fn project_locale_rejects_noncanonical_and_duplicate_fallbacks_at_exact_spans() {
+    let noncanonical = minimal("[locale]\nsource = \"ja-jp\"\n");
+    let report = decode(document(&noncanonical)).expect_err("noncanonical source locale");
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == ManifestDiagnosticCode::ProjectLocaleInvalid)
+        .expect("project-locale diagnostic");
+    assert_eq!(
+        diagnostic.primary().range(),
+        range_of(&noncanonical, "\"ja-jp\"", 0)
+    );
+
+    let duplicate =
+        minimal("[locale]\ndefault = \"en-US\"\nfallback = [\"en-US\", \"fr-FR\", \"en-US\"]\n");
+    let report = decode(document(&duplicate)).expect_err("duplicate fallback locales");
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| {
+            diagnostic.code() == ManifestDiagnosticCode::ProjectLocaleFallbackDuplicate
+        })
+        .expect("duplicate fallback diagnostic");
+    assert_eq!(
+        diagnostic.primary().range(),
+        range_of(&duplicate, "\"en-US\"", 2)
+    );
+    assert_eq!(
+        diagnostic.related()[0].span().range(),
+        range_of(&duplicate, "\"en-US\"", 1)
+    );
+}
+
+#[test]
+fn project_locale_bounds_fallbacks_and_rejects_unknown_or_inert_fields() {
+    let exact = (0..16)
+        .map(|index| format!("\"qaa-x{index}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let accepted = minimal(&format!("[locale]\nfallback = [{exact}]\n"));
+    let decoded = decode(document(&accepted)).expect("16 project fallbacks");
+    assert_eq!(decoded.manifest.locale().fallback().len(), 16);
+
+    let one_over = minimal(&format!("[locale]\nfallback = [{exact}, \"qaa-x16\"]\n"));
+    let report = decode(document(&one_over)).expect_err("17 project fallbacks");
+    let diagnostic = report
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == ManifestDiagnosticCode::ProjectLocaleFallbackLimit)
+        .expect("project fallback limit diagnostic");
+    assert_eq!(
+        diagnostic.primary().range(),
+        range_of(&one_over, "\"qaa-x16\"", 0)
+    );
+
+    let unknown_field = minimal("[locale]\nunknown = true\n");
+    let report = decode(document(&unknown_field)).expect_err("unknown locale field");
+    assert!(report.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == ManifestDiagnosticCode::UnknownField
+            && diagnostic.primary().range() == range_of(&unknown_field, "unknown", 0)
+    }));
+
+    let inert_extraction =
+        minimal("[locale]\nsource = \"ja-JP\"\n[locale.extraction]\nid-storage = \"registry\"\n");
+    let report = decode(document(&inert_extraction)).expect_err("inert extraction is unsupported");
+    assert!(report.diagnostics().iter().any(|diagnostic| {
+        diagnostic.code() == ManifestDiagnosticCode::UnknownField
+            && diagnostic.primary().range() == range_of(&inert_extraction, "extraction", 0)
+    }));
 }
 
 #[test]
@@ -675,196 +836,6 @@ fn dialogue_profile_uses_nominal_view_and_style_ids_with_exact_source_map_entrie
         let span = decoded.source_map.get(&key).expect("dialogue source span");
         assert_eq!(span.range(), range_of(&source, expected, 0));
     }
-}
-
-#[test]
-fn character_name_localization_policy_is_typed_ordered_and_revision_bound() {
-    let source = minimal(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\nfallbacks = [\"en\", \"fr\"]\n",
-    );
-    let source_document = document(&source);
-    let decoded = decode(Arc::clone(&source_document)).expect("typed localization policy");
-    let profile_id = ProfileId::new("dev").expect("profile id");
-    let policy = decoded
-        .manifest
-        .profiles
-        .get(&profile_id)
-        .and_then(|profile| profile.localization.character_names())
-        .expect("Character-name policy");
-
-    assert_eq!(policy.active().as_str(), "ja-JP");
-    assert_eq!(
-        policy
-            .fallbacks()
-            .iter()
-            .map(arcweft_id::LocaleTag::as_str)
-            .collect::<Vec<_>>(),
-        ["en", "fr"]
-    );
-
-    let base = [
-        ManifestPathSegment::Root(ManifestRootField::Profiles),
-        ManifestPathSegment::Profile(profile_id),
-        ManifestPathSegment::ProfileField(ProfileField::Localization),
-        ManifestPathSegment::Localization(LocalizationField::CharacterNames),
-    ];
-    for (tail, slot, expected) in [
-        (
-            Vec::new(),
-            ManifestSourceSlot::TableHeader,
-            "[profiles.dev.localization.character_names]",
-        ),
-        (
-            vec![ManifestPathSegment::CharacterNames(
-                CharacterNamesField::Active,
-            )],
-            ManifestSourceSlot::ScalarValue,
-            "\"ja-JP\"",
-        ),
-        (
-            vec![ManifestPathSegment::CharacterNames(
-                CharacterNamesField::Fallbacks,
-            )],
-            ManifestSourceSlot::ArrayElement { index: 0 },
-            "\"en\"",
-        ),
-        (
-            vec![ManifestPathSegment::CharacterNames(
-                CharacterNamesField::Fallbacks,
-            )],
-            ManifestSourceSlot::ArrayElement { index: 1 },
-            "\"fr\"",
-        ),
-    ] {
-        let mut segments = base.to_vec();
-        segments.extend(tail);
-        let span = decoded
-            .source_map
-            .get(&source_key(segments, slot))
-            .expect("localization source span");
-        assert_eq!(span.range(), range_of(&source, expected, 0));
-        assert_eq!(span.source(), source_document.identity());
-    }
-}
-
-#[test]
-fn character_name_locale_diagnostics_retain_exact_value_and_related_spans() {
-    let noncanonical = minimal(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-jp\"\nfallbacks = [\"en\"]\n",
-    );
-    let report = decode(document(&noncanonical)).expect_err("noncanonical active locale");
-    let diagnostic = report
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.code() == ManifestDiagnosticCode::CharacterNameLocaleInvalid)
-        .expect("locale diagnostic");
-    assert_eq!(
-        diagnostic.primary().range(),
-        range_of(&noncanonical, "\"ja-jp\"", 0)
-    );
-
-    let duplicate = minimal(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\nfallbacks = [\"en\", \"fr\", \"en\"]\n",
-    );
-    let report = decode(document(&duplicate)).expect_err("duplicate fallback");
-    let diagnostic = report
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| {
-            diagnostic.code() == ManifestDiagnosticCode::CharacterNameFallbackDuplicate
-        })
-        .expect("duplicate fallback diagnostic");
-    assert_eq!(
-        diagnostic.primary().range(),
-        range_of(&duplicate, "\"en\"", 1)
-    );
-    assert_eq!(
-        diagnostic.related()[0].span().range(),
-        range_of(&duplicate, "\"en\"", 0)
-    );
-
-    let active_repeated = minimal(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\nfallbacks = [\"ja-JP\"]\n",
-    );
-    let report = decode(document(&active_repeated)).expect_err("active repeated");
-    let diagnostic = report
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| {
-            diagnostic.code() == ManifestDiagnosticCode::CharacterNameFallbackDuplicate
-        })
-        .expect("active repeat diagnostic");
-    assert_eq!(
-        diagnostic.primary().range(),
-        range_of(&active_repeated, "\"ja-JP\"", 1)
-    );
-    assert_eq!(
-        diagnostic.related()[0].span().range(),
-        range_of(&active_repeated, "\"ja-JP\"", 0)
-    );
-}
-
-#[test]
-fn character_name_fallback_limit_is_exact_and_unknown_fields_fail_closed() {
-    let exact = (0..16)
-        .map(|index| format!("\"qaa-x{index}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let accepted = minimal(&format!(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\nfallbacks = [{exact}]\n"
-    ));
-    let decoded = decode(document(&accepted)).expect("16 fallbacks");
-    assert_eq!(
-        decoded
-            .manifest
-            .profiles
-            .values()
-            .next()
-            .and_then(|profile| profile.localization.character_names())
-            .expect("accepted policy")
-            .fallbacks()
-            .len(),
-        16
-    );
-
-    let one_over = minimal(&format!(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\nfallbacks = [{exact}, \"qaa-x16\"]\n"
-    ));
-    let report = decode(document(&one_over)).expect_err("17 fallbacks");
-    let diagnostic = report
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.code() == ManifestDiagnosticCode::CharacterNameFallbackLimit)
-        .expect("fallback limit diagnostic");
-    assert_eq!(
-        diagnostic.primary().range(),
-        range_of(&one_over, "\"qaa-x16\"", 0)
-    );
-
-    let unknown = minimal(
-        "[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\
-         [profiles.dev.localization.character_names]\n\
-         active = \"ja-JP\"\ndefault = \"en\"\n",
-    );
-    let report = decode(document(&unknown)).expect_err("unknown locale policy field");
-    assert!(
-        report
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code() == ManifestDiagnosticCode::UnknownField)
-    );
 }
 
 #[test]

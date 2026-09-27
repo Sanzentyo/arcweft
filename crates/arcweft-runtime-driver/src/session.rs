@@ -6,8 +6,8 @@ use crate::dialogue::{
     DialogueAdvanceTarget, DialoguePresentationStore,
 };
 use crate::display::{
-    ActiveSessionLocale, BundlePresentationResources, BundlePresentationSnapshot,
-    CatalogDialogueRuntimeContextProvider, DisplayResolution, resolve_display_frames,
+    BundlePresentationResources, BundlePresentationSnapshot, CatalogDialogueRuntimeContextProvider,
+    DisplayResolution, resolve_display_frames,
 };
 use crate::fx_runtime::BundleFxRuntimeError;
 use crate::generation_runtime::{
@@ -72,14 +72,17 @@ use arcweft_core::task::{
     CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
 use arcweft_core::value::{
-    RuntimeBinding, RuntimeDialoguePlainTextContextTemplateProof, RuntimePayload, RuntimeValue,
+    RuntimeBinding, RuntimeDialoguePlainTextContextTemplateProof, RuntimeFormatContext,
+    RuntimePayload, RuntimeValue,
 };
+use arcweft_id::LocaleTag;
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
     InputActionId, InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
 use arcweft_interaction_model::payload::InteractionPayload;
+use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_presentation::appearance::{
     PresentationEnvironment, PresentationEnvironmentField, PresentationEnvironmentOverrides,
     PresentationEnvironmentValue, PresentationEnvironmentValues, SystemPaletteSet,
@@ -128,6 +131,8 @@ use text_control::apply_text_control_write_back_to_controls;
 #[derive(Clone, Debug, PartialEq)]
 pub struct BundleSessionOptions {
     pub entry: Option<EntryRuntimeId>,
+    /// Host-selected initial locale; otherwise the bundle project default.
+    pub active_locale: Option<LocaleTag>,
     pub mode: RuntimeStepMode,
     pub max_ops: usize,
     pub view_root_bindings: Vec<RuntimeBinding>,
@@ -143,6 +148,7 @@ impl Default for BundleSessionOptions {
     fn default() -> Self {
         Self {
             entry: None,
+            active_locale: None,
             mode: RuntimeStepMode::Game,
             max_ops: 64,
             view_root_bindings: Vec::new(),
@@ -277,7 +283,8 @@ pub struct BundleSession {
     runtime_images: GenerationRuntimeTable<SessionRuntime>,
     dialogue_content: DialogueContentCatalog,
     character_presentation: Option<AcceptedCharacterPresentationCatalog>,
-    active_locale: Option<ActiveSessionLocale>,
+    project_locale: ProjectLocaleSpec,
+    active_locale: LocaleTag,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -530,6 +537,11 @@ impl RuntimeInputKind {
 }
 
 impl BundleSession {
+    /// Locale selected for this session's formatter and Character presentation.
+    pub const fn active_locale(&self) -> &LocaleTag {
+        &self.active_locale
+    }
+
     /// Retains this session's selected program for an asynchronous host result.
     pub fn program_owner(&self) -> arcweft_core::task::RuntimeProgramOwner {
         self.executor.program_owner()
@@ -741,6 +753,9 @@ impl BundleSession {
             .collect::<Vec<_>>();
         let mut pure_backend = VmRuntimePureCallBackend::default()
             .with_external_calls(dialogue_backend::GenerationDialogueBackend::new(schemas));
+        let format_context = RuntimeFormatContext::new(self.active_locale.clone());
+        pure_backend.set_format_context(format_context.clone());
+        self.executor.set_format_context(format_context);
         let result = self.executor.step_with_pure_backend(
             runtime,
             RuntimeStepOptions {
@@ -783,18 +798,15 @@ impl BundleSession {
             .ok()
             .map(|image| image.runtime())
             .and_then(|runtime| {
-                runtime
-                    .character_presentation
-                    .as_ref()
-                    .zip(runtime.active_locale.as_ref())
-                    .map(|(catalog, locale)| {
-                        CatalogDialogueRuntimeContextProvider::new(
-                            catalog,
-                            locale,
-                            runtime.character_dialogue_schema.as_deref(),
-                            runtime.view_runtime.style_program(),
-                        )
-                    })
+                runtime.character_presentation.as_ref().map(|catalog| {
+                    CatalogDialogueRuntimeContextProvider::new(
+                        catalog,
+                        &runtime.active_locale,
+                        &runtime.project_locale,
+                        runtime.character_dialogue_schema.as_deref(),
+                        runtime.view_runtime.style_program(),
+                    )
+                })
             });
         let display = resolve_display_frames(
             &self.dialogue_content,
@@ -1779,6 +1791,7 @@ mod view_handler_queue_tests {
                 profile_kind: None,
                 entry: Some("entry.main".to_owned()),
                 adapter: None,
+                locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {

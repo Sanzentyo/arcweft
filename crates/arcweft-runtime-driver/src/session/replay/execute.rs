@@ -21,6 +21,7 @@ use arcweft_core::entry::{RuntimeStatefulEntryRoles, RuntimeValueDigest};
 use arcweft_core::plan::RuntimeEntryRoles;
 use arcweft_core::program_types::RuntimeProgramTypes;
 use arcweft_core::root::{RootStateSnapshotV1, RootTransitionOutcome, TransitionSequence};
+use arcweft_core::value::RuntimeFormatDataIdentity;
 use std::collections::BTreeSet;
 
 impl BundleSession {
@@ -36,13 +37,15 @@ impl BundleSession {
                 .map_err(|error| RootReplayError::ArtifactInspection {
                     message: error.to_string(),
                 })?;
-        let replay_options = options.clone();
+        let mut replay_options = options.clone();
+        replay_options.active_locale = Some(trace.active_locale.clone());
+        let start_options = replay_options.clone();
         replay_root_trace_with(
             bundle,
-            &replay_options,
+            &options,
             trace,
             BundleSessionArtifactIdentity::LogicalBundle { identity },
-            || BundleSession::new(bundle, options),
+            || BundleSession::new(bundle, start_options),
         )
     }
 
@@ -67,9 +70,11 @@ impl BundleSession {
         .map_err(|error| RootReplayError::ArtifactInspection {
             message: error.to_string(),
         })?;
-        let replay_options = options.clone();
-        replay_root_trace_with(&bundle, &replay_options, trace, artifact, || {
-            BundleSession::from_awfb_bytes(bytes, options)
+        let mut replay_options = options.clone();
+        replay_options.active_locale = Some(trace.active_locale.clone());
+        let start_options = replay_options.clone();
+        replay_root_trace_with(&bundle, &options, trace, artifact, || {
+            BundleSession::from_awfb_bytes(bytes, start_options)
         })
     }
 }
@@ -432,6 +437,16 @@ fn preflight(
     }
     if trace.artifact != artifact {
         return Err(RootReplayError::ArtifactMismatch);
+    }
+    if trace.format_data_identity != RuntimeFormatDataIdentity::CURRENT {
+        return Err(RootReplayError::FormatDataMismatch);
+    }
+    if options
+        .active_locale
+        .as_ref()
+        .is_some_and(|locale| locale != &trace.active_locale)
+    {
+        return Err(RootReplayError::LocaleMismatch);
     }
     let program = bundle.product_awbc_program();
     bundle

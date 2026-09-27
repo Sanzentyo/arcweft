@@ -57,6 +57,7 @@ use arcweft_lang_syntax::{
     incremental::{ParsedSource, SyntaxDiagnostic, SyntaxParseStats},
     lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy},
 };
+use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_presentation::fx::FxDefinition;
 use arcweft_project::{
     graph::CompileUnitId,
@@ -167,6 +168,7 @@ pub struct CompiledProject {
     fx_definitions: FxDefinitions,
     view_product: CompiledViewProduct,
     dialogue_profile: CheckedDialogueProfile,
+    locale: ProjectLocaleSpec,
     runtime_plan: RuntimePlanLowerReport,
     #[cfg(test)]
     runtime_facts: arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
@@ -451,6 +453,11 @@ impl CompiledProject {
     /// owner rather than an unchecked runtime fallback.
     pub const fn dialogue_profile(&self) -> &CheckedDialogueProfile {
         &self.dialogue_profile
+    }
+
+    /// Project-wide locale accepted with this exact compilation transaction.
+    pub const fn locale(&self) -> &ProjectLocaleSpec {
+        &self.locale
     }
 
     pub const fn runtime_plan(&self) -> &RuntimePlanLowerReport {
@@ -938,12 +945,6 @@ where
                 &view_value_reachability,
                 view_product.handler_programs(),
                 Some(&dialogue_profile),
-                context.accepted_launch_profile().and_then(|input| {
-                    input
-                        .resolved_profile()
-                        .localization()
-                        .character_names()
-                }),
                 &fx_catalog,
                 context.instantiation_control(),
             )
@@ -1001,6 +1002,7 @@ where
                 fx_definitions: fx_catalog.into_definitions(),
                 view_product,
                 dialogue_profile,
+                locale: context.project_locale().clone(),
                 runtime_plan,
                 #[cfg(test)]
                 runtime_facts,

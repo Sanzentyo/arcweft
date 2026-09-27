@@ -1158,9 +1158,9 @@ mod dynamic_character_dialogue_context_tests {
         id::CharacterId,
         presentation_name::{
             AcceptedCharacterPresentationCatalog, CharacterDisplayNameInput,
-            CharacterDisplayNameRecordInput, CharacterDisplayNameValue, CharacterNameLocale,
-            CharacterNameLocalePolicy, CharacterPresentationCatalogData,
-            CharacterPresentationCatalogInput, CharacterPresentationRole,
+            CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
+            CharacterPresentationCatalogData, CharacterPresentationCatalogInput,
+            CharacterPresentationRole,
         },
     };
     use arcweft_core::{
@@ -1375,7 +1375,8 @@ mod dynamic_character_dialogue_context_tests {
         alice: CharacterId,
         bob: CharacterId,
         catalog: AcceptedCharacterPresentationCatalog,
-        locale: ActiveSessionLocale,
+        locale: LocaleTag,
+        project_locale: ProjectLocaleSpec,
         style_program: ViewStyleProgram,
         sheet_id: ViewStyleSheetId,
         template: DialogueContentFragmentTemplate,
@@ -1473,11 +1474,7 @@ mod dynamic_character_dialogue_context_tests {
                 )
                 .expect("generation binds to its real runtime plan and resources");
             assert_eq!(schema.generation_digest(), declaration.digest());
-            let display_locale =
-                CharacterNameLocale::new(LocaleTag::try_new("en").expect("valid locale"));
-            let display_policy =
-                CharacterNameLocalePolicy::try_new(display_locale.clone(), Vec::new())
-                    .expect("accepted locale policy");
+            let locale = LocaleTag::try_new("en").expect("valid locale");
             let base_name = CharacterDisplayNameInput::Visible(
                 CharacterDisplayNameValue::try_new("Alice Display Name")
                     .expect("accepted display name"),
@@ -1492,13 +1489,13 @@ mod dynamic_character_dialogue_context_tests {
             )
             .expect("accepted display-name row");
             let display_data = CharacterPresentationCatalogData::try_from_inputs(
-                CharacterPresentationCatalogInput::try_new(display_policy, vec![display_record])
+                CharacterPresentationCatalogInput::try_new(vec![display_record])
                     .expect("accepted display catalog input"),
             )
             .expect("accepted display catalog");
             let catalog = AcceptedCharacterPresentationCatalog::publish_initial(display_data)
                 .expect("accepted display generation");
-            let locale = ActiveSessionLocale::new(&display_locale);
+            let project_locale = ProjectLocaleSpec::default();
 
             let template = DialogueContentFragmentTemplate::try_new_canonical(
                 RuntimeDialogueContentTemplateId::from_zero_based(0).expect("template identity"),
@@ -1526,6 +1523,7 @@ mod dynamic_character_dialogue_context_tests {
                 bob,
                 catalog,
                 locale,
+                project_locale,
                 style_program,
                 sheet_id,
                 template,
@@ -1638,6 +1636,7 @@ mod dynamic_character_dialogue_context_tests {
             let provider = CatalogDialogueRuntimeContextProvider::new(
                 &self.catalog,
                 &self.locale,
+                &self.project_locale,
                 Some(&self.schema),
                 Some(&self.style_program),
             );
@@ -1656,6 +1655,7 @@ mod dynamic_character_dialogue_context_tests {
             let provider = CatalogDialogueRuntimeContextProvider::new(
                 &self.catalog,
                 &self.locale,
+                &self.project_locale,
                 Some(&self.schema),
                 Some(&self.style_program),
             );

@@ -1350,7 +1350,6 @@ entry cli @entry.main { goto @flow.main }
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         Some(compiled.dialogue_profile()),
-        None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
     .expect("Object runtime semantic facts")
@@ -2598,11 +2597,7 @@ version = \"0.0.0\"\n\
 \n\
 [profiles.dev]\n\
 kind = \"game\"\n\
-source = \"src/main.arcw\"\n\
-\n\
-[profiles.dev.localization.character_names]\n\
-active = \"ja-JP\"\n\
-fallbacks = []\n",
+source = \"src/main.arcw\"\n",
         )
         .expect("dialogue manifest document"),
     );

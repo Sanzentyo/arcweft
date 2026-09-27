@@ -1240,6 +1240,7 @@ fn agent_controller_test_bundle(
             profile_kind: None,
             entry: Some(format!("entry.{agent_id}")),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {

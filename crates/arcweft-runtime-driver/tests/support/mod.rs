@@ -2,16 +2,15 @@ use arcweft_character::{
     id::CharacterId,
     presentation_name::{
         CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
-        CharacterNameLocale, CharacterNameLocalePolicy, CharacterPresentationCatalogData,
-        CharacterPresentationCatalogGeneration, CharacterPresentationCatalogInput,
-        CharacterPresentationCatalogRevision, CharacterPresentationRole,
+        CharacterPresentationCatalogData, CharacterPresentationCatalogGeneration,
+        CharacterPresentationCatalogInput, CharacterPresentationCatalogRevision,
+        CharacterPresentationRole,
     },
 };
 use arcweft_dialogue::character_presentation::{
     CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
-use arcweft_id::LocaleTag;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
@@ -25,15 +24,12 @@ pub fn character_plan(character: &str) -> CheckedCharacterPresentationPlan {
         CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             catalog.semantic_digest(),
-            catalog.locale_policy_digest(),
         ),
     )
     .expect("fixture character presentation plan is valid")
 }
 
 pub fn character_catalog(character: &str, display_name: &str) -> CharacterPresentationCatalogData {
-    let locale = CharacterNameLocale::new(LocaleTag::try_new("en").unwrap());
-    let policy = CharacterNameLocalePolicy::try_new(locale, Vec::new()).unwrap();
     let base = CharacterDisplayNameInput::Visible(
         CharacterDisplayNameValue::try_new(display_name).unwrap(),
     );
@@ -47,7 +43,7 @@ pub fn character_catalog(character: &str, display_name: &str) -> CharacterPresen
     )
     .unwrap();
     CharacterPresentationCatalogData::try_from_inputs(
-        CharacterPresentationCatalogInput::try_new(policy, vec![record]).unwrap(),
+        CharacterPresentationCatalogInput::try_new(vec![record]).unwrap(),
     )
     .unwrap()
 }

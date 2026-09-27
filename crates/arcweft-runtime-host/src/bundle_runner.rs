@@ -24,8 +24,10 @@ use arcweft_core::step::{
 use arcweft_core::task::{GenerationId, LogicalEpoch};
 use arcweft_core::value::{
     RuntimeBundleAssetArtifactDigest, RuntimeBundleAssetContext, RuntimeBundleAssetValueError,
+    RuntimeFormatContext,
 };
 use arcweft_host_adapter::HostCallPolicy;
+use arcweft_id::LocaleTag;
 use arcweft_interaction_model::audio::AudioCommandEnvelope;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
@@ -101,6 +103,8 @@ pub fn run_bundle_file_with_native_adapters(
 #[derive(Clone, Debug)]
 pub struct BundleRunnerOptions {
     pub entry: Option<EntryRuntimeId>,
+    /// Host-selected initial locale; otherwise the bundle project default.
+    pub active_locale: Option<LocaleTag>,
     pub steps: usize,
     pub mode: BundleRunnerStepMode,
     pub max_ops: usize,
@@ -111,6 +115,7 @@ impl Default for BundleRunnerOptions {
     fn default() -> Self {
         Self {
             entry: None,
+            active_locale: None,
             steps: 8,
             mode: BundleRunnerStepMode::Drain,
             max_ops: 32,
@@ -265,6 +270,11 @@ fn execute_bundle_with_native_adapters(
             Some(workspace.source_path()),
             bundle,
             artifact_identity,
+            options
+                .active_locale
+                .as_ref()
+                .unwrap_or(bundle.manifest.locale.default_locale())
+                .clone(),
             RuntimeStepRunConfig {
                 steps: options.steps,
                 mode: options.mode,
@@ -478,11 +488,12 @@ fn run_product_runtime_steps(
     source_path: Option<&Path>,
     bundle: &ArcweftBundle,
     artifact_identity: BundleArtifactIdentity,
+    active_locale: LocaleTag,
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<RuntimeRunTrace, BundleRunnerError> {
-    let mut executor = RuntimeExecutorInstance::from_awbc_product(program)?;
+    let mut executor = RuntimeExecutorInstance::from_awbc_product(program, active_locale)?;
     run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {
@@ -619,19 +630,25 @@ impl RuntimeExecutorInstance {
         self.executor.generation()
     }
 
-    fn from_awbc_product(program: BundleRunnerRuntimeProgram) -> Result<Self, BundleRunnerError> {
+    fn from_awbc_product(
+        program: BundleRunnerRuntimeProgram,
+        active_locale: LocaleTag,
+    ) -> Result<Self, BundleRunnerError> {
         let pure_plan = Arc::new(
             RuntimePlanBuilder::new()
                 .finish()
                 .expect("empty runtime plan is valid"),
         );
-        Ok(Self {
-            executor: ArcweftRuntimeExecutor::from_awbc_product(*program.program, program.entry)?,
-            pure: RuntimePureAccelerator::with_config(
-                RuntimePureAcceleratorConfig::default(),
-                &pure_plan,
-            ),
-        })
+        let mut executor =
+            ArcweftRuntimeExecutor::from_awbc_product(*program.program, program.entry)?;
+        let format_context = RuntimeFormatContext::new(active_locale);
+        executor.set_format_context(format_context.clone());
+        let mut pure = RuntimePureAccelerator::with_config(
+            RuntimePureAcceleratorConfig::default(),
+            &pure_plan,
+        );
+        pure.set_format_context(format_context);
+        Ok(Self { executor, pure })
     }
 
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
@@ -855,7 +872,7 @@ mod tests {
         id::CharacterId,
         presentation_name::{
             CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
-            CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+            CharacterPresentationSemanticDigest,
         },
     };
     use arcweft_core::effect::{
@@ -923,7 +940,6 @@ mod tests {
             CharacterPresentationCatalogGeneration::new(
                 CharacterPresentationCatalogRevision::INITIAL,
                 CharacterPresentationSemanticDigest::from_bytes([1; 32]),
-                CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
             ),
         )
         .unwrap()
@@ -1275,6 +1291,7 @@ mod tests {
                 profile_kind: None,
                 entry: None,
                 adapter: None,
+                locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
@@ -1764,6 +1781,7 @@ mod tests {
                 profile_kind: None,
                 entry: Some("entry.main".to_owned()),
                 adapter: None,
+                locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {

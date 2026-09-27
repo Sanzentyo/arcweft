@@ -510,6 +510,7 @@ fn try_test_bundle(
             profile_kind: None,
             entry: None,
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {

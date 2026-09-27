@@ -3,9 +3,8 @@
 use super::{
     error::CharacterPresentationCatalogCodecError,
     wire::{
-        FIELD_CATALOG_HEADER, FIELD_CHARACTER_RECORDS, FIELD_FALLBACK_LOCALES,
-        FIELD_LOCALIZED_RECORDS, MISSING_REF, WireCatalogHeader, WireCharacterRecord,
-        WireLocalizedRecord, codec_budget,
+        FIELD_CATALOG_HEADER, FIELD_CHARACTER_RECORDS, FIELD_LOCALIZED_RECORDS, MISSING_REF,
+        WireCatalogHeader, WireCharacterRecord, WireLocalizedRecord, codec_budget,
     },
 };
 use crate::resource_codec::{
@@ -26,8 +25,7 @@ pub(super) fn encode(
     let strings = StringTable::with_budget(strings, budget)?;
     let public_ids = PublicIdTable::with_budget(public_ids, budget)?;
     let counts = CatalogCounts::try_from_catalog(catalog)?;
-    let header_payload = encode_header(catalog, &strings, counts)?;
-    let fallback_payload = encode_fallbacks(catalog, &strings)?;
+    let header_payload = encode_header(catalog, counts);
     let record_payloads = encode_records(catalog, &strings, &public_ids, counts)?;
     ProductResourceEnvelope::with_budget(
         ProductSectionCodecKind::LocaleCatalog,
@@ -39,11 +37,6 @@ pub(super) fn encode(
                 FIELD_CATALOG_HEADER,
                 ResourceWireType::Bytes,
                 header_payload,
-            ),
-            ResourceField::required(
-                FIELD_FALLBACK_LOCALES,
-                ResourceWireType::Bytes,
-                fallback_payload,
             ),
             ResourceField::required(
                 FIELD_CHARACTER_RECORDS,
@@ -65,7 +58,6 @@ pub(super) fn encode(
 
 #[derive(Clone, Copy)]
 struct CatalogCounts {
-    fallbacks: u32,
     characters: u32,
     localized: u32,
 }
@@ -85,7 +77,6 @@ impl CatalogCounts {
                 })
         })?;
         Ok(Self {
-            fallbacks: checked_u32(catalog.policy().fallbacks().len(), "fallback count")?,
             characters: checked_u32(catalog.records().len(), "Character count")?,
             localized,
         })
@@ -93,8 +84,7 @@ impl CatalogCounts {
 
     fn record_count(self) -> Result<u32, CharacterPresentationCatalogCodecError> {
         1_u32
-            .checked_add(self.fallbacks)
-            .and_then(|count| count.checked_add(self.characters))
+            .checked_add(self.characters)
             .and_then(|count| count.checked_add(self.localized))
             .ok_or(CharacterPresentationCatalogCodecError::ArithmeticOverflow {
                 operation: "LocaleCatalog record count",
@@ -102,40 +92,17 @@ impl CatalogCounts {
     }
 }
 
-fn encode_header(
-    catalog: &CharacterPresentationCatalogData,
-    strings: &StringTable,
-    counts: CatalogCounts,
-) -> Result<Vec<u8>, CharacterPresentationCatalogCodecError> {
-    let mut payload = Vec::with_capacity(88);
+fn encode_header(catalog: &CharacterPresentationCatalogData, counts: CatalogCounts) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(48);
     WireCatalogHeader {
         flags: 0,
-        default_active_locale: string_id(
-            strings,
-            catalog.policy().default_active().locale_tag().as_str(),
-        )?,
-        fallback_count: counts.fallbacks,
         character_count: counts.characters,
         localized_count: counts.localized,
         reserved: 0,
         semantic_digest: *catalog.semantic_digest().as_bytes(),
-        locale_policy_digest: *catalog.locale_policy_digest().as_bytes(),
     }
     .encode_into(&mut payload);
-    Ok(payload)
-}
-
-fn encode_fallbacks(
-    catalog: &CharacterPresentationCatalogData,
-    strings: &StringTable,
-) -> Result<Vec<u8>, CharacterPresentationCatalogCodecError> {
-    let mut payload = Vec::with_capacity(catalog.policy().fallbacks().len().saturating_mul(4));
-    for fallback in catalog.policy().fallbacks() {
-        payload.extend_from_slice(
-            &string_id(strings, fallback.locale().locale_tag().as_str())?.to_le_bytes(),
-        );
-    }
-    Ok(payload)
+    payload
 }
 
 struct RecordPayloads {
@@ -241,17 +208,6 @@ fn encode_localized_records(
 
 fn canonical_tables(catalog: &CharacterPresentationCatalogData) -> (Vec<String>, Vec<String>) {
     let mut strings = BTreeSet::new();
-    strings.insert(
-        catalog
-            .policy()
-            .default_active()
-            .locale_tag()
-            .as_str()
-            .to_owned(),
-    );
-    for fallback in catalog.policy().fallbacks() {
-        strings.insert(fallback.locale().locale_tag().as_str().to_owned());
-    }
 
     let mut public_ids = Vec::with_capacity(catalog.records().len());
     for record in catalog.records() {

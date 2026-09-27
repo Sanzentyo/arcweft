@@ -20,8 +20,8 @@ use crate::value::{
     AwbcRuntimeValueSnapshot, RuntimeArcError, RuntimeArcErrorContextKind,
     RuntimeArcErrorContextPending, RuntimeArcErrorContextStart, RuntimeBinding,
     RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
-    RuntimeCallableValue, RuntimeFlowParameterBinding, RuntimeInt, RuntimeIterator, RuntimeSeq,
-    RuntimeUInt, RuntimeValue,
+    RuntimeCallableValue, RuntimeFlowParameterBinding, RuntimeFormatContext, RuntimeInt,
+    RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -76,12 +76,17 @@ pub struct FiberFrame {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FiberFormatState {
     site: FiberCursor,
+    format_context: RuntimeFormatContext,
     next_operand: usize,
     values: Vec<Option<RuntimeValue>>,
     first_recoverable: Option<String>,
 }
 
 impl FiberFormatState {
+    pub const fn format_context(&self) -> &RuntimeFormatContext {
+        &self.format_context
+    }
+
     pub const fn site(&self) -> FiberCursor {
         self.site
     }
@@ -402,6 +407,7 @@ pub struct AwbcFiberFrameSnapshot {
 #[serde(deny_unknown_fields)]
 pub struct AwbcFiberFormatStateSnapshot {
     pub site: FiberCursor,
+    pub format_context: RuntimeFormatContext,
     pub next_operand: usize,
     pub values: Vec<Option<AwbcRuntimeValueSnapshot>>,
     pub first_recoverable: Option<String>,
@@ -721,6 +727,7 @@ impl AwbcFiberFormatStateSnapshot {
     fn from_live(state: &FiberFormatState) -> AwbcSaveResult<Self> {
         Ok(Self {
             site: state.site,
+            format_context: state.format_context.clone(),
             next_operand: state.next_operand,
             values: state
                 .values
@@ -739,6 +746,7 @@ impl AwbcFiberFormatStateSnapshot {
     fn into_live(self, owner: &RuntimeProgramOwner) -> AwbcSaveResult<FiberFormatState> {
         Ok(FiberFormatState {
             site: self.site,
+            format_context: self.format_context,
             next_operand: self.next_operand,
             values: self
                 .values
@@ -2037,6 +2045,7 @@ impl FiberState {
     pub(crate) fn begin_format_content(
         &mut self,
         program: &AwbcProgram,
+        context: &RuntimeFormatContext,
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let site = self.cursor;
@@ -2053,6 +2062,7 @@ impl FiberState {
         }
         frame.format = Some(FiberFormatState {
             site,
+            format_context: context.clone(),
             next_operand: 0,
             values: vec![None; operands.len()],
             first_recoverable: None,
@@ -2786,6 +2796,9 @@ fn validate_format_state(
     frame: &FiberFrame,
     state: &FiberFormatState,
 ) -> Result<(), FiberStateError> {
+    if !state.format_context.has_current_data() {
+        return Err(FiberStateError::InvalidFrame);
+    }
     if state.site.function != frame.function {
         return Err(FiberStateError::InvalidFrame);
     }
@@ -5051,7 +5064,9 @@ mod tests {
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
         let site = fiber.cursor;
-        fiber.begin_format_content(&program).unwrap();
+        fiber
+            .begin_format_content(&program, &RuntimeFormatContext::default())
+            .unwrap();
         fiber
             .push_call_frame_with_continuation(
                 &program,
@@ -5110,7 +5125,9 @@ mod tests {
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
         let site = fiber.cursor;
-        fiber.begin_format_content(&program).unwrap();
+        fiber
+            .begin_format_content(&program, &RuntimeFormatContext::default())
+            .unwrap();
         fiber
             .push_call_frame_with_continuation(
                 &program,
@@ -5161,7 +5178,9 @@ mod tests {
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
         let site = fiber.cursor;
-        fiber.begin_format_content(&program).unwrap();
+        fiber
+            .begin_format_content(&program, &RuntimeFormatContext::default())
+            .unwrap();
         fiber
             .push_call_frame_with_continuation(
                 &program,
@@ -5202,7 +5221,9 @@ mod tests {
         let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
         fiber.frames[0].registers[0] = Some(RuntimeValue::Unit);
         let site = fiber.cursor;
-        fiber.begin_format_content(&program).unwrap();
+        fiber
+            .begin_format_content(&program, &RuntimeFormatContext::default())
+            .unwrap();
         fiber
             .push_call_frame_with_continuation(
                 &program,

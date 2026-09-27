@@ -108,7 +108,8 @@ pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use format_content::{
-    RuntimeFormatAttemptError, RuntimeFormatPrimaryKind, finish_format_content_attempt,
+    RuntimeFormatAttemptError, RuntimeFormatContext, RuntimeFormatDataIdentity,
+    RuntimeFormatPrimaryKind, finish_format_content_attempt,
 };
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};

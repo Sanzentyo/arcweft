@@ -75,7 +75,6 @@ pub(crate) fn test_character_plan()
         CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             catalog.semantic_digest(),
-            catalog.locale_policy_digest(),
         ),
     )
     .unwrap()
@@ -86,11 +85,9 @@ pub(crate) fn test_character_catalog()
 -> arcweft_character::presentation_name::CharacterPresentationCatalogData {
     use arcweft_character::presentation_name::{
         CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
-        CharacterNameLocale, CharacterNameLocalePolicy, CharacterPresentationCatalogData,
-        CharacterPresentationCatalogInput, CharacterPresentationRole,
+        CharacterPresentationCatalogData, CharacterPresentationCatalogInput,
+        CharacterPresentationRole,
     };
-    let locale = CharacterNameLocale::new(arcweft_id::LocaleTag::try_new("en").unwrap());
-    let policy = CharacterNameLocalePolicy::try_new(locale, Vec::new()).unwrap();
     let record = CharacterDisplayNameRecordInput::try_new(
         arcweft_character::id::CharacterId::try_new("character.fixture").unwrap(),
         CharacterPresentationRole::Character,
@@ -103,7 +100,7 @@ pub(crate) fn test_character_catalog()
     )
     .unwrap();
     CharacterPresentationCatalogData::try_from_inputs(
-        CharacterPresentationCatalogInput::try_new(policy, vec![record]).unwrap(),
+        CharacterPresentationCatalogInput::try_new(vec![record]).unwrap(),
     )
     .unwrap()
 }
@@ -474,6 +471,7 @@ mod tests {
                 profile_kind: None,
                 entry: Some("entry.main".to_owned()),
                 adapter: None,
+                locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
@@ -558,6 +556,7 @@ mod tests {
                 profile_kind: None,
                 entry: Some("entry.main".to_owned()),
                 adapter: None,
+                locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {

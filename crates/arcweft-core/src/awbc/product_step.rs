@@ -853,6 +853,7 @@ enum AwbcProductExecutorStatus {
 pub struct AwbcProductStepExecutor {
     pub(super) program: Arc<AwbcProgram>,
     artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
+    format_context: crate::value::RuntimeFormatContext,
     plain_text_context_template_proof:
         Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
     fiber: FiberState,
@@ -892,6 +893,16 @@ pub struct AwbcProductStepExecutor {
 }
 
 impl AwbcProductStepExecutor {
+    /// Selects the ambient locale for formatter attempts started by later steps.
+    pub fn set_format_context(&mut self, context: crate::value::RuntimeFormatContext) {
+        self.format_context = context;
+    }
+
+    #[must_use]
+    pub const fn format_context(&self) -> &crate::value::RuntimeFormatContext {
+        &self.format_context
+    }
+
     #[must_use]
     pub const fn runtime_generation(&self) -> GenerationId {
         self.runtime_generation
@@ -1326,6 +1337,7 @@ impl AwbcProductStepExecutor {
         Self {
             program,
             artifact_fingerprint,
+            format_context: crate::value::RuntimeFormatContext::default(),
             plain_text_context_template_proof: None,
             fiber,
             runtime_generation,
@@ -1441,6 +1453,7 @@ impl AwbcProductStepExecutor {
         options: RuntimeStepOptions,
     ) -> RuntimeStepResult {
         let mut backend = VmRuntimePureCallBackend::default();
+        backend.set_format_context(self.format_context.clone());
         self.step_with_pure_backend(input, options, &mut backend)
     }
 
@@ -1679,6 +1692,7 @@ impl AwbcProductStepExecutor {
                 Arc::clone(&self.program),
             ),
         }
+        .with_format_context(self.format_context.clone())
     }
 
     fn has_attemptable_work(&self) -> bool {

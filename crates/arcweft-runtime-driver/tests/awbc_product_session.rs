@@ -51,7 +51,7 @@ use arcweft_core::{
         RuntimeImageHandleValue, RuntimeValue,
     },
 };
-use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily};
+use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, LocaleTag};
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
@@ -67,8 +67,8 @@ use arcweft_runtime_driver::{
         PresentationResourceState,
     },
     session::{
-        BundleHotSwapError, BundleSession, BundleSessionError, BundleSessionOptions,
-        BundleStepInput,
+        BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionError,
+        BundleSessionOptions, BundleStepInput,
     },
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
@@ -207,6 +207,7 @@ fn entry_selection_product_bundle() -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
@@ -299,6 +300,79 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
         .export_session_save_bytes()
         .expect("restored session save exports");
     assert_eq!(save, restored_save);
+}
+
+#[test]
+fn session_save_restores_host_selected_locale_into_default_session() {
+    let bytes = product_awfb_bytes("entry.main");
+    let selected = LocaleTag::try_new("de-DE").expect("canonical locale");
+    let mut session = BundleSession::from_awfb_bytes(
+        &bytes,
+        BundleSessionOptions {
+            active_locale: Some(selected.clone()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("host-selected session starts");
+    assert_eq!(session.active_locale(), &selected);
+    session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    let save = session
+        .export_session_save_bytes()
+        .expect("session exports");
+
+    let mut restored = BundleSession::from_awfb_bytes(&bytes, BundleSessionOptions::default())
+        .expect("default session starts");
+    assert_ne!(restored.active_locale(), &selected);
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("selected locale restores atomically");
+    assert_eq!(restored.active_locale(), &selected);
+    assert_eq!(
+        restored
+            .export_session_save_bytes()
+            .expect("restored session exports"),
+        save
+    );
+}
+
+#[test]
+fn content_swap_preserves_active_locale_when_project_default_changes() {
+    let base = product_bundle_with_label("entry.main", "locale-swap.arcw");
+    let selected = LocaleTag::try_new("de-DE").expect("canonical active locale");
+    let mut session = BundleSession::new(
+        &base,
+        BundleSessionOptions {
+            active_locale: Some(selected.clone()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("selected session starts");
+    let mut target = base.clone();
+    target.manifest.locale = arcweft_manifest_model::ProjectLocaleSpec::try_new(
+        LocaleTag::try_new("ja-JP").expect("canonical source locale"),
+        LocaleTag::try_new("fr-FR").expect("canonical next default"),
+        [],
+    )
+    .expect("accepted project locale");
+
+    session
+        .hot_swap_bundle(&target)
+        .expect("content swap succeeds");
+    assert_eq!(session.active_locale(), &selected);
+    session
+        .start_foreground_entry_on_current_generation(BundleEntryStart::SessionDefault)
+        .expect("active generation starts after content swap");
+    assert_eq!(session.active_locale(), &selected);
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("session snapshots")
+            .active_locale,
+        selected
+    );
 }
 
 #[test]
@@ -1574,6 +1648,7 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.main".to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
@@ -1621,6 +1696,7 @@ fn product_bundle_with_program(
             profile_kind: None,
             entry: Some(entry.to_owned()),
             adapter: None,
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {

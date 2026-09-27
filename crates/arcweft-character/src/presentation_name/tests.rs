@@ -2,9 +2,8 @@ use super::{
     AcceptedCharacterPresentationCatalog, CharacterDisplayNameEntry, CharacterDisplayNameInput,
     CharacterDisplayNameKey, CharacterDisplayNameLookupError, CharacterDisplayNameRecordInput,
     CharacterDisplayNameResolutionSource, CharacterDisplayNameValue,
-    CharacterDisplayNameValueError, CharacterNameFallbackLocale, CharacterNameLocale,
-    CharacterNameLocalePolicy, CharacterNameLocalePolicyError, CharacterNameSourceLocale,
-    CharacterPresentationCatalogData, CharacterPresentationCatalogError,
+    CharacterDisplayNameValueError, CharacterNameLocale, CharacterNameResolutionLocales,
+    CharacterNameSourceLocale, CharacterPresentationCatalogData, CharacterPresentationCatalogError,
     CharacterPresentationCatalogInput, CharacterPresentationCatalogRevision,
     CharacterPresentationRole, DigestParseError, LocalizedCharacterDisplayNameInput,
 };
@@ -13,6 +12,10 @@ use arcweft_id::LocaleTag;
 
 fn locale(value: &str) -> CharacterNameLocale {
     CharacterNameLocale::new(LocaleTag::try_new(value).expect("canonical locale"))
+}
+
+fn tag(value: &str) -> LocaleTag {
+    LocaleTag::try_new(value).expect("canonical locale")
 }
 
 fn visible(value: &str) -> CharacterDisplayNameInput {
@@ -28,22 +31,12 @@ fn localized(
     LocalizedCharacterDisplayNameInput::new(locale(locale_value), entry)
 }
 
-fn policy(active: &str, fallbacks: &[&str]) -> CharacterNameLocalePolicy {
-    CharacterNameLocalePolicy::try_new(
-        locale(active),
-        fallbacks
-            .iter()
-            .map(|value| CharacterNameFallbackLocale::new(locale(value)))
-            .collect(),
-    )
-    .expect("locale policy")
-}
-
-#[test]
-fn engine_default_is_japanese_first_without_fallbacks() {
-    let policy = CharacterNameLocalePolicy::engine_default();
-    assert_eq!(policy.default_active().locale_tag().as_str(), "ja-JP");
-    assert!(policy.fallbacks().is_empty());
+fn resolution_locales<'a>(
+    active: &'a LocaleTag,
+    source: &'a LocaleTag,
+    fallbacks: &'a [LocaleTag],
+) -> CharacterNameResolutionLocales<'a> {
+    CharacterNameResolutionLocales::new(active, source, fallbacks)
 }
 
 fn record(
@@ -65,12 +58,8 @@ fn record(
     .expect("Character display-name record")
 }
 
-fn catalog(
-    locale_policy: CharacterNameLocalePolicy,
-    records: Vec<CharacterDisplayNameRecordInput>,
-) -> CharacterPresentationCatalogData {
-    let input =
-        CharacterPresentationCatalogInput::try_new(locale_policy, records).expect("catalog input");
+fn catalog(records: Vec<CharacterDisplayNameRecordInput>) -> CharacterPresentationCatalogData {
+    let input = CharacterPresentationCatalogInput::try_new(records).expect("catalog input");
     CharacterPresentationCatalogData::try_from_inputs(input).expect("accepted catalog")
 }
 
@@ -135,71 +124,26 @@ fn generated_keys_hex_encode_exact_canonical_bytes() {
 }
 
 #[test]
-fn locale_policy_preserves_order_and_rejects_duplicates() {
-    let fallbacks = (0..16)
-        .map(|index| CharacterNameFallbackLocale::new(locale(&format!("en-x{index:02}"))))
-        .collect();
-    let exact = CharacterNameLocalePolicy::try_new(locale("ja-JP"), fallbacks).unwrap();
-    assert_eq!(exact.fallbacks().len(), 16);
-
-    let one_over = (0..17)
-        .map(|index| CharacterNameFallbackLocale::new(locale(&format!("en-x{index:02}"))))
-        .collect();
-    assert_eq!(
-        CharacterNameLocalePolicy::try_new(locale("ja-JP"), one_over),
-        Err(CharacterNameLocalePolicyError::TooManyFallbacks {
-            observed: 17,
-            maximum: 16,
-        })
-    );
-
-    assert!(matches!(
-        CharacterNameLocalePolicy::try_new(
-            locale("ja-JP"),
-            vec![
-                CharacterNameFallbackLocale::new(locale("en")),
-                CharacterNameFallbackLocale::new(locale("en")),
-            ],
-        ),
-        Err(CharacterNameLocalePolicyError::DuplicateFallback {
-            first: 0,
-            duplicate: 1,
-            ..
-        })
-    ));
-    assert!(matches!(
-        CharacterNameLocalePolicy::try_new(
-            locale("ja-JP"),
-            vec![CharacterNameFallbackLocale::new(locale("ja-JP"))],
-        ),
-        Err(CharacterNameLocalePolicyError::RepeatsDefaultActive { ordinal: 0, .. })
-    ));
-}
-
-#[test]
 fn catalog_canonicalizes_records_and_localized_entries() {
-    let data = catalog(
-        policy("ja-JP", &[]),
-        vec![
-            record(
-                "character.zed",
-                None,
-                Some(visible("Zed")),
-                Vec::new(),
-                None,
-            ),
-            record(
-                "character.alice",
-                None,
-                None,
-                vec![
-                    localized("fr", visible("Alice FR")),
-                    localized("en", visible("Alice")),
-                ],
-                None,
-            ),
-        ],
-    );
+    let data = catalog(vec![
+        record(
+            "character.zed",
+            None,
+            Some(visible("Zed")),
+            Vec::new(),
+            None,
+        ),
+        record(
+            "character.alice",
+            None,
+            None,
+            vec![
+                localized("fr", visible("Alice FR")),
+                localized("en", visible("Alice")),
+            ],
+            None,
+        ),
+    ]);
 
     assert_eq!(data.records()[0].character().as_str(), "character.alice");
     assert_eq!(
@@ -218,23 +162,25 @@ fn catalog_canonicalizes_records_and_localized_entries() {
 
 #[test]
 fn resolution_obeys_exact_order_and_hidden_is_terminal() {
-    let data = catalog(
-        policy("ja-JP", &["en", "fr"]),
-        vec![record(
-            "character.alice",
-            Some("de"),
-            Some(visible("Base")),
-            vec![
-                localized("en", CharacterDisplayNameInput::Hidden),
-                localized("fr", visible("Alice FR")),
-                localized("de", visible("Alice DE")),
-            ],
-            Some("Alice declaration"),
-        )],
-    );
+    let data = catalog(vec![record(
+        "character.alice",
+        Some("de"),
+        Some(visible("Base")),
+        vec![
+            localized("en", CharacterDisplayNameInput::Hidden),
+            localized("fr", visible("Alice FR")),
+            localized("de", visible("Alice DE")),
+        ],
+        Some("Alice declaration"),
+    )]);
     let character = CharacterId::try_new("character.alice").unwrap();
 
-    let hidden = data.resolve(&character, &locale("ja-JP")).unwrap();
+    let hidden = data
+        .resolve(
+            &character,
+            resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[tag("en"), tag("fr")]),
+        )
+        .unwrap();
     assert!(hidden.is_hidden());
     assert_eq!(hidden.value(), "");
     assert_eq!(hidden.key(), None);
@@ -243,7 +189,12 @@ fn resolution_obeys_exact_order_and_hidden_is_terminal() {
         CharacterDisplayNameResolutionSource::ProjectFallback { ordinal: 0 }
     );
 
-    let active = data.resolve(&character, &locale("fr")).unwrap();
+    let active = data
+        .resolve(
+            &character,
+            resolution_locales(&tag("fr"), &tag("ja-JP"), &[tag("en")]),
+        )
+        .unwrap();
     assert_eq!(active.value(), "Alice FR");
     assert_eq!(
         active.source(),
@@ -253,20 +204,17 @@ fn resolution_obeys_exact_order_and_hidden_is_terminal() {
 
 #[test]
 fn resolution_uses_source_base_and_declaration_without_inference() {
-    let source = catalog(
-        policy("ja-JP", &["fr"]),
-        vec![record(
-            "character.source",
-            Some("de"),
-            None,
-            vec![localized("de", visible("Quelle"))],
-            None,
-        )],
-    );
+    let source = catalog(vec![record(
+        "character.source",
+        Some("de"),
+        None,
+        vec![localized("de", visible("Quelle"))],
+        None,
+    )]);
     let resolved = source
         .resolve(
             &CharacterId::try_new("character.source").unwrap(),
-            &locale("ja-JP"),
+            resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[tag("fr")]),
         )
         .unwrap();
     assert_eq!(resolved.value(), "Quelle");
@@ -275,41 +223,35 @@ fn resolution_uses_source_base_and_declaration_without_inference() {
         CharacterDisplayNameResolutionSource::CharacterSourceLocale
     );
 
-    let base = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
-            "character.base",
-            None,
-            Some(visible("Base")),
-            Vec::new(),
-            Some("Declaration"),
-        )],
-    );
+    let base = catalog(vec![record(
+        "character.base",
+        None,
+        Some(visible("Base")),
+        Vec::new(),
+        Some("Declaration"),
+    )]);
     assert_eq!(
         base.resolve(
             &CharacterId::try_new("character.base").unwrap(),
-            &locale("ja-JP")
+            resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[])
         )
         .unwrap()
         .source(),
         CharacterDisplayNameResolutionSource::Base
     );
 
-    let declaration = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
-            "character.declaration",
-            None,
-            None,
-            vec![localized("de", visible("Nicht ausgewählt"))],
-            Some("Declaration"),
-        )],
-    );
+    let declaration = catalog(vec![record(
+        "character.declaration",
+        None,
+        None,
+        vec![localized("de", visible("Nicht ausgewählt"))],
+        Some("Declaration"),
+    )]);
     assert_eq!(
         declaration
             .resolve(
                 &CharacterId::try_new("character.declaration").unwrap(),
-                &locale("ja-JP")
+                resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[])
             )
             .unwrap()
             .source(),
@@ -318,43 +260,63 @@ fn resolution_uses_source_base_and_declaration_without_inference() {
 }
 
 #[test]
-fn exhausted_resolution_reports_exact_attempted_locales() {
-    let data = catalog(
-        policy("ja-JP", &["fr"]),
-        vec![record(
-            "character.alice",
-            None,
-            None,
-            vec![localized("de", visible("Alice DE"))],
-            None,
-        )],
+fn project_source_is_the_final_locale_probe_and_duplicate_steps_are_skipped() {
+    let data = catalog(vec![record(
+        "character.alice",
+        None,
+        None,
+        vec![localized("ja-JP", visible("アリス"))],
+        None,
+    )]);
+    let character = CharacterId::try_new("character.alice").unwrap();
+    let resolved = data
+        .resolve(
+            &character,
+            resolution_locales(&tag("fr"), &tag("ja-JP"), &[tag("fr"), tag("en")]),
+        )
+        .unwrap();
+    assert_eq!(resolved.value(), "アリス");
+    assert_eq!(
+        resolved.source(),
+        CharacterDisplayNameResolutionSource::ProjectSourceLocale
     );
+}
+
+#[test]
+fn exhausted_resolution_reports_exact_attempted_locales() {
+    let data = catalog(vec![record(
+        "character.alice",
+        None,
+        None,
+        vec![localized("de", visible("Alice DE"))],
+        None,
+    )]);
     let character = CharacterId::try_new("character.alice").unwrap();
     assert_eq!(
-        data.resolve(&character, &locale("ja-JP")),
+        data.resolve(
+            &character,
+            resolution_locales(&tag("ja-JP"), &tag("en"), &[tag("fr")]),
+        ),
         Err(CharacterDisplayNameLookupError::MissingAcceptedName {
             character,
             active: locale("ja-JP"),
-            attempted_locales: vec![locale("ja-JP"), locale("fr")].into_boxed_slice(),
+            attempted_locales: vec![locale("ja-JP"), locale("fr"), locale("en")].into_boxed_slice(),
             has_base: false,
             has_declaration: false,
         })
     );
 
-    let parent_only = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
-            "character.parent_only",
-            None,
-            None,
-            vec![localized("ja", visible("親ロケール"))],
-            None,
-        )],
-    );
+    let parent_only = catalog(vec![record(
+        "character.parent_only",
+        None,
+        None,
+        vec![localized("ja", visible("親ロケール"))],
+        None,
+    )]);
     assert!(matches!(
         parent_only.resolve(
             &CharacterId::try_new("character.parent_only").unwrap(),
-            &locale("ja-JP"),
+            resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[]),
         ),
         Err(CharacterDisplayNameLookupError::MissingAcceptedName { .. })
     ));
@@ -401,11 +363,11 @@ fn record_constraints_reject_duplicates_and_invalid_roles() {
         None,
     )
     .unwrap();
-    let narrator_catalog = catalog(policy("ja-JP", &[]), vec![narrator_hidden]);
+    let narrator_catalog = catalog(vec![narrator_hidden]);
     let resolved = narrator_catalog
         .resolve(
             &CharacterId::try_new("character.narrator").unwrap(),
-            &locale("ja-JP"),
+            resolution_locales(&tag("ja-JP"), &tag("ja-JP"), &[]),
         )
         .unwrap();
     assert!(resolved.is_hidden());
@@ -454,7 +416,7 @@ fn catalog_input_rejects_missing_source_locale_and_duplicate_characters() {
         None,
     );
     assert!(matches!(
-        CharacterPresentationCatalogInput::try_new(policy("ja-JP", &[]), vec![first, duplicate],),
+        CharacterPresentationCatalogInput::try_new(vec![first, duplicate]),
         Err(CharacterPresentationCatalogError::DuplicateCharacter {
             first: 0,
             duplicate: 1,
@@ -501,89 +463,51 @@ fn localized_entry_limit_is_exact() {
 }
 
 #[test]
-fn digests_are_canonical_and_policy_identity_preserves_fallback_order() {
-    let first = catalog(
-        policy("ja-JP", &["en", "fr"]),
-        vec![
-            record(
-                "character.zed",
-                None,
-                Some(visible("Zed")),
-                Vec::new(),
-                None,
-            ),
-            record(
-                "character.alice",
-                None,
-                Some(visible("Alice")),
-                Vec::new(),
-                None,
-            ),
-        ],
-    );
-    let reordered = catalog(
-        policy("ja-JP", &["en", "fr"]),
-        vec![
-            record(
-                "character.alice",
-                None,
-                Some(visible("Alice")),
-                Vec::new(),
-                None,
-            ),
-            record(
-                "character.zed",
-                None,
-                Some(visible("Zed")),
-                Vec::new(),
-                None,
-            ),
-        ],
-    );
-    let changed_policy = catalog(
-        policy("ja-JP", &["fr", "en"]),
-        vec![
-            record(
-                "character.alice",
-                None,
-                Some(visible("Alice")),
-                Vec::new(),
-                None,
-            ),
-            record(
-                "character.zed",
-                None,
-                Some(visible("Zed")),
-                Vec::new(),
-                None,
-            ),
-        ],
-    );
-
-    assert_eq!(first.semantic_digest(), reordered.semantic_digest());
-    assert_eq!(
-        first.semantic_digest(),
-        changed_policy.semantic_digest(),
-        "locale policy is excluded from semantic identity"
-    );
-    assert_ne!(
-        first.locale_policy_digest(),
-        changed_policy.locale_policy_digest()
-    );
-}
-
-#[test]
-fn digest_text_and_serde_are_strict_lowercase_hex() {
-    let data = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
+fn semantic_digest_is_canonical_across_record_order() {
+    let first = catalog(vec![
+        record(
+            "character.zed",
+            None,
+            Some(visible("Zed")),
+            Vec::new(),
+            None,
+        ),
+        record(
             "character.alice",
             None,
             Some(visible("Alice")),
             Vec::new(),
             None,
-        )],
-    );
+        ),
+    ]);
+    let reordered = catalog(vec![
+        record(
+            "character.alice",
+            None,
+            Some(visible("Alice")),
+            Vec::new(),
+            None,
+        ),
+        record(
+            "character.zed",
+            None,
+            Some(visible("Zed")),
+            Vec::new(),
+            None,
+        ),
+    ]);
+    assert_eq!(first.semantic_digest(), reordered.semantic_digest());
+}
+
+#[test]
+fn digest_text_and_serde_are_strict_lowercase_hex() {
+    let data = catalog(vec![record(
+        "character.alice",
+        None,
+        Some(visible("Alice")),
+        Vec::new(),
+        None,
+    )]);
     let digest = data.semantic_digest();
     let text = digest.to_lower_hex();
     assert_eq!(text.len(), 64);
@@ -605,32 +529,26 @@ fn digest_text_and_serde_are_strict_lowercase_hex() {
 
 #[test]
 fn publication_candidates_do_not_mutate_the_prior_generation() {
-    let first = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
-            "character.alice",
-            None,
-            Some(visible("Alice")),
-            Vec::new(),
-            None,
-        )],
-    );
+    let first = catalog(vec![record(
+        "character.alice",
+        None,
+        Some(visible("Alice")),
+        Vec::new(),
+        None,
+    )]);
     let accepted = AcceptedCharacterPresentationCatalog::publish_initial(first).unwrap();
     assert_eq!(
         accepted.revision(),
         CharacterPresentationCatalogRevision::INITIAL
     );
 
-    let replacement = catalog(
-        policy("ja-JP", &[]),
-        vec![record(
-            "character.alice",
-            None,
-            Some(visible("アリス")),
-            Vec::new(),
-            None,
-        )],
-    );
+    let replacement = catalog(vec![record(
+        "character.alice",
+        None,
+        Some(visible("アリス")),
+        Vec::new(),
+        None,
+    )]);
     let candidate = accepted.candidate_replacement(replacement).unwrap();
     assert_eq!(accepted.revision().get(), 1);
     assert_eq!(candidate.revision().get(), 2);

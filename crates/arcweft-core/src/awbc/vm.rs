@@ -54,6 +54,7 @@ pub struct VmStepOptions {
 #[derive(Clone, Debug)]
 pub struct VmExecutionContext {
     artifact: RuntimeArtifactFingerprint,
+    format_context: crate::value::RuntimeFormatContext,
     program_owner: Option<RuntimeProgramOwner>,
     plain_text_context_template_proof:
         Option<crate::value::RuntimeDialoguePlainTextContextTemplateProof>,
@@ -61,9 +62,10 @@ pub struct VmExecutionContext {
 
 impl VmExecutionContext {
     #[must_use]
-    pub const fn new(artifact: RuntimeArtifactFingerprint) -> Self {
+    pub fn new(artifact: RuntimeArtifactFingerprint) -> Self {
         Self {
             artifact,
+            format_context: crate::value::RuntimeFormatContext::default(),
             program_owner: None,
             plain_text_context_template_proof: None,
         }
@@ -78,6 +80,7 @@ impl VmExecutionContext {
     ) -> Self {
         Self {
             artifact,
+            format_context: crate::value::RuntimeFormatContext::default(),
             program_owner: Some(RuntimeProgramOwner::Awbc(program)),
             plain_text_context_template_proof: None,
         }
@@ -90,6 +93,7 @@ impl VmExecutionContext {
     ) -> Self {
         Self {
             artifact,
+            format_context: crate::value::RuntimeFormatContext::default(),
             program_owner: Some(RuntimeProgramOwner::Awbc(program)),
             plain_text_context_template_proof: Some(proof),
         }
@@ -98,6 +102,19 @@ impl VmExecutionContext {
     #[must_use]
     pub const fn artifact(&self) -> RuntimeArtifactFingerprint {
         self.artifact
+    }
+
+    /// Binds the session-selected locale for new formatter attempts. A staged
+    /// formatter retains its starting locale across step and save boundaries.
+    #[must_use]
+    pub fn with_format_context(mut self, context: crate::value::RuntimeFormatContext) -> Self {
+        self.format_context = context;
+        self
+    }
+
+    #[must_use]
+    pub const fn format_context(&self) -> &crate::value::RuntimeFormatContext {
+        &self.format_context
     }
 
     fn program_owner(&self, program: &AwbcProgram) -> Result<RuntimeProgramOwner, VmError> {
@@ -1568,7 +1585,7 @@ fn execute_instruction(
             operands,
         } => {
             let context = context.ok_or(VmError::MissingExecutionContext)?;
-            fiber.begin_format_content(program)?;
+            fiber.begin_format_content(program, context.format_context())?;
             let next = fiber.format_content_state()?.next_operand();
             if let Some(operand) = operands.get(next) {
                 let captures = register_values(fiber, &operand.captures)?;
@@ -1614,6 +1631,7 @@ fn execute_instruction(
                 .map(|(operand, value)| (operand.parameter, value.clone()))
                 .collect::<Vec<_>>();
             let formatted = crate::value::finish_format_content_attempt(
+                state.format_context(),
                 primary_kind,
                 &evaluated,
                 state.first_recoverable(),

@@ -29,6 +29,7 @@ thiserror.workspace = true
 arcweft-audio-core = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
+arcweft-manifest-model = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }

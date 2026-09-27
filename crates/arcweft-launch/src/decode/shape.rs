@@ -175,6 +175,7 @@ fn is_known_root(root: &str) -> bool {
         "schema"
             | "package"
             | "build"
+            | "locale"
             | "resource-type-manifest"
             | "content-units"
             | "external-modules"
@@ -193,6 +194,7 @@ fn field_path_allowed(path: &[String]) -> bool {
                     | "resource-type-manifest"
                     | "package"
                     | "build"
+                    | "locale"
                     | "content-units"
                     | "external-modules"
                     | "activity-implementations"
@@ -205,6 +207,9 @@ fn field_path_allowed(path: &[String]) -> bool {
         [root, field] if root == "package" => matches!(field.as_str(), "id" | "version"),
         [root, field] if root == "build" => {
             matches!(field.as_str(), "source-dir" | "target-dir" | "incremental")
+        }
+        [root, field] if root == "locale" => {
+            matches!(field.as_str(), "source" | "default" | "fallback")
         }
         [root, _, field] if root == "content-units" => {
             matches!(field.as_str(), "roots" | "visibility" | "demand")
@@ -234,7 +239,6 @@ fn field_path_allowed(path: &[String]) -> bool {
                 | "external-modules"
                 | "activity-bindings"
                 | "dialogue"
-                | "localization"
                 | "listen"
                 | "pure"
                 | "content"
@@ -282,25 +286,8 @@ fn field_path_allowed(path: &[String]) -> bool {
         {
             matches!(field.as_str(), "kind" | "styles")
         }
-        _ => localization_field_path_allowed(path),
+        _ => false,
     }
-}
-
-fn localization_field_path_allowed(path: &[String]) -> bool {
-    matches!(
-        path,
-        [root, _, localization, field]
-            if root == "profiles"
-                && localization == "localization"
-                && field == "character_names"
-    ) || matches!(
-        path,
-        [root, _, localization, character_names, field]
-            if root == "profiles"
-                && localization == "localization"
-                && character_names == "character_names"
-                && matches!(field.as_str(), "active" | "fallbacks")
-    )
 }
 
 fn table_path_allowed(path: &[String]) -> bool {
@@ -310,6 +297,7 @@ fn table_path_allowed(path: &[String]) -> bool {
                 root.as_str(),
                 "package"
                     | "build"
+                    | "locale"
                     | "content-units"
                     | "external-modules"
                     | "activity-implementations"
@@ -328,17 +316,7 @@ fn table_path_allowed(path: &[String]) -> bool {
         }
         [root, _, record]
             if root == "profiles"
-                && matches!(
-                    record.as_str(),
-                    "dialogue" | "localization" | "pure" | "content" | "player"
-                ) =>
-        {
-            true
-        }
-        [root, _, localization, character_names]
-            if root == "profiles"
-                && localization == "localization"
-                && character_names == "character_names" =>
+                && matches!(record.as_str(), "dialogue" | "pure" | "content" | "player") =>
         {
             true
         }
@@ -399,12 +377,13 @@ fn unknown_segment_span(spans: &[SourceSpan], path: &[String]) -> Option<SourceS
 fn known_prefix_len(path: &[String]) -> usize {
     match path.first().map(String::as_str) {
         Some("schema" | "default-profile" | "package" | "build") => 1,
+        Some("locale") => 1,
         Some("content-units" | "external-modules" | "activity-implementations") => {
             path.len().min(2)
         }
         Some("profiles") => match path.get(2).map(String::as_str) {
             None => path.len().min(2),
-            Some("dialogue" | "localization" | "pure" | "content" | "player") => {
+            Some("dialogue" | "pure" | "content" | "player") => {
                 match path.get(3).map(String::as_str) {
                     Some("inline-failure")
                         if path.get(2).is_some_and(|value| value == "dialogue") =>
@@ -418,11 +397,6 @@ fn known_prefix_len(path: &[String]) -> usize {
                         }
                     }
                     Some("viewport") if path.get(2).is_some_and(|value| value == "player") => 4,
-                    Some("character_names")
-                        if path.get(2).is_some_and(|value| value == "localization") =>
-                    {
-                        4
-                    }
                     Some(_) if path.get(2).is_some_and(|value| value == "content") => 4,
                     _ => 3,
                 }

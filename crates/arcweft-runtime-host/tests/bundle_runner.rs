@@ -456,6 +456,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
             profile_kind: None,
             entry: Some("entry.custom".to_owned()),
             adapter: Some("custom-echo".to_owned()),
+            locale: arcweft_manifest_model::ProjectLocaleSpec::default(),
             adapter_manifest_ids: vec!["custom-echo".to_owned()],
             required_host_calls: vec!["custom.echo".to_owned()],
             runtime: BundleRuntimeSummary {

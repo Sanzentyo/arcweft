@@ -40,6 +40,7 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_data::{Number, Value};
 use arcweft_dialogue::CharacterDialogueGenerationDeclaration;
 use arcweft_layout::stage_placement::StagePlacement;
+use arcweft_manifest_model::ProjectLocaleSpec;
 use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
 use arcweft_source::SourceDocumentId;
 use arcweft_text_model::DialogueContentCatalog;
@@ -118,6 +119,7 @@ pub struct BundleManifest {
     pub entry: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adapter: Option<String>,
+    pub locale: ProjectLocaleSpec,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_manifest_ids: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1780,6 +1782,7 @@ mod tests {
     use arcweft_core::value::{
         RuntimeDialogueOpaqueRole, RuntimeDialoguePlainTextContextTemplateRef,
     };
+    use arcweft_id::LocaleTag;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
@@ -1912,6 +1915,7 @@ mod tests {
                 profile_kind: None,
                 entry: Some("main".to_owned()),
                 adapter: Some("native-file".to_owned()),
+                locale: ProjectLocaleSpec::default(),
                 adapter_manifest_ids: vec!["native-file".to_owned()],
                 required_host_calls: vec!["fs.read_text".to_owned()],
                 runtime: BundleRuntimeSummary {
@@ -1951,6 +1955,37 @@ mod tests {
             ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes"),
             bundle
         );
+    }
+
+    #[test]
+    fn bundle_json_requires_and_round_trips_project_locale() {
+        let expected_locale = ProjectLocaleSpec::try_new(
+            LocaleTag::try_new("ja-JP").expect("canonical source locale"),
+            LocaleTag::try_new("en-US").expect("canonical default locale"),
+            [
+                LocaleTag::try_new("fr-FR").expect("canonical fallback locale"),
+                LocaleTag::try_new("en-US").expect("default is allowed as fallback"),
+            ],
+        )
+        .expect("unique bounded fallbacks");
+        let mut bundle = empty_test_bundle();
+        bundle.manifest.locale = expected_locale.clone();
+
+        let bytes = bundle.to_json_bytes().expect("bundle encodes");
+        let decoded = ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes");
+        assert_eq!(decoded.manifest.locale, expected_locale);
+
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&bytes).expect("encoded bundle is JSON");
+        value["manifest"]
+            .as_object_mut()
+            .expect("manifest object")
+            .remove("locale");
+        let legacy_bytes = serde_json::to_vec(&value).expect("legacy shape is JSON");
+        assert!(matches!(
+            ArcweftBundle::from_json_slice(&legacy_bytes),
+            Err(BundleCodecError::Decode(_))
+        ));
     }
 
     #[test]
@@ -2488,6 +2523,7 @@ mod tests {
                 profile_kind: None,
                 entry: Some("main".to_owned()),
                 adapter: None,
+                locale: ProjectLocaleSpec::default(),
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {

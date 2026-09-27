@@ -4,14 +4,12 @@
 //! payload contains only restorable runtime state and one unambiguous artifact
 //! binding; it deliberately has no nested schema marker or legacy identity.
 
-use crate::display::{ActiveSessionLocale, BundlePresentationSnapshot};
+use crate::display::BundlePresentationSnapshot;
 use crate::task::RuntimeTaskStatus;
 use crate::view_runtime::BundleViewRuntimeSnapshot;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_character::presentation_name::{
-    CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
-};
+use arcweft_character::presentation_name::CharacterPresentationSemanticDigest;
 use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
 use arcweft_core::awbc::product_step::{
     AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
@@ -26,6 +24,7 @@ use arcweft_core::task::{
     TaskSequence,
 };
 use arcweft_core::value::RuntimeBundleAssetOpaqueRole;
+use arcweft_id::LocaleTag;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -40,6 +39,7 @@ pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq)]
 pub struct BundleSessionSnapshot {
     pub generation: BundleSessionGenerationSnapshot,
+    pub active_locale: LocaleTag,
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
     pub root: Option<RootStateSnapshotV1>,
@@ -62,6 +62,7 @@ pub struct BundleSessionSnapshot {
 #[serde(deny_unknown_fields)]
 pub(crate) struct BundleSessionSavePayload {
     pub generation: BundleSessionGenerationSnapshot,
+    pub active_locale: LocaleTag,
     #[serde(deserialize_with = "deserialize_required_option")]
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
@@ -84,6 +85,7 @@ impl BundleSessionSavePayload {
     pub(crate) fn from_snapshot(snapshot: &BundleSessionSnapshot) -> Result<Self, String> {
         Ok(Self {
             generation: snapshot.generation.clone(),
+            active_locale: snapshot.active_locale.clone(),
             character_presentation: snapshot.character_presentation.clone(),
             active_entry: snapshot.active_entry.clone(),
             root: snapshot.root.clone(),
@@ -105,6 +107,7 @@ impl BundleSessionSavePayload {
     ) -> Result<BundleSessionSnapshot, String> {
         Ok(BundleSessionSnapshot {
             generation: self.generation,
+            active_locale: self.active_locale,
             character_presentation: self.character_presentation,
             active_entry: self.active_entry,
             root: self.root,
@@ -123,9 +126,7 @@ impl BundleSessionSavePayload {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BundleSessionCharacterPresentationSnapshot {
-    pub active_locale: ActiveSessionLocale,
     pub semantic_digest: CharacterPresentationSemanticDigest,
-    pub locale_policy_digest: CharacterPresentationLocalePolicyDigest,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

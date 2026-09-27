@@ -584,7 +584,6 @@ fn runtime_plan_consumes_project_view_without_flattening() {
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
-        None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
     .expect("runtime facts project from the accepted project view")
@@ -695,7 +694,6 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         compiled.analysis_lease().registered_world(),
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
-        None,
         None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
@@ -965,7 +963,6 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
-        None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
     .expect("assignment projects through the compiler boundary")
@@ -1017,7 +1014,6 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         compiled.analysis_lease().registered_world(),
         compiled.analysis_lease().final_analysis(),
         &runtime_owners,
-        None,
         None,
         &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )

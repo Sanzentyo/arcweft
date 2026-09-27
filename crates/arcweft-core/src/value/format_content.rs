@@ -4,17 +4,90 @@
 //! and type projections. This function owns the resulting formatted value so
 //! the two engines cannot silently choose different failure policies.
 
+use arcweft_id::LocaleTag;
+use fixed_decimal::{Decimal, FloatPrecision};
+use icu_decimal::DecimalFormatter;
+use icu_decimal::options::DecimalFormatterOptions;
+use icu_experimental::dimension::currency::{
+    CurrencyType, formatter::CurrencyFormatter, options::CurrencyFormatterOptions,
+};
+use icu_locale::Locale;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeSemanticTypeId};
+use crate::pattern::{
+    RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
+};
 
 use super::{
     RuntimeDialogueContentValue, RuntimeDialogueContentValueError,
     RuntimeDialogueFormattedFailureSelection, RuntimeDialogueFormattedOutcome,
     RuntimeDialogueFormattedSuccess, RuntimeDialogueFormattedValue,
     RuntimeDialogueFormattedValueError, RuntimeFmtParameterId, RuntimeInlineTextValue,
-    RuntimeInlineTextValueError, RuntimeValue,
+    RuntimeInlineTextValueError, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
+
+/// Exact bundled ICU algorithms and CLDR data required by Core formatting.
+/// Serialized format continuations reject a different data release.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeFormatDataIdentity {
+    IcuDecimal230Experimental060Locale231Cldr4821,
+}
+
+impl RuntimeFormatDataIdentity {
+    pub const CURRENT: Self = Self::IcuDecimal230Experimental060Locale231Cldr4821;
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::IcuDecimal230Experimental060Locale231Cldr4821 => {
+                "icu-decimal-2.3.0+experimental-0.6.0+locale-2.3.1+cldr-48.2.1"
+            }
+        }
+    }
+}
+
+/// Immutable locale selected for one deterministic formatter attempt.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeFormatContext {
+    active_locale: LocaleTag,
+    data_identity: RuntimeFormatDataIdentity,
+}
+
+impl RuntimeFormatContext {
+    #[must_use]
+    pub fn new(active_locale: LocaleTag) -> Self {
+        Self {
+            active_locale,
+            data_identity: RuntimeFormatDataIdentity::CURRENT,
+        }
+    }
+
+    #[must_use]
+    pub const fn active_locale(&self) -> &LocaleTag {
+        &self.active_locale
+    }
+
+    #[must_use]
+    pub const fn data_identity(&self) -> RuntimeFormatDataIdentity {
+        self.data_identity
+    }
+
+    #[must_use]
+    pub const fn has_current_data(&self) -> bool {
+        matches!(
+            self.data_identity,
+            RuntimeFormatDataIdentity::IcuDecimal230Experimental060Locale231Cldr4821
+        )
+    }
+}
+
+impl Default for RuntimeFormatContext {
+    fn default() -> Self {
+        Self::new(LocaleTag::try_new("ja-JP").expect("the language default is canonical"))
+    }
+}
 
 /// The admitted display type, projected from the owning executable's type
 /// table. The semantic type of an Option is its Some payload's scalar type.
@@ -47,6 +120,7 @@ pub enum RuntimeFormatAttemptError {
 /// only a previously classified recoverable expression failure. Fatal errors
 /// must be returned by the evaluator before this function is called.
 pub fn finish_format_content_attempt(
+    context: &RuntimeFormatContext,
     primary_kind: RuntimeFormatPrimaryKind,
     operands: &[(RuntimeFmtParameterId, Option<RuntimeValue>)],
     first_recoverable: Option<&str>,
@@ -113,12 +187,13 @@ pub fn finish_format_content_attempt(
                 }),
         }
     } else {
-        format_success(primary_kind, &values)?
+        format_success(context, primary_kind, &values)?
     };
     RuntimeDialogueFormattedValue::try_new(outcome, failure).map_err(Into::into)
 }
 
 fn format_success(
+    context: &RuntimeFormatContext,
     primary_kind: RuntimeFormatPrimaryKind,
     values: &[Option<&RuntimeValue>; 9],
 ) -> Result<RuntimeDialogueFormattedOutcome, RuntimeFormatAttemptError> {
@@ -142,36 +217,47 @@ fn format_success(
         }
         None => None,
     };
-    let mut unsupported = None;
-    for (parameter, supported) in [
-        (RuntimeFmtParameterId::Style, Some("number")),
-        (RuntimeFmtParameterId::Locale, None),
-        (RuntimeFmtParameterId::Currency, None),
-    ] {
-        if let Some(value) = values[parameter.index()] {
-            let RuntimeValue::String(text) = value else {
-                return Err(RuntimeFormatAttemptError::InvalidParameter(parameter));
-            };
-            if supported.is_none_or(|supported| text != supported) {
-                unsupported = Some(parameter);
-                break;
-            }
-        }
-    }
     let rendered = render_primary(primary_kind, primary, none_text)?;
-    if let Some(parameter) = unsupported {
-        let value_plain = match rendered {
-            Ok(RuntimeDialogueFormattedSuccess::Text(text)) => Some(text),
-            Ok(RuntimeDialogueFormattedSuccess::Content(_)) | Err(_) => None,
-        };
-        return Ok(RuntimeDialogueFormattedOutcome::Failure {
-            reason: format!(
-                "fmt {:?} option is not supported by Core formatting",
-                parameter
-            ),
-            value_plain,
-        });
-    }
+    let style = format_string_operand(values, RuntimeFmtParameterId::Style)?;
+    let locale = format_string_operand(values, RuntimeFmtParameterId::Locale)?;
+    let currency = format_string_operand(values, RuntimeFmtParameterId::Currency)?;
+    let numeric_mode = match (style, currency) {
+        (Some("number") | None, Some(code)) => Some(Some(code)),
+        (Some("number"), None) => Some(None),
+        (None, None) if locale.is_none() => None,
+        (None, None) => {
+            return Ok(format_failure(
+                "fmt locale requires number or currency formatting",
+                &rendered,
+            ));
+        }
+        (Some(_), _) => {
+            return Ok(format_failure(
+                "fmt style is not supported by Core formatting",
+                &rendered,
+            ));
+        }
+    };
+    let rendered = if let Some(currency) = numeric_mode {
+        match format_numeric(context, primary_kind, primary, none_text, locale, currency) {
+            Ok(text) => {
+                let semantic_type = match primary_kind {
+                    RuntimeFormatPrimaryKind::Scalar(semantic_type)
+                    | RuntimeFormatPrimaryKind::OptionScalar(semantic_type) => semantic_type,
+                    RuntimeFormatPrimaryKind::Content => {
+                        unreachable!("numeric formatter rejected Content")
+                    }
+                };
+                let text = RuntimeInlineTextValue::try_new(semantic_type, text)?;
+                Ok(RuntimeDialogueFormattedSuccess::Text(
+                    text.text().to_owned(),
+                ))
+            }
+            Err(reason) => return Ok(format_failure(&reason, &rendered)),
+        }
+    } else {
+        rendered
+    };
     Ok(match rendered {
         Ok(value) => RuntimeDialogueFormattedOutcome::Success { value, color },
         Err(reason) => RuntimeDialogueFormattedOutcome::Failure {
@@ -179,6 +265,179 @@ fn format_success(
             value_plain: None,
         },
     })
+}
+
+fn format_string_operand<'a>(
+    values: &'a [Option<&RuntimeValue>; 9],
+    parameter: RuntimeFmtParameterId,
+) -> Result<Option<&'a str>, RuntimeFormatAttemptError> {
+    match values[parameter.index()] {
+        Some(RuntimeValue::String(text)) => Ok(Some(text)),
+        Some(_) => Err(RuntimeFormatAttemptError::InvalidParameter(parameter)),
+        None => Ok(None),
+    }
+}
+
+fn format_failure(
+    reason: &str,
+    rendered: &Result<RuntimeDialogueFormattedSuccess, String>,
+) -> RuntimeDialogueFormattedOutcome {
+    RuntimeDialogueFormattedOutcome::Failure {
+        reason: reason.to_owned(),
+        value_plain: match rendered {
+            Ok(RuntimeDialogueFormattedSuccess::Text(text)) => Some(text.clone()),
+            Ok(RuntimeDialogueFormattedSuccess::Content(_)) | Err(_) => None,
+        },
+    }
+}
+
+#[derive(Clone, Copy)]
+enum NumericKind {
+    Signed(RuntimeSignedIntWidth),
+    Unsigned(RuntimeUnsignedIntWidth),
+    F32,
+    F64,
+}
+
+impl NumericKind {
+    fn from_semantic_type(semantic_type: RuntimeSemanticTypeId) -> Option<Self> {
+        const SIGNED: [RuntimeSignedIntWidth; 6] = [
+            RuntimeSignedIntWidth::I8,
+            RuntimeSignedIntWidth::I16,
+            RuntimeSignedIntWidth::I32,
+            RuntimeSignedIntWidth::I64,
+            RuntimeSignedIntWidth::I128,
+            RuntimeSignedIntWidth::ISize,
+        ];
+        const UNSIGNED: [RuntimeUnsignedIntWidth; 6] = [
+            RuntimeUnsignedIntWidth::U8,
+            RuntimeUnsignedIntWidth::U16,
+            RuntimeUnsignedIntWidth::U32,
+            RuntimeUnsignedIntWidth::U64,
+            RuntimeUnsignedIntWidth::U128,
+            RuntimeUnsignedIntWidth::USize,
+        ];
+        SIGNED
+            .into_iter()
+            .find(|width| {
+                RuntimeCheckedType::Signed(*width).semantic_identity_digest() == semantic_type
+            })
+            .map(Self::Signed)
+            .or_else(|| {
+                UNSIGNED
+                    .into_iter()
+                    .find(|width| {
+                        RuntimeCheckedType::Unsigned(*width).semantic_identity_digest()
+                            == semantic_type
+                    })
+                    .map(Self::Unsigned)
+            })
+            .or_else(|| {
+                (RuntimeCheckedType::F32.semantic_identity_digest() == semantic_type)
+                    .then_some(Self::F32)
+            })
+            .or_else(|| {
+                (RuntimeCheckedType::F64.semantic_identity_digest() == semantic_type)
+                    .then_some(Self::F64)
+            })
+    }
+
+    fn decimal(self, value: &RuntimeValue) -> Result<Decimal, String> {
+        match (self, value) {
+            (Self::Signed(width), RuntimeValue::Int(value)) if value.width() == width => value
+                .as_i128()
+                .to_string()
+                .parse()
+                .map_err(|error| format!("fmt integer is outside decimal limits: {error}")),
+            (Self::Unsigned(width), RuntimeValue::UInt(value)) if value.width() == width => value
+                .as_u128()
+                .to_string()
+                .parse()
+                .map_err(|error| format!("fmt integer is outside decimal limits: {error}")),
+            (Self::F32, RuntimeValue::F32(value)) if value.is_finite() => {
+                // f32 must take its own shortest round-trip text. Widening to
+                // f64 first would expose the binary approximation of 0.1f32.
+                value
+                    .to_string()
+                    .parse()
+                    .map_err(|error| format!("fmt f32 is outside decimal limits: {error}"))
+            }
+            (Self::F64, RuntimeValue::F64(value)) if value.is_finite() => {
+                Decimal::try_from_f64(*value, FloatPrecision::RoundTrip)
+                    .map_err(|error| format!("fmt f64 is outside decimal limits: {error}"))
+            }
+            (Self::F32, RuntimeValue::F32(_)) => Err("fmt cannot format non-finite f32".to_owned()),
+            (Self::F64, RuntimeValue::F64(_)) => Err("fmt cannot format non-finite f64".to_owned()),
+            _ => Err("fmt numeric value does not match its checked type".to_owned()),
+        }
+    }
+}
+
+fn format_numeric(
+    context: &RuntimeFormatContext,
+    primary_kind: RuntimeFormatPrimaryKind,
+    primary: &RuntimeValue,
+    none_text: Option<&str>,
+    explicit_locale: Option<&str>,
+    currency: Option<&str>,
+) -> Result<String, String> {
+    let semantic_type = match primary_kind {
+        RuntimeFormatPrimaryKind::Scalar(semantic_type)
+        | RuntimeFormatPrimaryKind::OptionScalar(semantic_type) => semantic_type,
+        RuntimeFormatPrimaryKind::Content => {
+            return Err("fmt numeric style requires a numeric value".to_owned());
+        }
+    };
+    let kind = NumericKind::from_semantic_type(semantic_type)
+        .ok_or_else(|| "fmt numeric style requires a numeric value".to_owned())?;
+    let locale = explicit_locale.map_or_else(
+        || Ok(context.active_locale.clone()),
+        |value| {
+            LocaleTag::canonicalize(value).map_err(|error| format!("invalid fmt locale: {error}"))
+        },
+    )?;
+    let locale: Locale = locale
+        .as_str()
+        .parse()
+        .map_err(|error| format!("invalid ICU locale: {error}"))?;
+    let currency = currency
+        .map(|code| {
+            if code.len() != 3 || !code.bytes().all(|byte| byte.is_ascii_alphabetic()) {
+                return Err("fmt currency must be a three-letter ASCII code".to_owned());
+            }
+            code.to_ascii_uppercase()
+                .parse::<CurrencyType>()
+                .map_err(|error| format!("invalid fmt currency: {error}"))
+        })
+        .transpose()?;
+    let primary = match primary_kind {
+        RuntimeFormatPrimaryKind::OptionScalar(_) => {
+            match primary.clone().try_into_builtin_variant_case() {
+                Ok((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => value,
+                Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => {
+                    return none_text.map(ToOwned::to_owned).ok_or_else(|| {
+                        "fmt received Option::None without a `none` operand".to_owned()
+                    });
+                }
+                _ => return Err("fmt numeric Option has an invalid runtime value".to_owned()),
+            }
+        }
+        RuntimeFormatPrimaryKind::Scalar(_) => primary.clone(),
+        RuntimeFormatPrimaryKind::Content => unreachable!("checked above"),
+    };
+    let value = kind.decimal(&primary)?;
+    let formatted = if let Some(code) = currency {
+        CurrencyFormatter::try_new_symbol(locale.into(), code, CurrencyFormatterOptions::default())
+            .map_err(|error| format!("fmt currency data is unavailable: {error}"))?
+            .format_fixed_decimal(&value)
+            .to_string()
+    } else {
+        DecimalFormatter::try_new(locale.into(), DecimalFormatterOptions::default())
+            .map_err(|error| format!("fmt number data is unavailable: {error}"))?
+            .format(&value)
+            .to_string()
+    };
+    Ok(formatted)
 }
 
 fn render_primary(
@@ -230,70 +489,5 @@ fn render_primary(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::pattern::RuntimeCheckedType;
-    use crate::value::RuntimeSignedIntWidth;
-
-    #[test]
-    fn unsupported_dynamic_format_option_retains_plain_evaluated_value() {
-        let formatted = finish_format_content_attempt(
-            RuntimeFormatPrimaryKind::Scalar(
-                RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest(),
-            ),
-            &[
-                (RuntimeFmtParameterId::Value, Some(RuntimeValue::i64(42))),
-                (
-                    RuntimeFmtParameterId::Locale,
-                    Some(RuntimeValue::String("invalid-locale".to_owned())),
-                ),
-            ],
-            None,
-        )
-        .expect("formatter failure remains a value");
-        assert_eq!(
-            formatted.outcome(),
-            &RuntimeDialogueFormattedOutcome::Failure {
-                reason: "fmt Locale option is not supported by Core formatting".to_owned(),
-                value_plain: Some("42".to_owned()),
-            }
-        );
-    }
-
-    #[test]
-    fn recoverable_option_failure_retains_plain_evaluated_primary() {
-        let primary_kind = RuntimeFormatPrimaryKind::Scalar(
-            RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64).semantic_identity_digest(),
-        );
-        let formatted = finish_format_content_attempt(
-            primary_kind,
-            &[
-                (RuntimeFmtParameterId::Value, Some(RuntimeValue::i64(42))),
-                (RuntimeFmtParameterId::Style, None),
-            ],
-            Some("style evaluation failed"),
-        )
-        .expect("recoverable formatter failure remains a value");
-        assert_eq!(
-            formatted.outcome(),
-            &RuntimeDialogueFormattedOutcome::Failure {
-                reason: "style evaluation failed".to_owned(),
-                value_plain: Some("42".to_owned()),
-            }
-        );
-
-        let missing_primary = finish_format_content_attempt(
-            primary_kind,
-            &[(RuntimeFmtParameterId::Value, None)],
-            Some("primary evaluation failed"),
-        )
-        .expect("failed primary remains a formatted failure");
-        assert_eq!(
-            missing_primary.outcome(),
-            &RuntimeDialogueFormattedOutcome::Failure {
-                reason: "primary evaluation failed".to_owned(),
-                value_plain: None,
-            }
-        );
-    }
-}
+#[path = "format_content/tests.rs"]
+mod tests;
