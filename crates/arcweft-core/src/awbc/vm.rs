@@ -26,6 +26,7 @@ use crate::effect::RuntimeArtifactFingerprint;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
     RuntimeCallableAttachedContract, RuntimeCallableRetainedRole, RuntimeCallableTransition,
+    RuntimeFlowTargetError,
 };
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
@@ -343,8 +344,12 @@ pub enum VmExit {
 pub enum VmError {
     #[error(transparent)]
     Evaluation(#[from] crate::value::RuntimeEvalError),
-    #[error("nested AWBC pure helper exited without a value: {0:?}")]
-    NestedPureExit(Box<VmNestedPureExit>),
+    #[error("AWBC pattern did not match its runtime value")]
+    PatternMismatch,
+    #[error(transparent)]
+    DynamicTarget(#[from] RuntimeFlowTargetError),
+    #[error("nested AWBC call exited without a value: {0:?}")]
+    NestedCallExit(Box<VmNestedCallExit>),
     #[error("AWBC VM fiber error: {0}")]
     Fiber(#[from] FiberStateError),
     #[error("AWBC function {0:?} does not exist")]
@@ -373,10 +378,10 @@ pub enum VmError {
     Runtime(String),
 }
 
-/// Fatal non-value exit of a nested pure helper. This remains in-memory and
+/// Fatal non-value exit of a nested call. This remains in-memory and
 /// retains budget, cancellation, and trap provenance without a string decoder.
 #[derive(Clone, Debug, PartialEq)]
-pub enum VmNestedPureExit {
+pub enum VmNestedCallExit {
     DialogueResultSelected(RuntimeValue),
     Cancelled,
     Trapped(FiberTrap),
@@ -1896,25 +1901,32 @@ fn execute_trait_method_call(
                     "trait method returned unit where a value was required".to_owned(),
                 ));
             }
-            VmExit::DialogueResultSelected(_) => {
-                return Err(VmError::Runtime(
-                    "trait method selected a dialogue result".to_owned(),
-                ));
-            }
-            VmExit::Trapped(trap) => {
-                return Err(VmError::Runtime(format!("trait method trapped: {trap:?}")));
-            }
-            VmExit::Cancelled => {
-                return Err(VmError::Runtime(
-                    "trait method execution was cancelled".to_owned(),
-                ));
-            }
-            VmExit::Suspended(reason) => {
-                return Err(VmError::Runtime(format!(
-                    "trait method attempted to suspend: {reason:?}"
+            VmExit::DialogueResultSelected(value) => {
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::DialogueResultSelected(value),
                 )));
             }
-            VmExit::BudgetYield(_) | VmExit::Running => {
+            VmExit::Trapped(trap) => {
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Trapped(trap),
+                )));
+            }
+            VmExit::Cancelled => {
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Cancelled,
+                )));
+            }
+            VmExit::Suspended(reason) => {
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Suspended(reason),
+                )));
+            }
+            VmExit::BudgetYield(point) => {
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::BudgetYield(point),
+                )));
+            }
+            VmExit::Running => {
                 return Err(VmError::Runtime(
                     "trait method did not complete within deterministic call budget".to_owned(),
                 ));
@@ -2013,11 +2025,11 @@ fn execute_terminator(
                 RuntimeValue::String(target) => program
                     .resolve_flow_target_value(target)
                     .map(|(_, function)| function)
-                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+                    .map_err(VmError::DynamicTarget)?,
                 RuntimeValue::EntityRef(target) => program
                     .resolve_flow_target_value(&target.runtime_label())
                     .map(|(_, function)| function)
-                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+                    .map_err(VmError::DynamicTarget)?,
                 _ => {
                     return Err(VmError::Runtime(format!(
                         "invalid dynamic goto target `{}`",
@@ -3134,7 +3146,7 @@ pub(crate) fn bind_pattern(
     value: &RuntimeValue,
 ) -> Result<(), VmError> {
     if !test_pattern(program, pattern, value)? {
-        return Err(VmError::Runtime("pattern did not match".to_owned()));
+        return Err(VmError::PatternMismatch);
     }
     bind_tested_pattern(program, fiber, pattern, value)
 }
@@ -3289,12 +3301,12 @@ fn source_map_for_location(
 impl VmError {
     fn runtime_trap_code(&self) -> Option<AwbcTrapCode> {
         match self {
-            Self::NestedPureExit(exit) => Some(match exit.as_ref() {
-                VmNestedPureExit::Trapped(trap) => trap.code,
-                VmNestedPureExit::Suspended(_)
-                | VmNestedPureExit::DialogueResultSelected(_)
-                | VmNestedPureExit::Cancelled
-                | VmNestedPureExit::BudgetYield(_) => AwbcTrapCode::InternalInvariant,
+            Self::NestedCallExit(exit) => Some(match exit.as_ref() {
+                VmNestedCallExit::Trapped(trap) => trap.code,
+                VmNestedCallExit::Suspended(_)
+                | VmNestedCallExit::DialogueResultSelected(_)
+                | VmNestedCallExit::Cancelled
+                | VmNestedCallExit::BudgetYield(_) => AwbcTrapCode::InternalInvariant,
             }),
             Self::Evaluation(error) => Some(match error.recoverable_expression() {
                 Some(crate::value::RuntimeExpressionFailure::DivisionByZero) => {
@@ -3308,17 +3320,9 @@ impl VmError {
                 }
                 None => AwbcTrapCode::InternalInvariant,
             }),
-            Self::Runtime(message) => Some(if message.contains("division by zero") {
-                AwbcTrapCode::DivisionByZero
-            } else if message.contains("pattern") {
-                AwbcTrapCode::PatternMismatch
-            } else if message.contains("dynamic goto target") {
-                AwbcTrapCode::MissingDynamicTarget
-            } else if message.contains("expected") || message.contains("type") {
-                AwbcTrapCode::TypeMismatch
-            } else {
-                AwbcTrapCode::InternalInvariant
-            }),
+            Self::PatternMismatch => Some(AwbcTrapCode::PatternMismatch),
+            Self::DynamicTarget(_) => Some(AwbcTrapCode::MissingDynamicTarget),
+            Self::Runtime(_) => Some(AwbcTrapCode::InternalInvariant),
             Self::Fiber(FiberStateError::RegisterOutOfBounds { .. }) => {
                 Some(AwbcTrapCode::UninitializedRegister)
             }

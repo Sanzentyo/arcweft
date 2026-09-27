@@ -1,7 +1,7 @@
 use crate::awbc::fiber::FiberState;
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
 use crate::awbc::vm::{
-    VmError, VmExecutionContext, VmExit, VmHost, VmNestedPureExit, VmStepOptions,
+    VmError, VmExecutionContext, VmExit, VmHost, VmNestedCallExit, VmStepOptions,
     step_with_host_context,
 };
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper, RuntimeExternalCallContext};
@@ -142,7 +142,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             scalar_eval_supported: record.scalar_eval_supported,
         };
         if let Some(result) = self.backend.call_compact_values(&descriptor, args) {
-            return result.map_err(|error| VmError::Runtime(error.to_string()));
+            return result.map_err(VmError::Evaluation);
         }
         self.fallback_stats.pure_calls = self.fallback_stats.pure_calls.saturating_add(1);
         self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
@@ -298,28 +298,28 @@ fn run_function_with_host(
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
             VmExit::DialogueResultSelected(value) => {
-                return Err(VmError::NestedPureExit(Box::new(
-                    VmNestedPureExit::DialogueResultSelected(value),
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::DialogueResultSelected(value),
                 )));
             }
             VmExit::Cancelled => {
-                return Err(VmError::NestedPureExit(Box::new(
-                    VmNestedPureExit::Cancelled,
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Cancelled,
                 )));
             }
             VmExit::Trapped(trap) => {
-                return Err(VmError::NestedPureExit(Box::new(
-                    VmNestedPureExit::Trapped(trap),
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Trapped(trap),
                 )));
             }
             VmExit::Suspended(reason) => {
-                return Err(VmError::NestedPureExit(Box::new(
-                    VmNestedPureExit::Suspended(reason),
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::Suspended(reason),
                 )));
             }
             VmExit::BudgetYield(point) => {
-                return Err(VmError::NestedPureExit(Box::new(
-                    VmNestedPureExit::BudgetYield(point),
+                return Err(VmError::NestedCallExit(Box::new(
+                    VmNestedCallExit::BudgetYield(point),
                 )));
             }
         }
