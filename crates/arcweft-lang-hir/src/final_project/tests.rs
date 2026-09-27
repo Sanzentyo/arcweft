@@ -4076,6 +4076,134 @@ fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions
 }
 
 #[test]
+fn selected_trait_method_edge_reaches_implicit_expression_method_body() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/selected-trait-method-reachability",
+        "selected-trait-method-reachability.arcw",
+        concat!(
+            "struct Label {}\n",
+            "trait DisplayText { fn display_text(self) -> Int }\n",
+            "impl DisplayText for Label {\n",
+            "    fn display_text(self) -> Int {\n",
+            "        let rendered: Int = 7\n",
+            "        rendered\n",
+            "    }\n",
+            "}\n",
+            "flow root(value: Label) { value }\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.analysis_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "selected-trait-method");
+    let topology = evaluation_topology(&project, &symbols);
+    let flow = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(super::HirProjectItemRef::id)
+        .unwrap();
+    let (implementation, method) = symbols
+        .callable_symbols()
+        .find_map(|symbol| match symbol.declaration() {
+            CallableDeclarationKey::ImplMethod(method) => {
+                Some((symbol.source_item(), method.clone()))
+            }
+            _ => None,
+        })
+        .expect("one project trait method");
+    let target = HirRuntimeExecutableOwner::ImplMethod(method.clone());
+    let baseline = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| retained_runtime_projection(executable, owner),
+    )
+    .expect("flow-only reachability");
+    let source = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            (baseline.contains_expression(owner)
+                && matches!(expression.kind(), HirExprKind::Path(_)))
+            .then_some(owner)
+        })
+        .expect("flow expression can trigger selected display");
+    assert!(!baseline.contains_runtime_owner(&target));
+    let edge = HirRuntimeReachabilityEdge::new(
+        super::HirRuntimeReachabilitySite::Expression(source),
+        target.clone(),
+        super::HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+            expression: source,
+            implementation,
+            member: 0,
+            method: method.clone(),
+        },
+    );
+    let build = |edge| {
+        let input = HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            topology.generation().symbol_world().clone(),
+            topology.generation().symbol_revision(),
+            vec![HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirRuntimeExecutableOwner::Item(flow),
+            )],
+            vec![edge],
+        )?;
+        executable.runtime_semantic_reachability(
+            input,
+            &topology,
+            |_| None,
+            |owner| test_selected_call_inventory(executable, &topology, owner),
+            |owner| retained_runtime_projection(executable, owner),
+        )
+    };
+    let reached =
+        build(edge.clone()).expect("selected method is reachable from a plain expression");
+    assert!(reached.contains_runtime_owner(&target));
+    assert_eq!(reached.first_path(&target).unwrap().steps(), [edge.clone()]);
+    let method_owners = reached.executable_owners(&target).unwrap();
+    assert!(method_owners.locals().count() >= 2);
+    assert!(method_owners.expressions().count() >= 2);
+    assert!(method_owners.types().count() >= 1);
+    assert_ne!(baseline.identity().digest(), reached.identity().digest());
+
+    let wrong_member = HirRuntimeReachabilityEdge::new(
+        edge.source(),
+        target,
+        super::HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+            expression: source,
+            implementation,
+            member: 1,
+            method,
+        },
+    );
+    assert!(matches!(
+        build(wrong_member),
+        Err(HirRuntimeReachabilityError::InvalidEdgeTarget { .. })
+    ));
+}
+
+#[test]
 #[expect(
     clippy::too_many_lines,
     reason = "the determinism proof constructs and compares both complete edge orderings"

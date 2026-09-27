@@ -994,7 +994,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             TypeKind::String => checked(RuntimeCheckedType::String),
             TypeKind::Char => copy(RuntimeCheckedType::Char),
             TypeKind::Bytes => checked(RuntimeCheckedType::Bytes),
-            TypeKind::TextCluster | TypeKind::DisplayText => self.classify_text(ty, path),
+            TypeKind::TextCluster => self.classify_text(ty, path),
             TypeKind::Duration => copy(RuntimeCheckedType::Duration),
             TypeKind::Progress => checked(RuntimeCheckedType::Progress),
             TypeKind::StageApi(_)
@@ -1054,7 +1054,9 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 ))
             }
             TypeKind::AgentValue => checked(RuntimeCheckedType::AgentValue),
-            TypeKind::DataValue
+            TypeKind::DisplayContext
+            | TypeKind::DisplayError
+            | TypeKind::DataValue
             | TypeKind::DataError
             | TypeKind::DataErrorKind
             | TypeKind::DataPath

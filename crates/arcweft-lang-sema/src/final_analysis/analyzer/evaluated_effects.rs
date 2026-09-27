@@ -1399,20 +1399,22 @@ impl Analyzer<'_, '_, '_> {
                         else {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                         };
+                        let display = self
+                            .display_conformances
+                            .as_ref()
+                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                         let witness = checked
                             .value_type()
                             .map(|actual| {
-                                crate::checked_rich_text::CheckedDisplayWitness::for_interpolation(
-                                    actual,
-                                    &expected_content,
-                                )
-                                .ok_or_else(|| {
-                                    FinalSemanticAnalysisError::UnsupportedDialogueDisplayType {
-                                        owner: content_id.owner(),
-                                        expression,
-                                        actual: Box::new(actual.clone()),
-                                    }
-                                })
+                                display
+                                    .for_interpolation(actual, &expected_content)?
+                                    .ok_or_else(|| {
+                                        FinalSemanticAnalysisError::UnsupportedDialogueDisplayType {
+                                            owner: content_id.owner(),
+                                            expression,
+                                            actual: Box::new(actual.clone()),
+                                        }
+                                    })
                             })
                             .transpose()?;
                         let source = CheckedExpressionValueSource::from_evidence(

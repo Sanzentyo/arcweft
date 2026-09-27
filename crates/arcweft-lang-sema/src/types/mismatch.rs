@@ -360,8 +360,14 @@ impl TypeKind {
                     ))
                 }
             }
-            Self::DisplayText => {
-                let Self::DisplayText = actual else {
+            Self::DisplayContext => {
+                let Self::DisplayContext = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DisplayError => {
+                let Self::DisplayError = actual else {
                     unreachable!("equal discriminants")
                 };
                 None

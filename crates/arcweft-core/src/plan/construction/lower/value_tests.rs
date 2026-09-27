@@ -239,6 +239,9 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
     let invalid = RuntimeExprSeed::format_content(
         content,
         template,
+        None,
+        None,
+        false,
         [RuntimeFormatContentOperandSeed::new(
             RuntimeFmtParameterId::Value,
             RuntimeExprSeed::new(
@@ -260,6 +263,9 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
     let valid = RuntimeExprSeed::format_content(
         content,
         template,
+        None,
+        None,
+        false,
         [
             RuntimeFormatContentOperandSeed::new(
                 RuntimeFmtParameterId::Style,
@@ -279,12 +285,18 @@ fn format_content_lowering_keeps_operand_order_and_rejects_unwitnessed_values() 
         .expect("witnessed fmt value lowers");
     let RuntimeExprKind::FormatContent {
         template: actual_template,
+        attempt,
         operands,
+        project_method,
+        project_option,
     } = lowered.kind()
     else {
         panic!("format Content remains a dedicated expression");
     };
     assert_eq!(*actual_template, template);
+    assert_eq!(*attempt, None);
+    assert_eq!(*project_method, None);
+    assert!(!project_option);
     assert_eq!(
         operands
             .iter()

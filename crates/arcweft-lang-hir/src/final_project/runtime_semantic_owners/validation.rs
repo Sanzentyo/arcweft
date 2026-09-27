@@ -70,6 +70,10 @@ fn edge_source_family_matches(
             .is_some_and(|kind| matches!(kind, HirExprKind::Call(_))),
         (
             HirRuntimeReachabilitySite::Expression(owner),
+            HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { .. },
+        ) => resolve_expression_kind(project, *owner).is_some(),
+        (
+            HirRuntimeReachabilitySite::Expression(owner),
             HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { .. },
         ) => resolve_expression_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirExprKind::Path(_))),
@@ -152,6 +156,18 @@ fn edge_kind_matches_target(
                 && impl_method_implementation_owner(project, method) == Some(*implementation)
         }
         (
+            HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+                implementation,
+                member,
+                method,
+                ..
+            },
+            HirRuntimeExecutableOwner::ImplMethod(target),
+        ) => {
+            method == target
+                && selected_trait_method_matches(project, *implementation, *member, method)
+        }
+        (
             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
                 implementation,
                 member,
@@ -161,10 +177,11 @@ fn edge_kind_matches_target(
             HirRuntimeExecutableOwner::ImplMethod(target),
         ) => {
             method == target
-                && iterator_witness_method_matches(project, *implementation, *member, method)
+                && selected_trait_method_matches(project, *implementation, *member, method)
         }
         (
             HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }
+            | HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { .. }
             | HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
             _,
         ) => false,
@@ -177,7 +194,7 @@ fn edge_kind_matches_target(
     }
 }
 
-fn iterator_witness_method_matches(
+fn selected_trait_method_matches(
     project: HirAnalysisProjectView<'_>,
     implementation_owner: ItemId,
     member: u16,

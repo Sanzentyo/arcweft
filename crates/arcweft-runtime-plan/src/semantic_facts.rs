@@ -99,6 +99,11 @@ mod dialogue_target;
 pub use dialogue_target::RuntimeDialogueApplicationTarget;
 mod defer;
 pub use defer::RuntimeDeferFact;
+mod display;
+pub use display::{
+    RuntimeFormatExecutableScope, RuntimeFormatTemplateFact, RuntimeFormatTemplateKey,
+    RuntimeProjectDisplayValue, RuntimeResolvedFormatCall,
+};
 mod evaluated_effect;
 mod flow;
 mod lexical_scope;
@@ -122,7 +127,7 @@ pub use evaluated_effect::{
 pub use flow::RuntimeFlowFact;
 pub use project_function::{
     RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
-    RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
+    RuntimeClosureLexicalOwner, RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
     RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectContinuationAbi,
     RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
     RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionCallSpecialization,
@@ -4065,235 +4070,6 @@ pub enum RuntimeLineCallable {
     },
 }
 
-/// Selected standard formatter call. The checked semantic fact owns parameter
-/// identity, display admission, and failure policy. Authored source text is
-/// retained for the canonical per-call Content template; its dense template
-/// identity is allocated only after all executable instances are known.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeResolvedFormatCall {
-    checked: arcweft_lang_sema::callable::CheckedFmtCall,
-    call_source: Box<str>,
-    value_source: Box<str>,
-}
-
-impl RuntimeResolvedFormatCall {
-    pub fn new(
-        checked: arcweft_lang_sema::callable::CheckedFmtCall,
-        call_source: impl Into<Box<str>>,
-        value_source: impl Into<Box<str>>,
-    ) -> Self {
-        Self {
-            checked,
-            call_source: call_source.into(),
-            value_source: value_source.into(),
-        }
-    }
-
-    pub const fn checked(&self) -> &arcweft_lang_sema::callable::CheckedFmtCall {
-        &self.checked
-    }
-
-    pub const fn coordinate(
-        &self,
-    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate {
-        self.checked.call_source().coordinate()
-    }
-
-    pub const fn call_source(&self) -> &str {
-        &self.call_source
-    }
-
-    pub const fn value_source(&self) -> &str {
-        &self.value_source
-    }
-}
-
-/// Owned lexical scope of a checked formatter occurrence. Distinct closed
-/// instances and nested closures must never share a generated template ID.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeFormatExecutableScope {
-    Global,
-    ProjectFunction(RuntimeProjectFunctionInstanceKey),
-    Closure(RuntimeClosureInstanceKey),
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct RuntimeFormatTemplateKey {
-    scope: RuntimeFormatExecutableScope,
-    coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-}
-
-impl RuntimeFormatTemplateKey {
-    pub fn new(
-        scope: RuntimeFormatExecutableScope,
-        coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
-    ) -> Self {
-        Self { scope, coordinate }
-    }
-
-    pub const fn scope(&self) -> &RuntimeFormatExecutableScope {
-        &self.scope
-    }
-
-    pub const fn coordinate(
-        &self,
-    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate {
-        &self.coordinate
-    }
-
-    pub fn for_call(
-        scope: RuntimeExecutableSemanticScope<'_>,
-        call: &RuntimeResolvedFormatCall,
-    ) -> Self {
-        let scope = match scope {
-            RuntimeExecutableSemanticScope::Global => RuntimeFormatExecutableScope::Global,
-            RuntimeExecutableSemanticScope::ProjectFunction(key) => {
-                RuntimeFormatExecutableScope::ProjectFunction(key.clone())
-            }
-            RuntimeExecutableSemanticScope::Closure(key) => {
-                RuntimeFormatExecutableScope::Closure(key.clone())
-            }
-        };
-        Self::new(scope, call.coordinate().clone())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeFormatTemplateFact {
-    key: RuntimeFormatTemplateKey,
-    template: arcweft_text_model::DialogueContentFragmentTemplate,
-}
-
-impl RuntimeFormatTemplateFact {
-    pub fn new(
-        key: RuntimeFormatTemplateKey,
-        template: arcweft_text_model::DialogueContentFragmentTemplate,
-    ) -> Self {
-        Self { key, template }
-    }
-
-    pub const fn key(&self) -> &RuntimeFormatTemplateKey {
-        &self.key
-    }
-
-    pub const fn template(&self) -> &arcweft_text_model::DialogueContentFragmentTemplate {
-        &self.template
-    }
-}
-
-fn format_scalar_shape(ty: &RuntimeNormalizedType) -> bool {
-    matches!(
-        ty.shape(),
-        RuntimeTypeShape::Unit
-            | RuntimeTypeShape::Bool
-            | RuntimeTypeShape::Signed(_)
-            | RuntimeTypeShape::Unsigned(_)
-            | RuntimeTypeShape::F32
-            | RuntimeTypeShape::F64
-            | RuntimeTypeShape::String
-            | RuntimeTypeShape::Char
-            | RuntimeTypeShape::Duration
-            | RuntimeTypeShape::Progress
-            | RuntimeTypeShape::EntityReference
-    )
-}
-
-fn format_scalar_witness_admits(
-    witness: &arcweft_lang_sema::checked_rich_text::CheckedDisplayScalar,
-    ty: &RuntimeNormalizedType,
-) -> bool {
-    use arcweft_lang_sema::checked_rich_text::{
-        CheckedDisplayFloatWidth as Float, CheckedDisplayIntegerWidth as Integer,
-        CheckedDisplayScalar as Scalar,
-    };
-    matches!(
-        (witness, ty.shape()),
-        (Scalar::Unit, RuntimeTypeShape::Unit)
-            | (Scalar::Bool, RuntimeTypeShape::Bool)
-            | (
-                Scalar::SignedInteger(Integer::Bits8),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I8)
-            )
-            | (
-                Scalar::SignedInteger(Integer::Bits16),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I16)
-            )
-            | (
-                Scalar::SignedInteger(Integer::Bits32),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I32)
-            )
-            | (
-                Scalar::SignedInteger(Integer::Bits64),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I64)
-            )
-            | (
-                Scalar::SignedInteger(Integer::Bits128),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I128)
-            )
-            | (
-                Scalar::SignedInteger(Integer::Pointer),
-                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::ISize)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Bits8),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U8)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Bits16),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U16)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Bits32),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U32)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Bits64),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U64)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Bits128),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U128)
-            )
-            | (
-                Scalar::UnsignedInteger(Integer::Pointer),
-                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::USize)
-            )
-            | (Scalar::Float(Float::Bits32), RuntimeTypeShape::F32)
-            | (Scalar::Float(Float::Bits64), RuntimeTypeShape::F64)
-            | (Scalar::String, RuntimeTypeShape::String)
-            | (Scalar::Char, RuntimeTypeShape::Char)
-            | (Scalar::Duration, RuntimeTypeShape::Duration)
-            | (Scalar::Reference(_), RuntimeTypeShape::EntityReference)
-            | (Scalar::Progress, RuntimeTypeShape::Progress)
-    )
-}
-
-pub(crate) fn format_witness_admits(
-    witness: &arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness,
-    ty: &RuntimeNormalizedType,
-) -> bool {
-    use arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness;
-
-    match witness {
-        CheckedDisplayWitness::Scalar(scalar) => format_scalar_witness_admits(scalar, ty),
-        CheckedDisplayWitness::Content => {
-            ty.identity()
-                == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
-        }
-        CheckedDisplayWitness::Option(scalar) => {
-            matches!(ty.shape(), RuntimeTypeShape::Option { item, .. } if format_scalar_witness_admits(scalar, item))
-        }
-        CheckedDisplayWitness::OptionDeferredGeneric(_) => {
-            matches!(ty.shape(), RuntimeTypeShape::Option { item, .. } if format_scalar_shape(item))
-        }
-        CheckedDisplayWitness::DeferredGeneric(_) => {
-            format_scalar_shape(ty)
-                || ty.identity()
-                    == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
-        }
-    }
-}
-
 /// Closed runtime dispatch selected by the shared semantic resolver.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
@@ -4819,6 +4595,7 @@ pub struct RuntimeDialogueValueExpression {
     role: RuntimeDialogueValueRole,
     expression: ExprId,
     ty: RuntimeNormalizedType,
+    project_display: Option<RuntimeProjectDisplayValue>,
 }
 
 impl RuntimeDialogueValueExpression {
@@ -4833,6 +4610,28 @@ impl RuntimeDialogueValueExpression {
             role,
             expression,
             ty,
+            project_display: None,
+        }
+    }
+
+    pub fn new_project_display(
+        slot: RuntimeDialogueValueSlotId,
+        expression: ExprId,
+        source_type: RuntimeNormalizedType,
+        content_type: RuntimeNormalizedType,
+        method: RuntimeTraitMethodInstanceKey,
+        template: RuntimeFormatTemplateKey,
+    ) -> Self {
+        Self {
+            slot,
+            role: RuntimeDialogueValueRole::Content,
+            expression,
+            ty: content_type,
+            project_display: Some(RuntimeProjectDisplayValue::new(
+                source_type,
+                method,
+                template,
+            )),
         }
     }
 
@@ -4851,6 +4650,17 @@ impl RuntimeDialogueValueExpression {
     pub const fn ty(&self) -> &RuntimeNormalizedType {
         &self.ty
     }
+
+    pub const fn source_type(&self) -> &RuntimeNormalizedType {
+        match &self.project_display {
+            Some(project) => project.source_type(),
+            None => &self.ty,
+        }
+    }
+
+    pub const fn project_display(&self) -> Option<&RuntimeProjectDisplayValue> {
+        self.project_display.as_ref()
+    }
 }
 
 /// Trait authority selected by final semantic analysis for one executable
@@ -4860,6 +4670,77 @@ pub enum RuntimeTraitIdentity {
     Project(ItemId),
     StandardIterator,
     StandardIntoIterator,
+    StandardDisplayText,
+}
+
+/// One closed executable instance of a trait method. A declaration may have
+/// several monomorphized bodies and therefore is not a complete lookup key.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeTraitMethodInstanceKey {
+    declaration: ImplMethodDeclarationId,
+    self_type: RuntimeSemanticTypeId,
+}
+
+/// One closed executable that selected a method after global reachability
+/// was sealed. The use is scoped to a concrete instance and expression.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeTraitMethodUseScope {
+    ProjectFunction(RuntimeProjectFunctionInstanceKey),
+    Closure(RuntimeClosureInstanceKey),
+    TraitMethod(RuntimeTraitMethodInstanceKey),
+}
+
+impl RuntimeTraitMethodUseScope {
+    fn for_executable(scope: RuntimeExecutableSemanticScope<'_>) -> Option<Self> {
+        match scope {
+            RuntimeExecutableSemanticScope::Global => None,
+            RuntimeExecutableSemanticScope::ProjectFunction(key) => {
+                Some(Self::ProjectFunction(key.clone()))
+            }
+            RuntimeExecutableSemanticScope::Closure(key) => Some(Self::Closure(key.clone())),
+            RuntimeExecutableSemanticScope::TraitMethod(key) => {
+                Some(Self::TraitMethod(key.clone()))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeTraitMethodInstanceUse {
+    scope: RuntimeTraitMethodUseScope,
+    expression: ExprId,
+}
+
+impl RuntimeTraitMethodInstanceUse {
+    pub const fn new(scope: RuntimeTraitMethodUseScope, expression: ExprId) -> Self {
+        Self { scope, expression }
+    }
+
+    pub const fn scope(&self) -> &RuntimeTraitMethodUseScope {
+        &self.scope
+    }
+    pub const fn expression(&self) -> ExprId {
+        self.expression
+    }
+}
+
+impl RuntimeTraitMethodInstanceKey {
+    pub const fn new(
+        declaration: ImplMethodDeclarationId,
+        self_type: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            declaration,
+            self_type,
+        }
+    }
+
+    pub const fn declaration(&self) -> &ImplMethodDeclarationId {
+        &self.declaration
+    }
+    pub const fn self_type(&self) -> RuntimeSemanticTypeId {
+        self.self_type
+    }
 }
 
 /// Generation-bound method identity consumed by final-HIR runtime lowering.
@@ -4868,13 +4749,16 @@ pub enum RuntimeTraitIdentity {
 /// the ordered set of checked conformances. The implementation/member pair is
 /// the sole body owner; no detached method catalog or source lookup is
 /// retained.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethodFact {
-    declaration: ImplMethodDeclarationId,
+    key: RuntimeTraitMethodInstanceKey,
     implementation: ItemId,
     member: u16,
     trait_identity: RuntimeTraitIdentity,
     self_type: RuntimeNormalizedType,
+    closed_callable: Option<RuntimeCallableId>,
+    closed_semantics: Option<RuntimeProjectFunctionInstanceSemanticFacts>,
+    instance_uses: Box<[RuntimeTraitMethodInstanceUse]>,
 }
 
 impl RuntimeTraitMethodFact {
@@ -4886,16 +4770,47 @@ impl RuntimeTraitMethodFact {
         self_type: RuntimeNormalizedType,
     ) -> Self {
         Self {
+            key: RuntimeTraitMethodInstanceKey::new(declaration, self_type.identity()),
+            implementation,
+            member,
+            trait_identity,
+            self_type,
+            closed_callable: None,
+            closed_semantics: None,
+            instance_uses: Box::new([]),
+        }
+    }
+
+    /// Compiler-owned closed body projection for one generic impl instance.
+    pub fn new_closed(
+        declaration: ImplMethodDeclarationId,
+        implementation: ItemId,
+        member: u16,
+        trait_identity: RuntimeTraitIdentity,
+        self_type: RuntimeNormalizedType,
+        callable: RuntimeCallableId,
+        semantics: RuntimeProjectFunctionInstanceSemanticFacts,
+        instance_uses: Box<[RuntimeTraitMethodInstanceUse]>,
+    ) -> Self {
+        let mut value = Self::new(
             declaration,
             implementation,
             member,
             trait_identity,
             self_type,
-        }
+        );
+        value.closed_callable = Some(callable);
+        value.closed_semantics = Some(semantics);
+        value.instance_uses = instance_uses;
+        value
+    }
+
+    pub const fn key(&self) -> &RuntimeTraitMethodInstanceKey {
+        &self.key
     }
 
     pub const fn declaration(&self) -> &ImplMethodDeclarationId {
-        &self.declaration
+        self.key.declaration()
     }
 
     pub const fn implementation(&self) -> ItemId {
@@ -4912,6 +4827,18 @@ impl RuntimeTraitMethodFact {
 
     pub const fn self_type(&self) -> &RuntimeNormalizedType {
         &self.self_type
+    }
+
+    pub const fn closed_semantics(&self) -> Option<&RuntimeProjectFunctionInstanceSemanticFacts> {
+        self.closed_semantics.as_ref()
+    }
+
+    pub const fn closed_callable(&self) -> Option<&RuntimeCallableId> {
+        self.closed_callable.as_ref()
+    }
+
+    pub const fn instance_uses(&self) -> &[RuntimeTraitMethodInstanceUse] {
+        &self.instance_uses
     }
 }
 
@@ -5412,6 +5339,7 @@ impl RuntimePlanSemanticFactInput {
         for (scope, semantics) in instance_semantic_roots(
             self.project_function_instances.iter(),
             self.root_closures.iter(),
+            self.trait_methods.iter(),
         ) {
             semantics
                 .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
@@ -5466,7 +5394,7 @@ pub struct RuntimePlanSemanticFacts {
     types: BTreeMap<TypeId, RuntimeNormalizedType>,
     calls: BTreeMap<ExprId, RuntimeResolvedCall>,
     postfix_candidates: BTreeMap<ExprId, ExprId>,
-    trait_methods: BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
+    trait_methods: BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodFact>,
     iterations: BTreeMap<StmtId, RuntimeIteratorFact>,
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
     triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
@@ -5516,6 +5444,7 @@ pub enum RuntimeExecutableSemanticScope<'facts> {
     Global,
     ProjectFunction(&'facts RuntimeProjectFunctionInstanceKey),
     Closure(&'facts RuntimeClosureInstanceKey),
+    TraitMethod(&'facts RuntimeTraitMethodInstanceKey),
 }
 
 /// One lexical scope and the only semantic catalog valid while lowering it.
@@ -5549,6 +5478,16 @@ impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
     ) -> Self {
         Self {
             scope: RuntimeExecutableSemanticScope::Closure(key),
+            facts: RuntimeExecutableSemanticFactView::ProjectInstance(facts),
+        }
+    }
+
+    pub const fn trait_method(
+        key: &'facts RuntimeTraitMethodInstanceKey,
+        facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        Self {
+            scope: RuntimeExecutableSemanticScope::TraitMethod(key),
             facts: RuntimeExecutableSemanticFactView::ProjectInstance(facts),
         }
     }
@@ -6072,6 +6011,7 @@ struct RuntimeSemanticOwnerSet<'a> {
 fn instance_semantic_roots<'facts>(
     functions: impl Iterator<Item = &'facts RuntimeProjectFunctionInstanceFact> + 'facts,
     closures: impl Iterator<Item = &'facts RuntimeClosureInstanceFact> + 'facts,
+    methods: impl Iterator<Item = &'facts RuntimeTraitMethodFact> + 'facts,
 ) -> impl Iterator<
     Item = (
         RuntimeScopedExecutableSemanticFactView<'facts>,
@@ -6096,6 +6036,13 @@ fn instance_semantic_roots<'facts>(
                 ),
                 closure.semantics(),
             )
+        }))
+        .chain(methods.filter_map(|method| {
+            let semantics = method.closed_semantics()?;
+            Some((
+                RuntimeScopedExecutableSemanticFactView::trait_method(method.key(), semantics),
+                semantics,
+            ))
         }))
 }
 
@@ -6402,7 +6349,7 @@ impl RuntimePlanSemanticFacts {
         )?;
         if root_closures
             .values()
-            .any(|closure| closure.key().enclosing_instance().is_some())
+            .any(|closure| closure.key().enclosing_owner().is_some())
         {
             return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
         }
@@ -6483,6 +6430,31 @@ impl RuntimePlanSemanticFacts {
                 .visit_statement_owners(&mut |statement| {
                     instance_statement_owners.insert(statement);
                 });
+        }
+        for method in &input.trait_methods {
+            let Some(semantics) = method.closed_semantics() else {
+                continue;
+            };
+            semantics.visit_type_projections(&mut |projection| match projection.owner() {
+                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
+                    instance_expression_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
+                    instance_pattern_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                    instance_local_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Type(owner) => {
+                    instance_type_owners.insert(owner);
+                }
+            });
+            semantics.visit_captures(&mut |capture| {
+                instance_capture_owners.insert(capture.capture());
+            });
+            semantics.visit_statement_owners(&mut |statement| {
+                instance_statement_owners.insert(statement);
+            });
         }
         let expected_local_declarations = runtime_owners
             .locals()
@@ -7544,14 +7516,43 @@ impl RuntimePlanSemanticFacts {
             input
                 .trait_methods
                 .into_iter()
-                .map(|method| (method.declaration().clone(), method)),
+                .map(|method| (method.key().clone(), method)),
             RuntimeSemanticFactFamily::TraitMethod,
         )?;
         for method in trait_methods.values() {
             validate_trait_method(&modules, method)?;
             let owner = HirRuntimeExecutableOwner::ImplMethod(method.declaration().clone());
-            if !runtime_owners.contains_runtime_owner(&owner) {
+            if !runtime_owners.contains_runtime_owner(&owner) && method.instance_uses().is_empty() {
                 return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
+            }
+            if method.key().self_type() != method.self_type().identity() {
+                return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+            }
+            if let Some(semantics) = method.closed_semantics() {
+                if semantics.partition().executable() != &owner
+                    || semantics.partition().reachability() != runtime_owners.runtime.identity()
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+                }
+                let callable = method
+                    .closed_callable()
+                    .ok_or(RuntimeSemanticFactsError::InvalidTraitMethodIdentity)?;
+                let lexical_owner = RuntimeClosureLexicalOwner::TraitMethod(method.key().clone());
+                validate_project_function_semantic_catalog(
+                    &modules,
+                    runtime_owners,
+                    Some(&lexical_owner),
+                    callable,
+                    semantics,
+                    None,
+                )?;
+                for projection in semantics.type_projection() {
+                    if let Some(ty) = projection.ty() {
+                        validate_normalized_type(&modules, ty)?;
+                    }
+                }
+            } else if method.closed_callable().is_some() {
+                return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
             }
         }
 
@@ -7591,6 +7592,13 @@ impl RuntimePlanSemanticFacts {
             validate_iterator_witness_method_edges(
                 runtime_owners,
                 *statement,
+                match resolve_stmt(&modules, *statement)? {
+                    HirStmtKind::For(for_stmt) => expression_types
+                        .get(&for_stmt.source())
+                        .ok_or(RuntimeSemanticFactsError::InvalidTraitMethodIdentity)?
+                        .identity(),
+                    _ => return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity),
+                },
                 evidence,
                 &trait_methods,
             )?;
@@ -7841,7 +7849,8 @@ impl RuntimePlanSemanticFacts {
                     RuntimeSemanticFactFamily::DialogueApplication,
                 )?;
                 validate_normalized_type(&modules, value.ty())?;
-                if expression_types.get(&value.expression()) != Some(value.ty()) {
+                validate_normalized_type(&modules, value.source_type())?;
+                if expression_types.get(&value.expression()) != Some(value.source_type()) {
                     return Err(RuntimeSemanticFactsError::InvalidContentFragment {
                         expression: fragment.source(),
                     });
@@ -7921,9 +7930,11 @@ impl RuntimePlanSemanticFacts {
             }
         }
         let mut duplicate_instance_template = None;
-        for (scope, semantics) in
-            instance_semantic_roots(project_function_instances.values(), root_closures.values())
-        {
+        for (scope, semantics) in instance_semantic_roots(
+            project_function_instances.values(),
+            root_closures.values(),
+            trait_methods.values(),
+        ) {
             semantics.visit_content_fragments(scope, &mut |_, fragment| {
                 if !fragment_templates.insert(fragment.template().id())
                     && duplicate_instance_template.is_none()
@@ -7955,9 +7966,11 @@ impl RuntimePlanSemanticFacts {
             character_dialogue_generation::validate_declaration(project, &modules, declaration)?;
         }
         let mut has_instance_dialogue = false;
-        for (scope, semantics) in
-            instance_semantic_roots(project_function_instances.values(), root_closures.values())
-        {
+        for (scope, semantics) in instance_semantic_roots(
+            project_function_instances.values(),
+            root_closures.values(),
+            trait_methods.values(),
+        ) {
             semantics
                 .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
         }
@@ -8024,58 +8037,7 @@ impl RuntimePlanSemanticFacts {
             character_dialogue_policy_types,
             character_dialogue_generation,
         };
-        let mut selected_format_keys = BTreeSet::new();
-        let mut invalid_format_template = false;
-        facts.visit_scoped_calls(&mut |scope, _, call| {
-            let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(
-                formatted,
-            )) = call.dispatch()
-            else {
-                return;
-            };
-            let key = RuntimeFormatTemplateKey::for_call(scope.scope(), formatted);
-            if !selected_format_keys.insert(key.clone()) {
-                invalid_format_template = true;
-                return;
-            }
-            let Some(fact) = facts.format_template(&key) else {
-                invalid_format_template = true;
-                return;
-            };
-            let canonical = arcweft_text_model::DialogueContentFragmentTemplate::formatted_call(
-                fact.template().id(),
-                formatted.call_source(),
-                formatted.value_source(),
-            );
-            if !matches!(canonical, Ok(ref template) if template == fact.template()) {
-                invalid_format_template = true;
-            }
-            let mut values = call.operands().iter().filter(|operand| {
-                operand
-                    .parameter()
-                    .is_some_and(|parameter| parameter.group() == 0 && parameter.parameter() == 0)
-            });
-            let value = values.next();
-            if values.next().is_some()
-                || !value.is_some_and(|operand| {
-                    operand.source()
-                        == RuntimeResolvedCallOperandSource::Expression(
-                            formatted.checked().value().owner(),
-                        )
-                        && format_witness_admits(formatted.checked().witness(), operand.ty())
-                })
-            {
-                invalid_format_template = true;
-            }
-        });
-        if invalid_format_template
-            || selected_format_keys.len() != facts.format_templates.len()
-            || selected_format_keys
-                .iter()
-                .any(|key| !facts.format_templates.contains_key(key))
-        {
-            return Err(RuntimeSemanticFactsError::InvalidFormatTemplateCatalog);
-        }
+        display::validate_selected_format_catalog(&facts, runtime_owners)?;
         for owner in facts.expression_types.keys() {
             if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
                 && !facts.is_pure_program_closure(*owner)
@@ -8123,6 +8085,7 @@ impl RuntimePlanSemanticFacts {
             for (_, semantics) in instance_semantic_roots(
                 facts.project_function_instances.values(),
                 facts.root_closures.values(),
+                facts.trait_methods.values(),
             ) {
                 validate_project_instance_dialogue_applications(
                     &modules,
@@ -8237,7 +8200,7 @@ impl RuntimePlanSemanticFacts {
                 value.expression(),
                 RuntimeSemanticFactFamily::DialogueApplication,
             )?;
-            if self.expression_type(value.expression()) != Some(value.ty()) {
+            if self.expression_type(value.expression()) != Some(value.source_type()) {
                 return Err(RuntimeSemanticFactsError::MissingDialogueValueType {
                     dialogue: owner,
                     value: value.expression(),
@@ -8505,6 +8468,7 @@ impl RuntimePlanSemanticFacts {
         for (_, semantics) in instance_semantic_roots(
             self.project_function_instances.values(),
             self.root_closures.values(),
+            self.trait_methods.values(),
         ) {
             semantics.visit_catalogs(&mut |catalog| {
                 for row in catalog.expressions() {
@@ -8576,6 +8540,12 @@ impl RuntimePlanSemanticFacts {
         }
         for fragment in &self.dialogue_content_fragments {
             fragment.append_normalized_types(&mut roots);
+            roots.extend(
+                fragment
+                    .values()
+                    .iter()
+                    .map(RuntimeDialogueValueExpression::source_type),
+            );
         }
         for effect in self.evaluated_effects.values() {
             roots.push(effect.result());
@@ -8611,6 +8581,14 @@ impl RuntimePlanSemanticFacts {
                 .values()
                 .map(RuntimeTraitMethodFact::self_type),
         );
+        for method in self.trait_methods.values() {
+            if let Some(semantics) = method.closed_semantics() {
+                semantics.visit_type_projections(&mut |projection| {
+                    roots.extend(projection.ty());
+                });
+                semantics.visit_captures(&mut |capture| roots.push(capture.ty()));
+            }
+        }
         for iteration in self.iterations.values() {
             iteration.append_normalized_types(&mut roots);
         }
@@ -8762,6 +8740,13 @@ impl RuntimePlanSemanticFacts {
         self.trait_methods.values()
     }
 
+    pub fn trait_method(
+        &self,
+        key: &RuntimeTraitMethodInstanceKey,
+    ) -> Option<&RuntimeTraitMethodFact> {
+        self.trait_methods.get(key)
+    }
+
     pub fn assertion(&self, statement: StmtId) -> Option<RuntimeAssertionAdmission> {
         self.assertions.get(&statement).copied()
     }
@@ -8872,6 +8857,7 @@ impl RuntimePlanSemanticFacts {
         for (scope, semantics) in instance_semantic_roots(
             self.project_function_instances.values(),
             self.root_closures.values(),
+            self.trait_methods.values(),
         ) {
             semantics.visit_dialogue_applications(scope, visitor);
         }
@@ -8909,6 +8895,7 @@ impl RuntimePlanSemanticFacts {
         for (scope, semantics) in instance_semantic_roots(
             self.project_function_instances.values(),
             self.root_closures.values(),
+            self.trait_methods.values(),
         ) {
             semantics.visit_content_fragments(scope, visitor);
         }
@@ -8934,6 +8921,7 @@ impl RuntimePlanSemanticFacts {
         for (scope, semantics) in instance_semantic_roots(
             self.project_function_instances.values(),
             self.root_closures.values(),
+            self.trait_methods.values(),
         ) {
             semantics.visit_scoped_calls(scope, visitor);
         }
@@ -8950,6 +8938,7 @@ impl RuntimePlanSemanticFacts {
                 instance_semantic_roots(
                     self.project_function_instances.values(),
                     self.root_closures.values(),
+                    self.trait_methods.values(),
                 )
                 .find_map(|(_, semantics)| semantics.dialogue_content_fragment(template))
             })
@@ -11338,10 +11327,11 @@ fn validate_project_function_instance(
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
+    let lexical_owner = RuntimeClosureLexicalOwner::ProjectFunction(instance.key().clone());
     validate_project_function_semantic_catalog(
         modules,
         runtime_owners,
-        Some(instance.key()),
+        Some(&lexical_owner),
         instance.callable().runtime(),
         instance.semantics(),
         None,
@@ -11398,7 +11388,7 @@ fn validate_project_function_root(
 fn validate_project_function_semantic_catalog(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
-    parent_key: Option<&RuntimeProjectFunctionInstanceKey>,
+    parent_key: Option<&RuntimeClosureLexicalOwner>,
     callable: &RuntimeCallableId,
     semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
     outer: Option<RuntimeExecutableSemanticFactView<'_>>,
@@ -11407,32 +11397,40 @@ fn validate_project_function_semantic_catalog(
     if partition.reachability() != runtime_owners.runtime.identity() {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
-    let exact = runtime_owners
-        .executable_owners(partition.executable())
-        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
-    if partition
-        .expressions()
-        .iter()
-        .map(|row| row.owner())
-        .ne(exact.expressions())
-        || partition
-            .patterns()
-            .iter()
-            .map(|row| row.owner())
-            .ne(exact.patterns())
-        || partition
-            .statements()
-            .iter()
-            .map(|row| row.owner())
-            .ne(exact.statements())
-        || partition.locals().iter().copied().ne(exact.locals())
-        || partition.types().iter().copied().ne(exact.types())
-        || partition.captures().iter().copied().ne(exact.captures())
-        || partition
+    let exact = runtime_owners.executable_owners(partition.executable());
+    if exact.is_none()
+        && (!matches!(parent_key, Some(RuntimeClosureLexicalOwner::TraitMethod(_)))
+            || !matches!(
+                partition.executable(),
+                HirRuntimeExecutableOwner::ImplMethod(_) | HirRuntimeExecutableOwner::Closure(_)
+            ))
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    if exact.is_some_and(|exact| {
+        partition
             .expressions()
             .iter()
-            .any(|row| row.children() != exact.expression_children(row.owner()))
-    {
+            .map(|row| row.owner())
+            .ne(exact.expressions())
+            || partition
+                .patterns()
+                .iter()
+                .map(|row| row.owner())
+                .ne(exact.patterns())
+            || partition
+                .statements()
+                .iter()
+                .map(|row| row.owner())
+                .ne(exact.statements())
+            || partition.locals().iter().copied().ne(exact.locals())
+            || partition.types().iter().copied().ne(exact.types())
+            || partition.captures().iter().copied().ne(exact.captures())
+            || partition
+                .expressions()
+                .iter()
+                .any(|row| row.children() != exact.expression_children(row.owner()))
+    }) {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     }
 
@@ -11501,7 +11499,7 @@ fn validate_project_function_semantic_catalog(
         }
     }
     for capture in semantics.captures() {
-        if !exact.capture_plan().contains(capture.projection()) {
+        if exact.is_some_and(|exact| !exact.capture_plan().contains(capture.projection())) {
             return Err(RuntimeSemanticFactsError::InvalidCaptureProjection {
                 capture: capture.capture(),
             });
@@ -11561,7 +11559,25 @@ fn validate_project_function_semantic_catalog(
                 ) {
                     return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
                 }
-                validate_resolved_value(modules, runtime_owners, value)?;
+                let selected_local = match value {
+                    RuntimeResolvedValue::Local(local)
+                    | RuntimeResolvedValue::NominalField { base: local, .. }
+                        if exact.is_none() =>
+                    {
+                        Some(*local)
+                    }
+                    _ => None,
+                };
+                if let Some(local) = selected_local {
+                    module_for(modules, local.module())?
+                        .resolve_local(local)
+                        .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local })?;
+                    if semantics.local_type(local).is_none() {
+                        return Err(RuntimeSemanticFactsError::InactiveLocalReference { local });
+                    }
+                } else {
+                    validate_resolved_value(modules, runtime_owners, value)?;
+                }
             }
             RuntimeProjectFunctionExpressionPayload::Select(select) => {
                 if !matches!(hir, HirExprKind::Select(_)) {
@@ -11984,10 +12000,11 @@ fn validate_project_instance_fragments(
             return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
         }
         for value in fragment.values() {
-            if semantics.expression_type(value.expression()) != Some(value.ty()) {
+            if semantics.expression_type(value.expression()) != Some(value.source_type()) {
                 return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
             }
             validate_normalized_type(modules, value.ty())?;
+            validate_normalized_type(modules, value.source_type())?;
         }
         for effect in fragment.effects() {
             let trigger_valid = match effect.trigger() {
@@ -12185,7 +12202,7 @@ fn validate_project_instance_dialogue_applications(
 fn validate_closure_instance(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
-    parent_key: Option<&RuntimeProjectFunctionInstanceKey>,
+    parent_key: Option<&RuntimeClosureLexicalOwner>,
     callable: &RuntimeCallableId,
     outer: RuntimeExecutableSemanticFactView<'_>,
     owner: ExprId,
@@ -12205,11 +12222,28 @@ fn validate_closure_instance(
     let HirExprKind::Closure(hir) = resolve_expr(modules, owner)? else {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     };
-    let expected_captures = runtime_owners
-        .executable_owners(&HirRuntimeExecutableOwner::Closure(owner))
-        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?
-        .capture_plan();
     let module = module_for(modules, owner.module())?;
+    let expected_captures = if let Some(owners) =
+        runtime_owners.executable_owners(&HirRuntimeExecutableOwner::Closure(owner))
+    {
+        owners
+            .capture_plan()
+            .iter()
+            .map(|capture| (capture.capture(), capture.local()))
+            .collect::<Vec<_>>()
+    } else if matches!(parent_key, Some(RuntimeClosureLexicalOwner::TraitMethod(_))) {
+        hir.captures()
+            .iter()
+            .map(|capture| {
+                module
+                    .resolve_capture(*capture)
+                    .map(|resolved| (*capture, resolved.local()))
+                    .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
     let source = module
         .source_site(
             module.provenance().source_identity(),
@@ -12226,7 +12260,7 @@ fn validate_closure_instance(
         })
         .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
     if closure.owner() != owner
-        || closure.key().enclosing_instance() != parent_key
+        || closure.key().enclosing_owner() != parent_key
         || closure.key().closure().expression() != source
         || RuntimeCallableId::from_checked_digest(
             closure
@@ -12257,16 +12291,16 @@ fn validate_closure_instance(
             return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
         }
     }
-    for (position, (runtime, capture)) in
+    for (position, (runtime, (capture, captured_local))) in
         closure.captures().iter().zip(expected_captures).enumerate()
     {
         let checked = module
-            .resolve_capture(capture.capture())
+            .resolve_capture(capture)
             .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
         if u32::try_from(position).ok() != Some(runtime.position())
-            || runtime.capture() != capture.capture()
+            || runtime.capture() != capture
             || runtime.source() != checked.local()
-            || runtime.source() != capture.local()
+            || runtime.source() != captured_local
             || outer.local_type(runtime.source()) != Some(runtime.ty())
             || closure
                 .semantics()
@@ -12674,8 +12708,9 @@ fn resolve_item<'project>(
 fn validate_iterator_witness_method_edges(
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
     statement: StmtId,
+    source_type: RuntimeSemanticTypeId,
     iteration: &RuntimeIteratorFact,
-    methods: &BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
+    methods: &BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodFact>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let expected = match iteration {
         RuntimeIteratorFact::Builtin(_) => BTreeMap::new(),
@@ -12758,11 +12793,28 @@ fn validate_iterator_witness_method_edges(
                 RuntimeTraitIdentity::StandardIterator
             }
         };
+        let self_type = match (role, iteration) {
+            (HirRuntimeIteratorWitnessMethodRole::IntoIterator, _) => source_type,
+            (
+                HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                RuntimeIteratorFact::Witness(witness),
+            ) => witness.iterator().identity(),
+            (
+                HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                RuntimeIteratorFact::Builtin(_),
+            ) => {
+                return Err(
+                    RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge { statement, role },
+                );
+            }
+        };
+        let key = RuntimeTraitMethodInstanceKey::new(method.clone(), self_type);
         if actual_method != &method
-            || methods.get(&method).is_none_or(|fact| {
-                fact.implementation() != *implementation
-                    || fact.member() != *member
-                    || fact.trait_identity() != &expected_trait
+            || methods.get(&key).is_none_or(|fact| {
+                !(fact.declaration() == &method
+                    && fact.implementation() == *implementation
+                    && fact.member() == *member
+                    && fact.trait_identity() == &expected_trait)
             })
         {
             return Err(
@@ -12796,6 +12848,20 @@ fn validate_trait_method(
     if method.declaration().method().as_str() != name.as_str() || function.body().is_none() {
         return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
     }
+    if let Some(semantics) = method.closed_semantics() {
+        let receiver = function
+            .parameter_groups()
+            .iter()
+            .flat_map(arcweft_lang_hir::item::HirMethodParameterGroup::parameters)
+            .find_map(|parameter| parameter.receiver())
+            .ok_or(RuntimeSemanticFactsError::InvalidTraitMethodIdentity)?;
+        let [local] = receiver.locals() else {
+            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+        };
+        if semantics.local_type(*local) != Some(method.self_type()) {
+            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+        }
+    }
     match method.trait_identity() {
         RuntimeTraitIdentity::Project(trait_item) => {
             let trait_owner = *trait_item;
@@ -12808,6 +12874,10 @@ fn validate_trait_method(
             }
         }
         RuntimeTraitIdentity::StandardIterator | RuntimeTraitIdentity::StandardIntoIterator => {}
+        RuntimeTraitIdentity::StandardDisplayText if name.as_str() == "display_text" => {}
+        RuntimeTraitIdentity::StandardDisplayText => {
+            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+        }
     }
     Ok(())
 }

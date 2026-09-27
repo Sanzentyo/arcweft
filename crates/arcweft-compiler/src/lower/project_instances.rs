@@ -34,6 +34,7 @@ pub enum ProjectInstantiationOrigin {
     Call(ExprId),
     CallableValue(ExprId),
     Root(ItemId),
+    TraitMethod(ItemId),
 }
 
 impl ProjectInstantiationOrigin {
@@ -44,6 +45,9 @@ impl ProjectInstantiationOrigin {
             Self::CallableValue(owner) => RuntimeSemanticProjectionError::Value { owner, reason },
             Self::Root(owner) => {
                 RuntimeSemanticProjectionError::ProjectFunctionInstance { owner, reason }
+            }
+            Self::TraitMethod(owner) => {
+                RuntimeSemanticProjectionError::TraitMethodInstance { owner, reason }
             }
         }
     }

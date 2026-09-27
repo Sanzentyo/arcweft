@@ -163,6 +163,7 @@ runtime_u32_identity!(RuntimeTransferPacketId);
 runtime_u32_identity!(RuntimeCleanupSlotId);
 runtime_u32_identity!(RuntimeDialogueValueSlotId);
 runtime_u32_identity!(RuntimeDialogueContentTemplateId);
+runtime_u32_identity!(RuntimeFormatAttemptId);
 runtime_u32_identity!(RuntimeDialogueEffectSiteId);
 runtime_u32_identity!(RuntimeDeferSiteId);
 runtime_u32_identity!(RuntimeLineTaskGroupId);
@@ -185,6 +186,22 @@ impl RuntimeDialogueContentTemplateId {
     }
 
     /// Returns the zero-based catalog ordinal.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeFormatAttemptId {
+    /// Creates the canonical one-based format-attempt identity for a
+    /// zero-based plan manifest ordinal.
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    /// Returns the zero-based plan manifest ordinal.
     #[must_use]
     pub const fn index(self) -> usize {
         (self.0.get() - 1) as usize

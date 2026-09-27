@@ -289,6 +289,7 @@ struct Analyzer<'project, 'catalog, 'control> {
     type_reports: BTreeMap<TypeId, TypeResolutionReport>,
     facts: SemanticFactState,
     staged_callables: Option<StagedCheckedCallables>,
+    display_conformances: Option<display::DisplayConformanceCatalog>,
     text_proxies: Option<crate::checked_text_proxy::PreparedCheckedTextProxyCatalog>,
     fx_definitions: Option<super::CheckedFxDefinitionCatalog>,
     fx_definition_body_obligations: Option<PreparedFxDefinitionBodyObligations>,
@@ -556,6 +557,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             type_reports: BTreeMap::new(),
             facts: SemanticFactState::new(),
             staged_callables: None,
+            display_conformances: None,
             text_proxies: None,
             fx_definitions: None,
             fx_definition_body_obligations: None,
@@ -695,6 +697,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             item_suspensions,
             executable_suspensions,
         ) = self.finish_checked_callables(staged, &input, &selected_expressions)?;
+        self.display_conformances = Some(display::DisplayConformanceCatalog::build(
+            self,
+            &checked_callables,
+        )?);
         input.set_executable_suspensions(executable_suspensions)?;
         for (owner, fact) in &mut input.items {
             if let Some(effects) = closed_flow_effects.remove(owner) {
@@ -850,7 +856,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         let semantic_shapes =
             super::AcceptedSemanticShapeCatalog::build(self.catalogs.world.environment())?;
         mutation.apply_checked_callables(&mut checked_callables)?;
-        FinalSemanticAnalysis::try_new_with_control_and_type_resolutions_and_catalog(
+        let report = FinalSemanticAnalysis::try_new_with_control_and_type_resolutions_and_catalog(
             self.executable,
             self.symbols,
             checked_callables,
@@ -866,7 +872,12 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             super::report::FinalSemanticAnalysisAuthority::Registered(self.catalogs.world.clone()),
             self.control,
-        )
+        )?;
+        Ok(report.with_display_conformances(
+            self.display_conformances
+                .take()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+        ))
     }
 
     /// Reconciles contextual closure types with the accepted latent effect row
@@ -987,6 +998,8 @@ mod callable_effect_graph;
 mod calls;
 #[path = "analyzer/checked_value_program.rs"]
 mod checked_value_program;
+#[path = "analyzer/display.rs"]
+pub(super) mod display;
 #[path = "analyzer/pending_effects.rs"]
 mod pending_effects;
 pub(super) use calls::AnalyzerPreparedCallGraph;

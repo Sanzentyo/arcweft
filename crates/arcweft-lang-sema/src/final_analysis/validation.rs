@@ -19,6 +19,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CallableCandidateId, CallableValidator, DialogueCallableId},
+    checked_rich_text::{CheckedDialogueToken, CheckedRichTextReport},
     semantic_coordinate::SemanticCoordinateIndex,
     types::{
         NoopTypeCompatibilityControl, TypeCompatibilityFailure, TypeCompatibilityForbidden,
@@ -506,6 +507,7 @@ pub(super) fn validate_bindings(
 
 pub(super) fn validate_expressions(
     symbols: &ProjectSymbolTable,
+    semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -516,6 +518,11 @@ pub(super) fn validate_expressions(
     coordinates: &SemanticCoordinateIndex<'_, '_>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     for (&owner, fact) in expressions {
+        if let CheckedExpressionResolution::DialogueApplication { rich_text, .. } =
+            fact.resolution()
+        {
+            validate_pure_interpolations(rich_text, expressions)?;
+        }
         let expression = resolve_module(modules, owner.module())?
             .resolve_expr(owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -623,6 +630,7 @@ pub(super) fn validate_expressions(
         if let Some(fact_type) = fact.source_value_type() {
             validate_expression_resolution(
                 symbols,
+                semantic_shapes,
                 topology,
                 modules,
                 dialogue_lines,
@@ -713,6 +721,43 @@ pub(super) fn validate_expressions(
             {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
+        }
+    }
+    Ok(())
+}
+
+fn validate_pure_interpolations(
+    rich_text: &CheckedRichTextReport,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let owner = rich_text.content().id().owner();
+    for token in rich_text.content().tokens() {
+        match token {
+            CheckedDialogueToken::Interpolation { expression, .. } => {
+                let checked =
+                    expressions
+                        .get(expression)
+                        .ok_or(FinalSemanticAnalysisError::MissingFact {
+                            family: SemanticFactFamily::Expression,
+                        })?;
+                if !checked.effects().is_empty() {
+                    return Err(FinalSemanticAnalysisError::ImpureDialogueInterpolation {
+                        owner,
+                        expression: *expression,
+                        effects: checked.effects().clone(),
+                    });
+                }
+            }
+            CheckedDialogueToken::ContentInsert(insertion) => {
+                if let Some(nested) = insertion.argument().checked_content() {
+                    validate_pure_interpolations(nested, expressions)?;
+                }
+            }
+            CheckedDialogueToken::Text(_)
+            | CheckedDialogueToken::Escape(_)
+            | CheckedDialogueToken::PointAction(_)
+            | CheckedDialogueToken::LineBreak(_)
+            | CheckedDialogueToken::RawLiteral(_) => {}
         }
     }
     Ok(())
@@ -1060,6 +1105,7 @@ fn validate_content_application_resolution(
 
 fn validate_expression_resolution(
     symbols: &ProjectSymbolTable,
+    semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -1076,6 +1122,7 @@ fn validate_expression_resolution(
         }
         CheckedExpressionResolution::ImplicitCallable(callable) => validate_implicit_callable(
             symbols,
+            semantic_shapes,
             topology,
             modules,
             dialogue_lines,
@@ -1102,11 +1149,16 @@ fn validate_expression_resolution(
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog),
             CheckedSelectResolution::AgentField { .. }
             | CheckedSelectResolution::ProgressField { .. } => Ok(()),
-            CheckedSelectResolution::Field(selection) => {
-                validate_field_selection(modules, expressions, owner, ty, selection)
-            }
+            CheckedSelectResolution::Field(selection) => validate_field_selection(
+                semantic_shapes,
+                modules,
+                expressions,
+                owner,
+                ty,
+                selection,
+            ),
             CheckedSelectResolution::DialogueView { projection, field } => {
-                validate_field_selection(modules, expressions, owner, ty, field)?;
+                validate_field_selection(semantic_shapes, modules, expressions, owner, ty, field)?;
                 (match projection {
                     crate::dialogue_view::DialogueProjectionCoordinate::Character(character) => {
                         character.field()
@@ -1225,6 +1277,7 @@ fn validate_expression_resolution(
         }
         CheckedExpressionResolution::CompileTimeScalar(scalar) => validate_expression_resolution(
             symbols,
+            semantic_shapes,
             topology,
             modules,
             dialogue_lines,
@@ -1468,6 +1521,7 @@ fn try_boundary_authority_failure(
 }
 
 fn validate_field_selection(
+    semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expressions: &BTreeMap<ExprId, CheckedExpression>,
     owner: ExprId,
@@ -1541,10 +1595,28 @@ fn validate_field_selection(
             TypeKind::ProjectNominal(_),
         ) => runtime_field.zero_based() == selection.declaration_ordinal(),
         (
-            crate::record_field::CheckedRecordFieldSemanticId::Environment(_),
+            crate::record_field::CheckedRecordFieldSemanticId::Environment(semantic_id),
             None,
             TypeKind::Named(_) | TypeKind::AcceptedNominal(_),
-        ) => true,
+        ) => {
+            semantic_id
+                == crate::env::nominal::AcceptedEnvironmentFieldSemanticId::issue(
+                    selection.owner_type(),
+                    selection.declaration_ordinal(),
+                    selection.field_type(),
+                )
+        }
+        (crate::record_field::CheckedRecordFieldSemanticId::Environment(semantic_id), None, _) => {
+            semantic_shapes
+                .environment_record(selection.owner_type())
+                .filter(|record| record.ty() == &target_type)
+                .and_then(|record| record.field(selection.diagnostic_name().as_str()))
+                .is_some_and(|field| {
+                    field.semantic_id() == semantic_id
+                        && field.ordinal() == selection.declaration_ordinal()
+                        && field.type_digest() == selection.field_type()
+                })
+        }
         _ => false,
     };
     (valid_family
@@ -1603,6 +1675,7 @@ fn validate_choice(
 
 fn validate_implicit_callable(
     symbols: &ProjectSymbolTable,
+    semantic_shapes: &super::semantic_shapes::AcceptedSemanticShapeCatalog,
     topology: &Arc<HirProjectEvaluationTopology>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -1676,6 +1749,7 @@ fn validate_implicit_callable(
     match callable.body() {
         CheckedImplicitCallableBody::Plain(resolution) => validate_expression_resolution(
             symbols,
+            semantic_shapes,
             topology,
             modules,
             dialogue_lines,

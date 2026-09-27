@@ -426,7 +426,9 @@ impl RegisteredCallableCatalogBuilder {
                 ProjectSymbolTargetId::Callable(declaration) => {
                     ProjectNameBinding::Callable(declaration.clone())
                 }
-                ProjectSymbolTargetId::StructuralCallable(_) => continue,
+                ProjectSymbolTargetId::StructuralCallable(_) | ProjectSymbolTargetId::Trait(_) => {
+                    continue;
+                }
                 ProjectSymbolTargetId::External(_)
                 | ProjectSymbolTargetId::Nominal(_)
                 | ProjectSymbolTargetId::Retained(_)

@@ -25,7 +25,6 @@ use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
 use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
-use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
 
 use crate::agent::RuntimeAgentIntrinsic;
@@ -47,8 +46,8 @@ use crate::semantic_facts::{
     RuntimeResolvedMutablePlace, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
     RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopeContinuation, RuntimeScopeOwner,
     RuntimeScopedExecutableSemanticFactView, RuntimeStandardMapCall,
-    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
-    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTraitMethodInstanceKey,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -59,7 +58,10 @@ pub(crate) struct FinalExprLowerer<'hir> {
     facts: &'hir RuntimePlanSemanticFacts,
     semantic_facts: RuntimeScopedExecutableSemanticFactView<'hir>,
     locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
-    trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    trait_methods: &'hir BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
+    format_attempts: Option<
+        &'hir BTreeMap<RuntimeFormatTemplateKey, arcweft_core::plan::RuntimeFormatAttemptSeedId>,
+    >,
     function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     dialogue_effect_sites:
         &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
@@ -173,7 +175,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         module: &'hir HirModule,
         facts: &'hir RuntimePlanSemanticFacts,
         locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
-        trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+        trait_methods: &'hir BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
         function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
         dialogue_effect_sites: &'hir BTreeMap<
             RuntimeDialogueEffectProgramKey,
@@ -191,6 +193,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             semantic_facts: RuntimeScopedExecutableSemanticFactView::global(facts),
             locals,
             trait_methods,
+            format_attempts: None,
             function_sites,
             dialogue_effect_sites,
             pipe_locals,
@@ -253,6 +256,17 @@ impl<'hir> FinalExprLowerer<'hir> {
         sites: &'hir BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     ) -> Self {
         self.closure_sites = Some(sites);
+        self
+    }
+
+    pub(crate) fn with_format_attempts(
+        mut self,
+        attempts: &'hir BTreeMap<
+            RuntimeFormatTemplateKey,
+            arcweft_core::plan::RuntimeFormatAttemptSeedId,
+        >,
+    ) -> Self {
+        self.format_attempts = Some(attempts);
         self
     }
 
@@ -751,6 +765,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             facts: self.facts,
             locals: self.locals,
             trait_methods: self.trait_methods,
+            format_attempts: self.format_attempts,
             function_sites: self.function_sites,
             dialogue_effect_sites: self.dialogue_effect_sites,
             pipe_locals: self.pipe_locals,
@@ -1757,6 +1772,15 @@ impl<'hir> FinalExprLowerer<'hir> {
                 method,
                 ..
             }) => {
+                let receiver_type = operands
+                    .iter()
+                    .find(|operand| {
+                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                    })
+                    .ok_or_else(|| format!("trait call {id:?} has no checked receiver"))?
+                    .ty();
+                let method_key =
+                    RuntimeTraitMethodInstanceKey::new(method.clone(), receiver_type.identity());
                 let scalar_values = self.scalar_values(id, &values)?;
                 let receiver = self.exact_scalar_operand_value(
                     id,
@@ -1794,9 +1818,15 @@ impl<'hir> FinalExprLowerer<'hir> {
                     ));
                 }
                 Ok(RuntimeExprSeedKind::TraitCall {
-                    callable: self.trait_methods.get(method).cloned().ok_or_else(|| {
-                        format!("builder-issued trait-method seed is missing for {method:?}")
-                    })?,
+                    callable: self
+                        .trait_methods
+                        .get(&method_key)
+                        .cloned()
+                        .ok_or_else(|| {
+                            format!(
+                                "builder-issued trait-method seed is missing for {method_key:?}"
+                            )
+                        })?,
                     receiver: Box::new(receiver),
                     args: args.into_boxed_slice(),
                 })
@@ -1827,6 +1857,10 @@ impl<'hir> FinalExprLowerer<'hir> {
             ));
         }
         let key = RuntimeFormatTemplateKey::for_call(self.semantic_facts.scope(), formatted);
+        let attempt = self
+            .format_attempts
+            .and_then(|attempts| attempts.get(&key))
+            .cloned();
         let template = self
             .facts
             .format_template(&key)
@@ -1910,17 +1944,17 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ));
             }
             seen[index] = true;
-            if index == FmtParameterId::Value.index()
-                && !crate::semantic_facts::format_witness_admits(checked.witness(), operand.ty())
-            {
+            if index == FmtParameterId::Value.index() && !formatted.admits_primary(operand.ty()) {
                 return Err(format!(
                     "formatter call {id:?} has an invalid display witness"
                 ));
             }
-            operands.push(RuntimeFormatContentOperandSeed {
-                parameter: *identity,
-                expression: self.lower_scalar_operand_source(operand.source(), operand.ty())?,
-            });
+            if attempt.is_none() {
+                operands.push(RuntimeFormatContentOperandSeed {
+                    parameter: *identity,
+                    expression: self.lower_scalar_operand_source(operand.source(), operand.ty())?,
+                });
+            }
         }
         if seen
             .iter()
@@ -1931,9 +1965,31 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "formatter call {id:?} is missing a selected parameter"
             ));
         }
+        let project_method = formatted
+            .display_witness()
+            .project_conformance()
+            .map(|conformance| {
+                let self_type = formatted.project_self_type().ok_or_else(|| {
+                    format!("formatter call {id:?} has no closed project self type")
+                })?;
+                let key = RuntimeTraitMethodInstanceKey::new(
+                    conformance.method_declaration().clone(),
+                    self_type.identity(),
+                );
+                self.trait_methods.get(&key).cloned().ok_or_else(|| {
+                    format!("formatter call {id:?} has no selected project DisplayText method")
+                })
+            })
+            .transpose()?;
         Ok(RuntimeExprSeedKind::FormatContent {
             template: template.id(),
+            attempt,
             operands: operands.into_boxed_slice(),
+            project_method,
+            project_option: matches!(
+                formatted.display_witness(),
+                arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness::OptionProject(_)
+            ),
         })
     }
 

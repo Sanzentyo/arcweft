@@ -3380,69 +3380,94 @@ impl Analyzer<'_, '_, '_> {
                 }),
             )));
         }
-        let (ty, resolution) =
-            if let Some((field, ty)) = target_type.agent_field_type(name.as_str()) {
-                (ty, super::CheckedSelectResolution::AgentField { field })
-            } else if let Some((field, ty)) = target_type.progress_field(name.as_str()) {
-                (ty, super::CheckedSelectResolution::ProgressField { field })
-            } else {
-                match target_type {
-                    TypeKind::ProjectNominal(_) => {
-                        let mutable_base = match target.checked_resolution() {
-                            Some(CheckedExpressionResolution::Value(
-                                CheckedValueResolution::Local(local),
-                            )) => Some(*local),
-                            _ => None,
-                        };
-                        return self.prepare_project_nominal_field_expression(
-                            owner,
-                            target_type,
-                            mutable_base,
-                            target.effects().clone(),
-                            name,
-                        );
-                    }
-                    TypeKind::Named(type_name) => {
-                        let environment = self.catalogs.world.environment().typecheck_env();
-                        let record = environment
-                            .environment_record(type_name.as_str())
-                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        checked_environment_field_selection(
-                            environment,
-                            record,
-                            type_name.as_str(),
-                            name,
-                            owner,
-                        )?
-                    }
-                    TypeKind::AcceptedNominal(nominal) => {
-                        let environment = self.catalogs.world.environment().typecheck_env();
-                        let record = environment
-                            .nominal_catalog()
-                            .exact(nominal.declaration().canonical_path())
-                            .filter(|record| record.id() == nominal.declaration())
-                            .filter(|record| {
-                                matches!(
-                                    record.try_instantiate(nominal.arguments().to_vec()),
-                                    Ok(ref instantiated) if instantiated == target_type
-                                )
-                            })
-                            .and_then(|record| record.environment_record())
-                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        let type_name =
-                            crate::types::direct_type_name(nominal.declaration().canonical_path())
-                                .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                        checked_environment_field_selection(
-                            environment,
-                            record,
-                            type_name,
-                            name,
-                            owner,
-                        )?
-                    }
-                    _ => return Err(AnalyzerExpressionError::rejected(owner)),
+        let (ty, resolution) = if let Some((field, ty)) =
+            target_type.agent_field_type(name.as_str())
+        {
+            (ty, super::CheckedSelectResolution::AgentField { field })
+        } else if let Some((field, ty)) = target_type.progress_field(name.as_str()) {
+            (ty, super::CheckedSelectResolution::ProgressField { field })
+        } else {
+            match target_type {
+                TypeKind::ProjectNominal(_) => {
+                    let mutable_base = match target.checked_resolution() {
+                        Some(CheckedExpressionResolution::Value(
+                            CheckedValueResolution::Local(local),
+                        )) => Some(*local),
+                        _ => None,
+                    };
+                    return self.prepare_project_nominal_field_expression(
+                        owner,
+                        target_type,
+                        mutable_base,
+                        target.effects().clone(),
+                        name,
+                    );
                 }
-            };
+                TypeKind::Named(type_name) => {
+                    let environment = self.catalogs.world.environment().typecheck_env();
+                    let record = environment
+                        .environment_record(type_name.as_str())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    checked_environment_field_selection(
+                        environment,
+                        record,
+                        type_name.as_str(),
+                        name,
+                        owner,
+                    )?
+                }
+                TypeKind::AcceptedNominal(nominal) => {
+                    let environment = self.catalogs.world.environment().typecheck_env();
+                    let record = environment
+                        .nominal_catalog()
+                        .exact(nominal.declaration().canonical_path())
+                        .filter(|record| record.id() == nominal.declaration())
+                        .filter(|record| {
+                            matches!(
+                                record.try_instantiate(nominal.arguments().to_vec()),
+                                Ok(ref instantiated) if instantiated == target_type
+                            )
+                        })
+                        .and_then(|record| record.environment_record())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    let type_name =
+                        crate::types::direct_type_name(nominal.declaration().canonical_path())
+                            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    checked_environment_field_selection(
+                        environment,
+                        record,
+                        type_name,
+                        name,
+                        owner,
+                    )?
+                }
+                _ => {
+                    let environment = self.catalogs.world.environment().typecheck_env();
+                    let semantic_type = target_type
+                        .semantic_identity_digest()
+                        .map_err(|_| AnalyzerExpressionError::rejected(owner))?;
+                    let accepted = environment
+                        .nominal_catalog()
+                        .environment_record_for_semantic_type(semantic_type)
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    let record = accepted
+                        .environment_record()
+                        .filter(|record| {
+                            record.ty() == target_type && record.semantic_type() == semantic_type
+                        })
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    let type_name = crate::types::direct_type_name(accepted.id().canonical_path())
+                        .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
+                    checked_environment_field_selection(
+                        environment,
+                        record,
+                        type_name,
+                        name,
+                        owner,
+                    )?
+                }
+            }
+        };
         Ok(CheckedExpression::value(
             ty,
             CheckedTypeSelection::Inferred,
@@ -4338,6 +4363,7 @@ impl Analyzer<'_, '_, '_> {
                     Ok(
                         ResolvedProjectSymbol::Callable(_)
                         | ResolvedProjectSymbol::StructuralCallable(_)
+                        | ResolvedProjectSymbol::Trait(_)
                         | ResolvedProjectSymbol::Nominal(_)
                         | ResolvedProjectSymbol::Module(_),
                     )

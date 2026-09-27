@@ -723,7 +723,7 @@ pub(super) fn generic_scope(
     owner: TypeId,
 ) -> Result<GenericTypeScope, FinalSemanticAnalysisError> {
     let item_id =
-        enclosing_item(module, scope)?.or(nominal_declaration_item_for_type(module, owner)?);
+        enclosing_item(module, scope)?.or(generic_declaration_item_for_type(module, owner)?);
     let Some(item_id) = item_id else {
         return Ok(GenericTypeScope::empty());
     };
@@ -771,14 +771,14 @@ pub(super) fn generic_scope(
         .map_err(|_| FinalSemanticAnalysisError::GenericScope { owner })
 }
 
-fn nominal_declaration_item_for_type(
+fn generic_declaration_item_for_type(
     module: &HirModule,
     owner: TypeId,
 ) -> Result<Option<ItemId>, FinalSemanticAnalysisError> {
     let mut matched = None;
     for (item_id, item) in module.items() {
         let mut contains = false;
-        for root in nominal_item_type_roots(item) {
+        for root in generic_item_type_roots(item) {
             if type_graph_contains(module, root, owner)? {
                 contains = true;
                 break;
@@ -794,7 +794,7 @@ fn nominal_declaration_item_for_type(
     Ok(matched)
 }
 
-fn nominal_item_type_roots(item: &HirItem) -> Vec<TypeId> {
+fn generic_item_type_roots(item: &HirItem) -> Vec<TypeId> {
     let mut roots = Vec::new();
     match item.kind() {
         HirItemKind::TypeAlias(alias) => roots.push(alias.target()),
@@ -810,6 +810,10 @@ fn nominal_item_type_roots(item: &HirItem) -> Vec<TypeId> {
                 }
             }
         }
+        HirItemKind::Impl(item) => {
+            roots.push(item.target());
+            roots.extend(item.trait_ref());
+        }
         _ => return roots,
     }
     for parameter in item_generic_parameters(item) {
@@ -819,6 +823,7 @@ fn nominal_item_type_roots(item: &HirItem) -> Vec<TypeId> {
         HirItemKind::TypeAlias(item) => item.where_predicates(),
         HirItemKind::Struct(item) => item.where_predicates(),
         HirItemKind::Enum(item) => item.where_predicates(),
+        HirItemKind::Impl(item) => item.where_predicates(),
         _ => &[],
     };
     for predicate in predicates {

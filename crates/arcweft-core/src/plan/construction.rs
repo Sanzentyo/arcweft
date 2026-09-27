@@ -36,21 +36,23 @@ pub use seed::{
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatContentOperandSeed,
-    RuntimeFunctionInputBindingSeed, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
-    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed,
-    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskGroupSeedId,
-    RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeMutablePlaceSeed,
-    RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFormatAttemptDeclarationSeed, RuntimeFormatAttemptOperandSeed,
+    RuntimeFormatAttemptSeedId, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
+    RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
+    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
+    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
+    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
+    RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -125,6 +127,7 @@ impl RuntimePlanSemanticAdmission {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimePlanTable {
     DialogueContent,
+    FormatAttempts,
     Entries,
     CallableExecutables,
     FlowSchemas,
@@ -242,6 +245,33 @@ pub enum RuntimePlanBuildError {
     },
     #[error("a construction-only dialogue content handle belongs to another runtime-plan builder")]
     ForeignDialogueContentSeed,
+    #[error("a construction-only format-attempt handle belongs to another runtime-plan builder")]
+    ForeignFormatAttemptSeed,
+    #[error("runtime format-attempt table exhausted its identity space")]
+    FormatAttemptIdentityExhausted,
+    #[error("format attempt {attempt} is not registered in this runtime plan")]
+    UnknownFormatAttempt {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+    },
+    #[error("format attempt {attempt} does not use formatter template {template}")]
+    FormatAttemptTemplateMismatch {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+    },
+    #[error("format attempt {attempt} cannot be combined with inline operands")]
+    FormatAttemptHasInlineOperands {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+    },
+    #[error("format attempt {attempt} has no operand for parameter {parameter:?}")]
+    MissingFormatAttemptOperand {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+    },
+    #[error("format attempt {attempt} operand {parameter:?} has an invalid source type")]
+    InvalidFormatAttemptOperand {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+    },
     #[error("a construction-only dialogue mark handle belongs to another runtime-plan builder")]
     ForeignDialogueMarkSeed,
     #[error(
@@ -332,6 +362,8 @@ pub enum RuntimePlanBuildError {
     },
     #[error("fmt Content expression selects more than one failure policy")]
     ConflictingFormatFailurePolicy,
+    #[error("fmt project DisplayText method has an invalid {context} contract")]
+    InvalidFormatDisplayMethod { context: &'static str },
     #[error(
         "dialogue content has {actual} effect bindings but its template declares {expected} sites"
     )]
@@ -666,6 +698,7 @@ pub struct RuntimePlanBuilder {
     >,
     project_call_sites: RefCell<RuntimeProjectCallSiteTableBuilder>,
     dialogue_content: RuntimeDialogueContentPlanTableBuilder,
+    format_attempts: Vec<super::RuntimeFormatAttempt>,
     entries: Vec<RuntimeEntrySpec>,
     callable_executables: Vec<RuntimeCallableExecutable>,
     flow_schemas: Vec<RuntimeFlowSchema>,
@@ -696,6 +729,7 @@ impl RuntimePlanBuilder {
             callable_specializations: Vec::new(),
             project_call_sites: RefCell::new(RuntimeProjectCallSiteTableBuilder::default()),
             dialogue_content: RuntimeDialogueContentPlanTableBuilder::new(),
+            format_attempts: Vec::new(),
             entries: Vec::new(),
             callable_executables: Vec::new(),
             flow_schemas: Vec::new(),
@@ -1071,6 +1105,116 @@ impl RuntimePlanBuilder {
         self.dialogue_content
             .intern_template(manifest)
             .map_err(RuntimePlanBuildError::from)
+    }
+
+    /// Reserves one plan-local formatter attempt and its source-order typed
+    /// operand manifest before any flow operand operations are lowered.
+    pub fn reserve_format_attempt_seed(
+        &mut self,
+        seed: RuntimeFormatAttemptDeclarationSeed,
+    ) -> Result<RuntimeFormatAttemptSeedId, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = self.try_reserve_format_attempt_seed(seed);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
+    fn try_reserve_format_attempt_seed(
+        &mut self,
+        seed: RuntimeFormatAttemptDeclarationSeed,
+    ) -> Result<RuntimeFormatAttemptSeedId, RuntimePlanBuildError> {
+        let template = self.dialogue_content.template(seed.template).ok_or(
+            RuntimePlanBuildError::MissingDialogueTemplateManifest {
+                template: seed.template,
+            },
+        )?;
+        let exact_formatted_slot = matches!(
+            template.slots(),
+            [slot]
+                if slot.role() == super::RuntimeDialogueValueRole::Formatted
+                    && slot.semantic_type()
+                        == crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+        );
+        if !exact_formatted_slot || !template.effects().is_empty() {
+            return Err(RuntimePlanBuildError::InvalidFormatContentTemplate {
+                template: seed.template,
+            });
+        }
+
+        let ordinal = self
+            .format_attempts
+            .len()
+            .checked_add(1)
+            .and_then(|value| u32::try_from(value).ok())
+            .and_then(NonZeroU32::new)
+            .ok_or(RuntimePlanBuildError::FormatAttemptIdentityExhausted)?;
+        let id =
+            crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(self.format_attempts.len())
+                .ok_or(RuntimePlanBuildError::FormatAttemptIdentityExhausted)?;
+        debug_assert_eq!(id.get(), ordinal);
+
+        let mut seen = BTreeSet::new();
+        let mut primary_present = false;
+        let mut failure_policy_count = 0;
+        let mut operands = Vec::with_capacity(seed.operands.len());
+        for operand in seed.operands.into_vec() {
+            if !seen.insert(operand.parameter) {
+                return Err(RuntimePlanBuildError::DuplicateFormatParameter {
+                    parameter: operand.parameter,
+                });
+            }
+            if operand.parameter == crate::value::RuntimeFmtParameterId::Value {
+                primary_present = true;
+            }
+            if matches!(
+                operand.parameter,
+                crate::value::RuntimeFmtParameterId::OnError
+                    | crate::value::RuntimeFmtParameterId::Fallback
+                    | crate::value::RuntimeFmtParameterId::DiscardError
+            ) {
+                failure_policy_count += 1;
+                if failure_policy_count > 1 {
+                    return Err(RuntimePlanBuildError::ConflictingFormatFailurePolicy);
+                }
+            }
+            let ty = self.resolve_seed_type("format-attempt operand", operand.ty)?;
+            let valid_type = match operand.parameter {
+                crate::value::RuntimeFmtParameterId::Style
+                | crate::value::RuntimeFmtParameterId::Locale
+                | crate::value::RuntimeFmtParameterId::Currency
+                | crate::value::RuntimeFmtParameterId::NoneValue
+                | crate::value::RuntimeFmtParameterId::Fallback => self.is_string(ty)?,
+                crate::value::RuntimeFmtParameterId::Color => {
+                    matches!(self.projection(ty)?, RuntimePlanTypeProjection::Color)
+                }
+                crate::value::RuntimeFmtParameterId::DiscardError => {
+                    matches!(self.projection(ty)?, RuntimePlanTypeProjection::Bool)
+                }
+                crate::value::RuntimeFmtParameterId::Value
+                | crate::value::RuntimeFmtParameterId::OnError => true,
+            };
+            if !valid_type {
+                return Err(RuntimePlanBuildError::InvalidFormatAttemptOperand {
+                    attempt: id,
+                    parameter: operand.parameter,
+                });
+            }
+            operands.push(super::RuntimeFormatAttemptOperand::new(
+                operand.parameter,
+                ty,
+            ));
+        }
+        if !primary_present {
+            return Err(RuntimePlanBuildError::MissingFormatPrimaryValue);
+        }
+        self.format_attempts.push(super::RuntimeFormatAttempt::new(
+            id,
+            seed.template,
+            operands.into_boxed_slice(),
+        ));
+        Ok(RuntimeFormatAttemptSeedId::issued(&self.issuer, id))
     }
 
     fn try_register_plain_text_context_template_seed(
@@ -2369,6 +2513,9 @@ impl RuntimePlanBuilder {
             callable_states: self.callable_states.into_inner().finish(),
             callable_specializations: self.callable_specializations.into_boxed_slice(),
             project_call_sites,
+            format_attempts: super::RuntimeFormatAttemptTable::from_admitted_rows(
+                self.format_attempts.into_boxed_slice(),
+            ),
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,
             callable_executables: self.callable_executables,

@@ -1934,7 +1934,7 @@ fn project_target_source(
         ProjectSymbolTargetId::Retained(id) => symbols
             .retained(id)
             .map(|symbol| symbol.declaration_span().clone()),
-        ProjectSymbolTargetId::Module(_) => None,
+        ProjectSymbolTargetId::Trait(_) | ProjectSymbolTargetId::Module(_) => None,
     }
 }
 
@@ -1947,7 +1947,7 @@ fn resolved_symbol_source(symbol: &ResolvedProjectSymbol<'_>) -> Option<SourceSp
         ResolvedProjectSymbol::External(symbol) => Some(symbol.declaration_span().clone()),
         ResolvedProjectSymbol::Nominal(symbol) => Some(symbol.source().whole().clone()),
         ResolvedProjectSymbol::Retained(symbol) => Some(symbol.declaration_span().clone()),
-        ResolvedProjectSymbol::Module(_) => None,
+        ResolvedProjectSymbol::Trait(_) | ResolvedProjectSymbol::Module(_) => None,
     }
 }
 

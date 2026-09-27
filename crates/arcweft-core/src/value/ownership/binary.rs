@@ -2,13 +2,13 @@
 
 use super::{RuntimeOwnedSlotId, RuntimeValuePath, RuntimeValuePathError, RuntimeValuePathSegment};
 use crate::{
-    awbc::schema::AwbcRegisterId,
+    awbc::{fiber::FiberCursor, schema::AwbcRegisterId},
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
-        RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeFrameLocalId, RuntimeLocalSlotId,
-        RuntimeMailboxInstanceId, RuntimeMailboxLaneId, RuntimeTransferInstanceId,
-        RuntimeTransferPacketId,
+        RuntimeFiberInstanceId, RuntimeFormatAttemptId, RuntimeFrameInstanceId,
+        RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId, RuntimeMailboxLaneId,
+        RuntimePersistentFiberId, RuntimeTransferInstanceId, RuntimeTransferPacketId,
         binary::{RuntimeIdentityBinaryError, decode_nonzero_u32, decode_nonzero_u64},
     },
     value::RuntimeRecordFieldId,
@@ -71,6 +71,34 @@ pub(super) fn encode_owned_slot(slot: RuntimeOwnedSlotId) -> Vec<u8> {
             push_u64(&mut bytes, frame.get());
             push_u32(&mut bytes, local.get());
         }
+        RuntimeOwnedSlotId::AwbcFormatOperand {
+            execution,
+            fiber,
+            frame,
+            site,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_u64(&mut bytes, fiber.get());
+            push_u64(&mut bytes, frame.get());
+            push_raw_u32(&mut bytes, site.function.0);
+            push_raw_u32(&mut bytes, site.block.0);
+            push_raw_u32(&mut bytes, site.instruction_offset);
+            push_raw_u32(&mut bytes, ordinal);
+        }
+        RuntimeOwnedSlotId::NativeFormatOperand {
+            execution,
+            fiber,
+            frame,
+            attempt,
+            ordinal,
+        } => {
+            push_u64(&mut bytes, execution.get());
+            push_raw_u64(&mut bytes, fiber.get());
+            push_raw_u32(&mut bytes, frame);
+            push_raw_u32(&mut bytes, attempt.get().get());
+            push_raw_u32(&mut bytes, ordinal);
+        }
         RuntimeOwnedSlotId::MailboxLane {
             execution,
             mailbox,
@@ -116,7 +144,7 @@ pub(super) fn decode_owned_slot(
 ) -> Result<RuntimeOwnedSlotId, RuntimeOwnershipBinaryError> {
     let mut reader = Reader::new(bytes);
     let tag = reader.u8()?;
-    if tag > 7 {
+    if tag > 9 {
         return Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag });
     }
     let execution = ExecutionInstanceId::from_allocated(reader.nonzero_u64()?);
@@ -161,6 +189,24 @@ pub(super) fn decode_owned_slot(
             execution,
             scope: RuntimeCleanupScopeId::from_allocated(reader.nonzero_u64()?),
             slot: RuntimeCleanupSlotId::from_accepted_ordinal(reader.nonzero_u32()?),
+        },
+        8 => RuntimeOwnedSlotId::AwbcFormatOperand {
+            execution,
+            fiber: RuntimeFiberInstanceId::from_allocated(reader.nonzero_u64()?),
+            frame: RuntimeFrameInstanceId::from_allocated(reader.nonzero_u64()?),
+            site: FiberCursor {
+                function: crate::awbc::schema::AwbcFunctionId(reader.u32()?),
+                block: crate::awbc::schema::AwbcBlockId(reader.u32()?),
+                instruction_offset: reader.u32()?,
+            },
+            ordinal: reader.u32()?,
+        },
+        9 => RuntimeOwnedSlotId::NativeFormatOperand {
+            execution,
+            fiber: RuntimePersistentFiberId::from_allocated(reader.u64()?),
+            frame: reader.u32()?,
+            attempt: RuntimeFormatAttemptId::from_accepted_ordinal(reader.nonzero_u32()?),
+            ordinal: reader.u32()?,
         },
         _ => unreachable!("owned-slot tag was validated above"),
     };
@@ -254,8 +300,16 @@ fn push_u32(bytes: &mut Vec<u8>, value: NonZeroU32) {
     bytes.extend_from_slice(&value.get().to_le_bytes());
 }
 
+fn push_raw_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
 fn push_u64(bytes: &mut Vec<u8>, value: NonZeroU64) {
     bytes.extend_from_slice(&value.get().to_le_bytes());
+}
+
+fn push_raw_u64(bytes: &mut Vec<u8>, value: u64) {
+    bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 struct Reader<'a> {
@@ -360,6 +414,14 @@ mod tests {
                 r#"{"kind":"cleanup_slot","execution":"1","scope":"2","slot":3}"#,
                 "070100000000000000020000000000000003000000",
             ),
+            (
+                r#"{"kind":"awbc_format_operand","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+                "0801000000000000000200000000000000030000000000000004000000050000000600000007000000",
+            ),
+            (
+                r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
+                "0901000000000000000200000000000000030000000400000005000000",
+            ),
         ];
         for (json, expected) in goldens {
             let slot: RuntimeOwnedSlotId = self::json(json);
@@ -395,8 +457,8 @@ mod tests {
     #[test]
     fn binary_decoders_reject_unknown_zero_truncated_and_trailing_forms() {
         assert!(matches!(
-            decode_owned_slot(&[8]),
-            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 8 })
+            decode_owned_slot(&[10]),
+            Err(RuntimeOwnershipBinaryError::UnknownOwnedSlotTag { tag: 10 })
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(

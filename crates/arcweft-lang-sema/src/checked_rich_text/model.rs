@@ -7,7 +7,9 @@ use arcweft_lang_hir::dialogue_application::{
     HirDialogueContentId, HirDialogueMarkName, HirDialoguePointActionArgumentId, HirLineBreakKind,
 };
 use arcweft_lang_hir::identity::ExprId;
+use arcweft_lang_hir::identity::ItemId;
 use arcweft_lang_hir::source_index::HirSourceSite;
+use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_presentation::rich_text::{
     PresentationContentCallableDefinitionId, PresentationContentCallableParameterId,
 };
@@ -481,6 +483,69 @@ pub enum CheckedDisplayFloatWidth {
     Bits64,
 }
 
+/// One closed project `DisplayText` implementation selected for an exact value type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDisplayConformance {
+    target: TypeKind,
+    implementation: ItemId,
+    method_ordinal: u16,
+    method_declaration: ImplMethodDeclarationId,
+    type_arguments: Box<[(crate::types::GenericTypeParameterId, TypeKind)]>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum CheckedDisplayInstantiationError {
+    #[error("DisplayText instance type still contains an unbound generic parameter")]
+    UnclosedType,
+}
+
+impl CheckedDisplayConformance {
+    pub(crate) fn new(
+        target: TypeKind,
+        implementation: ItemId,
+        method_ordinal: u16,
+        method_declaration: ImplMethodDeclarationId,
+        type_arguments: Box<[(crate::types::GenericTypeParameterId, TypeKind)]>,
+    ) -> Self {
+        Self {
+            target,
+            implementation,
+            method_ordinal,
+            method_declaration,
+            type_arguments,
+        }
+    }
+
+    pub const fn target(&self) -> &TypeKind {
+        &self.target
+    }
+    pub const fn implementation(&self) -> ItemId {
+        self.implementation
+    }
+    pub const fn method_ordinal(&self) -> u16 {
+        self.method_ordinal
+    }
+    pub const fn method_declaration(&self) -> &ImplMethodDeclarationId {
+        &self.method_declaration
+    }
+    pub const fn type_arguments(&self) -> &[(crate::types::GenericTypeParameterId, TypeKind)] {
+        &self.type_arguments
+    }
+
+    /// Instantiates one semantic type with this exact checked impl instance.
+    pub fn instantiate_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CheckedDisplayInstantiationError> {
+        let bindings = self.type_arguments.iter().cloned().collect();
+        let closed = ty.substitute_type_parameters(&bindings);
+        if crate::types::contains_generic_parameter(&closed) {
+            return Err(CheckedDisplayInstantiationError::UnclosedType);
+        }
+        Ok(closed)
+    }
+}
+
 /// Selected proof that one final checked type can enter dialogue display.
 ///
 /// `Option` is admitted only through explicit `fmt(...)`; its `Some` branch is
@@ -492,6 +557,8 @@ pub enum CheckedDisplayWitness {
     Scalar(CheckedDisplayScalar),
     Content,
     Option(Box<CheckedDisplayScalar>),
+    Project(Box<CheckedDisplayConformance>),
+    OptionProject(Box<CheckedDisplayConformance>),
     /// An open project-function parameter. Every closed executable instance
     /// must resolve this to a supported display type before publication.
     DeferredGeneric(crate::types::GenericTypeReference),
@@ -579,6 +646,8 @@ impl CheckedDisplayWitness {
             Self::Scalar(scalar) => Some(scalar),
             Self::Content
             | Self::Option(_)
+            | Self::Project(_)
+            | Self::OptionProject(_)
             | Self::DeferredGeneric(_)
             | Self::OptionDeferredGeneric(_) => None,
         }
@@ -589,6 +658,8 @@ impl CheckedDisplayWitness {
             Self::Option(scalar) => Some(scalar),
             Self::Scalar(_)
             | Self::Content
+            | Self::Project(_)
+            | Self::OptionProject(_)
             | Self::DeferredGeneric(_)
             | Self::OptionDeferredGeneric(_) => None,
         }
@@ -596,6 +667,14 @@ impl CheckedDisplayWitness {
 
     pub const fn is_content(&self) -> bool {
         matches!(self, Self::Content)
+    }
+
+    /// The exact project method and specialization selected for this value.
+    pub const fn project_conformance(&self) -> Option<&CheckedDisplayConformance> {
+        match self {
+            Self::Project(value) | Self::OptionProject(value) => Some(value),
+            _ => None,
+        }
     }
 
     pub const fn is_deferred_generic(&self) -> bool {
@@ -613,6 +692,8 @@ impl CheckedDisplayWitness {
             Self::Option(_) => 2,
             Self::DeferredGeneric(_) => 3,
             Self::OptionDeferredGeneric(_) => 4,
+            Self::Project(_) => 5,
+            Self::OptionProject(_) => 6,
         }
     }
 }

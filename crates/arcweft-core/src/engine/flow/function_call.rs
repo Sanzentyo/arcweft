@@ -176,6 +176,11 @@ impl Engine {
                 FlowControlStackEntryKind::Loop { .. }
                 | FlowControlStackEntryKind::While { .. }
                 | FlowControlStackEntryKind::WhileLet { .. } => {}
+                FlowControlStackEntryKind::FormatAttempt(frame) => {
+                    if frame.active.is_some() {
+                        self.fiber.env.pop_scope();
+                    }
+                }
             }
         }
         unreachable!("the selected function frame remains present while unwinding its child scopes")

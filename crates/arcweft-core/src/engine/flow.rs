@@ -1,4 +1,5 @@
 mod callable;
+mod format_attempt;
 mod function_call;
 
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
@@ -64,6 +65,33 @@ impl Engine {
                 self.evaluate_let_with_backend(&pattern, &expr, output, pure_backend);
                 self.advance_if_needed(next_op_index);
             }
+            FlowOp::FormatOperandAttempt {
+                attempt,
+                parameter,
+                body,
+                value,
+            } => {
+                if let Err(error) = self.start_format_operand_attempt(
+                    attempt,
+                    parameter,
+                    body,
+                    value,
+                    next_op_index,
+                ) {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                }
+            }
+            FlowOp::CompleteFormatOperand {
+                attempt,
+                parameter,
+                value,
+            } => {
+                if let Err(error) =
+                    self.complete_format_operand_attempt(attempt, parameter, &value, pure_backend)
+                {
+                    self.fail_format_aware_eval(error, output, pure_backend);
+                }
+            }
             FlowOp::LetElse {
                 pattern,
                 expr,
@@ -84,7 +112,7 @@ impl Engine {
                             runtime_value_label(&value)
                         )));
                     }
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::AssignNominalField { base, field, value } => {
@@ -99,7 +127,7 @@ impl Engine {
                             output,
                         ),
                     },
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::LineOperation { .. } | FlowOp::CommitDialogueResult { .. } => {
@@ -133,7 +161,7 @@ impl Engine {
                         self.unwind_control_stack(output, pure_backend);
                         self.fiber.status = FlowFiberStatus::Done(super::FlowExit::Done);
                     }
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::Dialogue {
@@ -144,7 +172,7 @@ impl Engine {
                 let target_value = match self.evaluate_expr_with_backend(&target, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
-                        self.fail_eval(error, output);
+                        self.fail_format_aware_eval(error, output, pure_backend);
                         return;
                     }
                 };
@@ -406,7 +434,7 @@ impl Engine {
                     )
                 })();
                 if let Err(error) = application {
-                    self.fail_eval(error, output);
+                    self.fail_format_aware_eval(error, output, pure_backend);
                 }
             }
             FlowOp::If {
@@ -422,7 +450,7 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                     self.push_scoped_ops(else_ops);
                 }
-                Err(error) => self.fail_eval(error, output),
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::IfLet {
                 pattern,
@@ -444,7 +472,7 @@ impl Engine {
                     self.advance_if_needed(next_op_index);
                     self.push_scoped_ops(else_ops);
                 }
-                Err(error) => self.fail_eval(error, output),
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Match { scrutinee, arms } => {
                 match self.evaluate_match_with_backend(&scrutinee, arms, pure_backend) {
@@ -456,7 +484,7 @@ impl Engine {
                         RuntimeEvalError::PatternMismatch(scrutinee.to_string()),
                         output,
                     ),
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::Loop { result, body } => {
@@ -487,7 +515,7 @@ impl Engine {
                         self.push_while_iteration(condition, &body);
                     }
                     Ok(false) => self.advance_if_needed(next_op_index),
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::WhileNext { condition, body } => {
@@ -498,7 +526,7 @@ impl Engine {
                     Ok(false) => {
                         self.pop_loop_frame(output, pure_backend);
                     }
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::WhileLet {
@@ -526,7 +554,7 @@ impl Engine {
                     self.push_while_let_iteration(pattern, expr, guard, &body, bindings);
                 }
                 Ok(None) => self.advance_if_needed(next_op_index),
-                Err(error) => self.fail_eval(error, output),
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::WhileLetNext {
                 pattern,
@@ -545,7 +573,7 @@ impl Engine {
                 Ok(None) => {
                     self.pop_loop_frame(output, pure_backend);
                 }
-                Err(error) => self.fail_eval(error, output),
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::For {
                 pattern,
@@ -571,9 +599,9 @@ impl Engine {
                                 pure_backend,
                             );
                         }
-                        Err(error) => self.fail_eval(error, output),
+                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                     },
-                    Err(error) => self.fail_eval(error, output),
+                    Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                 }
             }
             FlowOp::ForNext {
@@ -617,20 +645,28 @@ impl Engine {
                     Some(expr) => match self.evaluate_expr_with_backend(&expr, pure_backend) {
                         Ok(value) => value,
                         Err(error) => {
-                            self.fail_eval(error, output);
+                            self.fail_format_aware_eval(error, output, pure_backend);
                             return;
                         }
                     },
                     None => RuntimeValue::Unit,
                 };
-                if self.break_nearest_loop(&value, output, pure_backend) {
+                let mut handled = self.break_nearest_loop(&value, output, pure_backend);
+                while !handled && self.abandon_format_attempt_for_transfer() {
+                    handled = self.break_nearest_loop(&value, output, pure_backend);
+                }
+                if handled {
                     self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("break"), output);
                 }
             }
             FlowOp::Continue => {
-                if self.continue_nearest_loop(output, pure_backend) {
+                let mut handled = self.continue_nearest_loop(output, pure_backend);
+                while !handled && self.abandon_format_attempt_for_transfer() {
+                    handled = self.continue_nearest_loop(output, pure_backend);
+                }
+                if handled {
                     self.advance_if_needed(next_op_index);
                 } else {
                     self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
@@ -639,7 +675,7 @@ impl Engine {
             FlowOp::Goto(target) => self.goto(&target, output, pure_backend),
             FlowOp::GotoExpr(expr) => match self.evaluate_entity_target(&expr) {
                 Ok(target) => self.goto(&target, output, pure_backend),
-                Err(error) => self.fail_eval(error, output),
+                Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
             },
             FlowOp::Return(value) => {
                 if self.has_joined_work() {
@@ -665,7 +701,7 @@ impl Engine {
                                 );
                             }
                         }
-                        Err(error) => self.fail_eval(error, output),
+                        Err(error) => self.fail_format_aware_eval(error, output, pure_backend),
                     }
                 }
             }
@@ -735,7 +771,7 @@ impl Engine {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
                     Ok(value) => value,
                     Err(error) => {
-                        self.fail_eval(error, output);
+                        self.fail_format_aware_eval(error, output, pure_backend);
                         return;
                     }
                 };
@@ -794,7 +830,7 @@ impl Engine {
         let (callable, arguments, attached) = match prepared {
             Ok(values) => values,
             Err(error) => {
-                self.fail_eval(error, output);
+                self.fail_format_aware_eval(error, output, pure_backend);
                 return;
             }
         };
@@ -808,7 +844,7 @@ impl Engine {
             output,
             pure_backend,
         ) {
-            self.fail_eval(error, output);
+            self.fail_format_aware_eval(error, output, pure_backend);
         }
     }
     fn evaluate_project_call_operands(
@@ -1398,6 +1434,7 @@ impl Engine {
                 }
             }
             FlowControlStackEntryKind::Scope { .. } => return false,
+            FlowControlStackEntryKind::FormatAttempt(_) => return false,
             FlowControlStackEntryKind::FunctionCall(_) => return false,
         }
         true
@@ -1441,6 +1478,7 @@ impl Engine {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
             }
+            FlowControlStackEntryKind::FormatAttempt(_) => return false,
             FlowControlStackEntryKind::FunctionCall(_) => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;

@@ -42,8 +42,8 @@ pub use self::runtime_semantic_owners::{
     HirRuntimeIteratorWitnessMethodRole, HirRuntimeReachabilityDigest, HirRuntimeReachabilityEdge,
     HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError, HirRuntimeReachabilityIdentity,
     HirRuntimeReachabilityLimitFamily, HirRuntimeReachabilityPath, HirRuntimeReachabilityRoot,
-    HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
-    HirRuntimeSemanticReachabilityInput,
+    HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite, HirRuntimeSelectedMethodOwners,
+    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
 };
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionProjection, HirRuntimeValueRetention,

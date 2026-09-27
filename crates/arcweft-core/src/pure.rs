@@ -1946,11 +1946,6 @@ impl<'a> PureEvaluator<'a> {
                         "mutation or dialogue construction requires the flow runtime",
                     );
                 }
-                RuntimeExprKind::DialogueContent { effects, .. } if !effects.is_empty() => {
-                    return Self::unsupported_pure_trait_operation(
-                        "dialogue content with effects requires the flow runtime",
-                    );
-                }
                 RuntimeExprKind::Call { callee, .. } if callee.as_intrinsic().is_none() => {
                     return Self::unsupported_pure_trait_operation(
                         "host calls require the flow runtime",
@@ -1995,9 +1990,19 @@ impl<'a> PureEvaluator<'a> {
                 values,
                 effects,
             } => self.evaluate_dialogue_content_expr(*template, values, effects),
-            RuntimeExprKind::FormatContent { template, operands } => {
-                self.evaluate_format_content_expr(*template, operands)
-            }
+            RuntimeExprKind::FormatContent {
+                template,
+                attempt,
+                operands,
+                project_method,
+                project_option,
+            } => self.evaluate_format_content_expr(
+                *template,
+                *attempt,
+                operands,
+                *project_method,
+                *project_option,
+            ),
             RuntimeExprKind::CharacterDialogue {
                 operation,
                 target,
@@ -2200,8 +2205,16 @@ impl<'a> PureEvaluator<'a> {
     fn evaluate_format_content_expr(
         &mut self,
         template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        attempt: Option<crate::runtime_id::RuntimeFormatAttemptId>,
         operands: &[crate::value::RuntimeFormatContentOperand],
+        project_method: Option<RuntimeTraitMethodId>,
+        project_option: bool,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if attempt.is_some() {
+            return Err(RuntimeEvalError::DialogueContentConstruction(
+                "flow-evaluated formatter attempt requires its owning flow frame".to_owned(),
+            ));
+        }
         let manifest = self
             .plan
             .dialogue_content_templates()
@@ -2223,6 +2236,7 @@ impl<'a> PureEvaluator<'a> {
                     .to_owned(),
             ));
         }
+        let format_context = self.format_context.clone();
         let mut evaluated = Vec::with_capacity(operands.len());
         let mut first_recoverable = None;
         for operand in operands {
@@ -2253,7 +2267,7 @@ impl<'a> PureEvaluator<'a> {
             .ok_or(RuntimeEvalError::InvalidExpressionType(
                 primary.expression().ty(),
             ))?;
-        let primary_kind = match primary_type.projection() {
+        let mut primary_kind = match primary_type.projection() {
             RuntimePlanTypeProjection::Option { item, .. } => {
                 let item = self
                     .plan
@@ -2269,8 +2283,143 @@ impl<'a> PureEvaluator<'a> {
             }
             _ => crate::value::RuntimeFormatPrimaryKind::Scalar(primary_type.semantic_identity()),
         };
+        if let Some(method_id) = project_method {
+            primary_kind = if project_option {
+                crate::value::RuntimeFormatPrimaryKind::OptionProjectContent
+            } else {
+                crate::value::RuntimeFormatPrimaryKind::ProjectContent
+            };
+            if first_recoverable.is_none() {
+                let method = self
+                    .plan
+                    .trait_methods()
+                    .get(method_id.0)
+                    .filter(|method| method.id == method_id)
+                    .cloned()
+                    .ok_or(RuntimeEvalError::UnknownTraitMethod(method_id.0))?;
+                let [receiver_local, context_local] = method.input_locals.as_ref() else {
+                    return Err(RuntimeEvalError::DialogueContentConstruction(
+                        "project DisplayText method must have receiver and context".to_owned(),
+                    ));
+                };
+                let receiver_ty = self
+                    .plan
+                    .local_declarations()
+                    .get(*receiver_local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(*receiver_local))?
+                    .ty();
+                let context_ty = self
+                    .plan
+                    .local_declarations()
+                    .get(*context_local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(*context_local))?
+                    .ty();
+                let context_layout = crate::value::project_display_layout(self.plan, context_ty)
+                    .map_err(|error| {
+                        RuntimeEvalError::DialogueContentConstruction(error.to_string())
+                    })?;
+                let result_ty = self
+                    .plan
+                    .type_table()
+                    .get(method.body.ty())
+                    .ok_or(RuntimeEvalError::InvalidExpressionType(method.body.ty()))?;
+                let RuntimePlanTypeProjection::Result { error, .. } = result_ty.projection() else {
+                    return Err(RuntimeEvalError::InvalidExpressionType(method.body.ty()));
+                };
+                let error_layout = crate::value::project_display_layout(self.plan, *error)
+                    .map_err(|error| {
+                        RuntimeEvalError::DialogueContentConstruction(error.to_string())
+                    })?;
+                let value_position = evaluated
+                    .iter()
+                    .position(|(parameter, _)| {
+                        *parameter == crate::value::RuntimeFmtParameterId::Value
+                    })
+                    .ok_or_else(|| {
+                        RuntimeEvalError::DialogueContentConstruction(
+                            "project DisplayText has no primary value".to_owned(),
+                        )
+                    })?;
+                let receiver = evaluated[value_position].1.clone().ok_or_else(|| {
+                    RuntimeEvalError::DialogueContentConstruction(
+                        "project DisplayText primary was not evaluated".to_owned(),
+                    )
+                })?;
+                let receiver = if project_option {
+                    match receiver.try_into_builtin_variant_case() {
+                        Ok((
+                            crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                            Some(value),
+                        )) => Some(value),
+                        Ok((
+                            crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone,
+                            None,
+                        )) => None,
+                        _ => {
+                            return Err(RuntimeEvalError::InvalidExpressionType(
+                                primary.expression().ty(),
+                            ));
+                        }
+                    }
+                } else {
+                    Some(receiver)
+                };
+                if let Some(receiver) = receiver {
+                    let context = crate::value::project_display_context(
+                        &context_layout,
+                        &format_context,
+                        &evaluated,
+                    )
+                    .map_err(|error| {
+                        RuntimeEvalError::DialogueContentConstruction(error.to_string())
+                    })?;
+                    match context {
+                        Ok(context) => {
+                            let receiver = RuntimeExpr::from_admitted_parts(
+                                receiver_ty,
+                                RuntimeExprKind::Value(receiver),
+                            );
+                            let context = RuntimeExpr::from_admitted_parts(
+                                context_ty,
+                                RuntimeExprKind::Value(context),
+                            );
+                            let argument = RuntimeCallArgument::from_admitted_parts(
+                                context,
+                                crate::value::RuntimeCallArgumentMode::Value,
+                                0,
+                            );
+                            let result = self.evaluate_trait_call_expr(
+                                method_id,
+                                RuntimeReceiverMode::Owned,
+                                &receiver,
+                                &[argument],
+                                method.body.ty(),
+                            )?;
+                            match crate::value::project_display_result(result, &error_layout)
+                                .map_err(|error| {
+                                    RuntimeEvalError::DialogueContentConstruction(error.to_string())
+                                })? {
+                                Ok(content) => {
+                                    evaluated[value_position].1 = Some(if project_option {
+                                        RuntimeValue::option_some(content)
+                                    } else {
+                                        content
+                                    });
+                                }
+                                Err(reason) => first_recoverable = Some(reason),
+                            }
+                        }
+                        Err(reason) => first_recoverable = Some(reason),
+                    }
+                }
+            }
+        } else if project_option {
+            return Err(RuntimeEvalError::DialogueContentConstruction(
+                "project fmt option has no selected DisplayText method".to_owned(),
+            ));
+        }
         let formatted = crate::value::finish_format_content_attempt(
-            &self.format_context,
+            &format_context,
             primary_kind,
             &evaluated,
             first_recoverable.as_deref(),

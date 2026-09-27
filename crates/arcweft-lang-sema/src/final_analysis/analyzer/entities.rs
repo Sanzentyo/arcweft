@@ -55,6 +55,7 @@ impl Analyzer<'_, '_, '_> {
             ResolvedProjectSymbol::Callable(_)
             | ResolvedProjectSymbol::StructuralCallable(_)
             | ResolvedProjectSymbol::Nominal(_)
+            | ResolvedProjectSymbol::Trait(_)
             | ResolvedProjectSymbol::Module(_) => Err(EntityReferenceResolutionError::WrongFamily),
         }
     }

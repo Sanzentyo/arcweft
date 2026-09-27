@@ -15,7 +15,7 @@ use crate::source_index::{
 impl StagedHirSourceIndex {
     /// Stages the exact required-name component for one admitted declaration.
     ///
-    /// The declaration whole remains on the item slot. All six declaration
+    /// The declaration whole remains on the item slot. Named declaration
     /// families pass through this one dispatch, so no family-specific source
     /// table or later source-name reconstruction exists.
     #[allow(
@@ -38,6 +38,7 @@ impl StagedHirSourceIndex {
                 | (TypedItemNode::Struct(_), HirItemKind::Struct(_))
                 | (TypedItemNode::Enum(_), HirItemKind::Enum(_))
                 | (TypedItemNode::TypeAlias(_), HirItemKind::TypeAlias(_))
+                | (TypedItemNode::Trait(_), HirItemKind::Trait(_))
         );
         if !applicable {
             if is_declaration_syntax(attached) || is_declaration_kind(retained) {
@@ -351,6 +352,14 @@ fn declaration_component_sources(
                 )]
             })
         }
+        (TypedItemNode::Trait(node), HirItemKind::Trait(_)) => {
+            node.semantics().map(|declaration| {
+                vec![(
+                    HirDeclarationSourceRole::Name,
+                    declaration.name().syntax().source_span(),
+                )]
+            })
+        }
         _ if is_declaration_syntax(attached) || is_declaration_kind(retained) => {
             return Err(
                 HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
@@ -384,6 +393,7 @@ const fn is_declaration_syntax(attached: &TypedItemNode) -> bool {
             | TypedItemNode::Struct(_)
             | TypedItemNode::Enum(_)
             | TypedItemNode::TypeAlias(_)
+            | TypedItemNode::Trait(_)
     )
 }
 
@@ -396,6 +406,7 @@ const fn is_declaration_kind(retained: &HirItemKind) -> bool {
             | HirItemKind::Struct(_)
             | HirItemKind::Enum(_)
             | HirItemKind::TypeAlias(_)
+            | HirItemKind::Trait(_)
     )
 }
 

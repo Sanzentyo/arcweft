@@ -122,6 +122,7 @@ pub enum ProjectSymbolTargetId {
     /// Structural execution owner retained in the callable authority without
     /// entering the ordinary callable value namespace.
     StructuralCallable(CallableDeclarationKey),
+    Trait(super::TraitDeclarationId),
     External(ExternalDeclarationId),
     Nominal(ProjectNominalDeclarationId),
     Retained(PublicId),
@@ -132,6 +133,7 @@ pub enum ProjectSymbolTargetId {
 pub enum ResolvedProjectSymbol<'a> {
     Callable(&'a CallableSymbol),
     StructuralCallable(&'a CallableSymbol),
+    Trait(&'a super::TraitDeclarationId),
     External(&'a ExternalSymbol),
     Nominal(&'a ProjectNominalDeclaration),
     Retained(&'a ProjectRetainedSymbol),
@@ -932,9 +934,10 @@ impl ProjectSymbolTable {
     pub fn callable_symbols(&self) -> impl Iterator<Item = &CallableSymbol> {
         self.symbols.values().filter_map(|symbol| match symbol {
             ProjectSymbol::Callable(callable) => Some(callable),
-            ProjectSymbol::External(_) | ProjectSymbol::Nominal(_) | ProjectSymbol::Retained(_) => {
-                None
-            }
+            ProjectSymbol::Trait(_)
+            | ProjectSymbol::External(_)
+            | ProjectSymbol::Nominal(_)
+            | ProjectSymbol::Retained(_) => None,
         })
     }
 
@@ -951,9 +954,10 @@ impl ProjectSymbolTable {
     pub fn external_symbols(&self) -> impl Iterator<Item = &ExternalSymbol> {
         self.symbols.values().filter_map(|symbol| match symbol {
             ProjectSymbol::External(external) => Some(external),
-            ProjectSymbol::Callable(_) | ProjectSymbol::Nominal(_) | ProjectSymbol::Retained(_) => {
-                None
-            }
+            ProjectSymbol::Callable(_)
+            | ProjectSymbol::Trait(_)
+            | ProjectSymbol::Nominal(_)
+            | ProjectSymbol::Retained(_) => None,
         })
     }
 
@@ -1060,9 +1064,21 @@ impl ProjectSymbolTable {
             .get(&ProjectDeclarationId::Callable(id.clone()))?
         {
             ProjectSymbol::Callable(symbol) => Some(symbol),
-            ProjectSymbol::External(_) | ProjectSymbol::Nominal(_) | ProjectSymbol::Retained(_) => {
-                None
-            }
+            ProjectSymbol::Trait(_)
+            | ProjectSymbol::External(_)
+            | ProjectSymbol::Nominal(_)
+            | ProjectSymbol::Retained(_) => None,
+        }
+    }
+
+    /// Returns one declaration-owned project Trait identity.
+    pub fn trait_symbol(
+        &self,
+        id: &super::TraitDeclarationId,
+    ) -> Option<&super::TraitDeclarationId> {
+        match self.symbols.get(&ProjectDeclarationId::Trait(id.clone()))? {
+            ProjectSymbol::Trait(declaration) => Some(declaration),
+            _ => None,
         }
     }
 
@@ -1163,9 +1179,10 @@ impl ProjectSymbolTable {
     pub fn external(&self, id: ExternalDeclarationId) -> Option<&ExternalSymbol> {
         match self.symbols.get(&ProjectDeclarationId::External(id))? {
             ProjectSymbol::External(symbol) => Some(symbol),
-            ProjectSymbol::Callable(_) | ProjectSymbol::Nominal(_) | ProjectSymbol::Retained(_) => {
-                None
-            }
+            ProjectSymbol::Callable(_)
+            | ProjectSymbol::Trait(_)
+            | ProjectSymbol::Nominal(_)
+            | ProjectSymbol::Retained(_) => None,
         }
     }
 
@@ -1176,6 +1193,7 @@ impl ProjectSymbolTable {
         {
             ProjectSymbol::Nominal(symbol) => Some(symbol.as_ref()),
             ProjectSymbol::Callable(_)
+            | ProjectSymbol::Trait(_)
             | ProjectSymbol::External(_)
             | ProjectSymbol::Retained(_) => None,
         }
@@ -1187,18 +1205,20 @@ impl ProjectSymbolTable {
             .get(&ProjectDeclarationId::Retained(public_id.clone()))?
         {
             ProjectSymbol::Retained(symbol) => Some(symbol),
-            ProjectSymbol::Callable(_) | ProjectSymbol::External(_) | ProjectSymbol::Nominal(_) => {
-                None
-            }
+            ProjectSymbol::Callable(_)
+            | ProjectSymbol::Trait(_)
+            | ProjectSymbol::External(_)
+            | ProjectSymbol::Nominal(_) => None,
         }
     }
 
     pub fn retained_symbols(&self) -> impl Iterator<Item = &ProjectRetainedSymbol> {
         self.symbols.values().filter_map(|symbol| match symbol {
             ProjectSymbol::Retained(retained) => Some(retained),
-            ProjectSymbol::Callable(_) | ProjectSymbol::External(_) | ProjectSymbol::Nominal(_) => {
-                None
-            }
+            ProjectSymbol::Callable(_)
+            | ProjectSymbol::Trait(_)
+            | ProjectSymbol::External(_)
+            | ProjectSymbol::Nominal(_) => None,
         })
     }
 
@@ -1300,6 +1320,7 @@ impl ProjectSymbolTable {
                     source,
                 }),
             ProjectSymbolTargetId::Callable(_)
+            | ProjectSymbolTargetId::Trait(_)
             | ProjectSymbolTargetId::StructuralCallable(_)
             | ProjectSymbolTargetId::Retained(_)
             | ProjectSymbolTargetId::Module(_) => Err(ProjectTypeLookupError::WrongKind {
@@ -1329,6 +1350,7 @@ impl ProjectSymbolTable {
                         ProjectTypeTarget::External(self.external(*id)?)
                     }
                     ProjectSymbolTargetId::Callable(_)
+                    | ProjectSymbolTargetId::Trait(_)
                     | ProjectSymbolTargetId::StructuralCallable(_)
                     | ProjectSymbolTargetId::Retained(_)
                     | ProjectSymbolTargetId::Module(_) => {
@@ -1365,6 +1387,7 @@ impl ProjectSymbolTable {
                     ProjectSymbolTargetId::StructuralCallable(id) => self
                         .callable(id)
                         .map(|symbol| symbol.declaration_span().clone()),
+                    ProjectSymbolTargetId::Trait(_) => None,
                     ProjectSymbolTargetId::External(id) => self
                         .external(*id)
                         .map(|symbol| symbol.declaration_span().clone()),
@@ -1673,6 +1696,9 @@ impl ProjectSymbolTable {
             ProjectSymbolTargetId::StructuralCallable(id) => self
                 .callable(id)
                 .map(ResolvedProjectSymbol::StructuralCallable),
+            ProjectSymbolTargetId::Trait(id) => {
+                self.trait_symbol(id).map(ResolvedProjectSymbol::Trait)
+            }
             ProjectSymbolTargetId::External(id) => {
                 self.external(*id).map(ResolvedProjectSymbol::External)
             }
@@ -1709,6 +1735,11 @@ impl ProjectSymbolTable {
                     ),
                 })
             }
+            ResolvedProjectSymbol::Trait(id) => Err(ProjectSymbolResolutionError::NotCallable {
+                reference: reference.clone(),
+                source: source.clone(),
+                actual: ProjectSymbolTargetId::Trait(id.clone()),
+            }),
             ResolvedProjectSymbol::External(external) => {
                 Err(ProjectSymbolResolutionError::NotCallable {
                     reference: reference.clone(),

@@ -5,11 +5,11 @@ use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
     AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
-    AwbcFormatOperand, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace, AwbcPattern, AwbcPatternId,
-    AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcFormatAttemptOperand, AwbcFormatOperand, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags,
+    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace,
+    AwbcPattern, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape,
+    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
@@ -239,7 +239,13 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 destination
             }
-            RuntimeExprKind::FormatContent { template, operands } => {
+            RuntimeExprKind::FormatContent {
+                template,
+                attempt,
+                operands,
+                project_method,
+                project_option,
+            } => {
                 let operands = operands
                     .iter()
                     .map(|operand| {
@@ -261,6 +267,60 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         }
                     })
                     .collect();
+                let attempt_operands = attempt.map_or_else(Vec::new, |attempt_id| {
+                    let manifest = self.plan.format_attempt(attempt_id).unwrap_or_else(|| {
+                        panic!(
+                            "admitted format attempt refers to a missing plan manifest at {}",
+                            self.path
+                        )
+                    });
+                    manifest
+                        .operands()
+                        .iter()
+                        .map(|operand| AwbcFormatAttemptOperand {
+                            parameter: operand.parameter(),
+                            ty: admitted_plan_type(self.inventory, self.plan, operand.ty()),
+                        })
+                        .collect()
+                });
+                let (project_method, project_result) = match project_method {
+                    Some(method) => {
+                        let lowered = self
+                            .inventory
+                            .trait_method(*method)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "admitted DisplayText selection refers to an unlowered trait method at {}",
+                                    self.path
+                                )
+                            });
+                        let body = self
+                            .plan
+                            .trait_methods()
+                            .get(method.0)
+                            .filter(|body| body.id == *method)
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "admitted DisplayText selection refers to a missing RuntimePlan method at {}",
+                                    self.path
+                                )
+                            });
+                        let result = self.frame.temp(admitted_plan_type(
+                            self.inventory,
+                            self.plan,
+                            body.body.ty(),
+                        ));
+                        (Some(lowered), Some(result))
+                    }
+                    None => {
+                        assert!(
+                            !project_option,
+                            "project DisplayText option mode has no selected method at {}",
+                            self.path
+                        );
+                        (None, None)
+                    }
+                };
                 let destination =
                     self.frame
                         .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
@@ -268,6 +328,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     .push_instruction(AwbcInstruction::FormatContent {
                         destination,
                         template: *template,
+                        attempt: *attempt,
+                        attempt_operands,
+                        project_method,
+                        project_option: *project_option,
+                        project_result,
                         operands,
                     });
                 destination

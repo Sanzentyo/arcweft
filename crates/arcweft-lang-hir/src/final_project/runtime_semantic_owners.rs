@@ -123,6 +123,15 @@ pub enum HirRuntimeReachabilityEdgeKind {
         implementation: ItemId,
         method: ImplMethodDeclarationId,
     },
+    /// Reaches a selected trait method invoked implicitly by a checked
+    /// expression, such as display formatting. The exact member coordinate
+    /// comes from semantic selection; the HIR expression need not be a Call.
+    CheckedSelectedTraitMethod {
+        expression: ExprId,
+        implementation: ItemId,
+        member: u16,
+        method: ImplMethodDeclarationId,
+    },
     CheckedIteratorWitnessMethod {
         role: HirRuntimeIteratorWitnessMethodRole,
         implementation: ItemId,
@@ -151,6 +160,7 @@ enum HirRuntimeReachabilityEdgeAuthority {
     ProjectCall(CallableDeclarationKey),
     ProjectCallableValue(CallableDeclarationKey),
     TraitMethodCall(ImplMethodDeclarationId),
+    SelectedTraitMethod(ImplMethodDeclarationId),
     IteratorWitnessMethod(HirRuntimeIteratorWitnessMethodRole),
     ClosureExecution,
     FlowTransfer(CallableDeclarationKey),
@@ -498,6 +508,43 @@ pub struct HirRuntimeSemanticReachability<'project> {
     identity: HirRuntimeReachabilityIdentity,
 }
 
+/// Exact executable owner partition selected for one closed trait-method use.
+/// It retains the original runtime reachability generation while leaving the
+/// global root and reachable-executable sets unchanged.
+pub struct HirRuntimeSelectedMethodOwners<'project> {
+    project: HirAnalysisProjectView<'project>,
+    reachability: HirRuntimeReachabilityIdentity,
+    executable: HirRuntimeExecutableOwner,
+    owners: HirRuntimeExecutableSemanticOwners,
+    closures: BTreeMap<ExprId, HirRuntimeExecutableSemanticOwners>,
+}
+
+impl HirRuntimeSelectedMethodOwners<'_> {
+    pub const fn project(&self) -> HirAnalysisProjectView<'_> {
+        self.project
+    }
+
+    pub const fn reachability(&self) -> &HirRuntimeReachabilityIdentity {
+        &self.reachability
+    }
+
+    pub const fn executable(&self) -> &HirRuntimeExecutableOwner {
+        &self.executable
+    }
+
+    pub const fn owners(&self) -> &HirRuntimeExecutableSemanticOwners {
+        &self.owners
+    }
+
+    pub fn closure_owners(&self, owner: ExprId) -> Option<&HirRuntimeExecutableSemanticOwners> {
+        self.closures.get(&owner)
+    }
+
+    pub fn closures(&self) -> impl Iterator<Item = (ExprId, &HirRuntimeExecutableSemanticOwners)> {
+        self.closures.iter().map(|(owner, owners)| (*owner, owners))
+    }
+}
+
 impl HirRuntimeSemanticReachability<'_> {
     pub const fn project(&self) -> HirAnalysisProjectView<'_> {
         self.project
@@ -509,6 +556,164 @@ impl HirRuntimeSemanticReachability<'_> {
 
     pub const fn identity(&self) -> &HirRuntimeReachabilityIdentity {
         &self.identity
+    }
+
+    /// Closes one selected impl-method body without publishing it as a global
+    /// runtime root. The caller supplies the same checked expression decisions
+    /// used to seal the original generation; sema then classifies this sealed
+    /// owner partition under that generation's identity.
+    pub fn selected_method_owners(
+        &self,
+        method: &ImplMethodDeclarationId,
+        topology: &super::HirProjectEvaluationTopology,
+        mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        mut selected_call_edges: impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedCallExpressionDisposition>,
+        mut selected_select_target: impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedSelectTargetDisposition>,
+        mut expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
+    ) -> Result<HirRuntimeSelectedMethodOwners<'_>, HirRuntimeReachabilityError> {
+        let generation = topology.generation();
+        if generation.symbol_world() != self.identity.symbol_world()
+            || generation.symbol_revision() != self.identity.symbol_revision()
+            || generation.validate_analysis_lease(self.project).is_err()
+        {
+            return Err(HirRuntimeReachabilityError::TopologyGenerationMismatch);
+        }
+        let executable = HirRuntimeExecutableOwner::ImplMethod(method.clone());
+        let type_roots = self.project.type_root_projection()?;
+        let index = StructuralIndex::new(self.project, &type_roots);
+        let owners = self.selected_executable_owners(
+            &executable,
+            &index,
+            topology,
+            &mut selected_postfix,
+            &mut selected_call_edges,
+            &mut selected_select_target,
+            &mut expression_projection,
+        )?;
+        let mut closures = BTreeMap::new();
+        let mut pending = owners
+            .expressions()
+            .filter(|owner| {
+                index
+                    .expression_edges
+                    .get(owner)
+                    .is_some_and(|(_, _, closure)| *closure)
+            })
+            .collect::<Vec<_>>();
+        while let Some(closure) = pending.pop() {
+            if closures.contains_key(&closure) {
+                continue;
+            }
+            let selected = self.selected_executable_owners(
+                &HirRuntimeExecutableOwner::Closure(closure),
+                &index,
+                topology,
+                &mut selected_postfix,
+                &mut selected_call_edges,
+                &mut selected_select_target,
+                &mut expression_projection,
+            )?;
+            pending.extend(selected.expressions().filter(|owner| {
+                index
+                    .expression_edges
+                    .get(owner)
+                    .is_some_and(|(_, _, closure)| *closure)
+            }));
+            closures.insert(closure, selected);
+        }
+        Ok(HirRuntimeSelectedMethodOwners {
+            project: self.project,
+            reachability: self.identity.clone(),
+            executable,
+            owners,
+            closures,
+        })
+    }
+
+    fn selected_executable_owners(
+        &self,
+        executable: &HirRuntimeExecutableOwner,
+        index: &StructuralIndex<'_>,
+        topology: &super::HirProjectEvaluationTopology,
+        selected_postfix: &mut impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: &mut impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedCallExpressionDisposition>,
+        selected_select_target: &mut impl FnMut(
+            ExprId,
+        )
+            -> Option<super::HirSelectedSelectTargetDisposition>,
+        expression_projection: &mut impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
+    ) -> Result<HirRuntimeExecutableSemanticOwners, HirRuntimeReachabilityError> {
+        let (mut structural, execution_roots) = self.project.close_executable(index, executable)?;
+        structural.select_regions(topology, selected_postfix)?;
+        let captures = if let HirRuntimeExecutableOwner::Closure(closure) = executable {
+            topology
+                .module(closure.module())
+                .ok_or(HirRuntimeReachabilityError::UnresolvedExpression {
+                    expression: *closure,
+                })?
+                .select_closure_captures(*closure, &mut *selected_postfix)?
+        } else {
+            Box::new([])
+        };
+        let HirSelectedRuntimeExpressionOwners {
+            reached,
+            typed,
+            edges,
+        } = self.project.selected_runtime_expression_owners(
+            topology,
+            &structural.expressions,
+            &execution_roots,
+            selected_postfix,
+            selected_call_edges,
+            selected_select_target,
+            expression_projection,
+        )?;
+        let expression_children = reached
+            .iter()
+            .filter(|owner| {
+                execution_roots.contains(owner)
+                    || !index
+                        .expression_edges
+                        .get(owner)
+                        .is_some_and(|(_, _, is_closure)| *is_closure)
+            })
+            .map(|owner| {
+                let children = edges
+                    .get(owner)
+                    .into_iter()
+                    .flat_map(|edges| edges.iter())
+                    .filter_map(|edge| match edge {
+                        super::HirExpressionEvaluationEdge::Expression {
+                            ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                            child,
+                            ..
+                        } if reached.contains(child) => Some(*child),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                (*owner, children)
+            })
+            .collect();
+        Ok(HirRuntimeExecutableSemanticOwners {
+            locals: structural.locals.into_iter().collect(),
+            expressions: reached,
+            expression_type_owners: typed,
+            expression_children,
+            statements: structural.statements,
+            types: structural.types,
+            patterns: structural.patterns,
+            captures,
+        })
     }
 
     pub fn roots(&self) -> impl ExactSizeIterator<Item = &HirRuntimeReachabilityRoot> {
@@ -1442,6 +1647,10 @@ fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
         ) => source == call,
         (
             HirRuntimeReachabilitySite::Expression(source),
+            HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { expression, .. },
+        ) => source == expression,
+        (
+            HirRuntimeReachabilitySite::Expression(source),
             HirRuntimeReachabilityEdgeKind::CheckedProjectCallableValue { value, .. },
         ) => source == value,
         (
@@ -1476,6 +1685,9 @@ fn edge_authority(kind: &HirRuntimeReachabilityEdgeKind) -> HirRuntimeReachabili
         }
         HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { method, .. } => {
             HirRuntimeReachabilityEdgeAuthority::TraitMethodCall(method.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { method, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::SelectedTraitMethod(method.clone())
         }
         HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { role, .. } => {
             HirRuntimeReachabilityEdgeAuthority::IteratorWitnessMethod(*role)

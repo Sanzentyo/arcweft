@@ -1582,10 +1582,19 @@ fn execute_instruction(
         AwbcInstruction::FormatContent {
             destination,
             template,
+            attempt,
+            attempt_operands,
+            project_method,
+            project_option,
+            project_result,
             operands,
         } => {
             let context = context.ok_or(VmError::MissingExecutionContext)?;
-            fiber.begin_format_content(program, context.format_context())?;
+            if let Some(attempt) = attempt {
+                fiber.adopt_completed_format_attempt(program, *attempt)?;
+            } else {
+                fiber.begin_format_content(program, context.format_context())?;
+            }
             let next = fiber.format_content_state()?.next_operand();
             if let Some(operand) = operands.get(next) {
                 let captures = register_values(fiber, &operand.captures)?;
@@ -1605,15 +1614,205 @@ fn execute_instruction(
                 )?;
                 return Ok(InstructionControl::Transferred);
             }
-            let Some(value_operand) = operands
-                .iter()
-                .find(|operand| operand.parameter == crate::value::RuntimeFmtParameterId::Value)
-            else {
-                return Err(VmError::Runtime(
-                    "FormatContent has no verified primary operand".to_owned(),
-                ));
+            let state = fiber.format_content_state()?;
+            let state_context = state.format_context().clone();
+            let mut first_recoverable = state.first_recoverable().map(str::to_owned);
+            let parameters = if attempt.is_some() {
+                attempt_operands
+                    .iter()
+                    .map(|operand| operand.parameter)
+                    .collect::<Vec<_>>()
+            } else {
+                operands
+                    .iter()
+                    .map(|operand| operand.parameter)
+                    .collect::<Vec<_>>()
             };
-            let primary_kind = format_primary_kind(program, value_operand.function)?;
+            let mut evaluated = parameters
+                .into_iter()
+                .zip(state.values())
+                .map(|(parameter, value)| (parameter, value.clone()))
+                .collect::<Vec<_>>();
+            let value_index = evaluated
+                .iter()
+                .position(|(parameter, _)| *parameter == crate::value::RuntimeFmtParameterId::Value)
+                .ok_or_else(|| {
+                    VmError::Runtime("FormatContent has no verified primary operand".to_owned())
+                })?;
+            let original_primary = evaluated[value_index].1.clone();
+            if original_primary.is_none() && first_recoverable.is_none() {
+                return Err(VmError::Runtime(
+                    "FormatContent primary operand has no value or recoverable error".to_owned(),
+                ));
+            }
+
+            if project_method.is_none() != project_result.is_none()
+                || (project_method.is_none() && *project_option)
+            {
+                return Err(VmError::Runtime(
+                    "FormatContent project DisplayText contract is invalid".to_owned(),
+                ));
+            }
+
+            let primary_kind = if let Some(method_id) = project_method {
+                let result_register = project_result.expect("validated paired result temporary");
+                if first_recoverable.is_none() {
+                    let completed_result = fiber
+                        .active_frame()?
+                        .registers
+                        .get(result_register.index())
+                        .ok_or(FiberStateError::InvalidFrame)?
+                        .clone();
+                    if completed_result.is_some() {
+                        let method = program
+                            .trait_methods
+                            .get(method_id.index())
+                            .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+                        let signature = program
+                            .signatures
+                            .get(method.signature.index())
+                            .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+                        let result_type = signature.result.ok_or_else(|| {
+                            VmError::Runtime(
+                                "FormatContent DisplayText method has no result type".to_owned(),
+                            )
+                        })?;
+                        let error_type = program
+                            .builtin_variant_payload_item(
+                                result_type,
+                                crate::pattern::RuntimeBuiltinVariantCaseIdentity::ResultErr,
+                            )
+                            .ok_or_else(|| {
+                                VmError::Runtime(
+                                    "FormatContent DisplayText method has no DisplayError type"
+                                        .to_owned(),
+                                )
+                            })?;
+                        let error_layout = program
+                            .nominal_record_layout(error_type)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?
+                            .ok_or_else(|| {
+                                VmError::Runtime(
+                                    "FormatContent DisplayError layout is absent".to_owned(),
+                                )
+                            })?;
+                        let result = fiber.active_frame_mut()?.take_register(result_register)?;
+                        match crate::value::project_display_result(result, &error_layout)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?
+                        {
+                            Ok(content) => {
+                                evaluated[value_index].1 = Some(if *project_option {
+                                    RuntimeValue::option_some(content)
+                                } else {
+                                    content
+                                });
+                            }
+                            Err(reason) => first_recoverable = Some(reason),
+                        }
+                    } else {
+                        let method = program
+                            .trait_methods
+                            .get(method_id.index())
+                            .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+                        let signature = program
+                            .signatures
+                            .get(method.signature.index())
+                            .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+                        let [_, context_type] = signature.params.as_slice() else {
+                            return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+                        };
+                        let original_primary = original_primary.as_ref().ok_or_else(|| {
+                            VmError::Runtime(
+                                "FormatContent primary operand has no value".to_owned(),
+                            )
+                        })?;
+                        let receiver = if *project_option {
+                            match original_primary
+                                .clone()
+                                .try_into_builtin_variant_case()
+                                .map_err(|_| {
+                                    VmError::Runtime(
+                                        "FormatContent project Option has an invalid value"
+                                            .to_owned(),
+                                    )
+                                })? {
+                                (
+                                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                                    Some(value),
+                                ) => Some(value),
+                                (
+                                    crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionNone,
+                                    None,
+                                ) => None,
+                                _ => {
+                                    return Err(VmError::Runtime(
+                                        "FormatContent project Option has an invalid value"
+                                            .to_owned(),
+                                    ));
+                                }
+                            }
+                        } else {
+                            Some(original_primary.clone())
+                        };
+                        if let Some(receiver) = receiver {
+                            let context_layout = program
+                                .nominal_record_layout(*context_type)
+                                .map_err(|error| VmError::Runtime(error.to_string()))?
+                                .ok_or_else(|| {
+                                    VmError::Runtime(
+                                        "FormatContent DisplayContext layout is absent".to_owned(),
+                                    )
+                                })?;
+                            match crate::value::project_display_context(
+                                &context_layout,
+                                &state_context,
+                                &evaluated,
+                            )
+                            .map_err(|error| VmError::Runtime(error.to_string()))?
+                            {
+                                Err(reason) => first_recoverable = Some(reason),
+                                Ok(display_context) => {
+                                    let site = fiber.cursor;
+                                    fiber.push_call_frame_at(
+                                        program,
+                                        method.function,
+                                        FiberReturnPoint {
+                                            cursor: site,
+                                            destination: Some(result_register),
+                                            continuation: FiberReturnContinuation::FormatDisplay {
+                                                site,
+                                            },
+                                        },
+                                        &[receiver, display_context],
+                                    )?;
+                                    return Ok(InstructionControl::Transferred);
+                                }
+                            }
+                        }
+                    }
+                }
+                if *project_option {
+                    crate::value::RuntimeFormatPrimaryKind::OptionProjectContent
+                } else {
+                    crate::value::RuntimeFormatPrimaryKind::ProjectContent
+                }
+            } else {
+                if let Some(value_operand) = attempt_operands
+                    .iter()
+                    .find(|operand| operand.parameter == crate::value::RuntimeFmtParameterId::Value)
+                {
+                    format_primary_kind_for_type(program, value_operand.ty)?
+                } else {
+                    let Some(value_operand) = operands.iter().find(|operand| {
+                        operand.parameter == crate::value::RuntimeFmtParameterId::Value
+                    }) else {
+                        return Err(VmError::Runtime(
+                            "FormatContent has no verified primary operand".to_owned(),
+                        ));
+                    };
+                    format_primary_kind(program, value_operand.function)?
+                }
+            };
             let manifest = program
                 .content_templates
                 .iter()
@@ -1625,16 +1824,11 @@ fn execute_instruction(
                 ));
             };
             let state = fiber.take_completed_format_content(program)?;
-            let evaluated = operands
-                .iter()
-                .zip(state.values())
-                .map(|(operand, value)| (operand.parameter, value.clone()))
-                .collect::<Vec<_>>();
             let formatted = crate::value::finish_format_content_attempt(
                 state.format_context(),
                 primary_kind,
                 &evaluated,
-                state.first_recoverable(),
+                first_recoverable.as_deref(),
             )
             .map_err(|error| VmError::Runtime(error.to_string()))?;
             let content_slot = crate::plan::RuntimeDialogueContentSlot::new(
@@ -1660,6 +1854,25 @@ fn execute_instruction(
             fiber
                 .active_frame_mut()?
                 .set_register(*destination, value)?;
+        }
+        AwbcInstruction::FormatOperandAttempt { attempt, parameter } => {
+            let context = context.ok_or(VmError::MissingExecutionContext)?;
+            fiber.begin_format_operand_attempt(
+                program,
+                context.format_context(),
+                *attempt,
+                *parameter,
+            )?;
+        }
+        AwbcInstruction::CompleteFormatOperand {
+            attempt,
+            parameter,
+            value,
+        } => {
+            fiber.complete_format_operand_attempt(program, *attempt, *parameter, *value)?;
+        }
+        AwbcInstruction::AbandonFormatAttempt { attempt } => {
+            fiber.abandon_format_operand_attempt(*attempt)?;
         }
         AwbcInstruction::CharacterDialogue {
             destination,
@@ -2502,6 +2715,7 @@ fn execute_terminator(
                     match return_to.continuation.clone() {
                         FiberReturnContinuation::Ordinary
                         | FiberReturnContinuation::FormatOperand { .. }
+                        | FiberReturnContinuation::FormatDisplay { .. }
                         | FiberReturnContinuation::InstructionCall { .. } => {}
                         continuation @ (FiberReturnContinuation::ContextCallbackDefault {
                             ..
@@ -2838,6 +3052,7 @@ fn complete_project_call_return(
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(),
         FiberReturnContinuation::Ordinary
         | FiberReturnContinuation::FormatOperand { .. }
+        | FiberReturnContinuation::FormatDisplay { .. }
         | FiberReturnContinuation::InstructionCall { .. }
         | FiberReturnContinuation::ContextCallbackDefault { .. }
         | FiberReturnContinuation::ContextCallbackInvoke { .. } => {
@@ -2952,6 +3167,7 @@ fn complete_project_call_return(
             "apply-group default return is handled before looking up a project-call site"
         ),
         FiberReturnContinuation::FormatOperand { .. }
+        | FiberReturnContinuation::FormatDisplay { .. }
         | FiberReturnContinuation::InstructionCall { .. }
         | FiberReturnContinuation::ContextCallbackDefault { .. }
         | FiberReturnContinuation::ContextCallbackInvoke { .. } => {
@@ -3638,6 +3854,13 @@ fn format_primary_kind(
     let result = signature
         .result
         .ok_or_else(|| VmError::Runtime("formatter value operand has no result".to_owned()))?;
+    format_primary_kind_for_type(program, result)
+}
+
+fn format_primary_kind_for_type(
+    program: &AwbcProgram,
+    result: AwbcTypeId,
+) -> Result<crate::value::RuntimeFormatPrimaryKind, VmError> {
     if let Some(item) = program.builtin_variant_payload_item(
         result,
         crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,

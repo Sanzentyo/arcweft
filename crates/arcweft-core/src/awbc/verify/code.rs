@@ -3,6 +3,8 @@
     reason = "AWBC verifier walks complete instruction and terminator families with shared dataflow state"
 )]
 
+mod format;
+
 use super::AwbcVerifyError;
 use super::structure::{
     Verifier, block_is_in_function, check_index, check_string, checked_range, effect_set_is_subset,
@@ -28,7 +30,7 @@ use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
     RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeCapacityFamily,
     RuntimeCapacityOperation, RuntimeCharacterDialogueProducerId, RuntimeDialogueOpaqueRole,
-    RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeReductionProducer,
+    RuntimeIntrinsic, RuntimeReductionProducer,
 };
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueOperation, CharacterDialoguePatchOperation,
@@ -42,6 +44,7 @@ mod capacity_tests;
 struct FlowState {
     initialized: Vec<bool>,
     scopes: Vec<AwbcScopeId>,
+    format_attempts: Vec<format::FormatAttemptFlowState>,
 }
 
 fn block_index_to_u32(index: usize) -> u32 {
@@ -49,8 +52,9 @@ fn block_index_to_u32(index: usize) -> u32 {
 }
 
 pub(super) fn verify_code(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
+    let attempts = format::format_attempt_catalog(verifier.program)?;
     for function in 0..verifier.program.functions.len() {
-        verify_function(verifier, function, None)?;
+        verify_function(verifier, function, None, &attempts)?;
     }
     Ok(())
 }
@@ -166,6 +170,7 @@ fn verify_function(
     verifier: &Verifier<'_, '_>,
     function_index: usize,
     scope_query: Option<(usize, u32)>,
+    attempts: &format::FormatAttemptCatalog<'_>,
 ) -> Result<Option<Vec<AwbcScopeId>>, AwbcVerifyError> {
     let program = verifier.program;
     let function = &program.functions[function_index];
@@ -180,6 +185,7 @@ fn verify_function(
     let mut initial = FlowState {
         initialized: vec![false; layout.slots.len()],
         scopes: Vec::new(),
+        format_attempts: Vec::new(),
     };
     for (slot, initialized) in layout.slots.iter().zip(&mut initial.initialized) {
         *initialized = matches!(
@@ -221,6 +227,7 @@ fn verify_function(
                 block_index,
                 instruction_index,
                 &mut state,
+                attempts,
             )?;
         }
         if scope_query == Some((block_index, block.instructions.len)) {
@@ -285,7 +292,8 @@ pub(super) fn scope_stack_at(
             message: "scope resume coordinate has a foreign function or block".to_owned(),
         });
     }
-    verify_function(verifier, function, Some((block, offset)))?.ok_or_else(|| {
+    let attempts = format::format_attempt_catalog(verifier.program)?;
+    verify_function(verifier, function, Some((block, offset)), &attempts)?.ok_or_else(|| {
         AwbcVerifyError::InvalidInvariant {
             at: "scope resume coordinate".to_owned(),
             message: "scope resume offset is outside the selected block".to_owned(),
@@ -352,6 +360,13 @@ fn merge_state(
                     function: function_index,
                     block: target,
                     message: "control-flow predecessors have different scope stacks".to_owned(),
+                });
+            }
+            if current.format_attempts != incoming.format_attempts {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: format!("function {function_index} block {target}"),
+                    message: "control-flow predecessors have different format attempt states"
+                        .to_owned(),
                 });
             }
             let mut changed = false;
@@ -428,6 +443,7 @@ fn apply_instruction(
     block: usize,
     instruction_index: usize,
     state: &mut FlowState,
+    attempts: &format::FormatAttemptCatalog<'_>,
 ) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     let instruction = &program.instructions[instruction_index];
@@ -1247,144 +1263,18 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *destination, state)?;
         }
-        AwbcInstruction::FormatContent {
-            destination,
-            template,
-            operands,
-        } => {
-            let capture_count = operands.iter().try_fold(0_usize, |total, operand| {
-                total.checked_add(operand.captures.len()).ok_or_else(|| {
-                    AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "FormatContent capture register count overflows usize".to_owned(),
-                    }
-                })
-            })?;
-            let total_argument_count =
-                operands.len().checked_add(capture_count).ok_or_else(|| {
-                    AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: "FormatContent operand register count overflows usize".to_owned(),
-                    }
-                })?;
-            check_args_budget(verifier, total_argument_count)?;
-
-            let Some(template) = program
-                .content_templates
-                .iter()
-                .find(|candidate| candidate.id == *template)
-            else {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at,
-                    message: "FormatContent references a missing template manifest".to_owned(),
-                });
-            };
-            if !matches!(
-                template.slots.as_slice(),
-                [slot]
-                    if slot.role == AwbcDialogueValueRole::Formatted
-                        && is_exact_dialogue_content_type(program, slot.semantic_type)
-            ) || !template.effects.is_empty()
-            {
-                return invalid_type(
-                    &at,
-                    "FormatContent requires one exact Formatted/Content slot and no effects",
-                );
-            }
-
-            let mut seen = BTreeSet::new();
-            let mut value_present = false;
-            let mut failure_policy_count = 0_u8;
-            for operand in operands {
-                if !seen.insert(operand.parameter) {
-                    return invalid_type(&at, "FormatContent parameter identities must be unique");
-                }
-                if operand.parameter == RuntimeFmtParameterId::Value {
-                    value_present = true;
-                }
-                if matches!(
-                    operand.parameter,
-                    RuntimeFmtParameterId::OnError
-                        | RuntimeFmtParameterId::Fallback
-                        | RuntimeFmtParameterId::DiscardError
-                ) {
-                    failure_policy_count += 1;
-                    if failure_policy_count > 1 {
-                        return invalid_type(
-                            &at,
-                            "FormatContent has multiple mutually exclusive failure policies",
-                        );
-                    }
-                }
-
-                check_index(
-                    program.functions.len(),
-                    operand.function.0,
-                    "functions",
-                    &at,
-                )?;
-                let target = &program.functions[operand.function.index()];
-                if target.kind != AwbcFunctionKind::Synthetic
-                    || !target.flags.contains(AwbcFunctionFlag::Deterministic)
-                    || target.flags.contains(AwbcFunctionFlag::MaySuspend)
-                {
-                    return invalid_type(
-                        &at,
-                        "FormatContent operand must target a deterministic, non-suspending Synthetic function",
-                    );
-                }
-                check_index(
-                    program.signatures.len(),
-                    target.signature.0,
-                    "signatures",
-                    &at,
-                )?;
-                let signature = &program.signatures[target.signature.index()];
-                check_index(
-                    program.effect_sets.len(),
-                    signature.effects.0,
-                    "effect_sets",
-                    &at,
-                )?;
-                if !program.effect_sets[signature.effects.index()]
-                    .effects
-                    .is_empty()
-                {
-                    return invalid_type(&at, "FormatContent operand function must be effect-free");
-                }
-                if signature.params.len() != operand.captures.len() {
-                    return argument_count(&at, signature.params.len(), operand.captures.len());
-                }
-                let capture_types = operand
-                    .captures
-                    .iter()
-                    .map(|capture| read_register(verifier, function, block, *capture, state))
-                    .collect::<Result<Vec<_>, _>>()?;
-                if signature.params != capture_types {
-                    return invalid_type(
-                        &at,
-                        "FormatContent operand capture types must exactly match its function signature",
-                    );
-                }
-                let Some(result) = signature.result else {
-                    return invalid_type(&at, "FormatContent operand function must return a value");
-                };
-                if !format_operand_result_is_valid(program, operand.parameter, result) {
-                    return invalid_type(
-                        &at,
-                        "FormatContent operand result type is not admitted by its parameter",
-                    );
-                }
-            }
-            if !value_present {
-                return invalid_type(&at, "FormatContent requires the Value parameter");
-            }
-
-            let destination_type = register_type(verifier, function, block, *destination)?;
-            if !is_exact_dialogue_content_type(program, destination_type) {
-                return invalid_type(&at, "FormatContent destination");
-            }
-            write_register(verifier, function, block, *destination, state)?;
+        AwbcInstruction::FormatOperandAttempt { .. }
+        | AwbcInstruction::CompleteFormatOperand { .. }
+        | AwbcInstruction::AbandonFormatAttempt { .. }
+        | AwbcInstruction::FormatContent { .. } => {
+            format::apply_instruction(
+                verifier,
+                function,
+                block,
+                instruction_index,
+                state,
+                attempts,
+            )?;
         }
         AwbcInstruction::CharacterDialogue {
             destination,
@@ -1877,6 +1767,22 @@ fn apply_terminator(
 ) -> Result<Vec<(usize, FlowState)>, AwbcVerifyError> {
     let program = verifier.program;
     let at = format!("terminator of block {block}");
+    if !state.format_attempts.is_empty()
+        && matches!(
+            terminator,
+            AwbcTerminator::GotoStatic { .. }
+                | AwbcTerminator::GotoDynamic { .. }
+                | AwbcTerminator::Dialogue { .. }
+                | AwbcTerminator::Choice { .. }
+                | AwbcTerminator::Await { .. }
+                | AwbcTerminator::AwaitMany { .. }
+                | AwbcTerminator::HostCall { .. }
+                | AwbcTerminator::Return { .. }
+                | AwbcTerminator::SelectDialogueResult { .. }
+        )
+    {
+        return invalid_type(&at, "nonlocal transfer leaves a format attempt open");
+    }
     let mut successors = Vec::new();
     match terminator {
         AwbcTerminator::Jump { target } => {
@@ -3963,76 +3869,6 @@ fn is_exact_dialogue_content_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool
             .ok()
             .flatten()
             .is_some_and(|owner| RuntimeDialogueOpaqueRole::Content.accepts_exact_owner(&owner))
-}
-
-fn format_operand_result_is_valid(
-    program: &AwbcProgram,
-    parameter: RuntimeFmtParameterId,
-    ty: AwbcTypeId,
-) -> bool {
-    let shape = runtime_shape(program, ty);
-    let inline_scalar = matches!(
-        shape,
-        Some(
-            AwbcRuntimeTypeShape::Unit
-                | AwbcRuntimeTypeShape::Bool
-                | AwbcRuntimeTypeShape::Int(_)
-                | AwbcRuntimeTypeShape::UInt(_)
-                | AwbcRuntimeTypeShape::F32
-                | AwbcRuntimeTypeShape::F64
-                | AwbcRuntimeTypeShape::String
-                | AwbcRuntimeTypeShape::Char
-                | AwbcRuntimeTypeShape::Duration
-                | AwbcRuntimeTypeShape::EntityRef
-                | AwbcRuntimeTypeShape::Progress
-        )
-    );
-
-    match parameter {
-        RuntimeFmtParameterId::Value => {
-            inline_scalar
-                || is_exact_dialogue_content_type(program, ty)
-                || program
-                    .builtin_variant_payload_item(ty, RuntimeBuiltinVariantCaseIdentity::OptionSome)
-                    .is_some_and(|item| {
-                        matches!(
-                            runtime_shape(program, item),
-                            Some(
-                                AwbcRuntimeTypeShape::Unit
-                                    | AwbcRuntimeTypeShape::Bool
-                                    | AwbcRuntimeTypeShape::Int(_)
-                                    | AwbcRuntimeTypeShape::UInt(_)
-                                    | AwbcRuntimeTypeShape::F32
-                                    | AwbcRuntimeTypeShape::F64
-                                    | AwbcRuntimeTypeShape::String
-                                    | AwbcRuntimeTypeShape::Char
-                                    | AwbcRuntimeTypeShape::Duration
-                                    | AwbcRuntimeTypeShape::EntityRef
-                                    | AwbcRuntimeTypeShape::Progress
-                            )
-                        )
-                    })
-        }
-        RuntimeFmtParameterId::Style
-        | RuntimeFmtParameterId::Locale
-        | RuntimeFmtParameterId::Currency
-        | RuntimeFmtParameterId::NoneValue
-        | RuntimeFmtParameterId::Fallback => {
-            matches!(shape, Some(AwbcRuntimeTypeShape::String))
-        }
-        RuntimeFmtParameterId::Color => matches!(shape, Some(AwbcRuntimeTypeShape::Color)),
-        RuntimeFmtParameterId::OnError => matches!(
-            shape,
-            Some(AwbcRuntimeTypeShape::Variant {
-                owner: crate::awbc::schema::AwbcVariantIdentity::Nominal { .. },
-                arguments,
-                cases,
-            }) if arguments.is_empty() && !cases.is_empty()
-        ),
-        RuntimeFmtParameterId::DiscardError => {
-            matches!(shape, Some(AwbcRuntimeTypeShape::Bool))
-        }
-    }
 }
 
 fn is_character_dialogue_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {

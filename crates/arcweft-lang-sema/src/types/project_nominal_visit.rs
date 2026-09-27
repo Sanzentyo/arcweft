@@ -39,7 +39,8 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::CueHandle
         | TypeKind::VoiceHandle
         | TypeKind::StatementIngress(_)
-        | TypeKind::DisplayText
+        | TypeKind::DisplayContext
+        | TypeKind::DisplayError
         | TypeKind::DebugStatePath
         | TypeKind::ObservationFieldPath
         | TypeKind::Predicate

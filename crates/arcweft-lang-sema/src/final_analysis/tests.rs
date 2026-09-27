@@ -92,6 +92,8 @@ mod content_callables;
 mod data_callables;
 #[path = "tests/dialogue_mark_authority.rs"]
 mod dialogue_mark_authority;
+#[path = "tests/display_text.rs"]
+mod display_text;
 #[path = "tests/evaluated_effects.rs"]
 mod evaluated_effects;
 #[path = "tests/executable_ingress.rs"]

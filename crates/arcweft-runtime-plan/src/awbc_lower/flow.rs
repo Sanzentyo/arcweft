@@ -106,6 +106,7 @@ struct LoopLoweringTarget {
     exit_jumps: Vec<AwbcBlockId>,
     outer_scope_depth: u32,
     outer_scopes: Vec<AwbcScopeId>,
+    format_attempt_depth: usize,
     result: Option<AwbcRegisterId>,
 }
 
@@ -278,6 +279,7 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     plan: &'plan RuntimePlan,
     diagnostics: Vec<AwbcLowerDiagnostic>,
     loop_targets: Vec<LoopLoweringTarget>,
+    active_format_attempts: Vec<arcweft_core::runtime_id::RuntimeFormatAttemptId>,
     line_group: Option<LineGroupLoweringContext>,
     cancellation_handler_result: Option<(
         arcweft_core::runtime_id::RuntimePlanTypeId,
@@ -297,6 +299,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             plan,
             diagnostics: Vec::new(),
             loop_targets: Vec::new(),
+            active_format_attempts: Vec::new(),
             line_group: None,
             cancellation_handler_result: None,
             line_result_selector: None,
@@ -1139,6 +1142,58 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         mode: AwbcBindMode::Declare,
                     });
             }
+            FlowOp::FormatOperandAttempt {
+                attempt,
+                parameter,
+                body: ops,
+                value,
+            } => {
+                let outer_scopes = frame.scope_checkpoint();
+                let scope = frame.enter_scope();
+                self.inventory
+                    .push_instruction(AwbcInstruction::EnterScope { scope });
+                self.inventory
+                    .push_instruction(AwbcInstruction::FormatOperandAttempt {
+                        attempt: *attempt,
+                        parameter: *parameter,
+                    });
+                self.active_format_attempts.push(*attempt);
+                self.lower_ops(frame, body, ops, &format!("{path}.operand"));
+                if !body.terminated {
+                    let value = AwbcExprLowerer::new(
+                        self.inventory,
+                        frame,
+                        format!("{path}.value"),
+                        self.plan,
+                    )
+                    .lower(value);
+                    self.inventory
+                        .push_instruction(AwbcInstruction::CompleteFormatOperand {
+                            attempt: *attempt,
+                            parameter: *parameter,
+                            value,
+                        });
+                    self.inventory
+                        .push_instruction(AwbcInstruction::ExitScope { scope });
+                    frame.exit_scope();
+                }
+                self.active_format_attempts.pop();
+                frame.restore_scopes_after_branch(outer_scopes);
+            }
+            FlowOp::CompleteFormatOperand { .. } => {
+                let message = "CompleteFormatOperand is an AWBC-only lowering marker";
+                self.inventory
+                    .diagnostic(AwbcLowerDiagnostic::error(path, message));
+                let message = self.inventory.intern_string(message);
+                body.terminate(
+                    self.inventory,
+                    AwbcTerminator::Trap {
+                        code: AwbcTrapCode::InternalInvariant,
+                        message: Some(message),
+                    },
+                    AwbcSafePointKind::Trap,
+                );
+            }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let scoped_value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
@@ -1217,6 +1272,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     dst: selected,
                     src: source,
                 });
+                self.emit_format_attempt_abandons(0);
                 self.close_active_scopes_for_terminator(frame);
                 body.terminate(
                     self.inventory,
@@ -1687,6 +1743,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     ));
                     return;
                 }
+                self.emit_format_attempt_abandons(0);
                 let value =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
                 let result = frame.return_value(self.inventory.dynamic_ty());
@@ -1707,6 +1764,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.lower_continue(frame, body, path);
             }
             FlowOp::Goto(target) => {
+                self.emit_format_attempt_abandons(0);
                 if let Some(function) = self.inventory.flow_function(target) {
                     self.close_active_scopes_for_terminator(frame);
                     body.terminate(
@@ -1738,6 +1796,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 }
             }
             FlowOp::GotoExpr(expr) => {
+                self.emit_format_attempt_abandons(0);
                 let target =
                     AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
                 let stable_target = frame.root_temp(self.inventory.dynamic_ty());
@@ -1763,6 +1822,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     ));
                     return;
                 }
+                self.emit_format_attempt_abandons(0);
                 let value = self.inventory.constant_string(value);
                 let dst = frame.return_value(self.inventory.string_ty());
                 self.inventory.push_instruction(AwbcInstruction::LoadConst {
@@ -2651,6 +2711,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             exit_jumps: Vec::new(),
             outer_scope_depth,
             outer_scopes,
+            format_attempt_depth: self.active_format_attempts.len(),
             result: result_register,
         });
         self.lower_ops(frame, body, ops, &format!("{path}.body"));
@@ -2724,6 +2785,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             exit_jumps: Vec::new(),
             outer_scope_depth,
             outer_scopes,
+            format_attempt_depth: self.active_format_attempts.len(),
             result: None,
         });
         self.lower_ops(frame, body, ops, &format!("{path}.body"));
@@ -2849,6 +2911,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             exit_jumps: Vec::new(),
             outer_scope_depth: *outer_scope_depth,
             outer_scopes: outer_scopes.to_vec(),
+            format_attempt_depth: self.active_format_attempts.len(),
             result: None,
         });
 
@@ -2938,10 +3001,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         value: Option<&RuntimeExpr>,
         path: &str,
     ) {
-        let Some((outer_scope_depth, result)) = self
-            .loop_targets
-            .last()
-            .map(|target| (target.outer_scope_depth, target.result))
+        let Some((outer_scope_depth, result, format_attempt_depth)) =
+            self.loop_targets.last().map(|target| {
+                (
+                    target.outer_scope_depth,
+                    target.result,
+                    target.format_attempt_depth,
+                )
+            })
         else {
             self.terminate_missing_loop_transfer(frame, body, path, "break");
             return;
@@ -2968,6 +3035,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             }
             (None, None) => {}
         }
+        self.emit_format_attempt_abandons(format_attempt_depth);
         self.close_scopes_to_depth(frame, outer_scope_depth);
         let jump = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
         body.terminate(
@@ -2985,14 +3053,19 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     }
 
     fn lower_continue(&mut self, frame: &mut FrameBuilder, body: &mut FlowBodyBuilder, path: &str) {
-        let Some((header, outer_scope_depth)) = self
-            .loop_targets
-            .last()
-            .map(|target| (target.header, target.outer_scope_depth))
+        let Some((header, outer_scope_depth, format_attempt_depth)) =
+            self.loop_targets.last().map(|target| {
+                (
+                    target.header,
+                    target.outer_scope_depth,
+                    target.format_attempt_depth,
+                )
+            })
         else {
             self.terminate_missing_loop_transfer(frame, body, path, "continue");
             return;
         };
+        self.emit_format_attempt_abandons(format_attempt_depth);
         self.close_scopes_to_depth(frame, outer_scope_depth);
         body.terminate(
             self.inventory,
@@ -3005,6 +3078,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         for scope in frame.scope_ids_for_exit_to_depth(target_depth) {
             self.inventory
                 .push_instruction(AwbcInstruction::ExitScope { scope });
+        }
+    }
+
+    fn emit_format_attempt_abandons(&mut self, keep_depth: usize) {
+        for attempt in self.active_format_attempts[keep_depth..].iter().rev() {
+            self.inventory
+                .push_instruction(AwbcInstruction::AbandonFormatAttempt { attempt: *attempt });
         }
     }
 
@@ -3707,6 +3787,10 @@ fn collect_flow_dependencies(
                 collect_flow_dependencies(else_ops, targets, has_dynamic_target);
                 false
             }
+            FlowOp::FormatOperandAttempt { body, .. } => {
+                collect_flow_dependencies(body, targets, has_dynamic_target);
+                false
+            }
             FlowOp::If {
                 then_ops, else_ops, ..
             }
@@ -3752,6 +3836,7 @@ fn collect_flow_dependencies(
             FlowOp::Return(_) | FlowOp::ReturnExpr(_) | FlowOp::SelectDialogueResult { .. } => true,
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
+            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::AssignNominalField { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }

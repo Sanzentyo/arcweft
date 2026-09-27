@@ -15,7 +15,7 @@ use crate::plan::{
 use crate::runtime_id::{
     RuntimeCallableSpecializationId, RuntimeCallableStateId, RuntimeDialogueContentTemplateId,
     RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
-    RuntimeLocalDeclarationId,
+    RuntimeFormatAttemptId, RuntimeLocalDeclarationId,
 };
 use crate::task::{
     AssetLoadKind, NeedProducerContractDigest, NeedProducerSiteDigest, TaskPlanSemanticDigest,
@@ -1497,6 +1497,16 @@ pub struct AwbcFormatOperand {
     pub captures: Vec<AwbcRegisterId>,
 }
 
+/// One source-ordered typed operand evaluated inside an AWBC Flow formatter
+/// attempt. The containing `FormatContent` instruction is the manifest owner.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcFormatAttemptOperand {
+    #[serde(with = "runtime_fmt_parameter_id")]
+    pub parameter: RuntimeFmtParameterId,
+    pub ty: AwbcTypeId,
+}
+
 /// The `RuntimeFmtParameterId` domain is owned by `value`, which intentionally
 /// has no Serde dependency on the AWBC wire schema. This adapter keeps its
 /// stable source-order coordinate numeric in the structured AWBC contract.
@@ -1615,6 +1625,9 @@ pub enum AwbcOpcode {
     MakeDialogueContent = 0x28,
     CharacterDialogue = 0x29,
     FormatContent = 0x2a,
+    FormatOperandAttempt = 0x2b,
+    CompleteFormatOperand = 0x2c,
+    AbandonFormatAttempt = 0x2d,
     EmitEffect = 0x25,
     StartNeed = 0x26,
     SpawnFiber = 0x27,
@@ -1689,6 +1702,9 @@ impl AwbcOpcode {
         Self::MakeDialogueContent,
         Self::CharacterDialogue,
         Self::FormatContent,
+        Self::FormatOperandAttempt,
+        Self::CompleteFormatOperand,
+        Self::AbandonFormatAttempt,
         Self::StreamYield,
         Self::StreamClose,
         Self::ExecuteLineOperation,
@@ -1786,6 +1802,9 @@ impl AwbcOpcode {
             | Self::MakeDialogueContent
             | Self::CharacterDialogue
             | Self::FormatContent
+            | Self::FormatOperandAttempt
+            | Self::CompleteFormatOperand
+            | Self::AbandonFormatAttempt
             | Self::EmitEffect
             | Self::StartNeed
             | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
@@ -1991,7 +2010,42 @@ pub enum AwbcInstruction {
     FormatContent {
         destination: AwbcRegisterId,
         template: RuntimeDialogueContentTemplateId,
+        /// Plan-local identity of a Flow-evaluated source operand transaction.
+        /// When present, `operands` is empty and `attempt_operands` is the
+        /// complete source-order manifest staged by the Flow instructions.
+        attempt: Option<RuntimeFormatAttemptId>,
+        attempt_operands: Vec<AwbcFormatAttemptOperand>,
+        /// Selected project `DisplayText::display_text` method, if the
+        /// primary operand uses project conformance rather than the closed
+        /// Core formatter family.
+        project_method: Option<AwbcTraitMethodId>,
+        /// Whether the selected conformance receives the `Some` payload of
+        /// an Option primary. `None` is rendered through the `none` operand.
+        project_option: bool,
+        /// Caller-frame temporary for the selected method's
+        /// `Result<Content, DisplayError>` return value.
+        project_result: Option<AwbcRegisterId>,
         operands: Vec<AwbcFormatOperand>,
+    },
+    /// Begins or resumes the source-ordered transaction for one Flow operand.
+    FormatOperandAttempt {
+        attempt: RuntimeFormatAttemptId,
+        #[serde(with = "runtime_fmt_parameter_id")]
+        parameter: RuntimeFmtParameterId,
+    },
+    /// Commits one successfully evaluated source value into its matching
+    /// attempt. The VM will skip the register read if that operand failed
+    /// recoverably and resume directly at this instruction.
+    CompleteFormatOperand {
+        attempt: RuntimeFormatAttemptId,
+        #[serde(with = "runtime_fmt_parameter_id")]
+        parameter: RuntimeFmtParameterId,
+        value: AwbcRegisterId,
+    },
+    /// Abandons a live formatter transaction while propagating nonlocal Flow
+    /// control transfer.
+    AbandonFormatAttempt {
+        attempt: RuntimeFormatAttemptId,
     },
     /// Constructs or reconfigures a producer-owned CharacterDialogue value
     /// from already materialized source-order registers.
@@ -2150,6 +2204,9 @@ impl AwbcInstruction {
             Self::MakeDialogueContent { .. } => AwbcOpcode::MakeDialogueContent,
             Self::CharacterDialogue { .. } => AwbcOpcode::CharacterDialogue,
             Self::FormatContent { .. } => AwbcOpcode::FormatContent,
+            Self::FormatOperandAttempt { .. } => AwbcOpcode::FormatOperandAttempt,
+            Self::CompleteFormatOperand { .. } => AwbcOpcode::CompleteFormatOperand,
+            Self::AbandonFormatAttempt { .. } => AwbcOpcode::AbandonFormatAttempt,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
             Self::StartNeed { .. } => AwbcOpcode::StartNeed,
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,

@@ -10,8 +10,10 @@ use std::{
 use arcweft_lang_hir::{
     item::{HirItemKind, HirVisibility},
     project::{
-        HirProjectEvaluationTopology, HirRuntimeExecutableOwner, HirRuntimeReachabilityIdentity,
-        HirRuntimeSemanticReachability, HirSelectedCallExpressionInventory,
+        HirProjectEvaluationTopology, HirRuntimeExecutableOwner,
+        HirRuntimeExecutableSemanticOwners, HirRuntimeReachabilityIdentity,
+        HirRuntimeSelectedMethodOwners, HirRuntimeSemanticReachability,
+        HirSelectedCallExpressionInventory,
     },
     scope::HirScopeKind,
     source_index::{
@@ -63,6 +65,7 @@ pub struct FinalSemanticAnalysis {
     project_nominals: ProjectNominalSemanticCatalog,
     checked_text_proxies: crate::checked_text_proxy::CheckedTextProxyCatalog,
     checked_fx_definitions: super::CheckedFxDefinitionCatalog,
+    display_conformances: super::analyzer::display::DisplayConformanceCatalog,
     semantic_shapes: AcceptedSemanticShapeCatalog,
     runtime_nominals: RuntimeNominalProjectionCatalog,
     dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
@@ -432,9 +435,59 @@ impl FinalAnalysisExecutionProjection<'_> {
                 executable: executable.clone(),
             }
         })?;
+        self.classify_runtime_fact_partition(
+            reachability.project(),
+            reachability.identity(),
+            executable,
+            owners,
+        )
+    }
+
+    /// Classifies an exact selected trait-method body under the original
+    /// reachability generation without adding it to the global owner graph.
+    pub fn selected_method_fact_partition(
+        &self,
+        selected: &HirRuntimeSelectedMethodOwners<'_>,
+    ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
+        self.classify_runtime_fact_partition(
+            selected.project(),
+            selected.reachability(),
+            selected.executable(),
+            selected.owners(),
+        )
+    }
+
+    /// Classifies a nested closure selected under one closed method owner.
+    /// The closure retains its own executable partition and the method's
+    /// original reachability generation without entering the global graph.
+    pub fn selected_method_closure_fact_partition(
+        &self,
+        selected: &HirRuntimeSelectedMethodOwners<'_>,
+        owner: ExprId,
+    ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
+        let executable = HirRuntimeExecutableOwner::Closure(owner);
+        let owners = selected.closure_owners(owner).ok_or_else(|| {
+            FinalAnalysisExecutionProjectionError::MissingExecutablePartition {
+                executable: executable.clone(),
+            }
+        })?;
+        self.classify_runtime_fact_partition(
+            selected.project(),
+            selected.reachability(),
+            &executable,
+            owners,
+        )
+    }
+
+    fn classify_runtime_fact_partition(
+        &self,
+        project: HirAnalysisProjectView<'_>,
+        reachability: &HirRuntimeReachabilityIdentity,
+        executable: &HirRuntimeExecutableOwner,
+        owners: &HirRuntimeExecutableSemanticOwners,
+    ) -> Result<CheckedExecutableRuntimeFactPartition, FinalAnalysisExecutionProjectionError> {
         let module = |owner: ExprId| {
-            reachability
-                .project()
+            project
                 .modules()
                 .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))
         };
@@ -677,7 +730,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(CheckedExecutableRuntimeFactPartition {
-            reachability: reachability.identity().clone(),
+            reachability: reachability.clone(),
             executable: executable.clone(),
             expressions: expressions.into_boxed_slice(),
             patterns: patterns.into_boxed_slice(),
@@ -1183,6 +1236,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         );
         validate_expressions(
             symbols,
+            &semantic_shapes,
             &evaluation_topology,
             &modules,
             &dialogue_lines,
@@ -1233,6 +1287,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
             project_nominals,
             checked_text_proxies,
             checked_fx_definitions,
+            display_conformances: Default::default(),
             semantic_shapes,
             runtime_nominals,
             dialogue_lines,
@@ -1661,6 +1716,35 @@ fn validate_checked_entry_references(
 }
 
 impl FinalSemanticAnalysis {
+    pub(super) fn with_display_conformances(
+        mut self,
+        catalog: super::analyzer::display::DisplayConformanceCatalog,
+    ) -> Self {
+        self.display_conformances = catalog;
+        self
+    }
+
+    /// Selects one closed formatter witness for an instantiated value type.
+    /// Generic source functions call this after their type arguments close;
+    /// deferred generic witnesses must never be published to a runtime plan.
+    pub fn display_witness_for_fmt_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<Option<crate::checked_rich_text::CheckedDisplayWitness>, FinalSemanticAnalysisError>
+    {
+        self.display_conformances
+            .for_fmt_primary(ty, &crate::env::nominal::standard_dialogue_content_type())
+    }
+
+    /// Selects one closed direct-interpolation witness for an instantiated type.
+    pub fn display_witness_for_interpolation_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<Option<crate::checked_rich_text::CheckedDisplayWitness>, FinalSemanticAnalysisError>
+    {
+        self.display_conformances
+            .for_interpolation(ty, &crate::env::nominal::standard_dialogue_content_type())
+    }
     pub(super) const fn accepted_types(&self) -> &BTreeMap<TypeId, TypeKind> {
         &self.types
     }

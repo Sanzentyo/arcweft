@@ -543,11 +543,8 @@ narrator()[
 ]
 ```
 
-This requires:
-
-```arcw
-player_name: DisplayText
-```
+For a project nominal value, its type must have a selected `DisplayText`
+implementation. `DisplayText` is a trait reference, not a value type annotation.
 
 Explicit formatting:
 
@@ -573,13 +570,20 @@ pub trait DisplayText {
 }
 ```
 
-Built-in implementations:
+Standard formatter admissions:
 
 ```text
-String, LocalizedText, i32, u32, f32, bool, Duration, DateTime, Ref<T>, Option<T>, Result<T,E>
+scalar values (including String, Duration, and entity references); Content
 ```
 
-`Option<T>` is displayed only if explicitly formatted or matched. This avoids accidentally showing `None` in player-facing text.
+Project nominal values use a selected `DisplayText` implementation. `Option<T>`
+is displayed only through explicit `fmt(...)` when `T` has a scalar or project
+display witness, or by matching it. This avoids accidentally showing `None` in
+player-facing text. The standard `DisplayContext` carries the active or explicit
+canonical locale plus optional style and currency strings to project methods;
+their `DisplayError` result follows the selected inline failure policy. The
+context and error records are defined in
+[the interpolation contract](dialogue-content-actions-ruby-and-interpolation.md#pure-interpolation-with-displaytext).
 
 ```arcw
 match state.player_nickname {

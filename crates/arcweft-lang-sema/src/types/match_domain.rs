@@ -236,7 +236,8 @@ impl TypeKind {
             | Self::StageActorHandle(_)
             | Self::CueHandle
             | Self::VoiceHandle
-            | Self::DisplayText
+            | Self::DisplayContext
+            | Self::DisplayError
             | Self::DebugStatePath
             | Self::ObservationFieldPath
             | Self::Predicate

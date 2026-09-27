@@ -764,6 +764,11 @@ fn formatter_context_fixture() -> ContextFixture {
             destination: AwbcRegisterId(2),
             template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
                 .unwrap(),
+            attempt: None,
+            attempt_operands: Vec::new(),
+            project_method: None,
+            project_option: false,
+            project_result: None,
             operands: vec![
                 AwbcFormatOperand {
                     parameter: crate::value::RuntimeFmtParameterId::Value,

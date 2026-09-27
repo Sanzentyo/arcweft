@@ -27,6 +27,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+mod format;
+pub use format::{AwbcFiberFormatAttemptStateSnapshot, FiberFormatAttemptState};
+
 type AwbcSaveResult<T> = Result<T, crate::value::AwbcRuntimeValueSnapshotError>;
 
 /// Complete state that may cross compact-VM and compiled-region boundaries.
@@ -48,7 +51,7 @@ pub struct FiberState {
     pub streams: Vec<FiberStreamState>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct FiberCursor {
     pub function: AwbcFunctionId,
     pub block: AwbcBlockId,
@@ -65,6 +68,8 @@ pub struct FiberFrame {
     pub registers: Vec<Option<RuntimeValue>>,
     /// Source-order formatter operands staged at the exact instruction site.
     pub format: Option<FiberFormatState>,
+    /// Nested source-ordered Flow formatter transactions owned by this frame.
+    pub format_attempts: Vec<FiberFormatAttemptState>,
     pub root_cleanups: Vec<FiberScopeCleanup>,
     pub root_defers: Vec<FiberDeferredRegistration>,
     pub scopes: Vec<FiberScope>,
@@ -147,6 +152,11 @@ pub enum FiberReturnContinuation {
     FormatOperand {
         site: FiberCursor,
         ordinal: usize,
+    },
+    /// The selected project DisplayText method returns to the exact
+    /// FormatContent instruction after its already-staged operands.
+    FormatDisplay {
+        site: FiberCursor,
     },
     /// A verified instruction call returns to the following cursor. The
     /// program instruction at `site` owns the target and any receiver update.
@@ -398,6 +408,7 @@ pub struct AwbcFiberFrameSnapshot {
     pub return_to: Option<AwbcFiberReturnPointSnapshot>,
     pub registers: Vec<Option<AwbcRuntimeValueSnapshot>>,
     pub format: Option<AwbcFiberFormatStateSnapshot>,
+    pub format_attempts: Vec<AwbcFiberFormatAttemptStateSnapshot>,
     pub root_cleanups: Vec<AwbcFiberScopeCleanupSnapshot>,
     pub root_defers: Vec<AwbcFiberDeferredRegistrationSnapshot>,
     pub scopes: Vec<AwbcFiberScopeSnapshot>,
@@ -440,6 +451,9 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     FormatOperand {
         site: FiberCursor,
         ordinal: usize,
+    },
+    FormatDisplay {
+        site: FiberCursor,
     },
     InstructionCall {
         site: FiberCursor,
@@ -664,6 +678,11 @@ impl AwbcFiberFrameSnapshot {
                 .as_ref()
                 .map(AwbcFiberFormatStateSnapshot::from_live)
                 .transpose()?,
+            format_attempts: frame
+                .format_attempts
+                .iter()
+                .map(AwbcFiberFormatAttemptStateSnapshot::from_live)
+                .collect::<Result<_, _>>()?,
             root_cleanups: frame
                 .root_cleanups
                 .iter()
@@ -704,6 +723,11 @@ impl AwbcFiberFrameSnapshot {
                 .format
                 .map(|value| value.into_live(owner))
                 .transpose()?,
+            format_attempts: self
+                .format_attempts
+                .into_iter()
+                .map(|value| value.into_live(owner))
+                .collect::<Result<_, _>>()?,
             root_cleanups: self
                 .root_cleanups
                 .into_iter()
@@ -813,6 +837,7 @@ impl AwbcFiberReturnContinuationSnapshot {
                 site: *site,
                 ordinal: *ordinal,
             },
+            FiberReturnContinuation::FormatDisplay { site } => Self::FormatDisplay { site: *site },
             FiberReturnContinuation::InstructionCall { site } => {
                 Self::InstructionCall { site: *site }
             }
@@ -866,6 +891,7 @@ impl AwbcFiberReturnContinuationSnapshot {
             Self::FormatOperand { site, ordinal } => {
                 FiberReturnContinuation::FormatOperand { site, ordinal }
             }
+            Self::FormatDisplay { site } => FiberReturnContinuation::FormatDisplay { site },
             Self::InstructionCall { site } => FiberReturnContinuation::InstructionCall { site },
             Self::ContextCallbackDefault { site, pending } => {
                 FiberReturnContinuation::ContextCallbackDefault {
@@ -1425,11 +1451,17 @@ impl FiberState {
                     visit_value_graph(value, &mut visitor)?;
                 }
             }
+            for attempt in &frame.format_attempts {
+                for value in attempt.values().iter().flatten() {
+                    visit_value_graph(value, &mut visitor)?;
+                }
+            }
             if let Some(return_to) = &frame.return_to {
                 match &return_to.continuation {
                     FiberReturnContinuation::Ordinary
                     | FiberReturnContinuation::ProjectCallTarget { .. }
                     | FiberReturnContinuation::FormatOperand { .. }
+                    | FiberReturnContinuation::FormatDisplay { .. }
                     | FiberReturnContinuation::InstructionCall { .. } => {}
                     FiberReturnContinuation::ProjectCallDefault { logical_values, .. } => {
                         visit_value_slice(logical_values, &mut visitor)?;
@@ -1504,6 +1536,36 @@ impl FiberState {
                 FiberTerminalValue::Returned(None)
                 | FiberTerminalValue::Cancelled
                 | FiberTerminalValue::Trapped(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Visits completed values retained by inline or Flow-lowered formatter
+    /// continuations with their exact dynamic frame and static instruction site.
+    pub(crate) fn visit_formatter_operand_values<E>(
+        &self,
+        mut visitor: impl FnMut(
+            RuntimeFrameInstanceId,
+            FiberCursor,
+            usize,
+            &RuntimeValue,
+        ) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for frame in &self.frames {
+            if let Some(format) = &frame.format {
+                for (ordinal, value) in format.values.iter().enumerate() {
+                    if let Some(value) = value {
+                        visitor(frame.instance, format.site, ordinal, value)?;
+                    }
+                }
+            }
+            for attempt in &frame.format_attempts {
+                for (ordinal, value) in attempt.values().iter().enumerate() {
+                    if let Some(value) = value {
+                        visitor(frame.instance, attempt.site(), ordinal, value)?;
+                    }
+                }
             }
         }
         Ok(())
@@ -1977,14 +2039,23 @@ impl FiberState {
                 if parked_at != format.site {
                     return Err(FiberStateError::InvalidFrame);
                 }
-                if let Some(callee) = self.frames.get(index + 1)
-                    && !matches!(
-                        callee.return_to.as_ref().map(|point| &point.continuation),
+                if let Some(callee) = self.frames.get(index + 1) {
+                    let continuation = callee.return_to.as_ref().map(|point| &point.continuation);
+                    let operand_return = matches!(
+                        continuation,
                         Some(FiberReturnContinuation::FormatOperand { site, ordinal })
                             if *site == format.site && *ordinal == format.next_operand
-                    )
-                {
-                    return Err(FiberStateError::InvalidFrame);
+                    );
+                    let display_return = matches!(
+                        continuation,
+                        Some(FiberReturnContinuation::FormatDisplay { site })
+                            if *site == format.site
+                                && format.next_operand
+                                    == format_operand_count_at_site(program, format.site)?
+                    );
+                    if !operand_return && !display_return {
+                        return Err(FiberStateError::InvalidFrame);
+                    }
                 }
             }
             if index == 0 && frame.return_to.is_some() {
@@ -2024,6 +2095,13 @@ impl FiberState {
             validate_suspension(program, self, suspension)?;
         }
         if let Some(terminal) = &self.terminal {
+            if self
+                .frames
+                .iter()
+                .any(|frame| !frame.format_attempts.is_empty())
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
             validate_terminal(program, self, terminal)?;
         }
         for (index, stream) in self.streams.iter().enumerate() {
@@ -2049,7 +2127,7 @@ impl FiberState {
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let site = self.cursor;
-        let operands = format_operands_at_site(program, site)?;
+        let operand_count = format_operand_count_at_site(program, site)?;
         let frame = self.active_frame_mut()?;
         if frame.function != site.function {
             return Err(FiberStateError::InvalidFrame);
@@ -2064,7 +2142,7 @@ impl FiberState {
             site,
             format_context: context.clone(),
             next_operand: 0,
-            values: vec![None; operands.len()],
+            values: vec![None; operand_count],
             first_recoverable: None,
         });
         Ok(())
@@ -2089,7 +2167,7 @@ impl FiberState {
     ) -> Result<FiberFormatState, FiberStateError> {
         self.require_status(FiberStatus::Running)?;
         let site = self.cursor;
-        let count = format_operands_at_site(program, site)?.len();
+        let count = format_operand_count_at_site(program, site)?;
         let frame = self.active_frame()?;
         let state = frame.format.as_ref().ok_or(FiberStateError::InvalidFrame)?;
         validate_format_state(program, frame, state)?;
@@ -2102,8 +2180,9 @@ impl FiberState {
             .ok_or(FiberStateError::InvalidFrame)
     }
 
-    /// Converts an evaluation failure into the next operand of the innermost
-    /// enclosing formatter. Other error categories never call this boundary.
+    /// Converts an evaluation failure into the next formatter operand, or
+    /// records a recoverable project DisplayText method failure. Other error
+    /// categories never call this boundary.
     /// Any frame carrying a cleanup/defer is left untouched for its VM owner.
     pub(crate) fn recover_format_operand(
         &mut self,
@@ -2111,54 +2190,58 @@ impl FiberState {
         reason: String,
     ) -> Result<bool, FiberStateError> {
         self.require_status(FiberStatus::Running)?;
-        let Some((child_index, site, ordinal)) =
-            self.frames
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(
-                    |(index, frame)| match frame.return_to.as_ref()?.continuation {
-                        FiberReturnContinuation::FormatOperand { site, ordinal } => {
-                            Some((index, site, ordinal))
-                        }
-                        _ => None,
-                    },
-                )
-        else {
-            return Ok(false);
-        };
-        let child = &self.frames[child_index];
-        let caller = self
+        let direct = self
             .frames
-            .get(child_index - 1)
-            .ok_or(FiberStateError::InvalidFrame)?;
-        validate_return_point(
-            program,
-            caller,
-            child.function,
-            child
-                .return_to
-                .as_ref()
-                .ok_or(FiberStateError::InvalidFrame)?,
-        )?;
-        if self.frames[child_index..]
             .iter()
-            .any(FiberFrame::has_pending_cleanup)
-        {
-            return Ok(false);
+            .enumerate()
+            .rev()
+            .find_map(
+                |(index, frame)| match frame.return_to.as_ref()?.continuation {
+                    FiberReturnContinuation::FormatOperand { site, ordinal } => {
+                        Some((index, site, Some(ordinal)))
+                    }
+                    FiberReturnContinuation::FormatDisplay { site } => Some((index, site, None)),
+                    _ => None,
+                },
+            );
+        if let Some((child_index, site, operand_ordinal)) = direct {
+            let child = &self.frames[child_index];
+            let caller = self
+                .frames
+                .get(child_index - 1)
+                .ok_or(FiberStateError::InvalidFrame)?;
+            validate_return_point(
+                program,
+                caller,
+                child.function,
+                child
+                    .return_to
+                    .as_ref()
+                    .ok_or(FiberStateError::InvalidFrame)?,
+            )?;
+            if self.frames[child_index..]
+                .iter()
+                .any(FiberFrame::has_pending_cleanup)
+            {
+                return Ok(false);
+            }
+            self.frames.truncate(child_index);
+            self.cursor = site;
+            let state = self
+                .active_frame_mut()?
+                .format
+                .as_mut()
+                .ok_or(FiberStateError::InvalidFrame)?;
+            if state.first_recoverable.is_none() {
+                state.first_recoverable = Some(reason);
+            }
+            if let Some(ordinal) = operand_ordinal {
+                state.next_operand = ordinal + 1;
+            }
+            return Ok(true);
         }
-        self.frames.truncate(child_index);
-        self.cursor = site;
-        let state = self
-            .active_frame_mut()?
-            .format
-            .as_mut()
-            .ok_or(FiberStateError::InvalidFrame)?;
-        if state.first_recoverable.is_none() {
-            state.first_recoverable = Some(reason);
-        }
-        state.next_operand = ordinal + 1;
-        Ok(true)
+
+        self.recover_format_attempt_operand(program, reason)
     }
 
     pub fn safe_point(
@@ -2371,6 +2454,11 @@ impl FiberState {
             FiberReturnContinuation::FormatOperand { .. } if self.cursor != return_to.cursor => {
                 return Err(FiberStateError::InvalidFrame);
             }
+            FiberReturnContinuation::FormatDisplay { site }
+                if self.cursor != site || return_to.cursor != site =>
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
             FiberReturnContinuation::InstructionCall { site } if self.cursor != site => {
                 return Err(FiberStateError::InvalidFrame);
             }
@@ -2547,6 +2635,7 @@ impl FiberState {
         if matches!(
             return_to.continuation,
             FiberReturnContinuation::FormatOperand { .. }
+                | FiberReturnContinuation::FormatDisplay { .. }
         ) && return_value.is_none()
         {
             return Err(FiberStateError::ReturnValueMismatch);
@@ -2599,6 +2688,7 @@ impl FiberState {
 
     pub fn mark_returned(&mut self, value: Option<RuntimeValue>) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
+        self.discard_format_attempts();
         self.status = FiberStatus::Returned;
         self.suspension = None;
         self.terminal = Some(FiberTerminalValue::Returned(value));
@@ -2610,6 +2700,7 @@ impl FiberState {
         value: RuntimeValue,
     ) -> Result<(), FiberStateError> {
         self.require_status(FiberStatus::Running)?;
+        self.discard_format_attempts();
         self.status = FiberStatus::Returned;
         self.suspension = None;
         self.terminal = Some(FiberTerminalValue::DialogueResultSelected(value));
@@ -2617,6 +2708,7 @@ impl FiberState {
     }
 
     pub(super) fn mark_cancelled(&mut self) {
+        self.discard_format_attempts();
         self.status = FiberStatus::Cancelled;
         self.suspension = None;
         self.terminal = Some(FiberTerminalValue::Cancelled);
@@ -2629,6 +2721,7 @@ impl FiberState {
         ) {
             return;
         }
+        self.discard_format_attempts();
         self.status = FiberStatus::Trapped;
         self.suspension = None;
         self.terminal = Some(FiberTerminalValue::Trapped(trap));
@@ -2791,6 +2884,74 @@ fn format_operands_at_site(
     Ok(operands)
 }
 
+fn format_operand_count_at_site(
+    program: &AwbcProgram,
+    site: FiberCursor,
+) -> Result<usize, FiberStateError> {
+    if let Some((_, operands)) = format::format_attempt_operands_at_site(program, site)? {
+        Ok(operands.len())
+    } else {
+        Ok(format_operands_at_site(program, site)?.len())
+    }
+}
+
+fn format_operand_type_at_site(
+    program: &AwbcProgram,
+    site: FiberCursor,
+    ordinal: usize,
+) -> Result<AwbcTypeId, FiberStateError> {
+    if let Some((_, operands)) = format::format_attempt_operands_at_site(program, site)? {
+        return operands
+            .get(ordinal)
+            .map(|operand| operand.ty)
+            .ok_or(FiberStateError::InvalidFrame);
+    }
+    let operand = format_operands_at_site(program, site)?
+        .get(ordinal)
+        .ok_or(FiberStateError::InvalidFrame)?;
+    program
+        .functions
+        .get(operand.function.index())
+        .and_then(|function| program.signatures.get(function.signature.index()))
+        .and_then(|signature| signature.result)
+        .ok_or(FiberStateError::InvalidFrame)
+}
+
+fn format_project_method_at_site(
+    program: &AwbcProgram,
+    site: FiberCursor,
+) -> Result<Option<(&super::schema::AwbcTraitMethod, AwbcRegisterId, AwbcTypeId)>, FiberStateError>
+{
+    let AwbcInstruction::FormatContent {
+        project_method,
+        project_result,
+        ..
+    } = instruction_at_site(program, site)?
+    else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    match (project_method, project_result) {
+        (None, None) => Ok(None),
+        (Some(method), Some(result)) => {
+            let method = program
+                .trait_methods
+                .get(method.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let function = program
+                .functions
+                .get(method.function.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let signature = program
+                .signatures
+                .get(function.signature.index())
+                .ok_or(FiberStateError::InvalidFrame)?;
+            let result_type = signature.result.ok_or(FiberStateError::InvalidFrame)?;
+            Ok(Some((method, *result, result_type)))
+        }
+        _ => Err(FiberStateError::InvalidFrame),
+    }
+}
+
 fn validate_format_state(
     program: &AwbcProgram,
     frame: &FiberFrame,
@@ -2802,12 +2963,12 @@ fn validate_format_state(
     if state.site.function != frame.function {
         return Err(FiberStateError::InvalidFrame);
     }
-    let operands = format_operands_at_site(program, state.site)?;
-    if state.values.len() != operands.len() || state.next_operand > operands.len() {
+    let operand_count = format_operand_count_at_site(program, state.site)?;
+    if state.values.len() != operand_count || state.next_operand > operand_count {
         return Err(FiberStateError::InvalidFrame);
     }
     let mut had_failure = false;
-    for (ordinal, (operand, value)) in operands.iter().zip(&state.values).enumerate() {
+    for (ordinal, value) in state.values.iter().enumerate() {
         if ordinal >= state.next_operand {
             if value.is_some() {
                 return Err(FiberStateError::InvalidFrame);
@@ -2815,12 +2976,7 @@ fn validate_format_state(
             continue;
         }
         if let Some(value) = value {
-            let result = program
-                .functions
-                .get(operand.function.index())
-                .and_then(|function| program.signatures.get(function.signature.index()))
-                .and_then(|signature| signature.result)
-                .ok_or(FiberStateError::InvalidFrame)?;
+            let result = format_operand_type_at_site(program, state.site, ordinal)?;
             validate_runtime_value_at(
                 program,
                 value,
@@ -2834,7 +2990,49 @@ fn validate_format_state(
     if had_failure != state.first_recoverable.is_some() {
         return Err(FiberStateError::InvalidFrame);
     }
+    if let Some((method, result_register, result_type)) =
+        format_project_method_at_site(program, state.site)?
+    {
+        let layout = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        if method.receiver != AwbcTraitReceiverMode::Owned
+            || method.receiver_state_slot.is_some()
+            || layout
+                .slots
+                .get(result_register.index())
+                .is_none_or(|slot| slot.ty != result_type)
+            || (state.next_operand < operand_count
+                && frame
+                    .registers
+                    .get(result_register.index())
+                    .is_some_and(Option::is_some))
+            || (state.first_recoverable.is_some()
+                && frame
+                    .registers
+                    .get(result_register.index())
+                    .is_some_and(Option::is_some))
+        {
+            return Err(FiberStateError::InvalidFrame);
+        }
+    } else if let AwbcInstruction::FormatContent {
+        project_option: true,
+        ..
+    } = instruction_at_site(program, state.site)?
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
     Ok(())
+}
+
+fn scope_has_pending_cleanup(scope: &FiberScope) -> bool {
+    !scope.cleanups.is_empty()
+        || !scope.defers.is_empty()
+        || !scope.defer_releasing.is_empty()
+        || scope.defer_inflight.is_some()
+        || scope.defer_exit.is_some()
+        || scope.defer_failure.is_some()
 }
 
 fn validate_frame(
@@ -2873,6 +3071,9 @@ fn validate_frame(
     }
     if let Some(format) = &frame.format {
         validate_format_state(program, frame, format)?;
+    }
+    for attempt in &frame.format_attempts {
+        format::validate_format_attempt_state(program, frame, attempt)?;
     }
     for (index, cleanup) in frame.root_cleanups.iter().enumerate() {
         validate_cleanup(program, cleanup, &format!("{path}.root_cleanups[{index}]"))?;
@@ -3290,6 +3491,15 @@ fn validate_return_continuation(
                 *ordinal,
             );
         }
+        FiberReturnContinuation::FormatDisplay { site } => {
+            return validate_format_display_return(
+                program,
+                caller,
+                returning_function,
+                return_to,
+                *site,
+            );
+        }
         FiberReturnContinuation::InstructionCall { site } => {
             return validate_instruction_call_return(
                 program,
@@ -3468,6 +3678,66 @@ fn validate_format_operand_return(
                     .get(capture.index())
                     .is_none_or(|slot| slot.ty != *ty)
             })
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    Ok(())
+}
+
+fn validate_format_display_return(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    returning_function: AwbcFunctionId,
+    return_to: &FiberReturnPoint,
+    site: FiberCursor,
+) -> Result<(), FiberStateError> {
+    if return_to.cursor != site || site.function != caller.function {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let state = caller
+        .format
+        .as_ref()
+        .ok_or(FiberStateError::InvalidFrame)?;
+    validate_format_state(program, caller, state)?;
+    let operand_count = format_operand_count_at_site(program, site)?;
+    if state.site != site
+        || state.next_operand != operand_count
+        || state.first_recoverable.is_some()
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let AwbcInstruction::FormatContent {
+        project_method: Some(method_id),
+        project_result: Some(result_register),
+        ..
+    } = instruction_at_site(program, site)?
+    else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    let method = program
+        .trait_methods
+        .get(method_id.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let function = program
+        .functions
+        .get(method.function.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or(FiberStateError::InvalidFrame)?;
+    let destination_type = program
+        .frame_layouts
+        .get(caller.layout.index())
+        .and_then(|layout| layout.slots.get(result_register.index()))
+        .map(|slot| slot.ty)
+        .ok_or(FiberStateError::InvalidFrame)?;
+    if method.receiver != AwbcTraitReceiverMode::Owned
+        || method.receiver_state_slot.is_some()
+        || returning_function != method.function
+        || return_to.destination != Some(*result_register)
+        || signature.params.len() != 2
+        || signature.result != Some(destination_type)
     {
         return Err(FiberStateError::InvalidFrame);
     }
@@ -4182,6 +4452,7 @@ impl FiberFrame {
             return_to,
             registers: vec![None; layout.slots.len()],
             format: None,
+            format_attempts: Vec::new(),
             root_cleanups: Vec::new(),
             root_defers: Vec::new(),
             scopes: Vec::with_capacity(layout.max_scope_depth as usize),
@@ -4763,6 +5034,11 @@ mod tests {
             destination: AwbcRegisterId(1),
             template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
                 .unwrap(),
+            attempt: None,
+            attempt_operands: Vec::new(),
+            project_method: None,
+            project_option: false,
+            project_result: None,
             operands: vec![
                 AwbcFormatOperand {
                     parameter: crate::value::RuntimeFmtParameterId::Value,
@@ -5113,6 +5389,25 @@ mod tests {
             })
             .unwrap();
         assert_eq!(strings, ["long"]);
+        let mut formatter_values = Vec::new();
+        restored
+            .visit_formatter_operand_values(|frame, site, ordinal, value| {
+                formatter_values.push((frame, site, ordinal, value.clone()));
+                Ok::<_, ()>(())
+            })
+            .unwrap();
+        assert_eq!(
+            formatter_values,
+            [
+                (restored.frames[0].instance, site, 0, RuntimeValue::Unit),
+                (
+                    restored.frames[0].instance,
+                    site,
+                    1,
+                    RuntimeValue::String("long".to_owned())
+                ),
+            ]
+        );
         let complete = restored.take_completed_format_content(&program).unwrap();
         assert_eq!(complete.values().len(), 2);
         assert_eq!(complete.first_recoverable(), None);

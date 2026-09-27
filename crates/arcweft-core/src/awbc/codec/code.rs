@@ -9,11 +9,11 @@ use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
     AwbcConstantId, AwbcContentUnitId, AwbcDeferOwner, AwbcDialogueContentEffectBinding,
     AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
-    AwbcEffectPlanId, AwbcFieldProjection, AwbcFormatOperand, AwbcFrameLayoutId, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction,
-    AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm, AwbcMutablePlace, AwbcOpcode,
-    AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProjectCall,
-    AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
+    AwbcEffectPlanId, AwbcFieldProjection, AwbcFormatAttemptOperand, AwbcFormatOperand,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm,
+    AwbcMutablePlace, AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest,
+    AwbcProjectCall, AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
     AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
     AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
     AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId,
@@ -455,6 +455,31 @@ impl Wire for AwbcFormatOperand {
     }
 }
 
+impl Wire for AwbcFormatAttemptOperand {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(
+            u8::try_from(self.parameter.index()).expect("fmt parameter IDs fit in one byte"),
+        );
+        self.ty.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        let parameter = RuntimeFmtParameterId::from_index(usize::from(tag)).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "fmt parameter",
+                tag,
+                offset,
+            },
+        )?;
+        Ok(Self {
+            parameter,
+            ty: AwbcTypeId::read_wire(reader)?,
+        })
+    }
+}
+
 impl Wire for AwbcInstruction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(self.opcode().encoded());
@@ -612,12 +637,40 @@ impl Wire for AwbcInstruction {
             Self::FormatContent {
                 destination,
                 template,
+                attempt,
+                attempt_operands,
+                project_method,
+                project_option,
+                project_result,
                 operands,
             } => {
                 destination.write_wire(writer)?;
                 template.write_wire(writer)?;
+                attempt.write_wire(writer)?;
+                attempt_operands.write_wire(writer)?;
+                project_method.write_wire(writer)?;
+                project_option.write_wire(writer)?;
+                project_result.write_wire(writer)?;
                 operands.write_wire(writer)?;
             }
+            Self::FormatOperandAttempt { attempt, parameter } => {
+                attempt.write_wire(writer)?;
+                writer.write_u8(
+                    u8::try_from(parameter.index()).expect("fmt parameter IDs fit in one byte"),
+                );
+            }
+            Self::CompleteFormatOperand {
+                attempt,
+                parameter,
+                value,
+            } => {
+                attempt.write_wire(writer)?;
+                writer.write_u8(
+                    u8::try_from(parameter.index()).expect("fmt parameter IDs fit in one byte"),
+                );
+                value.write_wire(writer)?;
+            }
+            Self::AbandonFormatAttempt { attempt } => attempt.write_wire(writer)?,
             Self::CharacterDialogue {
                 destination,
                 operation,
@@ -895,7 +948,45 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::FormatContent => Self::FormatContent {
                 destination: AwbcRegisterId::read_wire(reader)?,
                 template: crate::runtime_id::RuntimeDialogueContentTemplateId::read_wire(reader)?,
+                attempt: Option::<crate::runtime_id::RuntimeFormatAttemptId>::read_wire(reader)?,
+                attempt_operands: Vec::<AwbcFormatAttemptOperand>::read_wire(reader)?,
+                project_method: Option::<AwbcTraitMethodId>::read_wire(reader)?,
+                project_option: bool::read_wire(reader)?,
+                project_result: Option::<AwbcRegisterId>::read_wire(reader)?,
                 operands: Vec::<AwbcFormatOperand>::read_wire(reader)?,
+            },
+            AwbcOpcode::FormatOperandAttempt => {
+                let attempt = crate::runtime_id::RuntimeFormatAttemptId::read_wire(reader)?;
+                let offset = reader.offset();
+                let tag = reader.read_u8()?;
+                let parameter = RuntimeFmtParameterId::from_index(usize::from(tag)).ok_or(
+                    AwbcCodecError::UnknownTag {
+                        kind: "fmt parameter",
+                        tag,
+                        offset,
+                    },
+                )?;
+                Self::FormatOperandAttempt { attempt, parameter }
+            }
+            AwbcOpcode::CompleteFormatOperand => {
+                let attempt = crate::runtime_id::RuntimeFormatAttemptId::read_wire(reader)?;
+                let offset = reader.offset();
+                let tag = reader.read_u8()?;
+                let parameter = RuntimeFmtParameterId::from_index(usize::from(tag)).ok_or(
+                    AwbcCodecError::UnknownTag {
+                        kind: "fmt parameter",
+                        tag,
+                        offset,
+                    },
+                )?;
+                Self::CompleteFormatOperand {
+                    attempt,
+                    parameter,
+                    value: AwbcRegisterId::read_wire(reader)?,
+                }
+            }
+            AwbcOpcode::AbandonFormatAttempt => Self::AbandonFormatAttempt {
+                attempt: crate::runtime_id::RuntimeFormatAttemptId::read_wire(reader)?,
             },
             AwbcOpcode::CharacterDialogue => Self::CharacterDialogue {
                 destination: AwbcRegisterId::read_wire(reader)?,
@@ -1435,6 +1526,9 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::MakeDialogueContent
             | AwbcOpcode::CharacterDialogue
             | AwbcOpcode::FormatContent
+            | AwbcOpcode::FormatOperandAttempt
+            | AwbcOpcode::CompleteFormatOperand
+            | AwbcOpcode::AbandonFormatAttempt
             | AwbcOpcode::EmitEffect
             | AwbcOpcode::StartNeed
             | AwbcOpcode::SpawnFiber
@@ -1946,6 +2040,11 @@ mod format_content_wire_tests {
             destination: AwbcRegisterId(1),
             template: RuntimeDialogueContentTemplateId::from_zero_based(0)
                 .expect("template identity"),
+            attempt: None,
+            attempt_operands: Vec::new(),
+            project_method: None,
+            project_option: false,
+            project_result: None,
             operands: vec![
                 AwbcFormatOperand {
                     parameter: RuntimeFmtParameterId::Style,
@@ -1970,6 +2069,11 @@ mod format_content_wire_tests {
                 0x2a, // opcode
                 1,    // destination
                 1,    // template
+                0,    // no Flow attempt
+                0,    // no Flow attempt operands
+                0,    // no project DisplayText method
+                0,    // project option mode
+                0,    // no project-result temporary
                 2,    // operand count
                 1,    // Style parameter
                 7,    // Style function
@@ -1991,8 +2095,10 @@ mod format_content_wire_tests {
     #[test]
     fn format_content_wire_rejects_unknown_parameter_identity() {
         let bytes = [
-            0x2a, 0,    // opcode, destination
-            1,    // nonzero template identity
+            0x2a, 0, // opcode, destination
+            1, // nonzero template identity
+            0, 0, // no Flow attempt or attempt operands
+            0, 0, 0,    // no project method, option mode, or project-result temporary
             1,    // operand count
             0xff, // unknown parameter
         ];
@@ -2002,9 +2108,79 @@ mod format_content_wire_tests {
             AwbcCodecError::UnknownTag {
                 kind: "fmt parameter",
                 tag: 0xff,
-                offset: 4,
+                offset: 9,
             }
         );
+    }
+
+    #[test]
+    fn flow_format_attempt_instructions_round_trip_the_typed_coordinates() {
+        let attempt = crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(0)
+            .expect("attempt identity");
+        let instructions = [
+            AwbcInstruction::FormatOperandAttempt {
+                attempt,
+                parameter: RuntimeFmtParameterId::Style,
+            },
+            AwbcInstruction::CompleteFormatOperand {
+                attempt,
+                parameter: RuntimeFmtParameterId::Value,
+                value: AwbcRegisterId(6),
+            },
+            AwbcInstruction::AbandonFormatAttempt { attempt },
+        ];
+        let expected_opcodes = [0x2b, 0x2c, 0x2d];
+        for (instruction, expected_opcode) in instructions.into_iter().zip(expected_opcodes) {
+            let mut writer = Writer::with_capacity(16);
+            instruction
+                .write_wire(&mut writer)
+                .expect("encode Flow attempt instruction");
+            let bytes = writer.into_bytes();
+            assert_eq!(bytes[0], expected_opcode);
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                AwbcInstruction::read_wire(&mut reader).expect("decode Flow attempt instruction"),
+                instruction
+            );
+            reader.finish().expect("complete Flow attempt instruction");
+        }
+    }
+
+    #[test]
+    fn attempted_format_content_wire_keeps_manifest_parameter_and_type_order() {
+        let attempt = crate::runtime_id::RuntimeFormatAttemptId::from_zero_based(3)
+            .expect("attempt identity");
+        let instruction = AwbcInstruction::FormatContent {
+            destination: AwbcRegisterId(4),
+            template: RuntimeDialogueContentTemplateId::from_zero_based(2)
+                .expect("template identity"),
+            attempt: Some(attempt),
+            attempt_operands: vec![
+                AwbcFormatAttemptOperand {
+                    parameter: RuntimeFmtParameterId::Style,
+                    ty: AwbcTypeId(6),
+                },
+                AwbcFormatAttemptOperand {
+                    parameter: RuntimeFmtParameterId::Value,
+                    ty: AwbcTypeId(2),
+                },
+            ],
+            project_method: None,
+            project_option: false,
+            project_result: None,
+            operands: Vec::new(),
+        };
+        let mut writer = Writer::with_capacity(64);
+        instruction
+            .write_wire(&mut writer)
+            .expect("encode attempt FormatContent");
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcInstruction::read_wire(&mut reader).expect("decode attempt FormatContent"),
+            instruction
+        );
+        reader.finish().expect("complete attempt FormatContent");
     }
 
     #[test]

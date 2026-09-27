@@ -74,6 +74,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
     let body = RuntimeExprSeed::format_content(
         content_type,
         template,
+        None,
+        None,
+        false,
         [
             RuntimeFormatContentOperandSeed::new(
                 RuntimeFmtParameterId::Value,
@@ -109,6 +112,9 @@ fn pure_format_content_uses_selected_ambient_locale() {
             body: RuntimeExprSeed::format_content(
                 content_type,
                 template,
+                None,
+                None,
+                false,
                 [
                     RuntimeFormatContentOperandSeed::new(
                         RuntimeFmtParameterId::Value,

@@ -12,18 +12,19 @@ use arcweft_lang_hir::identity::{ExprId, LocalId};
 use crate::{
     callable::{
         CallConstraintInvariant, CallableParameterAdmission, CallableReceiverMode,
-        CheckedCallApplicationSite, CheckedCallArgumentPassing, CheckedCallArgumentSlotSource,
-        CheckedCallCalleeExecution, CheckedCallContextualReceiverKind,
-        CheckedCallExecutionArgumentSeal, CheckedCallExecutionProjectionSeal,
-        CheckedCallExecutionSlotSeal, CheckedCallExecutionSource, CheckedCallOperandDestination,
-        CheckedCallReceiverProjection, CheckedCallSemanticOperandSeal,
-        CheckedCallSemanticOperandSource, CheckedCallSemanticSelection, CheckedCallSite,
-        CheckedCaptureSignatureSeal, DetachedPreparedCallableApplication,
-        MappedCallArgumentPassing, PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey,
-        PreparedCallGraphSealPayload, PreparedCallableDefinitionKey,
-        PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionBatch,
-        PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity, ResolvedCallable,
-        ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
+        CallableValidator, CheckedCallApplicationSite, CheckedCallArgumentPassing,
+        CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
+        CheckedCallContextualReceiverKind, CheckedCallExecutionArgumentSeal,
+        CheckedCallExecutionProjectionSeal, CheckedCallExecutionSlotSeal,
+        CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
+        CheckedCallSemanticOperandSeal, CheckedCallSemanticOperandSource,
+        CheckedCallSemanticSelection, CheckedCallSite, CheckedCaptureSignatureSeal, CheckedFmtCall,
+        DetachedPreparedCallableApplication, MappedCallArgumentPassing,
+        PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
+        PreparedCallableDefinitionKey, PreparedFunctionValueOriginIdentity,
+        PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDetachArena,
+        PreparedResolvedCallableIdentity, ResolvedCallable, ResolvedCallableBase,
+        ResolvedCallableBaseInstantiation, ResolvedCallableBaseSeal,
         ResolvedCallableStableIdentitySeal, ResolvedCallableState,
     },
     final_analysis::{
@@ -41,6 +42,7 @@ use super::calls::{
     AnalyzerPreparedCalleeExpression, AnalyzerPreparedExpressionResolution, final_call_effects,
     final_callable_effect_row, final_callable_effects,
 };
+use super::display::DisplayConformanceCatalog;
 
 pub(super) struct DetachedAnalyzerCallGraph {
     pub(super) authority: PreparedCallGraphSealAuthority,
@@ -1433,6 +1435,7 @@ fn seal_selected_call(
     locals: &BTreeMap<LocalId, TypeKind>,
     checked_callables: &crate::callable::CheckedCallableCatalog,
     limits: &crate::callable::CallableLimits,
+    display: &DisplayConformanceCatalog,
 ) -> Result<SealedSelectedCall, FinalSemanticAnalysisError> {
     let DetachedAnalyzerSelectedCall {
         application,
@@ -1521,11 +1524,23 @@ fn seal_selected_call(
         },
     )
     .map_err(|error| final_call_seal_error(location, error))?;
+    let selected_display_witness = if matches!(
+        core.candidates().selected().schema().validator(),
+        CallableValidator::Format
+    ) {
+        let content = crate::env::nominal::standard_dialogue_content_type();
+        let primary = CheckedFmtCall::selected_primary_type(&core)
+            .map_err(|error| final_call_seal_error(location, error))?;
+        display.for_fmt_primary(primary, &content)?
+    } else {
+        None
+    };
     let application = crate::callable::CheckedCallApplication::seal(
         core,
         expected_result,
         terminal_effects.as_ref(),
         inferred_result_schema,
+        selected_display_witness,
     )
     .map_err(|error| final_call_seal_error(location, error))?;
     Ok(SealedSelectedCall {
@@ -1782,6 +1797,10 @@ impl super::Analyzer<'_, '_, '_> {
         checked_callables: &crate::callable::CheckedCallableCatalog,
         coordinates: &SemanticCoordinateIndex<'_, '_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let display = self
+            .display_conformances
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         let graph = self
             .facts
             .take_prepared_calls()
@@ -1836,6 +1855,7 @@ impl super::Analyzer<'_, '_, '_> {
                             locals,
                             checked_callables,
                             &self.catalogs.callable_limits,
+                            display,
                         )?;
                         let callee = sealed.callee_update(expressions, checked_callables)?;
                         let update = PendingSelectedExpressionUpdate {
@@ -1886,6 +1906,7 @@ impl super::Analyzer<'_, '_, '_> {
                             locals,
                             checked_callables,
                             &self.catalogs.callable_limits,
+                            display,
                         )?;
                         let callee = sealed.callee_update(expressions, checked_callables)?;
                         let update = PendingSelectedExpressionUpdate {

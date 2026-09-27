@@ -355,7 +355,8 @@ where
         | (TypeKind::LineContext, TypeKind::LineContext)
         | (TypeKind::CueHandle, TypeKind::CueHandle)
         | (TypeKind::VoiceHandle, TypeKind::VoiceHandle)
-        | (TypeKind::DisplayText, TypeKind::DisplayText)
+        | (TypeKind::DisplayContext, TypeKind::DisplayContext)
+        | (TypeKind::DisplayError, TypeKind::DisplayError)
         | (TypeKind::DebugStatePath, TypeKind::DebugStatePath)
         | (TypeKind::ObservationFieldPath, TypeKind::ObservationFieldPath)
         | (TypeKind::Predicate, TypeKind::Predicate)
@@ -1029,7 +1030,8 @@ where
         | TypeKind::Bytes
         | TypeKind::Duration
         | TypeKind::Progress
-        | TypeKind::DisplayText
+        | TypeKind::DisplayContext
+        | TypeKind::DisplayError
         | TypeKind::ActionName
         | TypeKind::AgentValue
         | TypeKind::ObservedObject

@@ -286,6 +286,25 @@ pub enum FinalSemanticAnalysisError {
         actual: Box<TypeKind>,
     },
     #[error(
+        "dialogue interpolation expression {expression:?} must be pure and non-suspending; found {effects:?}"
+    )]
+    ImpureDialogueInterpolation {
+        owner: ExprId,
+        expression: ExprId,
+        effects: EffectSet,
+    },
+    #[error("standard DisplayText implementation {implementation:?} is invalid: {reason}")]
+    InvalidDisplayTextImpl {
+        implementation: ItemId,
+        reason: super::analyzer::display::DisplayConformanceRejection,
+    },
+    #[error("DisplayText implementations {first:?} and {second:?} both match {target:?}")]
+    DuplicateDisplayTextImpl {
+        target: Box<TypeKind>,
+        first: ItemId,
+        second: ItemId,
+    },
+    #[error(
         "line-plan init statement {owner:?} starts a child that would escape its pre-reveal scope"
     )]
     InitEscapingChild { owner: StmtId },

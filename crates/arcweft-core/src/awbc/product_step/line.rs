@@ -2439,6 +2439,37 @@ fn activation_register_owner(
     })
 }
 
+fn awbc_formatter_handle_owners(
+    execution: crate::runtime_id::ExecutionInstanceId,
+    fiber: &FiberState,
+    frame: crate::runtime_id::RuntimeFrameInstanceId,
+) -> Result<BTreeMap<RuntimeLineHandleToken, RuntimeOwnedSlotId>, ProductStepError> {
+    let mut owners = BTreeMap::new();
+    fiber.visit_formatter_operand_values(
+        |value_frame, site, ordinal, value| -> Result<(), ProductStepError> {
+            if value_frame != frame {
+                return Ok(());
+            }
+            let ordinal =
+                u32::try_from(ordinal).map_err(|_| LineRuntimeError::OwnedSlotOverflow)?;
+            let owner = RuntimeOwnedSlotId::AwbcFormatOperand {
+                execution,
+                fiber: fiber.instance,
+                frame: value_frame,
+                site,
+                ordinal,
+            };
+            for handle in unique_line_handles(value)? {
+                if owners.insert(handle.token().clone(), owner).is_some() {
+                    return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+                }
+            }
+            Ok(())
+        },
+    )?;
+    Ok(owners)
+}
+
 fn fiber_has_scoped_defer_inflight(fiber: &FiberState) -> bool {
     fiber
         .frames
@@ -2579,6 +2610,17 @@ fn activation_fiber_handle_owners(
                 }
             }
         }
+        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
+            if token.activation() != activation {
+                return Err(LineRuntimeError::WrongActivation.into());
+            }
+            if owners
+                .insert(token, RuntimeHandleOwnerSlot::ActivationLocal(owner))
+                .is_some()
+            {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+            }
+        }
         for scope in &frame.scopes {
             for deferred in &scope.defers {
                 for capture in &deferred.captures {
@@ -2630,6 +2672,11 @@ fn parent_fiber_handle_owners(
                 }
             }
         }
+        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
+            if token.activation() == activation && owners.insert(token, owner).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
+            }
+        }
     }
     Ok(owners)
 }
@@ -2657,6 +2704,11 @@ pub(super) fn product_fiber_handle_owners(
                 if owners.insert(handle.token().clone(), owner).is_some() {
                     return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
                 }
+            }
+        }
+        for (token, owner) in awbc_formatter_handle_owners(execution, fiber, frame.instance)? {
+            if owners.insert(token, owner).is_some() {
+                return Err(LineRuntimeError::DuplicateHandleOccurrence.into());
             }
         }
     }

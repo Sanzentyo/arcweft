@@ -14,8 +14,8 @@ use crate::root::{
     RootCallableEvaluationError, RootCallableEvaluator, RootEventInput, RootRuntime,
     RootRuntimeError, RootStartupContract, RuntimeCommandEnvelope,
 };
-use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{DialogueActivationId, RuntimePersistentFiberId};
+use crate::runtime_id::{RuntimeFormatAttemptId, RuntimePlanTypeId};
 use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepInput,
     RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
@@ -165,17 +165,9 @@ fn flow_fiber_line_handle_tokens(
     fiber: &FlowFiber,
 ) -> Result<BTreeSet<crate::runtime_id::RuntimeLineHandleToken>, crate::line_task::LineRuntimeError>
 {
-    let mut tokens = BTreeSet::new();
-    for value in fiber.env.values() {
-        for handle in value
-            .affine_line_handles()
-            .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
-        {
-            if !tokens.insert(handle.token().clone()) {
-                return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
-            }
-        }
-    }
+    let mut tokens = flow_fiber_line_handle_owners(fiber)?
+        .into_keys()
+        .collect::<BTreeSet<_>>();
     if let Some(selected) = &fiber.selected_dialogue_result {
         for handle in selected
             .affine_line_handles()
@@ -209,6 +201,35 @@ fn flow_fiber_line_handle_owners(
         {
             if owners.insert(handle.token().clone(), owner).is_some() {
                 return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
+            }
+        }
+    }
+    for (frame_index, entry) in fiber.control_stack.iter().enumerate() {
+        let FlowControlStackEntryKind::FormatAttempt(frame) = &entry.kind else {
+            continue;
+        };
+        let frame_index = u32::try_from(frame_index)
+            .map_err(|_| crate::line_task::LineRuntimeError::OwnedSlotOverflow)?;
+        for (ordinal, value) in frame.values.iter().enumerate() {
+            let Some(value) = value else {
+                continue;
+            };
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| crate::line_task::LineRuntimeError::OwnedSlotOverflow)?;
+            let owner = crate::value::ownership::RuntimeOwnedSlotId::NativeFormatOperand {
+                execution: fiber.execution,
+                fiber: fiber.persistent_id,
+                frame: frame_index,
+                attempt: frame.attempt,
+                ordinal,
+            };
+            for handle in value
+                .affine_line_handles()
+                .map_err(|_| crate::line_task::LineRuntimeError::InvalidHandlePayload)?
+            {
+                if owners.insert(handle.token().clone(), owner).is_some() {
+                    return Err(crate::line_task::LineRuntimeError::DuplicateHandleOccurrence);
+                }
             }
         }
     }
@@ -256,10 +277,30 @@ pub(crate) enum FlowControlStackEntryKind {
         guard: Option<Box<RuntimeExpr>>,
         body: std::sync::Arc<[FlowOp]>,
     },
+    /// One source-ordered formatter occurrence. The frame remains the sole
+    /// outcome authority until its matching FormatContent expression consumes it.
+    FormatAttempt(NativeFormatAttemptFrame),
     /// Typed function-call return boundary. The callee's scope and any nested
     /// loop/scope frames are unwound before the returned value is admitted to
     /// the caller's result pattern.
     FunctionCall(FunctionCallFrame),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NativeFormatAttemptFrame {
+    pub(crate) attempt: RuntimeFormatAttemptId,
+    pub(crate) context: crate::value::RuntimeFormatContext,
+    pub(crate) values: Vec<Option<RuntimeValue>>,
+    pub(crate) first_recoverable: Option<String>,
+    pub(crate) next_operand: usize,
+    pub(crate) active: Option<NativeFormatOperandFrame>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct NativeFormatOperandFrame {
+    pub(crate) ordinal: usize,
+    pub(crate) resume: Option<FlowCursor>,
+    pub(crate) caller_pending_ops: VecDeque<FlowOp>,
 }
 
 /// One invocation frame shared by direct and value-based function calls.

@@ -5,6 +5,7 @@ mod dialogue_content;
 pub mod entry_inventory;
 mod executable_body;
 mod flow_ops;
+mod format_attempt;
 mod function_inputs;
 mod function_sites;
 pub mod generation_contract;
@@ -46,23 +47,24 @@ pub use construction::{
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatContentOperandSeed,
-    RuntimeFunctionInputBindingSeed, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
-    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed,
-    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskGroupSeedId,
-    RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeMutablePlaceSeed,
-    RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
-    RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent, RuntimePlanSemanticAdmission,
-    RuntimePlanTable, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
-    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
-    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
-    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFormatAttemptDeclarationSeed, RuntimeFormatAttemptOperandSeed,
+    RuntimeFormatAttemptSeedId, RuntimeFormatContentOperandSeed, RuntimeFunctionInputBindingSeed,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
+    RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
+    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
+    RuntimePlanBuilder, RuntimePlanNominalSchemaError, RuntimePlanSchemaComponent,
+    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
@@ -74,6 +76,9 @@ pub use dialogue_content::{
     RuntimeDialogueValueSite,
 };
 pub use executable_body::{RuntimeEffectSet, RuntimeEffectSetError, RuntimeExecutableBody};
+pub use format_attempt::{
+    RuntimeFormatAttempt, RuntimeFormatAttemptOperand, RuntimeFormatAttemptTable,
+};
 pub use function_sites::{
     RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSite,
     RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
@@ -189,6 +194,7 @@ pub struct RuntimePlan {
         >],
     >,
     pub(crate) project_call_sites: RuntimeProjectCallSiteTable,
+    pub(crate) format_attempts: RuntimeFormatAttemptTable,
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
     pub(crate) callable_executables: Vec<RuntimeCallableExecutable>,
@@ -274,6 +280,19 @@ impl RuntimePlan {
     #[must_use]
     pub const fn function_sites(&self) -> &RuntimeFunctionSiteTable {
         &self.function_sites
+    }
+
+    #[must_use]
+    pub const fn format_attempts(&self) -> &RuntimeFormatAttemptTable {
+        &self.format_attempts
+    }
+
+    #[must_use]
+    pub fn format_attempt(
+        &self,
+        id: crate::runtime_id::RuntimeFormatAttemptId,
+    ) -> Option<&RuntimeFormatAttempt> {
+        self.format_attempts.get(id)
     }
 
     #[must_use]
@@ -1124,6 +1143,21 @@ pub enum FlowOp {
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
+    },
+    /// Runs one checked source-ordered formatter operand body inside the
+    /// owning attempt's recoverable failure boundary.
+    FormatOperandAttempt {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+        body: Vec<FlowOp>,
+        value: RuntimeExpr,
+    },
+    /// Engine-only completion marker appended after a formatter operand body.
+    /// It never appears in a finished `RuntimePlan`.
+    CompleteFormatOperand {
+        attempt: crate::runtime_id::RuntimeFormatAttemptId,
+        parameter: crate::value::RuntimeFmtParameterId,
+        value: RuntimeExpr,
     },
     LetElse {
         pattern: RuntimePattern,

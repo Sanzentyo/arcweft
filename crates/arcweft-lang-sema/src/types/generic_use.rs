@@ -19,7 +19,6 @@ use super::{
     GenericScopeError, GenericTypeParameterId, GenericTypeReference, TypeKind,
 };
 
-#[cfg(test)]
 pub(crate) type TypeGenericUseCollector = GenericUseCollector<DeclarationUses>;
 pub(crate) type TypeGenericReferenceUseCollector = GenericUseCollector<ReferenceUses>;
 pub(crate) type StableGenericReferenceUseCollector = GenericUseCollector<StableReferenceUses>;
@@ -359,7 +358,8 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             | TypeKind::CueHandle
             | TypeKind::VoiceHandle
             | TypeKind::StatementIngress(_)
-            | TypeKind::DisplayText
+            | TypeKind::DisplayContext
+            | TypeKind::DisplayError
             | TypeKind::DebugStatePath
             | TypeKind::ObservationFieldPath
             | TypeKind::Predicate

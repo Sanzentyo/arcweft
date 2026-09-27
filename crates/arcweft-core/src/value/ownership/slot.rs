@@ -1,11 +1,11 @@
 use crate::{
-    awbc::schema::AwbcRegisterId,
+    awbc::{fiber::FiberCursor, schema::AwbcRegisterId},
     runtime_id::{
         ExecutionInstanceId, RuntimeCaptureSlotId, RuntimeChildInstanceId, RuntimeChildPacketId,
         RuntimeCleanupScopeId, RuntimeCleanupSlotId, RuntimeClosureInstanceId,
-        RuntimeFiberInstanceId, RuntimeFrameInstanceId, RuntimeFrameLocalId, RuntimeLocalSlotId,
-        RuntimeMailboxInstanceId, RuntimeMailboxLaneId, RuntimeTransferInstanceId,
-        RuntimeTransferPacketId,
+        RuntimeFiberInstanceId, RuntimeFormatAttemptId, RuntimeFrameInstanceId,
+        RuntimeFrameLocalId, RuntimeLocalSlotId, RuntimeMailboxInstanceId, RuntimeMailboxLaneId,
+        RuntimePersistentFiberId, RuntimeTransferInstanceId, RuntimeTransferPacketId,
     },
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -36,6 +36,20 @@ pub enum RuntimeOwnedSlotId {
         fiber: RuntimeFiberInstanceId,
         frame: RuntimeFrameInstanceId,
         local: RuntimeFrameLocalId,
+    },
+    AwbcFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    NativeFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        frame: u32,
+        attempt: RuntimeFormatAttemptId,
+        ordinal: u32,
     },
     MailboxLane {
         execution: ExecutionInstanceId,
@@ -82,6 +96,8 @@ impl RuntimeOwnedSlotId {
             Self::ChildPacket { .. } => 5,
             Self::TransferPacket { .. } => 6,
             Self::CleanupSlot { .. } => 7,
+            Self::AwbcFormatOperand { .. } => 8,
+            Self::NativeFormatOperand { .. } => 9,
         }
     }
 
@@ -92,6 +108,8 @@ impl RuntimeOwnedSlotId {
             | Self::ClosureCapture { execution, .. }
             | Self::AwbcRegister { execution, .. }
             | Self::AwbcFrameLocal { execution, .. }
+            | Self::AwbcFormatOperand { execution, .. }
+            | Self::NativeFormatOperand { execution, .. }
             | Self::MailboxLane { execution, .. }
             | Self::ChildPacket { execution, .. }
             | Self::TransferPacket { execution, .. }
@@ -134,6 +152,34 @@ impl RuntimeOwnedSlotId {
                 fiber.get(),
                 frame.get(),
                 local.get()
+            ),
+            Self::AwbcFormatOperand {
+                fiber,
+                frame,
+                site,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/awbc/fiber/{}/frame/{}/format/{}/{}/{}/{}",
+                fiber.get(),
+                frame.get(),
+                site.function.0,
+                site.block.0,
+                site.instruction_offset,
+                ordinal
+            ),
+            Self::NativeFormatOperand {
+                fiber,
+                frame,
+                attempt,
+                ordinal,
+                ..
+            } => format!(
+                "exec/{execution}/native/fiber/{}/frame/{}/format/{}/{}",
+                fiber.get(),
+                frame,
+                attempt,
+                ordinal
             ),
             Self::MailboxLane { mailbox, lane, .. } => format!(
                 "exec/{execution}/mailbox/{}/lane/{}",
@@ -182,6 +228,8 @@ impl Ord for RuntimeOwnedSlotId {
             5 => cmp_child_packet(*self, *other),
             6 => cmp_transfer_packet(*self, *other),
             7 => cmp_cleanup_slot(*self, *other),
+            8 => cmp_awbc_format_operand(*self, *other),
+            9 => cmp_native_format_operand(*self, *other),
             _ => unreachable!("canonical owned-slot tags are exhaustive"),
         }
     }
@@ -281,6 +329,84 @@ fn cmp_awbc_frame_local(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> 
         right_frame,
         right_local,
     ))
+}
+
+fn cmp_awbc_format_operand(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
+    let RuntimeOwnedSlotId::AwbcFormatOperand {
+        execution: left_execution,
+        fiber: left_fiber,
+        frame: left_frame,
+        site: left_site,
+        ordinal: left_ordinal,
+    } = left
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    let RuntimeOwnedSlotId::AwbcFormatOperand {
+        execution: right_execution,
+        fiber: right_fiber,
+        frame: right_frame,
+        site: right_site,
+        ordinal: right_ordinal,
+    } = right
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    (
+        left_execution,
+        left_fiber,
+        left_frame,
+        left_site.function,
+        left_site.block,
+        left_site.instruction_offset,
+        left_ordinal,
+    )
+        .cmp(&(
+            right_execution,
+            right_fiber,
+            right_frame,
+            right_site.function,
+            right_site.block,
+            right_site.instruction_offset,
+            right_ordinal,
+        ))
+}
+
+fn cmp_native_format_operand(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
+    let RuntimeOwnedSlotId::NativeFormatOperand {
+        execution: left_execution,
+        fiber: left_fiber,
+        frame: left_frame,
+        attempt: left_attempt,
+        ordinal: left_ordinal,
+    } = left
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    let RuntimeOwnedSlotId::NativeFormatOperand {
+        execution: right_execution,
+        fiber: right_fiber,
+        frame: right_frame,
+        attempt: right_attempt,
+        ordinal: right_ordinal,
+    } = right
+    else {
+        unreachable!("equal canonical tags select the same variant")
+    };
+    (
+        left_execution,
+        left_fiber,
+        left_frame,
+        left_attempt,
+        left_ordinal,
+    )
+        .cmp(&(
+            right_execution,
+            right_fiber,
+            right_frame,
+            right_attempt,
+            right_ordinal,
+        ))
 }
 
 fn cmp_mailbox_lane(left: RuntimeOwnedSlotId, right: RuntimeOwnedSlotId) -> Ordering {
@@ -397,6 +523,20 @@ enum HumanOwnedSlot {
         frame: RuntimeFrameInstanceId,
         local: RuntimeFrameLocalId,
     },
+    AwbcFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    NativeFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        frame: u32,
+        attempt: RuntimeFormatAttemptId,
+        ordinal: u32,
+    },
     MailboxLane {
         execution: ExecutionInstanceId,
         mailbox: RuntimeMailboxInstanceId,
@@ -442,6 +582,20 @@ enum HumanOwnedSlotInput {
         fiber: RuntimeFiberInstanceId,
         frame: RuntimeFrameInstanceId,
         local: RuntimeFrameLocalId,
+    },
+    AwbcFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimeFiberInstanceId,
+        frame: RuntimeFrameInstanceId,
+        site: FiberCursor,
+        ordinal: u32,
+    },
+    NativeFormatOperand {
+        execution: ExecutionInstanceId,
+        fiber: RuntimePersistentFiberId,
+        frame: u32,
+        attempt: RuntimeFormatAttemptId,
+        ordinal: u32,
     },
     MailboxLane {
         execution: ExecutionInstanceId,
@@ -501,6 +655,32 @@ impl From<RuntimeOwnedSlotId> for HumanOwnedSlot {
                 fiber,
                 frame,
                 local,
+            },
+            RuntimeOwnedSlotId::AwbcFormatOperand {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            } => Self::AwbcFormatOperand {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            },
+            RuntimeOwnedSlotId::NativeFormatOperand {
+                execution,
+                fiber,
+                frame,
+                attempt,
+                ordinal,
+            } => Self::NativeFormatOperand {
+                execution,
+                fiber,
+                frame,
+                attempt,
+                ordinal,
             },
             RuntimeOwnedSlotId::MailboxLane {
                 execution,
@@ -578,6 +758,32 @@ impl From<HumanOwnedSlotInput> for RuntimeOwnedSlotId {
                 fiber,
                 frame,
                 local,
+            },
+            HumanOwnedSlotInput::AwbcFormatOperand {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            } => Self::AwbcFormatOperand {
+                execution,
+                fiber,
+                frame,
+                site,
+                ordinal,
+            },
+            HumanOwnedSlotInput::NativeFormatOperand {
+                execution,
+                fiber,
+                frame,
+                attempt,
+                ordinal,
+            } => Self::NativeFormatOperand {
+                execution,
+                fiber,
+                frame,
+                attempt,
+                ordinal,
             },
             HumanOwnedSlotInput::MailboxLane {
                 execution,
@@ -685,11 +891,48 @@ mod tests {
             from_json(r#"{"kind":"child_packet","execution":"1","child":"2","packet":3}"#),
             from_json(r#"{"kind":"transfer_packet","execution":"1","transfer":"2","packet":3}"#),
             from_json(r#"{"kind":"cleanup_slot","execution":"1","scope":"2","slot":3}"#),
+            from_json(
+                r#"{"kind":"awbc_format_operand","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+            ),
+            from_json(
+                r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
+            ),
         ];
         assert!(slots.windows(2).all(|pair| pair[0] < pair[1]));
         assert_eq!(
             slots.map(RuntimeOwnedSlotId::canonical_tag),
-            [0, 1, 2, 3, 4, 5, 6, 7]
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         );
+    }
+
+    #[test]
+    fn formatter_owned_slots_have_dynamic_site_rendering_and_canonical_json() {
+        let awbc: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"awbc_format_operand","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#,
+        );
+        assert_eq!(
+            awbc.render_canonical(),
+            "exec/1/awbc/fiber/2/frame/3/format/4/5/6/7"
+        );
+        assert_eq!(
+            serde_json::to_string(&awbc).unwrap(),
+            r#"{"kind":"awbc_format_operand","execution":"1","fiber":"2","frame":"3","site":{"function":4,"block":5,"instruction_offset":6},"ordinal":7}"#
+        );
+
+        let native: RuntimeOwnedSlotId = from_json(
+            r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#,
+        );
+        assert_eq!(
+            native.render_canonical(),
+            "exec/1/native/fiber/2/frame/3/format/4/5"
+        );
+        assert_eq!(
+            serde_json::to_string(&native).unwrap(),
+            r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":4,"ordinal":5}"#
+        );
+        assert!(serde_json::from_str::<RuntimeOwnedSlotId>(
+            r#"{"kind":"native_format_operand","execution":"1","fiber":2,"frame":3,"attempt":0,"ordinal":5}"#
+        )
+        .is_err());
     }
 }

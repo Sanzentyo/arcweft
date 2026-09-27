@@ -67,8 +67,9 @@ use super::{
     RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
     RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
     RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
-    RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind, RuntimeTypeProjectionStep,
-    RuntimeTypeShape, RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
+    RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTriggerAdmissionKind,
+    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    validate_iterator_witness_method_edges,
 };
 
 #[test]
@@ -3105,12 +3106,13 @@ fn iterator_edge_error(
     statement: arcweft_lang_hir::identity::StmtId,
     edges: Vec<HirRuntimeReachabilityEdge>,
     iteration: &RuntimeIteratorFact,
-    methods: &BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
+    methods: &BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodFact>,
 ) -> RuntimeSemanticFactsError {
     let reachability = iterator_reachability_with_edges(project, edges);
     validate_iterator_witness_method_edges(
         RuntimeSemanticOwnerSet::runtime_only(&reachability),
         statement,
+        unit_type().identity(),
         iteration,
         methods,
     )
@@ -3176,15 +3178,11 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
             &into_iter,
         )
     };
+    let into_fact = iterator_method_fact(&into_iter, RuntimeTraitIdentity::StandardIntoIterator);
+    let next_fact = iterator_method_fact(&next, RuntimeTraitIdentity::StandardIterator);
     let methods = BTreeMap::from([
-        (
-            into_iter.declaration.clone(),
-            iterator_method_fact(&into_iter, RuntimeTraitIdentity::StandardIntoIterator),
-        ),
-        (
-            next.declaration.clone(),
-            iterator_method_fact(&next, RuntimeTraitIdentity::StandardIterator),
-        ),
+        (into_fact.key().clone(), into_fact),
+        (next_fact.key().clone(), next_fact),
     ]);
     let identity = identity_iterator_fact(&next);
     let trait_calls = trait_call_iterator_fact(&into_iter, &next);
@@ -3194,6 +3192,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         validate_iterator_witness_method_edges(
             RuntimeSemanticOwnerSet::runtime_only(&accepted_identity),
             statement,
+            unit_type().identity(),
             &identity,
             &methods,
         ),
@@ -3205,6 +3204,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         validate_iterator_witness_method_edges(
             RuntimeSemanticOwnerSet::runtime_only(&accepted_trait_calls),
             statement,
+            unit_type().identity(),
             &trait_calls,
             &methods,
         ),
@@ -3278,16 +3278,14 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
     );
 
     let mut wrong_implementation = methods.clone();
-    wrong_implementation.insert(
+    let wrong = RuntimeTraitMethodFact::new(
         next.declaration.clone(),
-        RuntimeTraitMethodFact::new(
-            next.declaration.clone(),
-            other_next.implementation,
-            next.member,
-            RuntimeTraitIdentity::StandardIterator,
-            unit_type(),
-        ),
+        other_next.implementation,
+        next.member,
+        RuntimeTraitIdentity::StandardIterator,
+        unit_type(),
     );
+    wrong_implementation.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
             &project,
@@ -3302,18 +3300,16 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         }
     );
     let mut wrong_member = methods.clone();
-    wrong_member.insert(
+    let wrong = RuntimeTraitMethodFact::new(
         next.declaration.clone(),
-        RuntimeTraitMethodFact::new(
-            next.declaration.clone(),
-            next.implementation,
-            next.member
-                .checked_add(1)
-                .expect("fixture member coordinate"),
-            RuntimeTraitIdentity::StandardIterator,
-            unit_type(),
-        ),
+        next.implementation,
+        next.member
+            .checked_add(1)
+            .expect("fixture member coordinate"),
+        RuntimeTraitIdentity::StandardIterator,
+        unit_type(),
     );
+    wrong_member.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
             &project,
@@ -3328,10 +3324,8 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         }
     );
     let mut wrong_trait = methods;
-    wrong_trait.insert(
-        next.declaration.clone(),
-        iterator_method_fact(&next, RuntimeTraitIdentity::StandardIntoIterator),
-    );
+    let wrong = iterator_method_fact(&next, RuntimeTraitIdentity::StandardIntoIterator);
+    wrong_trait.insert(wrong.key().clone(), wrong);
     assert_eq!(
         iterator_edge_error(
             &project,

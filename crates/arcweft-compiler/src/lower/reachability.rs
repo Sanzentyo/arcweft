@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_hir::{
     expr::HirExprKind,
@@ -19,6 +19,10 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     callable::{CheckedCallCalleeExecution, CheckedCallSite, ResolvedCallableOrigin},
+    checked_rich_text::{
+        CheckedDialogueToken, CheckedDisplayConformance, CheckedDisplayWitness,
+        CheckedRichTextReport,
+    },
     entry::{CheckedEntryBinding, CheckedEntryCatalog},
     final_analysis::{
         CheckedCallExecutionCallee, CheckedChoice, CheckedExpressionExecution,
@@ -162,40 +166,7 @@ pub fn project_runtime_reachability<'project>(
             HirRuntimeExecutableOwner::Item(entry.source_item()),
         )
     }));
-    let mut edges = BTreeSet::new();
-    for (call, facts) in analysis.calls() {
-        if let Some(edge) = checked_call_edge(call, facts, symbols)? {
-            edges.insert(edge);
-        }
-    }
-    for (owner, checked) in analysis.expressions() {
-        let CheckedExpressionResolution::Choice(choice) = checked.resolution() else {
-            continue;
-        };
-        edges.extend(checked_choice_edges(owner, choice));
-    }
-    for (statement, checked) in analysis.statements() {
-        let CheckedStatementPayload::Iteration(iteration) = checked.payload() else {
-            continue;
-        };
-        edges.extend(checked_iteration_edges(statement, iteration));
-    }
-    for (owner, checked) in analysis.expressions() {
-        match checked.resolution() {
-            CheckedExpressionResolution::Closure(closure) => {
-                edges.insert(checked_closure_execution_edge(owner, closure.owner()));
-            }
-            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-                callable,
-            )) => {
-                edges.extend(checked_project_callable_value_edge(owner, callable));
-            }
-            _ => {}
-        }
-    }
-    for entry in &selected_entries {
-        append_entry_edges(entry, symbols, &mut edges)?;
-    }
+    let edges = checked_runtime_edges(symbols, analysis, &selected_entries)?;
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         hir_mode,
         symbols.world().clone(),
@@ -266,37 +237,7 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             )
         })
         .collect::<BTreeSet<_>>();
-    let mut edges = BTreeSet::new();
-    for (call, facts) in analysis.calls() {
-        if let Some(edge) = checked_call_edge(call, facts, symbols)? {
-            edges.insert(edge);
-        }
-    }
-    for (owner, checked) in analysis.expressions() {
-        let CheckedExpressionResolution::Choice(choice) = checked.resolution() else {
-            continue;
-        };
-        edges.extend(checked_choice_edges(owner, choice));
-    }
-    for (statement, checked) in analysis.statements() {
-        let CheckedStatementPayload::Iteration(iteration) = checked.payload() else {
-            continue;
-        };
-        edges.extend(checked_iteration_edges(statement, iteration));
-    }
-    for (owner, checked) in analysis.expressions() {
-        match checked.resolution() {
-            CheckedExpressionResolution::Closure(closure) => {
-                edges.insert(checked_closure_execution_edge(owner, closure.owner()));
-            }
-            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-                callable,
-            )) => {
-                edges.extend(checked_project_callable_value_edge(owner, callable));
-            }
-            _ => {}
-        }
-    }
+    let edges = checked_runtime_edges(symbols, analysis, &[])?;
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
         symbols.world().clone(),
@@ -344,6 +285,106 @@ pub(crate) fn project_view_value_program_reachability<'project>(
     let reachability = reachability?;
     validate_checked_executable_edges(symbols, analysis, &[], &reachability)?;
     Ok(reachability)
+}
+
+fn checked_runtime_edges(
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+    selected_entries: &[&CheckedEntryBinding],
+) -> Result<BTreeSet<HirRuntimeReachabilityEdge>, RuntimeReachabilityProjectionError> {
+    let mut edges = BTreeSet::new();
+    for (call, facts) in analysis.calls() {
+        if let Some(edge) = checked_call_edge(call, facts, symbols)? {
+            edges.insert(edge);
+        }
+        if let Some(edge) = checked_format_display_edge(call, facts) {
+            edges.insert(edge);
+        }
+    }
+    for (owner, checked) in analysis.expressions() {
+        match checked.resolution() {
+            CheckedExpressionResolution::Choice(choice) => {
+                edges.extend(checked_choice_edges(owner, choice));
+            }
+            CheckedExpressionResolution::Closure(closure) => {
+                edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+            }
+            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
+                callable,
+            )) => {
+                edges.extend(checked_project_callable_value_edge(owner, callable));
+            }
+            CheckedExpressionResolution::DialogueApplication { rich_text, .. } => {
+                checked_dialogue_display_edges(rich_text, &mut edges);
+            }
+            _ => {}
+        }
+    }
+    for (statement, checked) in analysis.statements() {
+        let CheckedStatementPayload::Iteration(iteration) = checked.payload() else {
+            continue;
+        };
+        edges.extend(checked_iteration_edges(statement, iteration));
+    }
+    for entry in selected_entries {
+        append_entry_edges(entry, symbols, &mut edges)?;
+    }
+    Ok(edges)
+}
+
+fn checked_format_display_edge(
+    expression: ExprId,
+    facts: &arcweft_lang_sema::callable::CallTargetFacts,
+) -> Option<HirRuntimeReachabilityEdge> {
+    if !matches!(facts.outcome().site(), CheckedCallSite::HirCall(call) if call == expression) {
+        return None;
+    }
+    let conformance = facts
+        .selected_application()?
+        .format_call()?
+        .witness()
+        .project_conformance()?;
+    Some(checked_selected_trait_method_edge(expression, conformance))
+}
+
+fn checked_dialogue_display_edges(
+    report: &CheckedRichTextReport,
+    edges: &mut BTreeSet<HirRuntimeReachabilityEdge>,
+) {
+    for token in report.content().tokens() {
+        match token {
+            CheckedDialogueToken::Interpolation {
+                expression,
+                witness: Some(CheckedDisplayWitness::Project(conformance)),
+                ..
+            } => {
+                edges.insert(checked_selected_trait_method_edge(*expression, conformance));
+            }
+            CheckedDialogueToken::ContentInsert(insertion) => {
+                if let Some(content) = insertion.argument().checked_content() {
+                    checked_dialogue_display_edges(content, edges);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn checked_selected_trait_method_edge(
+    expression: ExprId,
+    conformance: &CheckedDisplayConformance,
+) -> HirRuntimeReachabilityEdge {
+    let method = conformance.method_declaration().clone();
+    HirRuntimeReachabilityEdge::new(
+        HirRuntimeReachabilitySite::Expression(expression),
+        HirRuntimeExecutableOwner::ImplMethod(method.clone()),
+        HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+            expression,
+            implementation: conformance.implementation(),
+            member: conformance.method_ordinal(),
+            method,
+        },
+    )
 }
 
 fn checked_call_edge(
@@ -674,7 +715,7 @@ fn runtime_owner_for_declaration(
     }
 }
 
-fn runtime_expression_projection_for_owner(
+pub(super) fn runtime_expression_projection_for_owner(
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
 ) -> Result<HirRuntimeExpressionProjection, RuntimeReachabilityProjectionError> {
@@ -709,7 +750,7 @@ fn runtime_expression_projection_for_owner(
     }
 }
 
-fn runtime_select_target_disposition(
+pub(super) fn runtime_select_target_disposition(
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
 ) -> Option<HirSelectedSelectTargetDisposition> {
@@ -726,64 +767,36 @@ fn validate_checked_executable_edges(
     selected_entries: &[&CheckedEntryBinding],
     reachability: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<(), RuntimeReachabilityProjectionError> {
-    for (call, facts) in analysis.calls() {
-        if !reachability.contains_expression(call) {
-            continue;
-        }
-        let Some(edge) = checked_call_edge(call, facts, symbols)? else {
-            continue;
-        };
-        validate_exact_edge_set(
-            reachability,
-            HirRuntimeReachabilitySite::Expression(call),
-            &BTreeSet::from([edge]),
-        )?;
+    let mut expected_by_site: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+    for edge in checked_runtime_edges(symbols, analysis, selected_entries)? {
+        expected_by_site
+            .entry(edge.source())
+            .or_default()
+            .insert(edge);
     }
-    for (owner, checked) in analysis.expressions() {
-        if !reachability.contains_expression(owner) {
-            continue;
-        }
-        let expected = match checked.resolution() {
-            CheckedExpressionResolution::Choice(choice) => checked_choice_edges(owner, choice),
-            CheckedExpressionResolution::Closure(closure) => {
-                BTreeSet::from([checked_closure_execution_edge(owner, closure.owner())])
+    let sites = expected_by_site
+        .keys()
+        .copied()
+        .chain(reachability.edges().map(HirRuntimeReachabilityEdge::source))
+        .collect::<BTreeSet<_>>();
+    let empty = BTreeSet::new();
+    for site in sites {
+        let reached = match site {
+            HirRuntimeReachabilitySite::Item(owner) => {
+                reachability.contains_runtime_owner(&HirRuntimeExecutableOwner::Item(owner))
             }
-            CheckedExpressionResolution::Value(CheckedValueResolution::ProjectCallable(
-                callable,
-            )) => checked_project_callable_value_edge(owner, callable)
-                .into_iter()
-                .collect(),
-            _ => continue,
+            HirRuntimeReachabilitySite::Expression(owner) => {
+                reachability.contains_expression(owner)
+            }
+            HirRuntimeReachabilitySite::Statement(owner) => reachability.contains_statement(owner),
         };
-        validate_exact_edge_set(
-            reachability,
-            HirRuntimeReachabilitySite::Expression(owner),
-            &expected,
-        )?;
-    }
-    for (statement, checked) in analysis.statements() {
-        if !reachability.contains_statement(statement) {
-            continue;
+        if reached {
+            validate_exact_edge_set(
+                reachability,
+                site,
+                expected_by_site.get(&site).unwrap_or(&empty),
+            )?;
         }
-        let CheckedStatementPayload::Iteration(iteration) = checked.payload() else {
-            continue;
-        };
-        validate_exact_edge_set(
-            reachability,
-            HirRuntimeReachabilitySite::Statement(statement),
-            &checked_iteration_edges(statement, iteration),
-        )?;
-    }
-    for entry in selected_entries {
-        let site = HirRuntimeReachabilitySite::Item(entry.source_item());
-        if !reachability
-            .contains_runtime_owner(&HirRuntimeExecutableOwner::Item(entry.source_item()))
-        {
-            continue;
-        }
-        let mut expected = BTreeSet::new();
-        append_entry_edges(entry, symbols, &mut expected)?;
-        validate_exact_edge_set(reachability, site, &expected)?;
     }
     Ok(())
 }

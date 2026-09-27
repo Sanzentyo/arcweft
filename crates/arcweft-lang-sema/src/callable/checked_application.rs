@@ -2674,6 +2674,7 @@ pub(crate) enum CheckedCallResultSeal {
 pub struct CheckedFmtCall {
     call_source: CheckedCallApplicationSite,
     value: CheckedCallExecutionSource,
+    primary_type: TypeKind,
     witness: CheckedDisplayWitness,
     style: Option<CheckedCallExecutionSource>,
     locale: Option<CheckedCallExecutionSource>,
@@ -2694,9 +2695,50 @@ pub enum CheckedFmtFailurePolicy {
 }
 
 impl CheckedFmtCall {
+    /// Final type of the selected `fmt` primary operand. The selected schema
+    /// coordinate, rather than its source spelling, is the lookup authority.
+    pub(crate) fn selected_primary_type(
+        core: &CheckedCallApplicationCore,
+    ) -> Result<&TypeKind, CallConstraintInvariant> {
+        let group_index = core.current_group();
+        let group = core
+            .candidates()
+            .selected()
+            .schema()
+            .group(group_index)
+            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        let index = CallableParameterIndex::try_from_usize(FmtParameterId::Value.index())
+            .map_err(|_| CallConstraintInvariant::MalformedSchemaInventory)?;
+        let parameter = group
+            .parameter(index)
+            .filter(|parameter| {
+                parameter
+                    .name()
+                    .is_some_and(|name| name.as_str() == FmtParameterId::Value.source_name())
+            })
+            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        let destination = CheckedCallOperandDestination::Parameter(
+            CallableParameterCoordinate::new(group_index, parameter.index()),
+        );
+        let mut slots = core
+            .execution()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .filter(|slot| slot.destination() == &destination);
+        let Some(slot) = slots.next() else {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        };
+        if slots.next().is_some() {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        Ok(slot.inferred())
+    }
+
     fn seal(
         core: &CheckedCallApplicationCore,
         content_type: &TypeKind,
+        selected_witness: Option<CheckedDisplayWitness>,
     ) -> Result<Self, CallConstraintInvariant> {
         let schema = core.candidates().selected().schema();
         if !matches!(schema.validator(), CallableValidator::Format) {
@@ -2745,19 +2787,11 @@ impl CheckedFmtCall {
 
         let value =
             source(FmtParameterId::Value)?.ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
-        let value_type = core
-            .execution()
-            .arguments()
-            .iter()
-            .flat_map(|argument| argument.slots())
-            .find(|slot| slot.source() == &value)
-            .map(CheckedCallExecutionSlot::inferred)
-            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
-        let witness =
-            CheckedDisplayWitness::for_fmt_primary(value_type, content_type).ok_or_else(|| {
-                CallConstraintInvariant::UnsupportedDisplayType {
-                    actual: Box::new(value_type.clone()),
-                }
+        let value_type = Self::selected_primary_type(core)?;
+        let witness = selected_witness
+            .or_else(|| CheckedDisplayWitness::for_fmt_primary(value_type, content_type))
+            .ok_or_else(|| CallConstraintInvariant::UnsupportedDisplayType {
+                actual: Box::new(value_type.clone()),
             })?;
         let style = source(FmtParameterId::Style)?;
         let locale = source(FmtParameterId::Locale)?;
@@ -2777,6 +2811,7 @@ impl CheckedFmtCall {
         Ok(Self {
             call_source: core.application_site().clone(),
             value,
+            primary_type: value_type.clone(),
             witness,
             style,
             locale,
@@ -2796,6 +2831,12 @@ impl CheckedFmtCall {
     /// Exact selected primary-value operand source for `InlineFallback.expr_source`.
     pub const fn value(&self) -> &CheckedCallExecutionSource {
         &self.value
+    }
+
+    /// The final checked type of the selected primary operand before any
+    /// enclosing project-function specialization.
+    pub const fn primary_type(&self) -> &TypeKind {
+        &self.primary_type
     }
 
     /// Closed semantic proof selected from the final checked type of `value`.
@@ -2842,6 +2883,7 @@ impl CheckedCallApplication {
         expected: CheckedCallResultSeal,
         terminal_effects: &EffectRow,
         inferred_result_schema: Option<&CallableResultSchema>,
+        selected_display_witness: Option<CheckedDisplayWitness>,
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
         let projected = base.result_schema_for_group(
@@ -2889,7 +2931,11 @@ impl CheckedCallApplication {
             CallableValidator::Format
         ) {
             let content_type = crate::env::nominal::standard_dialogue_content_type();
-            Some(CheckedFmtCall::seal(&core, &content_type)?)
+            Some(CheckedFmtCall::seal(
+                &core,
+                &content_type,
+                selected_display_witness,
+            )?)
         } else {
             None
         };

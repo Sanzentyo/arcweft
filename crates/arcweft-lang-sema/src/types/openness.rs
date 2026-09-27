@@ -31,7 +31,8 @@ macro_rules! atomic_type_kind_pattern {
             | Self::CueHandle
             | Self::VoiceHandle
             | Self::StatementIngress(_)
-            | Self::DisplayText
+            | Self::DisplayContext
+            | Self::DisplayError
             | Self::DebugStatePath
             | Self::ObservationFieldPath
             | Self::Predicate

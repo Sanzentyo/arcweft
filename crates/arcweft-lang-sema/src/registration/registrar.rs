@@ -430,6 +430,7 @@ impl CharacterRegistrar {
                     })
                     .map(|kind| TypeKind::Ref(EntityType::new(kind, None))),
                 ProjectSymbolTargetId::Callable(_)
+                | ProjectSymbolTargetId::Trait(_)
                 | ProjectSymbolTargetId::StructuralCallable(_) => None,
             })
         {
@@ -869,6 +870,7 @@ impl CharacterRegistrar {
                         })
                         .map(|kind| TypeKind::Ref(EntityType::new(kind, None))),
                     ProjectSymbolTargetId::Callable(_)
+                    | ProjectSymbolTargetId::Trait(_)
                     | ProjectSymbolTargetId::StructuralCallable(_) => None,
                 }
             })
@@ -1664,6 +1666,17 @@ fn audit_character_spellings(
                         },
                         record.primary_source().clone(),
                         [symbol.declaration_span().clone()],
+                    ));
+                }
+                Ok(ResolvedProjectSymbol::Trait(id)) => {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::AliasCollision {
+                            spelling: path,
+                            expected: *declaration,
+                            conflicting: vec![ProjectSymbolTargetId::Trait(id.clone())],
+                        },
+                        record.primary_source().clone(),
+                        [],
                     ));
                 }
                 Ok(ResolvedProjectSymbol::Nominal(symbol)) => {

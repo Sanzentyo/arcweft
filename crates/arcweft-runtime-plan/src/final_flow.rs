@@ -7,16 +7,21 @@ mod callable_states;
 mod control_locals;
 #[path = "final_flow/defer.rs"]
 mod defer;
+#[path = "final_flow/format_attempt.rs"]
+mod format_attempt;
 #[path = "final_flow/line_plan.rs"]
 mod line_plan;
 #[path = "final_flow/rust_defaults.rs"]
 mod rust_defaults;
 #[path = "final_flow/scopes.rs"]
 mod scopes;
+#[path = "final_flow/trait_method.rs"]
+mod trait_method;
 #[path = "final_flow/value_branches.rs"]
 mod value_branches;
 
 use control_locals::ControlLocals;
+use trait_method::{define_trait_methods, reserve_trait_methods};
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -35,12 +40,13 @@ use arcweft_core::plan::{
     RuntimeChoiceOptionSeed, RuntimeDeferOwner, RuntimeDialogueContentPlanSeedId,
     RuntimeDropPolicySeed, RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind,
     RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
-    RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed, RuntimeLineId,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePlan, RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
+    RuntimeExprSeedKind, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFormatAttemptSeedId, RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource,
+    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
+    RuntimeFunctionSiteSeedId, RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineId, RuntimeLocalDeclarationSeed,
+    RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+    RuntimePlanBuilder, RuntimeProjectCallAttachedMaterializationSeed,
     RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallFixedMaterializationSeed,
     RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterializationSeed,
     RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterializationSeed,
@@ -51,8 +57,8 @@ use arcweft_core::plan::{
 };
 use arcweft_core::runtime_id::RuntimeDeferSiteId;
 use arcweft_core::value::{
-    RuntimeCallArgumentMode, RuntimeIntrinsic, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
-    RuntimeValue,
+    RuntimeCallArgumentMode, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeSignedIntWidth,
+    RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{
     HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirThreadBody, HirThreadFlowItem,
@@ -109,8 +115,8 @@ use crate::semantic_facts::{
     RuntimeResolvedCallOperandSource, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
     RuntimeScopeContinuation, RuntimeScopeFact, RuntimeScopeOwner,
     RuntimeScopedExecutableSemanticFactView, RuntimeSemanticFactsError, RuntimeTraitIdentity,
-    RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
-    RuntimeTypeShape,
+    RuntimeTraitMethodFact, RuntimeTraitMethodInstanceKey, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 
 /// Final-HIR owner and checked runtime Entry metadata admitted by semantic analysis.
@@ -391,6 +397,7 @@ enum ClosureFrameLocal {
 enum ClosureLexicalParent {
     Global,
     ProjectFunction(RuntimeProjectFunctionInstanceKey),
+    TraitMethod(RuntimeTraitMethodInstanceKey),
     Closure(RuntimeClosureInstanceKey),
 }
 
@@ -400,12 +407,6 @@ struct ReservedPureProgramDefinition {
     module: HirModuleId,
     body: ExprId,
     helper: RuntimePureHelperSeedId,
-}
-
-#[derive(Clone)]
-struct ReservedTraitMethodDefinition {
-    checked: RuntimeTraitMethodFact,
-    method: RuntimeTraitMethodSeedId,
 }
 
 #[derive(Clone)]
@@ -472,7 +473,12 @@ struct FinalLoweringContext<'project, 'data> {
         &'data BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
     closure_sites: &'data BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
     closure_locals: &'data BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
-    trait_methods: &'data BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    trait_methods: &'data BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
+    format_attempts: &'data BTreeMap<
+        crate::semantic_facts::RuntimeFormatTemplateKey,
+        RuntimeFormatAttemptSeedId,
+    >,
+    trait_method_locals: &'data BTreeMap<RuntimeTraitMethodInstanceKey, ProjectFunctionFrameLocals>,
     function_sites: &'data BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     defer_sites: &'data BTreeMap<StmtId, RuntimeDeferSiteId>,
     dialogue_effect_sites:
@@ -481,6 +487,15 @@ struct FinalLoweringContext<'project, 'data> {
         &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_value_result_locals:
         &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
+    dialogue_value_project_source_locals:
+        &'data BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
+    format_operand_source_locals: &'data BTreeMap<
+        (
+            crate::semantic_facts::RuntimeFormatTemplateKey,
+            RuntimeFmtParameterId,
+        ),
+        RuntimeLocalSeedId,
+    >,
     dialogue_effect_capture_input_locals:
         &'data BTreeMap<RuntimeDialogueEffectCaptureKey, RuntimeLocalSeedId>,
     dialogue_content: &'data BTreeMap<
@@ -524,6 +539,7 @@ impl FinalLoweringContext<'_, '_> {
         .with_scope_locals(&self.control.scopes)
         .with_specialized_operand_locals(self.specialized_operand_locals)
         .with_closure_sites(self.closure_sites)
+        .with_format_attempts(self.format_attempts)
         .with_project_callable_states(self.project_callable_states)
         .with_callable_sources(self.callable_sources)
         .with_callable_specializations(self.callable_specializations)
@@ -566,6 +582,13 @@ impl FinalLoweringContext<'_, '_> {
                 .ok_or_else(|| {
                     RuntimePlanLowerError::new("dialogue closure frame has no control locals")
                 }),
+            RuntimeExecutableSemanticScope::TraitMethod(key) => self
+                .trait_method_locals
+                .get(key)
+                .map(|frame| &frame.control)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new("dialogue trait-method frame has no control locals")
+                }),
         }
     }
 
@@ -593,6 +616,15 @@ impl FinalLoweringContext<'_, '_> {
                     RuntimePlanLowerError::new(format!(
                         "dialogue project-closure scope {:?} has no admitted local frame",
                         key
+                    ))
+                }),
+            RuntimeExecutableSemanticScope::TraitMethod(key) => self
+                .trait_method_locals
+                .get(key)
+                .map(|frame| &frame.hir)
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "dialogue trait-method scope {key:?} has no admitted local frame"
                     ))
                 }),
         }
@@ -624,6 +656,11 @@ impl FinalLoweringContext<'_, '_> {
                         key
                     ))
                 }),
+            RuntimeExecutableSemanticScope::TraitMethod(key) => self
+                .trait_method_locals
+                .get(key)
+                .map(|frame| &frame.specialized_operands)
+                .ok_or_else(|| RuntimePlanLowerError::new(format!("dialogue trait-method scope {key:?} has no admitted specialized operand frame"))),
         }
     }
 }
@@ -716,7 +753,7 @@ pub fn lower_runtime_plan_with_stats(
             .iter()
             .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
     );
-    let project_instance_expression_owners = facts
+    let mut project_instance_expression_owners = facts
         .project_function_instances()
         .flat_map(|instance| instance.semantics().type_projection().iter())
         .filter_map(|projection| {
@@ -733,6 +770,12 @@ pub fn lower_runtime_plan_with_stats(
             | RuntimeProjectFunctionTypeOwner::Type(_) => None,
         })
         .collect::<BTreeSet<_>>();
+    project_instance_expression_owners.extend(
+        facts
+            .trait_methods()
+            .filter_map(RuntimeTraitMethodFact::closed_semantics)
+            .flat_map(|semantics| semantics.expressions().iter().map(|row| row.owner())),
+    );
     let specialized_operand_local_specs = facts
         .calls()
         .filter(|(expression, call)| {
@@ -841,6 +884,41 @@ pub fn lower_runtime_plan_with_stats(
                 }
             }
             Ok((instance.key().clone(), locals))
+        })
+        .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
+        .map_err(|error| vec![error])?;
+    let trait_method_local_specs = facts
+        .trait_methods()
+        .filter_map(|method| method.closed_semantics().map(|semantics| (method.key(), semantics)))
+        .map(|(key, semantics)| -> Result<_, RuntimePlanLowerError> {
+            let mut rows = semantics.type_projection().iter().filter_map(|projection| {
+                match projection {
+                    RuntimeProjectFunctionTypeProjection::Value {
+                        owner: RuntimeProjectFunctionTypeOwner::Local(local), ty,
+                    } => Some((ProjectFunctionFrameLocal::Hir(*local), ty.identity())),
+                    _ => None,
+                }
+            }).collect::<Vec<_>>();
+            for expression in semantics.expressions() {
+                let Some(call) = semantics.call(expression.owner()) else { continue };
+                if !call.requires_specialized_operand_anf() { continue; }
+                if call.attached_content().is_some() {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "trait-method instance {key:?} specialized call {:?} carries attached content",
+                        expression.owner(),
+                    )));
+                }
+                for (index, operand) in call.operands().iter().enumerate() {
+                    let source_index = u32::try_from(index).map_err(|_| RuntimePlanLowerError::new(
+                        "trait-method specialized source operand index exceeds checked limits"
+                    ))?;
+                    rows.push((
+                        ProjectFunctionFrameLocal::SpecializedOperand { owner: expression.owner(), source_index },
+                        operand.ty().identity(),
+                    ));
+                }
+            }
+            Ok((key.clone(), rows))
         })
         .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
         .map_err(|error| vec![error])?;
@@ -972,6 +1050,12 @@ pub fn lower_runtime_plan_with_stats(
         .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
         .map_err(|error| vec![error])?;
     for (_, rows) in &project_instance_local_specs {
+        local_seeds.extend(
+            rows.iter()
+                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+        );
+    }
+    for (_, rows) in &trait_method_local_specs {
         local_seeds.extend(
             rows.iter()
                 .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
@@ -1119,6 +1203,65 @@ pub fn lower_runtime_plan_with_stats(
         .map_err(|error| vec![error])?;
         project_instance_locals.insert(key.clone(), frame);
     }
+    let mut trait_method_locals = BTreeMap::new();
+    for (key, rows) in &trait_method_local_specs {
+        let mut frame = ProjectFunctionFrameLocals::default();
+        for (owner, _) in rows {
+            let seed = admitted_locals.next().ok_or_else(|| {
+                vec![RuntimePlanLowerError::new(
+                    "admitted trait-method instance local is missing",
+                )]
+            })?;
+            match owner {
+                ProjectFunctionFrameLocal::Hir(local) => {
+                    if frame.hir.insert(*local, seed).is_some() {
+                        return Err(vec![RuntimePlanLowerError::new(
+                            "trait-method instance repeats a HIR local",
+                        )]);
+                    }
+                }
+                ProjectFunctionFrameLocal::SpecializedOperand {
+                    owner,
+                    source_index,
+                } => {
+                    if frame
+                        .specialized_operands
+                        .insert((*owner, *source_index), seed)
+                        .is_some()
+                    {
+                        return Err(vec![RuntimePlanLowerError::new(
+                            "trait-method instance repeats a specialized operand local",
+                        )]);
+                    }
+                }
+                ProjectFunctionFrameLocal::ParameterInput { .. }
+                | ProjectFunctionFrameLocal::AttachedAbi => {
+                    return Err(vec![RuntimePlanLowerError::new(
+                        "trait-method instance has an ordinary-function local role",
+                    )]);
+                }
+            }
+        }
+        let semantics = facts
+            .trait_methods()
+            .find(|method| method.key() == key)
+            .and_then(RuntimeTraitMethodFact::closed_semantics)
+            .ok_or_else(|| {
+                vec![RuntimePlanLowerError::new(
+                    "trait-method frame has no closed semantic facts",
+                )]
+            })?;
+        frame.control = ControlLocals::admit(
+            crate::semantic_facts::RuntimeExecutableSemanticFactView::project_instance(semantics),
+            &mut builder,
+        )
+        .map_err(|error| vec![error])?;
+        if trait_method_locals.insert(key.clone(), frame).is_some() {
+            return Err(vec![RuntimePlanLowerError::new(
+                "trait-method instance repeats its local frame",
+            )]);
+        }
+    }
     let mut closure_locals: BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals> =
         BTreeMap::new();
     for (key, rows) in &closure_local_specs {
@@ -1180,6 +1323,9 @@ pub fn lower_runtime_plan_with_stats(
                 Some(ClosureLexicalParent::Global) => Some(&locals),
                 Some(ClosureLexicalParent::ProjectFunction(parent)) => {
                     project_instance_locals.get(parent).map(|frame| &frame.hir)
+                }
+                Some(ClosureLexicalParent::TraitMethod(parent)) => {
+                    trait_method_locals.get(parent).map(|frame| &frame.hir)
                 }
                 Some(ClosureLexicalParent::Closure(parent)) => {
                     closure_locals.get(parent).map(|frame| &frame.hir)
@@ -1302,12 +1448,21 @@ pub fn lower_runtime_plan_with_stats(
     );
     rust_defaults::lower(facts, &mut builder, &mut errors);
     let pure_program_definitions = reserve_pure_programs(facts, &locals, &mut builder, &mut errors);
-    let (trait_methods, trait_definitions) =
-        reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
+    let (trait_methods, trait_definitions) = reserve_trait_methods(
+        project,
+        facts,
+        &locals,
+        &trait_method_locals,
+        &mut builder,
+        &mut errors,
+    );
     let empty_dialogue_effect_sites = BTreeMap::new();
     let empty_defer_sites = BTreeMap::new();
     let empty_dialogue_value_capture_input_locals = BTreeMap::new();
     let empty_dialogue_value_result_locals = BTreeMap::new();
+    let empty_dialogue_value_project_source_locals = BTreeMap::new();
+    let empty_format_attempts = BTreeMap::new();
+    let empty_format_operand_source_locals = BTreeMap::new();
     let empty_dialogue_effect_capture_input_locals = BTreeMap::new();
     let empty_dialogue_content = BTreeMap::new();
     let control_locals = ControlLocals::admit(
@@ -1329,11 +1484,15 @@ pub fn lower_runtime_plan_with_stats(
         closure_sites: &closure_sites,
         closure_locals: &closure_locals,
         trait_methods: &trait_methods,
+        format_attempts: &empty_format_attempts,
+        trait_method_locals: &trait_method_locals,
         function_sites: &function_sites,
         defer_sites: &empty_defer_sites,
         dialogue_effect_sites: &empty_dialogue_effect_sites,
         dialogue_value_capture_input_locals: &empty_dialogue_value_capture_input_locals,
         dialogue_value_result_locals: &empty_dialogue_value_result_locals,
+        dialogue_value_project_source_locals: &empty_dialogue_value_project_source_locals,
+        format_operand_source_locals: &empty_format_operand_source_locals,
         dialogue_effect_capture_input_locals: &empty_dialogue_effect_capture_input_locals,
         dialogue_content: &empty_dialogue_content,
         control: &control_locals,
@@ -1440,9 +1599,46 @@ pub fn lower_runtime_plan_with_stats(
             "admitted dialogue value locals contain an unexpected row",
         )]);
     }
+    let mut project_source_specs = Vec::new();
+    context
+        .facts
+        .visit_dialogue_content_fragments(&mut |_, fragment| {
+            for value in fragment.values() {
+                let Some(project) = value.project_display() else {
+                    continue;
+                };
+                project_source_specs.push((
+                    RuntimeDialogueValueCaptureKey::new(fragment.template().id(), value.slot(), 0),
+                    project.source_type().identity(),
+                ));
+            }
+        });
+    let source_admission = builder
+        .admit_type_batch(
+            [],
+            project_source_specs
+                .iter()
+                .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(*ty)),
+        )
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let mut dialogue_value_project_source_locals = BTreeMap::new();
+    for ((key, _), local) in project_source_specs
+        .iter()
+        .zip(source_admission.local_ids())
+    {
+        if dialogue_value_project_source_locals
+            .insert(*key, local.clone())
+            .is_some()
+        {
+            return Err(vec![RuntimePlanLowerError::new(
+                "project dialogue value repeats its source local",
+            )]);
+        }
+    }
     let context = FinalLoweringContext {
         dialogue_value_capture_input_locals: &dialogue_value_capture_input_locals,
         dialogue_value_result_locals: &dialogue_value_result_locals,
+        dialogue_value_project_source_locals: &dialogue_value_project_source_locals,
         ..context
     };
     let (defer_sites, defer_definitions) =
@@ -1456,6 +1652,13 @@ pub fn lower_runtime_plan_with_stats(
     dialogue_assertion_sites.extend(dialogue_effect_assertion_sites);
     let context = FinalLoweringContext {
         dialogue_content: &dialogue_content,
+        ..context
+    };
+    let (format_attempts, format_operand_source_locals) =
+        format_attempt::reserve(&context, &mut builder).map_err(|error| vec![error])?;
+    let context = FinalLoweringContext {
+        format_attempts: &format_attempts,
+        format_operand_source_locals: &format_operand_source_locals,
         ..context
     };
 
@@ -1844,6 +2047,19 @@ fn collect_closure_instances<'facts>(
             &mut instances,
             &mut order,
             ClosureLexicalParent::ProjectFunction(instance.key().clone()),
+            &mut parents,
+            &mut line_schedule_callbacks,
+        )?;
+    }
+    for method in facts.trait_methods() {
+        let Some(semantics) = method.closed_semantics() else {
+            continue;
+        };
+        collect_closure_instances_from_semantics(
+            semantics,
+            &mut instances,
+            &mut order,
+            ClosureLexicalParent::TraitMethod(method.key().clone()),
             &mut parents,
             &mut line_schedule_callbacks,
         )?;
@@ -2563,177 +2779,6 @@ fn reserve_pure_programs(
     definitions
 }
 
-fn reserve_trait_methods(
-    project: HirAnalysisProjectView<'_>,
-    facts: &RuntimePlanSemanticFacts,
-    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
-    builder: &mut RuntimePlanBuilder,
-    errors: &mut Vec<RuntimePlanLowerError>,
-) -> (
-    BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
-    Vec<ReservedTraitMethodDefinition>,
-) {
-    let mut methods = BTreeMap::new();
-    let mut definitions = Vec::new();
-    for (position, checked) in facts.trait_methods().enumerate() {
-        match trait_method_declaration(project, facts, locals, checked, position).and_then(
-            |declaration| {
-                builder
-                    .reserve_trait_method_seed(declaration)
-                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
-            },
-        ) {
-            Ok(method) => {
-                methods.insert(checked.declaration().clone(), method.clone());
-                definitions.push(ReservedTraitMethodDefinition {
-                    checked: checked.clone(),
-                    method,
-                });
-            }
-            Err(error) => errors.push(error),
-        }
-    }
-    (methods, definitions)
-}
-
-fn trait_method_declaration(
-    project: HirAnalysisProjectView<'_>,
-    facts: &RuntimePlanSemanticFacts,
-    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
-    checked: &RuntimeTraitMethodFact,
-    witness: usize,
-) -> Result<RuntimeTraitMethodDeclarationSeed, RuntimePlanLowerError> {
-    let (module, function) = resolve_trait_method(project, checked)?;
-    let method_name = function
-        .name()
-        .resolved()
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no resolved name"))?;
-    let mut receiver = None;
-    let mut inputs = Vec::new();
-    let mut input_abi = Vec::new();
-    for parameter in function
-        .parameter_groups()
-        .iter()
-        .flat_map(HirMethodParameterGroup::parameters)
-    {
-        let (local, abi) = match parameter {
-            HirMethodParameter::Receiver(parameter) => {
-                if receiver.is_some() {
-                    return Err(RuntimePlanLowerError::new(
-                        "runtime trait method has more than one receiver",
-                    ));
-                }
-                receiver = Some(match parameter.kind() {
-                    HirMethodReceiverKind::Owned => RuntimeReceiverMode::Owned,
-                    HirMethodReceiverKind::SharedReference => RuntimeReceiverMode::SharedRef,
-                    HirMethodReceiverKind::MutableReference => RuntimeReceiverMode::MutRef,
-                });
-                (parameter.locals()[0], RuntimePureInputType::Value)
-            }
-            HirMethodParameter::Typed(parameter) => {
-                if parameter.kind() != HirParameterKind::Fixed
-                    || parameter.default().is_some()
-                    || parameter.locals().len() != 1
-                {
-                    return Err(RuntimePlanLowerError::new(
-                        "runtime trait method requires fixed single-binding parameters",
-                    ));
-                }
-                let ty = facts.ty(parameter.ty()).ok_or_else(|| {
-                    RuntimePlanLowerError::new("runtime trait parameter type fact is missing")
-                })?;
-                (parameter.locals()[0], runtime_input_type(ty.shape()))
-            }
-        };
-        inputs.push(
-            locals
-                .get(&local)
-                .cloned()
-                .ok_or_else(|| RuntimePlanLowerError::new("trait method local is not admitted"))?,
-        );
-        input_abi.push(abi);
-    }
-    let receiver = receiver
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method requires a receiver"))?;
-    let body = function_body_expression(
-        function
-            .body()
-            .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no body"))?,
-    )?;
-    let result = facts.expression_type(body).ok_or_else(|| {
-        RuntimePlanLowerError::new("runtime trait method body has no accepted runtime type")
-    })?;
-    let output_abi = function
-        .return_type()
-        .and_then(|ty| facts.ty(ty))
-        .map_or(RuntimePureOutputType::Value, |ty| {
-            runtime_output_type(ty.shape())
-        });
-    let impl_id = project
-        .items()
-        .position(|item| item.id() == checked.implementation())
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait Impl owner is absent"))?;
-    let (trait_id, trait_name) = lower_runtime_trait_identity(project, checked.trait_identity())?;
-    let _ = module;
-    Ok(RuntimeTraitMethodDeclarationSeed {
-        identity: RuntimeTraitMethodIdentity {
-            impl_id,
-            trait_id,
-            witness: Some(witness),
-            trait_name,
-            self_type: semantic_type_label(checked.self_type()),
-            method_name: method_name.as_str().to_owned(),
-            monomorph_label: format!(
-                "{}::{}",
-                semantic_type_label(checked.self_type()),
-                method_name.as_str()
-            ),
-        },
-        receiver,
-        inputs: inputs.into_boxed_slice(),
-        input_abi,
-        result: result.identity(),
-        output_abi,
-    })
-}
-
-fn semantic_type_label(ty: &crate::semantic_facts::RuntimeNormalizedType) -> String {
-    let mut label = String::with_capacity(64);
-    for byte in ty.identity().as_bytes() {
-        use std::fmt::Write as _;
-        write!(&mut label, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    label
-}
-
-fn resolve_trait_method<'a>(
-    project: HirAnalysisProjectView<'a>,
-    checked: &RuntimeTraitMethodFact,
-) -> Result<(&'a HirModule, &'a HirImplFunction), RuntimePlanLowerError> {
-    let module = project
-        .modules()
-        .find_map(|(_, module)| {
-            (module.module_id() == checked.implementation().module()).then_some(module)
-        })
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method module is absent"))?;
-    let item = module
-        .resolve_item(checked.implementation())
-        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-    let HirItemKind::Impl(implementation) = item.kind() else {
-        return Err(RuntimePlanLowerError::new(
-            "checked runtime trait method owner is not an Impl",
-        ));
-    };
-    let Some(HirImplMember::Function(function)) =
-        implementation.members().get(usize::from(checked.member()))
-    else {
-        return Err(RuntimePlanLowerError::new(
-            "checked runtime trait method member is not a function",
-        ));
-    };
-    Ok((module, function))
-}
-
 fn define_function_sites(
     context: &FinalLoweringContext<'_, '_>,
     definitions: &[ReservedFunctionSiteDefinition],
@@ -3073,36 +3118,6 @@ fn define_pure_programs(
         match body.and_then(|body| {
             builder
                 .define_pure_helper_seed(&definition.helper, body)
-                .map_err(|error| error.to_string())
-        }) {
-            Ok(()) => {}
-            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
-        }
-    }
-}
-
-fn define_trait_methods(
-    context: &FinalLoweringContext<'_, '_>,
-    definitions: &[ReservedTraitMethodDefinition],
-    builder: &mut RuntimePlanBuilder,
-    errors: &mut Vec<RuntimePlanLowerError>,
-) {
-    for definition in definitions {
-        let Ok((module, function)) = resolve_trait_method(context.project, &definition.checked)
-        else {
-            errors.push(RuntimePlanLowerError::new("trait method owner is absent"));
-            continue;
-        };
-        let Some(body_owner) = function.body() else {
-            errors.push(RuntimePlanLowerError::new(
-                "runtime trait method has no body",
-            ));
-            continue;
-        };
-        let body = context.expr_lowerer(module).lower_function_body(body_owner);
-        match body.and_then(|body| {
-            builder
-                .define_trait_method_seed(&definition.method, body)
                 .map_err(|error| error.to_string())
         }) {
             Ok(()) => {}
@@ -3806,10 +3821,10 @@ fn lower_dialogue_application<'facts>(
     // are lowered once in the owning Flow body.
     for value in fragment.values() {
         let expression_type = match scope.expression_type(value.expression()) {
-            Some(ty) if ty.identity() == value.ty().identity() => ty.identity(),
+            Some(ty) if ty.identity() == value.source_type().identity() => value.ty().identity(),
             Some(_) => {
                 errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue value {:?} result type disagrees with its accepted slot type",
+                    "dialogue value {:?} source type disagrees with its accepted projection",
                     value.expression()
                 )));
                 invalid = true;
@@ -3817,7 +3832,7 @@ fn lower_dialogue_application<'facts>(
             }
             None => {
                 errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue value {:?} has no accepted result type",
+                    "dialogue value {:?} has no accepted source type",
                     value.expression()
                 )));
                 invalid = true;
@@ -4244,37 +4259,6 @@ fn module_by_id(
         .find_map(|(_, module)| (module.module_id() == expected).then_some(module))
 }
 
-fn lower_runtime_trait_identity(
-    project: HirAnalysisProjectView<'_>,
-    identity: &RuntimeTraitIdentity,
-) -> Result<(Option<usize>, Option<String>), RuntimePlanLowerError> {
-    Ok(match identity {
-        RuntimeTraitIdentity::Project(owner) => {
-            let (position, trait_owner) = project
-                .items()
-                .enumerate()
-                .find(|(_, item)| item.id() == *owner)
-                .ok_or_else(|| RuntimePlanLowerError::new("runtime Trait owner is absent"))?;
-            let trait_item = trait_owner
-                .module()
-                .resolve_item(*owner)
-                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-            let HirItemKind::Trait(trait_item) = trait_item.kind() else {
-                return Err(RuntimePlanLowerError::new(
-                    "runtime Trait identity does not own a Trait item",
-                ));
-            };
-            let name = trait_item
-                .name()
-                .resolved()
-                .ok_or_else(|| RuntimePlanLowerError::new("runtime Trait has no resolved name"))?;
-            (Some(position), Some(name.as_str().to_owned()))
-        }
-        RuntimeTraitIdentity::StandardIterator => (None, Some("Iterator".to_owned())),
-        RuntimeTraitIdentity::StandardIntoIterator => (None, Some("IntoIterator".to_owned())),
-    })
-}
-
 fn collect_entry_inputs<'input>(
     input: &'input RuntimeEntryLoweringInput,
     errors: &mut Vec<RuntimePlanLowerError>,
@@ -4504,7 +4488,16 @@ struct FinalFlowLowerer<'a> {
     semantic_facts: RuntimeScopedExecutableSemanticFactView<'a>,
     package: &'a CallablePackageId,
     locals: &'a BTreeMap<LocalId, RuntimeLocalSeedId>,
-    trait_methods: &'a BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    trait_methods: &'a BTreeMap<RuntimeTraitMethodInstanceKey, RuntimeTraitMethodSeedId>,
+    format_attempts:
+        &'a BTreeMap<crate::semantic_facts::RuntimeFormatTemplateKey, RuntimeFormatAttemptSeedId>,
+    format_operand_source_locals: &'a BTreeMap<
+        (
+            crate::semantic_facts::RuntimeFormatTemplateKey,
+            RuntimeFmtParameterId,
+        ),
+        RuntimeLocalSeedId,
+    >,
     function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     defer_sites: &'a BTreeMap<StmtId, RuntimeDeferSiteId>,
     closure_sites: &'a BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
@@ -4515,6 +4508,8 @@ struct FinalFlowLowerer<'a> {
     callable_specialization_targets: &'a callable_states::CallableSpecializationTargetStates,
     dialogue_effect_sites: &'a BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     dialogue_value_result_locals: &'a BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
+    dialogue_value_project_source_locals:
+        &'a BTreeMap<RuntimeDialogueValueCaptureKey, RuntimeLocalSeedId>,
     dialogue_content: &'a BTreeMap<
         arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
         RuntimeDialogueContentPlanSeedId,
@@ -4662,6 +4657,17 @@ fn resolve_flow_tail_holes(
                 expr,
                 else_ops: resolve_flow_tail_holes(else_ops, child_ids, child_cursor, resolved)?,
             }),
+            RuntimeFlowOpSeed::FormatOperandAttempt {
+                attempt,
+                parameter,
+                body,
+                value,
+            } => output.push(RuntimeFlowOpSeed::FormatOperandAttempt {
+                attempt,
+                parameter,
+                body: resolve_flow_tail_holes(body, child_ids, child_cursor, resolved)?,
+                value,
+            }),
             RuntimeFlowOpSeed::Await {
                 binding,
                 target,
@@ -4786,6 +4792,8 @@ impl<'a> FinalFlowLowerer<'a> {
             package: context.project.package(),
             locals: context.locals,
             trait_methods: context.trait_methods,
+            format_attempts: context.format_attempts,
+            format_operand_source_locals: context.format_operand_source_locals,
             function_sites: context.function_sites,
             defer_sites: context.defer_sites,
             closure_sites: context.closure_sites,
@@ -4796,6 +4804,7 @@ impl<'a> FinalFlowLowerer<'a> {
             callable_specialization_targets: context.callable_specialization_targets,
             dialogue_effect_sites: context.dialogue_effect_sites,
             dialogue_value_result_locals: context.dialogue_value_result_locals,
+            dialogue_value_project_source_locals: context.dialogue_value_project_source_locals,
             dialogue_content: context.dialogue_content,
             control: context.control,
             specialized_operand_locals: context.specialized_operand_locals,
@@ -4866,6 +4875,7 @@ impl<'a> FinalFlowLowerer<'a> {
             (&self.control.pipes, &self.control.tries),
         )
         .with_closure_sites(self.closure_sites)
+        .with_format_attempts(self.format_attempts)
         .with_project_callable_states(self.project_callable_states)
         .with_callable_sources(self.callable_sources)
         .with_callable_specializations(self.callable_specializations)
@@ -5076,10 +5086,12 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         declaration: &ImplMethodDeclarationId,
         statement: StmtId,
+        self_type: RuntimeSemanticTypeId,
     ) -> Result<RuntimeTraitMethodSeedId, RuntimePlanLowerError> {
-        self.trait_methods.get(declaration).cloned().ok_or_else(|| {
+        let key = RuntimeTraitMethodInstanceKey::new(declaration.clone(), self_type);
+        self.trait_methods.get(&key).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
-                "For statement {statement:?} refers to an unreserved trait method"
+                "For statement {statement:?} refers to an unreserved trait method instance {key:?}"
             ))
         })
     }
@@ -5529,17 +5541,33 @@ impl<'a> FinalFlowLowerer<'a> {
                         })
                     }
                     RuntimeIteratorFact::Witness(witness) => {
+                        let source_type = self
+                            .semantic_facts
+                            .expression_type(for_stmt.source())
+                            .ok_or_else(|| {
+                                RuntimePlanLowerError::new(format!(
+                                    "For statement {id:?} has no checked source type"
+                                ))
+                            })?;
                         let executable = match witness.executable() {
                             RuntimeIteratorWitnessExecutableFact::TraitCalls {
                                 into_iter,
                                 next,
                             } => RuntimeIteratorWitnessExecutableSeed::TraitCalls {
-                                into_iter: self.trait_method(into_iter, id)?,
-                                next: self.trait_method(next, id)?,
+                                into_iter: self.trait_method(
+                                    into_iter,
+                                    id,
+                                    source_type.identity(),
+                                )?,
+                                next: self.trait_method(next, id, witness.iterator().identity())?,
                             },
                             RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
                                 RuntimeIteratorWitnessExecutableSeed::IdentityIntoIterator {
-                                    next: self.trait_method(next, id)?,
+                                    next: self.trait_method(
+                                        next,
+                                        id,
+                                        witness.iterator().identity(),
+                                    )?,
                                 }
                             }
                         };
@@ -5723,6 +5751,44 @@ impl<'a> FinalFlowLowerer<'a> {
         self.lower_flow_value_source_with_overrides(expression, continuation, overrides)
     }
 
+    fn is_format_attempt_call(&self, expression: ExprId) -> bool {
+        let Some(call) = self.call(expression) else {
+            return false;
+        };
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(formatted)) =
+            call.dispatch()
+        else {
+            return false;
+        };
+        let key = crate::semantic_facts::RuntimeFormatTemplateKey::for_call(
+            self.semantic_facts.scope(),
+            formatted,
+        );
+        self.format_attempts.contains_key(&key)
+    }
+
+    // Keep the selected call clone off the recursive source-lowering frame:
+    // even unrelated callable expressions may nest deeply in that path.
+    #[inline(never)]
+    fn lower_selected_format_attempt(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let call = self.call(expression).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new("selected formatter attempt has no checked call")
+        })?;
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(formatted)) =
+            call.dispatch()
+        else {
+            return Err(RuntimePlanLowerError::new(
+                "selected formatter attempt has no format dispatch",
+            ));
+        };
+        self.lower_format_attempt_call(expression, &call, formatted, continuation, overrides)
+    }
+
     fn lower_flow_value_source_with_overrides(
         &mut self,
         expression: ExprId,
@@ -5805,6 +5871,9 @@ impl<'a> FinalFlowLowerer<'a> {
                 "cannot resolve flow value expression {expression:?}: {error}"
             ))
         })?;
+        if self.is_format_attempt_call(expression) {
+            return self.lower_selected_format_attempt(expression, continuation, overrides);
+        }
         if let Some(call) = self
             .call(expression)
             .filter(|call| {
@@ -6396,10 +6465,10 @@ impl<'a> FinalFlowLowerer<'a> {
         // result locals and never lower the source expressions again.
         let mut ops = Vec::new();
         for value in fragment.values() {
-            let value_type = self.expression_type(value.expression())?;
-            if value_type.identity() != value.ty().identity() {
+            let value_type = self.expression_type(value.expression())?.clone();
+            if value_type.identity() != value.source_type().identity() {
                 return Err(RuntimePlanLowerError::new(format!(
-                    "dialogue value {:?} result type disagrees with its accepted slot type",
+                    "dialogue value {:?} source type disagrees with its accepted projection",
                     value.expression()
                 )));
             }
@@ -6417,13 +6486,96 @@ impl<'a> FinalFlowLowerer<'a> {
                         value.expression()
                     ))
                 })?;
-            ops.extend(self.lower_flow_value(
-                value.expression(),
-                RuntimeFlowValueContinuation::Bind {
-                    pattern: bind_seed(value_type, local),
-                    tail: RuntimeFlowTail::None,
-                },
-            )?);
+            if let Some(project) = value.project_display() {
+                let (body, source) = if self.contains_flow_value_expression(value.expression())? {
+                    let key = RuntimeDialogueValueCaptureKey::new(
+                        application.content().template_id(),
+                        value.slot(),
+                        0,
+                    );
+                    let source_local = self
+                        .dialogue_value_project_source_locals
+                        .get(&key)
+                        .cloned()
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "dialogue value {:?} has no admitted project source local",
+                                value.expression()
+                            ))
+                        })?;
+                    let body = self.lower_flow_value(
+                        value.expression(),
+                        RuntimeFlowValueContinuation::Bind {
+                            pattern: bind_seed(&value_type, source_local.clone()),
+                            tail: RuntimeFlowTail::None,
+                        },
+                    )?;
+                    (body, local_seed(&value_type, source_local))
+                } else {
+                    (
+                        Vec::new(),
+                        self.expr_lowerer()
+                            .lower_source(value.expression())
+                            .map_err(RuntimePlanLowerError::new)?,
+                    )
+                };
+                let method = self
+                    .trait_methods
+                    .get(project.method())
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "dialogue value {:?} has no selected DisplayText method",
+                            value.expression()
+                        ))
+                    })?;
+                let template = self
+                    .facts
+                    .format_template(project.template())
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "dialogue value {:?} has no accepted formatter template",
+                            value.expression()
+                        ))
+                    })?;
+                let attempt = self
+                    .format_attempts
+                    .get(project.template())
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "dialogue value {:?} has no builder-issued formatter attempt",
+                            value.expression()
+                        ))
+                    })?;
+                ops.push(RuntimeFlowOpSeed::FormatOperandAttempt {
+                    attempt: attempt.clone(),
+                    parameter: RuntimeFmtParameterId::Value,
+                    body,
+                    value: source,
+                });
+                ops.push(RuntimeFlowOpSeed::Let {
+                    pattern: bind_seed(value.ty(), local),
+                    expr: RuntimeExprSeed::new(
+                        value.ty().identity(),
+                        RuntimeExprSeedKind::FormatContent {
+                            template: template.template().id(),
+                            attempt: Some(attempt),
+                            operands: Box::new([]),
+                            project_method: Some(method),
+                            project_option: false,
+                        },
+                    ),
+                });
+            } else {
+                ops.extend(self.lower_flow_value(
+                    value.expression(),
+                    RuntimeFlowValueContinuation::Bind {
+                        pattern: bind_seed(&value_type, local),
+                        tail: RuntimeFlowTail::None,
+                    },
+                )?);
+            }
         }
         ops.push(RuntimeFlowOpSeed::Dialogue {
             target,

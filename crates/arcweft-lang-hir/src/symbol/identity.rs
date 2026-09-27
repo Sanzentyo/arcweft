@@ -314,6 +314,7 @@ pub enum ProjectDeclarationId {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectSymbol {
     Callable(CallableSymbol),
+    Trait(TraitDeclarationId),
     External(ExternalSymbol),
     Nominal(Box<ProjectNominalDeclaration>),
     Retained(ProjectRetainedSymbol),

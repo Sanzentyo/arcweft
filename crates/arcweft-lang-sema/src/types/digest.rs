@@ -666,7 +666,8 @@ impl Encoder {
                 self.iterator_family(*family);
                 tasks.push(EncodingTask::Type(item, child_depth));
             }
-            TypeKind::DisplayText => self.tag(23),
+            TypeKind::DisplayContext => self.tag(23),
+            TypeKind::DisplayError => self.tag(190),
             TypeKind::DebugStatePath => self.tag(24),
             TypeKind::ObservationFieldPath => self.tag(25),
             TypeKind::Ref(entity) => {

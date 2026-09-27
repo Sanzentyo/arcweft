@@ -1059,10 +1059,7 @@ impl TypeCheckEnv {
                 ["text", "show"],
                 FunctionSignature::new(
                     TypeKind::Unit,
-                    [FunctionParam::required(
-                        "text",
-                        TypeKind::Choice(vec![TypeKind::String, TypeKind::DisplayText]),
-                    )],
+                    [FunctionParam::required("text", TypeKind::String)],
                 ),
             )
             .with_standard_function(
@@ -1188,7 +1185,7 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_standard_dialogue_view_types(self) -> Self {
-        let environment = self
+        let mut environment = self
             .with_standard_runtime_nominal_record(
                 DIALOGUE_CONTENT_TYPE,
                 std::iter::empty::<(String, TypeKind)>(),
@@ -1261,6 +1258,18 @@ impl TypeCheckEnv {
                 DialogueRuntimeValueRole::View,
             )
             .with_dialogue_view_models(DialogueViewModelRegistry::standard());
+        environment.nominal_catalog = environment
+            .nominal_catalog
+            .try_with_record(
+                super::nominal::standard_exact_record(
+                    "Content",
+                    super::nominal::standard_dialogue_content_type(),
+                    super::nominal::AcceptedNominalOrigin::Domain,
+                )
+                .expect("Content is an exact alias for DialogueContent"),
+                crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
+            )
+            .expect("Content has one standard alias owner");
         environment.recanonicalize_standard_view_modifier(ViewModifierId::OnActivate)
     }
 

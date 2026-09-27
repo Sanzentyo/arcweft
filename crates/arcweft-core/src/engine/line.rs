@@ -100,6 +100,11 @@ impl Engine {
                         self.fiber.env.pop_scope();
                     }
                 }
+                FlowControlStackEntryKind::FormatAttempt(frame) => {
+                    if frame.active.is_some() {
+                        self.fiber.env.pop_scope();
+                    }
+                }
                 FlowControlStackEntryKind::Loop { .. }
                 | FlowControlStackEntryKind::While { .. }
                 | FlowControlStackEntryKind::WhileLet { .. } => {}

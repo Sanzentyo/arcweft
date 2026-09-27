@@ -2,6 +2,112 @@ use super::*;
 use crate::pattern::RuntimeCheckedType;
 use crate::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
 
+fn project_record_layout(
+    name: &str,
+    fields: &[(&str, RuntimeCheckedType)],
+) -> RuntimeNominalRecordLayout {
+    RuntimeNominalRecordLayout::try_from_checked_projection(
+        crate::entry::RuntimeNominalTypeId::try_new(name).unwrap(),
+        crate::pattern::RuntimeSemanticTypeId::from_bytes([17; 32]),
+        crate::entry::TypeLayoutHash::from_bytes([18; 32]),
+        crate::entry::RuntimeNominalRecordShape::Record,
+        Vec::new(),
+        fields
+            .iter()
+            .enumerate()
+            .map(|(index, (name, ty))| {
+                crate::value::RuntimeNominalRecordLayoutField::new(
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(index).unwrap(),
+                    Some((*name).to_owned()),
+                    ty.clone(),
+                )
+            })
+            .collect(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn project_display_context_binds_canonical_locale_and_evaluated_options() {
+    let layout = project_record_layout(
+        "std.DisplayContext",
+        &[
+            (
+                "currency",
+                RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::String)),
+            ),
+            ("locale", RuntimeCheckedType::String),
+            (
+                "style",
+                RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::String)),
+            ),
+        ],
+    );
+    let context = RuntimeFormatContext::new(LocaleTag::try_new("de-DE").unwrap());
+    let value = project_display_context(
+        &layout,
+        &context,
+        &[
+            (RuntimeFmtParameterId::Value, Some(RuntimeValue::i64(7))),
+            (
+                RuntimeFmtParameterId::Style,
+                Some(RuntimeValue::String("money".into())),
+            ),
+            (
+                RuntimeFmtParameterId::Currency,
+                Some(RuntimeValue::String("JPY".into())),
+            ),
+        ],
+    )
+    .unwrap()
+    .unwrap();
+    let record = value.as_nominal_record().unwrap();
+    assert_eq!(
+        record.fields()[0],
+        RuntimeValue::option_some(RuntimeValue::String("JPY".into()))
+    );
+    assert_eq!(record.fields()[1], RuntimeValue::String("de-DE".into()));
+    assert_eq!(
+        record.fields()[2],
+        RuntimeValue::option_some(RuntimeValue::String("money".into()))
+    );
+    assert!(matches!(
+        project_display_context(
+            &layout,
+            &context,
+            &[(RuntimeFmtParameterId::Locale, Some(RuntimeValue::String("invalid_locale".into())))],
+        ),
+        Ok(Err(reason)) if reason.starts_with("invalid fmt locale")
+    ));
+}
+
+#[test]
+fn project_display_error_is_a_recoverable_result_only_for_the_selected_layout() {
+    let layout = project_record_layout(
+        "std.DisplayError",
+        &[("message", RuntimeCheckedType::String)],
+    );
+    let error = RuntimeValue::NominalRecord(
+        RuntimeNominalRecordValue::try_from_accepted_layout(
+            &layout,
+            vec![RuntimeValue::String("unavailable".into())],
+        )
+        .unwrap(),
+    );
+    assert_eq!(
+        project_display_result(RuntimeValue::result_err(error.clone()), &layout).unwrap(),
+        Err("unavailable".into())
+    );
+    assert!(matches!(
+        project_display_result(RuntimeValue::result_ok(error), &layout),
+        Err(RuntimeFormatAttemptError::Content(_))
+    ));
+    assert_eq!(
+        project_display_result(RuntimeValue::option_none(), &layout),
+        Err(RuntimeFormatAttemptError::InvalidProjectResult)
+    );
+}
+
 fn text(
     context: &RuntimeFormatContext,
     primary_type: RuntimeCheckedType,
@@ -414,4 +520,71 @@ fn unstyled_content_passes_through_and_numeric_style_rejects_it() {
             ..
         }
     ));
+
+    let project = finish_format_content_attempt(
+        &RuntimeFormatContext::default(),
+        RuntimeFormatPrimaryKind::ProjectContent,
+        &[
+            (
+                RuntimeFmtParameterId::Value,
+                Some(content.clone().into_runtime_value()),
+            ),
+            (
+                RuntimeFmtParameterId::Style,
+                Some(RuntimeValue::String("currency".to_owned())),
+            ),
+            (
+                RuntimeFmtParameterId::Locale,
+                Some(RuntimeValue::String("ja-JP".to_owned())),
+            ),
+            (
+                RuntimeFmtParameterId::Currency,
+                Some(RuntimeValue::String("JPY".to_owned())),
+            ),
+        ],
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        project.outcome(),
+        RuntimeDialogueFormattedOutcome::Success {
+            value: RuntimeDialogueFormattedSuccess::Content(inner), ..
+        } if **inner == content
+    ));
+
+    let project_some = finish_format_content_attempt(
+        &RuntimeFormatContext::default(),
+        RuntimeFormatPrimaryKind::OptionProjectContent,
+        &[(
+            RuntimeFmtParameterId::Value,
+            Some(RuntimeValue::option_some(
+                content.clone().into_runtime_value(),
+            )),
+        )],
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        project_some.outcome(),
+        RuntimeDialogueFormattedOutcome::Success {
+            value: RuntimeDialogueFormattedSuccess::Content(inner), ..
+        } if **inner == content
+    ));
+    let project_none = finish_format_content_attempt(
+        &RuntimeFormatContext::default(),
+        RuntimeFormatPrimaryKind::OptionProjectContent,
+        &[
+            (
+                RuntimeFmtParameterId::Value,
+                Some(RuntimeValue::option_none()),
+            ),
+            (
+                RuntimeFmtParameterId::NoneValue,
+                Some(RuntimeValue::String("missing".into())),
+            ),
+        ],
+        None,
+    )
+    .unwrap();
+    assert_eq!(success_text(project_none.outcome().clone()), "missing");
 }

@@ -181,12 +181,6 @@ impl RuntimeEnv {
         self.get(local).cloned()
     }
 
-    pub(crate) fn values(&self) -> impl Iterator<Item = &RuntimeValue> {
-        self.scopes
-            .iter()
-            .flat_map(|scope| scope.bindings.iter().map(|binding| &binding.value))
-    }
-
     pub(crate) fn bindings(&self) -> impl Iterator<Item = &RuntimeLocalBinding> {
         self.scopes.iter().flat_map(|scope| scope.bindings.iter())
     }

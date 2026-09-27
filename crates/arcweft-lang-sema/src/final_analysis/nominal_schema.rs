@@ -1660,12 +1660,44 @@ fn seal_prepared_expression(
             }
             let (shell, nominal, mutable_base, declaration_ordinal, field_type, diagnostic_name) =
                 prepared.into_parts();
-            let projection = context.get_cached(&nominal)?;
             let field_type_digest = field_type.semantic_identity_digest()?;
-            let projected = projection
-                .record_field(declaration_ordinal)
-                .filter(|projected| projected.field_type() == field_type_digest)
+            let semantic_field = project_nominals
+                .get(nominal.identity())
+                .filter(|definition| definition.nominal() == &nominal)
+                .and_then(|definition| definition.fields())
+                .and_then(|fields| fields.get(usize::try_from(declaration_ordinal).ok()?))
+                .filter(|field| {
+                    field.declaration_ordinal() == declaration_ordinal
+                        && field.ty() == &field_type
+                        && field.semantic_id()
+                            == AcceptedRecordFieldSemanticId::issue(
+                                nominal.identity(),
+                                declaration_ordinal,
+                                field_type_digest,
+                            )
+                })
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+            let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                usize::try_from(semantic_field.declaration_ordinal())
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
+            )
+            .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?;
+            let generics = crate::types::StableGenericReferenceUseCollector::collect_in_scope(
+                &nominal.ty(),
+                &crate::types::GenericScope::default(),
+            )
+            .map_err(NominalSchemaProjectionError::from)?;
+            if generics.types().is_empty() && generics.consts().is_empty() {
+                let projected = context
+                    .get_cached(&nominal)?
+                    .record_field(declaration_ordinal)
+                    .filter(|projected| {
+                        projected.field_type() == field_type_digest
+                            && projected.runtime_field() == runtime_field
+                    })
+                    .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                debug_assert_eq!(projected.runtime_field(), runtime_field);
+            }
             let semantic_id =
                 CheckedRecordFieldSemanticId::Project(AcceptedRecordFieldSemanticId::issue(
                     nominal.identity(),
@@ -1682,7 +1714,7 @@ fn seal_prepared_expression(
                 nominal.identity(),
                 semantic_id,
                 declaration_ordinal,
-                Some(projected.runtime_field()),
+                Some(runtime_field),
                 field_type_digest,
                 diagnostic_name,
             )

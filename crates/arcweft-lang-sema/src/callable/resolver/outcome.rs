@@ -493,6 +493,22 @@ impl PreparedResolvedCallable {
         ) || self.definition.identity.requires_value_callee()
     }
 
+    /// Exact closure expression behind a base-group function value. Other
+    /// value callees remain dynamic for suspension analysis.
+    pub(crate) fn exact_closure_producer(&self) -> Option<arcweft_lang_hir::identity::ExprId> {
+        match (&self.state, &self.definition.identity) {
+            (
+                PreparedResolvedCallableState::Base,
+                super::PreparedResolvedCallableIdentity::FunctionValue {
+                    producer:
+                        super::PreparedFunctionValueOriginIdentity::IndependentExpression { producer },
+                    ..
+                },
+            ) => Some(*producer),
+            _ => None,
+        }
+    }
+
     pub(crate) fn try_from_prepared_continuation<P, U>(
         graph: &super::super::PreparedCallGraph<P, U>,
         reference: &super::super::PreparedCallContinuationRef,

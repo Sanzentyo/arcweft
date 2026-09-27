@@ -30,8 +30,8 @@ use super::{
     RuntimeNormalizedType, RuntimePipeFact, RuntimeProjectCallable, RuntimeProjectItem,
     RuntimeRecordExpressionFact, RuntimeRecordPatternFact, RuntimeResolvedCall,
     RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeScopedExecutableSemanticFactView, RuntimeSequenceKind, RuntimeTriggerAdmission,
-    RuntimeTryFact, RuntimeTypeShape,
+    RuntimeScopedExecutableSemanticFactView, RuntimeSequenceKind, RuntimeTraitMethodInstanceKey,
+    RuntimeTriggerAdmission, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_core::value::RuntimeValue;
 
@@ -1151,28 +1151,35 @@ impl RuntimeProjectFunctionTypeProjection {
     }
 }
 
+/// Closed lexical owner of a closure inside an instantiated callable body.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeClosureLexicalOwner {
+    ProjectFunction(RuntimeProjectFunctionInstanceKey),
+    TraitMethod(RuntimeTraitMethodInstanceKey),
+}
+
 /// Semantic identity of one explicit closure. The checked identity owns its
-/// source/revision; an enclosing project instance, when present, owns the frozen
-/// generic environment shared by all closures inside that instance.
+/// source/revision; the enclosing owner, when present, owns the frozen generic
+/// environment shared by all closures inside that callable instance.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RuntimeClosureInstanceKey {
-    enclosing_instance: Option<RuntimeProjectFunctionInstanceKey>,
+    enclosing_owner: Option<RuntimeClosureLexicalOwner>,
     closure: CheckedClosureId,
 }
 
 impl RuntimeClosureInstanceKey {
     pub const fn new(
-        enclosing_instance: Option<RuntimeProjectFunctionInstanceKey>,
+        enclosing_owner: Option<RuntimeClosureLexicalOwner>,
         closure: CheckedClosureId,
     ) -> Self {
         Self {
-            enclosing_instance,
+            enclosing_owner,
             closure,
         }
     }
 
-    pub const fn enclosing_instance(&self) -> Option<&RuntimeProjectFunctionInstanceKey> {
-        self.enclosing_instance.as_ref()
+    pub const fn enclosing_owner(&self) -> Option<&RuntimeClosureLexicalOwner> {
+        self.enclosing_owner.as_ref()
     }
 
     pub const fn closure(&self) -> &CheckedClosureId {

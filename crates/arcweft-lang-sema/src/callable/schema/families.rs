@@ -1043,7 +1043,7 @@ impl DomainMethodId {
                 validator,
             ),
             Self::DiagnosticsHasError => empty(TypeKind::Predicate, &[], validator),
-            Self::RagContextPackSummary => empty(TypeKind::DisplayText, &[], validator),
+            Self::RagContextPackSummary => empty(TypeKind::String, &[], validator),
             Self::Context => context_schema(receiver, false, validator)?,
             Self::WithContext => context_schema(receiver, true, validator)?,
         })
@@ -1433,7 +1433,7 @@ impl AgentIntrinsicSignatureId {
             ),
             Self::Note => one_positional(
                 "text",
-                TypeKind::DisplayText,
+                TypeKind::String,
                 TypeKind::Unit,
                 &["debug.record"],
                 validator,

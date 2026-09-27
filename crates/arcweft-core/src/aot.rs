@@ -115,6 +115,8 @@ impl AotLinearOp {
             }),
             FlowOp::Noop => Some(Self::Noop),
             FlowOp::LetElse { .. }
+            | FlowOp::FormatOperandAttempt { .. }
+            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }
             | FlowOp::SelectDialogueResult { .. }
@@ -251,6 +253,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Noop => true,
         FlowOp::Effect(effect) => !effect_changes_control(effect),
         FlowOp::LetElse { .. }
+        | FlowOp::FormatOperandAttempt { .. }
+        | FlowOp::CompleteFormatOperand { .. }
         | FlowOp::LineOperation { .. }
         | FlowOp::CommitDialogueResult { .. }
         | FlowOp::SelectDialogueResult { .. }
@@ -304,6 +308,7 @@ impl AotOpClass {
         match op {
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
+            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::AssignNominalField { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
@@ -316,6 +321,7 @@ impl AotOpClass {
             | FlowOp::Noop
             | FlowOp::CompleteAwaitObserver => Self::Linear,
             FlowOp::LetElse { .. }
+            | FlowOp::FormatOperandAttempt { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
@@ -356,6 +362,7 @@ impl AotProgramStats {
             self.record_op(op);
             match op {
                 FlowOp::LetElse { else_ops, .. } => self.record_ops(else_ops),
+                FlowOp::FormatOperandAttempt { body, .. } => self.record_ops(body),
                 FlowOp::If {
                     then_ops, else_ops, ..
                 }
@@ -388,6 +395,7 @@ impl AotProgramStats {
                 }
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
+                | FlowOp::CompleteFormatOperand { .. }
                 | FlowOp::AssignNominalField { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }

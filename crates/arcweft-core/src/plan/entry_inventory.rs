@@ -882,6 +882,7 @@ impl RuntimePlan {
                     }
                 }
                 FlowOp::LetElse { else_ops, .. }
+                | FlowOp::FormatOperandAttempt { body: else_ops, .. }
                 | FlowOp::Thread { body: else_ops, .. }
                 | FlowOp::Scope { body: else_ops, .. }
                 | FlowOp::Loop { body: else_ops, .. }
@@ -918,6 +919,7 @@ impl RuntimePlan {
                 }
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
+                | FlowOp::CompleteFormatOperand { .. }
                 | FlowOp::AssignNominalField { .. }
                 | FlowOp::LineOperation { .. }
                 | FlowOp::CommitDialogueResult { .. }

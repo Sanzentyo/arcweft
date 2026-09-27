@@ -226,6 +226,11 @@ impl RegisteredTypeCheckEnv {
                     actual: ProjectSymbolTargetId::Nominal(symbol.id().clone()),
                 });
             }
+            ResolvedProjectSymbol::Trait(id) => {
+                return Err(RegisteredCharacterResolutionError::NotExternal {
+                    actual: ProjectSymbolTargetId::Trait(id.clone()),
+                });
+            }
             ResolvedProjectSymbol::Retained(symbol) => {
                 return Err(RegisteredCharacterResolutionError::NotExternal {
                     actual: ProjectSymbolTargetId::Retained(symbol.public_id().clone()),

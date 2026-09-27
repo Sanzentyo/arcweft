@@ -385,11 +385,24 @@ pub trait DisplayText {
 }
 ```
 
-Built-in implementations include common scalar types, `String`, `LocalizedText`, `Ref<T>`, and selected wrappers. `Option<T>` must be explicitly handled or formatted with a fallback:
+The standard formatter admits scalar values (including `String`, `Duration`, and
+entity references) and `Content` directly. A project nominal value requires a
+selected `DisplayText` implementation. `Option<T>` is admitted only through
+explicit `fmt(...)` when `T` has a scalar or project display witness; `None`
+uses the `none` text or selected inline failure policy:
 
 ```arcw
 #[fmt(state.nickname, none="名無し", on_error=InlineFailure.fallback("名無し"))]
 ```
+
+`DisplayContext` is a standard record with `locale: String`,
+`style: Option<String>`, and `currency: Option<String>`. Its locale is the
+canonical active session locale at the start of the formatting attempt, unless
+`fmt` supplies an explicit locale. All `fmt` operands are evaluated once in
+source order before the selected project method runs. The method handles its
+style and currency options and returns `Result<Content, DisplayError>`;
+`DisplayError` has one `message: String` field. An `Err` enters the same inline
+failure policy as other recoverable formatter failures.
 
 Inline function calls inside `#[...]` must declare how interpolation failures are
  handled, unless the line, configured dialogue values, character state, or selected profile

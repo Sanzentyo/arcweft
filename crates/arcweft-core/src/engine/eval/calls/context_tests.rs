@@ -630,6 +630,9 @@ fn format_content_expression(
             .expect("format result type is in the test plan"),
         RuntimeExprKind::FormatContent {
             template,
+            attempt: None,
+            project_method: None,
+            project_option: false,
             operands: vec![
                 RuntimeFormatContentOperand::from_admitted_parts(
                     RuntimeFmtParameterId::Value,
@@ -660,6 +663,9 @@ fn native_formatter_uses_selected_locale_for_number_style() {
         type_table.id_for_semantic(context.types.content).unwrap(),
         RuntimeExprKind::FormatContent {
             template: RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+            attempt: None,
+            project_method: None,
+            project_option: false,
             operands: vec![
                 RuntimeFormatContentOperand::from_admitted_parts(
                     RuntimeFmtParameterId::Value,

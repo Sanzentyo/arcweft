@@ -230,6 +230,18 @@ impl ProjectSymbolTable {
                         ModuleSegment::new(name.as_str())
                             .expect("resolved Trait names are module segments"),
                     );
+                    if !self.insert_trait_symbol(
+                        module_path,
+                        module,
+                        source_item,
+                        item,
+                        trait_declaration.clone(),
+                        name.as_str(),
+                        diagnostics,
+                        work,
+                    ) {
+                        return false;
+                    }
                     for (position, member) in declaration.members().iter().enumerate() {
                         let HirTraitMember::Function(function) = member else {
                             continue;
@@ -518,6 +530,63 @@ impl ProjectSymbolTable {
         clippy::too_many_arguments,
         reason = "symbol publication binds every final callable identity and source component atomically"
     )]
+    fn insert_trait_symbol(
+        &mut self,
+        module_path: &CanonicalModulePath,
+        module: ProjectSymbolModuleView<'_, '_>,
+        source_item: ItemId,
+        item: &HirItem,
+        declaration: TraitDeclarationId,
+        name: &str,
+        diagnostics: &mut Vec<ProjectSymbolLinkError>,
+        work: &mut u64,
+    ) -> bool {
+        let whole = declaration_span(module, source_item, HirDeclarationSourceRole::Whole);
+        let name_span = declaration_span(module, source_item, HirDeclarationSourceRole::Name);
+        if let Err(error) = Self::charge(work, 1, Some(whole)) {
+            diagnostics.push(error);
+            return false;
+        }
+        let path = ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            [ProjectSymbolSegment::try_new(name)
+                .expect("resolved Trait names are project symbol segments")],
+        )
+        .expect("one resolved Trait name is a valid binding");
+        let lookup_key = path.to_string();
+        if let Some(first) = self
+            .scopes
+            .get(module_path)
+            .and_then(|scope| scope.get(&lookup_key))
+            .and_then(|bindings| bindings.first())
+            .and_then(|binding| binding.sites.first())
+            .cloned()
+        {
+            diagnostics.push(ProjectSymbolLinkError::duplicate_declaration(
+                module_path.clone(),
+                lookup_key,
+                first,
+                name_span,
+            ));
+            return true;
+        }
+        self.insert_scope_binding(
+            module_path,
+            ScopeBinding::new(
+                path,
+                ProjectSymbolTargetId::Trait(declaration.clone()),
+                visibility(item),
+                module_path.clone(),
+                [name_span],
+            ),
+        );
+        self.symbols.insert(
+            ProjectDeclarationId::Trait(declaration.clone()),
+            ProjectSymbol::Trait(declaration),
+        );
+        true
+    }
+
     pub(super) fn insert_callable_symbol(
         &mut self,
         module_path: &CanonicalModulePath,

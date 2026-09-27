@@ -16,8 +16,9 @@ use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
     RuntimeDeferSiteId, RuntimeDialogueContentPlanId, RuntimeDialogueContentTemplateId,
     RuntimeDialogueEffectSiteCount, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
-    RuntimeDialogueValueSlotId, RuntimeFunctionSiteId, RuntimeLineHandleSiteId,
-    RuntimeLineTaskGroupId, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDialogueValueSlotId, RuntimeFormatAttemptId, RuntimeFunctionSiteId,
+    RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
+    RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::scope::RuntimeScopeIdentity;
 use crate::step::RuntimeHostCallMode;
@@ -405,6 +406,14 @@ pub enum RuntimeFlowOpSeed {
         pattern: RuntimePatternSeed,
         expr: RuntimeExprSeed,
     },
+    /// Evaluates one source-ordered `fmt` operand in an inline failure
+    /// boundary, then records its admitted value or recoverable failure.
+    FormatOperandAttempt {
+        attempt: RuntimeFormatAttemptSeedId,
+        parameter: RuntimeFmtParameterId,
+        body: Vec<Self>,
+        value: RuntimeExprSeed,
+    },
     LetElse {
         pattern: RuntimePatternSeed,
         expr: RuntimeExprSeed,
@@ -730,6 +739,13 @@ fn collect_binding_or_host_free_locals(
             expr.collect_free_locals(bound, locals);
             pattern.collect_binding_locals(bound);
         }
+        RuntimeFlowOpSeed::FormatOperandAttempt { body, value, .. } => {
+            let mut attempt_bound = bound.clone();
+            for operation in body {
+                collect_flow_op_free_locals(operation, &mut attempt_bound, locals);
+            }
+            value.collect_free_locals(&attempt_bound, locals);
+        }
         RuntimeFlowOpSeed::LetElse {
             pattern,
             expr,
@@ -948,6 +964,7 @@ fn collect_terminal_or_effect_free_locals(
             effect.collect_free_locals(bound, locals);
         }
         RuntimeFlowOpSeed::Let { .. }
+        | RuntimeFlowOpSeed::FormatOperandAttempt { .. }
         | RuntimeFlowOpSeed::LetElse { .. }
         | RuntimeFlowOpSeed::AssignNominalField { .. }
         | RuntimeFlowOpSeed::Dialogue { .. }
@@ -1589,6 +1606,49 @@ impl PartialEq for RuntimeFunctionSiteSeedId {
 
 impl Eq for RuntimeFunctionSiteSeedId {}
 
+/// A construction-only handle for one builder-owned formatter occurrence.
+#[derive(Clone)]
+pub struct RuntimeFormatAttemptSeedId {
+    issuer: Arc<RuntimePlanConstructionIssuer>,
+    attempt: RuntimeFormatAttemptId,
+}
+
+impl RuntimeFormatAttemptSeedId {
+    pub(super) fn issued(
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+        attempt: RuntimeFormatAttemptId,
+    ) -> Self {
+        Self {
+            issuer: Arc::clone(issuer),
+            attempt,
+        }
+    }
+
+    pub(super) fn resolve(
+        &self,
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+    ) -> Option<RuntimeFormatAttemptId> {
+        Arc::ptr_eq(&self.issuer, issuer).then_some(self.attempt)
+    }
+}
+
+impl fmt::Debug for RuntimeFormatAttemptSeedId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("RuntimeFormatAttemptSeedId")
+            .field(&self.attempt)
+            .finish()
+    }
+}
+
+impl PartialEq for RuntimeFormatAttemptSeedId {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.issuer, &other.issuer) && self.attempt == other.attempt
+    }
+}
+
+impl Eq for RuntimeFormatAttemptSeedId {}
+
 /// A construction-only pure-helper handle issued after its recursive body and
 /// signature have been admitted.
 #[derive(Clone)]
@@ -1889,13 +1949,19 @@ impl RuntimeExprSeed {
     pub fn format_content(
         ty: RuntimeSemanticTypeId,
         template: RuntimeDialogueContentTemplateId,
+        attempt: Option<RuntimeFormatAttemptSeedId>,
+        project_method: Option<RuntimeTraitMethodSeedId>,
+        project_option: bool,
         operands: impl IntoIterator<Item = RuntimeFormatContentOperandSeed>,
     ) -> Self {
         Self::new(
             ty,
             RuntimeExprSeedKind::FormatContent {
                 template,
+                attempt,
                 operands: operands.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+                project_method,
+                project_option,
             },
         )
     }
@@ -1920,6 +1986,28 @@ impl RuntimeExprSeed {
 pub struct RuntimeFormatContentOperandSeed {
     pub parameter: RuntimeFmtParameterId,
     pub expression: RuntimeExprSeed,
+}
+
+/// Typed source-order manifest row used to reserve one flow formatter
+/// occurrence before its operand operations are lowered.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeFormatAttemptOperandSeed {
+    pub parameter: RuntimeFmtParameterId,
+    pub ty: RuntimeSemanticTypeId,
+}
+
+impl RuntimeFormatAttemptOperandSeed {
+    #[must_use]
+    pub const fn new(parameter: RuntimeFmtParameterId, ty: RuntimeSemanticTypeId) -> Self {
+        Self { parameter, ty }
+    }
+}
+
+/// Construction-time manifest for a flow-evaluated formatter occurrence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeFormatAttemptDeclarationSeed {
+    pub template: RuntimeDialogueContentTemplateId,
+    pub operands: Box<[RuntimeFormatAttemptOperandSeed]>,
 }
 
 impl RuntimeFormatContentOperandSeed {
@@ -1975,7 +2063,10 @@ pub enum RuntimeExprSeedKind {
     /// constructs one exact Formatted Content binding against its template.
     FormatContent {
         template: RuntimeDialogueContentTemplateId,
+        attempt: Option<RuntimeFormatAttemptSeedId>,
         operands: Box<[RuntimeFormatContentOperandSeed]>,
+        project_method: Option<RuntimeTraitMethodSeedId>,
+        project_option: bool,
     },
     /// One checked CharacterDialogue factory or immutable reconfiguration.
     /// Field contributions remain in authored order, including overwritten

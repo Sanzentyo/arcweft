@@ -18,13 +18,16 @@ use thiserror::Error;
 use crate::pattern::{
     RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
 };
+use crate::plan::{RuntimePlan, RuntimePlanTypeProjection};
+use crate::runtime_id::RuntimePlanTypeId;
 
 use super::{
     RuntimeDialogueContentValue, RuntimeDialogueContentValueError,
     RuntimeDialogueFormattedFailureSelection, RuntimeDialogueFormattedOutcome,
     RuntimeDialogueFormattedSuccess, RuntimeDialogueFormattedValue,
     RuntimeDialogueFormattedValueError, RuntimeFmtParameterId, RuntimeInlineTextValue,
-    RuntimeInlineTextValueError, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeInlineTextValueError, RuntimeNominalRecordLayout, RuntimeNominalRecordValue,
+    RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
 
 /// Exact bundled ICU algorithms and CLDR data required by Core formatting.
@@ -96,6 +99,12 @@ pub enum RuntimeFormatPrimaryKind {
     Scalar(RuntimeSemanticTypeId),
     Content,
     OptionScalar(RuntimeSemanticTypeId),
+    /// A selected project DisplayText method has already consumed the style,
+    /// locale, and currency options and returned this Content.
+    ProjectContent,
+    /// A selected project method returned Content for Option::Some; Option::None
+    /// is rendered by the checked `none` operand or failure policy.
+    OptionProjectContent,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -108,12 +117,152 @@ pub enum RuntimeFormatAttemptError {
     InvalidParameter(RuntimeFmtParameterId),
     #[error("fmt expression selects more than one failure policy")]
     ConflictingFailurePolicy,
+    #[error("project DisplayText context does not match its accepted record schema")]
+    InvalidProjectContext,
+    #[error("project DisplayText returned an invalid Result<Content, DisplayError>")]
+    InvalidProjectResult,
     #[error(transparent)]
     Content(#[from] RuntimeDialogueContentValueError),
     #[error(transparent)]
     Inline(#[from] RuntimeInlineTextValueError),
     #[error(transparent)]
     Formatted(#[from] RuntimeDialogueFormattedValueError),
+}
+
+/// Builds the standard, schema-checked context passed to a selected project
+/// `DisplayText` implementation. A dynamic invalid locale is a recoverable
+/// formatting failure, so the caller can apply its already selected policy.
+pub fn project_display_context(
+    layout: &RuntimeNominalRecordLayout,
+    context: &RuntimeFormatContext,
+    operands: &[(RuntimeFmtParameterId, Option<RuntimeValue>)],
+) -> Result<Result<RuntimeValue, String>, RuntimeFormatAttemptError> {
+    let mut selected = [false; 9];
+    let mut values: [Option<&RuntimeValue>; 9] = std::array::from_fn(|_| None);
+    for (parameter, value) in operands {
+        let index = parameter.index();
+        if std::mem::replace(&mut selected[index], true) {
+            return Err(RuntimeFormatAttemptError::DuplicateParameter(*parameter));
+        }
+        values[index] = value.as_ref();
+    }
+    let style = format_string_operand(&values, RuntimeFmtParameterId::Style)?;
+    let currency = format_string_operand(&values, RuntimeFmtParameterId::Currency)?;
+    let locale = format_string_operand(&values, RuntimeFmtParameterId::Locale)?;
+    let locale = match locale {
+        Some(locale) => match LocaleTag::canonicalize(locale) {
+            Ok(locale) => locale,
+            Err(error) => return Ok(Err(format!("invalid fmt locale: {error}"))),
+        },
+        None => context.active_locale().clone(),
+    };
+    let fields = layout
+        .fields()
+        .iter()
+        .map(|field| match field.name() {
+            Some("locale") => Ok(RuntimeValue::String(locale.as_str().to_owned())),
+            Some("style") => Ok(style.map_or_else(RuntimeValue::option_none, |value| {
+                RuntimeValue::option_some(RuntimeValue::String(value.to_owned()))
+            })),
+            Some("currency") => Ok(currency.map_or_else(RuntimeValue::option_none, |value| {
+                RuntimeValue::option_some(RuntimeValue::String(value.to_owned()))
+            })),
+            _ => Err(RuntimeFormatAttemptError::InvalidProjectContext),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if layout.fields().len() != 3 {
+        return Err(RuntimeFormatAttemptError::InvalidProjectContext);
+    }
+    let record = RuntimeNominalRecordValue::try_from_accepted_layout(layout, fields)
+        .map_err(|_| RuntimeFormatAttemptError::InvalidProjectContext)?;
+    Ok(Ok(RuntimeValue::NominalRecord(record)))
+}
+
+/// Converts a project method's admitted result into the common formatter
+/// success or recoverable failure consumed by native, pure, and AWBC paths.
+pub fn project_display_result(
+    result: RuntimeValue,
+    error_layout: &RuntimeNominalRecordLayout,
+) -> Result<Result<RuntimeValue, String>, RuntimeFormatAttemptError> {
+    let (case, payload) = result
+        .try_into_builtin_variant_case()
+        .map_err(|_| RuntimeFormatAttemptError::InvalidProjectResult)?;
+    let payload = payload.ok_or(RuntimeFormatAttemptError::InvalidProjectResult)?;
+    match case {
+        RuntimeBuiltinVariantCaseIdentity::ResultOk => {
+            RuntimeDialogueContentValue::try_from_runtime_value(&payload)?;
+            Ok(Ok(payload))
+        }
+        RuntimeBuiltinVariantCaseIdentity::ResultErr => {
+            let record = payload
+                .as_nominal_record()
+                .ok_or(RuntimeFormatAttemptError::InvalidProjectResult)?;
+            record
+                .validate_against_layout(error_layout)
+                .map_err(|_| RuntimeFormatAttemptError::InvalidProjectResult)?;
+            let [RuntimeValue::String(message)] = record.fields() else {
+                return Err(RuntimeFormatAttemptError::InvalidProjectResult);
+            };
+            Ok(Err(message.clone()))
+        }
+        _ => Err(RuntimeFormatAttemptError::InvalidProjectResult),
+    }
+}
+
+/// Projects one sealed plan record domain into the same checked layout used by
+/// native and AWBC value admission. No field names or ordinals are inferred
+/// from authored source.
+pub(crate) fn project_display_layout(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+) -> Result<RuntimeNominalRecordLayout, RuntimeFormatAttemptError> {
+    let declaration = plan
+        .type_table()
+        .get(ty)
+        .ok_or(RuntimeFormatAttemptError::InvalidProjectContext)?;
+    let RuntimePlanTypeProjection::Nominal {
+        nominal,
+        layout,
+        arguments,
+    } = declaration.projection()
+    else {
+        return Err(RuntimeFormatAttemptError::InvalidProjectContext);
+    };
+    let domain = plan
+        .nominal_record_domains()
+        .get(ty)
+        .ok_or(RuntimeFormatAttemptError::InvalidProjectContext)?;
+    let checked = |field_ty| {
+        plan.checked_type(field_ty)
+            .ok()
+            .flatten()
+            .ok_or(RuntimeFormatAttemptError::InvalidProjectContext)
+    };
+    let arguments = arguments
+        .iter()
+        .copied()
+        .map(checked)
+        .collect::<Result<Vec<_>, _>>()?;
+    let fields = domain
+        .fields()
+        .iter()
+        .map(|field| {
+            Ok(super::RuntimeNominalRecordLayoutField::new(
+                field.field(),
+                field.name().map(str::to_owned),
+                checked(field.ty())?,
+            ))
+        })
+        .collect::<Result<Vec<_>, RuntimeFormatAttemptError>>()?;
+    RuntimeNominalRecordLayout::try_from_checked_projection(
+        nominal.clone(),
+        declaration.semantic_identity(),
+        *layout,
+        domain.shape(),
+        arguments,
+        fields,
+    )
+    .map_err(|_| RuntimeFormatAttemptError::InvalidProjectContext)
 }
 
 /// Folds one source-ordered, once-evaluated formatter attempt. `None` denotes
@@ -221,6 +370,18 @@ fn format_success(
     let style = format_string_operand(values, RuntimeFmtParameterId::Style)?;
     let locale = format_string_operand(values, RuntimeFmtParameterId::Locale)?;
     let currency = format_string_operand(values, RuntimeFmtParameterId::Currency)?;
+    if matches!(
+        primary_kind,
+        RuntimeFormatPrimaryKind::ProjectContent | RuntimeFormatPrimaryKind::OptionProjectContent
+    ) {
+        return Ok(match rendered {
+            Ok(value) => RuntimeDialogueFormattedOutcome::Success { value, color },
+            Err(reason) => RuntimeDialogueFormattedOutcome::Failure {
+                reason,
+                value_plain: None,
+            },
+        });
+    }
     let numeric_mode = match (style, currency) {
         (Some("number") | None, Some(code)) => Some(Some(code)),
         (Some("number"), None) => Some(None),
@@ -244,7 +405,9 @@ fn format_success(
                 let semantic_type = match primary_kind {
                     RuntimeFormatPrimaryKind::Scalar(semantic_type)
                     | RuntimeFormatPrimaryKind::OptionScalar(semantic_type) => semantic_type,
-                    RuntimeFormatPrimaryKind::Content => {
+                    RuntimeFormatPrimaryKind::Content
+                    | RuntimeFormatPrimaryKind::ProjectContent
+                    | RuntimeFormatPrimaryKind::OptionProjectContent => {
                         unreachable!("numeric formatter rejected Content")
                     }
                 };
@@ -384,7 +547,9 @@ fn format_numeric(
     let semantic_type = match primary_kind {
         RuntimeFormatPrimaryKind::Scalar(semantic_type)
         | RuntimeFormatPrimaryKind::OptionScalar(semantic_type) => semantic_type,
-        RuntimeFormatPrimaryKind::Content => {
+        RuntimeFormatPrimaryKind::Content
+        | RuntimeFormatPrimaryKind::ProjectContent
+        | RuntimeFormatPrimaryKind::OptionProjectContent => {
             return Err("fmt numeric style requires a numeric value".to_owned());
         }
     };
@@ -423,7 +588,11 @@ fn format_numeric(
             }
         }
         RuntimeFormatPrimaryKind::Scalar(_) => primary.clone(),
-        RuntimeFormatPrimaryKind::Content => unreachable!("checked above"),
+        RuntimeFormatPrimaryKind::Content
+        | RuntimeFormatPrimaryKind::ProjectContent
+        | RuntimeFormatPrimaryKind::OptionProjectContent => {
+            unreachable!("checked above")
+        }
     };
     let value = kind.decimal(&primary)?;
     let formatted = if let Some(code) = currency {
@@ -464,10 +633,28 @@ fn render_primary(
                 }
             }
         }
+        RuntimeFormatPrimaryKind::OptionProjectContent => {
+            match value.clone().try_into_builtin_variant_case() {
+                Ok((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => {
+                    (RuntimeFormatPrimaryKind::ProjectContent, value)
+                }
+                Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => {
+                    return Ok(none_text.map_or_else(
+                        || Err("fmt received Option::None without a `none` operand".to_owned()),
+                        |text| Ok(RuntimeDialogueFormattedSuccess::Text(text.to_owned())),
+                    ));
+                }
+                _ => {
+                    return Err(RuntimeFormatAttemptError::InvalidParameter(
+                        RuntimeFmtParameterId::Value,
+                    ));
+                }
+            }
+        }
         kind => (kind, value.clone()),
     };
     match kind {
-        RuntimeFormatPrimaryKind::Content => {
+        RuntimeFormatPrimaryKind::Content | RuntimeFormatPrimaryKind::ProjectContent => {
             let content = RuntimeDialogueContentValue::try_from_runtime_value(&value)?;
             Ok(Ok(RuntimeDialogueFormattedSuccess::Content(Box::new(
                 content,
@@ -484,7 +671,10 @@ fn render_primary(
                 Err(error) => Err(error.to_string()),
             },
         ),
-        RuntimeFormatPrimaryKind::OptionScalar(_) => unreachable!("Option was decoded above"),
+        RuntimeFormatPrimaryKind::OptionScalar(_)
+        | RuntimeFormatPrimaryKind::OptionProjectContent => {
+            unreachable!("Option was decoded above")
+        }
     }
 }
 

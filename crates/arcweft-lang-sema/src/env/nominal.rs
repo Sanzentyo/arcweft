@@ -1172,7 +1172,6 @@ impl TypeCheckEnv {
             ("Duration", TypeKind::Duration),
             ("DebugStatePath", TypeKind::DebugStatePath),
             ("ObservationFieldPath", TypeKind::ObservationFieldPath),
-            ("DisplayText", TypeKind::DisplayText),
         ]
         .into_iter()
         .fold(self, |environment, (name, semantics)| {
@@ -1208,7 +1207,35 @@ impl TypeCheckEnv {
                 )
                 .expect("DataPath has a valid exact standard record schema"),
             )
-            .expect("DataPath has one standard nominal owner");
+            .expect("DataPath has one standard nominal owner")
+            .try_with_nominal_record(
+                standard_domain_record(
+                    "DisplayContext",
+                    TypeKind::DisplayContext,
+                    [
+                        ("locale".to_owned(), TypeKind::String),
+                        (
+                            "style".to_owned(),
+                            TypeKind::Option(Box::new(TypeKind::String)),
+                        ),
+                        (
+                            "currency".to_owned(),
+                            TypeKind::Option(Box::new(TypeKind::String)),
+                        ),
+                    ],
+                )
+                .expect("DisplayContext has a valid exact standard record schema"),
+            )
+            .expect("DisplayContext has one standard nominal owner")
+            .try_with_nominal_record(
+                standard_domain_record(
+                    "DisplayError",
+                    TypeKind::DisplayError,
+                    [("message".to_owned(), TypeKind::String)],
+                )
+                .expect("DisplayError has a valid exact standard record schema"),
+            )
+            .expect("DisplayError has one standard nominal owner");
         let environment = [
             CompileTimeScalarKind::Milli,
             CompileTimeScalarKind::Ratio,

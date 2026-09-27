@@ -13,12 +13,24 @@ pub(super) fn materialize_root_closures(
 ) -> Result<Vec<RuntimeClosureInstanceFact>, RuntimeSemanticProjectionError> {
     let execution = analysis.execution_projection();
     let mut roots = BTreeMap::new();
+    let selected_method_owners = runtime_owners
+        .edges()
+        .filter(|edge| {
+            matches!(
+                edge.kind(),
+                HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod { .. }
+            )
+        })
+        .map(|edge| edge.target().clone())
+        .collect::<BTreeSet<_>>();
     let mut projection = ProjectInstanceProjection::Materialize {
         graph: instances,
         caller: None,
     };
     for executable in runtime_owners.reachable_executables() {
-        if matches!(executable, HirRuntimeExecutableOwner::Closure(_)) {
+        if matches!(executable, HirRuntimeExecutableOwner::Closure(_))
+            || selected_method_owners.contains(executable)
+        {
             continue;
         }
         if let HirRuntimeExecutableOwner::Item(owner) = executable {

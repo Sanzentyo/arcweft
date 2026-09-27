@@ -107,9 +107,11 @@ pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
+pub(crate) use format_content::project_display_layout;
 pub use format_content::{
     RuntimeFormatAttemptError, RuntimeFormatContext, RuntimeFormatDataIdentity,
-    RuntimeFormatPrimaryKind, finish_format_content_attempt,
+    RuntimeFormatPrimaryKind, finish_format_content_attempt, project_display_context,
+    project_display_result,
 };
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
@@ -1619,7 +1621,10 @@ pub enum RuntimeExprKind {
     /// constructs one exact Formatted Content binding against its template.
     FormatContent {
         template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        attempt: Option<crate::runtime_id::RuntimeFormatAttemptId>,
         operands: Vec<RuntimeFormatContentOperand>,
+        project_method: Option<RuntimeTraitMethodId>,
+        project_option: bool,
     },
     /// One checked CharacterDialogue factory or immutable reconfiguration.
     /// Every authored Set contribution remains an executable child.
@@ -1925,8 +1930,18 @@ impl fmt::Display for RuntimeExpr {
                     effects.len()
                 )
             }
-            RuntimeExprKind::FormatContent { template, operands } => {
-                write!(f, "format_content/{template}/{}", operands.len())
+            RuntimeExprKind::FormatContent {
+                template,
+                attempt,
+                operands,
+                project_method,
+                project_option,
+            } => {
+                write!(
+                    f,
+                    "format_content/{template}/attempt={attempt:?}/{}/project={project_method:?}/option={project_option}",
+                    operands.len(),
+                )
             }
             RuntimeExprKind::CharacterDialogue {
                 operation, fields, ..

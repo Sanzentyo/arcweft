@@ -162,6 +162,19 @@ fn digest_edge_kind(hasher: &mut Sha256, kind: &HirRuntimeReachabilityEdgeKind) 
             let declaration = CallableDeclarationKey::ImplMethod(method.clone());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
+        HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+            expression,
+            implementation,
+            member,
+            method,
+        } => {
+            hasher.update([7]);
+            hasher.update(expression.raw().cache_fingerprint_input());
+            hasher.update(implementation.raw().cache_fingerprint_input());
+            hasher.update(member.to_le_bytes());
+            let declaration = CallableDeclarationKey::ImplMethod(method.clone());
+            hasher.update(declaration.semantic_digest().as_bytes());
+        }
         HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
             role,
             implementation,

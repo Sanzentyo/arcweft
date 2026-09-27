@@ -20,8 +20,14 @@ struct IndexedCallableCall<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum IndexedCallableSuspension {
     Project(CheckedCallableId),
+    Closure(ExprId),
     NonSuspending,
     MaySuspend,
+}
+
+struct IndexedClosureExecution {
+    direct_suspension: bool,
+    expressions: Box<[ExprId]>,
 }
 
 struct IndexedCallableExecution {
@@ -38,6 +44,7 @@ pub(super) struct CallableEffectGraph<'a> {
     edges: CallableEdges,
     calls_by_expression: BTreeMap<ExprId, IndexedCallableCall<'a>>,
     execution_by_expression: BTreeMap<ExprId, IndexedCallableExecution>,
+    closure_execution: BTreeMap<ExprId, IndexedClosureExecution>,
 }
 
 pub(super) fn prepared_fixed_call_effect_rows(
@@ -86,6 +93,7 @@ impl<'a> CallableEffectGraph<'a> {
         let body_ids = owners.keys().cloned().collect::<BTreeSet<_>>();
         let mut calls_by_expression = BTreeMap::<ExprId, IndexedCallableCall<'a>>::new();
         let mut execution_by_expression = BTreeMap::new();
+        let mut closure_execution = BTreeMap::new();
 
         for node in prepared_calls.selected_nodes() {
             control.check()?;
@@ -109,6 +117,16 @@ impl<'a> CallableEffectGraph<'a> {
                 && body_ids.contains(target)
             {
                 IndexedCallableSuspension::Project(target.clone())
+            } else if let Some(producer) = selected.exact_closure_producer()
+                && let Some(closure) = execution.closure(producer)
+            {
+                closure_execution
+                    .entry(producer)
+                    .or_insert_with(|| IndexedClosureExecution {
+                        direct_suspension: closure.direct_suspension(),
+                        expressions: closure.expressions().collect(),
+                    });
+                IndexedCallableSuspension::Closure(producer)
             } else if selected.requires_value_callee()
                 || matches!(
                     selected.checked().map(CheckedCallableId::declaration),
@@ -213,6 +231,7 @@ impl<'a> CallableEffectGraph<'a> {
             edges,
             calls_by_expression,
             execution_by_expression,
+            closure_execution,
         })
     }
 
@@ -227,35 +246,24 @@ impl<'a> CallableEffectGraph<'a> {
         {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
-        let direct = rows.clone();
-        for owner in self.owners.keys() {
-            let CheckedCallableDeclaration::Project(declaration) = owner.declaration() else {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            };
-            let may_suspend = self.selected_expressions_may_suspend(
-                execution
-                    .declaration_expressions(declaration)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?,
-                &direct,
-            );
-            if may_suspend {
-                *rows
-                    .get_mut(owner)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)? = true;
-            }
-        }
         for iteration in 0..=self.owners.len() {
             control.check()?;
             let previous = rows.clone();
             let mut changed = false;
-            for (caller, targets) in &self.edges {
+            for owner in self.owners.keys() {
+                let CheckedCallableDeclaration::Project(declaration) = owner.declaration() else {
+                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                };
                 let row = rows
-                    .get_mut(caller)
+                    .get_mut(owner)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 if !*row
-                    && targets
-                        .keys()
-                        .any(|target| previous.get(target).copied().unwrap_or(true))
+                    && self.selected_expressions_may_suspend(
+                        execution
+                            .declaration_expressions(declaration)
+                            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?,
+                        &previous,
+                    )
                 {
                     *row = true;
                     changed = true;
@@ -350,17 +358,34 @@ impl<'a> CallableEffectGraph<'a> {
         expressions: impl IntoIterator<Item = ExprId>,
         rows: &BTreeMap<CheckedCallableId, bool>,
     ) -> bool {
-        expressions.into_iter().any(|expression| {
-            self.execution_by_expression
-                .get(&expression)
-                .is_some_and(|call| match &call.suspension {
-                    IndexedCallableSuspension::Project(target) => {
-                        rows.get(target).copied().unwrap_or(true)
+        let mut pending = expressions.into_iter().collect::<Vec<_>>();
+        let mut visited_closures = BTreeSet::new();
+        while let Some(expression) = pending.pop() {
+            let Some(call) = self.execution_by_expression.get(&expression) else {
+                continue;
+            };
+            match &call.suspension {
+                IndexedCallableSuspension::Project(target) => {
+                    if rows.get(target).copied().unwrap_or(true) {
+                        return true;
                     }
-                    IndexedCallableSuspension::NonSuspending => false,
-                    IndexedCallableSuspension::MaySuspend => true,
-                })
-        })
+                }
+                IndexedCallableSuspension::Closure(owner) => {
+                    let Some(closure) = self.closure_execution.get(owner) else {
+                        return true;
+                    };
+                    if visited_closures.insert(*owner) {
+                        if closure.direct_suspension {
+                            return true;
+                        }
+                        pending.extend(closure.expressions.iter().copied());
+                    }
+                }
+                IndexedCallableSuspension::NonSuspending => {}
+                IndexedCallableSuspension::MaySuspend => return true,
+            }
+        }
+        false
     }
 
     pub(super) fn reject_recursive_contracts(

@@ -67,7 +67,8 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
                     visit_ops(&arm.ops, visitor);
                 }
             }
-            FlowOp::Loop { body, .. }
+            FlowOp::FormatOperandAttempt { body, .. }
+            | FlowOp::Loop { body, .. }
             | FlowOp::While { body, .. }
             | FlowOp::WhileLet { body, .. }
             | FlowOp::For { body, .. }
@@ -80,6 +81,7 @@ fn visit_ops(ops: &[FlowOp], visitor: &mut impl FnMut(&FlowOp)) {
             | FlowOp::ForNext { body, .. } => visit_ops(body, visitor),
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
+            | FlowOp::CompleteFormatOperand { .. }
             | FlowOp::AssignNominalField { .. }
             | FlowOp::LineOperation { .. }
             | FlowOp::CommitDialogueResult { .. }

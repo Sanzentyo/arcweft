@@ -477,7 +477,14 @@ flow main() -> i64 {
                 _ => None,
             })
             .expect("instance semantic catalog owns its explicit closure");
-        assert_eq!(closure.key().enclosing_instance(), Some(instance.key()));
+        assert_eq!(
+            closure.key().enclosing_owner(),
+            Some(
+                &arcweft_runtime_plan::semantic_facts::RuntimeClosureLexicalOwner::ProjectFunction(
+                    instance.key().clone(),
+                )
+            ),
+        );
         match closure_owner {
             Some(owner) => assert_eq!(owner, closure.owner()),
             None => closure_owner = Some(closure.owner()),
@@ -635,6 +642,443 @@ flow main() {
         }),
         "diagnostics={:?}",
         error.diagnostics()
+    );
+}
+
+#[test]
+fn selected_project_display_methods_are_reachable_from_fmt_and_interpolation() {
+    use arcweft_lang_hir::project::{
+        HirRuntimeExecutableOwner, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilitySite,
+    };
+    use arcweft_lang_sema::checked_rich_text::{CheckedDialogueToken, CheckedDisplayWitness};
+
+    let (project, context) = removed_role_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+struct RouteInfo { label: String }
+impl DisplayText for RouteInfo {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        Ok(fmt(self.label))
+    }
+}
+
+flow main(value: RouteInfo) {
+    let formatted = fmt(value, style="currency", locale="ja-JP", currency="JPY");
+    alice[#[value]];
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("selected project display methods compile");
+    let analysis = compiled.analysis_lease();
+    let executable = analysis.hir_project().analysis_view().unwrap();
+    let reachability = lower::project_runtime_reachability(
+        executable,
+        analysis.project_symbols(),
+        analysis.final_analysis(),
+        analysis.checked_entries(),
+        lower::RuntimeEmissionMode::CheckAll,
+    )
+    .expect("selected display reachability");
+    let (fmt_call, conformance) = analysis
+        .final_analysis()
+        .calls()
+        .find_map(|(owner, facts)| {
+            facts
+                .selected_application()?
+                .format_call()?
+                .witness()
+                .project_conformance()
+                .map(|conformance| (owner, conformance))
+        })
+        .expect("fmt selects a project DisplayText method");
+    let interpolation = analysis
+        .final_analysis()
+        .expressions()
+        .find_map(|(_, checked)| {
+            let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::DialogueApplication {
+                rich_text,
+                ..
+            } = checked.resolution() else {
+                return None;
+            };
+            rich_text.content().tokens().iter().find_map(|token| {
+                let CheckedDialogueToken::Interpolation {
+                    expression,
+                    witness: Some(CheckedDisplayWitness::Project(selected)),
+                    ..
+                } = token else {
+                    return None;
+                };
+                (selected.method_declaration() == conformance.method_declaration())
+                    .then_some(*expression)
+            })
+        })
+        .expect("plain interpolation selects the same project method");
+    let target = HirRuntimeExecutableOwner::ImplMethod(conformance.method_declaration().clone());
+    assert!(reachability.contains_runtime_owner(&target));
+    let expected_sources = [fmt_call, interpolation]
+        .into_iter()
+        .map(HirRuntimeReachabilitySite::Expression)
+        .collect::<std::collections::BTreeSet<_>>();
+    let actual_sources = reachability
+        .edges()
+        .filter_map(|edge| match edge.kind() {
+            HirRuntimeReachabilityEdgeKind::CheckedSelectedTraitMethod {
+                implementation,
+                member,
+                method,
+                ..
+            } if *implementation == conformance.implementation()
+                && *member == conformance.method_ordinal()
+                && method == conformance.method_declaration()
+                && edge.target() == &target =>
+            {
+                Some(edge.source())
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(actual_sources, expected_sources);
+    let method_owners = reachability.executable_owners(&target).unwrap();
+    assert!(method_owners.locals().count() >= 2);
+    assert!(method_owners.expressions().count() >= 2);
+    assert!(method_owners.types().count() >= 1);
+
+    let methods = compiled
+        .runtime_facts()
+        .trait_methods()
+        .filter(|method| {
+            method.trait_identity()
+                == &arcweft_runtime_plan::semantic_facts::RuntimeTraitIdentity::StandardDisplayText
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(methods.len(), 1);
+    let method = methods[0];
+    assert_eq!(method.declaration(), conformance.method_declaration());
+    let semantics = method
+        .closed_semantics()
+        .expect("DisplayText method is closed");
+    assert_eq!(semantics.partition().executable(), &target);
+    assert!(semantics.type_projection().len() >= 3);
+    let mut project_slots = 0;
+    compiled
+        .runtime_facts()
+        .visit_dialogue_content_fragments(&mut |_, fragment| {
+            for value in fragment.values() {
+                let Some(project) = value.project_display() else {
+                    continue;
+                };
+                project_slots += 1;
+                assert_eq!(value.expression(), interpolation);
+                assert_eq!(
+                    value.role(),
+                    arcweft_core::plan::RuntimeDialogueValueRole::Content
+                );
+                assert_eq!(project.method(), method.key());
+                assert!(
+                    compiled
+                        .runtime_facts()
+                        .format_template(project.template())
+                        .is_some()
+                );
+            }
+        });
+    assert_eq!(project_slots, 1);
+}
+
+#[test]
+fn generic_display_text_publishes_distinct_closed_method_instances() {
+    let (project, context) = removed_role_project(
+        r#"
+struct Route<T> { label: T }
+impl<T> DisplayText for Route<T> {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        let label = self.label;
+        let render = || fmt(label);
+        Ok(render())
+    }
+}
+
+flow main(number: Route<i32>, word: Route<String>) {
+    let first = fmt(number);
+    let second = fmt(word);
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("two closed Route display instances compile");
+    let methods = compiled
+        .runtime_facts()
+        .trait_methods()
+        .filter(|method| {
+            method.trait_identity()
+                == &arcweft_runtime_plan::semantic_facts::RuntimeTraitIdentity::StandardDisplayText
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(methods.len(), 2);
+    assert_eq!(methods[0].declaration(), methods[1].declaration());
+    assert_ne!(methods[0].key(), methods[1].key());
+    for method in methods {
+        let semantics = method
+            .closed_semantics()
+            .expect("generic method body is closed");
+        assert!(semantics.partition().locals().len() >= 2);
+        assert!(semantics.partition().expressions().len() >= 2);
+        let closure = semantics
+            .expressions()
+            .iter()
+            .find_map(|expression| match expression.payload() {
+                arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExpressionPayload::Closure(closure) => Some(closure.as_ref()),
+                _ => None,
+            })
+            .expect("generic method owns its nested formatter closure");
+        assert_eq!(
+            closure.key().enclosing_owner(),
+            Some(
+                &arcweft_runtime_plan::semantic_facts::RuntimeClosureLexicalOwner::TraitMethod(
+                    method.key().clone()
+                )
+            )
+        );
+        assert!(
+            semantics
+                .type_projection()
+                .iter()
+                .all(|row| row.ty().is_some()
+                    || matches!(
+            row.owner(),
+            arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeOwner::Expression(_)
+        ))
+        );
+    }
+}
+
+#[test]
+fn project_display_context_runs_from_source_flow() {
+    use arcweft_core::{
+        engine::{Engine, FlowExit, FlowFiberStatus},
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        value::{
+            RuntimeDialogueContentBinding, RuntimeDialogueContentValue,
+            RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess,
+        },
+    };
+
+    fn content_text(content: &RuntimeDialogueContentValue) -> String {
+        let [RuntimeDialogueContentBinding::Formatted { value, .. }] = content.bindings() else {
+            panic!("one fmt call produces one formatted Content binding");
+        };
+        let RuntimeDialogueFormattedOutcome::Success { value, .. } = value.outcome() else {
+            panic!("project DisplayText formatting succeeds");
+        };
+        match value {
+            RuntimeDialogueFormattedSuccess::Text(text) => text.clone(),
+            RuntimeDialogueFormattedSuccess::Content(nested) => content_text(nested),
+        }
+    }
+
+    let (project, context) = removed_role_project(
+        r#"
+struct LocaleProbe { marker: i32 }
+struct StyleProbe { marker: i32 }
+struct CurrencyProbe { marker: i32 }
+impl DisplayText for LocaleProbe {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        Ok(fmt(ctx.locale))
+    }
+}
+impl DisplayText for StyleProbe {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        Ok(fmt(ctx.style, none="missing"))
+    }
+}
+impl DisplayText for CurrencyProbe {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        Ok(fmt(ctx.currency, none="missing"))
+    }
+}
+flow main() -> String {
+    let rendered_locale = fmt(LocaleProbe { marker = 0i32 }, style="currency", locale="ja-JP", currency="JPY");
+    let rendered_style = fmt(StyleProbe { marker = 0i32 }, style="currency", locale="ja-JP", currency="JPY");
+    let rendered_currency = fmt(CurrencyProbe { marker = 0i32 }, style="currency", locale="ja-JP", currency="JPY");
+    return "done"
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("source project DisplayText context compiles");
+    let mut plan = compiled.runtime_plan().plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6c; 32])
+            .expect("test artifact fingerprint"),
+    )
+    .expect("source plan binds its test artifact");
+    let flow = plan
+        .flows()
+        .first()
+        .expect("authored flow is present")
+        .id
+        .clone();
+    let mut engine = Engine::for_flow(plan, &flow).expect("authored flow starts");
+    let mut actual = std::collections::BTreeSet::new();
+    let mut completed = false;
+    for _ in 0..128 {
+        let output = engine
+            .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
+            .output;
+        for binding in engine.fiber().env.bindings_snapshot() {
+            if let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&binding.value)
+            {
+                actual.insert(content_text(&content));
+            }
+        }
+        match &engine.fiber().status {
+            FlowFiberStatus::Done(FlowExit::Return(value)) => {
+                assert_eq!(value, "done");
+                completed = true;
+                break;
+            }
+            FlowFiberStatus::Failed(reason) => {
+                panic!(
+                    "source DisplayContext flow failed: {reason}; diagnostics={:?}",
+                    output.diagnostics
+                )
+            }
+            _ => {}
+        }
+    }
+    assert!(completed, "source DisplayContext flow completes");
+    assert_eq!(
+        actual,
+        ["ja-JP", "currency", "JPY"].map(str::to_owned).into()
+    );
+}
+#[test]
+fn source_project_call_failure_enters_fmt_inline_fallback() {
+    use arcweft_core::{
+        engine::{Engine, FlowExit, FlowFiberStatus},
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        value::{
+            RuntimeDialogueContentBinding, RuntimeDialogueContentValue,
+            RuntimeDialogueFormattedFailureSelection, RuntimeDialogueFormattedOutcome,
+            RuntimeValue,
+        },
+    };
+
+    fn is_recovered_fallback(failure: &RuntimeDialogueFormattedFailureSelection) -> bool {
+        let RuntimeDialogueFormattedFailureSelection::OnError(RuntimeValue::Variant {
+            name: policy,
+            payload: Some(fallback),
+            ..
+        }) = failure
+        else {
+            return false;
+        };
+        let RuntimeValue::Variant {
+            name: source,
+            payload: Some(value),
+            ..
+        } = fallback.as_ref()
+        else {
+            return false;
+        };
+        let RuntimeValue::Tuple(fields) = value.as_ref() else {
+            return false;
+        };
+        policy == "Fallback"
+            && source == "Text"
+            && matches!(fields.first(), Some(RuntimeValue::String(text)) if text == "recovered")
+    }
+
+    let (project, context) = removed_role_project(
+        r#"
+struct Route { label: i32 }
+impl DisplayText for Route {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        Ok(fmt(self.label))
+    }
+}
+fn source(divisor: i32) -> Route { Route { label = 42i32 / divisor } }
+fn choose_style() -> String { "number" }
+fn fallback_text() -> String { "recovered" }
+flow main() -> String {
+    let rendered = fmt(source(0i32), style=choose_style(), on_error=InlineFailure.fallback(fallback_text()));
+    return "done"
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("Flow-lowered fmt operands compile as one selected attempt");
+    let mut plan = compiled.runtime_plan().plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6d; 32])
+            .expect("test artifact fingerprint"),
+    )
+    .expect("source plan binds its test artifact");
+    assert!(plan.format_attempts().iter().any(|attempt| {
+        attempt
+            .operands()
+            .iter()
+            .map(|operand| operand.parameter())
+            .eq([
+                arcweft_core::value::RuntimeFmtParameterId::Value,
+                arcweft_core::value::RuntimeFmtParameterId::Style,
+                arcweft_core::value::RuntimeFmtParameterId::OnError,
+            ])
+    }));
+    let flow = plan
+        .flows()
+        .first()
+        .expect("authored flow is present")
+        .id
+        .clone();
+    let mut engine = Engine::for_flow(plan, &flow).expect("authored flow starts");
+    let mut observed_fallback = false;
+    let mut observed_style = false;
+    let mut completed = false;
+    for _ in 0..128 {
+        let output = engine
+            .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
+            .output;
+        for binding in engine.fiber().env.bindings_snapshot() {
+            observed_style |=
+                matches!(&binding.value, RuntimeValue::String(text) if text == "number");
+            let Ok(content) = RuntimeDialogueContentValue::try_from_runtime_value(&binding.value)
+            else {
+                continue;
+            };
+            let [RuntimeDialogueContentBinding::Formatted { value, .. }] = content.bindings()
+            else {
+                continue;
+            };
+            observed_fallback |= matches!(value.outcome(), RuntimeDialogueFormattedOutcome::Failure { reason, .. } if reason.contains("division by zero"))
+                && is_recovered_fallback(value.failure_selection());
+        }
+        match &engine.fiber().status {
+            FlowFiberStatus::Done(FlowExit::Return(value)) => {
+                assert_eq!(value, "done");
+                completed = true;
+                break;
+            }
+            FlowFiberStatus::Failed(reason) => {
+                panic!(
+                    "source fmt attempt failed: {reason}; diagnostics={:?}",
+                    output.diagnostics
+                )
+            }
+            _ => {}
+        }
+    }
+    assert!(completed, "recoverable source fmt flow completes");
+    assert!(observed_style, "later style operand is evaluated");
+    assert!(
+        observed_fallback,
+        "source failure retains the evaluated fallback"
     );
 }
 

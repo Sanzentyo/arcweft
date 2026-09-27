@@ -10,6 +10,43 @@ fn absolute_entity_reference(value: &str) -> HirIdRef {
 }
 
 #[test]
+fn trait_names_publish_typed_bindings_only_in_visible_scopes() {
+    let (documents, project) = project_modules(&[
+        ("", "use crate.local.DisplayText as ImportedDisplay\n"),
+        (
+            "local",
+            "pub trait DisplayText { fn display_text(self) -> Int }\n",
+        ),
+        (
+            "unrelated",
+            "pub trait DisplayText { fn display_text(self) -> Int }\n",
+        ),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "trait-scope-binding"),
+    )
+    .expect("Trait bindings link")
+    .into_table();
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("lookup source");
+    let root = CanonicalModulePath::crate_root();
+    assert!(matches!(
+        table.resolve(&root, &symbol_path("ImportedDisplay"), &source),
+        Ok(ResolvedProjectSymbol::Trait(id)) if id.module() == &module_path("local")
+    ));
+    assert!(matches!(
+        table.resolve(&root, &symbol_path("DisplayText"), &source),
+        Err(ProjectSymbolResolutionError::Unknown { .. })
+    ));
+    assert!(matches!(
+        table.resolve(&module_path("unrelated"), &symbol_path("DisplayText"), &source),
+        Ok(ResolvedProjectSymbol::Trait(id)) if id.module() == &module_path("unrelated")
+    ));
+}
+
+#[test]
 fn view_has_one_retained_binding_and_one_nonbinding_callable_row() {
     let source_text = "view Main() {\n    Panel {}\n}\n";
     let (document, project) = project(source_text);

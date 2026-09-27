@@ -20,6 +20,10 @@ pub(crate) struct TypeParameterSubstitutions {
 }
 
 impl TypeParameterSubstitutions {
+    /// Closed declaration bindings selected for one project impl instance.
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = (&GenericTypeParameterId, &TypeKind)> {
+        self.bindings.iter()
+    }
     /// Infers bindings from one declared parameter shape and actual argument.
     pub(crate) fn observe(&mut self, declared: &TypeKind, actual: &TypeKind) -> bool {
         let mut bindings = self.bindings.clone();
@@ -47,7 +51,7 @@ impl TypeParameterSubstitutions {
     }
 }
 
-fn contains_generic_parameter(ty: &TypeKind) -> bool {
+pub(crate) fn contains_generic_parameter(ty: &TypeKind) -> bool {
     contains_generic_parameter_where(ty, &|_| true)
 }
 
@@ -156,7 +160,8 @@ fn atomic_contains_generic_parameter(
         | TypeKind::CueHandle
         | TypeKind::VoiceHandle
         | TypeKind::StatementIngress(_)
-        | TypeKind::DisplayText
+        | TypeKind::DisplayContext
+        | TypeKind::DisplayError
         | TypeKind::DebugStatePath
         | TypeKind::ObservationFieldPath
         | TypeKind::Predicate

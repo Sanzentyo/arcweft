@@ -460,7 +460,13 @@ impl<'a> NominalGraphProjection<'a> {
 
     fn schema_inner(&mut self, ty: &TypeKind, depth: u64) -> Result<Schema, Error> {
         self.budget.type_node(depth)?;
-        if matches!(ty, TypeKind::DataError | TypeKind::DataPath) {
+        if matches!(
+            ty,
+            TypeKind::DataError
+                | TypeKind::DataPath
+                | TypeKind::DisplayContext
+                | TypeKind::DisplayError
+        ) {
             let semantic = self.semantic_identity(ty)?;
             if let Some(record) = self
                 .semantic_shapes

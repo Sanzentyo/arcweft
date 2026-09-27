@@ -336,6 +336,24 @@ impl Wire for RuntimeDialogueContentTemplateId {
     }
 }
 
+impl Wire for crate::runtime_id::RuntimeFormatAttemptId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.get().get().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let value = u32::read_wire(reader)?;
+        std::num::NonZeroU32::new(value)
+            .map(crate::runtime_id::RuntimeFormatAttemptId::from_accepted_ordinal)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "format attempt",
+                message: "format attempt identity must be nonzero".to_owned(),
+                offset,
+            })
+    }
+}
+
 impl Wire for RuntimeDialogueContentTemplateDigest {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_bytes(self.as_bytes());

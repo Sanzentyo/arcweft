@@ -37,7 +37,6 @@ pub(crate) use constraints::NoConstraintClient;
 pub use constraints::TypeInstantiationError;
 pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
-#[cfg(test)]
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
 pub(crate) use generic_use::{
@@ -63,6 +62,7 @@ pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use projection_control::UnmeteredTypeProjection;
 pub use projection_control::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind};
 pub(crate) use substitution::TypeParameterSubstitutions;
+pub(crate) use substitution::contains_generic_parameter;
 pub(crate) use variant_payload::{
     AcceptedVariantCaseSemanticId, AcceptedVariantPayloadFieldSemanticId,
     VariantPayloadTypeChildren,
@@ -988,7 +988,10 @@ pub enum TypeKind {
         family: IteratorStateKind,
         item: Box<TypeKind>,
     },
-    DisplayText,
+    /// Formatter-owned, source-visible context passed to `DisplayText` methods.
+    DisplayContext,
+    /// Recoverable error returned by `DisplayText` methods.
+    DisplayError,
     DebugStatePath,
     ObservationFieldPath,
     Ref(EntityType),
@@ -1351,7 +1354,8 @@ impl TypeKind {
             Self::StatementIngress(StandardStatementIngressTypeId::FrameBoundary) => {
                 "FrameBoundary"
             }
-            Self::DisplayText => "DisplayText",
+            Self::DisplayContext => "DisplayContext",
+            Self::DisplayError => "DisplayError",
             Self::DebugStatePath => "DebugStatePath",
             Self::ObservationFieldPath => "ObservationFieldPath",
             Self::Predicate => "Predicate",
@@ -1616,6 +1620,8 @@ impl TypeKind {
             "DataFormat" => Self::DataFormat,
             "DataValue" => Self::DataValue,
             "DataError" => Self::DataError,
+            "DisplayContext" => Self::DisplayContext,
+            "DisplayError" => Self::DisplayError,
             "DataErrorKind" => Self::DataErrorKind,
             "DataPath" => Self::DataPath,
             "DataPathSegment" => Self::DataPathSegment,

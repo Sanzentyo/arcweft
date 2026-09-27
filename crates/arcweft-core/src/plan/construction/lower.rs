@@ -470,7 +470,13 @@ impl RuntimePlanBuilder {
                     lowered_effects,
                 ));
             }
-            RuntimeExprSeedKind::FormatContent { template, operands } => {
+            RuntimeExprSeedKind::FormatContent {
+                template,
+                attempt,
+                operands,
+                project_method: project_method_seed,
+                project_option,
+            } => {
                 if !self.is_exact_dialogue_content_type(ty) {
                     return Err(RuntimePlanBuildError::InvalidDialogueContentType {
                         slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0)
@@ -491,6 +497,97 @@ impl RuntimePlanBuilder {
                 );
                 if !exact_formatted_slot || !manifest.effects().is_empty() {
                     return Err(RuntimePlanBuildError::InvalidFormatContentTemplate { template });
+                }
+
+                if let Some(attempt_seed) = attempt {
+                    let attempt = attempt_seed
+                        .resolve(&self.issuer)
+                        .ok_or(RuntimePlanBuildError::ForeignFormatAttemptSeed)?;
+                    if !operands.is_empty() {
+                        return Err(RuntimePlanBuildError::FormatAttemptHasInlineOperands {
+                            attempt,
+                        });
+                    }
+                    let format_attempt = self
+                        .format_attempts
+                        .get(attempt.index())
+                        .filter(|candidate| candidate.id() == attempt)
+                        .ok_or(RuntimePlanBuildError::UnknownFormatAttempt { attempt })?;
+                    if format_attempt.template() != template {
+                        return Err(RuntimePlanBuildError::FormatAttemptTemplateMismatch {
+                            attempt,
+                            template,
+                        });
+                    }
+                    let value_ty = format_attempt
+                        .operands()
+                        .iter()
+                        .find(|operand| operand.parameter() == RuntimeFmtParameterId::Value)
+                        .map(super::super::RuntimeFormatAttemptOperand::ty)
+                        .ok_or(RuntimePlanBuildError::MissingFormatPrimaryValue)?;
+                    let receiver_type = if project_option {
+                        match self.projection(value_ty)? {
+                            RuntimePlanTypeProjection::Option { item, .. } => *item,
+                            _ => {
+                                return Err(RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                    context: "OptionProject receiver type",
+                                });
+                            }
+                        }
+                    } else {
+                        value_ty
+                    };
+                    let project_method = project_method_seed
+                        .as_ref()
+                        .map(|method| {
+                            let (method_id, receiver, inputs, result) = method
+                                .resolve(&self.issuer)
+                                .ok_or(RuntimePlanBuildError::ForeignTraitMethodSeed)?;
+                            if receiver != RuntimeReceiverMode::Owned
+                                || inputs.len() != 2
+                                || inputs[0] != receiver_type
+                            {
+                                return Err(RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                    context: "receiver and DisplayContext inputs",
+                                });
+                            }
+                            let returns_content = match self.projection(result)? {
+                                RuntimePlanTypeProjection::Result { value, .. } => {
+                                    self.is_exact_dialogue_content_type(*value)
+                                }
+                                _ => false,
+                            };
+                            if !returns_content {
+                                return Err(RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                    context: "Result<Content, DisplayError> output",
+                                });
+                            }
+                            Ok(method_id)
+                        })
+                        .transpose()?;
+                    if project_option && project_method.is_none() {
+                        return Err(RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                            context: "OptionProject requires a selected project method",
+                        });
+                    }
+                    if project_method.is_none()
+                        && (project_option || !self.is_format_display_type(value_ty)?)
+                    {
+                        return Err(RuntimePlanBuildError::InvalidFormatParameterType {
+                            parameter: RuntimeFmtParameterId::Value,
+                            ty: value_ty,
+                        });
+                    }
+                    return Ok(RuntimeExpr::from_admitted_parts(
+                        ty,
+                        RuntimeExprKind::FormatContent {
+                            template,
+                            attempt: Some(attempt),
+                            operands: Vec::new(),
+                            project_method,
+                            project_option,
+                        },
+                    ));
                 }
 
                 let mut seen = BTreeSet::new();
@@ -536,9 +633,54 @@ impl RuntimePlanBuilder {
                                 RuntimePlanTypeProjection::Bool
                             )
                         }
-                        RuntimeFmtParameterId::Value => {
-                            self.is_format_display_type(expression.ty())?
-                        }
+                        RuntimeFmtParameterId::Value => match project_method_seed.as_ref() {
+                            Some(method) => {
+                                let receiver_type = if project_option {
+                                    match self.projection(expression.ty())? {
+                                        RuntimePlanTypeProjection::Option { item, .. } => *item,
+                                        _ => {
+                                            return Err(
+                                                RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                                    context: "OptionProject receiver type",
+                                                },
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    expression.ty()
+                                };
+                                let (_, receiver, inputs, result) = method
+                                    .resolve(&self.issuer)
+                                    .ok_or(RuntimePlanBuildError::ForeignTraitMethodSeed)?;
+                                if receiver != RuntimeReceiverMode::Owned
+                                    || inputs.len() != 2
+                                    || inputs[0] != receiver_type
+                                {
+                                    return Err(
+                                        RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                            context: "receiver and DisplayContext inputs",
+                                        },
+                                    );
+                                }
+                                let returns_content = match self.projection(result)? {
+                                    RuntimePlanTypeProjection::Result { value, .. } => {
+                                        self.is_exact_dialogue_content_type(*value)
+                                    }
+                                    _ => false,
+                                };
+                                if !returns_content {
+                                    return Err(
+                                        RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                                            context: "Result<Content, DisplayError> output",
+                                        },
+                                    );
+                                }
+                                true
+                            }
+                            None => {
+                                !project_option && self.is_format_display_type(expression.ty())?
+                            }
+                        },
                         // InlineFailure's nominal identity belongs to the
                         // selected project schema, which Core deliberately
                         // does not duplicate. The selected producer's checked
@@ -559,9 +701,26 @@ impl RuntimePlanBuilder {
                 if !primary_present {
                     return Err(RuntimePlanBuildError::MissingFormatPrimaryValue);
                 }
+                if project_option && project_method_seed.is_none() {
+                    return Err(RuntimePlanBuildError::InvalidFormatDisplayMethod {
+                        context: "OptionProject requires a selected project method",
+                    });
+                }
+                let project_method = project_method_seed
+                    .as_ref()
+                    .map(|method| {
+                        method
+                            .resolve(&self.issuer)
+                            .map(|(method_id, _, _, _)| method_id)
+                            .ok_or(RuntimePlanBuildError::ForeignTraitMethodSeed)
+                    })
+                    .transpose()?;
                 RuntimeExprKind::FormatContent {
                     template,
+                    attempt: None,
                     operands: lowered,
+                    project_method,
+                    project_option,
                 }
             }
             RuntimeExprSeedKind::BracketSeq(items) => {
@@ -1108,7 +1267,7 @@ impl RuntimePlanBuilder {
         Ok(ty)
     }
 
-    fn projection(
+    pub(super) fn projection(
         &self,
         ty: RuntimePlanTypeId,
     ) -> Result<&RuntimePlanTypeProjection<RuntimePlanTypeId>, RuntimePlanBuildError> {
@@ -1950,7 +2109,7 @@ impl RuntimePlanBuilder {
         ))
     }
 
-    fn is_string(&self, ty: RuntimePlanTypeId) -> Result<bool, RuntimePlanBuildError> {
+    pub(super) fn is_string(&self, ty: RuntimePlanTypeId) -> Result<bool, RuntimePlanBuildError> {
         Ok(matches!(
             self.projection(ty)?,
             RuntimePlanTypeProjection::String
@@ -3040,6 +3199,39 @@ impl RuntimePlanBuilder {
                 let expr = self.lower_expression(expr)?;
                 self.require_expression_assignable("flow let pattern", pattern.ty(), expr.ty())?;
                 FlowOp::Let { pattern, expr }
+            }
+            RuntimeFlowOpSeed::FormatOperandAttempt {
+                attempt,
+                parameter,
+                body,
+                value,
+            } => {
+                let attempt = attempt
+                    .resolve(&self.issuer)
+                    .ok_or(RuntimePlanBuildError::ForeignFormatAttemptSeed)?;
+                let format_attempt = self
+                    .format_attempts
+                    .get(attempt.index())
+                    .filter(|candidate| candidate.id() == attempt)
+                    .ok_or(RuntimePlanBuildError::UnknownFormatAttempt { attempt })?;
+                let expected = format_attempt
+                    .operands()
+                    .iter()
+                    .find(|operand| operand.parameter() == parameter)
+                    .map(super::super::RuntimeFormatAttemptOperand::ty)
+                    .ok_or(RuntimePlanBuildError::MissingFormatAttemptOperand {
+                        attempt,
+                        parameter,
+                    })?;
+                let body = self.lower_flow_ops(body)?;
+                let value = self.lower_expression(value)?;
+                require_same("format-attempt operand", expected, value.ty())?;
+                FlowOp::FormatOperandAttempt {
+                    attempt,
+                    parameter,
+                    body,
+                    value,
+                }
             }
             RuntimeFlowOpSeed::LetElse {
                 pattern,
@@ -4565,6 +4757,42 @@ impl RuntimePlanBuilder {
                 FlowOp::Let { pattern, expr } => {
                     self.validate_expression_locals(expr, scope, used)?;
                     *scope = extend_scope(scope, pattern_binding_locals(pattern))?;
+                }
+                FlowOp::FormatOperandAttempt {
+                    attempt,
+                    parameter,
+                    body,
+                    value,
+                } => {
+                    let manifest = self
+                        .format_attempts
+                        .get(attempt.index())
+                        .filter(|candidate| candidate.id() == *attempt)
+                        .ok_or(RuntimePlanBuildError::UnknownFormatAttempt { attempt: *attempt })?;
+                    let expected = manifest
+                        .operands()
+                        .iter()
+                        .find(|operand| operand.parameter() == *parameter)
+                        .map(super::super::RuntimeFormatAttemptOperand::ty)
+                        .ok_or(RuntimePlanBuildError::MissingFormatAttemptOperand {
+                            attempt: *attempt,
+                            parameter: *parameter,
+                        })?;
+                    require_same("format-attempt operand", expected, value.ty())?;
+                    let mut body_scope = scope.clone();
+                    let mut body_frames = scope_frames.clone();
+                    self.validate_flow_operation_locals_inner(
+                        body,
+                        &mut body_scope,
+                        used,
+                        &mut body_frames,
+                    )?;
+                    self.validate_expression_locals(value, &body_scope, used)?;
+                }
+                FlowOp::CompleteFormatOperand { .. } => {
+                    return Err(RuntimePlanBuildError::FlowLoweringInvariant {
+                        context: "engine-only format completion appears in a finished RuntimePlan",
+                    });
                 }
                 FlowOp::LetElse {
                     pattern,

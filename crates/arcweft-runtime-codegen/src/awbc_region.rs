@@ -218,6 +218,9 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::AwaitMany
         | AwbcOpcode::BudgetYield
         | AwbcOpcode::FormatContent
+        | AwbcOpcode::FormatOperandAttempt
+        | AwbcOpcode::CompleteFormatOperand
+        | AwbcOpcode::AbandonFormatAttempt
         | AwbcOpcode::CharacterDialogue
         | AwbcOpcode::Dialogue
         | AwbcOpcode::Choice
