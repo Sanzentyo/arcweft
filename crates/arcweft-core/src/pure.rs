@@ -13,7 +13,7 @@ use crate::pattern::{
 use crate::plan::{
     RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeDeclaration,
     RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType,
-    RuntimePureOutputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::scope::RuntimeScopeIdentity;
@@ -1457,6 +1457,7 @@ struct PureEvaluator<'a> {
     stats: PureFunctionStats,
     external: Option<&'a mut dyn RuntimeExternalCallBackend>,
     format_context: crate::value::RuntimeFormatContext,
+    evaluating_pure_trait_call: bool,
 }
 
 impl RuntimePureScalar {
@@ -1908,6 +1909,7 @@ impl<'a> PureEvaluator<'a> {
             stats: PureFunctionStats::default(),
             external: None,
             format_context: crate::value::RuntimeFormatContext::default(),
+            evaluating_pure_trait_call: false,
         }
     }
 
@@ -1918,6 +1920,7 @@ impl<'a> PureEvaluator<'a> {
             stats: PureFunctionStats::default(),
             external: None,
             format_context: crate::value::RuntimeFormatContext::default(),
+            evaluating_pure_trait_call: false,
         }
     }
 
@@ -1932,6 +1935,30 @@ impl<'a> PureEvaluator<'a> {
 
     fn evaluate_expr(&mut self, expr: &RuntimeExpr) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.evaluated_exprs += 1;
+        if self.evaluating_pure_trait_call {
+            match expr.kind() {
+                RuntimeExprKind::SequencePopFront { .. }
+                | RuntimeExprKind::SequencePush { .. }
+                | RuntimeExprKind::SequencePopBack { .. }
+                | RuntimeExprKind::AssignNominalField { .. }
+                | RuntimeExprKind::CharacterDialogue { .. } => {
+                    return Self::unsupported_pure_trait_operation(
+                        "mutation or dialogue construction requires the flow runtime",
+                    );
+                }
+                RuntimeExprKind::DialogueContent { effects, .. } if !effects.is_empty() => {
+                    return Self::unsupported_pure_trait_operation(
+                        "dialogue content with effects requires the flow runtime",
+                    );
+                }
+                RuntimeExprKind::Call { callee, .. } if callee.as_intrinsic().is_none() => {
+                    return Self::unsupported_pure_trait_operation(
+                        "host calls require the flow runtime",
+                    );
+                }
+                _ => {}
+            }
+        }
         let value = match expr.kind() {
             RuntimeExprKind::Value(value) => Ok(value.clone()),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
@@ -2019,7 +2046,14 @@ impl<'a> PureEvaluator<'a> {
                 specialization,
             } => self.evaluate_specialize_callable_expr(value, *specialization),
             RuntimeExprKind::ApplyGroup { callee, args } => self.evaluate_apply_expr(callee, args),
-            RuntimeExprKind::TraitCall { .. } => Self::unsupported_flow_runtime_expr(),
+            RuntimeExprKind::TraitCall {
+                callable,
+                receiver,
+                receiver_mode,
+                args,
+            } => {
+                self.evaluate_trait_call_expr(*callable, *receiver_mode, receiver, args, expr.ty())
+            }
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_nested_pure_call(*helper, args)
             }
@@ -2459,6 +2493,102 @@ impl<'a> PureEvaluator<'a> {
         self.with_temp_bindings(bindings, |this| this.evaluate_expr(&expr))
     }
 
+    fn evaluate_trait_call_expr(
+        &mut self,
+        callable: RuntimeTraitMethodId,
+        receiver_mode: RuntimeReceiverMode,
+        receiver: &RuntimeExpr,
+        args: &[RuntimeCallArgument],
+        result_ty: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let method = self
+            .plan
+            .trait_methods()
+            .get(callable.0)
+            .filter(|method| method.id == callable)
+            .ok_or(RuntimeEvalError::UnknownTraitMethod(callable.0))?
+            .clone();
+        if receiver_mode != RuntimeReceiverMode::Owned || method.receiver != receiver_mode {
+            return Self::unsupported_pure_trait_operation(
+                "only owned receiver methods can run in pure evaluation",
+            );
+        }
+        let Some(&receiver_local) = method.input_locals.first() else {
+            return Err(RuntimeEvalError::InvalidTraitReceiverUpdate {
+                method: method.identity.method_name,
+                receiver: method.identity.self_type,
+            });
+        };
+        if method.input_locals.len() != method.input_types.len() {
+            return Self::unsupported_pure_trait_operation(
+                "input local and ABI type counts differ",
+            );
+        }
+        for (&local, &input_type) in method.input_locals.iter().zip(&method.input_types) {
+            let declaration = self
+                .plan
+                .local_declarations()
+                .get(local)
+                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+            if input_type != RuntimePureInputType::Value
+                && pure_scalar_projection(self.plan, declaration.ty())
+                    != Some(input_as_output(input_type))
+            {
+                return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
+            }
+        }
+        let receiver_ty = self
+            .plan
+            .local_declarations()
+            .get(receiver_local)
+            .ok_or(RuntimeEvalError::UnknownLocal(receiver_local))?
+            .ty();
+        if receiver.ty() != receiver_ty {
+            return Err(RuntimeEvalError::InvalidExpressionType(receiver.ty()));
+        }
+        if method.body.ty() != result_ty
+            || (method.output_type != RuntimePureOutputType::Value
+                && pure_scalar_projection(self.plan, method.body.ty()) != Some(method.output_type))
+        {
+            return Err(RuntimeEvalError::InvalidExpressionType(result_ty));
+        }
+
+        self.stats.evaluated_calls += 1;
+        let previous = std::mem::replace(&mut self.evaluating_pure_trait_call, true);
+        let result = (|| {
+            let receiver_value = self.evaluate_expr(receiver)?;
+            let mut values = vec![receiver_value];
+            values.extend(self.evaluate_call_args(args)?);
+            if values.len() != method.input_locals.len() {
+                return Err(RuntimeEvalError::TraitMethodArgumentCount {
+                    method: method.identity.method_name.clone(),
+                    expected: method.input_locals.len() - 1,
+                    found: values.len() - 1,
+                });
+            }
+            let bindings = method
+                .input_locals
+                .iter()
+                .copied()
+                .zip(values)
+                .map(|(local, value)| {
+                    let declaration = self
+                        .plan
+                        .local_declarations()
+                        .get(local)
+                        .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+                    if !self.plan.value_matches_type(declaration.ty(), &value)? {
+                        return Err(RuntimeEvalError::InvalidExpressionType(declaration.ty()));
+                    }
+                    Ok(RuntimeLocalBinding { local, value })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            self.with_temp_bindings(bindings, |this| this.evaluate_expr(&method.body))
+        })();
+        self.evaluating_pure_trait_call = previous;
+        result
+    }
+
     fn evaluate_repeat_seq_expr(
         &mut self,
         value: &RuntimeExpr,
@@ -2556,10 +2686,10 @@ impl<'a> PureEvaluator<'a> {
         result
     }
 
-    fn unsupported_flow_runtime_expr() -> Result<RuntimeValue, RuntimeEvalError> {
+    fn unsupported_pure_trait_operation(reason: &str) -> Result<RuntimeValue, RuntimeEvalError> {
         Err(RuntimeEvalError::UnsupportedPure {
             name: "trait method".to_owned(),
-            reason: "trait dispatch and mutation require the flow runtime".to_owned(),
+            reason: reason.to_owned(),
         })
     }
 

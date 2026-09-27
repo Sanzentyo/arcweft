@@ -9,7 +9,8 @@ use crate::plan::{
     RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
-    RuntimePureOutputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
+    RuntimeTraitMethodSeed,
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
@@ -18,7 +19,7 @@ use crate::pure::{
 };
 use crate::scope::RuntimeScopeIdentity;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeDialogueContentValue,
+    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeDialogueContentValue,
     RuntimeDialogueFormattedOutcome, RuntimeDialogueFormattedSuccess, RuntimeDialogueOpaqueRole,
     RuntimeEvalError, RuntimeExprKind, RuntimeFmtParameterId, RuntimeFormatContext, RuntimeSeq,
     RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
@@ -34,7 +35,7 @@ fn pure_format_content_uses_selected_ambient_locale() {
     let content_type = content_owner.semantic_identity();
     let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap();
     let mut builder = RuntimePlanBuilder::new();
-    builder
+    let admission = builder
         .admit_type_batch(
             [
                 RuntimePlanTypeSeed::new(
@@ -53,9 +54,10 @@ fn pure_format_content_uses_selected_ambient_locale() {
                     },
                 ),
             ],
-            [],
+            [RuntimeLocalDeclarationSeed::new(int_type)],
         )
         .unwrap();
+    let receiver_local = admission.local_ids()[0].clone();
     builder
         .register_plain_text_context_template_seed(RuntimeDialogueContentTemplateManifestSeed {
             id: template,
@@ -89,6 +91,40 @@ fn pure_format_content_uses_selected_ambient_locale() {
             ),
         ],
     );
+    let method = builder
+        .push_trait_method_seed(RuntimeTraitMethodSeed {
+            identity: RuntimeTraitMethodIdentity {
+                impl_id: 0,
+                trait_id: Some(0),
+                witness: Some(0),
+                trait_name: Some("DisplayText".to_owned()),
+                self_type: "I64".to_owned(),
+                method_name: "display_text".to_owned(),
+                monomorph_label: "I64::display_text".to_owned(),
+            },
+            receiver: RuntimeReceiverMode::Owned,
+            inputs: Box::new([receiver_local.clone()]),
+            input_abi: vec![RuntimePureInputType::I64],
+            output_abi: RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::format_content(
+                content_type,
+                template,
+                [
+                    RuntimeFormatContentOperandSeed::new(
+                        RuntimeFmtParameterId::Value,
+                        RuntimeExprSeed::new(int_type, RuntimeExprSeedKind::Local(receiver_local)),
+                    ),
+                    RuntimeFormatContentOperandSeed::new(
+                        RuntimeFmtParameterId::Style,
+                        RuntimeExprSeed::new(
+                            string_type,
+                            RuntimeExprSeedKind::Value(RuntimeValue::String("number".to_owned())),
+                        ),
+                    ),
+                ],
+            ),
+        })
+        .unwrap();
     builder
         .push_pure_helper_seed(RuntimePureHelperSeed {
             name: "localized_number".to_owned(),
@@ -96,6 +132,27 @@ fn pure_format_content_uses_selected_ambient_locale() {
             input_abi: vec![],
             output_abi: RuntimePureOutputType::Value,
             body,
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .unwrap();
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "localized_number_via_trait".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::Value,
+            body: RuntimeExprSeed::new(
+                content_type,
+                RuntimeExprSeedKind::TraitCall {
+                    callable: method,
+                    receiver: Box::new(RuntimeExprSeed::new(
+                        int_type,
+                        RuntimeExprSeedKind::Value(RuntimeValue::i64(12345)),
+                    )),
+                    args: Box::new([]),
+                },
+            ),
             scalar_eval_supported: false,
             origin: RuntimePureHelperOrigin::Annotated,
         })
@@ -112,6 +169,12 @@ fn pure_format_content_uses_selected_ambient_locale() {
         .unwrap()
         .with_format_context(context.clone());
     let evaluated = VmPureFunctionBackend.evaluate(&request).unwrap();
+    let trait_request =
+        PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[1].id, [])
+            .unwrap()
+            .with_format_context(context.clone());
+    let trait_evaluated = VmPureFunctionBackend.evaluate(&trait_request).unwrap();
+    assert_eq!(trait_evaluated.value, evaluated.value);
     let content = RuntimeDialogueContentValue::try_from_runtime_value(&evaluated.value).unwrap();
     let value = content
         .binding(crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).unwrap())
@@ -1303,6 +1366,211 @@ fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
         )
         .expect("positioned-call evaluation");
     assert_eq!(result.value, RuntimeValue::i64(-9));
+}
+
+#[test]
+fn owned_pure_trait_call_evaluates_receiver_and_source_arguments_once() {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [scalar_type_seeds()[0].clone()],
+            [
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+            ],
+        )
+        .expect("trait call input types");
+    let receiver = admission.local_ids()[0].clone();
+    let first = admission.local_ids()[1].clone();
+    let second = admission.local_ids()[2].clone();
+    let method = builder
+        .push_trait_method_seed(RuntimeTraitMethodSeed {
+            identity: RuntimeTraitMethodIdentity {
+                impl_id: 0,
+                trait_id: Some(0),
+                witness: Some(0),
+                trait_name: Some("DisplayText".to_owned()),
+                self_type: "I64".to_owned(),
+                method_name: "display_text".to_owned(),
+                monomorph_label: "I64::display_text".to_owned(),
+            },
+            receiver: RuntimeReceiverMode::Owned,
+            inputs: vec![receiver.clone(), first.clone(), second.clone()].into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::I64; 3],
+            output_abi: RuntimePureOutputType::I64,
+            body: i64_binary(
+                i64_local(receiver),
+                RuntimeBinaryOp::Sub,
+                i64_binary(i64_local(first), RuntimeBinaryOp::Mul, i64_local(second)),
+            ),
+        })
+        .expect("owned method body");
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "owned_trait_call".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::TraitCall {
+                    callable: method,
+                    receiver: Box::new(i64_binary(
+                        i64_value(20),
+                        RuntimeBinaryOp::Add,
+                        i64_value(1),
+                    )),
+                    args: Box::new([
+                        RuntimeCallArgumentSeed::new(
+                            i64_binary(i64_value(2), RuntimeBinaryOp::Add, i64_value(1)),
+                            RuntimeCallArgumentMode::Value,
+                            1,
+                        ),
+                        RuntimeCallArgumentSeed::new(
+                            i64_value(4),
+                            RuntimeCallArgumentMode::Value,
+                            0,
+                        ),
+                    ]),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("owned trait call helper");
+    let plan = Arc::new(builder.finish().expect("owned trait call plan"));
+    let request = PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+        .expect("owned trait call request");
+    let result = VmPureFunctionBackend
+        .evaluate(&request)
+        .expect("owned trait call evaluation");
+    assert_eq!(result.value, RuntimeValue::i64(9));
+    assert_eq!(result.stats.evaluated_binary_ops, 4);
+    assert_eq!(result.stats.evaluated_calls, 1);
+}
+
+fn simple_trait_call_plan(
+    receiver_mode: RuntimeReceiverMode,
+    host_call_body: bool,
+) -> Arc<RuntimePlan> {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_type_batch(
+            [scalar_type_seeds()[0].clone()],
+            [RuntimeLocalDeclarationSeed::new(i64_semantic_type())],
+        )
+        .expect("trait method receiver type");
+    let receiver = admission.local_ids()[0].clone();
+    let body = if host_call_body {
+        RuntimeExprSeed::new(
+            i64_semantic_type(),
+            RuntimeExprSeedKind::Call {
+                callee: RuntimeCallTarget::try_from_label("host_call")
+                    .expect("valid callable identity"),
+                args: Box::new([]),
+            },
+        )
+    } else {
+        i64_local(receiver.clone())
+    };
+    let method = builder
+        .push_trait_method_seed(RuntimeTraitMethodSeed {
+            identity: RuntimeTraitMethodIdentity {
+                impl_id: 0,
+                trait_id: None,
+                witness: None,
+                trait_name: None,
+                self_type: "I64".to_owned(),
+                method_name: "render".to_owned(),
+                monomorph_label: "I64::render".to_owned(),
+            },
+            receiver: receiver_mode,
+            inputs: Box::new([receiver]),
+            input_abi: vec![RuntimePureInputType::I64],
+            output_abi: RuntimePureOutputType::I64,
+            body,
+        })
+        .expect("trait method");
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "trait_call".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::TraitCall {
+                    callable: method,
+                    receiver: Box::new(i64_value(42)),
+                    args: Box::new([]),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("trait call helper");
+    Arc::new(builder.finish().expect("trait call plan"))
+}
+
+#[test]
+fn pure_trait_call_rejects_borrowed_receivers_and_host_calls() {
+    for mode in [RuntimeReceiverMode::SharedRef, RuntimeReceiverMode::MutRef] {
+        let plan = simple_trait_call_plan(mode, false);
+        let request =
+            PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+                .expect("trait call request");
+        assert!(matches!(
+            VmPureFunctionBackend.evaluate(&request),
+            Err(RuntimeEvalError::UnsupportedPure { .. })
+        ));
+    }
+    let plan = simple_trait_call_plan(RuntimeReceiverMode::Owned, true);
+    let request = PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+        .expect("host call request");
+    assert!(matches!(
+        VmPureFunctionBackend.evaluate(&request),
+        Err(RuntimeEvalError::UnsupportedPure { reason, .. }) if reason.contains("host calls")
+    ));
+}
+
+#[test]
+fn pure_trait_call_checks_selected_method_and_sealed_abi() {
+    let base = simple_trait_call_plan(RuntimeReceiverMode::Owned, false);
+    let mut wrong_id = Arc::new((*base).clone());
+    Arc::get_mut(&mut wrong_id).unwrap().trait_methods[0].id = RuntimeTraitMethodId(1);
+    let request =
+        PureFunctionRequest::try_new(Arc::clone(&wrong_id), wrong_id.pure_helpers()[0].id, [])
+            .expect("wrong method id request");
+    assert_eq!(
+        VmPureFunctionBackend.evaluate(&request),
+        Err(RuntimeEvalError::UnknownTraitMethod(0))
+    );
+
+    let mut wrong_abi = Arc::new((*base).clone());
+    Arc::get_mut(&mut wrong_abi).unwrap().trait_methods[0].input_types[0] =
+        RuntimePureInputType::F64;
+    let request =
+        PureFunctionRequest::try_new(Arc::clone(&wrong_abi), wrong_abi.pure_helpers()[0].id, [])
+            .expect("wrong method ABI request");
+    assert!(matches!(
+        VmPureFunctionBackend.evaluate(&request),
+        Err(RuntimeEvalError::InvalidExpressionType(_))
+    ));
+
+    let mut wrong_result = Arc::new((*base).clone());
+    Arc::get_mut(&mut wrong_result).unwrap().trait_methods[0].output_type =
+        RuntimePureOutputType::F64;
+    let request = PureFunctionRequest::try_new(
+        Arc::clone(&wrong_result),
+        wrong_result.pure_helpers()[0].id,
+        [],
+    )
+    .expect("wrong method result request");
+    assert!(matches!(
+        VmPureFunctionBackend.evaluate(&request),
+        Err(RuntimeEvalError::InvalidExpressionType(_))
+    ));
 }
 
 #[test]
