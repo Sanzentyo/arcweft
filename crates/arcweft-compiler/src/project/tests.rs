@@ -608,6 +608,36 @@ flow main() {
     );
 }
 
+#[test]
+fn generic_dialogue_interpolation_rejects_an_unsupported_closed_instance() {
+    let (project, context) = removed_role_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+
+fn speak<T>(value: T) {
+    alice[#[value]];
+}
+
+flow main() {
+    speak((1i64, 2i64));
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let error = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect_err("a tuple instance has no selected DisplayText implementation");
+    assert!(
+        error.diagnostics().iter().any(|diagnostic| {
+            diagnostic
+                .diagnostic()
+                .message()
+                .contains("closed generic interpolation has no supported DisplayText witness")
+        }),
+        "diagnostics={:?}",
+        error.diagnostics()
+    );
+}
+
 fn dialogue_manifest_document(name: &str) -> Arc<SourceDocument> {
     Arc::new(
         SourceDocument::try_new(
