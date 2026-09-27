@@ -1981,3 +1981,38 @@ Core all-target check と all-feature Clippy correctness、rustfmt、cached diff
 check が既存 warning ありで通過した。独立 fiber に入る既存 helper/trait の
 budget と中断の同一 fiber 継続は未完であり、formatter の protected operand
 実行受理をこの commit だけで主張しない。
+
+## 053 typed formatter substrate — 2026-09-27
+
+`b13f0b8b7f55949f16bc460f558c13e29458b0c3` は既存 `main` の
+`f8ddcd2aef1ee47016cbf7e283f41ccd0552e2d2` を起点に、selected `fmt`
+call を exact scoped template と source-ordered typed operand に投影し、Core
+`FormatContent` の builder/Engine/pure evaluator と AWBC v1 opcode/verifier/
+codec/VM に接続した。AWBC は同一 fiber の各 operand 継続で recoverable な
+式失敗だけを保持し、後続 operand を評価する。途中状態は snapshot、restore
+validation と retained-value visitor に含めた。Core の共通 formatter outcome
+builder が native/pure/AWBC の結果と失敗 policy を作る。053 check fixture の
+manifest/assets も同じ commit に入れた。push 後の working tree は clean。
+
+Core lib 707/707、runtime-plan lib 90/90、AWBC VM focused 3/3、053
+companion manifest/assets による公開 CLI check、workspace all-target/all-feature
+check と Clippy、fmt、cached diff check は既存 warning ありで通過した。
+`just structure-audit-gate` は 2640 files/97 packages、blocking 0 で通過。
+`just test-workspace` は sema lib 968件中2件で失敗した。
+`contextual_effect_rows_survive_value_expression_boundaries` の
+`ExpressionTypeUnavailable` と capacity の expected `Unchecked` 対 actual
+`Exact(USize)` であり、どちらも本 cut では未編集の sema owner。原因を別途
+追跡中で、workspace test の合格とは記録しない。
+
+構造 review: `crates/arcweft-core/src/awbc/fiber.rs` はこの cut の起点
+4201 physical LOC から 4892 LOC（180957 bytes、+691）となり、SIZE001 /
+TEST001 が出た。生存 frame、return continuation、snapshot codec と復元時
+検証を同じ fiber state machine に閉じ込める既存 owner の責務内であり、
+formatter だけの別 side table や重複した保存経路は導入していない。この
+責務の一体性を維持する判断である。新しい dependency direction 違反は
+scanner で検出されなかった。
+
+この commit は 053 全受理ではない。`style="number"` の決定的な数値整形、
+locale/currency data、project `DisplayText` conformance、
+`InlineFallback.value_plain` の適切な失敗、AWBC の pure-helper/trait-method
+別 fiber 経路の同一継続化は残る。
