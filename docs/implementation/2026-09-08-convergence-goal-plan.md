@@ -2044,3 +2044,35 @@ all-target/all-feature check と Clippy、`cargo fmt --all -- --check`、
 も、この一連で dependency/owner 変更を追加しておらず、blocking 0 の
 証拠を維持する。053 の残る locale/currency、project `DisplayText`、
 数値 style、AWBC nested helper/trait の同一 fiber 化は未受理のまま。
+
+## 053 formatter の同一 fiber 呼び出し — 2026-09-27
+
+Supersedes: 直前の follow-up note にある AWBC helper/trait の別 fiber 経路は
+解消した。確認した HEAD は `4e8a481fae71c0cb025b4c96437f53024cc3e13a`、
+push 後の working tree は clean。
+
+`f2347a082b6b34d6536d19963b40cb4eed0692ef` は primary が先に評価済みで
+後続 formatter option の式が回復可能に失敗した場合、その primary の plain
+表示を `value_plain` に保持する。primary 自体が失敗したときは値を偽造しない。
+Core focused 2/2 と変更 crate Clippy、fmt、diff check が通過した。
+
+`4e8a481fae71c0cb025b4c96437f53024cc3e13a` は AWBC の未加速 pure
+helper と trait method を呼び出し元 fiber の検証済み frame に入れ、同じ
+budget/cancel/save/restore と formatter protected operand の継続で実行する。
+typed return continuation は instruction site、対象 function、戻り先 register、
+可変 receiver の返却 slot を program と照合する。callee に pending cleanup が
+ある回復可能エラーは formatter へ強制的に回収せず、通常 unwind に渡す。
+backend 加速がない helper の fallback 統計は一回だけ課金する。別 fiber の
+trait method executor と helper fallback 呼び出しは削除した。
+
+Core lib 714/714、`just test-workspace` 全レシピ、workspace all-target/all-feature
+check と Clippy、`cargo fmt --all -- --check`、cached diff check は終了コード 0
+（既存 warning あり）。`just structure-audit-gate` は 2641 files / 97 packages /
+339 review triggers / blocking 0。`awbc/fiber.rs` の SIZE001/TEST001 は継続し、
+増分は frame return、snapshot、program validation という同じ live-fiber
+所有境界に収まるため、行数だけを理由に別 state を作らなかった。
+
+053 全受理ではない。`Option/Result.with_context` の lazy callback は formatter
+operand から到達可能だが、Product host でなお別 fiber に入る。project
+`DisplayText` の選択済み適合・実行、session locale と固定書式データを用いた
+number/currency 整形も未完了である。
