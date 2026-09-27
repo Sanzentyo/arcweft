@@ -2162,3 +2162,36 @@ blocking 0。触れた bundle facade、runtime-host runner、runtime-plan semant
 method ID、pure trait call と AWBC formatter continuation を一つの typed witness
 で接続する必要がある。既存 `TypeKind::DisplayText` record atom を trait の代用に
 残さず、RAG/Agent consumer を同時に移行する。
+
+## 053 selected DisplayText と formatter attempt の統合 — 2026-09-27
+
+Supersedes: 直前 checkpoint の project `DisplayText` 未接続。確認した commit は
+`7e9f72946f459c31de60c0ec4ef9730a1f443d67`。main へ push 後の working tree
+は clean。標準 `DisplayText` trait、`DisplayContext`、`DisplayError`、標準
+scalar/Content と明示的 Option の witness、閉じた project impl の選択済み method
+instance を sema・HIR・compiler・runtime-plan・Core native/pure/AWBC へ接続した。
+source-order の `fmt` operand を型付き attempt manifest に保持し、同じ fiber で
+recoverable failure と非局所制御を処理する。AWBC v1 codec・verifier・snapshot/restore
+にも attempt state を含め、途中復元と forged state 拒否を検証した。context の
+locale/style/currency、generic impl の複数閉じた instance、nested closure、
+project `DisplayText` の成功・失敗と後続 style 評価を検証した。
+
+`cargo fmt --all -- --check`、workspace all-target/all-feature check と Clippy、
+`just test-workspace` 全レシピ、`git diff --cached --check`、
+`just structure-audit-gate` は最終差分で終了コード 0（既存 warning と size review
+trigger あり、blocking 0）。focused sema DisplayText 10/10、runtime-plan lib 90/90、
+Core format attempt 5/5、AWBC format-content 14/14、compiler の closed generic
+拒否 1/1 と関数値 branch の native/AWBC 2/2 も通過した。途中の workspace run は
+closed generic の診断が旧判定に届かず 1 件失敗し、witness 欠落の診断へ統合して修正。
+別 run の LSP rustc ICE は LSP 単体 221/221 と最終 workspace run では再現せず、
+compiler branch の stack overflow は fmt call clone を再帰 lowering frame から
+隔離して解消した。
+
+構造 review では AWBC fiber の format attempt live/snapshot state と verifier の
+attempt abstract state を各 `format.rs` 子 owner に抽出した。runtime-plan の
+`format_attempt.rs`、`trait_method.rs`、semantic display 子 owner と合わせ、
+親の frame/save orchestration と dispatcher に別 authority を作っていない。
+053 全受理は未達。affine `VoiceHandle` の callback capture → `Content` → `fmt` は
+sema で受理されるが、一般 local read の Copy/Move と native/AWBC の consuming
+transfer が未接続である。次の cut は generation-bound な local-use 判定から
+単一の Core read mode、runtime token 一意性、途中 save/restore まで閉じる。
