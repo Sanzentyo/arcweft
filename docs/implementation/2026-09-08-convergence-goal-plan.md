@@ -1945,3 +1945,12 @@ check が既存 warning ありで通過した。
 AWBC VM の残る `VmError::Runtime(String)` と nested helper の trap/
 budget/cancel の文字列化、`Format` 専用 expression と verified AWBC
 continuation は引き続き未実装である。
+
+`332ed89175f0399ca08e1391126e9d8389fcf710` では native と Product
+AWBC が共有する `evaluate_runtime_call` を typed `Result` に変えた。
+組み込み iterator/Option/index/string/float、math backend、外部 callable
+の失敗を String 成功値へ変換せず、未受理 backend も typed error へ返す。
+`Option.unwrap(None)` の回帰テスト、Core lib 691/691、workspace
+all-target/all-feature check、Core all-target Clippy、fmt、cached diff
+check が既存 warning ありで通過した。nested AWBC pure-helper の
+trap/budget/cancel の文字列化と `Format` 専用式はまだ未完である。
