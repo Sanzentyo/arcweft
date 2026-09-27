@@ -1923,3 +1923,25 @@ generic dialogue 3 回帰は、開いた generic を早期拒否していた問�
 閉じた instance での検査に移して解消した。053 fixture はまだ `fmt`
 実行式の Core/native/AWBC 評価がないため未受理。project `DisplayText`
 conformance と formatter の動的 policy/style/locale 等も未完である。
+
+## 053 typed fault 前提 cut — 2026-09-27
+
+`d1093c1fa7c2a6d20976a67de1b1c05b337a9af8` は、選択済み `fmt`
+call の primary operand が `CheckedFmtCall` の source と一致し、閉じた
+runtime type が Sema の display witness に適合することを RuntimePlan
+semantic-fact transaction で検証する。runtime-plan 90/90、compiler
+116/116、runtime-plan all-target Clippy と cached diff check が通過した。
+
+`37671e5462b44b9bb990a739b1e515f690800fa0` は整数のゼロ除算を
+panic から `RuntimeEvalError::RecoverableExpression(DivisionByZero)` に
+変更した。signed/unsigned 全幅、pure scalar、AOT i64、AWBC `Binary`
+は同じ typed error を通す。float の IEEE 除算と signed 最小値 / -1
+の wrapping 結果は維持する。Core lib 690/690、workspace
+all-target/all-feature check、Core all-target Clippy、fmt と cached diff
+check が既存 warning ありで通過した。
+
+この cut は formatter の recoverable 子式境界の前提であり、053 fixture の
+実行受理ではない。`evaluate_runtime_call` の String 値への失敗変換、
+AWBC VM の残る `VmError::Runtime(String)` と nested helper の trap/
+budget/cancel の文字列化、`Format` 専用 expression と verified AWBC
+continuation は引き続き未実装である。
