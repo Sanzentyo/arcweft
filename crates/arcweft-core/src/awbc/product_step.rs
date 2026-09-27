@@ -1703,7 +1703,6 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: self.vm_execution_context(),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
         let context = self.vm_execution_context();
@@ -1824,7 +1823,6 @@ impl AwbcProductStepExecutor {
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
-                    context: context.clone(),
                     program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(
                         &self.program,
                     )),
@@ -1981,7 +1979,6 @@ impl AwbcProductStepExecutor {
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
-            context: self.vm_execution_context(),
             program_owner: crate::task::RuntimeProgramOwner::Awbc(Arc::clone(&self.program)),
         };
         let context = self.vm_execution_context();

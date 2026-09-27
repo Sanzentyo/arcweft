@@ -31,8 +31,10 @@ use crate::plan::{
 use crate::task::RuntimeProgramOwner;
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeAgentValue, RuntimeCallableApplication, RuntimeCallableBodyReference,
-    RuntimeCallableInvocation, RuntimeCallableValue, RuntimeFieldValue, RuntimeNominalRecordValue,
+    RuntimeAgentValue, RuntimeArcError, RuntimeArcErrorContextKind, RuntimeArcErrorContextPending,
+    RuntimeArcErrorContextStart, RuntimeArcErrorFrame, RuntimeCallableApplication,
+    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableValue,
+    RuntimeDialogueContentValue, RuntimeFieldValue, RuntimeNominalRecordValue,
     RuntimeRecordFieldId, RuntimeRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue,
     evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_value_label,
@@ -437,6 +439,10 @@ pub trait VmHost {
         helper: AwbcPureHelperId,
         args: &[RuntimeValue],
     ) -> Result<Option<RuntimeValue>, VmError>;
+
+    /// Non-semantic Product telemetry for a context callback body entered on
+    /// the current fiber. Called only after its frame was pushed successfully.
+    fn record_context_callback_vm_call(&mut self) {}
 
     fn produce_character_dialogue(
         &mut self,
@@ -1309,11 +1315,91 @@ fn execute_instruction(
             intrinsic,
             args,
         } => {
-            let args = args
-                .iter()
-                .map(|arg| register(fiber, *arg).cloned())
-                .collect::<Result<Vec<_>, _>>()?;
-            if let Some(value) = host.call_intrinsic(program, *intrinsic, &args)?
+            let args = register_values(fiber, args)?;
+            let identity = program
+                .intrinsics
+                .get(intrinsic.index())
+                .ok_or(VmError::MissingIntrinsic(*intrinsic))?
+                .identity
+                .as_intrinsic();
+            if let Some((kind, lazy)) = identity.and_then(context_intrinsic_kind) {
+                let [receiver, message] = args.as_slice() else {
+                    return Err(VmError::FunctionArgumentCount {
+                        expected: 2,
+                        actual: args.len(),
+                    });
+                };
+                let dst = dst.ok_or_else(|| {
+                    VmError::Runtime("context intrinsic has no result destination".to_owned())
+                })?;
+                match RuntimeArcError::begin_context_value(kind, receiver.clone())
+                    .map_err(context_value_error)?
+                {
+                    RuntimeArcErrorContextStart::Complete(value) => {
+                        fiber.active_frame_mut()?.set_register(dst, value)?;
+                    }
+                    RuntimeArcErrorContextStart::NeedsMessage(pending) if !lazy => {
+                        let value =
+                            finish_context_message(program, context, pending, message.clone())?;
+                        fiber.active_frame_mut()?.set_register(dst, value)?;
+                    }
+                    RuntimeArcErrorContextStart::NeedsMessage(pending) => {
+                        let RuntimeValue::Callable(callable) = message else {
+                            return Err(VmError::Evaluation(
+                                crate::value::RuntimeEvalError::ExpectedFunction(
+                                    runtime_value_label(message),
+                                ),
+                            ));
+                        };
+                        let owner = context
+                            .ok_or(VmError::MissingExecutionContext)?
+                            .program_owner(program)?;
+                        callable
+                            .validate_for_owner(&owner)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?;
+                        let arguments = callable
+                            .materialize_arrow_arguments(&[])
+                            .map_err(|error| VmError::Runtime(error.to_string()))?;
+                        let application = callable
+                            .prepare_group(&arguments, None)
+                            .map_err(|error| VmError::Runtime(error.to_string()))?;
+                        match application {
+                            RuntimeCallableApplication::Complete(message) => {
+                                let value =
+                                    finish_context_message(program, context, pending, message)?;
+                                fiber.active_frame_mut()?.set_register(dst, value)?;
+                            }
+                            RuntimeCallableApplication::Invoke(invocation) => {
+                                enter_context_callback_frame(
+                                    program,
+                                    fiber,
+                                    host,
+                                    invocation,
+                                    FiberReturnContinuation::ContextCallbackInvoke {
+                                        site: fiber.cursor,
+                                        pending,
+                                        attached_default: None,
+                                    },
+                                )?;
+                                return Ok(InstructionControl::Transferred);
+                            }
+                            RuntimeCallableApplication::AttachedDefault(invocation) => {
+                                enter_context_callback_frame(
+                                    program,
+                                    fiber,
+                                    host,
+                                    invocation,
+                                    FiberReturnContinuation::ContextCallbackDefault {
+                                        site: fiber.cursor,
+                                        pending,
+                                    },
+                                )?;
+                                return Ok(InstructionControl::Transferred);
+                            }
+                        }
+                    }
+                }
+            } else if let Some(value) = host.call_intrinsic(program, *intrinsic, &args)?
                 && let Some(dst) = dst
             {
                 fiber.active_frame_mut()?.set_register(*dst, value)?;
@@ -1937,6 +2023,196 @@ fn invocation_values(invocation: RuntimeCallableInvocation) -> Result<Vec<Runtim
     Ok(values)
 }
 
+fn context_intrinsic_kind(
+    intrinsic: crate::value::RuntimeIntrinsic,
+) -> Option<(RuntimeArcErrorContextKind, bool)> {
+    use crate::value::RuntimeIntrinsic;
+    match intrinsic {
+        RuntimeIntrinsic::StdResultContext => Some((RuntimeArcErrorContextKind::Result, false)),
+        RuntimeIntrinsic::StdResultWithContext => Some((RuntimeArcErrorContextKind::Result, true)),
+        RuntimeIntrinsic::StdOptionContext => Some((RuntimeArcErrorContextKind::Option, false)),
+        RuntimeIntrinsic::StdOptionWithContext => Some((RuntimeArcErrorContextKind::Option, true)),
+        _ => None,
+    }
+}
+
+fn context_value_error(error: crate::value::RuntimeArcErrorValueError) -> VmError {
+    VmError::Evaluation(crate::value::RuntimeEvalError::DialogueContentConstruction(
+        error.to_string(),
+    ))
+}
+
+fn finish_context_message(
+    program: &AwbcProgram,
+    context: Option<&VmExecutionContext>,
+    pending: RuntimeArcErrorContextPending,
+    message: RuntimeValue,
+) -> Result<RuntimeValue, VmError> {
+    let context = context.ok_or(VmError::MissingExecutionContext)?;
+    let limits = crate::entry::RuntimeSchemaLimits::engine_default();
+    let proof = context.plain_text_context_template_proof(program)?;
+    let message_content = RuntimeDialogueContentValue::try_new_context_message_with_limits(
+        context.artifact(),
+        proof,
+        message,
+        limits,
+    )
+    .map_err(|error| {
+        VmError::Evaluation(crate::value::RuntimeEvalError::DialogueContentConstruction(
+            error.to_string(),
+        ))
+    })?;
+    RuntimeArcError::finish_context_value(
+        pending,
+        message_content,
+        RuntimeArcErrorFrame::empty(),
+        limits,
+    )
+    .map_err(context_value_error)
+}
+
+fn enter_context_callback_frame(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    host: &mut impl VmHost,
+    invocation: RuntimeCallableInvocation,
+    continuation: FiberReturnContinuation,
+) -> Result<(), VmError> {
+    let function = invocation_function(&invocation)?;
+    let values = invocation_values(invocation)?;
+    fiber.push_call_frame_with_continuation(
+        program,
+        function,
+        FiberReturnPoint {
+            cursor: fiber.cursor,
+            destination: None,
+            continuation,
+        },
+        &values,
+    )?;
+    host.record_context_callback_vm_call();
+    Ok(())
+}
+
+fn context_call_at_site(
+    program: &AwbcProgram,
+    site: FiberCursor,
+) -> Result<(AwbcRegisterId, AwbcRegisterId), VmError> {
+    let block = program
+        .blocks
+        .get(site.block.index())
+        .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+    let instruction = block
+        .instructions
+        .start
+        .checked_add(site.instruction_offset)
+        .and_then(|index| program.instructions.get(index as usize))
+        .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+    let AwbcInstruction::CallIntrinsic {
+        dst: Some(dst),
+        intrinsic,
+        args,
+    } = instruction
+    else {
+        return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+    };
+    if block.owner != site.function
+        || site.instruction_offset >= block.instructions.len
+        || !matches!(
+            program
+                .intrinsics
+                .get(intrinsic.index())
+                .and_then(|record| record.identity.as_intrinsic()),
+            Some(
+                crate::value::RuntimeIntrinsic::StdResultWithContext
+                    | crate::value::RuntimeIntrinsic::StdOptionWithContext
+            )
+        )
+    {
+        return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+    }
+    let [_, callback] = args.as_slice() else {
+        return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+    };
+    Ok((*dst, *callback))
+}
+
+fn complete_context_callback_return(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    host: &mut impl VmHost,
+    context: Option<&VmExecutionContext>,
+    continuation: FiberReturnContinuation,
+    value: Option<RuntimeValue>,
+) -> Result<(), VmError> {
+    let (site, pending, message) = match continuation {
+        FiberReturnContinuation::ContextCallbackDefault { site, pending } => {
+            let default_value = value.ok_or_else(|| {
+                VmError::Runtime("context callback default returned no value".to_owned())
+            })?;
+            let (_, callback_register) = context_call_at_site(program, site)?;
+            let RuntimeValue::Callable(callback) = register(fiber, callback_register)? else {
+                return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+            };
+            let callback = callback.clone();
+            let arguments = callback
+                .materialize_arrow_arguments(&[])
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            let application = callback
+                .complete_group_default(&arguments, default_value.clone())
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            match application {
+                RuntimeCallableApplication::Complete(message) => (site, pending, message),
+                RuntimeCallableApplication::Invoke(invocation) => {
+                    enter_context_callback_frame(
+                        program,
+                        fiber,
+                        host,
+                        invocation,
+                        FiberReturnContinuation::ContextCallbackInvoke {
+                            site,
+                            pending,
+                            attached_default: Some(default_value),
+                        },
+                    )?;
+                    return Ok(());
+                }
+                RuntimeCallableApplication::AttachedDefault(_) => {
+                    return Err(VmError::Runtime(
+                        "context callback selected another default stage".to_owned(),
+                    ));
+                }
+            }
+        }
+        FiberReturnContinuation::ContextCallbackInvoke { site, pending, .. } => {
+            let message = value.ok_or_else(|| {
+                VmError::Runtime("context callback returned no message".to_owned())
+            })?;
+            (site, pending, message)
+        }
+        _ => return Err(VmError::Fiber(FiberStateError::InvalidFrame)),
+    };
+    if fiber.cursor != site {
+        return Err(VmError::Fiber(FiberStateError::InvalidFrame));
+    }
+    let (dst, _) = context_call_at_site(program, site)?;
+    let next_offset = site
+        .instruction_offset
+        .checked_add(1)
+        .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+    let result = finish_context_message(program, context, pending, message)?;
+    let destination_type = program
+        .frame_layouts
+        .get(fiber.active_frame()?.layout.index())
+        .and_then(|layout| layout.slots.get(dst.index()))
+        .map(|slot| slot.ty)
+        .ok_or(VmError::Fiber(FiberStateError::InvalidFrame))?;
+    require_runtime_type(program, destination_type, &result)?;
+    fiber.active_frame_mut()?.set_register(dst, result)?;
+    fiber.cursor.instruction_offset = next_offset;
+    Ok(())
+}
+
 fn set_record_field_value(
     target: &mut RuntimeValue,
     field: u32,
@@ -1956,7 +2232,7 @@ fn set_record_field_value(
 fn execute_terminator(
     program: &AwbcProgram,
     fiber: &mut FiberState,
-    _host: &mut impl VmHost,
+    host: &mut impl VmHost,
     context: Option<&VmExecutionContext>,
     terminator: &AwbcTerminator,
     source_map: Option<AwbcSourceMapId>,
@@ -2209,6 +2485,21 @@ fn execute_terminator(
                         FiberReturnContinuation::Ordinary
                         | FiberReturnContinuation::FormatOperand { .. }
                         | FiberReturnContinuation::InstructionCall { .. } => {}
+                        continuation @ (FiberReturnContinuation::ContextCallbackDefault {
+                            ..
+                        }
+                        | FiberReturnContinuation::ContextCallbackInvoke {
+                            ..
+                        }) => {
+                            complete_context_callback_return(
+                                program,
+                                fiber,
+                                host,
+                                context,
+                                continuation,
+                                value,
+                            )?;
+                        }
                         continuation => {
                             complete_project_call_return(
                                 program,
@@ -2529,7 +2820,9 @@ fn complete_project_call_return(
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(),
         FiberReturnContinuation::Ordinary
         | FiberReturnContinuation::FormatOperand { .. }
-        | FiberReturnContinuation::InstructionCall { .. } => {
+        | FiberReturnContinuation::InstructionCall { .. }
+        | FiberReturnContinuation::ContextCallbackDefault { .. }
+        | FiberReturnContinuation::ContextCallbackInvoke { .. } => {
             return Ok(());
         }
     };
@@ -2641,7 +2934,9 @@ fn complete_project_call_return(
             "apply-group default return is handled before looking up a project-call site"
         ),
         FiberReturnContinuation::FormatOperand { .. }
-        | FiberReturnContinuation::InstructionCall { .. } => {
+        | FiberReturnContinuation::InstructionCall { .. }
+        | FiberReturnContinuation::ContextCallbackDefault { .. }
+        | FiberReturnContinuation::ContextCallbackInvoke { .. } => {
             unreachable!("instruction return is handled by the fiber return continuation")
         }
         FiberReturnContinuation::Ordinary => {}

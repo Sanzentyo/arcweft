@@ -25,11 +25,12 @@ mod asset_handle;
 pub(crate) use asset_handle::standard_asset_opaque_payload_is_valid;
 mod arc_error;
 pub use arc_error::{
-    RUNTIME_ARC_ERROR_VALUE_VERSION, RuntimeArcError, RuntimeArcErrorDataEntry,
-    RuntimeArcErrorFrame, RuntimeArcErrorKind, RuntimeArcErrorNativeBacktrace,
-    RuntimeArcErrorSource, RuntimeArcErrorStateHash, RuntimeArcErrorTrace,
-    RuntimeArcErrorValueError,
+    RUNTIME_ARC_ERROR_VALUE_VERSION, RuntimeArcError, RuntimeArcErrorContextPending,
+    RuntimeArcErrorDataEntry, RuntimeArcErrorFrame, RuntimeArcErrorKind,
+    RuntimeArcErrorNativeBacktrace, RuntimeArcErrorSource, RuntimeArcErrorStateHash,
+    RuntimeArcErrorTrace, RuntimeArcErrorValueError,
 };
+pub(crate) use arc_error::{RuntimeArcErrorContextKind, RuntimeArcErrorContextStart};
 mod awbc_save;
 mod callable;
 mod character_dialogue;

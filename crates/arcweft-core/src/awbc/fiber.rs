@@ -17,10 +17,11 @@ use crate::runtime_id::{
 };
 use crate::task::{NeedId, RuntimeProgramOwner, TaskId};
 use crate::value::{
-    AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeCallableApplication,
-    RuntimeCallableBodyReference, RuntimeCallableInvocation, RuntimeCallableValue,
-    RuntimeFlowParameterBinding, RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt,
-    RuntimeValue,
+    AwbcRuntimeValueSnapshot, RuntimeArcError, RuntimeArcErrorContextKind,
+    RuntimeArcErrorContextPending, RuntimeArcErrorContextStart, RuntimeBinding,
+    RuntimeCallableApplication, RuntimeCallableBodyReference, RuntimeCallableInvocation,
+    RuntimeCallableValue, RuntimeFlowParameterBinding, RuntimeInt, RuntimeIterator, RuntimeSeq,
+    RuntimeUInt, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -146,6 +147,15 @@ pub enum FiberReturnContinuation {
     /// program instruction at `site` owns the target and any receiver update.
     InstructionCall {
         site: FiberCursor,
+    },
+    ContextCallbackDefault {
+        site: FiberCursor,
+        pending: RuntimeArcErrorContextPending,
+    },
+    ContextCallbackInvoke {
+        site: FiberCursor,
+        pending: RuntimeArcErrorContextPending,
+        attached_default: Option<RuntimeValue>,
     },
 }
 
@@ -428,6 +438,22 @@ pub enum AwbcFiberReturnContinuationSnapshot {
     InstructionCall {
         site: FiberCursor,
     },
+    ContextCallbackDefault {
+        site: FiberCursor,
+        pending: AwbcFiberContextPendingSnapshot,
+    },
+    ContextCallbackInvoke {
+        site: FiberCursor,
+        pending: AwbcFiberContextPendingSnapshot,
+        attached_default: Option<AwbcRuntimeValueSnapshot>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcFiberContextPendingSnapshot {
+    ResultErr(AwbcRuntimeValueSnapshot),
+    OptionNone,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -782,6 +808,24 @@ impl AwbcFiberReturnContinuationSnapshot {
             FiberReturnContinuation::InstructionCall { site } => {
                 Self::InstructionCall { site: *site }
             }
+            FiberReturnContinuation::ContextCallbackDefault { site, pending } => {
+                Self::ContextCallbackDefault {
+                    site: *site,
+                    pending: AwbcFiberContextPendingSnapshot::from_live(pending)?,
+                }
+            }
+            FiberReturnContinuation::ContextCallbackInvoke {
+                site,
+                pending,
+                attached_default,
+            } => Self::ContextCallbackInvoke {
+                site: *site,
+                pending: AwbcFiberContextPendingSnapshot::from_live(pending)?,
+                attached_default: attached_default
+                    .as_ref()
+                    .map(AwbcRuntimeValueSnapshot::from_runtime_value)
+                    .transpose()?,
+            },
         })
     }
 
@@ -815,6 +859,46 @@ impl AwbcFiberReturnContinuationSnapshot {
                 FiberReturnContinuation::FormatOperand { site, ordinal }
             }
             Self::InstructionCall { site } => FiberReturnContinuation::InstructionCall { site },
+            Self::ContextCallbackDefault { site, pending } => {
+                FiberReturnContinuation::ContextCallbackDefault {
+                    site,
+                    pending: pending.into_live(owner)?,
+                }
+            }
+            Self::ContextCallbackInvoke {
+                site,
+                pending,
+                attached_default,
+            } => FiberReturnContinuation::ContextCallbackInvoke {
+                site,
+                pending: pending.into_live(owner)?,
+                attached_default: attached_default
+                    .map(|value| value.into_runtime_value_for_program(owner))
+                    .transpose()?,
+            },
+        })
+    }
+}
+
+impl AwbcFiberContextPendingSnapshot {
+    fn from_live(pending: &RuntimeArcErrorContextPending) -> AwbcSaveResult<Self> {
+        Ok(match pending {
+            RuntimeArcErrorContextPending::ResultErr(value) => {
+                Self::ResultErr(AwbcRuntimeValueSnapshot::from_runtime_value(value)?)
+            }
+            RuntimeArcErrorContextPending::OptionNone => Self::OptionNone,
+        })
+    }
+
+    fn into_live(
+        self,
+        owner: &RuntimeProgramOwner,
+    ) -> AwbcSaveResult<RuntimeArcErrorContextPending> {
+        Ok(match self {
+            Self::ResultErr(value) => RuntimeArcErrorContextPending::ResultErr(
+                value.into_runtime_value_for_program(owner)?,
+            ),
+            Self::OptionNone => RuntimeArcErrorContextPending::OptionNone,
         })
     }
 }
@@ -1349,6 +1433,19 @@ impl FiberState {
                     } => {
                         visit_value_graph(callable, &mut visitor)?;
                         visit_value_slice(arguments, &mut visitor)?;
+                    }
+                    FiberReturnContinuation::ContextCallbackDefault { pending, .. }
+                    | FiberReturnContinuation::ContextCallbackInvoke { pending, .. } => {
+                        if let RuntimeArcErrorContextPending::ResultErr(cause) = pending {
+                            visit_value_graph(cause, &mut visitor)?;
+                        }
+                        if let FiberReturnContinuation::ContextCallbackInvoke {
+                            attached_default: Some(value),
+                            ..
+                        } = &return_to.continuation
+                        {
+                            visit_value_graph(value, &mut visitor)?;
+                        }
                     }
                 }
             }
@@ -2267,6 +2364,12 @@ impl FiberState {
             FiberReturnContinuation::InstructionCall { site } if self.cursor != site => {
                 return Err(FiberStateError::InvalidFrame);
             }
+            FiberReturnContinuation::ContextCallbackDefault { site, .. }
+            | FiberReturnContinuation::ContextCallbackInvoke { site, .. }
+                if self.cursor != site || return_to.cursor != site =>
+            {
+                return Err(FiberStateError::InvalidFrame);
+            }
             _ => {}
         }
         validate_return_point(program, self.active_frame()?, function, &return_to)?;
@@ -3183,6 +3286,34 @@ fn validate_return_continuation(
                 *site,
             );
         }
+        FiberReturnContinuation::ContextCallbackDefault { site, pending } => {
+            return validate_context_callback_return(
+                program,
+                caller,
+                returning_function,
+                return_to,
+                *site,
+                pending,
+                true,
+                None,
+            );
+        }
+        FiberReturnContinuation::ContextCallbackInvoke {
+            site,
+            pending,
+            attached_default,
+        } => {
+            return validate_context_callback_return(
+                program,
+                caller,
+                returning_function,
+                return_to,
+                *site,
+                pending,
+                false,
+                attached_default.as_ref(),
+            );
+        }
         FiberReturnContinuation::ProjectCallDefault {
             site,
             logical_values,
@@ -3420,6 +3551,84 @@ fn instruction_call_receiver_update(
         return Err(FiberStateError::ReturnValueMismatch);
     }
     Ok(Some((*destination, value)))
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "snapshot validation keeps the exact callback stage and return site visible"
+)]
+fn validate_context_callback_return(
+    program: &AwbcProgram,
+    caller: &FiberFrame,
+    returning_function: AwbcFunctionId,
+    return_to: &FiberReturnPoint,
+    site: FiberCursor,
+    pending: &RuntimeArcErrorContextPending,
+    default_stage: bool,
+    attached_default: Option<&RuntimeValue>,
+) -> Result<(), FiberStateError> {
+    if site.function != caller.function
+        || return_to.cursor != site
+        || return_to.destination.is_some()
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let AwbcInstruction::CallIntrinsic {
+        dst: Some(_),
+        intrinsic,
+        args,
+    } = instruction_at_site(program, site)?
+    else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    let [receiver_register, callback_register] = args.as_slice() else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    let kind = match program
+        .intrinsics
+        .get(intrinsic.index())
+        .and_then(|record| record.identity.as_intrinsic())
+    {
+        Some(crate::value::RuntimeIntrinsic::StdResultWithContext) => {
+            RuntimeArcErrorContextKind::Result
+        }
+        Some(crate::value::RuntimeIntrinsic::StdOptionWithContext) => {
+            RuntimeArcErrorContextKind::Option
+        }
+        _ => return Err(FiberStateError::InvalidFrame),
+    };
+    let RuntimeArcErrorContextStart::NeedsMessage(expected) =
+        RuntimeArcError::begin_context_value(kind, caller.register(*receiver_register)?.clone())
+            .map_err(|_| FiberStateError::InvalidFrame)?
+    else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    if &expected != pending {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    let RuntimeValue::Callable(callback) = caller.register(*callback_register)? else {
+        return Err(FiberStateError::InvalidFrame);
+    };
+    validate_runtime_callable(program, callback, 0)?;
+    let arguments = callback
+        .materialize_arrow_arguments(&[])
+        .map_err(|_| FiberStateError::InvalidFrame)?;
+    let application = if let Some(value) = attached_default {
+        callback.complete_group_default(&arguments, value.clone())
+    } else {
+        callback.prepare_group(&arguments, None)
+    }
+    .map_err(|_| FiberStateError::InvalidFrame)?;
+    let invocation = match (default_stage, application) {
+        (true, RuntimeCallableApplication::AttachedDefault(invocation))
+        | (false, RuntimeCallableApplication::Invoke(invocation)) => invocation,
+        _ => return Err(FiberStateError::InvalidFrame),
+    };
+    if !matches!(invocation.body, RuntimeCallableBodyReference::Awbc(function) if function == returning_function)
+    {
+        return Err(FiberStateError::InvalidFrame);
+    }
+    Ok(())
 }
 
 fn validate_project_call_stage_values(

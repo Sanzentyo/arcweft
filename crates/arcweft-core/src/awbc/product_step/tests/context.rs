@@ -11,7 +11,7 @@ use crate::{
             AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
             AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
-        vm::{VmError, VmExecutionContext, VmHost},
+        vm::{VmError, VmExecutionContext},
     },
     effect::RuntimeArtifactFingerprint,
     entry::{RuntimeCallableId, RuntimeDialogueContentTemplateDigest},
@@ -73,7 +73,7 @@ fn context_program() -> AwbcContextFixture {
     .into_iter()
     .map(|intrinsic| AwbcIntrinsic {
         identity: RuntimeCallTarget::intrinsic(intrinsic),
-        signature: AwbcSignatureId(0),
+        signature: AwbcSignatureId(1),
         revision: 1,
     });
     let mut intrinsics = context_intrinsics.collect::<Vec<_>>();
@@ -83,7 +83,7 @@ fn context_program() -> AwbcContextFixture {
         revision: 1,
     });
 
-    let program = AwbcProgram {
+    let mut program = AwbcProgram {
         strings: vec![
             "context.callback".to_owned(),
             "std.dialogue.content".to_owned(),
@@ -112,45 +112,111 @@ fn context_program() -> AwbcContextFixture {
                     arguments: Vec::new(),
                 },
             ),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([0x70; 32]),
+                AwbcRuntimeTypeShape::Dynamic,
+            ),
         ],
-        signatures: vec![AwbcSignature {
-            params: Vec::new(),
-            result: Some(STRING),
-            effects: crate::awbc::schema::AwbcEffectSetId(0),
-        }],
-        frame_layouts: vec![AwbcFrameLayout {
-            slots: vec![AwbcFrameSlot {
-                name: None,
-                ty: STRING,
-                role: AwbcFrameSlotRole::ReturnValue,
-                scope_depth: 0,
-            }],
-            scopes: Vec::new(),
-            max_scope_depth: 0,
-        }],
-        instructions: vec![AwbcInstruction::CallIntrinsic {
-            dst: Some(AwbcRegisterId(0)),
-            intrinsic: AwbcIntrinsicId(4),
-            args: Vec::new(),
-        }],
-        blocks: vec![AwbcBlock {
-            owner: callback_function,
-            instructions: AwbcTableRange::new(0, 1),
-            terminator: AwbcTerminator::Return {
-                value: Some(AwbcRegisterId(0)),
+        signatures: vec![
+            AwbcSignature {
+                params: Vec::new(),
+                result: Some(STRING),
+                effects: crate::awbc::schema::AwbcEffectSetId(0),
             },
-            safe_point: AwbcSafePointKind::Return,
-            source_map: None,
-        }],
-        functions: vec![AwbcFunction {
-            public_id: Some(AwbcStringId(0)),
-            kind: AwbcFunctionKind::Ordinary,
-            signature: AwbcSignatureId(0),
-            frame_layout: AwbcFrameLayoutId(0),
-            blocks: AwbcTableRange::new(0, 1),
-            entry_block: AwbcBlockId(0),
-            flags: Default::default(),
-        }],
+            AwbcSignature {
+                params: vec![AwbcTypeId(4), AwbcTypeId(4)],
+                result: Some(AwbcTypeId(4)),
+                effects: crate::awbc::schema::AwbcEffectSetId(0),
+            },
+        ],
+        frame_layouts: vec![
+            AwbcFrameLayout {
+                slots: vec![AwbcFrameSlot {
+                    name: None,
+                    ty: STRING,
+                    role: AwbcFrameSlotRole::ReturnValue,
+                    scope_depth: 0,
+                }],
+                scopes: Vec::new(),
+                max_scope_depth: 0,
+            },
+            AwbcFrameLayout {
+                slots: vec![
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::Parameter,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::Parameter,
+                        scope_depth: 0,
+                    },
+                    AwbcFrameSlot {
+                        name: None,
+                        ty: AwbcTypeId(4),
+                        role: AwbcFrameSlotRole::ReturnValue,
+                        scope_depth: 0,
+                    },
+                ],
+                scopes: Vec::new(),
+                max_scope_depth: 0,
+            },
+        ],
+        instructions: vec![
+            AwbcInstruction::CallIntrinsic {
+                dst: Some(AwbcRegisterId(0)),
+                intrinsic: AwbcIntrinsicId(4),
+                args: Vec::new(),
+            },
+            AwbcInstruction::CallIntrinsic {
+                dst: Some(AwbcRegisterId(2)),
+                intrinsic: AwbcIntrinsicId(0),
+                args: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+            },
+        ],
+        blocks: vec![
+            AwbcBlock {
+                owner: callback_function,
+                instructions: AwbcTableRange::new(0, 1),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(0)),
+                },
+                safe_point: AwbcSafePointKind::CallableBoundary,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(1),
+                instructions: AwbcTableRange::new(1, 1),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(2)),
+                },
+                safe_point: AwbcSafePointKind::CallableBoundary,
+                source_map: None,
+            },
+        ],
+        functions: vec![
+            AwbcFunction {
+                public_id: Some(AwbcStringId(0)),
+                kind: AwbcFunctionKind::Ordinary,
+                signature: AwbcSignatureId(0),
+                frame_layout: AwbcFrameLayoutId(0),
+                blocks: AwbcTableRange::new(0, 1),
+                entry_block: AwbcBlockId(0),
+                flags: Default::default(),
+            },
+            AwbcFunction {
+                public_id: None,
+                kind: AwbcFunctionKind::Ordinary,
+                signature: AwbcSignatureId(1),
+                frame_layout: AwbcFrameLayoutId(1),
+                blocks: AwbcTableRange::new(1, 1),
+                entry_block: AwbcBlockId(1),
+                flags: Default::default(),
+            },
+        ],
         intrinsics,
         callable_states: vec![RuntimeCallableStateDefinition {
             function_type: CALLBACK,
@@ -181,6 +247,32 @@ fn context_program() -> AwbcContextFixture {
         plain_text_context_template: Some(template_ref),
         ..AwbcProgram::default()
     };
+    for index in 1..4 {
+        let function = AwbcFunctionId(index + 1);
+        program.instructions.push(AwbcInstruction::CallIntrinsic {
+            dst: Some(AwbcRegisterId(2)),
+            intrinsic: AwbcIntrinsicId(index),
+            args: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+        });
+        program.blocks.push(AwbcBlock {
+            owner: function,
+            instructions: AwbcTableRange::new(index + 1, 1),
+            terminator: AwbcTerminator::Return {
+                value: Some(AwbcRegisterId(2)),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        });
+        program.functions.push(AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(1),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(index + 1, 1),
+            entry_block: AwbcBlockId(index + 1),
+            flags: Default::default(),
+        });
+    }
     AwbcContextFixture {
         program: Arc::new(program),
         artifact,
@@ -215,6 +307,7 @@ fn evaluate_context(
     receiver: RuntimeValue,
     message: RuntimeValue,
     backend: &mut impl RuntimeCallBackend,
+    fallback_stats: &mut crate::step::RuntimePureCallStats,
 ) -> Result<RuntimeValue, VmError> {
     let context = if let Some(proof) = proof {
         VmExecutionContext::for_program_with_plain_text_context_proof(
@@ -226,11 +319,9 @@ fn evaluate_context(
         VmExecutionContext::for_program(fixture.artifact, Arc::clone(&fixture.program))
     };
     let program_owner = RuntimeProgramOwner::Awbc(Arc::clone(&fixture.program));
-    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
     let mut host = ProductVmHost {
         backend,
-        fallback_stats: &mut fallback_stats,
-        context,
+        fallback_stats,
         program_owner,
     };
     let intrinsic_id = fixture
@@ -241,8 +332,45 @@ fn evaluate_context(
         .and_then(|index| u32::try_from(index).ok())
         .map(AwbcIntrinsicId)
         .expect("context intrinsic is registered in the fixture program");
-    host.call_intrinsic(&fixture.program, intrinsic_id, &[receiver, message])?
-        .ok_or_else(|| VmError::Runtime("context intrinsic returned no value".to_owned()))
+    let function = AwbcFunctionId(intrinsic_id.0 + 1);
+    let mut fiber = crate::awbc::fiber::FiberState::for_function(
+        &fixture.program,
+        crate::awbc::schema::AwbcEntryId(0),
+        function,
+        1,
+        64,
+    )?;
+    fiber
+        .active_frame_mut()?
+        .bind_positional_arguments(&fixture.program, &[receiver, message])?;
+    for _ in 0..32 {
+        let output = crate::awbc::vm::step_with_host_context(
+            &fixture.program,
+            &mut fiber,
+            crate::awbc::vm::VmStepOptions {
+                max_instructions: 64,
+            },
+            &context,
+            &mut host,
+        )?;
+        match output.exit {
+            crate::awbc::vm::VmExit::Running => {}
+            crate::awbc::vm::VmExit::Returned(Some(value)) => return Ok(value),
+            crate::awbc::vm::VmExit::Trapped(trap) => {
+                return Err(VmError::Runtime(format!(
+                    "context callback trapped: {trap:?}"
+                )));
+            }
+            exit => {
+                return Err(VmError::Runtime(format!(
+                    "unexpected context exit: {exit:?}"
+                )));
+            }
+        }
+    }
+    Err(VmError::Runtime(
+        "context callback did not complete".to_owned(),
+    ))
 }
 
 fn context_error(value: RuntimeValue) -> RuntimeArcError {
@@ -279,6 +407,7 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
         [],
     )
     .expect("callback state is AWBC-owned");
+    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
 
     let error = evaluate_context(
         &fixture,
@@ -287,9 +416,18 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
         RuntimeValue::result_err(RuntimeValue::String("asset missing".to_owned())),
         RuntimeValue::Callable(callback.clone()),
         &mut backend,
+        &mut fallback_stats,
     )
     .expect("Result::Err invokes lazy context");
     assert_eq!(calls.get(), 1);
+    assert_eq!(
+        (
+            fallback_stats.pure_calls,
+            fallback_stats.vm_calls,
+            fallback_stats.fallbacks
+        ),
+        (1, 1, 1)
+    );
     let error = context_error(error);
     assert_eq!(error.message(), &expected_content(&fixture, "lazy context"));
     assert!(matches!(
@@ -305,9 +443,18 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
         RuntimeValue::option_none(),
         RuntimeValue::Callable(callback.clone()),
         &mut backend,
+        &mut fallback_stats,
     )
     .expect("Option::None invokes lazy context");
     assert_eq!(calls.get(), 2);
+    assert_eq!(
+        (
+            fallback_stats.pure_calls,
+            fallback_stats.vm_calls,
+            fallback_stats.fallbacks
+        ),
+        (2, 2, 2)
+    );
     assert_eq!(
         context_error(none).message(),
         &expected_content(&fixture, "lazy context")
@@ -320,9 +467,18 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
         RuntimeValue::result_ok(RuntimeValue::String("ready".to_owned())),
         RuntimeValue::Callable(callback.clone()),
         &mut backend,
+        &mut fallback_stats,
     )
     .expect("Result::Ok bypasses the callback");
     assert_eq!(calls.get(), 2);
+    assert_eq!(
+        (
+            fallback_stats.pure_calls,
+            fallback_stats.vm_calls,
+            fallback_stats.fallbacks
+        ),
+        (2, 2, 2)
+    );
     assert_eq!(
         ok.try_into_builtin_variant_case(),
         Ok((
@@ -338,9 +494,18 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
         RuntimeValue::option_some(RuntimeValue::String("route.main".to_owned())),
         RuntimeValue::Callable(callback),
         &mut backend,
+        &mut fallback_stats,
     )
     .expect("Option::Some bypasses the callback");
     assert_eq!(calls.get(), 2);
+    assert_eq!(
+        (
+            fallback_stats.pure_calls,
+            fallback_stats.vm_calls,
+            fallback_stats.fallbacks
+        ),
+        (2, 2, 2)
+    );
     assert_eq!(
         some.try_into_builtin_variant_case(),
         Ok((
@@ -354,6 +519,7 @@ fn awbc_context_callbacks_match_native_laziness_and_preserve_error_cause() {
 fn awbc_standalone_context_requires_string_proof_but_accepts_direct_content() {
     let fixture = context_program();
     let mut backend = VmRuntimePureCallBackend::default();
+    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
 
     let missing_proof = evaluate_context(
         &fixture,
@@ -362,6 +528,7 @@ fn awbc_standalone_context_requires_string_proof_but_accepts_direct_content() {
         RuntimeValue::result_err(RuntimeValue::String("cause".to_owned())),
         RuntimeValue::String("plain text".to_owned()),
         &mut backend,
+        &mut fallback_stats,
     );
     assert!(missing_proof.is_err());
 
@@ -373,6 +540,7 @@ fn awbc_standalone_context_requires_string_proof_but_accepts_direct_content() {
         RuntimeValue::result_err(RuntimeValue::String("cause".to_owned())),
         direct_content.clone().into_runtime_value(),
         &mut backend,
+        &mut fallback_stats,
     )
     .expect("already typed Content does not need a String-conversion proof");
     assert_eq!(context_error(result).message(), &direct_content);

@@ -13,6 +13,7 @@ use arcweft_id::{DeclarationIdentityFamily, TextKey};
 use arcweft_source::{
     SourceCoordinate, SourceCoordinateError, SourceDocumentId, SourceRange, SourceRevision,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -446,7 +447,83 @@ pub(crate) enum RuntimeArcErrorContextValueError<E> {
     Message(E),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeArcErrorContextKind {
+    Result,
+    Option,
+}
+
+/// Typed error or absence retained while a lazy context message is evaluated.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum RuntimeArcErrorContextPending {
+    ResultErr(RuntimeValue),
+    OptionNone,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum RuntimeArcErrorContextStart {
+    Complete(RuntimeValue),
+    NeedsMessage(RuntimeArcErrorContextPending),
+}
+
 impl RuntimeArcError {
+    /// Selects the lazy context branch while retaining the exact typed cause.
+    pub(crate) fn begin_context_value(
+        kind: RuntimeArcErrorContextKind,
+        receiver: RuntimeValue,
+    ) -> Result<RuntimeArcErrorContextStart, RuntimeArcErrorValueError> {
+        let (case, payload) = receiver
+            .try_into_builtin_variant_case()
+            .map_err(|_| RuntimeArcErrorValueError::InvalidContextReceiver)?;
+        match (kind, case, payload) {
+            (
+                RuntimeArcErrorContextKind::Result,
+                RuntimeBuiltinVariantCaseIdentity::ResultOk,
+                Some(value),
+            )
+            | (
+                RuntimeArcErrorContextKind::Option,
+                RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                Some(value),
+            ) => Ok(RuntimeArcErrorContextStart::Complete(
+                RuntimeValue::result_ok(value),
+            )),
+            (
+                RuntimeArcErrorContextKind::Result,
+                RuntimeBuiltinVariantCaseIdentity::ResultErr,
+                Some(cause_value),
+            ) => Ok(RuntimeArcErrorContextStart::NeedsMessage(
+                RuntimeArcErrorContextPending::ResultErr(cause_value),
+            )),
+            (
+                RuntimeArcErrorContextKind::Option,
+                RuntimeBuiltinVariantCaseIdentity::OptionNone,
+                None,
+            ) => Ok(RuntimeArcErrorContextStart::NeedsMessage(
+                RuntimeArcErrorContextPending::OptionNone,
+            )),
+            _ => Err(RuntimeArcErrorValueError::InvalidContextReceiver),
+        }
+    }
+
+    /// Finishes only the selected error/absence branch after its message exists.
+    pub(crate) fn finish_context_value(
+        pending: RuntimeArcErrorContextPending,
+        message: RuntimeDialogueContentValue,
+        frame: RuntimeArcErrorFrame,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValue, RuntimeArcErrorValueError> {
+        let error = match pending {
+            RuntimeArcErrorContextPending::ResultErr(cause) => {
+                Self::context_from_result_with_limits(cause, message, frame, limits)?
+            }
+            RuntimeArcErrorContextPending::OptionNone => {
+                Self::missing_value_with_limits(message, frame, limits)?
+            }
+        };
+        Ok(RuntimeValue::result_err(error.into_runtime_value()))
+    }
+
     /// Constructs an ArcError payload under the named engine limits.
     pub fn try_new(
         kind: RuntimeArcErrorKind,
@@ -559,29 +636,15 @@ impl RuntimeArcError {
         frame: RuntimeArcErrorFrame,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeArcErrorContextValueError<E>> {
-        let (case, payload) = result.try_into_builtin_variant_case().map_err(|_| {
-            RuntimeArcErrorContextValueError::Payload(
-                RuntimeArcErrorValueError::InvalidContextReceiver,
-            )
-        })?;
-        match case {
-            RuntimeBuiltinVariantCaseIdentity::ResultOk => payload
-                .map(RuntimeValue::result_ok)
-                .ok_or(RuntimeArcErrorContextValueError::Payload(
-                    RuntimeArcErrorValueError::InvalidContextReceiver,
-                )),
-            RuntimeBuiltinVariantCaseIdentity::ResultErr => {
-                let cause = payload.ok_or(RuntimeArcErrorContextValueError::Payload(
-                    RuntimeArcErrorValueError::InvalidContextReceiver,
-                ))?;
+        match Self::begin_context_value(RuntimeArcErrorContextKind::Result, result)
+            .map_err(RuntimeArcErrorContextValueError::Payload)?
+        {
+            RuntimeArcErrorContextStart::Complete(value) => Ok(value),
+            RuntimeArcErrorContextStart::NeedsMessage(pending) => {
                 let message = message().map_err(RuntimeArcErrorContextValueError::Message)?;
-                let error = Self::context_from_result_with_limits(cause, message, frame, limits)
-                    .map_err(RuntimeArcErrorContextValueError::Payload)?;
-                Ok(RuntimeValue::result_err(error.into_runtime_value()))
+                Self::finish_context_value(pending, message, frame, limits)
+                    .map_err(RuntimeArcErrorContextValueError::Payload)
             }
-            _ => Err(RuntimeArcErrorContextValueError::Payload(
-                RuntimeArcErrorValueError::InvalidContextReceiver,
-            )),
         }
     }
 
@@ -622,31 +685,15 @@ impl RuntimeArcError {
         frame: RuntimeArcErrorFrame,
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValue, RuntimeArcErrorContextValueError<E>> {
-        let (case, payload) = option.try_into_builtin_variant_case().map_err(|_| {
-            RuntimeArcErrorContextValueError::Payload(
-                RuntimeArcErrorValueError::InvalidContextReceiver,
-            )
-        })?;
-        match case {
-            RuntimeBuiltinVariantCaseIdentity::OptionSome => payload
-                .map(RuntimeValue::result_ok)
-                .ok_or(RuntimeArcErrorContextValueError::Payload(
-                    RuntimeArcErrorValueError::InvalidContextReceiver,
-                )),
-            RuntimeBuiltinVariantCaseIdentity::OptionNone => {
-                if payload.is_some() {
-                    return Err(RuntimeArcErrorContextValueError::Payload(
-                        RuntimeArcErrorValueError::InvalidContextReceiver,
-                    ));
-                }
+        match Self::begin_context_value(RuntimeArcErrorContextKind::Option, option)
+            .map_err(RuntimeArcErrorContextValueError::Payload)?
+        {
+            RuntimeArcErrorContextStart::Complete(value) => Ok(value),
+            RuntimeArcErrorContextStart::NeedsMessage(pending) => {
                 let message = message().map_err(RuntimeArcErrorContextValueError::Message)?;
-                let error = Self::missing_value_with_limits(message, frame, limits)
-                    .map_err(RuntimeArcErrorContextValueError::Payload)?;
-                Ok(RuntimeValue::result_err(error.into_runtime_value()))
+                Self::finish_context_value(pending, message, frame, limits)
+                    .map_err(RuntimeArcErrorContextValueError::Payload)
             }
-            _ => Err(RuntimeArcErrorContextValueError::Payload(
-                RuntimeArcErrorValueError::InvalidContextReceiver,
-            )),
         }
     }
 

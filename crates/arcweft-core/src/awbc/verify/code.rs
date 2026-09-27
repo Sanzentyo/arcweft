@@ -20,9 +20,9 @@ use crate::awbc::schema::{
 };
 use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{
-    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableParameterKind,
-    RuntimeCallablePosition, RuntimeCallableRetainedRole, RuntimeCallableTransition,
-    RuntimePlanSequenceKind,
+    RuntimeAgentTypeProjection, RuntimeCallableAttachedContract, RuntimeCallableDefault,
+    RuntimeCallableParameterKind, RuntimeCallablePosition, RuntimeCallableRetainedRole,
+    RuntimeCallableTransition, RuntimePlanSequenceKind,
 };
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
@@ -1114,6 +1114,23 @@ fn apply_instruction(
             let intrinsic = &program.intrinsics[intrinsic.index()];
             if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
+                if matches!(
+                    identity,
+                    RuntimeIntrinsic::StdOptionContext
+                        | RuntimeIntrinsic::StdOptionWithContext
+                        | RuntimeIntrinsic::StdResultContext
+                        | RuntimeIntrinsic::StdResultWithContext
+                ) {
+                    if dst.is_none() {
+                        return invalid_type(&at, "context intrinsic result destination");
+                    }
+                    verify_context_intrinsic_signature(
+                        program,
+                        *identity,
+                        intrinsic.signature,
+                        &at,
+                    )?;
+                }
             }
             verify_callable(
                 verifier,
@@ -3786,6 +3803,147 @@ fn verify_capacity_intrinsic_signature(
         });
     }
     Ok(())
+}
+
+fn verify_context_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "context intrinsic has no signature".to_owned(),
+        })?;
+    let [receiver, message] = signature.params.as_slice() else {
+        return invalid_type(at, "context intrinsic requires receiver and message");
+    };
+    let intrinsic_pure = program
+        .effect_sets
+        .get(signature.effects.index())
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !intrinsic_pure {
+        return invalid_type(at, "context intrinsic must be effect-free");
+    }
+    let lazy = matches!(
+        intrinsic,
+        RuntimeIntrinsic::StdOptionWithContext | RuntimeIntrinsic::StdResultWithContext
+    );
+    let message_valid = if lazy {
+        matches!(
+            runtime_shape(program, *message),
+            Some(AwbcRuntimeTypeShape::Function { contract, parameters, result })
+                if contract.binder().is_empty()
+                    && contract.predicate().is_unconstrained()
+                    && contract.invocation() == &crate::effect_row::EffectFormula::empty()
+                    && parameters.is_empty()
+                    && is_context_message_type(program, *result, 0)
+        )
+    } else {
+        is_context_message_type(program, *message, 0)
+    };
+    if !message_valid {
+        return invalid_type(at, "context message or pure zero-argument callback type");
+    }
+    if lazy {
+        verify_context_callback_bodies(program, *message, at)?;
+    }
+    let receiver_case = if matches!(
+        intrinsic,
+        RuntimeIntrinsic::StdOptionContext | RuntimeIntrinsic::StdOptionWithContext
+    ) {
+        RuntimeBuiltinVariantCaseIdentity::OptionSome
+    } else {
+        RuntimeBuiltinVariantCaseIdentity::ResultOk
+    };
+    let Some(item) = program.builtin_variant_payload_item(*receiver, receiver_case) else {
+        return invalid_type(at, "context receiver Option or Result type");
+    };
+    let Some(result) = signature.result else {
+        return invalid_type(at, "context intrinsic Result type");
+    };
+    let Some(result_item) =
+        program.builtin_variant_payload_item(result, RuntimeBuiltinVariantCaseIdentity::ResultOk)
+    else {
+        return invalid_type(at, "context intrinsic Result type");
+    };
+    let Some(error_item) =
+        program.builtin_variant_payload_item(result, RuntimeBuiltinVariantCaseIdentity::ResultErr)
+    else {
+        return invalid_type(at, "context intrinsic ArcError result type");
+    };
+    let arc_error = crate::pattern::runtime_standard_opaque_type(&["ArcError"])
+        .and_then(|spec| spec.monomorphic_owner())
+        .expect("standard ArcError has a monomorphic owner");
+    if result_item != item || program.opaque_owner(error_item).ok().flatten() != Some(arc_error) {
+        return invalid_type(at, "context intrinsic Result item and ArcError cause");
+    }
+    Ok(())
+}
+
+fn verify_context_callback_bodies(
+    program: &AwbcProgram,
+    callback_type: AwbcTypeId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    for state in program
+        .callable_states
+        .iter()
+        .filter(|state| state.function_type == callback_type)
+    {
+        if let RuntimeCallableAttachedContract::Defaulted {
+            default: RuntimeCallableDefault::Body { function, .. },
+            ..
+        } = &state.attached
+        {
+            verify_context_callback_body(program, *function, at)?;
+        }
+        if let RuntimeCallableTransition::Invoke { function, .. } = &state.transition {
+            verify_context_callback_body(program, *function, at)?;
+        }
+    }
+    Ok(())
+}
+
+fn verify_context_callback_body(
+    program: &AwbcProgram,
+    function: crate::awbc::schema::AwbcFunctionId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let Some(body) = program.functions.get(function.index()) else {
+        return invalid_type(at, "context callback body function");
+    };
+    let pure = program
+        .signatures
+        .get(body.signature.index())
+        .and_then(|signature| program.effect_sets.get(signature.effects.index()))
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !pure || body.flags.contains(AwbcFunctionFlag::MaySuspend) {
+        return invalid_type(
+            at,
+            "context callback body must be effect-free and non-suspending",
+        );
+    }
+    Ok(())
+}
+
+fn is_context_message_type(program: &AwbcProgram, ty: AwbcTypeId, depth: usize) -> bool {
+    if depth > 8 {
+        return false;
+    }
+    match runtime_shape(program, ty) {
+        Some(AwbcRuntimeTypeShape::String) => true,
+        Some(AwbcRuntimeTypeShape::Choice(alternatives)) => {
+            !alternatives.is_empty()
+                && alternatives
+                    .iter()
+                    .all(|alternative| is_context_message_type(program, *alternative, depth + 1))
+        }
+        _ => is_exact_dialogue_content_type(program, ty),
+    }
 }
 
 fn runtime_shape(program: &AwbcProgram, ty: AwbcTypeId) -> Option<&AwbcRuntimeTypeShape> {

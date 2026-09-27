@@ -3,6 +3,7 @@ mod agent_constructors;
 mod agent_projection;
 mod array;
 mod callable_specialization;
+mod context_callback_execution;
 mod format_content_execution;
 mod instruction_call_execution;
 mod record_shapes;
