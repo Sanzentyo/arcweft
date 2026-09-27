@@ -4181,6 +4181,46 @@ impl RuntimeFormatTemplateFact {
     }
 }
 
+fn format_scalar_shape(ty: &RuntimeNormalizedType) -> bool {
+    matches!(
+        ty.shape(),
+        RuntimeTypeShape::Unit
+            | RuntimeTypeShape::Bool
+            | RuntimeTypeShape::Signed(_)
+            | RuntimeTypeShape::Unsigned(_)
+            | RuntimeTypeShape::F32
+            | RuntimeTypeShape::F64
+            | RuntimeTypeShape::String
+            | RuntimeTypeShape::Char
+            | RuntimeTypeShape::Duration
+            | RuntimeTypeShape::Progress
+            | RuntimeTypeShape::EntityReference
+    )
+}
+
+fn format_witness_admits(
+    witness: &arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness,
+    ty: &RuntimeNormalizedType,
+) -> bool {
+    use arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness;
+
+    match witness {
+        CheckedDisplayWitness::Scalar(_) => format_scalar_shape(ty),
+        CheckedDisplayWitness::Content => {
+            ty.identity()
+                == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+        }
+        CheckedDisplayWitness::Option(_) | CheckedDisplayWitness::OptionDeferredGeneric(_) => {
+            matches!(ty.shape(), RuntimeTypeShape::Option { item, .. } if format_scalar_shape(item))
+        }
+        CheckedDisplayWitness::DeferredGeneric(_) => {
+            format_scalar_shape(ty)
+                || ty.identity()
+                    == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+        }
+    }
+}
+
 /// Closed runtime dispatch selected by the shared semantic resolver.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
@@ -7935,6 +7975,23 @@ impl RuntimePlanSemanticFacts {
                 formatted.value_source(),
             );
             if !matches!(canonical, Ok(ref template) if template == fact.template()) {
+                invalid_format_template = true;
+            }
+            let mut values = call.operands().iter().filter(|operand| {
+                operand
+                    .parameter()
+                    .is_some_and(|parameter| parameter.group() == 0 && parameter.parameter() == 0)
+            });
+            let value = values.next();
+            if values.next().is_some()
+                || !value.is_some_and(|operand| {
+                    operand.source()
+                        == RuntimeResolvedCallOperandSource::Expression(
+                            formatted.checked().value().owner(),
+                        )
+                        && format_witness_admits(formatted.checked().witness(), operand.ty())
+                })
+            {
                 invalid_format_template = true;
             }
         });
