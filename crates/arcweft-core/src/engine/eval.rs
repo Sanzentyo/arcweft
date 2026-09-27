@@ -1071,36 +1071,28 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
 fn evaluate_core_iterator_intrinsic(
     intrinsic: RuntimeIntrinsic,
     args: &[RuntimeValue],
-) -> Option<RuntimeValue> {
+) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
     match (intrinsic, args) {
-        (RuntimeIntrinsic::CoreIterCollect, [value]) => Some(
-            evaluate_core_iter_collect_intrinsic(value.clone()).unwrap_or_else(|error| {
-                RuntimeValue::String(format!("core.iter.collect({error})"))
-            }),
-        ),
-        (intrinsic, [value]) if intrinsic.builtin_iterator_family().is_some() => Some(
-            evaluate_core_iter_into_iter_intrinsic(
+        (RuntimeIntrinsic::CoreIterCollect, [value]) => {
+            Some(evaluate_core_iter_collect_intrinsic(value.clone()))
+        }
+        (intrinsic, [value]) if intrinsic.builtin_iterator_family().is_some() => {
+            Some(evaluate_core_iter_into_iter_intrinsic(
                 value.clone(),
                 intrinsic
                     .builtin_iterator_family()
                     .expect("guard retains a built-in iterator family"),
-            )
-            .unwrap_or_else(|error| RuntimeValue::String(format!("core.iter.into_iter({error})"))),
-        ),
-        (RuntimeIntrinsic::CoreIterNext, [value]) => Some(
-            evaluate_core_iter_next_intrinsic(value.clone())
-                .unwrap_or_else(|error| RuntimeValue::String(format!("core.iter.next({error})"))),
-        ),
-        (RuntimeIntrinsic::CoreOptionIsSome, [value]) => Some(
-            evaluate_core_option_is_some_intrinsic(value).unwrap_or_else(|error| {
-                RuntimeValue::String(format!("core.option.is_some({error})"))
-            }),
-        ),
-        (RuntimeIntrinsic::CoreOptionUnwrap, [value]) => Some(
-            evaluate_core_option_unwrap_intrinsic(value.clone()).unwrap_or_else(|error| {
-                RuntimeValue::String(format!("core.option.unwrap({error})"))
-            }),
-        ),
+            ))
+        }
+        (RuntimeIntrinsic::CoreIterNext, [value]) => {
+            Some(evaluate_core_iter_next_intrinsic(value.clone()))
+        }
+        (RuntimeIntrinsic::CoreOptionIsSome, [value]) => {
+            Some(evaluate_core_option_is_some_intrinsic(value))
+        }
+        (RuntimeIntrinsic::CoreOptionUnwrap, [value]) => {
+            Some(evaluate_core_option_unwrap_intrinsic(value.clone()))
+        }
         _ => None,
     }
 }
@@ -1110,26 +1102,26 @@ pub(crate) fn evaluate_runtime_call(
     args: &[RuntimeValue],
     external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
-) -> RuntimeValue {
+) -> Result<RuntimeValue, RuntimeEvalError> {
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Ok(Some(value)) = evaluate_std_float_intrinsic(intrinsic, args)
+        && let Some(value) = evaluate_std_float_intrinsic(intrinsic, args)?
     {
-        return value;
+        return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Ok(Some(value)) = evaluate_string_intrinsic(intrinsic, args)
+        && let Some(value) = evaluate_string_intrinsic(intrinsic, args)?
     {
-        return value;
+        return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Ok(Some(value)) = evaluate_capacity_intrinsic(intrinsic, args)
+        && let Some(value) = evaluate_capacity_intrinsic(intrinsic, args)?
     {
-        return value;
+        return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
-        && let Ok(Some(value)) = evaluate_index_intrinsic(intrinsic, args)
+        && let Some(value) = evaluate_index_intrinsic(intrinsic, args)?
     {
-        return value;
+        return Ok(value);
     }
     if let Some(intrinsic) = callee.as_intrinsic()
         && let Some(value) = evaluate_core_iterator_intrinsic(intrinsic, args)
@@ -1144,7 +1136,7 @@ fn evaluate_runtime_call_after_intrinsics(
     args: &[RuntimeValue],
     external_context: &RuntimeExternalCallContext,
     pure_backend: &mut impl RuntimeCallBackend,
-) -> RuntimeValue {
+) -> Result<RuntimeValue, RuntimeEvalError> {
     match (callee.as_intrinsic(), args) {
         (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
             evaluate_binary(
@@ -1152,71 +1144,52 @@ fn evaluate_runtime_call_after_intrinsics(
                 RuntimeBinaryOp::Add,
                 RuntimeValue::Int(*rhs),
             )
-            .unwrap_or_else(|_| RuntimeValue::String("add(<unsupported>)".to_owned()))
         }
-        (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args)
-            .unwrap_or_else(|error| RuntimeValue::String(format!("core.range({error})"))),
+        (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args),
         (
             Some(RuntimeIntrinsic::MathMatmulF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
-        ) => pure_backend.call_math_matmul_f32(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.matmul_f32({error})")),
-            RuntimeValue::matrix_f32,
-        ),
+        ) => pure_backend
+            .call_math_matmul_f32(lhs, rhs)
+            .map(RuntimeValue::matrix_f32),
         (
             Some(RuntimeIntrinsic::MathMatrixAddF32),
             [RuntimeValue::MatrixF32(lhs), RuntimeValue::MatrixF32(rhs)],
-        ) => pure_backend.call_math_matrix_add_f32(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.matrix_add_f32({error})")),
-            RuntimeValue::matrix_f32,
-        ),
+        ) => pure_backend
+            .call_math_matrix_add_f32(lhs, rhs)
+            .map(RuntimeValue::matrix_f32),
         (
             Some(RuntimeIntrinsic::MathTensorAddF32),
             [RuntimeValue::TensorF32(lhs), RuntimeValue::TensorF32(rhs)],
-        ) => pure_backend.call_math_tensor_add_f32(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.tensor_add_f32({error})")),
-            RuntimeValue::tensor_f32,
-        ),
+        ) => pure_backend
+            .call_math_tensor_add_f32(lhs, rhs)
+            .map(RuntimeValue::tensor_f32),
         (
             Some(RuntimeIntrinsic::MathMatmulF64),
             [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
-        ) => pure_backend.call_math_matmul_f64(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.matmul_f64({error})")),
-            RuntimeValue::matrix_f64,
-        ),
+        ) => pure_backend
+            .call_math_matmul_f64(lhs, rhs)
+            .map(RuntimeValue::matrix_f64),
         (
             Some(RuntimeIntrinsic::MathMatrixAddF64),
             [RuntimeValue::MatrixF64(lhs), RuntimeValue::MatrixF64(rhs)],
-        ) => pure_backend.call_math_matrix_add_f64(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.matrix_add_f64({error})")),
-            RuntimeValue::matrix_f64,
-        ),
+        ) => pure_backend
+            .call_math_matrix_add_f64(lhs, rhs)
+            .map(RuntimeValue::matrix_f64),
         (
             Some(RuntimeIntrinsic::MathTensorAddF64),
             [RuntimeValue::TensorF64(lhs), RuntimeValue::TensorF64(rhs)],
-        ) => pure_backend.call_math_tensor_add_f64(lhs, rhs).map_or_else(
-            |error| RuntimeValue::String(format!("math.tensor_add_f64({error})")),
-            RuntimeValue::tensor_f64,
-        ),
+        ) => pure_backend
+            .call_math_tensor_add_f64(lhs, rhs)
+            .map(RuntimeValue::tensor_f64),
         _ => pure_backend
             .call_external(external_context, callee, args)
-            .map_or_else(
-                || {
-                    RuntimeValue::String(format!(
-                        "{}({})",
-                        callee.as_label(),
-                        args.iter()
-                            .map(runtime_value_label)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ))
-                },
-                |result| {
-                    result.unwrap_or_else(|error| {
-                        RuntimeValue::String(format!("{}({error})", callee.as_label()))
-                    })
-                },
-            ),
+            .unwrap_or_else(|| {
+                Err(RuntimeEvalError::UnsupportedPure {
+                    name: callee.as_label().to_owned(),
+                    reason: "no runtime backend accepted this exact call".to_owned(),
+                })
+            }),
     }
 }
 

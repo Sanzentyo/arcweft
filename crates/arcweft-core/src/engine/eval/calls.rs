@@ -146,7 +146,7 @@ impl Engine {
             })?;
             (values, context)
         };
-        Ok(evaluate_runtime_call(callee, &args, &context, pure_backend))
+        evaluate_runtime_call(callee, &args, &context, pure_backend)
     }
 
     fn evaluate_context_intrinsic(

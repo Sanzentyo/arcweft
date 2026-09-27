@@ -4,16 +4,18 @@ use crate::{
         RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
         RuntimeVariantIdentity,
     },
+    pure::{RuntimeExternalCallContext, VmRuntimePureCallBackend},
     runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
     value::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
-        RuntimeEntityReference, RuntimeEnv, RuntimeEvalError, RuntimeExpressionFailure,
-        RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordValue,
-        RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
-        evaluate_binary, evaluate_capacity_intrinsic, evaluate_core_iter_collect_intrinsic,
-        evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        RuntimeCallTarget, RuntimeEntityReference, RuntimeEnv, RuntimeEvalError,
+        RuntimeExpressionFailure, RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding,
+        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        RuntimeValueNestingError, evaluate_binary, evaluate_capacity_intrinsic,
+        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
+        evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
+        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -523,6 +525,22 @@ fn integer_division_by_zero_is_a_typed_failure_for_every_width() {
         ),
         Ok(RuntimeValue::f32(f32::INFINITY)),
         "floating division retains IEEE behavior"
+    );
+}
+
+#[test]
+fn runtime_call_keeps_intrinsic_failure_as_an_error() {
+    let result = crate::engine::evaluate_runtime_call(
+        &RuntimeCallTarget::intrinsic(RuntimeIntrinsic::CoreOptionUnwrap),
+        &[RuntimeValue::option_none()],
+        &RuntimeExternalCallContext::unbound(),
+        &mut VmRuntimePureCallBackend::default(),
+    );
+    assert_eq!(
+        result,
+        Err(RuntimeEvalError::ExpectedBracketSeq(
+            "core.option.unwrap called on None".to_owned(),
+        )),
     );
 }
 

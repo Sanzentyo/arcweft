@@ -108,12 +108,14 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
                 ))
             })?
         };
-        Ok(Some(crate::engine::evaluate_runtime_call(
+        crate::engine::evaluate_runtime_call(
             &record.identity,
             args,
             &external_context,
             self.backend,
-        )))
+        )
+        .map(Some)
+        .map_err(VmError::Evaluation)
     }
 
     fn call_pure_helper(
