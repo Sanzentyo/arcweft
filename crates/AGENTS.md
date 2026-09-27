@@ -70,10 +70,10 @@ Existing coverage can suffice for low-impact changes; do not add tests that only
 mirror code spelling. Device/service/user-data operations follow their actual
 authorization, not an assumption that every test is disposable.
 
-No automated source-spelling/file-placement gates, including ones requested by
-older packages. Replace them with typed behavior, codec round trips, compile-fail
-or parser/compiler rejection evidence, lints, deterministic artifact comparison,
-or Cargo dependency graphs; delete checks with no observable invariant.
+Replace obsolete source-spelling/file-placement checks with typed behavior,
+codec round trips, compile-fail or parser/compiler rejection evidence, lints,
+deterministic artifact comparison, or Cargo dependency graphs; delete checks
+with no observable invariant.
 One-off source inspection is a review aid, not behavior evidence or a new gate.
 
 Add meaningful coverage for new crates, behavior, and stable boundaries not

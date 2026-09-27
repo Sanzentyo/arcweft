@@ -1,7 +1,7 @@
 # Documentation instructions
 
 Use [README.md](README.md) to locate an unfamiliar authority, not as a mandatory
-reading list. Root autonomy and task-priority rules apply to documentation too.
+reading list.
 
 ## Authority and placement
 

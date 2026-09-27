@@ -1,7 +1,7 @@
 # Implementation evidence instructions
 
 Keep operational policy, dated implementation evidence, and stable design
-contracts distinct. Root autonomy and completion rules apply here.
+contracts distinct.
 
 Keep a durable note when acceptance, a nontrivial design decision, package intake,
 a genuine blocker, or later continuation needs it. A small completed edit does
