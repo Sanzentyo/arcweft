@@ -2128,3 +2128,37 @@ all-target/all-feature check と Clippy、fmt と cached diff check は終了コ
 339 review triggers / blocking 0。`awbc/fiber.rs` と VM の増分は既存の
 live-fiber return/snapshot/verification owner に置き、別の継続 authority は
 作っていない。053 の project `DisplayText` と locale/number/currency 書式は未受理。
+
+## 053 project locale・数値書式の統合 — 2026-09-27
+
+Supersedes: 上の locale identity checkpoint で未接続だった root `[locale]`、
+Character catalog の別 active policy、number/currency 書式はこの cut で接続した。
+確認した commit は `3a2c8e84c77e4a20ca75ee4491c5ef15219d2f76`。
+main へ push 後、working tree は clean。
+
+root `[locale]` の source/default/fallback を typed `ProjectLocaleSpec` として厳密に
+decode し、source span を保持して compiled project、bundle manifest、session
+まで渡す。未公開の profile-scoped Character locale policy と policy digest は削除した。
+Character 表示名は session active → project fallback → record source または
+project source → base → declaration の順に解決する。active locale は host override
+または bundle default から決め、hot swap で維持し、v1 save/restore と root replay
+trace に保持する。bundle identity には project locale、replay には ICU/CLDR data
+identity も含める。View `Localized` の active/fallback 投影は retained View 工程に残る。
+
+Core の native/pure/AWBC formatter は同じ固定 ICU/CLDR data と typed locale context
+で整数・浮動小数・通貨を整形し、AWBC は formatter 開始時の context を継続と v1
+snapshot に捕捉する。runtime-host は executor と pure accelerator の両方へ context
+を設定する。Core 729 tests、Character 56 tests、bundle codec 8 tests、launch
+43 tests、manifest-model 17 tests、compiler 関連 61 tests と driver の locale
+save/hot-swap focused tests が通過。workspace all-target/all-feature check、Clippy、
+`just test-workspace` 全レシピ、fmt、cached diff check は終了コード 0（既存 warning
+あり）。`just structure-audit-gate` は 2641 files / 97 packages / 339 review triggers /
+blocking 0。触れた bundle facade、runtime-host runner、runtime-plan semantic facts の
+既存 SIZE trigger は、それぞれ manifest 契約、runner context、既存 fact owner の
+責務内の変更であり、別 state や逆向き依存を加えていない。
+
+053 の一般 project `DisplayText` conformance と fixture 全体の受理は未達。
+標準 trait/`DisplayContext`/`DisplayError`、閉じた impl の選択証拠、runtime-plan
+method ID、pure trait call と AWBC formatter continuation を一つの typed witness
+で接続する必要がある。既存 `TypeKind::DisplayText` record atom を trait の代用に
+残さず、RAG/Agent consumer を同時に移行する。
