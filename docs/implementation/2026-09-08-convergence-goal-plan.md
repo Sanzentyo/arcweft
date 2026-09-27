@@ -2099,3 +2099,32 @@ check は終了コード 0（既存 warning あり）。`just structure-audit-ga
 は現行 manifest decoder に未接続で、Character catalog の default active
 locale は別 authority のまま。session locale、formatter data、number/currency
 整形と保存・replay の一貫性を次の境界で閉じる。
+
+## 053 lazy context callback の同一 fiber 化 — 2026-09-27
+
+Supersedes: formatter operand から到達できた `Option/Result.with_context`
+callback の別 fiber 経路は解消した。確認した HEAD は
+`79538180640e4385ce1bae0ff8b7280a1e0517f8`、push 後の working tree
+は clean。
+
+Core `RuntimeArcError` の begin/finish が Result/Option の成功 branch と
+失敗・欠損 cause を一度だけ選び、native と AWBC が共有する。AWBC の四つの
+context intrinsic は VM が処理し、lazy callback は成功 branch では呼ばず、
+失敗 branch だけ現在の fiber に入れる。attached default は default body の
+戻り値を target call に渡す二段継続とし、従来 Product host が default 値を
+最終 message として扱った差異を除いた。Product host の nested callback
+evaluator は削除し、独立した root pure/choice 実行だけが別 root fiber を持つ。
+
+return continuation と v1 snapshot は pending cause と default 結果を保持し、
+restore 時に instruction site、元 receiver、callback state と選択 body を
+program に照合する。verifier は context の receiver/result/message、空 effect、
+callback contract と default/target body の空 effect・非中断を要求する。
+formatter 内の callback 評価失敗は protected operand が回収し、Content proof
+欠落は致命的 trap のまま後続 Style を実行しない。
+
+Core lib 719/719、新 AWBC focused 8/8、`just test-workspace`、workspace
+all-target/all-feature check と Clippy、fmt と cached diff check は終了コード 0
+（既存 warning あり）。`just structure-audit-gate` は 2641 files / 97 packages /
+339 review triggers / blocking 0。`awbc/fiber.rs` と VM の増分は既存の
+live-fiber return/snapshot/verification owner に置き、別の継続 authority は
+作っていない。053 の project `DisplayText` と locale/number/currency 書式は未受理。
