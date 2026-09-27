@@ -1899,3 +1899,26 @@ AWBC では値 register が完成する前に回復可能 failure を扱える v
 変換しない。ここは設計決定であり、この時点で 053 の実行受理・native/AWBC
 parity・workspace test gate は未達。project `DisplayText` conformance は
 現行実装に選択証拠がなく、同じ工程で接続が必要な残件である。
+
+## 053 checked witness / template 投影 checkpoint — 2026-09-27
+
+`main` に `26df8123ab550a12aeba6e11a743a956c843062b` を push した。
+Sema は通常補間と `fmt` の表示可能性を型付き witness で保持し、exact
+Content、Core が表示できる scalar、`fmt` の `Option<scalar>` を区別する。
+generic 関数内の開いた型は保留し、閉じた executable instance の具体型で
+再検証する。既に却下された call は補間の source 証拠を保持したまま
+`witness: None` として既存の拒否診断を失わない。
+
+compiler は選択済み `CheckedFmtCall` と authored source を Format target に
+投影し、global/project-function/closure の生存 call を完全な lexical scope と
+安定座標で収集する。dialogue fragment 後に dense ID を割り当てた canonical
+`FormattedInsert` template を RuntimePlan manifest と text-model catalog
+の双方へ登録する。RuntimePlan は選択 call と template の一対一対応を検査する。
+
+Sema `content_callables` 35/35、compiler lib 115/115、runtime-plan lib
+90/90、compiler/runtime-plan all-target Clippy、`cargo fmt --all`、staged
+diff check が通過した。Clippy は既存 warning あり。compiler tests の
+generic dialogue 3 回帰は、開いた generic を早期拒否していた問題を
+閉じた instance での検査に移して解消した。053 fixture はまだ `fmt`
+実行式の Core/native/AWBC 評価がないため未受理。project `DisplayText`
+conformance と formatter の動的 policy/style/locale 等も未完である。
