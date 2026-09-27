@@ -10,9 +10,9 @@ use crate::{
     value::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
         RuntimeCallTarget, RuntimeEntityReference, RuntimeEnv, RuntimeEvalError,
-        RuntimeExpressionFailure, RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding,
-        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        RuntimeValueNestingError, evaluate_binary, evaluate_capacity_intrinsic,
+        RuntimeExpressionFailure, RuntimeFmtParameterId, RuntimeIntrinsic, RuntimeIterator,
+        RuntimeLocalBinding, RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp,
+        RuntimeValue, RuntimeValueNestingError, evaluate_binary, evaluate_capacity_intrinsic,
         evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
         evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
         runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
@@ -33,6 +33,26 @@ fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
     RuntimeLocalDeclarationId::from_accepted_ordinal(
         NonZeroU32::new(ordinal).expect("test local ordinal is non-zero"),
     )
+}
+
+#[test]
+fn fmt_parameter_ids_keep_the_selected_schema_indexes() {
+    let parameters = [
+        RuntimeFmtParameterId::Value,
+        RuntimeFmtParameterId::Style,
+        RuntimeFmtParameterId::Locale,
+        RuntimeFmtParameterId::Currency,
+        RuntimeFmtParameterId::NoneValue,
+        RuntimeFmtParameterId::Color,
+        RuntimeFmtParameterId::OnError,
+        RuntimeFmtParameterId::Fallback,
+        RuntimeFmtParameterId::DiscardError,
+    ];
+    for (index, parameter) in parameters.into_iter().enumerate() {
+        assert_eq!(parameter.index(), index);
+        assert_eq!(RuntimeFmtParameterId::from_index(index), Some(parameter));
+    }
+    assert_eq!(RuntimeFmtParameterId::from_index(parameters.len()), None);
 }
 
 fn test_entity_ref(name: &str) -> RuntimeEntityReference {

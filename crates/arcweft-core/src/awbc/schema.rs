@@ -22,7 +22,7 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeDialoguePlainTextContextTemplateRef, RuntimeEntityReference,
-    RuntimeHandleKind, RuntimeRecordFieldId,
+    RuntimeFmtParameterId, RuntimeHandleKind, RuntimeRecordFieldId,
 };
 use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
@@ -1485,6 +1485,44 @@ pub struct AwbcDialogueValueBinding {
     pub value: AwbcRegisterId,
 }
 
+/// One checked `fmt` operand function and its captured source registers.
+/// Operand vector order preserves authored evaluation order while `parameter`
+/// retains the selected standard `fmt` schema coordinate.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcFormatOperand {
+    #[serde(with = "runtime_fmt_parameter_id")]
+    pub parameter: RuntimeFmtParameterId,
+    pub function: AwbcFunctionId,
+    pub captures: Vec<AwbcRegisterId>,
+}
+
+/// The `RuntimeFmtParameterId` domain is owned by `value`, which intentionally
+/// has no Serde dependency on the AWBC wire schema. This adapter keeps its
+/// stable source-order coordinate numeric in the structured AWBC contract.
+mod runtime_fmt_parameter_id {
+    use crate::value::RuntimeFmtParameterId;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(parameter: &RuntimeFmtParameterId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded = u8::try_from(parameter.index()).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_u8(encoded)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<RuntimeFmtParameterId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = u8::deserialize(deserializer)?;
+        RuntimeFmtParameterId::from_index(usize::from(encoded)).ok_or_else(|| {
+            serde::de::Error::custom(format_args!("unknown fmt parameter {encoded}"))
+        })
+    }
+}
+
 /// Parent-frame publication target for one typed dialogue result.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcDialogueResultTarget {
@@ -1576,6 +1614,7 @@ pub enum AwbcOpcode {
     EnsureContent = 0x24,
     MakeDialogueContent = 0x28,
     CharacterDialogue = 0x29,
+    FormatContent = 0x2a,
     EmitEffect = 0x25,
     StartNeed = 0x26,
     SpawnFiber = 0x27,
@@ -1649,6 +1688,7 @@ impl AwbcOpcode {
         Self::SpawnFiber,
         Self::MakeDialogueContent,
         Self::CharacterDialogue,
+        Self::FormatContent,
         Self::StreamYield,
         Self::StreamClose,
         Self::ExecuteLineOperation,
@@ -1745,6 +1785,7 @@ impl AwbcOpcode {
             | Self::EnsureContent
             | Self::MakeDialogueContent
             | Self::CharacterDialogue
+            | Self::FormatContent
             | Self::EmitEffect
             | Self::StartNeed
             | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
@@ -1945,6 +1986,13 @@ pub enum AwbcInstruction {
         values: Vec<AwbcDialogueValueBinding>,
         effects: Vec<AwbcDialogueContentEffectBinding>,
     },
+    /// Evaluates checked operand functions in source order and constructs the
+    /// exact Formatted Content value for one effect-free template.
+    FormatContent {
+        destination: AwbcRegisterId,
+        template: RuntimeDialogueContentTemplateId,
+        operands: Vec<AwbcFormatOperand>,
+    },
     /// Constructs or reconfigures a producer-owned CharacterDialogue value
     /// from already materialized source-order registers.
     CharacterDialogue {
@@ -2101,6 +2149,7 @@ impl AwbcInstruction {
             Self::EnsureContent { .. } => AwbcOpcode::EnsureContent,
             Self::MakeDialogueContent { .. } => AwbcOpcode::MakeDialogueContent,
             Self::CharacterDialogue { .. } => AwbcOpcode::CharacterDialogue,
+            Self::FormatContent { .. } => AwbcOpcode::FormatContent,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
             Self::StartNeed { .. } => AwbcOpcode::StartNeed,
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,

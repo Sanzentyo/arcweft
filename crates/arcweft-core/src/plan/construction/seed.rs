@@ -25,8 +25,8 @@ use crate::stream::StreamRuntimeId;
 use crate::task::{HostCapabilityId, NamedHostArg, NeedId, NeedProducerTaskPlan, TaskId};
 use crate::value::{
     RuntimeAgentCompareOp, RuntimeAgentField, RuntimeBinaryOp, RuntimeCallArgumentMode,
-    RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeUnaryOp,
-    RuntimeValue,
+    RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeFmtParameterId,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
@@ -1883,6 +1883,23 @@ impl RuntimeExprSeed {
         )
     }
 
+    /// Constructs a typed `fmt` Content expression while retaining the exact
+    /// template identity and authored operand order.
+    #[must_use]
+    pub fn format_content(
+        ty: RuntimeSemanticTypeId,
+        template: RuntimeDialogueContentTemplateId,
+        operands: impl IntoIterator<Item = RuntimeFormatContentOperandSeed>,
+    ) -> Self {
+        Self::new(
+            ty,
+            RuntimeExprSeedKind::FormatContent {
+                template,
+                operands: operands.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+            },
+        )
+    }
+
     #[must_use]
     pub const fn ty(&self) -> RuntimeSemanticTypeId {
         self.ty
@@ -1895,6 +1912,23 @@ impl RuntimeExprSeed {
 
     pub(super) fn into_parts(self) -> (RuntimeSemanticTypeId, RuntimeExprSeedKind) {
         (self.ty, self.kind)
+    }
+}
+
+/// One selected `fmt` parameter expression in authored source order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFormatContentOperandSeed {
+    pub parameter: RuntimeFmtParameterId,
+    pub expression: RuntimeExprSeed,
+}
+
+impl RuntimeFormatContentOperandSeed {
+    #[must_use]
+    pub const fn new(parameter: RuntimeFmtParameterId, expression: RuntimeExprSeed) -> Self {
+        Self {
+            parameter,
+            expression,
+        }
     }
 }
 
@@ -1936,6 +1970,12 @@ pub enum RuntimeExprSeedKind {
         template: RuntimeDialogueContentTemplateId,
         values: Box<[RuntimeExprSeed]>,
         effects: Box<[RuntimeDialogueContentEffectBindingSeed]>,
+    },
+    /// Evaluates selected standard `fmt` operands once in authored order and
+    /// constructs one exact Formatted Content binding against its template.
+    FormatContent {
+        template: RuntimeDialogueContentTemplateId,
+        operands: Box<[RuntimeFormatContentOperandSeed]>,
     },
     /// One checked CharacterDialogue factory or immutable reconfiguration.
     /// Field contributions remain in authored order, including overwritten
@@ -2361,6 +2401,11 @@ impl RuntimeExprSeed {
                 collect_expr_free_locals(values, bound, locals);
                 for effect in effects {
                     collect_expr_free_locals(&effect.captures, bound, locals);
+                }
+            }
+            RuntimeExprSeedKind::FormatContent { operands, .. } => {
+                for operand in operands {
+                    operand.expression.collect_free_locals(bound, locals);
                 }
             }
             RuntimeExprSeedKind::CharacterDialogue { target, fields, .. } => {

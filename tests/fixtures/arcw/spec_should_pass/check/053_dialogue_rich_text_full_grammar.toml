@@ -1,0 +1,19 @@
+schema = 1
+
+[package]
+id = "org.arcweft.fixture.dialogue-rich-text-full-grammar"
+version = "0.1.0"
+
+[content-units.characters]
+roots = ["@character.alice"]
+visibility = "package"
+demand = "required"
+
+[profiles.fixture]
+kind = "game"
+source = "053_dialogue_rich_text_full_grammar.arcw"
+
+[profiles.fixture.content.characters]
+residency = "startup"
+placement = "embedded"
+compression = "none"

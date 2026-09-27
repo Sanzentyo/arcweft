@@ -5,7 +5,7 @@ pub fn warning(
     speed: f32 = 1.0,
 ) -> Fx {
     Fx.stack([
-        Fx.text(weight = .strong, color = accent),
+        Fx.text(weight = 700, color = accent),
         Fx.transform(
             target = .glyph,
             sample = |ctx| Transform2D {
@@ -27,6 +27,8 @@ pub character bob {
 pub character narrator {
     display = "Narrator"
 }
+
+fn flash(color: Color, time: Duration) -> Unit { () }
 
 entry cli @entry.rich_text_full_grammar {
     goto @flow.rich_text_full_grammar
@@ -62,7 +64,7 @@ flow rich_text_full_grammar() -> String {
     ]
 
     alice(id=@say.full.007, voice=auto)[
-        cue: [voice auto][face @.smile][pose @.idle][show @.alice][hide @.bob][move x=10px y=0px][scale x=1.1][rotate 5deg][anim @.blink][shake amp=2px][at 0.2s call=flash][call flash(color=rgb("#ffffff"), time=90ms)][signal @.seen]条件と代替の表示[mark @.release][p]
+        cue: [voice auto][face @.smile][pose @.idle][show @.alice][hide @.bob][move x=10px y=0px][scale x=1.1][rotate 5deg][anim @.blink][shake amp=2px][at 0.2s call=flash(color=rgb("#ffffff"), time=90ms)][call flash(color=rgb("#ffffff"), time=90ms)][signal @.seen]条件と代替の表示[mark @.release][p]
     ]
 
     bob(id=@say.full.008, voice=auto)[

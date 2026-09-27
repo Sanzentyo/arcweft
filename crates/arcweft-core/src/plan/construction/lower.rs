@@ -30,7 +30,8 @@ use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
     RuntimeAgentFieldValue, RuntimeAgentSignatureError, RuntimeAgentTypeContext,
     RuntimeAgentTypeOperand, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
-    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection, RuntimeMutablePlace,
+    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
+    RuntimeFmtParameterId, RuntimeFormatContentOperand, RuntimeMutablePlace,
     RuntimeNominalRecordExpr, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
     RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeUnaryOp,
     RuntimeUnsignedIntWidth, RuntimeValue,
@@ -468,6 +469,100 @@ impl RuntimePlanBuilder {
                     lowered,
                     lowered_effects,
                 ));
+            }
+            RuntimeExprSeedKind::FormatContent { template, operands } => {
+                if !self.is_exact_dialogue_content_type(ty) {
+                    return Err(RuntimePlanBuildError::InvalidDialogueContentType {
+                        slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0)
+                            .expect("fmt Content diagnostics use slot zero"),
+                        ty,
+                    });
+                }
+                let manifest = self
+                    .dialogue_content
+                    .template(template)
+                    .ok_or(RuntimePlanBuildError::MissingDialogueTemplateManifest { template })?;
+                let exact_formatted_slot = matches!(
+                    manifest.slots(),
+                    [slot]
+                        if slot.role() == super::super::RuntimeDialogueValueRole::Formatted
+                            && slot.semantic_type()
+                                == crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                );
+                if !exact_formatted_slot || !manifest.effects().is_empty() {
+                    return Err(RuntimePlanBuildError::InvalidFormatContentTemplate { template });
+                }
+
+                let mut seen = BTreeSet::new();
+                let mut primary_present = false;
+                let mut failure_policy_count = 0;
+                let mut lowered = Vec::with_capacity(operands.len());
+                for operand in operands.into_vec() {
+                    if !seen.insert(operand.parameter) {
+                        return Err(RuntimePlanBuildError::DuplicateFormatParameter {
+                            parameter: operand.parameter,
+                        });
+                    }
+                    if operand.parameter == RuntimeFmtParameterId::Value {
+                        primary_present = true;
+                    }
+                    if matches!(
+                        operand.parameter,
+                        RuntimeFmtParameterId::OnError
+                            | RuntimeFmtParameterId::Fallback
+                            | RuntimeFmtParameterId::DiscardError
+                    ) {
+                        failure_policy_count += 1;
+                        if failure_policy_count > 1 {
+                            return Err(RuntimePlanBuildError::ConflictingFormatFailurePolicy);
+                        }
+                    }
+                    let expression = self.lower_expression(operand.expression)?;
+                    let valid_type = match operand.parameter {
+                        RuntimeFmtParameterId::Style
+                        | RuntimeFmtParameterId::Locale
+                        | RuntimeFmtParameterId::Currency
+                        | RuntimeFmtParameterId::NoneValue
+                        | RuntimeFmtParameterId::Fallback => self.is_string(expression.ty())?,
+                        RuntimeFmtParameterId::Color => {
+                            matches!(
+                                self.projection(expression.ty())?,
+                                RuntimePlanTypeProjection::Color
+                            )
+                        }
+                        RuntimeFmtParameterId::DiscardError => {
+                            matches!(
+                                self.projection(expression.ty())?,
+                                RuntimePlanTypeProjection::Bool
+                            )
+                        }
+                        RuntimeFmtParameterId::Value => {
+                            self.is_format_display_type(expression.ty())?
+                        }
+                        // InlineFailure's nominal identity belongs to the
+                        // selected project schema, which Core deliberately
+                        // does not duplicate. The selected producer's checked
+                        // type remains attached to this value expression.
+                        RuntimeFmtParameterId::OnError => true,
+                    };
+                    if !valid_type {
+                        return Err(RuntimePlanBuildError::InvalidFormatParameterType {
+                            parameter: operand.parameter,
+                            ty: expression.ty(),
+                        });
+                    }
+                    lowered.push(RuntimeFormatContentOperand::from_admitted_parts(
+                        operand.parameter,
+                        expression,
+                    ));
+                }
+                if !primary_present {
+                    return Err(RuntimePlanBuildError::MissingFormatPrimaryValue);
+                }
+                RuntimeExprKind::FormatContent {
+                    template,
+                    operands: lowered,
+                }
             }
             RuntimeExprSeedKind::BracketSeq(items) => {
                 let (item_ty, fixed_len) = self.sequence_projection(ty, "sequence expression")?;
@@ -1862,6 +1957,36 @@ impl RuntimePlanBuilder {
         ))
     }
 
+    fn is_format_display_type(&self, ty: RuntimePlanTypeId) -> Result<bool, RuntimePlanBuildError> {
+        if self.is_exact_dialogue_content_type(ty) {
+            return Ok(true);
+        }
+        if let RuntimePlanTypeProjection::Option { item, .. } = self.projection(ty)? {
+            return self.is_format_display_scalar_type(*item);
+        }
+        self.is_format_display_scalar_type(ty)
+    }
+
+    fn is_format_display_scalar_type(
+        &self,
+        ty: RuntimePlanTypeId,
+    ) -> Result<bool, RuntimePlanBuildError> {
+        Ok(matches!(
+            self.projection(ty)?,
+            RuntimePlanTypeProjection::Unit
+                | RuntimePlanTypeProjection::Bool
+                | RuntimePlanTypeProjection::Signed(_)
+                | RuntimePlanTypeProjection::Unsigned(_)
+                | RuntimePlanTypeProjection::F32
+                | RuntimePlanTypeProjection::F64
+                | RuntimePlanTypeProjection::String
+                | RuntimePlanTypeProjection::Char
+                | RuntimePlanTypeProjection::Duration
+                | RuntimePlanTypeProjection::EntityReference
+                | RuntimePlanTypeProjection::Progress
+        ))
+    }
+
     fn agent_field_owner_matches(
         &self,
         ty: RuntimePlanTypeId,
@@ -2432,6 +2557,12 @@ impl RuntimePlanBuilder {
                 self.validate_expression_slice_locals(values, scope, used)?;
                 for effect in effects {
                     self.validate_expression_slice_locals(&effect.captures, scope, used)?;
+                }
+                Ok(())
+            }
+            RuntimeExprKind::FormatContent { operands, .. } => {
+                for operand in operands {
+                    self.validate_expression_locals(operand.expression(), scope, used)?;
                 }
                 Ok(())
             }

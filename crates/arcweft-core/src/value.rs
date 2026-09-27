@@ -37,6 +37,7 @@ mod color;
 mod data_shape;
 mod env;
 mod expression_locals;
+mod format_content;
 mod integer;
 mod nesting;
 mod nominal_record;
@@ -105,6 +106,9 @@ pub use character_dialogue::RuntimeCharacterDialogueProducerId;
 pub use color::RuntimeColor;
 pub use data_shape::{RuntimeDataShape, RuntimeDataShapeError};
 pub use expression_locals::RuntimeExprFreeLocalError;
+pub use format_content::{
+    RuntimeFormatAttemptError, RuntimeFormatPrimaryKind, finish_format_content_attempt,
+};
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
 pub use nominal_record::{
@@ -1303,6 +1307,88 @@ pub struct RuntimeExpr {
     kind: RuntimeExprKind,
 }
 
+/// Parameter identity retained by a checked standard `fmt` expression.
+///
+/// Core cannot depend on the language semantic crate, so this closed runtime
+/// coordinate is the owner-neutral representation of the selected schema
+/// parameter. Its index mapping matches the standard `fmt` schema order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeFmtParameterId {
+    Value,
+    Style,
+    Locale,
+    Currency,
+    NoneValue,
+    Color,
+    OnError,
+    Fallback,
+    DiscardError,
+}
+
+impl RuntimeFmtParameterId {
+    /// Resolves the stable parameter coordinate used by the selected `fmt` schema.
+    #[must_use]
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Value),
+            1 => Some(Self::Style),
+            2 => Some(Self::Locale),
+            3 => Some(Self::Currency),
+            4 => Some(Self::NoneValue),
+            5 => Some(Self::Color),
+            6 => Some(Self::OnError),
+            7 => Some(Self::Fallback),
+            8 => Some(Self::DiscardError),
+            _ => None,
+        }
+    }
+
+    /// Returns the stable parameter coordinate used by the selected `fmt` schema.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Value => 0,
+            Self::Style => 1,
+            Self::Locale => 2,
+            Self::Currency => 3,
+            Self::NoneValue => 4,
+            Self::Color => 5,
+            Self::OnError => 6,
+            Self::Fallback => 7,
+            Self::DiscardError => 8,
+        }
+    }
+}
+
+/// One selected `fmt` operand retained in authored source order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFormatContentOperand {
+    parameter: RuntimeFmtParameterId,
+    expression: RuntimeExpr,
+}
+
+impl RuntimeFormatContentOperand {
+    pub(crate) const fn from_admitted_parts(
+        parameter: RuntimeFmtParameterId,
+        expression: RuntimeExpr,
+    ) -> Self {
+        Self {
+            parameter,
+            expression,
+        }
+    }
+
+    #[must_use]
+    pub const fn parameter(&self) -> RuntimeFmtParameterId {
+        self.parameter
+    }
+
+    #[must_use]
+    pub const fn expression(&self) -> &RuntimeExpr {
+        &self.expression
+    }
+}
+
 /// Writable Vec receiver admitted as a local or one direct nominal field.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeMutablePlace {
@@ -1526,6 +1612,12 @@ pub enum RuntimeExprKind {
         template: crate::runtime_id::RuntimeDialogueContentTemplateId,
         values: Vec<RuntimeExpr>,
         effects: Vec<RuntimeDialogueContentEffectBindingExpr>,
+    },
+    /// Evaluates selected standard `fmt` operands once in authored order and
+    /// constructs one exact Formatted Content binding against its template.
+    FormatContent {
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        operands: Vec<RuntimeFormatContentOperand>,
     },
     /// One checked CharacterDialogue factory or immutable reconfiguration.
     /// Every authored Set contribution remains an executable child.
@@ -1752,6 +1844,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::EntityRef(_)
             | RuntimeExprKind::Tuple(_)
             | RuntimeExprKind::DialogueContent { .. }
+            | RuntimeExprKind::FormatContent { .. }
             | RuntimeExprKind::CharacterDialogue { .. }
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
@@ -1829,6 +1922,9 @@ impl fmt::Display for RuntimeExpr {
                     values.len(),
                     effects.len()
                 )
+            }
+            RuntimeExprKind::FormatContent { template, operands } => {
+                write!(f, "format_content/{template}/{}", operands.len())
             }
             RuntimeExprKind::CharacterDialogue {
                 operation, fields, ..

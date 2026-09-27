@@ -5,10 +5,11 @@ use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
     AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
-    AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
-    AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace, AwbcPattern, AwbcPatternId, AwbcPureHelperId,
-    AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange,
-    AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcFormatOperand, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcMutablePlace, AwbcPattern, AwbcPatternId,
+    AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
@@ -235,6 +236,39 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         template: *template,
                         values,
                         effects,
+                    });
+                destination
+            }
+            RuntimeExprKind::FormatContent { template, operands } => {
+                let operands = operands
+                    .iter()
+                    .map(|operand| {
+                        let expression = operand.expression();
+                        let captures = self.control_expr_captures(expression);
+                        let function = self.inventory.reserve_function_slot();
+                        self.inventory
+                            .push_pending_closure(PendingAwbcClosure::FormatOperand {
+                                function,
+                                captures: captures.iter().map(|capture| capture.local).collect(),
+                                result: expression.ty(),
+                                expression: expression.clone(),
+                                path: format!("{}.fmt.{}", self.path, function.0),
+                            });
+                        AwbcFormatOperand {
+                            parameter: operand.parameter(),
+                            function,
+                            captures: captures.iter().map(|capture| capture.register).collect(),
+                        }
+                    })
+                    .collect();
+                let destination =
+                    self.frame
+                        .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::FormatContent {
+                        destination,
+                        template: *template,
+                        operands,
                     });
                 destination
             }
@@ -1082,6 +1116,47 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 body: RuntimeFunctionSiteBody::Executable(_),
                 ..
             } => unreachable!("control-expression thunks cannot have executable bodies"),
+            PendingAwbcClosure::FormatOperand {
+                function,
+                captures,
+                result,
+                expression,
+                path,
+            } => {
+                let mut frame = FrameBuilder::new();
+                for local in &captures {
+                    let name = inventory.local_name(*local);
+                    frame.named_parameter(
+                        *local,
+                        admitted_plan_type(inventory, plan, local_type(plan, *local)),
+                        name,
+                    );
+                }
+                let mut body = ExprBodyBuilder::new(inventory, function);
+                lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
+                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let block = body.block_start;
+                let block_len = table_range_len(block.0, inventory.program.blocks.len());
+                let params = captures
+                    .iter()
+                    .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
+                    .collect();
+                let result = admitted_plan_type(inventory, plan, result);
+                let signature =
+                    inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
+                inventory.replace_function(
+                    function,
+                    AwbcFunction {
+                        public_id: None,
+                        kind: AwbcFunctionKind::Synthetic,
+                        signature,
+                        frame_layout: layout,
+                        blocks: AwbcTableRange::new(block.0, block_len),
+                        entry_block: block,
+                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+                    },
+                );
+            }
         }
     }
 }

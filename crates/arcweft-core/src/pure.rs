@@ -1927,6 +1927,9 @@ impl<'a> PureEvaluator<'a> {
                 values,
                 effects,
             } => self.evaluate_dialogue_content_expr(*template, values, effects),
+            RuntimeExprKind::FormatContent { template, operands } => {
+                self.evaluate_format_content_expr(*template, operands)
+            }
             RuntimeExprKind::CharacterDialogue {
                 operation,
                 target,
@@ -2114,6 +2117,102 @@ impl<'a> PureEvaluator<'a> {
             manifest,
             &evaluated,
             &effect_bindings,
+        )
+        .map(crate::value::RuntimeDialogueContentValue::into_runtime_value)
+        .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))
+    }
+
+    fn evaluate_format_content_expr(
+        &mut self,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        operands: &[crate::value::RuntimeFormatContentOperand],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let manifest = self
+            .plan
+            .dialogue_content_templates()
+            .get(template)
+            .cloned()
+            .ok_or(RuntimeEvalError::MissingDialogueTemplateManifest { template })?;
+        let [slot] = manifest.slots() else {
+            return Err(RuntimeEvalError::DialogueContentConstruction(
+                "fmt Content template must have one Formatted slot".to_owned(),
+            ));
+        };
+        if slot.role() != crate::plan::RuntimeDialogueValueRole::Formatted
+            || slot.semantic_type()
+                != crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+            || !manifest.effects().is_empty()
+        {
+            return Err(RuntimeEvalError::DialogueContentConstruction(
+                "fmt Content template must have one exact Formatted/Content slot and no effects"
+                    .to_owned(),
+            ));
+        }
+        let mut evaluated = Vec::with_capacity(operands.len());
+        let mut first_recoverable = None;
+        for operand in operands {
+            let value = match self.evaluate_expr(operand.expression()) {
+                Ok(value) => Some(value),
+                Err(RuntimeEvalError::RecoverableExpression(failure)) => {
+                    if first_recoverable.is_none() {
+                        first_recoverable = Some(failure.to_string());
+                    }
+                    None
+                }
+                Err(error) => return Err(error),
+            };
+            evaluated.push((operand.parameter(), value));
+        }
+        let primary = operands
+            .iter()
+            .find(|operand| operand.parameter() == crate::value::RuntimeFmtParameterId::Value)
+            .ok_or_else(|| {
+                RuntimeEvalError::DialogueContentConstruction(
+                    "fmt Content has no primary value expression".to_owned(),
+                )
+            })?;
+        let primary_type = self
+            .plan
+            .type_table()
+            .get(primary.expression().ty())
+            .ok_or(RuntimeEvalError::InvalidExpressionType(
+                primary.expression().ty(),
+            ))?;
+        let primary_kind = match primary_type.projection() {
+            RuntimePlanTypeProjection::Option { item, .. } => {
+                let item = self
+                    .plan
+                    .type_table()
+                    .get(*item)
+                    .ok_or(RuntimeEvalError::InvalidExpressionType(*item))?;
+                crate::value::RuntimeFormatPrimaryKind::OptionScalar(item.semantic_identity())
+            }
+            _ if primary_type.semantic_identity()
+                == crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity() =>
+            {
+                crate::value::RuntimeFormatPrimaryKind::Content
+            }
+            _ => crate::value::RuntimeFormatPrimaryKind::Scalar(primary_type.semantic_identity()),
+        };
+        let formatted = crate::value::finish_format_content_attempt(
+            primary_kind,
+            &evaluated,
+            first_recoverable.as_deref(),
+        )
+        .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))?;
+        let artifact = self
+            .plan
+            .artifact()
+            .ok_or(RuntimeEvalError::DialogueContentUnboundArtifact)?;
+        let binding = crate::plan::RuntimeDialogueValueBinding {
+            slot: slot.slot(),
+            role: slot.role(),
+            value: formatted.into_runtime_value(),
+        };
+        crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings(
+            artifact,
+            &manifest,
+            &[binding],
         )
         .map(crate::value::RuntimeDialogueContentValue::into_runtime_value)
         .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))

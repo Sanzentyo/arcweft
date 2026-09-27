@@ -94,6 +94,13 @@ impl RuntimeExpr {
                     collect_slice_free_locals(plan, &effect.captures, bound, locals)?;
                 }
             }
+            RuntimeExprKind::FormatContent { operands, .. } => {
+                for operand in operands {
+                    operand
+                        .expression()
+                        .collect_evaluation_free_locals(plan, bound, locals)?;
+                }
+            }
             RuntimeExprKind::CharacterDialogue { target, fields, .. } => {
                 target.collect_evaluation_free_locals(plan, bound, locals)?;
                 for field in fields {

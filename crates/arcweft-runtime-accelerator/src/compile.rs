@@ -839,6 +839,12 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                     .map(runtime_expr_work_units)
                     .sum::<usize>()
         }
+        RuntimeExprKind::FormatContent { operands, .. } => {
+            4 + operands
+                .iter()
+                .map(|operand| runtime_expr_work_units(operand.expression()))
+                .sum::<usize>()
+        }
         RuntimeExprKind::CharacterDialogue { target, fields, .. } => {
             let field_units = fields
                 .iter()

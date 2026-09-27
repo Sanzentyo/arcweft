@@ -4198,19 +4198,92 @@ fn format_scalar_shape(ty: &RuntimeNormalizedType) -> bool {
     )
 }
 
-fn format_witness_admits(
+fn format_scalar_witness_admits(
+    witness: &arcweft_lang_sema::checked_rich_text::CheckedDisplayScalar,
+    ty: &RuntimeNormalizedType,
+) -> bool {
+    use arcweft_lang_sema::checked_rich_text::{
+        CheckedDisplayFloatWidth as Float, CheckedDisplayIntegerWidth as Integer,
+        CheckedDisplayScalar as Scalar,
+    };
+    matches!(
+        (witness, ty.shape()),
+        (Scalar::Unit, RuntimeTypeShape::Unit)
+            | (Scalar::Bool, RuntimeTypeShape::Bool)
+            | (
+                Scalar::SignedInteger(Integer::Bits8),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I8)
+            )
+            | (
+                Scalar::SignedInteger(Integer::Bits16),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I16)
+            )
+            | (
+                Scalar::SignedInteger(Integer::Bits32),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I32)
+            )
+            | (
+                Scalar::SignedInteger(Integer::Bits64),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I64)
+            )
+            | (
+                Scalar::SignedInteger(Integer::Bits128),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::I128)
+            )
+            | (
+                Scalar::SignedInteger(Integer::Pointer),
+                RuntimeTypeShape::Signed(RuntimeSignedIntWidth::ISize)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Bits8),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U8)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Bits16),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U16)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Bits32),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U32)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Bits64),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U64)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Bits128),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::U128)
+            )
+            | (
+                Scalar::UnsignedInteger(Integer::Pointer),
+                RuntimeTypeShape::Unsigned(RuntimeUnsignedIntWidth::USize)
+            )
+            | (Scalar::Float(Float::Bits32), RuntimeTypeShape::F32)
+            | (Scalar::Float(Float::Bits64), RuntimeTypeShape::F64)
+            | (Scalar::String, RuntimeTypeShape::String)
+            | (Scalar::Char, RuntimeTypeShape::Char)
+            | (Scalar::Duration, RuntimeTypeShape::Duration)
+            | (Scalar::Reference(_), RuntimeTypeShape::EntityReference)
+            | (Scalar::Progress, RuntimeTypeShape::Progress)
+    )
+}
+
+pub(crate) fn format_witness_admits(
     witness: &arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness,
     ty: &RuntimeNormalizedType,
 ) -> bool {
     use arcweft_lang_sema::checked_rich_text::CheckedDisplayWitness;
 
     match witness {
-        CheckedDisplayWitness::Scalar(_) => format_scalar_shape(ty),
+        CheckedDisplayWitness::Scalar(scalar) => format_scalar_witness_admits(scalar, ty),
         CheckedDisplayWitness::Content => {
             ty.identity()
                 == arcweft_core::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
         }
-        CheckedDisplayWitness::Option(_) | CheckedDisplayWitness::OptionDeferredGeneric(_) => {
+        CheckedDisplayWitness::Option(scalar) => {
+            matches!(ty.shape(), RuntimeTypeShape::Option { item, .. } if format_scalar_witness_admits(scalar, item))
+        }
+        CheckedDisplayWitness::OptionDeferredGeneric(_) => {
             matches!(ty.shape(), RuntimeTypeShape::Option { item, .. } if format_scalar_shape(item))
         }
         CheckedDisplayWitness::DeferredGeneric(_) => {

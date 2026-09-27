@@ -36,21 +36,21 @@ pub use seed::{
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
     RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
-    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
-    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
-    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
-    RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
-    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
-    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeMutablePlaceSeed, RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
-    RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
-    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
-    RuntimeTraitMethodSeedId,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFormatContentOperandSeed,
+    RuntimeFunctionInputBindingSeed, RuntimeFunctionSiteBodySeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
+    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
+    RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed, RuntimeLineOperationSeed,
+    RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed, RuntimeLineTaskGroupSeedId,
+    RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId, RuntimeLineTaskTriggerSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeMutablePlaceSeed,
+    RuntimeNeedProducerStartTargetSeed, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -313,6 +313,25 @@ pub enum RuntimePlanBuildError {
         "dialogue content has {actual} evaluated value sites but its template declares {expected} slots"
     )]
     DialogueValueCountMismatch { expected: usize, actual: usize },
+    #[error(
+        "fmt Content template {template} must contain one exact Formatted/Content slot and no effects"
+    )]
+    InvalidFormatContentTemplate {
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+    },
+    #[error("fmt Content expression is missing its primary value operand")]
+    MissingFormatPrimaryValue,
+    #[error("fmt parameter {parameter:?} is selected more than once")]
+    DuplicateFormatParameter {
+        parameter: crate::value::RuntimeFmtParameterId,
+    },
+    #[error("fmt parameter {parameter:?} has invalid plan type {ty}")]
+    InvalidFormatParameterType {
+        parameter: crate::value::RuntimeFmtParameterId,
+        ty: RuntimePlanTypeId,
+    },
+    #[error("fmt Content expression selects more than one failure policy")]
+    ConflictingFormatFailurePolicy,
     #[error(
         "dialogue content has {actual} effect bindings but its template declares {expected} sites"
     )]

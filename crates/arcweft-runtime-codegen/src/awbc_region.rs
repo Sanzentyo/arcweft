@@ -217,6 +217,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::Await
         | AwbcOpcode::AwaitMany
         | AwbcOpcode::BudgetYield
+        | AwbcOpcode::FormatContent
         | AwbcOpcode::CharacterDialogue
         | AwbcOpcode::Dialogue
         | AwbcOpcode::Choice

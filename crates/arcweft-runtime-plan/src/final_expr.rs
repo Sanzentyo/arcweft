@@ -6,17 +6,18 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeCallableSpecializationSeedId,
-    RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeExprMatchArmSeed,
-    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed,
-    RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
-    RuntimeLocalSeedId, RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed,
-    RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
+    RuntimeCallableStateSeedId, RuntimeDialogueContentEffectBindingSeed, RuntimeDialogueValueRole,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowOpSeed, RuntimeFormatContentOperandSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
+    RuntimeMutablePlaceSeed, RuntimeNominalRecordFieldSeed, RuntimeRecordFieldSeedId,
+    RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeDialogueOpaqueRole, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeDialogueOpaqueRole, RuntimeFmtParameterId, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_dialogue::CharacterDialoguePolicyTypeGraph;
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
@@ -25,6 +26,7 @@ use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
+use arcweft_lang_sema::callable::{CheckedFmtFailurePolicy, FmtParameterId};
 
 use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
@@ -33,9 +35,10 @@ use crate::final_variant::{
 };
 use crate::flow::{ScopeLocalSeeds, TryLocalSeeds};
 use crate::semantic_facts::{
-    RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeCallableSpecializationKey,
-    RuntimeClosureInstanceKey, RuntimeDialogueEffectProgramKey, RuntimeNormalizedType,
-    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
+    RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeCallResultShape,
+    RuntimeCallableSpecializationKey, RuntimeClosureInstanceKey, RuntimeDialogueEffectProgramKey,
+    RuntimeFormatTemplateKey, RuntimeNormalizedType, RuntimePlanSemanticFacts,
+    RuntimePositionedAttachedContent, RuntimeProjectCallableSourceKey,
     RuntimeProjectCallableValueTarget, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
     RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
     RuntimeResolvedCallDispatch, RuntimeResolvedCallMutation, RuntimeResolvedCallOperand,
@@ -1676,6 +1679,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         {
             return self.lower_standard_map(id, map);
         }
+        if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(
+            formatted,
+        )) = selected.dispatch()
+        {
+            return self.lower_format_call(id, selected, formatted);
+        }
         let operands = selected.operands();
         if selected.requires_specialized_operand_anf() {
             if selected.attached_content().is_some() {
@@ -1699,9 +1708,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 callee: RuntimeCallTarget::intrinsic(*intrinsic),
                 args: arguments.into_boxed_slice(),
             }),
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(_)) => Err(
-                format!("formatter call {id:?} has no typed Content expression lowering"),
-            ),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Format(_)) => {
+                unreachable!("formatter is lowered before generic call operands")
+            }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPopFront)
             | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::VecPop)
@@ -1799,6 +1808,133 @@ impl<'hir> FinalExprLowerer<'hir> {
                 format!("line capability call {id:?} must be consumed by typed line-plan lowering"),
             ),
         }
+    }
+
+    fn lower_format_call(
+        &self,
+        id: ExprId,
+        selected: &RuntimeResolvedCall,
+        formatted: &crate::semantic_facts::RuntimeResolvedFormatCall,
+    ) -> Result<RuntimeExprSeedKind, String> {
+        let content = RuntimeDialogueOpaqueRole::Content.semantic_identity();
+        if self.expression_type(id)? != content
+            || selected.result() != RuntimeCallResultShape::Value
+            || selected.attached_content().is_some()
+            || selected.project_function().is_some()
+        {
+            return Err(format!(
+                "formatter call {id:?} has an invalid Content result contract"
+            ));
+        }
+        let key = RuntimeFormatTemplateKey::for_call(self.semantic_facts.scope(), formatted);
+        let template = self
+            .facts
+            .format_template(&key)
+            .ok_or_else(|| format!("formatter call {id:?} has no exact scoped template"))?
+            .template();
+        let [slot] = template.slots() else {
+            return Err(format!(
+                "formatter call {id:?} does not own one Content slot"
+            ));
+        };
+        if slot.role() != RuntimeDialogueValueRole::Formatted
+            || slot.semantic_type() != content
+            || !template.marks().is_empty()
+            || !template.effects().is_empty()
+        {
+            return Err(format!(
+                "formatter call {id:?} has an invalid template schema"
+            ));
+        }
+        let checked = formatted.checked();
+        let policy = checked.failure_policy();
+        let expected = [
+            Some(checked.value()),
+            checked.style(),
+            checked.locale(),
+            checked.currency(),
+            checked.none(),
+            checked.color(),
+            match policy {
+                CheckedFmtFailurePolicy::OnError(source) => Some(source),
+                _ => None,
+            },
+            match policy {
+                CheckedFmtFailurePolicy::FallbackText(source) => Some(source),
+                _ => None,
+            },
+            match policy {
+                CheckedFmtFailurePolicy::DiscardError(source) => Some(source),
+                _ => None,
+            },
+        ];
+        let parameters = [
+            (FmtParameterId::Value, RuntimeFmtParameterId::Value),
+            (FmtParameterId::Style, RuntimeFmtParameterId::Style),
+            (FmtParameterId::Locale, RuntimeFmtParameterId::Locale),
+            (FmtParameterId::Currency, RuntimeFmtParameterId::Currency),
+            (FmtParameterId::NoneValue, RuntimeFmtParameterId::NoneValue),
+            (FmtParameterId::Color, RuntimeFmtParameterId::Color),
+            (FmtParameterId::OnError, RuntimeFmtParameterId::OnError),
+            (FmtParameterId::Fallback, RuntimeFmtParameterId::Fallback),
+            (
+                FmtParameterId::DiscardError,
+                RuntimeFmtParameterId::DiscardError,
+            ),
+        ];
+        let mut seen = [false; 9];
+        let mut operands = Vec::with_capacity(selected.operands().len());
+        for operand in selected.operands() {
+            let Some(parameter) = operand.parameter() else {
+                return Err(format!("formatter call {id:?} has an unbound operand"));
+            };
+            let Some((_, identity)) = parameters.iter().find(|(schema, _)| {
+                parameter.group() == 0 && parameter.parameter() == schema.index() as u32
+            }) else {
+                return Err(format!("formatter call {id:?} has an unknown parameter"));
+            };
+            let index = identity.index();
+            if seen[index]
+                || !matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                )
+                || !matches!(
+                    (expected[index], operand.source()),
+                    (Some(source), RuntimeResolvedCallOperandSource::Expression(owner))
+                        if source.owner() == owner
+                )
+            {
+                return Err(format!(
+                    "formatter call {id:?} has a conflicting selected operand"
+                ));
+            }
+            seen[index] = true;
+            if index == FmtParameterId::Value.index()
+                && !crate::semantic_facts::format_witness_admits(checked.witness(), operand.ty())
+            {
+                return Err(format!(
+                    "formatter call {id:?} has an invalid display witness"
+                ));
+            }
+            operands.push(RuntimeFormatContentOperandSeed {
+                parameter: *identity,
+                expression: self.lower_scalar_operand_source(operand.source(), operand.ty())?,
+            });
+        }
+        if seen
+            .iter()
+            .enumerate()
+            .any(|(index, seen)| *seen != expected[index].is_some())
+        {
+            return Err(format!(
+                "formatter call {id:?} is missing a selected parameter"
+            ));
+        }
+        Ok(RuntimeExprSeedKind::FormatContent {
+            template: template.id(),
+            operands: operands.into_boxed_slice(),
+        })
     }
 
     /// Lower structural call payloads only after their complete source row has

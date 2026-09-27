@@ -561,6 +561,13 @@ fn step_with_host_context_optional(
             ) {
                 Ok(control) => control,
                 Err(error) => {
+                    if let VmError::Evaluation(evaluation) = &error
+                        && let Some(failure) = evaluation.recoverable_expression()
+                        && fiber.recover_format_operand(program, failure.to_string())?
+                    {
+                        executed = executed.saturating_add(1);
+                        continue;
+                    }
                     if let Some(code) = error.runtime_trap_code() {
                         let trap = mark_runtime_error_trap(
                             fiber,
@@ -641,6 +648,13 @@ fn step_with_host_context_optional(
         ) {
             Ok(exit) => exit,
             Err(error) => {
+                if let VmError::Evaluation(evaluation) = &error
+                    && let Some(failure) = evaluation.recoverable_expression()
+                    && fiber.recover_format_operand(program, failure.to_string())?
+                {
+                    executed = executed.saturating_add(1);
+                    continue;
+                }
                 if let Some(code) = error.runtime_trap_code() {
                     let trap = mark_runtime_error_trap(
                         fiber,
@@ -1436,6 +1450,87 @@ fn execute_instruction(
                 .active_frame_mut()?
                 .set_register(*destination, value)?;
         }
+        AwbcInstruction::FormatContent {
+            destination,
+            template,
+            operands,
+        } => {
+            let context = context.ok_or(VmError::MissingExecutionContext)?;
+            fiber.begin_format_content(program)?;
+            let next = fiber.format_content_state()?.next_operand();
+            if let Some(operand) = operands.get(next) {
+                let captures = register_values(fiber, &operand.captures)?;
+                let site = fiber.cursor;
+                fiber.push_call_frame_with_continuation(
+                    program,
+                    operand.function,
+                    FiberReturnPoint {
+                        cursor: site,
+                        destination: None,
+                        continuation: FiberReturnContinuation::FormatOperand {
+                            site,
+                            ordinal: next,
+                        },
+                    },
+                    &captures,
+                )?;
+                return Ok(InstructionControl::Transferred);
+            }
+            let Some(value_operand) = operands
+                .iter()
+                .find(|operand| operand.parameter == crate::value::RuntimeFmtParameterId::Value)
+            else {
+                return Err(VmError::Runtime(
+                    "FormatContent has no verified primary operand".to_owned(),
+                ));
+            };
+            let primary_kind = format_primary_kind(program, value_operand.function)?;
+            let manifest = program
+                .content_templates
+                .iter()
+                .find(|candidate| candidate.id == *template)
+                .ok_or_else(|| VmError::Runtime("FormatContent template is absent".to_owned()))?;
+            let [slot] = manifest.slots.as_slice() else {
+                return Err(VmError::Runtime(
+                    "FormatContent template does not have one slot".to_owned(),
+                ));
+            };
+            let state = fiber.take_completed_format_content(program)?;
+            let evaluated = operands
+                .iter()
+                .zip(state.values())
+                .map(|(operand, value)| (operand.parameter, value.clone()))
+                .collect::<Vec<_>>();
+            let formatted = crate::value::finish_format_content_attempt(
+                primary_kind,
+                &evaluated,
+                state.first_recoverable(),
+            )
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
+            let content_slot = crate::plan::RuntimeDialogueContentSlot::new(
+                slot.slot,
+                crate::plan::RuntimeDialogueValueRole::Formatted,
+                crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            );
+            let binding = crate::plan::RuntimeDialogueValueBinding {
+                slot: slot.slot,
+                role: crate::plan::RuntimeDialogueValueRole::Formatted,
+                value: formatted.into_runtime_value(),
+            };
+            let value = crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_parts_with_effect_bindings(
+                context.artifact(),
+                manifest.id,
+                manifest.digest,
+                &[content_slot],
+                &[binding],
+                &[],
+            )
+            .map_err(|error| VmError::Runtime(error.to_string()))?
+            .into_runtime_value();
+            fiber
+                .active_frame_mut()?
+                .set_register(*destination, value)?;
+        }
         AwbcInstruction::CharacterDialogue {
             destination,
             operation,
@@ -2204,7 +2299,8 @@ fn execute_terminator(
             } else {
                 if let Some(return_to) = return_to {
                     match return_to.continuation.clone() {
-                        FiberReturnContinuation::Ordinary => {}
+                        FiberReturnContinuation::Ordinary
+                        | FiberReturnContinuation::FormatOperand { .. } => {}
                         continuation => {
                             complete_project_call_return(
                                 program,
@@ -2523,7 +2619,9 @@ fn complete_project_call_return(
         FiberReturnContinuation::ProjectCallDefault { site, .. }
         | FiberReturnContinuation::ProjectCallTarget { site } => *site,
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(),
-        FiberReturnContinuation::Ordinary => return Ok(()),
+        FiberReturnContinuation::Ordinary | FiberReturnContinuation::FormatOperand { .. } => {
+            return Ok(());
+        }
     };
     let call = project_call_at_site(program, site)?;
     let resume = program
@@ -2632,6 +2730,9 @@ fn complete_project_call_return(
         FiberReturnContinuation::ApplyGroupDefault { .. } => unreachable!(
             "apply-group default return is handled before looking up a project-call site"
         ),
+        FiberReturnContinuation::FormatOperand { .. } => {
+            unreachable!("formatter operand return is handled by the fiber return continuation")
+        }
         FiberReturnContinuation::Ordinary => {}
     }
     Ok(())
@@ -3296,6 +3397,48 @@ fn source_map_for_location(
         .position(|entry| entry.location == location)
         .and_then(|index| u32::try_from(index).ok())
         .map(AwbcSourceMapId)
+}
+
+fn format_primary_kind(
+    program: &AwbcProgram,
+    function: AwbcFunctionId,
+) -> Result<crate::value::RuntimeFormatPrimaryKind, VmError> {
+    let function = program
+        .functions
+        .get(function.index())
+        .ok_or(VmError::MissingFunction(function))?;
+    let signature = program
+        .signatures
+        .get(function.signature.index())
+        .ok_or_else(|| VmError::Runtime("formatter operand signature is absent".to_owned()))?;
+    let result = signature
+        .result
+        .ok_or_else(|| VmError::Runtime("formatter value operand has no result".to_owned()))?;
+    if let Some(item) = program.builtin_variant_payload_item(
+        result,
+        crate::pattern::RuntimeBuiltinVariantCaseIdentity::OptionSome,
+    ) {
+        let item = program
+            .runtime_types
+            .get(item.index())
+            .ok_or(VmError::MissingType(item))?;
+        return Ok(crate::value::RuntimeFormatPrimaryKind::OptionScalar(
+            item.semantic_identity(),
+        ));
+    }
+    let ty = program
+        .runtime_types
+        .get(result.index())
+        .ok_or(VmError::MissingType(result))?;
+    if ty.semantic_identity()
+        == crate::value::RuntimeDialogueOpaqueRole::Content.semantic_identity()
+    {
+        Ok(crate::value::RuntimeFormatPrimaryKind::Content)
+    } else {
+        Ok(crate::value::RuntimeFormatPrimaryKind::Scalar(
+            ty.semantic_identity(),
+        ))
+    }
 }
 
 impl VmError {

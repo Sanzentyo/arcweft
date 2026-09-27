@@ -184,6 +184,15 @@ pub(crate) enum PendingAwbcClosure {
         body: RuntimeFunctionSiteBody,
         path: String,
     },
+    /// Protected `fmt` operand thunk. A checked FormatContent instruction
+    /// resumes this body on the same fiber and retains its source-order result.
+    FormatOperand {
+        function: AwbcFunctionId,
+        captures: Box<[RuntimeLocalDeclarationId]>,
+        result: RuntimePlanTypeId,
+        expression: arcweft_core::value::RuntimeExpr,
+        path: String,
+    },
 }
 
 impl AwbcInventory {

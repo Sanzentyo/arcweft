@@ -3,6 +3,7 @@ mod agent_constructors;
 mod agent_projection;
 mod array;
 mod callable_specialization;
+mod format_content_execution;
 mod record_shapes;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberResumeTarget, FiberReturnContinuation, FiberScopeCleanup,
@@ -96,6 +97,126 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+fn format_content_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    let content_owner = crate::value::RuntimeDialogueOpaqueRole::Content.exact_owner();
+    let producer = content_owner.producer().as_str().to_owned();
+    program.strings.push(producer.clone());
+    program.canonicalize_string_table();
+    let producer = AwbcStringId(
+        u32::try_from(
+            program
+                .strings
+                .binary_search(&producer)
+                .expect("Content producer string"),
+        )
+        .expect("Content producer string index"),
+    );
+    let content_type = AwbcTypeId(0);
+    let value_type = AwbcTypeId(1);
+    program.runtime_types = vec![
+        AwbcRuntimeType::new(
+            content_owner.semantic_identity(),
+            AwbcRuntimeTypeShape::Opaque {
+                producer,
+                admission: content_owner.admission(),
+                value_class: content_owner.value_class(),
+                persistence: content_owner.persistence(),
+                arguments: Vec::new(),
+            },
+        ),
+        AwbcRuntimeType::new(
+            RuntimeCheckedType::Signed(crate::value::RuntimeSignedIntWidth::I64)
+                .semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64),
+        ),
+    ];
+    program.frame_layouts[0].slots = vec![
+        AwbcFrameSlot {
+            name: None,
+            ty: content_type,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+        AwbcFrameSlot {
+            name: None,
+            ty: value_type,
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        },
+    ];
+    let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+        .expect("template identity");
+    let slot =
+        crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot identity");
+    program.content_templates = vec![AwbcDialogueContentTemplate {
+        id: template,
+        digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x19; 32]),
+        slots: vec![AwbcDialogueContentSlot {
+            slot,
+            role: AwbcDialogueValueRole::Formatted,
+            semantic_type: content_type,
+        }],
+        effects: Vec::new(),
+    }];
+    let mut bits = [0; 16];
+    bits[..8].copy_from_slice(&17_i64.to_le_bytes());
+    program.constants = vec![AwbcConstant::Int {
+        kind: AwbcSignedIntKind::I64,
+        bits,
+    }];
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::FormatContent {
+            destination: AwbcRegisterId(0),
+            template,
+            operands: vec![AwbcFormatOperand {
+                parameter: crate::value::RuntimeFmtParameterId::Value,
+                function: AwbcFunctionId(1),
+                captures: vec![AwbcRegisterId(1)],
+            }],
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.signatures.push(AwbcSignature {
+        params: vec![value_type],
+        result: Some(value_type),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: value_type,
+            role: AwbcFrameSlotRole::Parameter,
+            scope_depth: 0,
+        }],
+        scopes: Vec::new(),
+        max_scope_depth: 0,
+    });
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Synthetic,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(1, 1),
+        entry_block: AwbcBlockId(1),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program
 }
 
 #[test]
@@ -2343,6 +2464,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::SpawnFiber, 0x27, CallTask),
         (AwbcOpcode::MakeDialogueContent, 0x28, CallTask),
         (AwbcOpcode::CharacterDialogue, 0x29, CallTask),
+        (AwbcOpcode::FormatContent, 0x2a, CallTask),
         (AwbcOpcode::StreamYield, 0x32, StreamLine),
         (AwbcOpcode::StreamClose, 0x34, StreamLine),
         (AwbcOpcode::ExecuteLineOperation, 0x35, StreamLine),
@@ -2401,6 +2523,80 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         assert_eq!(AwbcOpcode::from_encoded(encoded), expected);
     }
     assert!(serde_json::from_value::<AwbcOpcode>(serde_json::json!(0xff)).is_err());
+}
+
+#[test]
+fn format_content_verifies_and_round_trips_a_checked_operand_thunk() {
+    let program = format_content_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("typed FormatContent program verifies");
+
+    let encoded = program.encode_canonical().expect("encode FormatContent");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode FormatContent");
+    assert_eq!(decoded, program);
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("decoded FormatContent program verifies");
+}
+
+#[test]
+fn format_content_rejects_duplicate_parameters_and_unadmitted_results() {
+    let mut duplicate = format_content_program();
+    let AwbcInstruction::FormatContent { operands, .. } = &mut duplicate.instructions[1] else {
+        unreachable!("fixture has FormatContent at instruction one")
+    };
+    operands.push(operands[0].clone());
+    assert!(matches!(
+        duplicate.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { .. })
+    ));
+
+    let mut invalid_result = format_content_program();
+    let color_type = AwbcTypeId(2);
+    invalid_result.runtime_types.push(AwbcRuntimeType::new(
+        RuntimeCheckedType::Color.semantic_identity_digest(),
+        AwbcRuntimeTypeShape::Color,
+    ));
+    invalid_result.signatures[1].result = Some(color_type);
+    invalid_result.frame_layouts[1].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: color_type,
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    invalid_result
+        .constants
+        .push(AwbcConstant::Color(crate::value::RuntimeColor::new(
+            1, 2, 3, 255,
+        )));
+    invalid_result
+        .instructions
+        .push(AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(1),
+        });
+    invalid_result.blocks[1].instructions = AwbcTableRange::new(2, 1);
+    invalid_result.blocks[1].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+    assert!(matches!(
+        invalid_result.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { .. })
+    ));
+}
+
+#[test]
+fn format_content_rejects_a_suspending_operand_thunk() {
+    let mut program = format_content_program();
+    program.functions[1].flags = program.functions[1]
+        .flags
+        .with(AwbcFunctionFlag::MaySuspend);
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { .. })
+    ));
 }
 
 #[test]

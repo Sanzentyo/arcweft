@@ -1,4 +1,8 @@
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::Arc,
+};
 
 use crate::{
     effect::RuntimeArtifactFingerprint,
@@ -13,16 +17,18 @@ use crate::{
         RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimePlanBuilder,
         RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
-    pure::{RuntimeExternalCallBackend, VmRuntimePureCallBackend},
+    pure::{RuntimeExternalCallBackend, RuntimeExternalCallContext, VmRuntimePureCallBackend},
     runtime_id::{
         RuntimeCallableStateId, RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId,
     },
     task::RuntimeProgramOwner,
     value::{
         RuntimeArcError, RuntimeArcErrorSource, RuntimeCallArgument, RuntimeCallArgumentMode,
-        RuntimeCallTarget, RuntimeDialogueContentValue, RuntimeDialogueOpaqueRole,
+        RuntimeCallTarget, RuntimeDialogueContentValue, RuntimeDialogueFormattedFailureSelection,
+        RuntimeDialogueFormattedOutcome, RuntimeDialogueOpaqueRole,
         RuntimeDialoguePlainTextContextTemplateProof, RuntimeDialoguePlainTextContextTemplateRef,
-        RuntimeExpr, RuntimeExprKind, RuntimeIntrinsic, RuntimeValue,
+        RuntimeExpr, RuntimeExprKind, RuntimeExpressionFailure, RuntimeFmtParameterId,
+        RuntimeFormatContentOperand, RuntimeIntrinsic, RuntimeValue,
     },
 };
 
@@ -557,4 +563,143 @@ fn native_standalone_context_requires_proof_for_string_but_accepts_content() {
         )
         .expect("typed Content passes without an execution proof");
     assert_eq!(context_error(result).message(), &direct_content);
+}
+
+struct SequencedFmtOperands {
+    target: RuntimeCallTarget,
+    primary_result: Result<RuntimeValue, RuntimeEvalError>,
+    calls: Rc<RefCell<Vec<usize>>>,
+}
+
+impl RuntimeExternalCallBackend for SequencedFmtOperands {
+    fn call_external(
+        &mut self,
+        _context: &RuntimeExternalCallContext,
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
+    ) -> Option<Result<RuntimeValue, RuntimeEvalError>> {
+        assert_eq!(callee, &self.target);
+        assert!(args.is_empty());
+        let index = self.calls.borrow().len();
+        self.calls.borrow_mut().push(index);
+        Some(match index {
+            0 => self.primary_result.clone(),
+            1 => Ok(RuntimeValue::String("number".to_owned())),
+            2 => Ok(RuntimeValue::String("safe fallback".to_owned())),
+            _ => panic!("each authored format operand is evaluated once"),
+        })
+    }
+}
+
+fn format_call_expression(
+    plan: &crate::plan::RuntimePlan,
+    target: &RuntimeCallTarget,
+) -> RuntimeExpr {
+    RuntimeExpr::from_admitted_parts(
+        plan.type_table()
+            .id_for_semantic(STRING)
+            .expect("format call result type is in the test plan"),
+        RuntimeExprKind::Call {
+            callee: target.clone(),
+            args: Vec::new(),
+        },
+    )
+}
+
+fn format_content_expression(
+    plan: &crate::plan::RuntimePlan,
+    content: RuntimeSemanticTypeId,
+    template: RuntimeDialogueContentTemplateId,
+    target: &RuntimeCallTarget,
+) -> RuntimeExpr {
+    RuntimeExpr::from_admitted_parts(
+        plan.type_table()
+            .id_for_semantic(content)
+            .expect("format result type is in the test plan"),
+        RuntimeExprKind::FormatContent {
+            template,
+            operands: vec![
+                RuntimeFormatContentOperand::from_admitted_parts(
+                    RuntimeFmtParameterId::Value,
+                    format_call_expression(plan, target),
+                ),
+                RuntimeFormatContentOperand::from_admitted_parts(
+                    RuntimeFmtParameterId::Style,
+                    format_call_expression(plan, target),
+                ),
+                RuntimeFormatContentOperand::from_admitted_parts(
+                    RuntimeFmtParameterId::Fallback,
+                    format_call_expression(plan, target),
+                ),
+            ],
+        },
+    )
+}
+
+#[test]
+fn native_format_content_records_recoverable_operand_failures_and_evaluates_each_operand_once() {
+    let context = context_plan(true, true);
+    let mut engine = Engine::new(context.plan);
+    let template = RuntimeDialogueContentTemplateId::from_zero_based(0)
+        .expect("first format template identity");
+    let expression = format_content_expression(
+        &engine.plan,
+        context.types.content,
+        template,
+        &context.callback_target,
+    );
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut backend =
+        VmRuntimePureCallBackend::default().with_external_calls(SequencedFmtOperands {
+            target: context.callback_target.clone(),
+            primary_result: Err(RuntimeEvalError::RecoverableExpression(
+                RuntimeExpressionFailure::DivisionByZero,
+            )),
+            calls: Rc::clone(&calls),
+        });
+
+    let value = engine
+        .evaluate_expr_with_backend(&expression, &mut backend)
+        .expect("recoverable expression fault becomes formatted content data");
+    assert_eq!(*calls.borrow(), [0, 1, 2]);
+    let content = RuntimeDialogueContentValue::try_from_runtime_value(&value)
+        .expect("format evaluator returns the artifact-bound Content envelope");
+    let formatted = content
+        .binding(RuntimeDialogueValueSlotId::from_zero_based(0).unwrap())
+        .and_then(|binding| binding.formatted())
+        .expect("exact one-slot template has a Formatted binding");
+    assert_eq!(
+        formatted.outcome(),
+        &RuntimeDialogueFormattedOutcome::Failure {
+            reason: "division by zero".to_owned(),
+            value_plain: None,
+        }
+    );
+    assert_eq!(
+        formatted.failure_selection(),
+        &RuntimeDialogueFormattedFailureSelection::Fallback("safe fallback".to_owned())
+    );
+
+    let fatal_expression = format_content_expression(
+        &engine.plan,
+        context.types.content,
+        template,
+        &context.callback_target,
+    );
+    let fatal = RuntimeEvalError::FunctionArgumentCount {
+        expected: 1,
+        found: 0,
+    };
+    let fatal_calls = Rc::new(RefCell::new(Vec::new()));
+    let mut fatal_backend =
+        VmRuntimePureCallBackend::default().with_external_calls(SequencedFmtOperands {
+            target: context.callback_target,
+            primary_result: Err(fatal.clone()),
+            calls: Rc::clone(&fatal_calls),
+        });
+    assert_eq!(
+        engine.evaluate_expr_with_backend(&fatal_expression, &mut fatal_backend),
+        Err(fatal)
+    );
+    assert_eq!(*fatal_calls.borrow(), [0]);
 }

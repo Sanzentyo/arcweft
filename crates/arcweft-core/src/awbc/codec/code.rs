@@ -9,18 +9,19 @@ use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
     AwbcConstantId, AwbcContentUnitId, AwbcDeferOwner, AwbcDialogueContentEffectBinding,
     AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
-    AwbcEffectPlanId, AwbcFieldProjection, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId,
-    AwbcLineOperationId, AwbcMatchArm, AwbcMutablePlace, AwbcOpcode, AwbcOpcodeClass, AwbcPattern,
-    AwbcPatternId, AwbcPatternRest, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
-    AwbcProjectCallAttachedPresence, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
-    AwbcProjectCallOrdinaryMaterialization, AwbcPureHelperId, AwbcRecordPatternField,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
-    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcEffectPlanId, AwbcFieldProjection, AwbcFormatOperand, AwbcFrameLayoutId, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction,
+    AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm, AwbcMutablePlace, AwbcOpcode,
+    AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProjectCall,
+    AwbcProjectCallAttachedMaterialization, AwbcProjectCallAttachedPresence,
+    AwbcProjectCallOperand, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
+    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId,
+    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcTypeId, AwbcUnaryOp,
 };
 use crate::runtime_id::{RuntimeCallableSpecializationId, RuntimeCallableStateId};
-use crate::value::RuntimeAgentConstructor;
+use crate::value::{RuntimeAgentConstructor, RuntimeFmtParameterId};
 use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueFieldCoordinate, CharacterDialogueOperation,
     CharacterDialoguePatchField, CharacterDialoguePatchOperation,
@@ -427,6 +428,33 @@ impl Wire for AwbcFieldProjection {
     }
 }
 
+impl Wire for AwbcFormatOperand {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(
+            u8::try_from(self.parameter.index()).expect("fmt parameter IDs fit in one byte"),
+        );
+        self.function.write_wire(writer)?;
+        self.captures.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        let parameter = RuntimeFmtParameterId::from_index(usize::from(tag)).ok_or(
+            AwbcCodecError::UnknownTag {
+                kind: "fmt parameter",
+                tag,
+                offset,
+            },
+        )?;
+        Ok(Self {
+            parameter,
+            function: AwbcFunctionId::read_wire(reader)?,
+            captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
+        })
+    }
+}
+
 impl Wire for AwbcInstruction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(self.opcode().encoded());
@@ -580,6 +608,15 @@ impl Wire for AwbcInstruction {
                 template.write_wire(writer)?;
                 values.write_wire(writer)?;
                 effects.write_wire(writer)?;
+            }
+            Self::FormatContent {
+                destination,
+                template,
+                operands,
+            } => {
+                destination.write_wire(writer)?;
+                template.write_wire(writer)?;
+                operands.write_wire(writer)?;
             }
             Self::CharacterDialogue {
                 destination,
@@ -854,6 +891,11 @@ impl Wire for AwbcInstruction {
                 template: crate::runtime_id::RuntimeDialogueContentTemplateId::read_wire(reader)?,
                 values: Vec::<AwbcDialogueValueBinding>::read_wire(reader)?,
                 effects: Vec::<AwbcDialogueContentEffectBinding>::read_wire(reader)?,
+            },
+            AwbcOpcode::FormatContent => Self::FormatContent {
+                destination: AwbcRegisterId::read_wire(reader)?,
+                template: crate::runtime_id::RuntimeDialogueContentTemplateId::read_wire(reader)?,
+                operands: Vec::<AwbcFormatOperand>::read_wire(reader)?,
             },
             AwbcOpcode::CharacterDialogue => Self::CharacterDialogue {
                 destination: AwbcRegisterId::read_wire(reader)?,
@@ -1392,6 +1434,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::EnsureContent
             | AwbcOpcode::MakeDialogueContent
             | AwbcOpcode::CharacterDialogue
+            | AwbcOpcode::FormatContent
             | AwbcOpcode::EmitEffect
             | AwbcOpcode::StartNeed
             | AwbcOpcode::SpawnFiber
@@ -1888,5 +1931,103 @@ mod callable_specialization_wire_tests {
             instruction
         );
         reader.finish().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod format_content_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::runtime_id::RuntimeDialogueContentTemplateId;
+
+    #[test]
+    fn version_one_format_content_preserves_parameter_and_operand_order() {
+        let instruction = AwbcInstruction::FormatContent {
+            destination: AwbcRegisterId(1),
+            template: RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("template identity"),
+            operands: vec![
+                AwbcFormatOperand {
+                    parameter: RuntimeFmtParameterId::Style,
+                    function: AwbcFunctionId(7),
+                    captures: vec![AwbcRegisterId(10), AwbcRegisterId(11)],
+                },
+                AwbcFormatOperand {
+                    parameter: RuntimeFmtParameterId::Value,
+                    function: AwbcFunctionId(8),
+                    captures: Vec::new(),
+                },
+            ],
+        };
+        let mut writer = Writer::with_capacity(64);
+        instruction
+            .write_wire(&mut writer)
+            .expect("encode FormatContent");
+        let bytes = writer.into_bytes();
+        assert_eq!(
+            bytes,
+            [
+                0x2a, // opcode
+                1,    // destination
+                1,    // template
+                2,    // operand count
+                1,    // Style parameter
+                7,    // Style function
+                2,    // Style capture count
+                10, 11, // Style captures, in source order
+                0,  // Value parameter
+                8,  // Value function
+                0,  // Value capture count
+            ]
+        );
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcInstruction::read_wire(&mut reader).expect("decode FormatContent"),
+            instruction
+        );
+        reader.finish().expect("complete FormatContent instruction");
+    }
+
+    #[test]
+    fn format_content_wire_rejects_unknown_parameter_identity() {
+        let bytes = [
+            0x2a, 0,    // opcode, destination
+            1,    // nonzero template identity
+            1,    // operand count
+            0xff, // unknown parameter
+        ];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcInstruction::read_wire(&mut reader).expect_err("reject forged parameter tag"),
+            AwbcCodecError::UnknownTag {
+                kind: "fmt parameter",
+                tag: 0xff,
+                offset: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn format_operand_structured_parameter_is_a_stable_numeric_coordinate() {
+        let operand = AwbcFormatOperand {
+            parameter: RuntimeFmtParameterId::Fallback,
+            function: AwbcFunctionId(4),
+            captures: vec![AwbcRegisterId(3)],
+        };
+        let encoded = serde_json::to_value(&operand).expect("serialize format operand");
+        assert_eq!(encoded["parameter"], serde_json::json!(7));
+        assert_eq!(
+            serde_json::from_value::<AwbcFormatOperand>(encoded)
+                .expect("deserialize format operand"),
+            operand
+        );
+        assert!(
+            serde_json::from_value::<AwbcFormatOperand>(serde_json::json!({
+                "parameter": 255,
+                "function": 4,
+                "captures": []
+            }))
+            .is_err()
+        );
     }
 }
