@@ -1962,3 +1962,11 @@ workspace all-target/all-feature check、Core all-target Clippy、fmt、cached
 diff check は既存 warning ありで通過した。formatter が受け取る回復可能な
 `VmError::Evaluation` とは区別できるが、残る `VmError::Runtime(String)` の
 message-based trap 分類と protected formatter operand は未完である。
+
+`b1cf3a9f1750aeb4b45cac903c062cdae445633c` は selected expression
+failure を `Option.unwrap(None)` と source index bounds に拡張する。
+canonical な非 Option variant を `unwrap` に渡した場合は panic せず fatal
+な型エラー、index の target/引数形の不一致も fatal のままとした。Core lib
+692/692、workspace all-target/all-feature check、Core all-target Clippy、
+fmt、cached diff check が既存 warning ありで通過した。formatter style 等の
+失敗はこの expression error に混ぜず、専用の formatted outcome で扱う。
