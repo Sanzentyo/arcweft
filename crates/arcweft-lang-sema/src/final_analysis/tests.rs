@@ -5585,7 +5585,10 @@ fn production_analyzer_routes_capacity_through_typed_associated_authority() {
     assert_eq!(physical[0].argument().get(), 0);
     assert_eq!(physical[0].slot().get(), 0);
     assert_eq!(physical[0].kind(), PhysicalArgumentEvaluationKind::Authored);
-    assert_eq!(physical[0].expected(), &CandidateExpectedType::Unchecked);
+    assert_eq!(
+        physical[0].expected(),
+        &CandidateExpectedType::Exact(TypeKind::USize)
+    );
 }
 
 #[test]
