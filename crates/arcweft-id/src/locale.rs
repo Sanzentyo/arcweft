@@ -183,7 +183,7 @@ fn canonical_text(value: &str) -> Result<String, LocaleTagError> {
     }
 
     let mut seen = BTreeSet::new();
-    for subtag in &subtags {
+    for subtag in subtags.iter().skip(1) {
         let folded = subtag.to_ascii_lowercase();
         if !seen.insert(folded.clone()) {
             return Err(LocaleTagError::DuplicateCanonicalSubtag { subtag: folded });
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn strict_construction_accepts_only_canonical_locale_tags() {
-        for value in ["en", "ja-JP", "zh-Hant-TW", "en-US-u-ca-gregory"] {
+        for value in ["en", "de-DE", "ja-JP", "zh-Hant-TW", "en-US-u-ca-gregory"] {
             assert_eq!(LocaleTag::try_new(value).unwrap().as_str(), value);
         }
 
@@ -213,6 +213,26 @@ mod tests {
             LocaleTag::canonicalize("ZH-hant-tw").unwrap().as_str(),
             "zh-Hant-TW"
         );
+    }
+
+    #[test]
+    fn language_region_overlap_canonicalizes_and_round_trips() {
+        let canonical = LocaleTag::canonicalize("de-de").unwrap();
+        assert_eq!(canonical.as_str(), "de-DE");
+        assert_eq!(LocaleTag::try_new("de-DE").unwrap(), canonical);
+        let encoded = serde_json::to_string(&canonical).unwrap();
+        assert_eq!(
+            serde_json::from_str::<LocaleTag>(&encoded).unwrap(),
+            canonical
+        );
+        assert!(matches!(
+            LocaleTag::canonicalize("en-US-us"),
+            Err(LocaleTagError::DuplicateCanonicalSubtag { .. })
+        ));
+        assert!(matches!(
+            LocaleTag::canonicalize("en-Latn-latn"),
+            Err(LocaleTagError::DuplicateCanonicalSubtag { .. })
+        ));
     }
 
     #[test]

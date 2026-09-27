@@ -3,7 +3,8 @@ use crate::identity::{
     ResourceVariantId,
 };
 use crate::retained::{ResolvedRetainedIdentityRef, RetainedIdentityKind};
-use arcweft_core::{locale::LocaleId, time::LogicalDuration};
+use arcweft_core::time::LogicalDuration;
+use arcweft_id::LocaleTag;
 use arcweft_id::{EntityId, PublicId};
 use arcweft_interaction_model::audio::{GainDbMilli, PanMilli};
 use arcweft_layout::LayoutUnit;
@@ -70,7 +71,7 @@ pub enum ResourceScalarValue {
     Length(ResourceLength),
     Gain(GainDbMilli),
     Pan(PanMilli),
-    Locale(LocaleId),
+    Locale(LocaleTag),
     PublicId(PublicId),
 }
 

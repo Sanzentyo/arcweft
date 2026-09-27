@@ -27,11 +27,12 @@ mod support;
 fn shaping_language_uses_the_shared_canonical_locale_owner() {
     let language = LanguageTag::new("zh-hant-tw").unwrap();
     assert_eq!(language.as_str(), "zh-Hant-TW");
-    assert_eq!(language.locale_id().as_str(), "zh-Hant-TW");
+    assert_eq!(language.locale_tag().as_str(), "zh-Hant-TW");
     assert_eq!(LanguageTag::new("de-de").unwrap().as_str(), "de-DE");
     assert!(LanguageTag::new("e").is_err());
     assert!(LanguageTag::new("en-abcdefghi").is_err());
     assert!(LanguageTag::new("é-JP").is_err());
+    assert!(serde_json::from_str::<LanguageTag>("\"zh-hant-tw\"").is_err());
 }
 
 fn style() -> ResolvedTextStyle {

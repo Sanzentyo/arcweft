@@ -293,7 +293,7 @@ fn character_ownership_and_patch_clear_are_immutable() {
             &CharacterDialoguePatch::default()
                 .with_voice(PatchField::Set(CharacterDialogueVoice::Auto))
                 .with_source_locale(PatchField::Set(
-                    DialogueLocaleId::try_new("ja-jp").expect("locale"),
+                    DialogueLocaleId::canonicalize("ja-jp").expect("locale"),
                 ))
                 .with_view(PatchField::Clear),
         )
@@ -331,17 +331,20 @@ fn character_ownership_and_patch_clear_are_immutable() {
 }
 
 #[test]
-fn dialogue_locale_is_a_domain_newtype_over_the_shared_canonical_owner() {
-    let locale = DialogueLocaleId::try_new("zh-hant-tw").unwrap();
+fn dialogue_locale_is_a_domain_newtype_over_locale_tag() {
+    let locale = DialogueLocaleId::canonicalize("zh-hant-tw").unwrap();
     assert_eq!(locale.as_str(), "zh-Hant-TW");
-    assert_eq!(locale.locale_id().as_str(), "zh-Hant-TW");
+    assert_eq!(locale.locale_tag().as_str(), "zh-Hant-TW");
     assert_eq!(
-        DialogueLocaleId::try_new("de-de").unwrap().as_str(),
+        DialogueLocaleId::canonicalize("de-de").unwrap().as_str(),
         "de-DE"
     );
+    assert!(DialogueLocaleId::try_new("zh-hant-tw").is_err());
+    assert!(DialogueLocaleId::try_new("zh-Hant-TW").is_ok());
     assert!(DialogueLocaleId::try_new("e").is_err());
     assert!(DialogueLocaleId::try_new("en-abcdefghi").is_err());
     assert!(DialogueLocaleId::try_new("é-JP").is_err());
+    assert!(serde_json::from_str::<DialogueLocaleId>("\"zh-hant-tw\"").is_err());
 }
 
 #[test]

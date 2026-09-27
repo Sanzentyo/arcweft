@@ -1,4 +1,5 @@
-use arcweft_core::{locale::LocaleId, time::LogicalDuration};
+use arcweft_core::time::LogicalDuration;
+use arcweft_id::LocaleTag;
 use arcweft_id::{EntityId, PublicId};
 use arcweft_interaction_model::audio::{GainDbMilli, PanMilli};
 use arcweft_layout::LayoutUnit;
@@ -85,7 +86,7 @@ fn shared_duration_audio_and_layout_types_keep_owner_invariants() {
 
 #[test]
 fn locale_values_are_validated_and_stored_in_canonical_bcp47_case() {
-    let locale = LocaleId::try_new("ja-jp").unwrap();
+    let locale = LocaleTag::try_new("ja-JP").unwrap();
     assert_eq!(locale.as_str(), "ja-JP");
     ResourceValueType::Scalar(ResourceScalarType::Locale)
         .validate_const(&ResourceConstValue::Scalar(ResourceScalarValue::Locale(
@@ -93,10 +94,12 @@ fn locale_values_are_validated_and_stored_in_canonical_bcp47_case() {
         )))
         .unwrap();
     assert_eq!(
-        LocaleId::try_new("zh-hant-tw").unwrap().as_str(),
+        LocaleTag::try_new("zh-Hant-TW").unwrap().as_str(),
         "zh-Hant-TW"
     );
-    assert_eq!(LocaleId::try_new("de-de").unwrap().as_str(), "de-DE");
+    assert_eq!(LocaleTag::try_new("de-DE").unwrap().as_str(), "de-DE");
+    assert!(LocaleTag::try_new("ja-jp").is_err());
+    assert_eq!(LocaleTag::canonicalize("ja-jp").unwrap().as_str(), "ja-JP");
     for invalid in [
         "",
         "e",
@@ -106,7 +109,7 @@ fn locale_values_are_validated_and_stored_in_canonical_bcp47_case() {
         "en-abcdefgh-abcdefgh-abcdefgh-abcdefgh-abcdefgh-abcdefgh-abcdefgh-abcdefgh",
     ] {
         assert!(
-            LocaleId::try_new(invalid).is_err(),
+            LocaleTag::try_new(invalid).is_err(),
             "{invalid} must be rejected"
         );
     }

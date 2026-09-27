@@ -1,6 +1,6 @@
 //! Canonical post-resolution text and style boundary.
 
-use arcweft_core::locale::LocaleId;
+use arcweft_id::LocaleTag;
 use arcweft_presentation::fx::FxColor;
 use arcweft_text_model::{
     LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage, RichTextAngle,
@@ -50,17 +50,15 @@ impl Write for RevisionWriter {
 
 /// Validated BCP-47-style language identifier used during shaping.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct LanguageTag(LocaleId);
+pub struct LanguageTag(LocaleTag);
 
 impl LanguageTag {
     /// Validates and stores an ASCII language tag.
     pub fn new(value: impl Into<String>) -> Result<Self, TextResolveError> {
         let value = value.into();
-        LocaleId::try_new(value)
+        LocaleTag::canonicalize(&value)
             .map(Self)
-            .map_err(|error| TextResolveError::InvalidLanguageTag {
-                value: error.into_value(),
-            })
+            .map_err(|_| TextResolveError::InvalidLanguageTag { value })
     }
 
     /// Returns the normalized source spelling.
@@ -70,7 +68,7 @@ impl LanguageTag {
     }
 
     #[must_use]
-    pub const fn locale_id(&self) -> &LocaleId {
+    pub const fn locale_tag(&self) -> &LocaleTag {
         &self.0
     }
 }

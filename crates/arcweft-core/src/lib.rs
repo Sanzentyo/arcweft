@@ -9,7 +9,6 @@ pub mod engine;
 pub mod entry;
 pub mod executor;
 pub mod line_task;
-pub mod locale;
 pub mod math;
 pub mod observation;
 pub mod pattern;

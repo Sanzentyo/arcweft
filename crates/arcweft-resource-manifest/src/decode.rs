@@ -11,8 +11,8 @@ use crate::{
         TypedResourceTypeManifestV1,
     },
 };
-use arcweft_core::{locale::LocaleId, time::LogicalDuration};
-use arcweft_id::{EntityId, PublicId};
+use arcweft_core::time::LogicalDuration;
+use arcweft_id::{EntityId, LocaleTag, PublicId};
 use arcweft_interaction_model::audio::{GainDbMilli, PanMilli};
 use arcweft_layout::LayoutUnit;
 use arcweft_manifest_model::{PackageId, PackageVersion, RawDigest, SemanticDigest};
@@ -863,7 +863,7 @@ fn lower_scalar(dto: ScalarValueDto) -> Result<ResourceScalarValue, String> {
             ResourceScalarValue::Pan(PanMilli::new(v).map_err(|e| e.to_string())?)
         }
         ScalarValueDto::Locale(v) => {
-            ResourceScalarValue::Locale(LocaleId::try_new(v).map_err(|e| e.to_string())?)
+            ResourceScalarValue::Locale(LocaleTag::canonicalize(v).map_err(|e| e.to_string())?)
         }
         ScalarValueDto::PublicId(v) => {
             ResourceScalarValue::PublicId(PublicId::try_new(v).map_err(|e| e.to_string())?)

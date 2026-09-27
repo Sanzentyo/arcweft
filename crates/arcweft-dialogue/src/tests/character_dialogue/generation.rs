@@ -161,7 +161,7 @@ fn generation_declaration_digest_is_ordered_and_source_owned() {
     let changed_config = base
         .patched(
             &crate::CharacterDialoguePatch::default().with_source_locale(PatchField::Set(
-                crate::DialogueLocaleId::try_new("ja-jp").expect("locale"),
+                crate::DialogueLocaleId::canonicalize("ja-jp").expect("locale"),
             )),
         )
         .expect("source-locale patch")

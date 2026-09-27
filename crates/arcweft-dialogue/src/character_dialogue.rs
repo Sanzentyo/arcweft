@@ -111,7 +111,7 @@ pub enum CharacterDialogueValueError {
     #[error("invalid {kind} identity `{value}`")]
     Identity { kind: &'static str, value: String },
     #[error("invalid dialogue locale `{value}`: {reason}")]
-    Locale { value: String, reason: &'static str },
+    Locale { value: String, reason: String },
     #[error("CharacterDialogue field `{field}` has invalid runtime shape: {reason}")]
     Field { field: &'static str, reason: String },
     #[error("CharacterDialogue structured patch contains overlapping paths")]

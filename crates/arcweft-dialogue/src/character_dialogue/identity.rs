@@ -2,8 +2,7 @@
 
 use super::{CharacterDialogueValueError, limits::MAX_PUBLIC_ID_BYTES};
 use arcweft_core::entry::RuntimeValueDigest;
-use arcweft_core::locale::LocaleId;
-use arcweft_id::PublicId;
+use arcweft_id::{LocaleTag, LocaleTagError, PublicId};
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -43,7 +42,7 @@ pub struct CharacterDialogueVoiceId(PublicId);
 
 /// Canonical source-locale identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DialogueLocaleId(LocaleId);
+pub struct DialogueLocaleId(LocaleTag);
 
 impl CharacterDialogueContractIdentity {
     #[must_use]
@@ -126,15 +125,28 @@ impl CharacterDialogueVoiceId {
 }
 
 impl DialogueLocaleId {
-    /// Validates and canonicalizes an ASCII BCP-47 locale.
+    /// Validates one already-canonical ASCII BCP-47 locale.
     pub fn try_new(value: impl Into<String>) -> Result<Self, CharacterDialogueValueError> {
-        LocaleId::try_new(value.into()).map(Self).map_err(|error| {
-            let reason = error.kind().reason();
-            CharacterDialogueValueError::Locale {
-                value: error.into_value(),
-                reason,
-            }
-        })
+        let value = value.into();
+        Self::from_result(value.clone(), LocaleTag::try_new(&value))
+    }
+
+    /// Validates and canonicalizes authored locale text.
+    pub fn canonicalize(value: impl Into<String>) -> Result<Self, CharacterDialogueValueError> {
+        let value = value.into();
+        Self::from_result(value.clone(), LocaleTag::canonicalize(&value))
+    }
+
+    fn from_result(
+        value: String,
+        result: Result<LocaleTag, LocaleTagError>,
+    ) -> Result<Self, CharacterDialogueValueError> {
+        result
+            .map(Self)
+            .map_err(|error| CharacterDialogueValueError::Locale {
+                value,
+                reason: error.to_string(),
+            })
     }
 
     #[must_use]
@@ -143,7 +155,7 @@ impl DialogueLocaleId {
     }
 
     #[must_use]
-    pub const fn locale_id(&self) -> &LocaleId {
+    pub const fn locale_tag(&self) -> &LocaleTag {
         &self.0
     }
 }
