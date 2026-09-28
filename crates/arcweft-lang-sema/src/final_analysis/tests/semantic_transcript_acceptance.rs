@@ -318,6 +318,78 @@ flow row(flag: bool) {
 }
 
 #[test]
+fn checked_match_transcript_commits_dialogue_on_body_and_ignores_source_revision() {
+    let original = r#"
+pub character alice { display = "Alice" }
+flow row() -> Unit {
+    alice[before [mark @.release] after[p]] with {
+        on mark(@.release) {
+            let selected = match true {
+                true => "Released"
+                false => "Moved"
+            }
+            out "Released"
+        }
+    }
+    return ()
+}
+"#;
+    let changed = original.replace("true => \"Released\"", "true => \"Moved\"");
+    let revised = r#"
+fn unrelated() -> i64 { 99i64 }
+pub character alice { display = "Alice" }
+flow row ( ) -> Unit {
+    alice[before [mark @.release] after[p]] with {
+        on mark(@.release) {
+            let selected = match true {
+                true => "Released"
+                false => "Moved"
+            }
+            out "Released"
+        }
+    }
+return ()
+}
+"#;
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "dialogue On body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_attached_default_and_ignores_source_revision() {
+    let original = r#"
+fn fallback(first: DialogueContent, second: DialogueContent)[body: DialogueContent = {
+        match true {
+            true => first
+            false => second
+        }
+    }] -> DialogueContent { body }
+"#;
+    let changed = original.replace("true => first", "true => second");
+    let revised = r#"
+fn unrelated() -> i64 { 99i64 }
+fn fallback(first: DialogueContent, second: DialogueContent)[body: DialogueContent = {
+        match true {
+            true => first
+            false => second
+        }
+    }] -> DialogueContent { body }
+"#;
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "attached-content default",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
 fn checked_match_transcript_commits_selected_call_argument_passing() {
     let source = |call: &str| {
         format!(
