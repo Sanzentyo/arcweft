@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use arcweft_lang_hir::leaf::{
-    HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
-    HirStringLiteral, HirUnitNumberLiteral,
+    HirBigUint, HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral,
+    HirLiteral, HirStringLiteral, HirUnitNumberLiteral,
 };
 
 use super::match_transaction::{
@@ -119,11 +119,7 @@ pub(crate) fn encode_canonical_literal<E>(
             write(&u32::from(*value).to_le_bytes()).map_err(CanonicalLiteralEncodingError::Sink)?;
         }
         HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. }) => {
-            write(&[2]).map_err(CanonicalLiteralEncodingError::Sink)?;
-            write_canonical_len(&mut write, magnitude.limbs_le().len())?;
-            for limb in magnitude.limbs_le() {
-                write(&limb.to_le_bytes()).map_err(CanonicalLiteralEncodingError::Sink)?;
-            }
+            encode_canonical_integer_magnitude(magnitude, &mut write)?;
         }
         HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }) => {
             write(&[3]).map_err(CanonicalLiteralEncodingError::Sink)?;
@@ -175,6 +171,21 @@ pub(crate) fn encode_canonical_literal<E>(
         | HirLiteral::Duration(HirDurationLiteral::Invalid(_)) => {
             return Err(CanonicalLiteralEncodingError::Invalid);
         }
+    }
+    Ok(())
+}
+
+/// Shared canonical integer payload for literal and compact-sequence owners.
+/// The authored radix and suffix are deliberately excluded; the checked type
+/// is encoded by the enclosing semantic record.
+pub(crate) fn encode_canonical_integer_magnitude<E>(
+    magnitude: &HirBigUint,
+    write: &mut impl FnMut(&[u8]) -> Result<(), E>,
+) -> Result<(), CanonicalLiteralEncodingError<E>> {
+    write(&[2]).map_err(CanonicalLiteralEncodingError::Sink)?;
+    write_canonical_len(write, magnitude.limbs_le().len())?;
+    for limb in magnitude.limbs_le() {
+        write(&limb.to_le_bytes()).map_err(CanonicalLiteralEncodingError::Sink)?;
     }
     Ok(())
 }

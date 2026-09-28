@@ -40,7 +40,7 @@ use crate::callable::{
     ResolverWork, resolve_call_target,
 };
 use crate::final_analysis::CheckedCompileTimeCallee;
-use crate::final_analysis::type_rules::integer_suffix_type;
+use crate::final_analysis::type_rules::{integer_suffix_type, nonnegative_integer_magnitude_fits};
 use crate::registration::RegisteredExternalOwner;
 use arcweft_lang_hir::body_edges::{HirBodyChild, HirBodyKind};
 use arcweft_lang_hir::expr::{
@@ -1623,6 +1623,21 @@ impl Analyzer<'_, '_, '_> {
                 let item = integer_suffix_type(sequence.common_suffix())
                     .or_else(|| expected_item(expected).cloned())
                     .unwrap_or(TypeKind::I32);
+                for (ordinal, element) in sequence.elements().iter().enumerate() {
+                    if !nonnegative_integer_magnitude_fits(element.magnitude(), &item) {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CompactNumericElementOutOfRange {
+                                owner,
+                                ordinal: u32::try_from(ordinal).map_err(|_| {
+                                    AnalyzerExpressionError::fatal(
+                                        FinalSemanticAnalysisError::AccountingOverflow,
+                                    )
+                                })?,
+                                item: Box::new(item),
+                            },
+                        ));
+                    }
+                }
                 checked_bracket_sequence_expression(
                     owner,
                     expected,

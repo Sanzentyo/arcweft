@@ -11,6 +11,16 @@ pub enum HirPlaceholderKind {
     PipeLeft,
 }
 
+impl HirPlaceholderKind {
+    /// Closed semantic role retained by expression transcripts.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::PartialApplication => 0,
+            Self::PipeLeft => 1,
+        }
+    }
+}
+
 /// Ordered tuple elements.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirTupleExpr {
@@ -155,6 +165,16 @@ impl HirTryExpr {
 pub enum HirAwaitBranchKind {
     Pending,
     Recovered,
+}
+
+impl HirAwaitBranchKind {
+    /// A recovered branch has no successful semantic transcript tag.
+    pub const fn semantic_transcript_tag(self) -> Option<u8> {
+        match self {
+            Self::Pending => Some(0),
+            Self::Recovered => None,
+        }
+    }
 }
 
 /// One source-ordered Await branch and its branch-local bindings.
@@ -424,6 +444,30 @@ pub enum HirBinaryOp {
     Remainder,
 }
 
+impl HirBinaryOp {
+    /// Closed operator identity; operand digests alone do not select an operation.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Implies => 0,
+            Self::Or => 1,
+            Self::And => 2,
+            Self::In => 3,
+            Self::Equal => 4,
+            Self::NotEqual => 5,
+            Self::GreaterOrEqual => 6,
+            Self::LessOrEqual => 7,
+            Self::Greater => 8,
+            Self::Less => 9,
+            Self::Merge => 10,
+            Self::Add => 11,
+            Self::Subtract => 12,
+            Self::Multiply => 13,
+            Self::Divide => 14,
+            Self::Remainder => 15,
+        }
+    }
+}
+
 /// Borrow operation over one expression.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirBorrowExpr {
@@ -449,6 +493,16 @@ impl HirBorrowExpr {
 pub enum HirBorrowKind {
     Shared,
     Mutable,
+}
+
+impl HirBorrowKind {
+    /// Closed borrow mode retained independently of its checked result type.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Shared => 0,
+            Self::Mutable => 1,
+        }
+    }
 }
 
 /// Dereference operation over one expression.
@@ -492,6 +546,16 @@ impl HirUnaryExpr {
 pub enum HirUnaryOp {
     Not,
     Negate,
+}
+
+impl HirUnaryOp {
+    /// Closed unary operation selected by this HIR node.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Not => 0,
+            Self::Negate => 1,
+        }
+    }
 }
 
 /// One explicit, shorthand, or typed-invalid record field.

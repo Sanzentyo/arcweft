@@ -417,6 +417,12 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error("compact numeric sequence {owner:?} element {ordinal} does not fit {item:?}")]
+    CompactNumericElementOutOfRange {
+        owner: ExprId,
+        ordinal: u32,
+        item: Box<TypeKind>,
+    },
     #[error("contextual capability expression {owner:?} is used as a runtime value")]
     ContextualCapabilityRequiresDirectReceiver { owner: ExprId },
     #[error("statement {statement:?} operand {owner:?} expects {expected:?}, found {actual:?}")]

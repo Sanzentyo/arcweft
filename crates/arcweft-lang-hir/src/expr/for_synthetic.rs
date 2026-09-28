@@ -16,6 +16,14 @@ pub enum HirForSyntheticExpr {
 }
 
 impl HirForSyntheticExpr {
+    /// Closed role of a `for`-introduced semantic value.
+    pub const fn semantic_transcript_tag(&self) -> u8 {
+        match self {
+            Self::Iterator { .. } => 0,
+            Self::NextValue { .. } => 1,
+        }
+    }
+
     pub(crate) const fn iterator(source: ExprId) -> Self {
         Self::Iterator { source }
     }

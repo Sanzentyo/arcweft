@@ -154,6 +154,18 @@ pub enum HirComputationBlockKind {
     Stream,
 }
 
+impl HirComputationBlockKind {
+    /// Closed computation contract of a value-producing block.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Result => 0,
+            Self::Option => 1,
+            Self::Seq => 2,
+            Self::Stream => 3,
+        }
+    }
+}
+
 /// Named block expression with one explicit or synthetic tail.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirNamedBlockExpr {

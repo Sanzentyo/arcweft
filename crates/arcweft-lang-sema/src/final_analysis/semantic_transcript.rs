@@ -31,12 +31,12 @@ use crate::semantic_coordinate::{
     SemanticCoordinateIndexError, StableCheckedBodyCoordinate, StableCheckedValueCoordinate,
     StablePatternCoordinate, StablePatternCoordinateStep, StableSemanticCoordinate,
 };
-use crate::types::{SemanticTypeDigest, TypeKind};
+use crate::types::{ArrayLength, SemanticTypeDigest, TypeKind};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{HirExprKind, HirMatchExpr},
     identity::{ExprId, PatternId},
-    leaf::HirLiteral,
+    leaf::{HirLiteral, HirNumericSequenceRecovery},
     module::HirModule,
     pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind},
     project::{
@@ -1510,6 +1510,7 @@ fn expression_digest_at_with_state(
             })?,
         )?;
     }
+    write_expression_shape_atoms(&mut hasher, owner, hir.kind(), checked)?;
     write_resolution_payload(
         &mut hasher,
         owner,
@@ -1654,6 +1655,14 @@ fn generic_pattern_digest_at_with_state(
     transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
     transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
     transcript_update!(hasher, checked.ty().semantic_identity_digest()?.as_bytes());
+    if let HirPatternKind::BracketSequence { rest, .. } = hir.kind() {
+        transcript_update!(
+            hasher,
+            &[rest
+                .semantic_transcript_tag()
+                .ok_or(SemanticTranscriptError::RecoveredOwner)?],
+        );
+    }
     write_generic_pattern_resolution(&mut hasher, checked.resolution(), checked.ty(), analysis)?;
     write_len(&mut hasher, children.len())?;
     for (role, digest) in children {
@@ -3400,18 +3409,139 @@ fn write_literal(
     ty: &TypeKind,
 ) -> Result<(), SemanticTranscriptError> {
     super::match_coverage::encode_canonical_literal(literal, ty, |bytes| hasher.update(bytes))
-        .map_err(|error| match error {
-            super::match_coverage::CanonicalLiteralEncodingError::Invalid => {
-                SemanticTranscriptError::RecoveredOwner
+        .map_err(map_canonical_literal_error)
+}
+
+fn map_canonical_literal_error(
+    error: super::match_coverage::CanonicalLiteralEncodingError<CheckedMatchBuildError>,
+) -> SemanticTranscriptError {
+    match error {
+        super::match_coverage::CanonicalLiteralEncodingError::Invalid => {
+            SemanticTranscriptError::RecoveredOwner
+        }
+        super::match_coverage::CanonicalLiteralEncodingError::ArithmeticOverflow => {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::TranscriptBytes,
             }
-            super::match_coverage::CanonicalLiteralEncodingError::ArithmeticOverflow => {
-                CheckedMatchBuildError::ArithmeticOverflow {
-                    kind: CheckedMatchLimitKind::TranscriptBytes,
-                }
-                .into()
+            .into()
+        }
+        super::match_coverage::CanonicalLiteralEncodingError::Sink(error) => error.into(),
+    }
+}
+
+/// Writes only HIR-owned non-child meaning. Checked resolution, type, field,
+/// callable, and body facts are written by their existing owners.
+fn write_expression_shape_atoms(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    owner: ExprId,
+    kind: &HirExprKind,
+    checked: &super::CheckedExpression,
+) -> Result<(), SemanticTranscriptError> {
+    match kind {
+        HirExprKind::Unit
+        | HirExprKind::Literal(_)
+        | HirExprKind::EntityReference(_)
+        | HirExprKind::LifetimePath(_)
+        | HirExprKind::Path(_)
+        | HirExprKind::ShortVariant(_)
+        | HirExprKind::ArrayRepeat(_)
+        | HirExprKind::Select(_)
+        | HirExprKind::Index(_)
+        | HirExprKind::Pipe(_)
+        | HirExprKind::Try(_)
+        | HirExprKind::Choice(_)
+        | HirExprKind::Record(_)
+        | HirExprKind::RecordLiteral(_)
+        | HirExprKind::Dereference(_)
+        | HirExprKind::Closure(_)
+        | HirExprKind::Block(_)
+        | HirExprKind::NamedBlock(_)
+        | HirExprKind::Loop(_)
+        | HirExprKind::If(_)
+        | HirExprKind::IfLet(_)
+        | HirExprKind::Match(_)
+        | HirExprKind::AttachedContentApplication(_)
+        | HirExprKind::PostfixBracket(_) => {}
+        HirExprKind::Placeholder(placeholder) => {
+            transcript_update!(hasher, &[placeholder.semantic_transcript_tag()]);
+        }
+        HirExprKind::Tuple(tuple) => write_len(hasher, tuple.elements().len())?,
+        HirExprKind::BracketSequence(sequence) => write_len(hasher, sequence.elements().len())?,
+        HirExprKind::NumericBracketSequence(sequence) => {
+            if !matches!(sequence.recovery(), HirNumericSequenceRecovery::Complete) {
+                return Err(SemanticTranscriptError::RecoveredOwner);
             }
-            super::match_coverage::CanonicalLiteralEncodingError::Sink(error) => error.into(),
-        })
+            let ty = checked.value_type().ok_or_else(|| {
+                SemanticTranscriptError::from(
+                    super::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                )
+            })?;
+            let item = match ty {
+                TypeKind::Vec(item) => item.as_ref(),
+                TypeKind::Array {
+                    item,
+                    len: ArrayLength::Const(length),
+                } if *length == sequence.elements().len() => item.as_ref(),
+                _ => return Err(SemanticTranscriptError::MissingIdentity),
+            };
+            if !super::type_rules::is_integer(item) {
+                return Err(SemanticTranscriptError::MissingIdentity);
+            }
+            write_len(hasher, sequence.elements().len())?;
+            for element in sequence.elements() {
+                super::canonical_literal::encode_canonical_integer_magnitude(
+                    element.magnitude(),
+                    &mut |bytes| hasher.update(bytes),
+                )
+                .map_err(map_canonical_literal_error)?;
+            }
+        }
+        HirExprKind::Call(call) => {
+            transcript_update!(hasher, &[call.form().semantic_transcript_tag()]);
+        }
+        HirExprKind::Await(awaited) => {
+            write_len(hasher, awaited.branches().len())?;
+            for branch in awaited.branches() {
+                transcript_update!(
+                    hasher,
+                    &[branch
+                        .kind()
+                        .semantic_transcript_tag()
+                        .ok_or(SemanticTranscriptError::RecoveredOwner)?],
+                );
+            }
+        }
+        HirExprKind::Thread(thread) => {
+            transcript_update!(hasher, &[thread.mode().semantic_transcript_tag()]);
+        }
+        HirExprKind::Range(range) => {
+            transcript_update!(
+                hasher,
+                &[
+                    u8::from(range.inclusive()),
+                    u8::from(range.start().is_some()),
+                    u8::from(range.end().is_some()),
+                ],
+            );
+        }
+        HirExprKind::Binary(binary) => {
+            transcript_update!(hasher, &[binary.operator().semantic_transcript_tag()]);
+        }
+        HirExprKind::Borrow(borrow) => {
+            transcript_update!(hasher, &[borrow.kind().semantic_transcript_tag()]);
+        }
+        HirExprKind::Unary(unary) => {
+            transcript_update!(hasher, &[unary.operator().semantic_transcript_tag()]);
+        }
+        HirExprKind::ComputationBlock(block) => {
+            transcript_update!(hasher, &[block.kind().semantic_transcript_tag()]);
+        }
+        HirExprKind::ForSynthetic(synthetic) => {
+            transcript_update!(hasher, &[synthetic.semantic_transcript_tag()]);
+        }
+        HirExprKind::Error(_) => return Err(SemanticTranscriptError::RecoveredOwner),
+    }
+    Ok(())
 }
 
 fn write_complete_resolution_payload(

@@ -446,6 +446,16 @@ pub enum HirPatternSequenceRest {
 }
 
 impl HirPatternSequenceRest {
+    /// Closed sequence-rest mode; recovered input cannot enter a transcript.
+    pub const fn semantic_transcript_tag(self) -> Option<u8> {
+        match self {
+            Self::Absent => Some(0),
+            Self::Unbound => Some(1),
+            Self::Bound(_) => Some(2),
+            Self::Recovered(_) => None,
+        }
+    }
+
     fn validate<R: HirPatternResolver + ?Sized>(
         self,
         scope: ScopeId,

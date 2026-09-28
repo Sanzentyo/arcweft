@@ -65,6 +65,33 @@ fn bracket_sequences_reject_array_length_mismatches() {
 }
 
 #[test]
+fn compact_numeric_elements_fit_the_selected_integer_type() {
+    let accepted = fixture(
+        "fn unsigned() -> Vec<u8> { [255u8] }\nfn signed() -> Vec<i8> { [127i8] }\nfn wide() -> Vec<u128> { [340282366920938463463374607431768211455u128] }\n",
+        None,
+    );
+    analyze(&accepted).expect("exact integer maxima fit their selected item types");
+
+    for (source, item) in [
+        ("fn rejected() -> Vec<u8> { [256u8] }\n", TypeKind::U8),
+        ("fn rejected() -> Vec<i8> { [128i8] }\n", TypeKind::I8),
+        (
+            "fn rejected() -> Vec<u128> { [340282366920938463463374607431768211456u128] }\n",
+            TypeKind::U128,
+        ),
+    ] {
+        assert!(matches!(
+            analyze(&fixture(source, None)),
+            Err(FinalSemanticAnalysisError::CompactNumericElementOutOfRange {
+                ordinal: 0,
+                item: actual,
+                ..
+            }) if *actual == item
+        ));
+    }
+}
+
+#[test]
 fn array_repeats_preserve_constant_lengths_and_contextual_items() {
     let fixture = fixture(
         r#"

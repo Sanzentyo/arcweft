@@ -197,3 +197,69 @@ fn checked_match_transcript_commits_nested_statement_body_meaning() {
     assert_ne!(first, empty, "nonempty versus empty statement body");
     assert_ne!(ordered, reversed, "nested statement body order");
 }
+
+fn source_match_digest(source: &str) -> [u8; 32] {
+    outermost(&match_observations(source)).digest
+}
+
+fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).expect("pattern transcript fixture should check");
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("Match expression");
+    let product = super::checked_match_product(&report, project, module, &world.symbols, owner);
+    *product.arms()[0].pattern().as_bytes()
+}
+
+#[test]
+fn checked_match_transcript_commits_binary_operator_and_range_inclusivity() {
+    let result = |expression: &str| {
+        source_match_digest(&format!(
+            "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {expression}\n        false => 0i64\n    }}\n}}\n"
+        ))
+    };
+    assert_ne!(result("1i64 + 2i64"), result("1i64 - 2i64"));
+
+    let range = |expression: &str| {
+        source_match_digest(&format!(
+            "fn root(flag: bool) {{\n    let selected = match flag {{\n        true => {expression}\n        false => 0i64..1i64\n    }}\n}}\n"
+        ))
+    };
+    assert_ne!(range("0i64..1i64"), range("0i64..=1i64"));
+}
+
+#[test]
+fn checked_match_transcript_commits_compact_numeric_values_but_not_radix() {
+    let result = |expression: &str| {
+        source_match_digest(&format!(
+            "fn root(flag: bool) -> Vec<i64> {{\n    match flag {{\n        true => {expression}\n        false => [0i64]\n    }}\n}}\n"
+        ))
+    };
+    assert_ne!(result("[1i64, 2i64]"), result("[1i64, 3i64]"));
+    assert_eq!(result("[1i64, 2i64]"), result("[0x1_i64, 0b10_i64]"));
+}
+
+#[test]
+fn checked_match_pattern_transcript_distinguishes_exact_and_rest_sequences() {
+    let source = |pattern: &str| {
+        format!(
+            "fn root(values: Vec<bool>) -> i64 {{\n    match values {{\n        {pattern} => 1i64\n        _ => 0i64\n    }}\n}}\n"
+        )
+    };
+    assert_ne!(
+        first_arm_pattern_digest(&source("[true]")),
+        first_arm_pattern_digest(&source("[true, ..]")),
+    );
+    assert_ne!(
+        first_arm_pattern_digest(&source("[]")),
+        first_arm_pattern_digest(&source("[..]")),
+    );
+}

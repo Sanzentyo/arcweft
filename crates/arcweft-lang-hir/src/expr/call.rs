@@ -108,6 +108,16 @@ pub enum HirCallInvocationForm {
     Parenthesized,
 }
 
+impl HirCallInvocationForm {
+    /// Closed invocation form; a bare content value is distinct from a call.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Value => 0,
+            Self::Parenthesized => 1,
+        }
+    }
+}
+
 /// Non-ID invocation payload shared by ordinary Calls and attached content
 /// calls. The alias keeps one canonical call schema while allowing the owning
 /// expression family to retain an invocation without publishing a nested

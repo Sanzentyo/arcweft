@@ -54,6 +54,16 @@ pub enum HirThreadMode {
     Detached,
 }
 
+impl HirThreadMode {
+    /// Closed execution mode of a Thread expression.
+    pub const fn semantic_transcript_tag(self) -> u8 {
+        match self {
+            Self::Attached => 0,
+            Self::Detached => 1,
+        }
+    }
+}
+
 /// Typed semantic owner of one shared Flow/Thread statement body.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirThreadBodyOwner {
