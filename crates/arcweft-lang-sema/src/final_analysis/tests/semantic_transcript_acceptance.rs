@@ -202,6 +202,52 @@ fn source_match_digest(source: &str) -> [u8; 32] {
     outermost(&match_observations(source)).digest
 }
 
+#[test]
+fn checked_match_transcript_commits_selected_call_argument_passing() {
+    let source = |call: &str| {
+        format!(
+            "fn reorder(first: i64, second: i64) -> i64 {{ first + second }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {call}\n        false => 0i64\n    }}\n}}\n"
+        )
+    };
+    let positional = source_match_digest(&source("reorder(1i64, 2i64)"));
+    let named = source_match_digest(&source("reorder(first=1i64, second=2i64)"));
+    let reformatted = source_match_digest(&source("reorder( first = 1i64, second = 2i64 )"));
+    let radix = source_match_digest(&source("reorder(first=0x1_i64, second=0b10_i64)"));
+    let selected_join = |call: &str| {
+        let world = super::fixture(&source(call), None);
+        let report = super::analyze(&world).expect("checked call");
+        let (owner, _) = report.calls().next().expect("one call");
+        let join = report
+            .edge_facts
+            .get(&owner)
+            .expect("call edges")
+            .as_ref()
+            .expect("checked call edges")
+            .callable()
+            .expect("selected callable join");
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            report.accepted_root_catalog(),
+            &report,
+        );
+        *join
+            .stable_transcript_digest(&coordinates)
+            .expect("accepted callable transcript identity")
+            .as_bytes()
+    };
+
+    assert_eq!(
+        selected_join("reorder(1i64, 2i64)"),
+        selected_join("reorder(first=1i64, second=2i64)"),
+        "selected callable and argument slots are unchanged",
+    );
+    assert_ne!(positional, named, "selected source argument passing");
+    assert_eq!(
+        named, reformatted,
+        "spelling and layout do not alter passing"
+    );
+    assert_eq!(named, radix, "integer radix does not alter checked values");
+}
+
 fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
     let world = super::fixture(source, None);
     let report = super::analyze(&world).expect("pattern transcript fixture should check");

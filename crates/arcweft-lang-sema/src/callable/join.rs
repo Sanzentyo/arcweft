@@ -17,6 +17,9 @@ use thiserror::Error;
 use crate::{
     effect_row::{EffectRow, EffectRowError, EffectSubstitution},
     final_analysis::{CheckedFunctionExecution, CheckedProjectNominal},
+    semantic_coordinate::{
+        AcceptedDeclarationSemanticId, SemanticCoordinateIndex, SemanticCoordinateIndexError,
+    },
     types::{ArrayLength, TypeKind, constraints::ClosedTypeInstantiation},
 };
 
@@ -26,10 +29,10 @@ use super::{
     CallableParameterPresence, CallableResultSchema, CallableSignatureSchemaDigest,
     CheckedCallApplication, CheckedCallContinuationDigest, CheckedCallExecutionArgument,
     CheckedCallOperandDestination, CheckedCallResult, CheckedCallableCatalog,
-    CheckedCallableDigest, CheckedCallableExecution, CheckedCallableFacts, CheckedCallableId,
-    CheckedCallableLookupError, CheckedMethodLookup, ContentCallableIdentity,
-    FrozenCallTypeSolution, ResolvedCallable, ResolvedCallableBaseInstantiation,
-    ResolvedCallableOrigin, ResolvedCallableState,
+    CheckedCallableDeclaration, CheckedCallableDigest, CheckedCallableExecution,
+    CheckedCallableFacts, CheckedCallableId, CheckedCallableLookupError, CheckedMethodLookup,
+    ContentCallableIdentity, FrozenCallTypeSolution, ResolvedCallable,
+    ResolvedCallableBaseInstantiation, ResolvedCallableOrigin, ResolvedCallableState,
 };
 
 mod source;
@@ -1114,11 +1117,11 @@ impl CallableInstantiationDigest {
     }
 }
 
-/// Stable semantic digest of one fully checked callable-owner join.
+/// Generation-bound digest of one fully checked callable-owner join.
 ///
 /// The bytes can only be produced by [`CheckedCallableJoin::semantic_digest`];
-/// consumers may borrow them for a parent transcript but cannot mint a second
-/// callable authority from raw bytes.
+/// runtime-facing consumers may retain them but cannot mint a second callable
+/// authority from raw bytes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedCallableJoinDigest([u8; 32]);
 
@@ -1126,6 +1129,28 @@ impl CheckedCallableJoinDigest {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+}
+
+/// Source-invariant selected callable join for the Match transcript.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CheckedCallableJoinTranscriptDigest([u8; 32]);
+
+impl CheckedCallableJoinTranscriptDigest {
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum CheckedCallableJoinTranscriptError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
+    #[error(transparent)]
+    Coordinate(#[from] SemanticCoordinateIndexError),
+    #[error("source-bound detached callable cannot enter a project Match transcript")]
+    DetachedCallable,
+    #[error("selected callable digest disagrees with its checked identity")]
+    StaleCallable,
 }
 
 /// Semantic receiver mode proven by the selected callable.
@@ -1334,12 +1359,57 @@ impl CheckedCallableJoin {
         }
     }
 
-    /// Stable semantic transcript for the fully checked join.
+    /// Generation-bound digest retained by runtime-facing selected facts.
     pub fn semantic_digest(
         &self,
     ) -> Result<CheckedCallableJoinDigest, crate::types::GenericScopeError> {
+        self.digest_with_project_identity(
+            b"arcweft.lang.checked-callable-authority-join.v1\0",
+            None,
+        )
+        .map(CheckedCallableJoinDigest)
+    }
+
+    /// Stable Match transcript projection of this already selected join.
+    /// Project callable identity is issued by the accepted-root catalog, while
+    /// the generation-bound checked ID remains the runtime identity.
+    pub(crate) fn stable_transcript_digest(
+        &self,
+        coordinates: &SemanticCoordinateIndex<'_, '_>,
+    ) -> Result<CheckedCallableJoinTranscriptDigest, CheckedCallableJoinTranscriptError> {
+        let project_identity = match self {
+            Self::Catalog { id, digest, .. } => {
+                if id.semantic_digest() != *digest {
+                    return Err(CheckedCallableJoinTranscriptError::StaleCallable);
+                }
+                match id.declaration() {
+                    CheckedCallableDeclaration::Project(declaration) => {
+                        Some(coordinates.accepted_declaration(declaration)?)
+                    }
+                    CheckedCallableDeclaration::Detached(_) => {
+                        return Err(CheckedCallableJoinTranscriptError::DetachedCallable);
+                    }
+                    CheckedCallableDeclaration::Environment(_)
+                    | CheckedCallableDeclaration::Standard(_) => None,
+                }
+            }
+            Self::Intrinsic { .. } => None,
+        };
+        self.digest_with_project_identity(
+            b"arcweft.lang.checked-callable-authority-join-transcript.v1\0",
+            project_identity,
+        )
+        .map(CheckedCallableJoinTranscriptDigest)
+        .map_err(Into::into)
+    }
+
+    fn digest_with_project_identity(
+        &self,
+        domain: &[u8],
+        project_identity: Option<AcceptedDeclarationSemanticId>,
+    ) -> Result<[u8; 32], crate::types::GenericScopeError> {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft.lang.checked-callable-authority-join.v1\0");
+        hasher.update(domain);
         match self {
             Self::Catalog {
                 id,
@@ -1355,8 +1425,12 @@ impl CheckedCallableJoin {
                 instantiation,
             } => {
                 hasher.update(&[0]);
-                hasher.update(id.semantic_digest().as_bytes());
-                hasher.update(digest.as_bytes());
+                if let Some(identity) = project_identity {
+                    hasher.update(identity.as_bytes());
+                } else {
+                    hasher.update(id.semantic_digest().as_bytes());
+                    hasher.update(digest.as_bytes());
+                }
                 hasher.update(signature.as_bytes());
                 write_effect(&mut hasher, catalog_effects)?;
                 write_effect(&mut hasher, effects)?;
@@ -1394,7 +1468,7 @@ impl CheckedCallableJoin {
                 hasher.update(instantiation.bytes());
             }
         }
-        Ok(CheckedCallableJoinDigest(*hasher.finalize().as_bytes()))
+        Ok(*hasher.finalize().as_bytes())
     }
 }
 

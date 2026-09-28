@@ -1639,6 +1639,16 @@ pub enum CheckedCallArgumentPassing {
     Spread,
 }
 
+impl CheckedCallArgumentPassing {
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Positional => 0,
+            Self::Named => 1,
+            Self::Spread => 2,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedCallOperandDestination {
     Parameter(CallableParameterCoordinate),
@@ -4298,11 +4308,7 @@ impl CheckedCallCanonicalEncoder {
         argument: &CheckedCallExecutionArgument,
     ) -> Result<(), CallConstraintInvariant> {
         self.u32(u32::from(argument.argument().get()));
-        self.tag(match argument.passing() {
-            CheckedCallArgumentPassing::Positional => 0,
-            CheckedCallArgumentPassing::Named => 1,
-            CheckedCallArgumentPassing::Spread => 2,
-        });
+        self.tag(argument.passing().semantic_tag());
         self.count(argument.slots().len())?;
         for slot in argument.slots() {
             self.execution_slot(slot)?;

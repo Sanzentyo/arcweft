@@ -71,6 +71,8 @@ pub(crate) enum SemanticTranscriptError {
     MissingChildEdges,
     #[error("selected callable join is missing")]
     MissingCallableJoin,
+    #[error("selected call application is missing or stale")]
+    MissingSelectedCallApplication,
     #[error("recovered semantic owner cannot be transcribed")]
     RecoveredOwner,
     #[error("semantic transcript work limit exceeded")]
@@ -434,6 +436,7 @@ impl From<SemanticTranscriptError> for CheckedMatchQueryError {
             | SemanticTranscriptError::MissingPattern
             | SemanticTranscriptError::MissingChildEdges
             | SemanticTranscriptError::MissingCallableJoin
+            | SemanticTranscriptError::MissingSelectedCallApplication
             | SemanticTranscriptError::RecoveredOwner
             | SemanticTranscriptError::MatchBuild(_)
             | SemanticTranscriptError::MissingIdentity
@@ -1556,11 +1559,32 @@ fn expression_digest_at_with_state(
         write_bytes(&mut hasher, &role)?;
         transcript_update!(hasher, &digest);
     }
-    if checked.resolution().checked_call_site(owner).is_some() {
+    if let Some(site) = checked.resolution().checked_call_site(owner) {
         let callable = edges
             .callable()
             .ok_or(SemanticTranscriptError::MissingCallableJoin)?;
-        transcript_update!(hasher, callable.semantic_digest()?.as_bytes());
+        transcript_update!(
+            hasher,
+            callable
+                .stable_transcript_digest(coordinates)
+                .map_err(|_| SemanticTranscriptError::MissingCallableJoin)?
+                .as_bytes(),
+        );
+        let application = analysis
+            .call(owner)
+            .and_then(super::CallTargetFacts::selected_application)
+            .ok_or(SemanticTranscriptError::MissingSelectedCallApplication)?;
+        if application.core().site() != site
+            || application.core().stable_site()
+                != &StableCheckedValueCoordinate::Expression(coordinates.expression(owner)?)
+        {
+            return Err(SemanticTranscriptError::MissingSelectedCallApplication);
+        }
+        let arguments = application.core().execution().arguments();
+        write_len(&mut hasher, arguments.len())?;
+        for argument in arguments {
+            transcript_update!(hasher, &[argument.passing().semantic_tag()]);
+        }
     }
     write_len(&mut hasher, child_digests.len())?;
     for (edge, child_digest) in edges.edges().iter().zip(child_digests) {
