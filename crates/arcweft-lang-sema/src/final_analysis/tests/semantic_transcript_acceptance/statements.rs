@@ -60,9 +60,9 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::For(_) => For => Accepted,
     HirStmtKind::Close { .. } => Close => Pending,
     HirStmtKind::Select(_) => Select => Pending,
-    HirStmtKind::SourceLocale(_) => SourceLocale => Pending,
+    HirStmtKind::SourceLocale(_) => SourceLocale => Accepted,
     HirStmtKind::Scope(_) => Scope => Pending,
-    HirStmtKind::Include(_) => Include => Pending,
+    HirStmtKind::Include(_) => Include => Accepted,
     HirStmtKind::Break { .. } => Break => Pending,
     HirStmtKind::Continue { .. } => Continue => Pending,
     HirStmtKind::Expression { .. } => Expression => Accepted,
@@ -81,9 +81,9 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Trigger(_) => Trigger => Accepted,
     CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Pending,
     CheckedStatementPayload::Select(_) => Select => Pending,
-    CheckedStatementPayload::SourceLocale(_) => SourceLocale => Pending,
+    CheckedStatementPayload::SourceLocale(_) => SourceLocale => Accepted,
     CheckedStatementPayload::Scope(_) => Scope => Pending,
-    CheckedStatementPayload::Include(_) => Include => Pending,
+    CheckedStatementPayload::Include(_) => Include => Accepted,
     CheckedStatementPayload::Suspension(_) => Suspension => Accepted,
     CheckedStatementPayload::Yield => Yield => Pending,
 });
@@ -98,6 +98,8 @@ struct MatchStatementCorpusObservation {
     iterations: Vec<CheckedIteration>,
     suspensions: Vec<CheckedSuspensionStatement>,
     triggers: Vec<super::super::super::CheckedTrigger>,
+    source_locales: Vec<arcweft_id::LocaleTag>,
+    includes: Vec<super::super::super::CheckedIncludeFlowTarget>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
@@ -157,6 +159,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut iterations = Vec::new();
     let mut suspensions = Vec::new();
     let mut triggers = Vec::new();
+    let mut source_locales = Vec::new();
+    let mut includes = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -215,6 +219,12 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::CancelRule { .. }, CheckedStatementPayload::Trigger(trigger)) => {
                 triggers.push(trigger.clone());
             }
+            (HirStmtKind::SourceLocale(_), CheckedStatementPayload::SourceLocale(locale)) => {
+                source_locales.push(locale.clone());
+            }
+            (HirStmtKind::Include(_), CheckedStatementPayload::Include(target)) => {
+                includes.push(*target);
+            }
             (HirStmtKind::Assign { .. }, _) => {
                 panic!("accepted Assign has its exact checked Assignment payload")
             }
@@ -233,6 +243,12 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::CancelRule { .. }, _) => {
                 panic!("accepted CancelRule has its exact checked Trigger payload")
             }
+            (HirStmtKind::SourceLocale(_), _) => {
+                panic!("accepted SourceLocale has its exact checked SourceLocale payload")
+            }
+            (HirStmtKind::Include(_), _) => {
+                panic!("accepted Include has its exact checked Include payload")
+            }
             _ => {}
         }
     }
@@ -250,6 +266,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         iterations,
         suspensions,
         triggers,
+        source_locales,
+        includes,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
@@ -329,6 +347,13 @@ fn flow_match_defer_source(capture: &str) -> String {
 
 fn flow_match_thread_source(statement: &str) -> String {
     flow_match_statement_source(&format!("thread {{ {statement} }}"))
+}
+
+fn flow_match_include_source(target: &str) -> String {
+    format!(
+        "flow shared() {{}}\nflow alternate() {{}}\n{}",
+        flow_match_thread_source(&format!("include @flow.{target}")),
+    )
 }
 
 fn dialogue_match_wait_source(wait: &str) -> String {
@@ -498,6 +523,30 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
                 StatementPayloadFamily::ControlTransfer,
                 StatementPayloadFamily::Structural,
                 StatementPayloadFamily::Trigger,
+            ],
+        },
+        Row {
+            name: "SourceLocale in nested Thread arm block",
+            source: flow_match_thread_source("source locale en-US {}"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::SourceLocale,
+            ],
+            payloads: &[
+                StatementPayloadFamily::SourceLocale,
+                StatementPayloadFamily::Structural,
+            ],
+        },
+        Row {
+            name: "Include in nested Thread arm block",
+            source: flow_match_include_source("shared"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::Include,
+            ],
+            payloads: &[
+                StatementPayloadFamily::Include,
+                StatementPayloadFamily::Structural,
             ],
         },
     ];
@@ -853,6 +902,60 @@ fn checked_match_dialogue_cancel_rule_reaches_exact_trigger_payload() {
     assert_eq!(back.match_value_type, Some(crate::types::TypeKind::String));
     assert_ne!(absent.semantic_digest, skip.semantic_digest);
     assert_ne!(skip.semantic_digest, back.semantic_digest);
+}
+
+#[test]
+fn checked_match_thread_source_locale_reaches_exact_payload() {
+    let english = accepted_match_statement_corpus_observation(&flow_match_thread_source(
+        "source locale en-US {}",
+    ));
+    let japanese = accepted_match_statement_corpus_observation(&flow_match_thread_source(
+        "source locale ja-JP {}",
+    ));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (
+            StatementShapeFamily::SourceLocale,
+            StatementPayloadFamily::SourceLocale,
+        ),
+    ]);
+
+    assert_eq!(english.statement_families, expected);
+    assert_eq!(japanese.statement_families, expected);
+    assert_eq!(english.source_locales.len(), 1);
+    assert_eq!(japanese.source_locales.len(), 1);
+    assert_ne!(english.source_locales, japanese.source_locales);
+    assert_ne!(english.semantic_digest, japanese.semantic_digest);
+}
+
+#[test]
+fn checked_match_thread_include_reaches_exact_flow_target() {
+    let shared = accepted_match_statement_corpus_observation(&flow_match_include_source("shared"));
+    let alternate =
+        accepted_match_statement_corpus_observation(&flow_match_include_source("alternate"));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (
+            StatementShapeFamily::Include,
+            StatementPayloadFamily::Include,
+        ),
+    ]);
+
+    assert_eq!(shared.statement_families, expected);
+    assert_eq!(alternate.statement_families, expected);
+    assert_eq!(shared.includes.len(), 1);
+    assert_eq!(alternate.includes.len(), 1);
+    assert_ne!(
+        shared.includes[0].declaration(),
+        alternate.includes[0].declaration()
+    );
+    assert_ne!(shared.semantic_digest, alternate.semantic_digest);
 }
 
 #[test]
