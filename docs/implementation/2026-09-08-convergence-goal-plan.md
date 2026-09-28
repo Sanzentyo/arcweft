@@ -2278,3 +2278,28 @@ blocking finding ではない。
 affine witness `Iterator::next` の state clone と native/pure filter の item clone は
 実際の所有権境界として別途閉じる。後続の View、RuntimePlan/task-plan、
 scheduler/restore 工程も goal の受入条件に従い継続する。
+
+## Affine iterator と未使用 Filter IR の整理 — 2026-09-28
+
+Supersedes: 直前 checkpoint の witness iterator と filter clone の残課題。
+確認した code commit は `4fbc19771227fcd9871fd269a2bc73f6a5190f6e`。
+main へ fast-forward push 後、working tree は clean。
+
+Native の selected `Iterator::next` は affine state を一度だけ MutRef method へ
+移し、更新された receiver を iterator へ戻す。戻り値は canonical な typed
+`Option` case で判定し、`Some` の item 自体を渡す。affine `Vec<Need<i64>>` の
+先頭取り出し、残余 state の同一実体、typed snapshot/restore 後の再開と終端、
+affine receiver の Copy 拒否を focused test で検証した。
+
+Core の `RuntimeExprSeedKind::Filter` には workspace 内の producer がなく、
+native/pure は item を複製し、AWBC は predicate を一度だけ先に評価して
+未実装の `seq.filter` intrinsic へ渡していた。未公開の孤立した IR 経路として
+seed・実行 variant と全 consumer を削除した。言語の通常 callable `filter`
+契約は変更していない。
+
+`cargo fmt --all -- --check`、Core lib 774/774、runtime-plan lib 90/90、
+runtime-accelerator lib 62/62、変更 3 crate の all-target/all-feature Clippy、
+`git diff --cached --check` が終了コード 0。Clippy は多数の警告を出したが、
+今回の必須実行結果は成功。workspace 全体の test recipe・構造 gate はこの小さな
+Core cleanup cut では再実行していない。053 fixture 全体および後続工程の
+受入条件は依然未完了。
