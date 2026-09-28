@@ -252,6 +252,18 @@ fn choice_match_source(prefix: &str, plan: &str) -> String {
     )
 }
 
+fn entry_reference_match_source(first: &str, second: &str) -> String {
+    format!(
+        "flow done() -> String {{ return \"done\" }}\nflow @flow.references references {{\n    let selected = match true {{\n        true => {first}\n        false => {second}\n    }}\n}}\nentry cli @entry.cli.primary {{ goto @flow.done }}\nentry cli @entry.cli.alternate {{ goto @flow.done }}\n"
+    )
+}
+
+fn project_item_match_source(first: &str, second: &str) -> String {
+    format!(
+        "pub character alternate {{}}\nfn root(flag: bool) -> Ref<Character> {{\n    match flag {{\n        true => {first}\n        false => {second}\n    }}\n}}\n"
+    )
+}
+
 struct MatchArmExpressionObservation {
     semantic_digest: [u8; 32],
     hir_kind: HirExprKind,
@@ -1640,7 +1652,7 @@ macro_rules! expression_family_inventory {
 expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::Unit => Unit => Accepted,
     HirExprKind::Literal(_) => Literal => Accepted,
-    HirExprKind::EntityReference(_) => EntityReference => Pending,
+    HirExprKind::EntityReference(_) => EntityReference => Accepted,
     HirExprKind::LifetimePath(_) => LifetimePath => Pending,
     HirExprKind::Path(_) => Path => Accepted,
     HirExprKind::ShortVariant(_) => ShortVariant => Pending,
@@ -1719,8 +1731,8 @@ expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::LineContext => LineContext => Pending,
     CheckedValueResolution::CharacterField { .. } => CharacterField => Pending,
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
-    CheckedValueResolution::ProjectItem(_) => ProjectItem => Pending,
-    CheckedValueResolution::Entry(_) => Entry => Pending,
+    CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
+    CheckedValueResolution::Entry(_) => Entry => Accepted,
     CheckedValueResolution::Registered(_) => Registered => Pending,
     CheckedValueResolution::Constant(_) => Constant => Pending,
 });
@@ -1733,11 +1745,14 @@ expression_family_inventory!(SelectResolutionFamily for CheckedSelectResolution,
     CheckedSelectResolution::Field(_) => Field => Accepted,
 });
 
+#[derive(Default)]
 struct MatchExpressionCorpusObservation {
     shapes: BTreeSet<ExprShapeFamily>,
     resolutions: BTreeSet<ExpressionResolutionFamily>,
     values: BTreeSet<ValueResolutionFamily>,
     selects: BTreeSet<SelectResolutionFamily>,
+    value_facts: Vec<(CheckedValueResolution, TypeKind)>,
+    semantic_digest: Option<[u8; 32]>,
 }
 
 impl MatchExpressionCorpusObservation {
@@ -1772,7 +1787,13 @@ impl MatchExpressionCorpusObservation {
 /// Checked wrappers may retain a nested Value/Select resolution at that owner.
 fn accepted_match_expression_corpus_observation(source: &str) -> MatchExpressionCorpusObservation {
     let world = super::fixture(source, None);
-    let report = super::analyze(&world).expect("expression corpus source should check");
+    accepted_match_expression_corpus_observation_for_fixture(&world)
+}
+
+fn accepted_match_expression_corpus_observation_for_fixture(
+    world: &super::Fixture,
+) -> MatchExpressionCorpusObservation {
+    let report = super::analyze(world).expect("expression corpus source should check");
     let project = world.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
@@ -1802,6 +1823,8 @@ fn accepted_match_expression_corpus_observation(source: &str) -> MatchExpression
         resolutions: BTreeSet::new(),
         values: BTreeSet::new(),
         selects: BTreeSet::new(),
+        value_facts: Vec::new(),
+        semantic_digest: Some(*product.semantic_digest().as_bytes()),
     };
     for (owner, hir) in module.expressions() {
         let Some(checked) = report.expression(owner) else {
@@ -1815,6 +1838,15 @@ fn accepted_match_expression_corpus_observation(source: &str) -> MatchExpression
         }
         observation.shapes.insert(ExprShapeFamily::of(hir.kind()));
         observation.record_resolution(checked.resolution());
+        if let CheckedExpressionResolution::Value(value) = checked.resolution() {
+            observation.value_facts.push((
+                value.clone(),
+                checked
+                    .value_type()
+                    .expect("checked Value expression has a type")
+                    .clone(),
+            ));
+        }
     }
     assert!(observation.shapes.contains(&ExprShapeFamily::Match));
     observation
@@ -1837,16 +1869,33 @@ fn assert_expression_corpus_inventory<T: Copy + Ord + std::fmt::Debug>(
 struct ExpressionCorpusRow {
     name: &'static str,
     source: String,
+    fixture: ExpressionCorpusFixture,
     shapes: &'static [ExprShapeFamily],
     resolutions: &'static [ExpressionResolutionFamily],
     values: &'static [ValueResolutionFamily],
     selects: &'static [SelectResolutionFamily],
 }
 
+#[derive(Clone, Copy)]
+enum ExpressionCorpusFixture {
+    Standard,
+    ExternalCharacter,
+}
+
+impl ExpressionCorpusFixture {
+    fn build(self, source: &str) -> super::Fixture {
+        match self {
+            Self::Standard => super::fixture(source, None),
+            Self::ExternalCharacter => super::external_character_fixture(source),
+        }
+    }
+}
+
 fn view_method_corpus_row() -> ExpressionCorpusRow {
     ExpressionCorpusRow {
         name: "selected view method",
         source: method_match_source("", "Button().on_click { dialogue.primary_action }"),
+        fixture: ExpressionCorpusFixture::Standard,
         shapes: &[
             ExprShapeFamily::Call,
             ExprShapeFamily::Select,
@@ -1868,10 +1917,11 @@ fn view_method_corpus_row() -> ExpressionCorpusRow {
 }
 
 fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
-    vec![
+    let mut rows = vec![
         ExpressionCorpusRow {
             name: "binary scalar",
             source: bool_match_i64_source("1i64 + 2i64"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
                 ExprShapeFamily::Match,
                 ExprShapeFamily::Binary,
@@ -1887,6 +1937,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "compact numeric sequence",
             source: numeric_sequence_match_source("[1i64, 2i64]"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::NumericBracketSequence],
             resolutions: &[ExpressionResolutionFamily::Structural],
             values: &[ValueResolutionFamily::Local],
@@ -1895,6 +1946,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "local and project callable values",
             source: callable_value_match_source("saved"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Block, ExprShapeFamily::Path],
             resolutions: &[ExpressionResolutionFamily::Value],
             values: &[
@@ -1906,6 +1958,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "record field",
             source: field_match_source("left"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Select],
             resolutions: &[ExpressionResolutionFamily::Select],
             values: &[],
@@ -1915,6 +1968,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "checked Try carrier",
             source: try_match_source("first"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Try],
             resolutions: &[ExpressionResolutionFamily::Try],
             values: &[],
@@ -1923,6 +1977,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "pipeline placeholders",
             source: pipe_match_source("identity"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
                 ExprShapeFamily::Pipe,
                 ExprShapeFamily::Placeholder,
@@ -1940,6 +1995,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         ExpressionCorpusRow {
             name: "Choice plan with thread value",
             source: choice_match_source("", "with { window = thread {} }"),
+            fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
                 ExprShapeFamily::Choice,
                 ExprShapeFamily::Thread,
@@ -1949,19 +2005,40 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             values: &[],
             selects: &[],
         },
+    ];
+    rows.extend(checked_owner_expression_corpus_rows());
+    rows
+}
+
+fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
+    vec![
+        ExpressionCorpusRow {
+            name: "checked Entry references",
+            source: entry_reference_match_source("@entry.cli.primary", "@entry.cli.alternate"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural],
+            values: &[ValueResolutionFamily::Entry],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "checked external and project Character items",
+            source: project_item_match_source("@character.akane", "@character.alternate"),
+            fixture: ExpressionCorpusFixture::ExternalCharacter,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
+            resolutions: &[ExpressionResolutionFamily::Structural],
+            values: &[ValueResolutionFamily::ProjectItem],
+            selects: &[],
+        },
     ]
 }
 
 #[test]
 fn checked_match_expression_corpus_tracks_accepted_root_families() {
-    let mut observed = MatchExpressionCorpusObservation {
-        shapes: BTreeSet::new(),
-        resolutions: BTreeSet::new(),
-        values: BTreeSet::new(),
-        selects: BTreeSet::new(),
-    };
+    let mut observed = MatchExpressionCorpusObservation::default();
     for row in expression_corpus_rows() {
-        let found = accepted_match_expression_corpus_observation(&row.source);
+        let world = row.fixture.build(&row.source);
+        let found = accepted_match_expression_corpus_observation_for_fixture(&world);
         for required in row.shapes {
             assert!(
                 found.shapes.contains(required),
@@ -2014,6 +2091,119 @@ fn checked_match_expression_corpus_tracks_accepted_root_families() {
         "checked Select",
         &observed.selects,
         SelectResolutionFamily::INVENTORY,
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_entry_value_owner() {
+    let entry_world = ExpressionCorpusFixture::Standard.build(&entry_reference_match_source(
+        "@entry.cli.primary",
+        "@entry.cli.alternate",
+    ));
+    let entries = accepted_match_expression_corpus_observation_for_fixture(&entry_world);
+    let checked_entries = entries
+        .value_facts
+        .iter()
+        .filter_map(|(value, ty)| match value {
+            CheckedValueResolution::Entry(entry) => Some((entry, ty)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let entry_ids = checked_entries
+        .iter()
+        .map(|(entry, ty)| {
+            assert_eq!(*ty, &TypeKind::entity_ref(EntityKind::Entry));
+            assert_eq!(
+                entry.value_type(),
+                TypeKind::entity_ref(EntityKind::Entry)
+                    .semantic_identity_digest()
+                    .expect("Entry reference type has a stable identity"),
+            );
+            entry.diagnostic_public_id().as_str().to_owned()
+        })
+        .collect::<BTreeSet<_>>();
+    let entry_bindings = checked_entries
+        .iter()
+        .map(|(entry, _)| *entry.binding().as_bytes())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        entry_ids,
+        ["entry.cli.primary", "entry.cli.alternate"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        "both arm values resolve through the accepted Entry catalog",
+    );
+    assert_eq!(
+        entry_bindings.len(),
+        2,
+        "each Entry has its own checked binding"
+    );
+
+    let same_entry_world = ExpressionCorpusFixture::Standard.build(&entry_reference_match_source(
+        "@entry.cli.primary",
+        "@entry.cli.primary",
+    ));
+    let same_entry = accepted_match_expression_corpus_observation_for_fixture(&same_entry_world);
+    assert_ne!(
+        entries.semantic_digest, same_entry.semantic_digest,
+        "changing one Match arm's checked Entry owner changes its transcript",
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_project_item_value_owner() {
+    let project_item_world = ExpressionCorpusFixture::ExternalCharacter.build(
+        &project_item_match_source("@character.akane", "@character.alternate"),
+    );
+    let project_items =
+        accepted_match_expression_corpus_observation_for_fixture(&project_item_world);
+    let checked_items = project_items
+        .value_facts
+        .iter()
+        .filter_map(|(value, ty)| match value {
+            CheckedValueResolution::ProjectItem(item) => Some((item, ty)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let character_type = TypeKind::entity_ref(EntityKind::Character);
+    let project_item_ids = checked_items
+        .iter()
+        .map(|(item, ty)| {
+            assert_eq!(*ty, &character_type);
+            assert_eq!(
+                item.value_type(),
+                character_type
+                    .semantic_identity_digest()
+                    .expect("Character reference type has a stable identity")
+            );
+            item.semantic_id()
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        project_item_ids.len(),
+        2,
+        "the arms retain distinct checked Character owners"
+    );
+    let external = checked_items
+        .iter()
+        .find(|(item, _)| item.public_id().as_str() == "character.akane")
+        .expect("external registered Character item");
+    assert!(external.0.external_declaration().is_some());
+    let retained = checked_items
+        .iter()
+        .find(|(item, _)| item.public_id().as_str() == "character.alternate")
+        .expect("retained project Character item");
+    assert!(retained.0.retained_owner().is_some());
+
+    let same_project_item_world = ExpressionCorpusFixture::ExternalCharacter.build(
+        &project_item_match_source("@character.akane", "@character.akane"),
+    );
+    let same_project_item =
+        accepted_match_expression_corpus_observation_for_fixture(&same_project_item_world);
+    assert_ne!(
+        project_items.semantic_digest, same_project_item.semantic_digest,
+        "changing one Match arm's checked ProjectItem owner changes its transcript",
     );
 }
 
