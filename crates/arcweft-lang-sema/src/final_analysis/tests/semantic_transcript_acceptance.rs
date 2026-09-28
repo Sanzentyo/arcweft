@@ -202,6 +202,121 @@ fn source_match_digest(source: &str) -> [u8; 32] {
     outermost(&match_observations(source)).digest
 }
 
+fn assert_match_sensitivity_and_source_revision_invariance(
+    root: &str,
+    original: &str,
+    changed: &str,
+    revised: &str,
+) {
+    let original = outermost(&match_observations(original));
+    let changed = outermost(&match_observations(changed));
+    let revised = outermost(&match_observations(revised));
+
+    assert_ne!(
+        original.digest, changed.digest,
+        "semantic change in {root} must reach the Match transcript",
+    );
+    assert_ne!(
+        original.owner, revised.owner,
+        "source revision in {root} must perturb the raw Match ID",
+    );
+    assert_ne!(
+        original.source_start, revised.source_start,
+        "source revision in {root} must move the Match span",
+    );
+    assert_ne!(
+        original.source_end, revised.source_end,
+        "source revision in {root} must move the Match span",
+    );
+    assert_eq!(
+        original.digest, revised.digest,
+        "source revision in {root} must preserve checked meaning",
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_predicate_body_and_ignores_source_revision() {
+    let original = r"
+predicate guarded(value: bool) = match value {
+    true => true
+    false => false
+}
+";
+    let changed = r"
+predicate guarded(value: bool) = match value {
+    true => false
+    false => false
+}
+";
+    let revised = r"
+fn unrelated() -> i64 { 99i64 }
+predicate guarded ( value : bool ) = match value {
+true=>true
+false=>false
+}
+";
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "predicate body",
+        original,
+        changed,
+        revised,
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_proof_body_and_ignores_source_revision() {
+    let original = r"
+proof row() = match true {
+        true => { let value = 1i64; value; () }
+        false => ()
+    }
+";
+    let changed = original.replace("value = 1i64", "value = 2i64");
+    let revised = r"
+fn unrelated() -> i64 { 99i64 }
+proof row( ) = match true { true=>{let value=0x1_i64; value; ()} false=>() }
+";
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "proof body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_flow_body_and_ignores_source_revision() {
+    let original = r"
+flow row(flag: bool) {
+    let selected = match flag {
+        true => 1i64
+        false => 0i64
+    }
+    return ()
+}
+";
+    let changed = original.replace("true => 1i64", "true => 2i64");
+    let revised = r"
+fn unrelated() -> i64 { 99i64 }
+flow row(flag: bool) {
+    let selected = match flag {
+        true => 0x1_i64
+        false => 0i64
+    }
+    return ()
+}
+";
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "Flow body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
 #[test]
 fn checked_match_transcript_commits_selected_call_argument_passing() {
     let source = |call: &str| {
