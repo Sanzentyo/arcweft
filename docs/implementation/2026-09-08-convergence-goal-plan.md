@@ -2942,3 +2942,19 @@ parser が `FunctionItem` 文脈を使い、HIR Wait statement ではなく Expr
 body を含む到達可能性を調べる。一般の arm block に Flow 文脈を伝播させるのは式評価
 中の suspension を許す言語拡張になるため、この cut では行わない。T01/T06 の残り、
 View 以降と goal 全体は未完として継続する。
+
+## Match T01 Return/IfLet statement の受理差分 — 2026-09-28
+
+確認した code commit は `ad7853e12f1fc5a819a96acb8766b07a279f1f74`。
+main へ fast-forward push 後、working tree は clean。
+
+通常 function の expression Match arm block に Return と IfLet を置き、各 HIR
+shape と checked Structural payload の正確な組を accepted path 配下で確認した。
+同型 i64 return literal と同型 Bool IfLet 入力の意味変更がそれぞれ Match digest に
+届く。初期の LetElse/IfLet/While 候補の `InvalidArenaCommit` は Rust 行継続で
+`.arcw` 字下げが崩れた fixture によるもので、raw multiline helper へ直すと
+IfLet は受理された。LetElse/While/WhileLet は修正後未検証なので Pending のまま。
+
+focused Match 64件、Sema lib 1068/1068、changed-crate Clippy、fmt、cached diff
+check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
