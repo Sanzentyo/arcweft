@@ -2383,3 +2383,36 @@ digest authority や逆向き依存を作っていない。
 Match C5 の完成品 query は現在 sema 内部だけで、compiler に届く公開契約と
 受理済み result schema の残項目は未完。C3 の全 resolution/body 差分テスト、
 View 以降の工程も未完として継続する。
+
+## Match C5 完成品 query の公開 — 2026-09-28
+
+Supersedes: 直前 checkpoint の C5 公開契約未完という記述。確認した code commit は
+`c07a496ae47d6e019b5a0169c778e8c5cdf40338`。main へ fast-forward push 後、
+working tree は clean。
+
+`FinalSemanticAnalysis::checked_match` は exact な HIR・symbol generation を検証し、
+一つの Match subtree と nested Match を限界付きで転記する。成功時だけ、accepted-rooted
+path、scrutinee の checked digest/type、source-ordered arm 座標・guard・result・binding、
+version 1 の transcript digest と byte length、網羅性と到達不能 alternative を持つ
+`CheckedMatch` を返す。非網羅、世代不一致、限界、cancel、欠落・不正 evidence は型付き
+error とし、部分的な完成品を公開しない。非網羅 witness と Or alternative は sema の
+既存 coverage matrix に対する read-only view で辿れる。旧二段階の内部 query は削除した。
+
+外部 API の世代拒否、完全な成功結果、bool/record witness、Or alternative 座標の
+統合テスト 5/5、Sema lib 1022/1022、C3 の raw HIR ID・span・書式・数値 radix
+不変性、nested Match と block body の意味差分テスト 3/3 が通過。
+`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+Clippy とテストには既存の警告があるが失敗はない。`just structure-audit-gate` は
+2658 files / 97 packages / 348 review triggers / blocking 0。
+
+`arcweft-lang-sema/src/final_analysis/semantic_transcript.rs` は production owner で、
+4351 → 4739 physical LOC、186168 bytes、埋め込み test なし。増分 388 LOC は
+公開 result/view と同じ bounded transcript transaction に属する。内部 matrix と
+公開 view の authority は一つで、別の coverage state、逆向き依存、I/O は増えていない。
+外部 API テストは別 file に置いた。既存の大きな owner のまま保持する判断は、
+この責務と依存境界に基づくもので、行数だけを理由に分割していない。
+
+Match C3 の T01/T06 全 resolution/body 差分 matrix はまだ完走していない。
+View、task-plan、scheduler/restore と goal 全体の受入も未完として継続する。
