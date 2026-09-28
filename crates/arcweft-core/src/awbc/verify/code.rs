@@ -40,6 +40,8 @@ use std::collections::{BTreeSet, VecDeque};
 
 #[cfg(test)]
 mod capacity_tests;
+#[cfg(test)]
+mod index_tests;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
@@ -1457,6 +1459,7 @@ fn apply_instruction(
             let intrinsic = &program.intrinsics[intrinsic.index()];
             if let crate::value::RuntimeCallTarget::Intrinsic(identity) = &intrinsic.identity {
                 verify_capacity_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
+                verify_index_intrinsic_signature(program, *identity, intrinsic.signature, &at)?;
                 if matches!(
                     identity,
                     RuntimeIntrinsic::StdOptionContext
@@ -5229,6 +5232,64 @@ fn verify_capacity_intrinsic_signature(
                 "capacity intrinsic `{}` has an invalid typed signature",
                 intrinsic.as_label()
             ),
+        });
+    }
+    Ok(())
+}
+
+fn verify_index_intrinsic_signature(
+    program: &AwbcProgram,
+    intrinsic: RuntimeIntrinsic,
+    signature_id: AwbcSignatureId,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    if intrinsic != RuntimeIntrinsic::CoreIndex {
+        return Ok(());
+    }
+    let signature = program
+        .signatures
+        .get(signature_id.index())
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "index intrinsic has no signature".to_owned(),
+        })?;
+    let [target, index] = signature.params.as_slice() else {
+        return invalid_type(
+            at,
+            "core.index requires target and integer index parameters",
+        );
+    };
+    let Some(result) = signature.result else {
+        return invalid_type(at, "core.index requires an item result");
+    };
+    let integer_index = matches!(
+        runtime_shape(program, *index),
+        Some(AwbcRuntimeTypeShape::Int(_) | AwbcRuntimeTypeShape::UInt(_))
+    );
+    let result_matches_target = match runtime_shape(program, *target) {
+        Some(
+            AwbcRuntimeTypeShape::Sequence { item, .. } | AwbcRuntimeTypeShape::Array { item, .. },
+        ) => {
+            runtime_type_permits_copy(program, *item, 0)
+                && runtime_type_permits_copy(program, result, 0)
+                && types_compatible(program, *item, result)
+        }
+        Some(AwbcRuntimeTypeShape::String) => {
+            matches!(
+                runtime_shape(program, result),
+                Some(AwbcRuntimeTypeShape::Char)
+            ) && runtime_type_permits_copy(program, result, 0)
+        }
+        _ => false,
+    };
+    let pure = program
+        .effect_sets
+        .get(signature.effects.index())
+        .is_some_and(|effects| effects.effects.is_empty());
+    if !integer_index || !result_matches_target || !pure {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "CoreIndex has an invalid typed signature".to_owned(),
         });
     }
     Ok(())

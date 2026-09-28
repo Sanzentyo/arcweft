@@ -9,6 +9,62 @@ use crate::types::TypeKind;
 use super::{analyze, character_nominal_fixture, fixture};
 
 #[test]
+fn indexing_requires_a_copyable_selected_item() {
+    let copyable = fixture(
+        r#"
+fn first(items: Vec<i64>) -> i64 { items[0] }
+"#,
+        None,
+    );
+    analyze(&copyable).expect("indexing a Copy item is admitted");
+
+    let affine = fixture(
+        r#"
+fn first(items: Vec<VoiceHandle>) -> VoiceHandle { items[0] }
+"#,
+        None,
+    );
+    assert!(matches!(
+        analyze(&affine),
+        Err(FinalSemanticAnalysisError::LocalUse(
+            CheckedLocalUseError::IndexRequiresCopy { .. }
+        ))
+    ));
+}
+
+#[test]
+fn generic_index_copy_requirement_closes_for_each_selected_instance() {
+    let fixture = fixture(
+        r#"
+fn first<T>(items: Vec<T>) -> T { items[0] }
+fn numeric(items: Vec<i64>) -> i64 { first(items) }
+fn voiced(items: Vec<VoiceHandle>) -> VoiceHandle { first(items) }
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("open generic index defers its Copy proof");
+    let selections = super::project_specialization::selections(&report, "first");
+    assert_eq!(selections.len(), 2);
+    let mut accepted = 0;
+    let mut rejected = 0;
+    for selection in selections {
+        let instance = selection
+            .close_instance(None)
+            .expect("closed index instance");
+        match report.checked_local_uses_for_instance(
+            fixture.project.analysis_view().expect("executable HIR"),
+            &fixture.symbols,
+            CheckedLocalUseInstantiation::ProjectFunction(&instance),
+        ) {
+            Ok(_) => accepted += 1,
+            Err(CheckedLocalUseError::IndexRequiresCopy { .. }) => rejected += 1,
+            Err(other) => panic!("unexpected closed index error: {other:?}"),
+        }
+    }
+    assert_eq!((accepted, rejected), (1, 1));
+}
+
+#[test]
 fn generic_local_reads_close_under_the_selected_instance() {
     let fixture = fixture(
         r#"

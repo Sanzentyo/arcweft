@@ -18,6 +18,19 @@ use execution::{
 };
 
 #[test]
+fn copied_index_item_executes_in_native_and_decoded_awbc() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+flow main() -> i64 {
+    let items: Vec<i64> = [4i64, 42i64]
+    return items[1]
+}
+"#;
+    assert_native_return(SOURCE, "42");
+    assert_awbc_return(SOURCE, RuntimeValue::i64(42));
+}
+
+#[test]
 fn function_value_calls_do_not_merge_argument_groups() {
     const SOURCE: &str = r#"
 entry cli @entry.main { goto @flow.main }

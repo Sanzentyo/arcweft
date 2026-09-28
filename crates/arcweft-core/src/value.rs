@@ -2590,7 +2590,12 @@ pub fn evaluate_index_intrinsic(
         ));
     };
     let length = match target {
-        RuntimeValue::Seq(sequence) => sequence.len(),
+        RuntimeValue::Seq(sequence) if sequence.ownership().permits_copy() => sequence.len(),
+        RuntimeValue::Seq(_) => {
+            return Err(index_intrinsic_error(
+                "cannot index a sequence with affine elements",
+            ));
+        }
         RuntimeValue::String(value) => value.chars().count(),
         _ => {
             return Err(index_intrinsic_error(

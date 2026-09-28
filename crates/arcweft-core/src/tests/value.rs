@@ -1366,6 +1366,20 @@ fn index_intrinsic_reads_logical_sequence_and_string_values() {
 }
 
 #[test]
+fn index_intrinsic_rejects_an_affine_sequence_without_copying_its_item() {
+    let sequence = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::Need(
+        crate::task::NeedId("need.index.owner".to_owned()),
+    )]));
+    assert!(
+        evaluate_index_intrinsic(
+            RuntimeIntrinsic::CoreIndex,
+            &[sequence, RuntimeValue::i64(0)],
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn index_intrinsic_distinguishes_bounds_failure_from_invalid_operands() {
     let out_of_bounds = evaluate_index_intrinsic(
         RuntimeIntrinsic::CoreIndex,

@@ -208,10 +208,6 @@ mod tests {
                 1,
             ),
             (
-                "fn pass(stream: Stream<i64, String>) -> Stream<i64, String> { [stream][0] }",
-                0,
-            ),
-            (
                 "fn identity<T>(value: T) -> T { value }\nfn pass(stream: Stream<i64, String>) -> Stream<i64, String> { identity(stream) }",
                 0,
             ),
@@ -236,5 +232,19 @@ mod tests {
                 .count();
             assert_eq!(actual, generators);
         }
+    }
+
+    #[test]
+    fn body_result_rejects_index_copy_of_affine_stream() {
+        let fixture = crate::final_analysis::tests::fixture(
+            "fn pass(stream: Stream<i64, String>) -> Stream<i64, String> { [stream][0] }",
+            None,
+        );
+        assert!(matches!(
+            crate::final_analysis::tests::analyze(&fixture),
+            Err(crate::final_analysis::FinalSemanticAnalysisError::LocalUse(
+                crate::final_analysis::CheckedLocalUseError::IndexRequiresCopy { .. }
+            ))
+        ));
     }
 }

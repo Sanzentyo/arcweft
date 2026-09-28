@@ -206,6 +206,11 @@ pub enum CheckedLocalUseError {
         local: LocalId,
         site: CheckedLocalUseSite,
     },
+    #[error("index expression {expression:?} requires Copy item type {ty:?}")]
+    IndexRequiresCopy {
+        expression: ExprId,
+        ty: SemanticTypeDigest,
+    },
     #[error("synthetic value {owner:?} is unavailable at expression {expression:?}")]
     SyntheticUnavailable {
         owner: CheckedSyntheticUseOwner,
@@ -1716,6 +1721,30 @@ impl<'a> LocalUseChecker<'a> {
             .resolve_expr(owner)
             .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
         match expression.kind() {
+            HirExprKind::Index(_) => {
+                let Ok(edges) = self.analysis.checked_expression_edge_fact(owner) else {
+                    return Ok(());
+                };
+                let children = edges.child_expressions().collect::<Vec<_>>();
+                for child in children {
+                    self.expression(child, state)?;
+                }
+                let selected_type = self
+                    .analysis
+                    .expression(owner)
+                    .and_then(super::CheckedExpression::value_type)
+                    .ok_or(CheckedLocalUseError::InvalidTopology)?;
+                let selected_type = self.closed_type(selected_type)?;
+                if !self.type_is_copy(&selected_type)? {
+                    let ty = selected_type
+                        .semantic_identity_digest()
+                        .map_err(|_| CheckedLocalUseError::InvalidTopology)?;
+                    return Err(CheckedLocalUseError::IndexRequiresCopy {
+                        expression: owner,
+                        ty,
+                    });
+                }
+            }
             HirExprKind::Await(value) => {
                 let Some(CheckedExpressionResolution::Await(checked)) = self
                     .analysis

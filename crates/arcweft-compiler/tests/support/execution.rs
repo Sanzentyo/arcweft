@@ -13,6 +13,7 @@ use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
 use arcweft_core::task::RuntimeProgramOwner;
 use arcweft_core::value::{
     RuntimeCallTarget, RuntimeEvalError, RuntimeValue, evaluate_capacity_intrinsic,
+    evaluate_index_intrinsic,
 };
 use arcweft_dialogue::{
     CharacterDialogueRuntimeExternalCallBackend, CharacterDialogueRuntimeSchema,
@@ -350,6 +351,11 @@ impl VmHost for CharacterDialogueVmHost<'_> {
         {
             if let Some(value) = evaluate_capacity_intrinsic(identity, &args)
                 .map_err(|error| VmError::Runtime(error.to_string()))?
+            {
+                return Ok(Some(value));
+            }
+            if let Some(value) =
+                evaluate_index_intrinsic(identity, &args).map_err(VmError::Evaluation)?
             {
                 return Ok(Some(value));
             }

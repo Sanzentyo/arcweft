@@ -82,9 +82,7 @@ pub(super) fn indexed_item(ty: &TypeKind) -> Option<TypeKind> {
         TypeKind::Vec(item)
         | TypeKind::Array { item, .. }
         | TypeKind::Slice(item)
-        | TypeKind::Seq(item)
-        | TypeKind::Range(item) => Some((**item).clone()),
-        TypeKind::Map { value, .. } => Some((**value).clone()),
+        | TypeKind::Seq(item) => Some((**item).clone()),
         TypeKind::String => Some(TypeKind::Char),
         _ => None,
     }
