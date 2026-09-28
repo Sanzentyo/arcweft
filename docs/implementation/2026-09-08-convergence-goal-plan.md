@@ -2601,3 +2601,23 @@ focused transcript 12/12、Sema lib 1033/1033、
 依存方向を増やしていないため、構造 gate はこの cut では再実行していない。
 
 T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として継続する。
+
+## Match T06 受理済み body root の証拠 — 2026-09-28
+
+確認した code commit は `14c9fa5d792139838f673616c890dfba4aad387d`。
+main へ fast-forward push 後、working tree は clean。
+
+Predicate、Proof、Flow の受理済み body に Match を置き、各 root で arm body の
+型を保つ意味変更が transcript digest を変えることを確認した。先行する無関係な宣言と
+書式変更で raw Match ExprId と span が変わっても、checked meaning の digest は
+維持される。Flow は local initializer 内、Proof は expression body 内の Match を使う。
+
+focused `checked_match_transcript` 18/18、Sema lib 1036/1036、fmt、
+`git diff --cached --check` は成功。changed-crate Clippy は終了コード 0 だが既存警告が
+あり、baseline 比較はしていない。テストのみの cut なので workspace gates と構造 gate
+は再実行していない。
+
+impl/inherent、dialogue、Await、attached default の候補はこの cut で受理を証明
+できず、テストには含めていない。通常/View project parameter default は現行 builder
+が拒否する。T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として
+継続する。
