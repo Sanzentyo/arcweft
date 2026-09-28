@@ -55,8 +55,8 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::If(_) => If => Accepted,
     HirStmtKind::IfLet(_) => IfLet => Accepted,
     HirStmtKind::Match(_) => Match => Pending,
-    HirStmtKind::While(_) => While => Pending,
-    HirStmtKind::WhileLet(_) => WhileLet => Pending,
+    HirStmtKind::While(_) => While => Accepted,
+    HirStmtKind::WhileLet(_) => WhileLet => Accepted,
     HirStmtKind::For(_) => For => Accepted,
     HirStmtKind::Close { .. } => Close => Pending,
     HirStmtKind::Select(_) => Select => Pending,
@@ -65,7 +65,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Include(_) => Include => Pending,
     HirStmtKind::Break { .. } => Break => Pending,
     HirStmtKind::Continue { .. } => Continue => Pending,
-    HirStmtKind::Expression { .. } => Expression => Pending,
+    HirStmtKind::Expression { .. } => Expression => Accepted,
     HirStmtKind::ProofCall { .. } => ProofCall => Pending,
     HirStmtKind::Error => Error => RejectOnly,
 });
@@ -303,6 +303,10 @@ fn flow_match_defer_source(capture: &str) -> String {
     flow_match_statement_source(&format!("defer {{\n    let captured = {capture};\n}}"))
 }
 
+fn flow_match_thread_source(statement: &str) -> String {
+    flow_match_statement_source(&format!("thread {{ {statement} }}"))
+}
+
 fn assert_statement_inventory<T: Copy + Ord + std::fmt::Debug>(
     axis: &str,
     observed: &BTreeSet<T>,
@@ -382,6 +386,24 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             source: flow_match_statement_source("for value in [true, false] {}"),
             shapes: &[StatementShapeFamily::For],
             payloads: &[StatementPayloadFamily::Iteration],
+        },
+        Row {
+            name: "Thread While in arm block",
+            source: flow_match_thread_source("while other {}"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::While,
+            ],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "Thread WhileLet in arm block",
+            source: flow_match_thread_source("while let value = other {}"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::WhileLet,
+            ],
+            payloads: &[StatementPayloadFamily::Structural],
         },
     ];
     let mut shapes = BTreeSet::new();
@@ -585,6 +607,52 @@ fn checked_match_let_else_retains_exact_shapes_and_initializer_meaning() {
         true_initializer.semantic_digest,
         false_initializer.semantic_digest
     );
+}
+
+#[test]
+fn checked_match_thread_while_candidate_reaches_checked_statement_path() {
+    let other =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("while other {}"));
+    let flag =
+        accepted_match_statement_corpus_observation(&flow_match_thread_source("while flag {}"));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (
+            StatementShapeFamily::While,
+            StatementPayloadFamily::Structural,
+        ),
+    ]);
+
+    assert_eq!(other.statement_families, expected);
+    assert_eq!(flag.statement_families, expected);
+    assert_ne!(other.semantic_digest, flag.semantic_digest);
+}
+
+#[test]
+fn checked_match_thread_while_let_candidate_reaches_checked_statement_path() {
+    let other = accepted_match_statement_corpus_observation(&flow_match_thread_source(
+        "while let value = other {}",
+    ));
+    let flag = accepted_match_statement_corpus_observation(&flow_match_thread_source(
+        "while let value = flag {}",
+    ));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (
+            StatementShapeFamily::WhileLet,
+            StatementPayloadFamily::Structural,
+        ),
+    ]);
+
+    assert_eq!(other.statement_families, expected);
+    assert_eq!(flag.statement_families, expected);
+    assert_ne!(other.semantic_digest, flag.semantic_digest);
 }
 
 #[test]
