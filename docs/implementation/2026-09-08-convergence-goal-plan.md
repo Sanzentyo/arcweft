@@ -2663,3 +2663,19 @@ statement Match 形式は expression Match owner を生成しない。原因の 
 View parameter default は retained View 契約が要求するが現在の builder/compiler が
 拒否しており、View 工程で型・効果・実行側を一体で移行する必要がある。
 T01/T06 全 matrix と goal 全体は未完として継続する。
+
+## Match T06 実装 method body の受理証拠 — 2026-09-28
+
+確認した code commit は `f755b33c2ff97ceedd9f35e8d2c3a559f1678b73`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み DisplayText trait 実装 method と inherent method の body に expression Match
+を置き、同型の arm 意味変更で digest が変わり、先行宣言による raw ExprId/span 変更では
+digest が維持されることを確認した。inherent method は no-Match 宣言/body の受理を
+先に確認している。free function からの `number.get()` は現行 Sema で
+`CallResolutionFailed` となるため、body-root テストの実行条件に加えなかった。
+
+focused 15/15、`cargo test -p arcweft-lang-sema` と lib 1041/1041、changed-crate
+Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
+workspace と構造 gate は再実行していない。Await Pending と残る T01/T06 matrix、
+View 以降と goal 全体は未完として継続する。
