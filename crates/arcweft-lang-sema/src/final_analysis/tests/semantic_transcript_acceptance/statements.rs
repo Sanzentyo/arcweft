@@ -36,9 +36,9 @@ macro_rules! statement_family_inventory {
 }
 
 statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
-    HirStmtKind::Assertion { .. } => Assertion => Pending,
+    HirStmtKind::Assertion { .. } => Assertion => Accepted,
     HirStmtKind::Let { .. } => Let => Accepted,
-    HirStmtKind::Assign { .. } => Assign => Pending,
+    HirStmtKind::Assign { .. } => Assign => Accepted,
     HirStmtKind::LetElse { .. } => LetElse => Pending,
     HirStmtKind::Return { .. } => Return => Pending,
     HirStmtKind::Out { .. } => Out => Pending,
@@ -72,8 +72,8 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
 
 statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, {
     CheckedStatementPayload::Structural => Structural => Accepted,
-    CheckedStatementPayload::Assignment(_) => Assignment => Pending,
-    CheckedStatementPayload::Assertion(_) => Assertion => Pending,
+    CheckedStatementPayload::Assignment(_) => Assignment => Accepted,
+    CheckedStatementPayload::Assertion(_) => Assertion => Accepted,
     CheckedStatementPayload::Defer(_) => Defer => Pending,
     CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Pending,
     CheckedStatementPayload::Iteration(_) => Iteration => Pending,
@@ -91,6 +91,17 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
 struct MatchStatementCorpusObservation {
     shapes: BTreeSet<StatementShapeFamily>,
     payloads: BTreeSet<StatementPayloadFamily>,
+    assignments: Vec<CheckedAssignmentCorpusFact>,
+    assertion_dispositions: Vec<CheckedAssertionDisposition>,
+    semantic_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedAssignmentCorpusFact {
+    field_identity: [u8; 32],
+    field_ordinal: u32,
+    field_type: crate::types::TypeKind,
+    value_type: crate::types::TypeKind,
 }
 
 /// Count only checked statements owned below this accepted Match expression.
@@ -123,6 +134,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         .expect("accepted Match root path");
     let mut shapes = BTreeSet::new();
     let mut payloads = BTreeSet::new();
+    let mut assignments = Vec::new();
+    let mut assertion_dispositions = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -135,12 +148,71 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         }
         shapes.insert(StatementShapeFamily::of(hir.kind()));
         payloads.insert(StatementPayloadFamily::of(checked.payload()));
+        match (hir.kind(), checked.payload()) {
+            (HirStmtKind::Assign { .. }, CheckedStatementPayload::Assignment(assignment)) => {
+                let field_place = assignment
+                    .place()
+                    .nominal_field()
+                    .expect("Match assignment selects its checked nominal field");
+                assignments.push(CheckedAssignmentCorpusFact {
+                    field_identity: *field_place.field().field().as_bytes(),
+                    field_ordinal: field_place.field().declaration_ordinal(),
+                    field_type: field_place.field_type().clone(),
+                    value_type: assignment.value_type().clone(),
+                });
+            }
+            (HirStmtKind::Assertion { .. }, CheckedStatementPayload::Assertion(disposition)) => {
+                assertion_dispositions.push(*disposition)
+            }
+            (HirStmtKind::Assign { .. }, _) => {
+                panic!("accepted Assign has its exact checked Assignment payload")
+            }
+            (HirStmtKind::Assertion { .. }, _) => {
+                panic!("accepted Assertion has its exact checked Assertion payload")
+            }
+            _ => {}
+        }
     }
     assert!(
         !shapes.is_empty(),
         "Match root has checked statement descendants"
     );
-    MatchStatementCorpusObservation { shapes, payloads }
+    MatchStatementCorpusObservation {
+        shapes,
+        payloads,
+        assignments,
+        assertion_dispositions,
+        semantic_digest: *product.semantic_digest().as_bytes(),
+    }
+}
+
+fn match_arm_assignment_source(field: &str) -> String {
+    format!(
+        "struct Flags {{ left: bool, right: bool }}\n\
+         fn root(flags: Flags, flag: bool) -> bool {{\n\
+             match flag {{\n\
+                 true => {{\n\
+                     flags.{field} = flag\n\
+                     true\n\
+                 }}\n\
+                 false => false\n\
+             }}\n\
+         }}\n"
+    )
+}
+
+fn match_arm_assertion_source(operand: &str) -> String {
+    format!(
+        "fn root(flag: bool, other: bool) -> i64 {{\n\
+             match flag {{\n\
+                 true => {{\n\
+                     assert.check({operand})\n\
+                     1i64\n\
+                 }}\n\
+                 false => 0i64\n\
+             }}\n\
+         }}\n"
+    )
 }
 
 fn assert_statement_inventory<T: Copy + Ord + std::fmt::Debug>(
@@ -178,6 +250,18 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             shapes: &[StatementShapeFamily::If, StatementShapeFamily::Let],
             payloads: &[StatementPayloadFamily::Structural],
         },
+        Row {
+            name: "nominal field assignment in arm block",
+            source: match_arm_assignment_source("left"),
+            shapes: &[StatementShapeFamily::Assign],
+            payloads: &[StatementPayloadFamily::Assignment],
+        },
+        Row {
+            name: "runtime assertion in arm block",
+            source: match_arm_assertion_source("flag"),
+            shapes: &[StatementShapeFamily::Assertion],
+            payloads: &[StatementPayloadFamily::Assertion],
+        },
     ];
     let mut shapes = BTreeSet::new();
     let mut payloads = BTreeSet::new();
@@ -206,6 +290,57 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
         &payloads,
         StatementPayloadFamily::INVENTORY,
     );
+}
+
+#[test]
+fn checked_match_assignments_retain_same_typed_field_identity_and_digest() {
+    let left = accepted_match_statement_corpus_observation(&match_arm_assignment_source("left"));
+    let right = accepted_match_statement_corpus_observation(&match_arm_assignment_source("right"));
+
+    assert_eq!(left.shapes, BTreeSet::from([StatementShapeFamily::Assign]));
+    assert_eq!(
+        left.payloads,
+        BTreeSet::from([StatementPayloadFamily::Assignment])
+    );
+    assert_eq!(left.assignments.len(), 1);
+    assert_eq!(right.assignments.len(), 1);
+    assert_eq!(left.assignments[0].field_ordinal, 0);
+    assert_eq!(right.assignments[0].field_ordinal, 1);
+    assert_ne!(
+        left.assignments[0].field_identity,
+        right.assignments[0].field_identity
+    );
+    assert_eq!(left.assignments[0].field_type, crate::types::TypeKind::Bool);
+    assert_eq!(
+        right.assignments[0].field_type,
+        crate::types::TypeKind::Bool
+    );
+    assert_eq!(left.assignments[0].value_type, crate::types::TypeKind::Bool);
+    assert_eq!(
+        right.assignments[0].value_type,
+        crate::types::TypeKind::Bool
+    );
+    assert_ne!(left.semantic_digest, right.semantic_digest);
+}
+
+#[test]
+fn checked_match_assertions_retain_disposition_and_condition_meaning() {
+    let flag = accepted_match_statement_corpus_observation(&match_arm_assertion_source("flag"));
+    let other = accepted_match_statement_corpus_observation(&match_arm_assertion_source("other"));
+    let expected =
+        CheckedAssertionDisposition::Runtime(crate::assertion::AssertionRuntimePolicy::AlwaysGuard);
+
+    assert_eq!(
+        flag.shapes,
+        BTreeSet::from([StatementShapeFamily::Assertion])
+    );
+    assert_eq!(
+        flag.payloads,
+        BTreeSet::from([StatementPayloadFamily::Assertion])
+    );
+    assert_eq!(flag.assertion_dispositions, [expected]);
+    assert_eq!(other.assertion_dispositions, [expected]);
+    assert_ne!(flag.semantic_digest, other.semantic_digest);
 }
 
 #[test]
