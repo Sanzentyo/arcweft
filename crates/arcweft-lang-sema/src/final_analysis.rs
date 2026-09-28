@@ -126,7 +126,11 @@ pub use local_use::{
     CheckedLocalUseInstantiation, CheckedLocalUseSite, CheckedSyntheticCopyRequirement,
     CheckedSyntheticUse, CheckedSyntheticUseOwner,
 };
-pub use match_coverage::CheckedMatchLimits;
+pub use match_coverage::{
+    CheckedMatchCoverage, CheckedMatchLimitKind, CheckedMatchLimits, CheckedPatternCoordinateStep,
+    CheckedPatternCoordinateView, CheckedUnreachablePattern, CheckedUnreachableReason,
+    StableMatchArmCoordinate,
+};
 pub use match_edges::{
     CheckedChildEdgeError, CheckedExpressionChildEdge, CheckedExpressionEdgeError,
     CheckedExpressionEdgeFact, CheckedNestedEvidenceRole, NestedPathEvidence,
@@ -222,6 +226,13 @@ pub use report::{
 };
 pub(crate) use semantic_shapes::AcceptedSemanticShapeCatalog;
 pub(crate) use semantic_transcript::write_len;
+pub use semantic_transcript::{
+    CheckedGuardSemantic, CheckedMatch, CheckedMatchArm, CheckedMatchBinding,
+    CheckedMatchQueryError, CheckedMatchSequencePartition, CheckedMatchVariantFieldList,
+    CheckedMatchVariantFieldRef, CheckedMatchVariantPayloadView, CheckedMatchWitness,
+    CheckedMatchWitnessKind, CheckedMatchWitnessList, CheckedMatchWitnessRef,
+    CheckedMatchWitnessView, MatchSemanticTranscript,
+};
 pub(crate) use transcript_writer::{
     CheckedTranscriptByteBudget, TranscriptHasher, TranscriptWriteError,
 };

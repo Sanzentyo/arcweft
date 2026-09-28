@@ -51,6 +51,7 @@ impl TranscriptByteCounter for CheckedTranscriptByteBudget {
 pub(crate) struct TranscriptHasher<'a, C: TranscriptByteCounter + ?Sized> {
     hasher: blake3::Hasher,
     budget: &'a mut C,
+    byte_len: u64,
 }
 
 impl<'a, C: TranscriptByteCounter + ?Sized> TranscriptHasher<'a, C> {
@@ -58,6 +59,7 @@ impl<'a, C: TranscriptByteCounter + ?Sized> TranscriptHasher<'a, C> {
         Self {
             hasher: blake3::Hasher::new(),
             budget,
+            byte_len: 0,
         }
     }
 
@@ -67,9 +69,18 @@ impl<'a, C: TranscriptByteCounter + ?Sized> TranscriptHasher<'a, C> {
     {
         let delta = u64::try_from(bytes.len())
             .map_err(|_| C::Error::from(TranscriptWriteError::ArithmeticOverflow))?;
+        let attempted = self
+            .byte_len
+            .checked_add(delta)
+            .ok_or_else(|| C::Error::from(TranscriptWriteError::ArithmeticOverflow))?;
         self.budget.charge_transcript_bytes(delta)?;
         self.hasher.update(bytes);
+        self.byte_len = attempted;
         Ok(())
+    }
+
+    pub(crate) const fn byte_len(&self) -> u64 {
+        self.byte_len
     }
 
     pub(crate) fn finalize(self) -> [u8; 32] {

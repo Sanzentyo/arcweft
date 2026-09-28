@@ -629,10 +629,13 @@ fn execute_match_work(
         })
         .expect("Match expression");
     analysis
-        .checked_match_ref(module, &fixture.symbols, owner)
-        .and_then(|reference| {
-            analysis.build_checked_match_for_ref(project, &fixture.symbols, reference, limits)
-        })
+        .checked_match_with_control(
+            project,
+            &fixture.symbols,
+            owner,
+            limits,
+            FinalSemanticAnalysisControl::new(&std::sync::atomic::AtomicBool::new(false)),
+        )
         .map(|checked| checked.coverage().work)
 }
 

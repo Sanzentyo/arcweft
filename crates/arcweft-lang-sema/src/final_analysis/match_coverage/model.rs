@@ -62,6 +62,16 @@ pub(crate) struct CheckedVariantRecordCoverageWitnessField {
     pub(super) value: CheckedCoverageWitness,
 }
 
+impl CheckedVariantRecordCoverageWitnessField {
+    pub(crate) const fn semantic_id_bytes(&self) -> &[u8; 32] {
+        self.semantic_id.as_bytes()
+    }
+
+    pub(crate) const fn value(&self) -> &CheckedCoverageWitness {
+        &self.value
+    }
+}
+
 pub(super) type Matrix = Vec<PatternVector>;
 pub(super) type PatternVector = Vec<DeconstructedPattern>;
 

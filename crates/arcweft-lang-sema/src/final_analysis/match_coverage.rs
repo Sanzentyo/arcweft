@@ -27,10 +27,11 @@ use arcweft_lang_hir::pattern::HirPatternKind;
 pub(super) use super::canonical_literal::{
     CanonicalCoverageLiteral, CanonicalLiteralEncodingError, encode_canonical_literal,
 };
+pub use super::match_transaction::CheckedMatchLimitKind;
 pub use super::match_transaction::CheckedMatchLimits;
 pub(super) use super::match_transaction::{
-    CheckedMatchBudget, CheckedMatchBuildError, CheckedMatchLimitKind, CheckedMatchWork,
-    checked_depth_successor, checked_len,
+    CheckedMatchBudget, CheckedMatchBuildError, CheckedMatchWork, checked_depth_successor,
+    checked_len,
 };
 
 mod deconstruct;
@@ -59,7 +60,7 @@ pub(crate) enum CheckedGuardClass {
 
 /// Stable accepted-rooted coordinate of one Match arm.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct StableMatchArmCoordinate {
+pub struct StableMatchArmCoordinate {
     owner: CheckedSemanticPath,
     ordinal: u32,
 }
@@ -86,15 +87,66 @@ impl StableMatchArmCoordinate {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum CheckedUnreachableReason {
+pub enum CheckedUnreachableReason {
     CoveredByPriorUsefulArms,
     CoveredByEarlierOrAlternative,
     ConstantFalseGuard,
     UninhabitedDomain,
 }
 
+/// Read-only path step locating an unreachable pattern alternative.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedPatternCoordinateStep<'a> {
+    TupleElement(u32),
+    RecordField {
+        semantic_id: &'a [u8; 32],
+        source_ordinal: u32,
+    },
+    SequenceElement(u32),
+    VariantPayload,
+    WholeBindingInner,
+    OrAlternative(u32),
+    TypedBindingInner,
+}
+
+/// Borrowed view of the exact accepted pattern path used by coverage.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckedPatternCoordinateView<'a>(&'a StablePatternCoordinate);
+
+impl<'a> CheckedPatternCoordinateView<'a> {
+    pub fn steps(&self) -> impl ExactSizeIterator<Item = CheckedPatternCoordinateStep<'a>> + 'a {
+        self.0.steps().iter().map(|step| match step {
+            StablePatternCoordinateStep::TupleElement(ordinal) => {
+                CheckedPatternCoordinateStep::TupleElement(*ordinal)
+            }
+            StablePatternCoordinateStep::RecordField {
+                field,
+                source_ordinal,
+            } => CheckedPatternCoordinateStep::RecordField {
+                semantic_id: field.as_bytes(),
+                source_ordinal: *source_ordinal,
+            },
+            StablePatternCoordinateStep::SequenceElement(ordinal) => {
+                CheckedPatternCoordinateStep::SequenceElement(*ordinal)
+            }
+            StablePatternCoordinateStep::VariantPayload => {
+                CheckedPatternCoordinateStep::VariantPayload
+            }
+            StablePatternCoordinateStep::WholeBindingInner => {
+                CheckedPatternCoordinateStep::WholeBindingInner
+            }
+            StablePatternCoordinateStep::OrAlternative(ordinal) => {
+                CheckedPatternCoordinateStep::OrAlternative(*ordinal)
+            }
+            StablePatternCoordinateStep::TypedBindingInner => {
+                CheckedPatternCoordinateStep::TypedBindingInner
+            }
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct CheckedUnreachablePattern {
+pub struct CheckedUnreachablePattern {
     arm: StableMatchArmCoordinate,
     alternative: Option<StablePatternCoordinate>,
     reason: CheckedUnreachableReason,
@@ -105,8 +157,19 @@ impl CheckedUnreachablePattern {
         &self.arm
     }
 
-    pub const fn alternative(&self) -> Option<&StablePatternCoordinate> {
+    pub(crate) const fn alternative(&self) -> Option<&StablePatternCoordinate> {
         self.alternative.as_ref()
+    }
+
+    pub const fn has_alternative(&self) -> bool {
+        self.alternative.is_some()
+    }
+
+    pub const fn alternative_view(&self) -> Option<CheckedPatternCoordinateView<'_>> {
+        match self.alternative.as_ref() {
+            Some(coordinate) => Some(CheckedPatternCoordinateView(coordinate)),
+            None => None,
+        }
     }
 
     pub const fn reason(&self) -> CheckedUnreachableReason {
@@ -115,7 +178,7 @@ impl CheckedUnreachablePattern {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedMatchCoverage {
+pub struct CheckedMatchCoverage {
     exhaustive: bool,
     unreachable: Box<[CheckedUnreachablePattern]>,
     witness: Option<CheckedCoverageWitness>,
@@ -124,20 +187,24 @@ pub(crate) struct CheckedMatchCoverage {
 }
 
 impl CheckedMatchCoverage {
-    pub(crate) const fn exhaustive(&self) -> bool {
+    pub const fn exhaustive(&self) -> bool {
         self.exhaustive
     }
 
-    pub(crate) fn unreachable(&self) -> &[CheckedUnreachablePattern] {
+    pub fn unreachable(&self) -> &[CheckedUnreachablePattern] {
         self.unreachable.as_ref()
     }
 
-    pub const fn witness(&self) -> Option<&CheckedCoverageWitness> {
+    pub(crate) const fn witness(&self) -> Option<&CheckedCoverageWitness> {
         self.witness.as_ref()
     }
 
     pub const fn domain_digest(&self) -> CheckedCoverageDomainDigest {
         self.domain_digest
+    }
+
+    pub const fn observed_work(&self, kind: CheckedMatchLimitKind) -> u64 {
+        self.work.observed(kind)
     }
 
     pub(super) fn finish_transaction_work(&mut self, work: CheckedMatchWork) {

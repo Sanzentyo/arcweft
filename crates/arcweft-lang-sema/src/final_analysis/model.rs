@@ -3041,12 +3041,4 @@ impl CheckedMatchRef {
             expression,
         }
     }
-
-    pub const fn snapshot(self) -> HirSnapshotId {
-        self.snapshot
-    }
-
-    pub const fn expression(self) -> ExprId {
-        self.expression
-    }
 }

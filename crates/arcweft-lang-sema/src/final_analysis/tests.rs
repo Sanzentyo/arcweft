@@ -54,10 +54,7 @@ use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
 };
 
-use super::match_coverage::{
-    CheckedCoverageWitness, CheckedMatchBuildError, CheckedMatchLimitKind, CheckedUnreachableReason,
-};
-use super::semantic_transcript::SemanticTranscriptError;
+use super::match_coverage::{CheckedMatchLimitKind, CheckedUnreachableReason};
 use super::{
     CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
@@ -110,6 +107,8 @@ mod match_coverage;
 mod project_callable_source;
 #[path = "tests/project_specialization.rs"]
 mod project_specialization;
+#[path = "tests/semantic_transcript_acceptance.rs"]
+mod semantic_transcript_acceptance;
 #[path = "tests/statement_contextual.rs"]
 mod statement_contextual;
 #[path = "tests/statement_producers.rs"]
@@ -4539,29 +4538,18 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
     assert_eq!(accepted_ordinals, [(0, 1), (1, 0)]);
 }
 
-fn checked_match_reference(
-    report: &FinalSemanticAnalysis,
-    module: &HirModule,
-    symbols: &ProjectSymbolTable,
-    owner: arcweft_lang_hir::identity::ExprId,
-) -> super::CheckedMatchRef {
-    report
-        .checked_match_ref(module, symbols, owner)
-        .expect("Match reference belongs to the exact accepted module snapshot")
-}
-
 fn checked_match_product(
     report: &FinalSemanticAnalysis,
     project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
-    module: &HirModule,
+    _module: &HirModule,
     symbols: &ProjectSymbolTable,
     owner: arcweft_lang_hir::identity::ExprId,
-) -> super::semantic_transcript::CheckedMatch {
+) -> super::CheckedMatch {
     report
-        .build_checked_match_for_ref(
+        .checked_match(
             project,
             symbols,
-            checked_match_reference(report, module, symbols, owner),
+            owner,
             super::CheckedMatchLimits::PRODUCTION,
         )
         .expect("generic Match semantic product")
@@ -4717,34 +4705,31 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("non-exhaustive Match expression");
-    let non_exhaustive = report.build_checked_match_for_ref(
+    let non_exhaustive = report.checked_match(
         project,
         &fixture.symbols,
-        checked_match_reference(&report, module, &fixture.symbols, owner),
+        owner,
         CheckedMatchLimits::PRODUCTION,
     );
     assert!(matches!(
         non_exhaustive,
-        Err(SemanticTranscriptError::NonExhaustive {
-            witness: CheckedCoverageWitness::Bool(false)
-        })
+        Err(super::CheckedMatchQueryError::NonExhaustive { witness })
+            if witness.boolean() == Some(false)
     ));
 
-    let byte_limited = report.build_checked_match_for_ref(
+    let byte_limited = report.checked_match(
         project,
         &fixture.symbols,
-        checked_match_reference(&report, module, &fixture.symbols, owner),
+        owner,
         CheckedMatchLimits::PRODUCTION.with_limit(CheckedMatchLimitKind::TranscriptBytes, 0),
     );
     assert!(matches!(
         byte_limited,
-        Err(SemanticTranscriptError::MatchBuild(
-            CheckedMatchBuildError::LimitExceeded {
-                kind: CheckedMatchLimitKind::TranscriptBytes,
-                limit: 0,
-                ..
-            }
-        ))
+        Err(super::CheckedMatchQueryError::LimitExceeded {
+            kind: CheckedMatchLimitKind::TranscriptBytes,
+            limit: 0,
+            ..
+        })
     ));
 }
 

@@ -13,8 +13,10 @@ use super::{
     FinalSemanticAnalysisControl,
     match_coverage::{
         CheckedCoverageWitness, CheckedGuardClass, CheckedMatchBudget, CheckedMatchBuildError,
-        CheckedMatchCoverage, CheckedMatchLimitKind, CheckedUnreachableReason, CoverageArmInput,
-        MatchCoverageAnalyzer, StableMatchArmCoordinate,
+        CheckedMatchCoverage, CheckedMatchLimitKind, CheckedSequencePartitionWitness,
+        CheckedUnreachableReason, CheckedVariantCoverageWitness,
+        CheckedVariantRecordCoverageWitnessField, CoverageArmInput, MatchCoverageAnalyzer,
+        StableMatchArmCoordinate,
     },
     transcript_writer::{TranscriptByteCounter, TranscriptHasher, TranscriptWriteError},
 };
@@ -24,10 +26,10 @@ use crate::checked_rich_text::{
     CheckedRichTextReport, CheckedRichTextValue,
 };
 use crate::semantic_coordinate::{
-    AcceptedSemanticRootCatalogError, CheckedSemanticPath, SemanticCoordinateEncodingError,
-    SemanticCoordinateIndex, SemanticCoordinateIndexError, StableCheckedBodyCoordinate,
-    StableCheckedValueCoordinate, StablePatternCoordinate, StablePatternCoordinateStep,
-    StableSemanticCoordinate,
+    AcceptedDeclarationSemanticId, AcceptedSemanticRoot, AcceptedSemanticRootCatalogError,
+    CheckedSemanticPath, SemanticCoordinateEncodingError, SemanticCoordinateIndex,
+    SemanticCoordinateIndexError, StableCheckedBodyCoordinate, StableCheckedValueCoordinate,
+    StablePatternCoordinate, StablePatternCoordinateStep, StableSemanticCoordinate,
 };
 use crate::types::{SemanticTypeDigest, TypeKind};
 use arcweft_lang_hir::{
@@ -59,8 +61,6 @@ pub(crate) enum SemanticTranscriptError {
     Generation(Box<super::FinalSemanticAnalysisError>),
     #[error("expression is not a Match")]
     NotMatch,
-    #[error("checked Match reference does not belong to the exact accepted HIR snapshot")]
-    StaleMatchReference,
     #[error("checked Match evidence is missing or stale")]
     MissingMatchFact,
     #[error("checked expression evidence is missing")]
@@ -123,6 +123,326 @@ impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
     }
 }
 
+/// Public classification of a structured missing-case witness.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedMatchWitnessKind {
+    Unit,
+    Bool,
+    Literal,
+    Entity,
+    Other,
+    Variant,
+    Tuple,
+    Record,
+    Array,
+    Sequence,
+    Choice,
+}
+
+/// A missing-case witness retained by a rejected Match query.
+///
+/// The matrix algebra and its private identity rows remain owned by sema.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMatchWitness(CheckedCoverageWitness);
+
+impl CheckedMatchWitness {
+    pub fn view(&self) -> CheckedMatchWitnessView<'_> {
+        CheckedMatchWitnessRef(&self.0).view()
+    }
+
+    pub const fn kind(&self) -> CheckedMatchWitnessKind {
+        match self.0 {
+            CheckedCoverageWitness::Unit => CheckedMatchWitnessKind::Unit,
+            CheckedCoverageWitness::Bool(_) => CheckedMatchWitnessKind::Bool,
+            CheckedCoverageWitness::Literal(_) => CheckedMatchWitnessKind::Literal,
+            CheckedCoverageWitness::Entity(_) => CheckedMatchWitnessKind::Entity,
+            CheckedCoverageWitness::Other { .. } => CheckedMatchWitnessKind::Other,
+            CheckedCoverageWitness::Variant { .. } => CheckedMatchWitnessKind::Variant,
+            CheckedCoverageWitness::Tuple(_) => CheckedMatchWitnessKind::Tuple,
+            CheckedCoverageWitness::Record { .. } => CheckedMatchWitnessKind::Record,
+            CheckedCoverageWitness::Array(_) => CheckedMatchWitnessKind::Array,
+            CheckedCoverageWitness::Sequence { .. } => CheckedMatchWitnessKind::Sequence,
+            CheckedCoverageWitness::Choice { .. } => CheckedMatchWitnessKind::Choice,
+        }
+    }
+
+    pub const fn boolean(&self) -> Option<bool> {
+        match self.0 {
+            CheckedCoverageWitness::Bool(value) => Some(value),
+            _ => None,
+        }
+    }
+}
+
+/// A borrowed child in a structured non-exhaustiveness witness.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckedMatchWitnessRef<'a>(&'a CheckedCoverageWitness);
+
+impl<'a> CheckedMatchWitnessRef<'a> {
+    pub fn view(self) -> CheckedMatchWitnessView<'a> {
+        match self.0 {
+            CheckedCoverageWitness::Unit => CheckedMatchWitnessView::Unit,
+            CheckedCoverageWitness::Bool(value) => CheckedMatchWitnessView::Bool(*value),
+            CheckedCoverageWitness::Literal(literal) => CheckedMatchWitnessView::Literal {
+                semantic_type: literal.semantic_type,
+                canonical_bytes: &literal.bytes,
+            },
+            CheckedCoverageWitness::Entity(item) => CheckedMatchWitnessView::Entity {
+                semantic_id: item.as_bytes(),
+            },
+            CheckedCoverageWitness::Other { type_digest } => CheckedMatchWitnessView::Other {
+                type_digest: *type_digest,
+            },
+            CheckedCoverageWitness::Variant { case, payload } => {
+                let payload = match payload {
+                    CheckedVariantCoverageWitness::Unit => CheckedMatchVariantPayloadView::Unit,
+                    CheckedVariantCoverageWitness::Tuple(values) => {
+                        CheckedMatchVariantPayloadView::Tuple(CheckedMatchWitnessList(values))
+                    }
+                    CheckedVariantCoverageWitness::Record(fields) => {
+                        CheckedMatchVariantPayloadView::Record(CheckedMatchVariantFieldList(fields))
+                    }
+                };
+                CheckedMatchWitnessView::Variant {
+                    case_semantic_id: case.as_bytes(),
+                    payload,
+                }
+            }
+            CheckedCoverageWitness::Tuple(values) => {
+                CheckedMatchWitnessView::Tuple(CheckedMatchWitnessList(values))
+            }
+            CheckedCoverageWitness::Record { owner, fields } => CheckedMatchWitnessView::Record {
+                owner: *owner,
+                fields: CheckedMatchWitnessList(fields),
+            },
+            CheckedCoverageWitness::Array(values) => {
+                CheckedMatchWitnessView::Array(CheckedMatchWitnessList(values))
+            }
+            CheckedCoverageWitness::Sequence {
+                partition,
+                visible_prefix,
+            } => CheckedMatchWitnessView::Sequence {
+                partition: match partition {
+                    CheckedSequencePartitionWitness::Exact(length) => {
+                        CheckedMatchSequencePartition::Exact(*length)
+                    }
+                    CheckedSequencePartitionWitness::Interval {
+                        lower,
+                        upper_exclusive,
+                    } => CheckedMatchSequencePartition::Interval {
+                        lower: *lower,
+                        upper_exclusive: *upper_exclusive,
+                    },
+                },
+                visible_prefix: CheckedMatchWitnessList(visible_prefix),
+            },
+            CheckedCoverageWitness::Choice {
+                ordinal,
+                alternative,
+                value,
+            } => CheckedMatchWitnessView::Choice {
+                ordinal: *ordinal,
+                alternative: *alternative,
+                value: CheckedMatchWitnessRef(value),
+            },
+        }
+    }
+}
+
+/// Borrowed children of one tuple, record, array, sequence, or variant witness.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckedMatchWitnessList<'a>(&'a [CheckedCoverageWitness]);
+
+impl<'a> CheckedMatchWitnessList<'a> {
+    pub const fn len(self) -> usize {
+        self.0.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(self, index: usize) -> Option<CheckedMatchWitnessRef<'a>> {
+        self.0.get(index).map(CheckedMatchWitnessRef)
+    }
+
+    pub fn iter(self) -> impl ExactSizeIterator<Item = CheckedMatchWitnessRef<'a>> + 'a {
+        self.0.iter().map(CheckedMatchWitnessRef)
+    }
+}
+
+/// Borrowed field in a variant's record payload witness.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckedMatchVariantFieldRef<'a>(&'a CheckedVariantRecordCoverageWitnessField);
+
+impl<'a> CheckedMatchVariantFieldRef<'a> {
+    pub const fn semantic_id(self) -> &'a [u8; 32] {
+        self.0.semantic_id_bytes()
+    }
+
+    pub const fn value(self) -> CheckedMatchWitnessRef<'a> {
+        CheckedMatchWitnessRef(self.0.value())
+    }
+}
+
+/// Borrowed source-ordered fields in a variant's record payload witness.
+#[derive(Clone, Copy, Debug)]
+pub struct CheckedMatchVariantFieldList<'a>(&'a [CheckedVariantRecordCoverageWitnessField]);
+
+impl<'a> CheckedMatchVariantFieldList<'a> {
+    pub const fn len(self) -> usize {
+        self.0.len()
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(self, index: usize) -> Option<CheckedMatchVariantFieldRef<'a>> {
+        self.0.get(index).map(CheckedMatchVariantFieldRef)
+    }
+
+    pub fn iter(self) -> impl ExactSizeIterator<Item = CheckedMatchVariantFieldRef<'a>> + 'a {
+        self.0.iter().map(CheckedMatchVariantFieldRef)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedMatchSequencePartition {
+    Exact(u64),
+    Interval {
+        lower: u64,
+        upper_exclusive: Option<u64>,
+    },
+}
+
+/// Read-only shape of a variant payload coverage witness.
+#[derive(Clone, Copy, Debug)]
+pub enum CheckedMatchVariantPayloadView<'a> {
+    Unit,
+    Tuple(CheckedMatchWitnessList<'a>),
+    Record(CheckedMatchVariantFieldList<'a>),
+}
+
+/// Read-only traversal of the same witness retained by the coverage matrix.
+#[derive(Clone, Copy, Debug)]
+pub enum CheckedMatchWitnessView<'a> {
+    Unit,
+    Bool(bool),
+    Literal {
+        semantic_type: SemanticTypeDigest,
+        canonical_bytes: &'a [u8],
+    },
+    Entity {
+        semantic_id: &'a [u8; 32],
+    },
+    Other {
+        type_digest: SemanticTypeDigest,
+    },
+    Variant {
+        case_semantic_id: &'a [u8; 32],
+        payload: CheckedMatchVariantPayloadView<'a>,
+    },
+    Tuple(CheckedMatchWitnessList<'a>),
+    Record {
+        owner: SemanticTypeDigest,
+        fields: CheckedMatchWitnessList<'a>,
+    },
+    Array(CheckedMatchWitnessList<'a>),
+    Sequence {
+        partition: CheckedMatchSequencePartition,
+        visible_prefix: CheckedMatchWitnessList<'a>,
+    },
+    Choice {
+        ordinal: u32,
+        alternative: SemanticTypeDigest,
+        value: CheckedMatchWitnessRef<'a>,
+    },
+}
+
+/// Failure of the atomic, generation-checked Match query.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum CheckedMatchQueryError {
+    #[error(transparent)]
+    Generation(#[from] super::FinalSemanticAnalysisError),
+    #[error("expression is missing from the accepted HIR generation")]
+    MissingExpression,
+    #[error("expression is not a Match")]
+    NotMatch,
+    #[error("checked Match evidence is missing or stale")]
+    MissingMatchFact,
+    #[error("accepted checked Match evidence is invalid or incomplete")]
+    InvalidEvidence,
+    #[error("Match is non-exhaustive")]
+    NonExhaustive { witness: CheckedMatchWitness },
+    #[error("Match has no exact coverage domain for type {type_digest:?}")]
+    UnsupportedDomain { type_digest: SemanticTypeDigest },
+    #[error("checked Match {kind:?} limit {limit} exceeded by attempt {attempted}")]
+    LimitExceeded {
+        kind: CheckedMatchLimitKind,
+        limit: u64,
+        attempted: u64,
+    },
+    #[error("checked Match {kind:?} accounting overflow")]
+    ArithmeticOverflow { kind: CheckedMatchLimitKind },
+    #[error("checked Match coordinate or ordinal exceeds its representable range")]
+    CoordinateOverflow,
+    #[error("checked Match construction was cancelled")]
+    Cancelled,
+}
+
+impl From<SemanticTranscriptError> for CheckedMatchQueryError {
+    fn from(error: SemanticTranscriptError) -> Self {
+        match error {
+            SemanticTranscriptError::Generation(error) => Self::Generation(*error),
+            SemanticTranscriptError::MissingExpression => Self::MissingExpression,
+            SemanticTranscriptError::NotMatch => Self::NotMatch,
+            SemanticTranscriptError::MissingMatchFact => Self::MissingMatchFact,
+            SemanticTranscriptError::NonExhaustive { witness } => Self::NonExhaustive {
+                witness: CheckedMatchWitness(witness),
+            },
+            SemanticTranscriptError::MatchBuild(CheckedMatchBuildError::UnsupportedDomain {
+                type_digest,
+            }) => Self::UnsupportedDomain { type_digest },
+            SemanticTranscriptError::MatchBuild(CheckedMatchBuildError::LimitExceeded {
+                kind,
+                limit,
+                attempted,
+            }) => Self::LimitExceeded {
+                kind,
+                limit,
+                attempted,
+            },
+            SemanticTranscriptError::MatchBuild(CheckedMatchBuildError::ArithmeticOverflow {
+                kind,
+            }) => Self::ArithmeticOverflow { kind },
+            SemanticTranscriptError::MatchBuild(CheckedMatchBuildError::Cancelled) => {
+                Self::Cancelled
+            }
+            SemanticTranscriptError::TranscriptArithmeticOverflow => Self::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::TranscriptBytes,
+            },
+            SemanticTranscriptError::TranscriptLimitExceeded { limit, attempted } => {
+                Self::LimitExceeded {
+                    kind: CheckedMatchLimitKind::TranscriptBytes,
+                    limit,
+                    attempted,
+                }
+            }
+            SemanticTranscriptError::WorkLimit => Self::CoordinateOverflow,
+            SemanticTranscriptError::GenericScope(_)
+            | SemanticTranscriptError::MissingPattern
+            | SemanticTranscriptError::MissingChildEdges
+            | SemanticTranscriptError::MissingCallableJoin
+            | SemanticTranscriptError::RecoveredOwner
+            | SemanticTranscriptError::MatchBuild(_)
+            | SemanticTranscriptError::MissingIdentity
+            | SemanticTranscriptError::AcceptedRootCatalog(_)
+            | SemanticTranscriptError::CoordinateEncoding(_) => Self::InvalidEvidence,
+        }
+    }
+}
+
 type MatchTranscriptHasher<'a> = TranscriptHasher<'a, CheckedMatchBudget>;
 
 /// Version-one semantic identity of a checked rich-text content stream.
@@ -175,15 +495,11 @@ impl CheckedBodySemanticDigest {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedMatchBinding {
+pub struct CheckedMatchBinding {
     coordinate: StableCheckedValueCoordinate,
     ty: SemanticTypeDigest,
 }
 
-#[allow(
-    dead_code,
-    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
-)]
 impl CheckedMatchBinding {
     pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
         &self.coordinate
@@ -194,44 +510,133 @@ impl CheckedMatchBinding {
     }
 }
 
+/// The checked meaning of an authored Match guard.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CheckedGuardSemantic {
+    Absent,
+    ConstantTrue(CheckedExpressionSemanticDigest),
+    ConstantFalse(CheckedExpressionSemanticDigest),
+    Dynamic(CheckedExpressionSemanticDigest),
+}
+
+impl CheckedGuardSemantic {
+    const fn expression(self) -> Option<CheckedExpressionSemanticDigest> {
+        match self {
+            Self::Absent => None,
+            Self::ConstantTrue(digest) | Self::ConstantFalse(digest) | Self::Dynamic(digest) => {
+                Some(digest)
+            }
+        }
+    }
+
+    const fn class(self) -> CheckedGuardClass {
+        match self {
+            Self::Absent => CheckedGuardClass::Absent,
+            Self::ConstantTrue(_) => CheckedGuardClass::ConstantTrue,
+            Self::ConstantFalse(_) => CheckedGuardClass::ConstantFalse,
+            Self::Dynamic(_) => CheckedGuardClass::Dynamic,
+        }
+    }
+}
+
+/// One source-ordered checked Match arm.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedMatchArm {
-    ordinal: u32,
+pub struct CheckedMatchArm {
+    coordinate: StableMatchArmCoordinate,
     pattern: CheckedPatternSemanticDigest,
-    guard: CheckedGuardClass,
-    guard_expression: Option<CheckedExpressionSemanticDigest>,
-    value: CheckedExpressionSemanticDigest,
+    guard: CheckedGuardSemantic,
+    result: CheckedExpressionSemanticDigest,
     bindings: Box<[CheckedMatchBinding]>,
 }
 
-#[allow(
-    dead_code,
-    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
-)]
 impl CheckedMatchArm {
+    pub const fn coordinate(&self) -> &StableMatchArmCoordinate {
+        &self.coordinate
+    }
+
     pub const fn pattern(&self) -> CheckedPatternSemanticDigest {
         self.pattern
     }
+
+    pub const fn guard(&self) -> CheckedGuardSemantic {
+        self.guard
+    }
+
+    pub const fn result(&self) -> CheckedExpressionSemanticDigest {
+        self.result
+    }
+
     pub fn bindings(&self) -> &[CheckedMatchBinding] {
         &self.bindings
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedMatch {
-    semantic_digest: CheckedMatchSemanticDigest,
+/// Version-one digest and local checked byte length of a complete Match transcript.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MatchSemanticTranscript {
+    version: u8,
+    digest: CheckedMatchSemanticDigest,
+    byte_len: u64,
+}
+
+impl MatchSemanticTranscript {
+    pub const VERSION: u8 = 1;
+
+    pub const fn version(&self) -> u8 {
+        self.version
+    }
+
+    pub const fn digest(&self) -> CheckedMatchSemanticDigest {
+        self.digest
+    }
+
+    pub const fn byte_len(&self) -> u64 {
+        self.byte_len
+    }
+}
+
+/// One exhaustive, generation-bound, completely transcribed Match result.
+#[derive(Clone, Debug)]
+pub struct CheckedMatch {
+    lookup: CheckedMatchRef,
+    path: CheckedSemanticPath,
+    scrutinee: CheckedExpressionSemanticDigest,
     scrutinee_type: SemanticTypeDigest,
     arms: Box<[CheckedMatchArm]>,
+    transcript: MatchSemanticTranscript,
     coverage: CheckedMatchCoverage,
 }
 
-#[allow(
-    dead_code,
-    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
-)]
 impl CheckedMatch {
+    pub const fn path(&self) -> &CheckedSemanticPath {
+        &self.path
+    }
+
+    pub const fn root(&self) -> AcceptedSemanticRoot {
+        self.path.root()
+    }
+
+    pub const fn callable_owner(&self) -> Option<AcceptedDeclarationSemanticId> {
+        match self.root() {
+            AcceptedSemanticRoot::Declaration(owner) => Some(owner),
+            AcceptedSemanticRoot::Item(_) => None,
+        }
+    }
+
+    pub const fn scrutinee(&self) -> CheckedExpressionSemanticDigest {
+        self.scrutinee
+    }
+
+    pub const fn scrutinee_type(&self) -> SemanticTypeDigest {
+        self.scrutinee_type
+    }
+
+    pub const fn transcript(&self) -> &MatchSemanticTranscript {
+        &self.transcript
+    }
+
     pub const fn semantic_digest(&self) -> CheckedMatchSemanticDigest {
-        self.semantic_digest
+        self.transcript.digest()
     }
     pub fn arms(&self) -> &[CheckedMatchArm] {
         &self.arms
@@ -375,80 +780,47 @@ pub(crate) fn checked_attached_content_default_pattern_digest(
     )
 }
 
-#[allow(
-    dead_code,
-    reason = "the compiler Match query is consumed by downstream code and focused sema tests"
-)]
 impl FinalSemanticAnalysis {
-    /// Binds one checked Match lookup to this report's exact module snapshot.
-    pub(crate) fn checked_match_ref(
-        &self,
-        module: &HirModule,
-        symbols: &ProjectSymbolTable,
-        expression: ExprId,
-    ) -> Result<CheckedMatchRef, SemanticTranscriptError> {
-        self.validate_module_generation(module, symbols)?;
-        if expression.module() != module.module_id() {
-            return Err(SemanticTranscriptError::MissingExpression);
-        }
-        let owner = module
-            .resolve_expr(expression)
-            .map_err(|_| SemanticTranscriptError::MissingExpression)?;
-        if !matches!(owner.kind(), HirExprKind::Match(_)) {
-            return Err(SemanticTranscriptError::NotMatch);
-        }
-        let checked = self
-            .expression(expression)
-            .ok_or(SemanticTranscriptError::MissingExpression)?;
-        if checked.match_fact().is_none() {
-            return Err(SemanticTranscriptError::MissingMatchFact);
-        }
-        Ok(CheckedMatchRef::new(module.snapshot_id(), expression))
-    }
-
-    /// Revalidates a compiler-local Match reference before constructing the
-    /// complete accepted-rooted semantic transaction.
-    pub(crate) fn build_checked_match_for_ref(
+    /// Returns one complete exhaustive Match product from this exact accepted
+    /// HIR generation. A failed query publishes no partial semantic result.
+    pub fn checked_match(
         &self,
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        reference: CheckedMatchRef,
+        expression: ExprId,
         limits: CheckedMatchLimits,
-    ) -> Result<CheckedMatch, SemanticTranscriptError> {
+    ) -> Result<CheckedMatch, CheckedMatchQueryError> {
         static NOT_CANCELLED: std::sync::atomic::AtomicBool =
             std::sync::atomic::AtomicBool::new(false);
-        self.build_checked_match_for_ref_with_control(
+        self.checked_match_with_control(
             project,
             symbols,
-            reference,
+            expression,
             limits,
             FinalSemanticAnalysisControl::new(&NOT_CANCELLED),
         )
+        .map_err(CheckedMatchQueryError::from)
     }
 
     /// Constructs one checked Match while observing caller-owned cancellation.
-    /// The transaction is rooted at the referenced Match and includes only its
+    /// The transaction is rooted at the requested Match and includes only its
     /// accepted expression/pattern/statement/body subtree and nested Matches.
-    pub(crate) fn build_checked_match_for_ref_with_control(
+    pub(crate) fn checked_match_with_control(
         &self,
         project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        reference: CheckedMatchRef,
+        expression: ExprId,
         limits: CheckedMatchLimits,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
         control.check()?;
         self.validate_generation(project, symbols)?;
-        let expression = reference.expression();
         let module = project
             .modules()
             .find_map(|(_, module)| {
                 (module.module_id() == expression.module()).then_some(module.as_ref())
             })
             .ok_or(SemanticTranscriptError::MissingExpression)?;
-        if module.snapshot_id() != reference.snapshot() {
-            return Err(SemanticTranscriptError::StaleMatchReference);
-        }
         let owner = module
             .resolve_expr(expression)
             .map_err(|_| SemanticTranscriptError::MissingExpression)?;
@@ -464,7 +836,11 @@ impl FinalSemanticAnalysis {
         if fact.scrutinee() != authored.scrutinee() || fact.arms().len() != authored.arms().len() {
             return Err(SemanticTranscriptError::MissingMatchFact);
         }
-        build_checked_match_transaction(self, project, expression, limits, control)
+        let product = build_checked_match_transaction(self, project, expression, limits, control)?;
+        if product.lookup != CheckedMatchRef::new(module.snapshot_id(), expression) {
+            return Err(SemanticTranscriptError::MissingMatchFact);
+        }
+        Ok(product)
     }
 }
 
@@ -595,29 +971,39 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
                 &StablePatternCoordinate::new([]),
                 &mut bindings,
             )?;
-            let (guard, guard_expression) = match (arm.guard(), checked.guard()) {
-                (None, None) => (CheckedGuardClass::Absent, None),
-                (Some(authored), Some(checked)) if authored == checked => (
-                    guard_class(self.analysis, authored)?,
-                    Some(self.expression_digest(authored)?),
-                ),
+            let guard = match (arm.guard(), checked.guard()) {
+                (None, None) => CheckedGuardSemantic::Absent,
+                (Some(authored), Some(checked)) if authored == checked => {
+                    let digest = self.expression_digest(authored)?;
+                    match guard_class(self.analysis, authored)? {
+                        CheckedGuardClass::ConstantTrue => {
+                            CheckedGuardSemantic::ConstantTrue(digest)
+                        }
+                        CheckedGuardClass::ConstantFalse => {
+                            CheckedGuardSemantic::ConstantFalse(digest)
+                        }
+                        CheckedGuardClass::Dynamic => CheckedGuardSemantic::Dynamic(digest),
+                        CheckedGuardClass::Absent => {
+                            return Err(SemanticTranscriptError::MissingMatchFact);
+                        }
+                    }
+                }
                 _ => return Err(SemanticTranscriptError::MissingMatchFact),
             };
             if arm.value() != checked.value() {
                 return Err(SemanticTranscriptError::MissingMatchFact);
             }
             arms.push(CheckedMatchArm {
-                ordinal,
+                coordinate: arm_coordinate.clone(),
                 pattern,
                 guard,
-                guard_expression,
-                value: self.expression_digest(arm.value())?,
+                result: self.expression_digest(arm.value())?,
                 bindings: bindings.into_boxed_slice(),
             });
             coverage_arms.push(CoverageArmInput {
                 coordinate: arm_coordinate,
                 pattern: arm.pattern(),
-                guard,
+                guard: guard.class(),
             });
         }
         let mut coverage = MatchCoverageAnalyzer::new(
@@ -625,14 +1011,14 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
             self.module,
             self.control,
             &mut self.budget,
-            StableSemanticCoordinate::new(match_path),
+            StableSemanticCoordinate::new(match_path.clone()),
             std::mem::take(&mut self.observed_patterns),
         )
         .analyze(&scrutinee_ty, &coverage_arms)?;
         if let Some(witness) = coverage.witness().cloned() {
             return Err(SemanticTranscriptError::NonExhaustive { witness });
         }
-        let semantic_digest = match_digest(
+        let transcript = match_digest(
             &mut self.budget,
             scrutinee,
             scrutinee_type,
@@ -641,9 +1027,12 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         )?;
         coverage.finish_transaction_work(self.budget.work());
         Ok(CheckedMatch {
-            semantic_digest,
+            lookup: CheckedMatchRef::new(self.module.snapshot_id(), owner),
+            path: match_path,
+            scrutinee,
             scrutinee_type,
             arms: arms.into_boxed_slice(),
+            transcript,
             coverage,
         })
     }
@@ -2869,31 +3258,31 @@ fn match_digest(
     scrutinee_type: SemanticTypeDigest,
     arms: &[CheckedMatchArm],
     coverage: &CheckedMatchCoverage,
-) -> Result<CheckedMatchSemanticDigest, SemanticTranscriptError> {
+) -> Result<MatchSemanticTranscript, SemanticTranscriptError> {
     let mut hasher = TranscriptHasher::new(budget);
     transcript_update!(hasher, b"arcweft.lang.checked-match-semantic.v1\0");
     transcript_update!(hasher, scrutinee.as_bytes());
     transcript_update!(hasher, scrutinee_type.as_bytes());
     write_len(&mut hasher, arms.len())?;
     for arm in arms {
-        transcript_update!(hasher, &arm.ordinal.to_le_bytes());
+        transcript_update!(hasher, &arm.coordinate.ordinal().to_le_bytes());
         transcript_update!(hasher, arm.pattern.as_bytes());
         write_len(&mut hasher, arm.bindings.len())?;
         for binding in &arm.bindings {
             transcript_update!(hasher, &binding.coordinate.canonical_bytes()?);
             transcript_update!(hasher, binding.ty.as_bytes());
         }
-        match arm.guard_expression {
+        match arm.guard.expression() {
             Some(digest) => {
                 transcript_update!(hasher, &[1]);
                 transcript_update!(hasher, digest.as_bytes());
-                transcript_update!(hasher, &[guard_tag(arm.guard)]);
+                transcript_update!(hasher, &[guard_tag(arm.guard.class())]);
             }
             None => {
                 transcript_update!(hasher, &[0]);
             }
         }
-        transcript_update!(hasher, arm.value.as_bytes());
+        transcript_update!(hasher, arm.result.as_bytes());
     }
     transcript_update!(hasher, &[u8::from(coverage.exhaustive())]);
     transcript_update!(hasher, coverage.domain_digest().as_bytes());
@@ -2910,7 +3299,12 @@ fn match_digest(
         }
         transcript_update!(hasher, &[unreachable_tag(row.reason())]);
     }
-    Ok(CheckedMatchSemanticDigest::from_bytes(hasher.finalize()))
+    let byte_len = hasher.byte_len();
+    Ok(MatchSemanticTranscript {
+        version: MatchSemanticTranscript::VERSION,
+        digest: CheckedMatchSemanticDigest::from_bytes(hasher.finalize()),
+        byte_len,
+    })
 }
 
 fn child_pattern_coordinate(
@@ -4143,14 +4537,11 @@ mod tests {
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("Match expression");
-        let reference = analysis
-            .checked_match_ref(module, &fixture.symbols, owner)
-            .expect("Match reference belongs to the accepted HIR snapshot");
         let product = analysis
-            .build_checked_match_for_ref(
+            .checked_match(
                 project,
                 &fixture.symbols,
-                reference,
+                owner,
                 CheckedMatchLimits::PRODUCTION,
             )
             .expect("accepted Match transcript");
@@ -4237,14 +4628,11 @@ flow main(flag: bool) -> String {
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("interpolation Match expression");
-        let reference = analysis
-            .checked_match_ref(module, &fixture.symbols, owner)
-            .expect("Match reference belongs to the accepted HIR snapshot");
         let product = analysis
-            .build_checked_match_for_ref(
+            .checked_match(
                 project,
                 &fixture.symbols,
-                reference,
+                owner,
                 CheckedMatchLimits::PRODUCTION,
             )
             .expect("ObjectSpan must contribute its owner digest to the Match transcript");

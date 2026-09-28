@@ -26,11 +26,12 @@ fn build_only_checked_match(
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("focused Match expression");
-    report.build_checked_match_for_ref(
+    report.checked_match_with_control(
         project,
         &fixture.symbols,
-        super::checked_match_reference(&report, module, &fixture.symbols, owner),
+        owner,
         limits,
+        FinalSemanticAnalysisControl::new(&AtomicBool::new(false)),
     )
 }
 
@@ -536,10 +537,10 @@ fn root(flag: bool) -> i64 {
         .expect("Match expression");
     let cancelled = AtomicBool::new(true);
     assert!(matches!(
-        report.build_checked_match_for_ref_with_control(
+        report.checked_match_with_control(
             project,
             &fixture.symbols,
-            super::checked_match_reference(&report, module, &fixture.symbols, owner),
+            owner,
             CheckedMatchLimits::PRODUCTION,
             FinalSemanticAnalysisControl::new(&cancelled),
         ),
