@@ -3081,3 +3081,26 @@ changed-crate Clippy（全 target/feature）、fmt、cached diff check は成功
 既存警告あり。テストのみの cut なので workspace と構造 gate は再実行していない。
 Signal/LifetimeSet/statement-Match/Close/UnsafeLifetime 等と T01/T06、View 以降、
 goal 全体は未完として継続する。
+
+## Match C3 call generation を意味 digest から分離 — 2026-09-29
+
+確認した code commit は `a9ea82b0680aad576b513de02746704064ba7ca9`。
+main へ fast-forward push 後、working tree は clean。
+
+`CheckedCallApplicationDigest` は選択済み catalog/source 世代を含む実行・検証用
+identity であり、無関係な source 追加で変わる。Match transcript の
+EvaluatedEffect statement、dialogue 即時/遅延 Call、ContentResult/Emission と Fx
+outer/inner edge がその bytes を意味 atom として混入させていた。これを除き、既存の
+checked child expression、stable selected callable join、引数・effect operation、
+Fx の typed definition/binding payload を使用する。Fx semantic digest sealer からも
+raw call application だけを除き、runtime carrier/sealed ref の厳密な世代照合は維持した。
+受理済み project Fx は Function/Existing 宣言なので、その安定 declaration ID は保持した。
+
+Match 配下の受理済み6回帰で、末尾の無関係宣言を追加すると runtime application
+digest は変わるが Match digest は保たれ、同型の callable/operand/Fx binding 変更は
+Match digest に届くことを確認した。EvaluatedEffect の exact statement payload、
+dialogue Content/Delay(120ms) site、builtin/project Content、project Fx Content、ViewFx と
+Fx 自身の semantic digest も確認した。focused 6/6、Sema lib 1084/1084、workspace
+all-target/all-feature check と Clippy、`just test-workspace`、
+`just structure-audit-gate`（blocking 0）、fmt、cached diff check は成功。
+既存警告と size review trigger は残る。T01/T06、View 以降と goal 全体は未完として継続する。
