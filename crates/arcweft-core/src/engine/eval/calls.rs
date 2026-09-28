@@ -430,7 +430,7 @@ impl Engine {
             method
                 .input_locals
                 .first()
-                .and_then(|&local| self.fiber.env.get_cloned(local))
+                .and_then(|&local| self.fiber.env.take(local))
         } else {
             None
         };

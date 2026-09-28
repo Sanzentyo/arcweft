@@ -1047,25 +1047,6 @@ impl RuntimePlanBuilder {
                     source: Box::new(source),
                 }
             }
-            RuntimeExprSeedKind::Filter {
-                source,
-                param,
-                body,
-            } => {
-                let source = self.lower_expression(*source)?;
-                let (source_item, _) =
-                    self.sequence_projection(source.ty(), "filter source expression")?;
-                let (param, param_ty) = self.resolve_local(&param)?;
-                require_same("filter parameter", source_item, param_ty)?;
-                let body = self.lower_expression(*body)?;
-                self.require_bool("filter predicate", body.ty())?;
-                require_same("filter result", source.ty(), ty)?;
-                RuntimeExprKind::Filter {
-                    source: Box::new(source),
-                    param,
-                    body: Box::new(body),
-                }
-            }
             RuntimeExprSeedKind::Sum { source } => {
                 let source = self.lower_expression(*source)?;
                 let (item, _) = self.sequence_projection(source.ty(), "sum source expression")?;
@@ -2842,15 +2823,6 @@ impl RuntimePlanBuilder {
             } => {
                 self.validate_expression_locals(mapping, scope, used)?;
                 self.validate_expression_locals(source, scope, used)
-            }
-            RuntimeExprKind::Filter {
-                source,
-                param,
-                body,
-            } => {
-                self.validate_expression_locals(source, scope, used)?;
-                let nested = extend_scope(scope, [*param])?;
-                self.validate_expression_locals(body, &nested, used)
             }
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 self.validate_expression_locals(lhs, scope, used)?;

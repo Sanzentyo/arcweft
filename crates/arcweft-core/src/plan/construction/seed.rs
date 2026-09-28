@@ -2227,11 +2227,6 @@ pub enum RuntimeExprSeedKind {
         mapping: Box<RuntimeExprSeed>,
         source: Box<RuntimeExprSeed>,
     },
-    Filter {
-        source: Box<RuntimeExprSeed>,
-        param: RuntimeLocalSeedId,
-        body: Box<RuntimeExprSeed>,
-    },
     Sum {
         source: Box<RuntimeExprSeed>,
     },
@@ -2634,13 +2629,6 @@ impl RuntimeExprSeed {
                 mapping.collect_free_locals(bound, locals);
                 source.collect_free_locals(bound, locals);
             }
-            RuntimeExprSeedKind::Filter {
-                source,
-                param,
-                body,
-            } => {
-                collect_bound_body_free_locals(source, param, body, bound, locals);
-            }
             RuntimeExprSeedKind::Binary { lhs, rhs, .. } => {
                 lhs.collect_free_locals(bound, locals);
                 rhs.collect_free_locals(bound, locals);
@@ -2762,19 +2750,6 @@ fn collect_nominal_record_free_locals(
     for field in fields {
         field.value.collect_free_locals(bound, locals);
     }
-}
-
-fn collect_bound_body_free_locals(
-    source: &RuntimeExprSeed,
-    param: &RuntimeLocalSeedId,
-    body: &RuntimeExprSeed,
-    bound: &[RuntimeLocalSeedId],
-    locals: &mut Vec<RuntimeLocalSeedId>,
-) {
-    source.collect_free_locals(bound, locals);
-    let mut body_bound = bound.to_vec();
-    body_bound.push(param.clone());
-    body.collect_free_locals(&body_bound, locals);
 }
 
 impl RuntimeAgentExprSeed {

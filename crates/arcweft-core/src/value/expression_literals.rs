@@ -105,9 +105,6 @@ impl RuntimeExpr {
             RuntimeExprKind::StandardMap {
                 mapping, source, ..
             } => mapping.literals_permit_copy() && source.literals_permit_copy(),
-            RuntimeExprKind::Filter { source, body, .. } => {
-                source.literals_permit_copy() && body.literals_permit_copy()
-            }
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 lhs.literals_permit_copy() && rhs.literals_permit_copy()
             }

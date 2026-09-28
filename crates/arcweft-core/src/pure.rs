@@ -2031,11 +2031,6 @@ impl<'a> PureEvaluator<'a> {
                 mapping,
                 source,
             } => self.evaluate_standard_map_expr(*family, *order, mapping, source),
-            RuntimeExprKind::Filter {
-                source,
-                param,
-                body,
-            } => self.evaluate_filter_expr(source, *param, body),
             RuntimeExprKind::Sum { source } => self.evaluate_sum_expr(source),
             RuntimeExprKind::Unary { op, expr } => {
                 let value = self.evaluate_expr(expr)?;
@@ -2961,33 +2956,6 @@ impl<'a> PureEvaluator<'a> {
                 }
             }
         }
-    }
-
-    fn evaluate_filter_expr(
-        &mut self,
-        source: &RuntimeExpr,
-        param: RuntimeLocalDeclarationId,
-        body: &RuntimeExpr,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let iterator = match RuntimeIterator::from_value(self.evaluate_expr(source)?) {
-            Ok(iterator) => iterator,
-            Err(value) => {
-                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
-                    &value,
-                )));
-            }
-        };
-        let mut filtered = Vec::new();
-        for item in iterator.collect::<Vec<_>>() {
-            self.env.push_scope_with_capacity(1);
-            self.env.set(param, item.clone());
-            let keep = self.evaluate_bool(body);
-            self.env.pop_scope();
-            if keep? {
-                filtered.push(item);
-            }
-        }
-        Ok(runtime_sequence_values(filtered))
     }
 
     fn evaluate_sum_expr(

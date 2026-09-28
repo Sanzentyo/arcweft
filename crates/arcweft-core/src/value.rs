@@ -1769,11 +1769,6 @@ pub enum RuntimeExprKind {
         mapping: Box<RuntimeExpr>,
         source: Box<RuntimeExpr>,
     },
-    Filter {
-        source: Box<RuntimeExpr>,
-        param: RuntimeLocalDeclarationId,
-        body: Box<RuntimeExpr>,
-    },
     Sum {
         source: Box<RuntimeExpr>,
     },
@@ -1933,7 +1928,6 @@ impl RuntimeExpr {
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
             | RuntimeExprKind::StandardMap { .. }
-            | RuntimeExprKind::Filter { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::SequencePopFront { .. }
             | RuntimeExprKind::SequencePush { .. }
@@ -2038,7 +2032,6 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
             RuntimeExprKind::StandardMap { family, .. } => write!(f, "map/{family:?}"),
-            RuntimeExprKind::Filter { .. } => f.write_str("filter"),
             RuntimeExprKind::Sum { .. } => f.write_str("sum"),
             RuntimeExprKind::Unary { op, .. } => f.write_str(op.as_label()),
             RuntimeExprKind::Binary { op, .. } => f.write_str(op.as_label()),

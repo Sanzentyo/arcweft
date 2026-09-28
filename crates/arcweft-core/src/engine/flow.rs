@@ -10,7 +10,7 @@ use super::{
     runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
-use crate::pattern::pattern_binding_capacity;
+use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, pattern_binding_capacity};
 use crate::plan::{
     RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable,
     RuntimeProjectCallOrdinaryMaterialization, RuntimeReceiverMode,
@@ -1291,23 +1291,21 @@ impl Engine {
         let outcome = self.evaluate_trait_method_values(
             *next,
             RuntimeReceiverMode::MutRef,
-            (**state).clone(),
+            std::mem::replace(state.as_mut(), RuntimeValue::Unit),
             Vec::new(),
             pure_backend,
         )?;
         if let Some(updated_receiver) = outcome.updated_receiver {
             **state = updated_receiver;
         }
-        let RuntimeValue::Variant { name, payload, .. } = outcome.value else {
-            return Ok(None);
-        };
-        if name == "None" {
-            return Ok(None);
+        let label = runtime_value_label(&outcome.value);
+        match outcome.value.try_into_builtin_variant_case() {
+            Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(None),
+            Ok((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => Ok(Some(value)),
+            _ => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+                "Iterator::next expected Option, found {label}"
+            ))),
         }
-        if name == "Some" {
-            return Ok(payload.map(|value| *value));
-        }
-        Ok(None)
     }
 
     fn push_owned_scoped_ops(&mut self, ops: Vec<FlowOp>, prefix: Option<FlowOp>) {
@@ -1549,6 +1547,10 @@ impl Engine {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "flow/iterator_tests.rs"]
+mod iterator_tests;
 
 #[cfg(test)]
 mod ownership_tests {

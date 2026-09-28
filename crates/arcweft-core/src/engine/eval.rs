@@ -32,7 +32,6 @@ use std::sync::Arc;
 mod callable;
 mod calls;
 mod character_dialogue;
-mod sequence;
 
 impl Engine {
     pub(super) fn evaluate_let_with_backend(
@@ -236,11 +235,6 @@ impl Engine {
                 mapping,
                 source,
             } => self.evaluate_standard_map_expr(*family, *order, mapping, source, pure_backend),
-            RuntimeExprKind::Filter {
-                source,
-                param,
-                body,
-            } => self.evaluate_filter_expr(source, *param, body, pure_backend),
             RuntimeExprKind::Sum { source } => self.evaluate_sum_expr(source, pure_backend),
             RuntimeExprKind::Unary { op, expr } => {
                 self.evaluate_unary_expr(*op, expr, pure_backend)

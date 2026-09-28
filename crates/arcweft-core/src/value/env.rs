@@ -283,10 +283,6 @@ impl RuntimeEnv {
         Err(RuntimeEvalError::UnknownLocal(local))
     }
 
-    pub(crate) fn get_cloned(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
-        self.get(local).cloned()
-    }
-
     pub(crate) fn bindings(&self) -> impl Iterator<Item = &RuntimeLocalBinding> {
         self.scopes.iter().flat_map(|scope| scope.bindings.iter())
     }

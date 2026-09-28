@@ -213,16 +213,6 @@ impl RuntimeExpr {
                     mapping.collect_evaluation_free_locals(plan, bound, locals)?;
                 }
             },
-            RuntimeExprKind::Filter {
-                source,
-                param,
-                body,
-            } => {
-                source.collect_evaluation_free_locals(plan, bound, locals)?;
-                let mut body_bound = bound.to_vec();
-                body_bound.push(*param);
-                body.collect_evaluation_free_locals(plan, &body_bound, locals)?;
-            }
             RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 lhs.collect_evaluation_free_locals(plan, bound, locals)?;
                 rhs.collect_evaluation_free_locals(plan, bound, locals)?;

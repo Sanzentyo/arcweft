@@ -668,37 +668,6 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::StandardMap { .. } => self.lower_value_control_expr(expr),
-            RuntimeExprKind::Filter {
-                source,
-                param,
-                body,
-            } => {
-                let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
-                let body_ty = admitted_plan_type(self.inventory, self.plan, body.ty());
-                let source = self.lower(source);
-                let _ = self.frame.local(
-                    *param,
-                    admitted_plan_type(self.inventory, self.plan, local_type(self.plan, *param)),
-                );
-                let body = self.lower(body);
-                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
-                let dst = self.frame.temp(result_ty);
-                let intrinsic = self.intern_intrinsic(
-                    &RuntimeCallTarget::callable(
-                        RuntimeCallableId::try_new("seq.filter".to_owned())
-                            .expect("synthetic seq.filter callable identity is valid"),
-                    ),
-                    &[source_ty, body_ty],
-                    Some(result_ty),
-                );
-                self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args: vec![source, body],
-                    });
-                dst
-            }
             RuntimeExprKind::Sum { source } => {
                 let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
                 let source = self.lower(source);
