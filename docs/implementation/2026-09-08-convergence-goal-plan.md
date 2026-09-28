@@ -3104,3 +3104,22 @@ Fx 自身の semantic digest も確認した。focused 6/6、Sema lib 1084/1084�
 all-target/all-feature check と Clippy、`just test-workspace`、
 `just structure-audit-gate`（blocking 0）、fmt、cached diff check は成功。
 既存警告と size review trigger は残る。T01/T06、View 以降と goal 全体は未完として継続する。
+
+## Match T01 dialogue/Content/View expression corpus — 2026-09-29
+
+確認した code commit は `dcc7e1612984e9449b365912324ca863fb3c3bd2`。
+main へ fast-forward push 後、working tree は clean。
+
+直前の generation-invariance 回帰で受理した5種類の Match-root source を共有し、
+各 accepted path 配下の HIR expression shape と checked resolution の完全な集合を
+corpus 行ごとに固定した。dialogue 即時/遅延 Call、builtin/project Content、
+project Fx Content、View Fx の到達により、AttachedContentApplication、
+PostfixBracket、DialogueApplication、ContentApplication、ViewFxApplication、
+CompileTimeScalar 等を実測に基づき Accepted へ移した。厳密な集合照合は明示 row
+metadata で指定し、表示名の文字列規則には依存しない。意味差と世代不変性は直前の
+同じ fixture の回帰を再利用した。
+
+focused corpus、Sema lib 1084/1084 と UI/integration/doctest、changed-crate Clippy、
+fmt、cached diff check は成功。既存警告あり。テストのみの cut なので workspace と
+構造 gate は再実行していない。Effect resolution の declaration-only root 証拠は
+別の witness として Pending に残す。T01/T06、View 以降と goal 全体は未完として継続する。
