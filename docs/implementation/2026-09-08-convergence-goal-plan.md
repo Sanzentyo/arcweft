@@ -2355,3 +2355,31 @@ AWBC verifier owner は 5754 physical LOC / 224154 bytes。今回の追加はそ
 `645e217d4cf22a0fb66ad8b0d3b81572a2404203` で focused CLI test 1/1 が通過。
 この証拠は check 受理であり、053 の native/decoded AWBC 実行を示さない。
 後続の View、task-plan、scheduler/restore と goal 全体の受入は未完了。
+
+## Match C3 scope transcript の座標化 — 2026-09-28
+
+確認した code commit は `e6e769ac5f02a48fec1d998627b7bf6511ff17ae`。
+main へ fast-forward push 後、working tree は clean。起点は
+`fd50ad9d36afe503ee28c8c121e23b8aa14458ce`。
+
+受理済み [Match 設計](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure/README.md)
+は scope label の source spelling を transcript atom にしない契約だが、
+現行 `CheckedStatementPayload::Scope` と `CheckedExpressionResolution::Scope` は
+Named の名称を digest に書いていた。両 writer を Named/Anonymous tag と
+同じ owner の accepted-rooted 座標に統一した。checked scope 名の compiler・
+runtime 投影は保持し、凍結された設計 mirror と manifest は編集していない。
+設計時の resolution 列挙に live `Scope` がない不一致は、この現行 source と
+受理済み座標契約の照合として記録する。
+
+statement/expression の label 名変更では Match digest が等しく、owner 配置と
+Named/Anonymous の変更では異なる focused test 3/3 が通過。Sema lib 全体
+1019/1019、`cargo check -p arcweft-lang-sema`、all-target/all-feature Clippy、
+fmt、cached diff check は終了コード 0。`just structure-audit-gate` は
+2656 files / 97 packages / 348 review triggers / blocking 0。
+semantic transcript owner は 4351 physical LOC / 172437 bytes。既存の
+単一 transcript writer と同じ責務内で座標 atom とそのテストを追加し、並行する
+digest authority や逆向き依存を作っていない。
+
+Match C5 の完成品 query は現在 sema 内部だけで、compiler に届く公開契約と
+受理済み result schema の残項目は未完。C3 の全 resolution/body 差分テスト、
+View 以降の工程も未完として継続する。
