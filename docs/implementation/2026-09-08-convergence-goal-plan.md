@@ -2303,3 +2303,25 @@ runtime-accelerator lib 62/62、変更 3 crate の all-target/all-feature Clippy
 今回の必須実行結果は成功。workspace 全体の test recipe・構造 gate はこの小さな
 Core cleanup cut では再実行していない。053 fixture 全体および後続工程の
 受入条件は依然未完了。
+
+## Affine intrinsic 引数の所有権移譲 — 2026-09-28
+
+確認した code commit は `b574a28202e301e78ab0e1c9f2d79747229a609d`。
+main へ fast-forward push 後、working tree は clean。
+
+Core の `collect`、built-in `into_iter`、`Iterator::next`、`Option::unwrap`
+は、native・pure・AWBC が既に所有していた引数を、借用スライス経由で再び
+clone していた。共通の typed intrinsic dispatcher は単一引数を move し、
+観測だけの `Option::is_some` は借用する。`evaluate_runtime_call` と
+`VmHost::call_intrinsic` は所有済み `Vec<RuntimeValue>` を受け渡し、他の借用型
+handler と pure-helper の fallback 契約は維持した。これにより AWBC の
+`CallIntrinsic` が register から取り出した affine 値もそのまま host に渡る。
+
+`Need` の同じ割当が direct `Vec.into_iter` → `next` → `unwrap` → `collect` を
+通ることと、pure helper 内の `collect` を直接検証した。Core lib 776/776、
+変更 3 crate の `cargo check --tests` と all-target/all-feature Clippy、
+compiler の native/decoded AWBC 共通 host テスト 1/1、fmt と cached diff check
+が終了コード 0。Clippy は警告を出したが失敗はない。workspace 全体の recipe と
+構造 gate はこの cut では再実行していない。`CoreIndex` の値取得には別途
+affine item を clone しうる経路が見つかったため、次の所有権判断として残す。
+053 fixture 全体と後続工程の受入条件は未完了。
