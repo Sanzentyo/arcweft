@@ -2195,3 +2195,86 @@ attempt abstract state を各 `format.rs` 子 owner に抽出した。runtime-pl
 sema で受理されるが、一般 local read の Copy/Move と native/AWBC の consuming
 transfer が未接続である。次の cut は generation-bound な local-use 判定から
 単一の Core read mode、runtime token 一意性、途中 save/restore まで閉じる。
+
+## 053 affine local-use と実行時 custody の統合 — 2026-09-28
+
+Supersedes: 直前の 053 記録にある「一般 local read と consuming transfer が未接続」
+という現状説明。確認した code commit は
+`6cb610f536e186baade097afa8d4cc11445ca53d`。main へ fast-forward push 後、
+この証拠追記前の working tree は clean。起点は
+`2ab12d9327bda3ad1c4af1752baa142fbe082c63`。169 ファイルの統合 commit として
+sema → runtime-plan → Core native/AWBC → Product/driver/host/CLI の所有権契約を同時に接続した。
+
+Sema は受理済み HIR 世代と closed instance に結び付いた local-use catalog で
+Copy/Move/Borrow、guard、capture、関数入口の実値 Copy 義務を選ぶ。compiler と
+runtime-plan はその行を単一の `RuntimeLocalReadMode` と AWBC の所有権命令へ投影する。
+Core は affine 値の暗黙 clone を拒否し、Need、line/child packet、callback、
+ProjectCall、formatter operand、root event、Pure backend input の移譲を一つの
+live owner に収めた。AWBC v1 の verifier、codec、VM、途中 snapshot/restore は
+同じ所有権状態を検証する。Await progress は保留中の Need を observer 継続の
+register に戻し、Ready では戻さない。map と built-in For は `SequenceNext`、
+一度だけの tuple/array 分解、借用 pattern test を使い、反復ごとに source を
+再消費しない。native iterator は残り要素だけを保持し、affine item を move する。
+この cut が置き換えた複製・再読経路は残していない。
+
+最終差分で `cargo fmt --all -- --check`、workspace all-target/all-feature check と
+Clippy、`just test-workspace` 全レシピ、cached diff check が終了コード 0
+（既存 warning あり）。focused Core lib 772/772、runtime-plan lib 90/90、
+AWBC 288/288、runtime-plan map parity 5/5、iterator witness 3/3、
+Sema local-use 33/33、CLI fixture 8/8 も通過した。Core の iterator 残余値の
+live admission と途中 snapshot 往復、affine `SequenceNext` の空分岐と codec、
+Need progress 再 Await と失敗時無変更を直接検証した。`just structure-audit-gate` は
+2654 files / 97 workspace packages / blocking 0。途中の workspace run は
+capture、defer、policy 再利用、Core fixture、LSP adapter、map/For、CLI fixture の
+回帰を順に露出したが、最終 run は通過した。任意の `-D warnings` Clippy は
+未変更の依存 crate 警告で失敗し、通常の必須 Clippy 成功とは混同しない。
+MCP/capture/visual/production-limit の Tier 2 family と executable doctest は
+本 cut で変更しておらず未実行。変更した codec と保存契約の往復は上記テストで検証した。
+
+構造 review の実測は起点 HEAD → code commit の物理行数で、bytes は現在値。
+全行は workspace package の維持 Rust owner。`tests.rs` と
+`final_analysis/tests/local_use.rs` は test-only、他は production。
+括弧内は production file に埋め込まれた test 行数で、`—` は該当なし。
+
+| path | LOC (base → current) | bytes | embedded test LOC |
+|---|---:|---:|---:|
+| `crates/arcweft-core/src/awbc/fiber.rs` | 5597 → 6834 | 254456 | 877 |
+| `crates/arcweft-core/src/awbc/product_step.rs` | 3849 → 5214 | 210085 | — |
+| `crates/arcweft-core/src/awbc/product_step/line.rs` | 2865 → 4162 | 176763 | 74 |
+| `crates/arcweft-core/src/awbc/product_step/suspension.rs` | 1904 → 2817 | 114368 | — |
+| `crates/arcweft-core/src/awbc/product_step/tests.rs` | 4187 → 5335 | 203593 | test-only |
+| `crates/arcweft-core/src/awbc/tests.rs` | 7512 → 7889 | 282928 | test-only |
+| `crates/arcweft-core/src/awbc/verify/code.rs` | 4170 → 5693 | 221980 | — |
+| `crates/arcweft-core/src/awbc/vm.rs` | 3960 → 5263 | 216094 | — |
+| `crates/arcweft-core/src/engine.rs` | 2541 → 3944 | 154595 | 62 |
+| `crates/arcweft-core/src/engine/dialogue.rs` | 2811 → 3197 | 138377 | 638 |
+| `crates/arcweft-core/src/engine/dialogue/store.rs` | 1016 → 1676 | 62276 | 501 |
+| `crates/arcweft-core/src/line_task/activation.rs` | 493 → 910 | 35585 | — |
+| `crates/arcweft-core/src/line_task/handle.rs` | 4643 → 5614 | 216403 | 666 |
+| `crates/arcweft-core/src/pattern.rs` | 3172 → 4052 | 154630 | 915 |
+| `crates/arcweft-core/src/root.rs` | 1132 → 1304 | 48116 | — |
+| `crates/arcweft-core/src/task/producer.rs` | 2148 → 3066 | 111904 | 433 |
+| `crates/arcweft-core/src/value/callable/application.rs` | 217 → 1206 | 48661 | — |
+| `crates/arcweft-core/src/value/opaque.rs` | 3300 → 3853 | 151930 | 825 |
+| `crates/arcweft-core/src/value/ownership/slot.rs` | 938 → 1556 | 48811 | 146 |
+| `crates/arcweft-lang-sema/src/final_analysis/local_use.rs` | 0 → 2659 | 103448 | — |
+| `crates/arcweft-lang-sema/src/final_analysis/tests/local_use.rs` | 0 → 1076 | 32491 | test-only |
+| `crates/arcweft-runtime-plan/src/final_flow.rs` | 8236 → 8578 | 354253 | 398 |
+| `crates/arcweft-runtime-plan/src/semantic_facts.rs` | 12891 → 13271 | 514158 | — |
+
+判断: Core の AWBC fiber/VM/verifier と ProductStep の親・line・suspension は
+生存 frame、所有権転送、検証、保存、host progression のそれぞれ既存の状態機械 owner。
+test-only file と埋め込み test は同じ owner の境界を検証しており、別の実行 catalog
+を作っていない。Engine/Root/dialogue/line_task/task は native の順序と一度だけの
+child custody、Pattern/value/callable/opaque/slot は typed 値と owner token の
+責務に留まる。Sema の新規 owner は一つの generation-bound checker、runtime-plan
+の大きな親は selected final flow と semantic facts の既存集約点で、独立した
+projection は子 module に分けている。今回の増分に混在 I/O、逆向き Cargo 依存、
+並行する live-owner table、公開 API を分割のためだけに拡げる理由は見つからず、
+行数だけによる分割はしない。未変更の historical size trigger は本 cut の
+blocking finding ではない。
+
+この cut は 053 全体または収束 goal 全体の完了宣言ではない。次に残る
+affine witness `Iterator::next` の state clone と native/pure filter の item clone は
+実際の所有権境界として別途閉じる。後続の View、RuntimePlan/task-plan、
+scheduler/restore 工程も goal の受入条件に従い継続する。
