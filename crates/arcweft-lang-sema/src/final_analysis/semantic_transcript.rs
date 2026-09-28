@@ -3692,114 +3692,70 @@ fn write_resolution_payload(
         CheckedExpressionResolution::Scope(scope) => {
             write_scope_identity(hasher, scope, owner_coordinate)?;
         }
-        CheckedExpressionResolution::Value(value) => match value {
-            CheckedValueResolution::Local(local) => {
-                let binding = coordinates.binding(*local)?;
-                transcript_update!(hasher, &binding.canonical_bytes()?);
-            }
-            CheckedValueResolution::LineContext => {}
-            CheckedValueResolution::ProjectCallable(callable) => {
-                write_project_callable(hasher, analysis, coordinates, callable)?;
-            }
-            CheckedValueResolution::Registered(value) => {
-                transcript_update!(hasher, value.as_bytes());
-            }
-            CheckedValueResolution::Constant(literal) => write_literal(
-                hasher,
-                literal,
-                ty.ok_or_else(|| {
-                    SemanticTranscriptError::from(
-                        super::FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-                    )
-                })?,
-            )?,
-            CheckedValueResolution::CharacterField {
-                receiver,
-                character,
-                field,
-            } => {
-                transcript_update!(hasher, &[0]);
-                write_value_resolution(hasher, receiver, coordinates, analysis, owner, ty)?;
-                write_bytes(hasher, character.canonical_identity_bytes())?;
-                transcript_update!(
-                    hasher,
-                    &[match field {
-                        crate::types::CharacterField::Stage => 0,
-                    }]
-                );
-            }
-            CheckedValueResolution::ProjectItem(item) => {
-                if !item.has_valid_semantic_identity() {
-                    return Err(SemanticTranscriptError::RecoveredOwner);
+        CheckedExpressionResolution::Value(value) => {
+            write_value_resolution(hasher, value, coordinates, analysis, owner, ty)?;
+        }
+        CheckedExpressionResolution::Select(select) => {
+            transcript_update!(hasher, &select.semantic_transcript_tag().to_le_bytes());
+            match select {
+                CheckedSelectResolution::Field(selection) => {
+                    transcript_update!(hasher, selection.owner_type().as_bytes());
+                    transcript_update!(hasher, selection.field().as_bytes());
+                    transcript_update!(hasher, &selection.declaration_ordinal().to_le_bytes());
+                    transcript_update!(hasher, selection.field_type().as_bytes());
                 }
-                transcript_update!(hasher, &[1]);
-                transcript_update!(hasher, item.semantic_id().as_bytes());
-                transcript_update!(hasher, item.value_type().as_bytes());
-            }
-            CheckedValueResolution::Entry(entry) => {
-                transcript_update!(hasher, &[2]);
-                transcript_update!(hasher, entry.binding().as_bytes());
-                transcript_update!(hasher, entry.value_type().as_bytes());
-            }
-        },
-        CheckedExpressionResolution::Select(select) => match select {
-            CheckedSelectResolution::Field(selection) => {
-                transcript_update!(hasher, selection.owner_type().as_bytes());
-                transcript_update!(hasher, selection.field().as_bytes());
-                transcript_update!(hasher, &selection.declaration_ordinal().to_le_bytes());
-                transcript_update!(hasher, selection.field_type().as_bytes());
-            }
-            CheckedSelectResolution::ProgressField { field } => {
-                transcript_update!(
-                    hasher,
-                    &[match field {
-                        crate::types::ProgressField::Ratio => 0,
-                        crate::types::ProgressField::Label => 1,
-                    }]
-                );
-            }
-            CheckedSelectResolution::Method(method) => {
-                transcript_update!(hasher, method.transcript_callable().as_bytes());
-                transcript_update!(hasher, method.receiver_type().as_bytes());
-                match method.receiver_mode() {
-                    crate::callable::CallableReceiverMode::None => {
-                        return Err(SemanticTranscriptError::MissingIdentity);
-                    }
-                    crate::callable::CallableReceiverMode::Value { .. } => {
-                        transcript_update!(hasher, &[0]);
-                    }
-                    crate::callable::CallableReceiverMode::Type { .. } => {
-                        transcript_update!(hasher, &[1]);
-                    }
-                    crate::callable::CallableReceiverMode::Extension {
-                        group, parameter, ..
-                    } => {
-                        transcript_update!(hasher, &[2]);
-                        transcript_update!(
-                            hasher,
-                            &u64::try_from(group.get())
-                                .map_err(|_| SemanticTranscriptError::MissingIdentity)?
-                                .to_le_bytes(),
-                        );
-                        transcript_update!(
-                            hasher,
-                            &u64::try_from(parameter.get())
-                                .map_err(|_| SemanticTranscriptError::MissingIdentity)?
-                                .to_le_bytes(),
-                        );
+                CheckedSelectResolution::ProgressField { field } => {
+                    transcript_update!(
+                        hasher,
+                        &[match field {
+                            crate::types::ProgressField::Ratio => 0,
+                            crate::types::ProgressField::Label => 1,
+                        }]
+                    );
+                }
+                CheckedSelectResolution::Method(method) => {
+                    transcript_update!(hasher, method.transcript_callable().as_bytes());
+                    transcript_update!(hasher, method.receiver_type().as_bytes());
+                    match method.receiver_mode() {
+                        crate::callable::CallableReceiverMode::None => {
+                            return Err(SemanticTranscriptError::MissingIdentity);
+                        }
+                        crate::callable::CallableReceiverMode::Value { .. } => {
+                            transcript_update!(hasher, &[0]);
+                        }
+                        crate::callable::CallableReceiverMode::Type { .. } => {
+                            transcript_update!(hasher, &[1]);
+                        }
+                        crate::callable::CallableReceiverMode::Extension {
+                            group,
+                            parameter,
+                            ..
+                        } => {
+                            transcript_update!(hasher, &[2]);
+                            transcript_update!(
+                                hasher,
+                                &u64::try_from(group.get())
+                                    .map_err(|_| SemanticTranscriptError::MissingIdentity)?
+                                    .to_le_bytes(),
+                            );
+                            transcript_update!(
+                                hasher,
+                                &u64::try_from(parameter.get())
+                                    .map_err(|_| SemanticTranscriptError::MissingIdentity)?
+                                    .to_le_bytes(),
+                            );
+                        }
                     }
                 }
+                CheckedSelectResolution::DialogueView { projection, field } => {
+                    transcript_update!(hasher, &[projection.semantic_tag()]);
+                    write_field_selection(hasher, field)?;
+                }
+                CheckedSelectResolution::AgentField { field } => {
+                    write_agent_field(hasher, *field)?;
+                }
             }
-            CheckedSelectResolution::DialogueView { projection, field } => {
-                transcript_update!(hasher, &[0]);
-                transcript_update!(hasher, &[projection.semantic_tag()]);
-                write_field_selection(hasher, field)?;
-            }
-            CheckedSelectResolution::AgentField { field } => {
-                transcript_update!(hasher, &[1]);
-                write_agent_field(hasher, *field)?;
-            }
-        },
+        }
         CheckedExpressionResolution::Nominal(nominal) => {
             write_nominal(hasher, nominal, analysis)?;
         }
@@ -4150,18 +4106,17 @@ fn write_value_resolution(
     owner: ExprId,
     ty: Option<&TypeKind>,
 ) -> Result<(), SemanticTranscriptError> {
+    transcript_update!(hasher, &value.semantic_transcript_tag().to_le_bytes());
     match value {
         CheckedValueResolution::Local(local) => {
-            transcript_update!(hasher, &[0]);
             transcript_update!(hasher, &coordinates.binding(*local)?.canonical_bytes()?);
         }
-        CheckedValueResolution::LineContext => transcript_update!(hasher, &[1]),
+        CheckedValueResolution::LineContext => {}
         CheckedValueResolution::CharacterField {
             receiver,
             character,
             field,
         } => {
-            transcript_update!(hasher, &[2]);
             write_value_resolution(hasher, receiver, coordinates, analysis, owner, ty)?;
             write_bytes(hasher, character.canonical_identity_bytes())?;
             transcript_update!(
@@ -4172,28 +4127,23 @@ fn write_value_resolution(
             );
         }
         CheckedValueResolution::ProjectCallable(callable) => {
-            transcript_update!(hasher, &[3]);
             write_project_callable(hasher, analysis, coordinates, callable)?;
         }
         CheckedValueResolution::ProjectItem(item) => {
             if !item.has_valid_semantic_identity() {
                 return Err(SemanticTranscriptError::RecoveredOwner);
             }
-            transcript_update!(hasher, &[4]);
             transcript_update!(hasher, item.semantic_id().as_bytes());
             transcript_update!(hasher, item.value_type().as_bytes());
         }
         CheckedValueResolution::Entry(entry) => {
-            transcript_update!(hasher, &[5]);
             transcript_update!(hasher, entry.binding().as_bytes());
             transcript_update!(hasher, entry.value_type().as_bytes());
         }
         CheckedValueResolution::Registered(value) => {
-            transcript_update!(hasher, &[6]);
             transcript_update!(hasher, value.as_bytes());
         }
         CheckedValueResolution::Constant(literal) => {
-            transcript_update!(hasher, &[7]);
             write_literal(
                 hasher,
                 literal,

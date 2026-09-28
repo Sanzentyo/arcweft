@@ -445,6 +445,52 @@ fn checked_match_transcript_uses_accepted_project_callable_value_identity() {
 }
 
 #[test]
+fn checked_match_transcript_uses_closed_value_and_select_families() {
+    let value_source = |copy: &str| {
+        format!(
+            "fn identity(value: i64) -> i64 {{ value }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{ let saved = identity; let copy = {copy}; 1i64 }}\n        false => 0i64\n    }}\n}}\n"
+        )
+    };
+    let project = value_source("identity");
+    let local = value_source("saved");
+    let world = super::fixture(&local, None);
+    let report = super::analyze(&world).expect("checked local and project callable values");
+    let value_tags = report.expressions().filter_map(|(_, expression)| {
+        let CheckedExpressionResolution::Value(value) = expression.resolution() else {
+            return None;
+        };
+        Some(value.semantic_transcript_tag())
+    });
+    let observed = value_tags.collect::<BTreeSet<_>>();
+    assert!(observed.contains(&0x0300), "checked local value");
+    assert!(observed.contains(&0x0303), "checked project callable value");
+    assert_ne!(
+        source_match_digest(&project),
+        source_match_digest(&local),
+        "a direct callable and an accepted local binding are different Value meanings",
+    );
+
+    let field_source = |member: &str| {
+        format!(
+            "struct Pair {{ left: i64, right: i64 }}\nfn root(pair: Pair, flag: bool) -> i64 {{\n    match flag {{\n        true => pair.{member}\n        false => 0i64\n    }}\n}}\n"
+        )
+    };
+    let left = field_source("left");
+    let world = super::fixture(&left, None);
+    let report = super::analyze(&world).expect("checked field selection");
+    assert!(report.expressions().any(|(_, expression)| matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::Select(select @ CheckedSelectResolution::Field(_))
+            if select.semantic_transcript_tag() == 0x0404
+    )));
+    assert_ne!(
+        source_match_digest(&left),
+        source_match_digest(&field_source("right")),
+        "different accepted fields reach the Match digest",
+    );
+}
+
+#[test]
 fn checked_match_transcript_uses_structural_method_identity() {
     struct MethodObservation {
         match_digest: [u8; 32],
@@ -466,7 +512,10 @@ fn checked_match_transcript_uses_structural_method_identity() {
         let method = module
             .expressions()
             .find_map(|(owner, _)| match report.expression(owner)?.resolution() {
-                CheckedExpressionResolution::Select(CheckedSelectResolution::Method(method)) => {
+                CheckedExpressionResolution::Select(
+                    select @ CheckedSelectResolution::Method(method),
+                ) => {
+                    assert_eq!(select.semantic_transcript_tag(), 0x0400);
                     Some(method)
                 }
                 _ => None,

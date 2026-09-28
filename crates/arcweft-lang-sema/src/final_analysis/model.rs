@@ -519,6 +519,20 @@ pub enum CheckedValueResolution {
 }
 
 impl CheckedValueResolution {
+    /// Closed nested Value-family tag in the checked Match transcript.
+    pub(crate) const fn semantic_transcript_tag(&self) -> u16 {
+        match self {
+            Self::Local(_) => 0x0300,
+            Self::LineContext => 0x0301,
+            Self::CharacterField { .. } => 0x0302,
+            Self::ProjectCallable(_) => 0x0303,
+            Self::ProjectItem(_) => 0x0304,
+            Self::Entry(_) => 0x0305,
+            Self::Registered(_) => 0x0306,
+            Self::Constant(_) => 0x0307,
+        }
+    }
+
     /// Exact Character identity retained by a checked Character value.
     pub fn character(&self) -> Option<CharacterId> {
         match self {
@@ -625,6 +639,17 @@ impl CheckedMethodSelection {
 }
 
 impl CheckedSelectResolution {
+    /// Closed nested Select-family tag in the checked Match transcript.
+    pub(crate) const fn semantic_transcript_tag(&self) -> u16 {
+        match self {
+            Self::Method(_) => 0x0400,
+            Self::DialogueView { .. } => 0x0401,
+            Self::AgentField { .. } => 0x0402,
+            Self::ProgressField { .. } => 0x0403,
+            Self::Field(_) => 0x0404,
+        }
+    }
+
     pub(crate) fn visit_types<E>(
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
