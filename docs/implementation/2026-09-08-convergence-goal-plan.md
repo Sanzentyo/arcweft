@@ -2802,3 +2802,19 @@ acceptance module 34/34、Sema lib 1055/1055、changed-crate Clippy、fmt、cach
 diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
 再実行していない。Registered Value は custom environment が必要なためこの cut に
 含めず、残る T01/T06、View 以降と goal 全体は未完として継続する。
+
+## Match T01 Registered Value の受理差分 — 2026-09-28
+
+Supersedes: 直前 checkpoint の Registered Value は未着手という記述。確認した code
+commit は `6bd9dcaf4998b648d27e0b79aa696d0081928657`。main へ fast-forward
+push 後、working tree は clean。
+
+一つの `TypeCheckEnv` に同型 `i32` の2つの registered symbol を置き、受理済み
+Match path 配下の `CheckedValueResolution::Registered` がそれぞれの環境 binding
+ID を保持することを確認した。選択する binding を替えると registered semantic ID と
+Match digest が変わる。同じ binding のまま無関係な先行宣言を追加すると両者は維持される。
+synthetic `from_bytes` ID や型差ではなく実解析の checked fact を検査した。
+
+acceptance module 35/35、Sema lib 1056/1056、changed-crate Clippy、fmt、cached
+diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。残る T01/T06、View 以降と goal 全体は未完として継続する。
