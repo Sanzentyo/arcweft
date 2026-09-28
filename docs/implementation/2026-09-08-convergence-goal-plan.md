@@ -2849,3 +2849,22 @@ focused semantic transcript 42/42、Sema lib 1058/1058、changed-crate Clippy、
 fmt、cached diff check は成功。既存警告あり。owner tag に同じ値を移す内部 writer
 整理で公開形や依存関係を変えていないため、workspace と構造 gate はこの cut で
 再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
+
+## Match T01 contextual Value と lifetime Variant の受理証拠 — 2026-09-28
+
+確認した code commit は `72d76102a2e960336ab95da40eb9c9f9aa10f563`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み Dialogue line-plan 内の Match arm に direct `line.voice_handle()` と
+`akane.stage.acquire(scope=line)` を置き、checked LineContext / CharacterField(Stage)
+の exact owner・型を確認した。Stage call の `scope=line` は checked
+`PresentationLifetime::line` Variant で、BuiltinClosed owner、型、ordinal、case
+名を両 arm で確認した。Akane と alternate の Stage owner 変更で digest は変わるが、
+StageApi と Match result の exact Character 型も変わるため field atom 単独の差とは
+主張しない。先行宣言で raw owner/span が変わっても digest は維持される。
+
+途中の簡略 fixture は未束縛 `cue`、別の local workaround は HIR recovery を起こし
+失敗した。最終差分では元の受理済み line-plan binding と direct `scope=line` を保持した。
+focused 2/2 と corpus matrix 1/1、Sema lib 1060/1060、changed-crate Clippy、fmt、
+cached diff check は成功。既存警告あり。テストのみの cut なので workspace と構造
+gate は再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
