@@ -2679,3 +2679,23 @@ focused 15/15、`cargo test -p arcweft-lang-sema` と lib 1041/1041、changed-cr
 Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
 workspace と構造 gate は再実行していない。Await Pending と残る T01/T06 matrix、
 View 以降と goal 全体は未完として継続する。
+
+## Match T06 Await Pending の受理訂正 — 2026-09-28
+
+Supersedes: 直前の T06 dialogue/attached default 記録にある Await Pending は
+expression Match を挿入すると HIR `InvalidSourceIndex` で拒否されるという判断。
+確認した code commit は `9ad4df2c1177c8b7d708a31e412315069846d9fb`。
+main へ fast-forward push 後、working tree は clean。
+
+失敗候補は Match arm を一行で区切らず parser が `ParseStatus::Recovered` とした
+source だった。改行で arm を区切ると HIR と Sema の双方が受理する。HIR 回帰テストは
+Await Pending の Thread body 内 Let initializer が Match expression owner と source
+span を持つことを確認する。Sema 回帰テストは arm の意味変更で digest が変わり、
+先行宣言と数値表記を変えても digest が維持されることを確認する。
+
+HIR lib 925 成功・8 ignored、Sema lib 1042/1042、focused HIR/Sema、changed-crate
+Clippy、fmt、cached diff check は成功。テストのみの cut なので workspace と構造 gate
+は再実行していない。回復形の Await owner は現行 source-index invariant が型付き
+`InvalidSourceIndex` として拒否するが、正当な Await/Match の受理を妨げないため今回の
+production 変更対象には含めていない。T01/T06 の残 matrix、View 以降と goal 全体は
+未完として継続する。
