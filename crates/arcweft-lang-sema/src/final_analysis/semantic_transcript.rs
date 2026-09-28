@@ -2167,13 +2167,15 @@ fn write_statement_payload(
             }
         }
         CheckedStatementPayload::EvaluatedEffect(effect) => {
+            // The statement's checked expression child carries the selected
+            // callable and argument meaning. The application digest is only
+            // the generation-bound validation join.
             write_bytes(
                 hasher,
                 &coordinates
                     .expression(effect.site_root())?
                     .canonical_bytes()?,
             )?;
-            transcript_update!(hasher, effect.application_digest().as_bytes());
         }
         CheckedStatementPayload::Iteration(iteration) => {
             write_iteration(hasher, iteration, analysis)?;
@@ -4373,12 +4375,13 @@ fn write_effect_plan(
             }
             super::CheckedDialogueEffectOperation::Call {
                 application,
-                application_digest,
                 result,
+                ..
             } => {
                 transcript_update!(hasher, &[1]);
+                // The point-action token already commits its checked call
+                // expression, and the plan sealer proves the same site root.
                 write_bytes(hasher, &application.coordinate().canonical_bytes()?)?;
-                transcript_update!(hasher, application_digest.as_bytes());
                 transcript_update!(hasher, result.semantic_identity_digest()?.as_bytes());
             }
         }
@@ -4527,34 +4530,28 @@ fn write_content_application_resolution(
     application: &super::CheckedContentApplication,
 ) -> Result<(), SemanticTranscriptError> {
     // The expression owns the accepted content application carrier.  No
-    // insertion index or later HIR reconstruction is consulted here.
+    // insertion index or later HIR reconstruction is consulted here. The
+    // selected callable join and ordered argument children are written by
+    // the enclosing expression, including the nested Fx producer call.
     write_bytes(hasher, &application.id().path().canonical_bytes()?)?;
     match application {
         super::CheckedContentApplication::Value { source, .. } => {
             transcript_update!(hasher, &[0]);
             write_bytes(hasher, &source.path().canonical_bytes()?)?;
         }
-        super::CheckedContentApplication::ContentResultCall { application, .. } => {
+        super::CheckedContentApplication::ContentResultCall { .. } => {
             transcript_update!(hasher, &[1]);
-            transcript_update!(hasher, application.as_bytes());
         }
-        super::CheckedContentApplication::EmissionCall {
-            application: call_application,
-            edges,
-            ..
-        } => {
+        super::CheckedContentApplication::EmissionCall { edges, .. } => {
             transcript_update!(hasher, &[2]);
-            transcript_update!(hasher, call_application.as_bytes());
             let Some(plan) = edges.fx_plan() else {
                 transcript_update!(hasher, &[0]);
                 return Ok(());
             };
             transcript_update!(hasher, &[1]);
             transcript_update!(hasher, plan.outer().schema().as_bytes());
-            transcript_update!(hasher, plan.outer().application().as_bytes());
             transcript_update!(hasher, plan.producer().digest().as_bytes());
             transcript_update!(hasher, plan.producer().inner().schema().as_bytes());
-            transcript_update!(hasher, plan.producer().inner().application().as_bytes());
         }
     }
     Ok(())

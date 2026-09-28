@@ -6,6 +6,8 @@ mod body_roots;
 mod expression_corpus;
 #[path = "semantic_transcript_acceptance/expression_shapes.rs"]
 mod expression_shapes;
+#[path = "semantic_transcript_acceptance/generation_invariance.rs"]
+mod generation_invariance;
 #[path = "semantic_transcript_acceptance/patterns.rs"]
 mod patterns;
 #[path = "semantic_transcript_acceptance/statements.rs"]

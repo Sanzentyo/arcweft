@@ -50,7 +50,9 @@ pub struct CheckedFxApplicationOrdinal(u32);
 /// Opaque semantic identity of one checked Content or View Fx application.
 ///
 /// This value is issued by the shared Fx application sealer from the complete
-/// typed application record.  It intentionally has no Serde implementation:
+/// Fx-specific typed record. The exact call application remains a separate
+/// generation-bound validation identity, while the semantic digest is stable
+/// across unrelated source generations. It intentionally has no Serde implementation:
 /// transcript and downstream consumers may borrow the issued bytes, but may
 /// not deserialize or mint a parallel application identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -612,7 +614,6 @@ impl<S> CheckedFxApplication<S> {
         let semantic_digest = issue_checked_fx_application_semantic_digest(
             &definition,
             call_schema,
-            call_application,
             &site,
             ordinal,
             &arguments,
@@ -1160,7 +1161,6 @@ impl CheckedFxApplicationSemanticEncoder {
 fn issue_checked_fx_application_semantic_digest<S: CheckedFxProducerBinding>(
     definition: &CheckedFxDefinitionRef,
     call_schema: CallableSignatureSchemaDigest,
-    call_application: CheckedCallApplicationDigest,
     site: &CheckedCallApplicationSite,
     ordinal: CheckedFxApplicationOrdinal,
     arguments: &[CheckedFxArgument<S>],
@@ -1169,7 +1169,6 @@ fn issue_checked_fx_application_semantic_digest<S: CheckedFxProducerBinding>(
     encoder.tag(S::context_tag());
     encode_fx_definition_ref(&mut encoder, definition)?;
     encoder.digest(call_schema.as_bytes());
-    encoder.digest(call_application.as_bytes());
     encoder.bytes(&site.coordinate().canonical_bytes()?)?;
     encoder.u32(ordinal.get());
     encoder.count(arguments.len())?;
