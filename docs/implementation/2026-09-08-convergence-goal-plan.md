@@ -2440,3 +2440,41 @@ transcript transaction の body writer を再利用した。構造 gate はこ�
 C3 には expression の演算子・mode・数値などの HIR shape atom、pattern の
 sequence-rest atom、checked call passing、Choice の checked plan field 等の不足が
 残る。T01/T06 の完全受入、View 以降の工程と goal 全体は未完として継続する。
+
+## Match C3 HIR shape atom と compact numeric producer — 2026-09-28
+
+Supersedes: 直前 checkpoint の HIR shape/sequence-rest atom 未実装という記述。
+確認した code commit は `fee984818350656c92e04ffe10dad5787f80bfb0`。
+main へ fast-forward push 後、working tree は clean。
+
+Match transcript の exhaustive expression-shape writer は HIR が所有する閉じた tag
+で binary/unary/borrow operator、Thread/computation mode、ForSynthetic kind、
+placeholder/call form/Await branch を記録し、Range の inclusive/endpoint、
+tuple/bracket の個数、compact numeric sequence の個数と canonical magnitude も
+記録する。pattern の BracketSequence は absent/unbound/bound rest を区別する。
+既存 checked type、child/body、record field、callable join、Match product の
+authority は複製しない。radix など authored spelling は digest に入れない。
+
+compact numeric sequence の各値が選択された整数要素型へ収まるかは、Match query
+だけでなく Sema expression producer が検証する。u8/i8/u128 の上限ちょうどと
+一つ超過を型付き error で検証した。binary Add/Subtract、Range inclusive、
+numeric 値差分と radix 不変、`[true]`/`[true, ..]` および `[]`/`[..]` の
+pattern digest 差分は、修正前の衝突を含め focused test で確認した。
+
+HIR lib 924/924（8 ignored）、Sema lib 1027/1027、公開 Match query 5/5、
+`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+`just structure-audit-gate` は 2658 files / 97 packages / 348 review triggers /
+blocking 0。Clippy/test の既存警告はあるが失敗はない。
+
+production owner `semantic_transcript.rs` は 4774 → 4904 physical LOC / 192499 bytes。
+増分は同じ bounded transcript writer と shape atom の分岐で、別 state や逆向き依存、
+I/O を導入しない。HIR `expr/basic.rs` は 553 → 617 physical LOC / 15559 bytes で、
+閉じた HIR enum tag をその owner に置いた。既存の大きな transcript owner は
+この責務のまとまりを保ち、行数のみを理由に分割しない。
+
+checked call passing と Choice の plan key/cancel trigger は未転記。full Option の
+`label(text_key=...)` は現行 checker 自体が拒否しており、受理前の checked owner
+拡張が必要。T01/T06 の全 live family/root matrix、View 以降の工程、goal 全体の
+受入は未完として継続する。
