@@ -2699,3 +2699,20 @@ Clippy、fmt、cached diff check は成功。テストのみの cut なので wo
 `InvalidSourceIndex` として拒否するが、正当な Await/Match の受理を妨げないため今回の
 production 変更対象には含めていない。T01/T06 の残 matrix、View 以降と goal 全体は
 未完として継続する。
+
+## Match T01 pattern family の受理差分 — 2026-09-28
+
+確認した code commit は `a3f140e6689d712c16c30629d71cd145c721c159`。
+main へ fast-forward push 後、working tree は clean。
+
+既存の受理済み Match source を使い、各対象 pattern subtree が checked Match arm に
+到達することを HIR constructor と checked pattern resolution/type の両方で確認した。
+tuple/Or、Result payload variant と Choice typed binding、Vec sequence/rest、project
+enum record-variant payload の4 family で、対象 owner の意味変更が Match digest に届く。
+既存の exact/rest sequence 差分テストも維持した。合成 checked fact や frozen 設計の
+固定 variant 数をテストに持ち込んでいない。
+
+focused 4/4、Sema lib 1046/1046、`cargo test -p arcweft-lang-sema`、changed-crate
+Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
+workspace と構造 gate は再実行していない。T01 の残る live expression/value/select/
+pattern/statement family、T06 の残 root、View 以降と goal 全体は未完として継続する。
