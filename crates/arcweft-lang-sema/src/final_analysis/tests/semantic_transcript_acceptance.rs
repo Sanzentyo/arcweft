@@ -177,3 +177,23 @@ fn root(flag: bool) -> i64 {
     assert_eq!(changed.len(), 1);
     assert_ne!(outermost(&original).digest, outermost(&changed).digest);
 }
+
+#[test]
+fn checked_match_transcript_commits_nested_statement_body_meaning() {
+    let source = |body: &str| {
+        format!(
+            "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            if true {{\n{body}\n            }}\n            0i64\n        }}\n        false => 0i64\n    }}\n}}\n"
+        )
+    };
+    let digest = |body| outermost(&match_observations(&source(body))).digest;
+
+    let first = digest("                let first = 1i64");
+    let changed_value = digest("                let first = 2i64");
+    let empty = digest("");
+    let ordered = digest("                let first = 1i64\n                let second = 2i64");
+    let reversed = digest("                let second = 2i64\n                let first = 1i64");
+
+    assert_ne!(first, changed_value, "nested statement body value");
+    assert_ne!(first, empty, "nonempty versus empty statement body");
+    assert_ne!(ordered, reversed, "nested statement body order");
+}

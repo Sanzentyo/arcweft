@@ -1865,6 +1865,36 @@ fn statement_digest_at_with_state(
         };
         children.push((role, child));
     }
+    let mut bodies = Vec::new();
+    for body in hir
+        .kind()
+        .body_projections()
+        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?
+    {
+        let (coordinate, digest) = body_digest_at_with_state(
+            analysis,
+            module,
+            coordinates,
+            budget,
+            expression_digests,
+            expression_paths,
+            expression_visiting,
+            statement_digests,
+            statement_visiting,
+            body_digests,
+            body_visiting,
+            pattern_digests,
+            pattern_visiting,
+            match_products,
+            HirSemanticBodyOwner::statement_body(owner, *body.role()),
+            body.projection(),
+            None,
+            depth
+                .checked_add(1)
+                .ok_or(SemanticTranscriptError::WorkLimit)?,
+        )?;
+        bodies.push((coordinate, digest));
+    }
     let coordinate = coordinates.statement(owner)?.canonical_bytes()?;
     let mut hasher = TranscriptHasher::new(budget);
     transcript_update!(hasher, b"arcweft.lang.checked-statement-semantic.v1\0");
@@ -1889,6 +1919,11 @@ fn statement_digest_at_with_state(
             }
             None => transcript_update!(hasher, &[0]),
         }
+    }
+    write_len(&mut hasher, bodies.len())?;
+    for (coordinate, digest) in bodies {
+        write_bytes(&mut hasher, &coordinate.canonical_bytes()?)?;
+        transcript_update!(hasher, digest.as_bytes());
     }
     let digest = CheckedStatementSemanticDigest::from_bytes(hasher.finalize());
     statement_visiting.remove(&owner);
