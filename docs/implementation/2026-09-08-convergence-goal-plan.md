@@ -2921,3 +2921,24 @@ focused 60件、Sema lib 1064/1064、changed-crate Clippy、fmt、cached diff ch
 は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は再実行
 していない。Wait 以降の statement family、T01/T06 の残り、View 以降と goal
 全体は未完として継続する。
+
+## Match T01 Defer/For statement の受理差分 — 2026-09-28
+
+確認した code commit は `3cf692ae102fdfca4a258015f5d4e783fccb0df7`。
+main へ fast-forward push 後、working tree は clean。
+
+Flow 内 expression Match arm block に Defer と For を置き、HIR shape と checked
+Defer / Iteration payload を accepted path 配下で確認した。Defer は Bool capture の
+owner を変えると checked capture coordinate と Match digest が変わる。For は
+`Builtin { family: Vec, item: Bool }` を保ったまま iterable の値を変えると digest
+が変わる。focused Match 62件、Sema lib 1066/1066、changed-crate Clippy、fmt、
+cached diff check は成功。Clippy の既存警告あり。テストのみの cut なので workspace
+と構造 gate は再実行していない。
+
+Wait 候補は Final Sema analyze を通ったが、expression Match arm の式 block では
+parser が `FunctionItem` 文脈を使い、HIR Wait statement ではなく ExpressionStatement
+となる。checked Match query の `MissingChildEdges` はこの候補に出たが、Wait payload
+への到達証拠ではない。Wait は Pending のまま、Choice/Await/dialogue 等の特殊 nested
+body を含む到達可能性を調べる。一般の arm block に Flow 文脈を伝播させるのは式評価
+中の suspension を許す言語拡張になるため、この cut では行わない。T01/T06 の残り、
+View 以降と goal 全体は未完として継続する。
