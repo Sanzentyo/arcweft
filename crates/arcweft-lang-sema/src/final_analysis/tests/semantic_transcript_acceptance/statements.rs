@@ -42,9 +42,9 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::LetElse { .. } => LetElse => Accepted,
     HirStmtKind::Return { .. } => Return => Accepted,
     HirStmtKind::Out { .. } => Out => Accepted,
-    HirStmtKind::Goto { .. } => Goto => Pending,
+    HirStmtKind::Goto { .. } => Goto => Accepted,
     HirStmtKind::Defer { .. } => Defer => Accepted,
-    HirStmtKind::Yield { .. } => Yield => Pending,
+    HirStmtKind::Yield { .. } => Yield => Accepted,
     HirStmtKind::Signal { .. } => Signal => Pending,
     HirStmtKind::LifetimeSet { .. } => LifetimeSet => Pending,
     HirStmtKind::Wait { .. } => Wait => Accepted,
@@ -63,8 +63,8 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::SourceLocale(_) => SourceLocale => Accepted,
     HirStmtKind::Scope(_) => Scope => Accepted,
     HirStmtKind::Include(_) => Include => Accepted,
-    HirStmtKind::Break { .. } => Break => Pending,
-    HirStmtKind::Continue { .. } => Continue => Pending,
+    HirStmtKind::Break { .. } => Break => Accepted,
+    HirStmtKind::Continue { .. } => Continue => Accepted,
     HirStmtKind::Expression { .. } => Expression => Accepted,
     HirStmtKind::ProofCall { .. } => ProofCall => Pending,
     HirStmtKind::Error => Error => RejectOnly,
@@ -85,7 +85,7 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Scope(_) => Scope => Accepted,
     CheckedStatementPayload::Include(_) => Include => Accepted,
     CheckedStatementPayload::Suspension(_) => Suspension => Accepted,
-    CheckedStatementPayload::Yield => Yield => Pending,
+    CheckedStatementPayload::Yield => Yield => Accepted,
 });
 
 struct MatchStatementCorpusObservation {
@@ -101,6 +101,7 @@ struct MatchStatementCorpusObservation {
     source_locales: Vec<arcweft_id::LocaleTag>,
     scopes: Vec<super::super::super::CheckedScopeIdentity>,
     includes: Vec<super::super::super::CheckedIncludeFlowTarget>,
+    loop_transfers: Vec<CheckedLoopTransferCorpusFact>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
@@ -117,6 +118,13 @@ struct CheckedAssignmentCorpusFact {
 struct CheckedDeferCorpusFact {
     outcome: arcweft_lang_syntax::ast::line_plan::DeferOutcome,
     captures: Vec<(Vec<u8>, crate::types::TypeKind)>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedLoopTransferCorpusFact {
+    kind: arcweft_lang_hir::project::HirControlTransferKind,
+    family: arcweft_lang_hir::project::HirLoopTargetFamily,
+    body: Vec<u8>,
 }
 
 /// Count only checked statements owned below this accepted Match expression.
@@ -163,6 +171,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut source_locales = Vec::new();
     let mut scopes = Vec::new();
     let mut includes = Vec::new();
+    let mut loop_transfers = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -230,6 +239,31 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Include(_), CheckedStatementPayload::Include(target)) => {
                 includes.push(*target);
             }
+            (
+                HirStmtKind::Break { .. } | HirStmtKind::Continue { .. },
+                CheckedStatementPayload::ControlTransfer(_),
+            ) => {
+                let evidence = coordinates
+                    .control_transfer_evidence(owner)
+                    .expect("accepted loop transfer has a checked target");
+                assert_eq!(evidence.owner(), owner);
+                let crate::semantic_coordinate::CheckedControlTransferTarget::Loop(target) =
+                    evidence.target()
+                else {
+                    panic!("Break and Continue retain a checked loop target")
+                };
+                loop_transfers.push(CheckedLoopTransferCorpusFact {
+                    kind: evidence.kind(),
+                    family: target.family(),
+                    body: target
+                        .body()
+                        .canonical_bytes()
+                        .expect("checked loop target has a stable body coordinate"),
+                });
+            }
+            (HirStmtKind::Break { .. } | HirStmtKind::Continue { .. }, _) => {
+                panic!("accepted loop transfer has its exact ControlTransfer payload")
+            }
             (HirStmtKind::Assign { .. }, _) => {
                 panic!("accepted Assign has its exact checked Assignment payload")
             }
@@ -277,6 +311,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         source_locales,
         scopes,
         includes,
+        loop_transfers,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
@@ -362,6 +397,13 @@ fn flow_match_include_source(target: &str) -> String {
     format!(
         "flow shared() {{}}\nflow alternate() {{}}\n{}",
         flow_match_thread_source(&format!("include @flow.{target}")),
+    )
+}
+
+fn flow_match_goto_source(target: &str) -> String {
+    format!(
+        "flow done {{}}\nflow alternate {{}}\n{}",
+        flow_match_statement_source(&format!("goto @flow.{target}")),
     )
 }
 
@@ -457,6 +499,30 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             source: function_match_statement_source("return 1i64"),
             shapes: &[StatementShapeFamily::Return],
             payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "Goto in Flow Match arm block",
+            source: flow_match_goto_source("done"),
+            shapes: &[StatementShapeFamily::Goto],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "Yield in Flow Match arm block",
+            source: flow_match_statement_source("yield flag"),
+            shapes: &[StatementShapeFamily::Yield],
+            payloads: &[StatementPayloadFamily::Yield],
+        },
+        Row {
+            name: "Break in Flow Match arm loop",
+            source: flow_match_statement_source("loop { break }"),
+            shapes: &[StatementShapeFamily::Break],
+            payloads: &[StatementPayloadFamily::ControlTransfer],
+        },
+        Row {
+            name: "Continue in Flow Match arm loop",
+            source: flow_match_statement_source("loop { continue }"),
+            shapes: &[StatementShapeFamily::Continue],
+            payloads: &[StatementPayloadFamily::ControlTransfer],
         },
         Row {
             name: "IfLet in arm block",
@@ -597,6 +663,131 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
         "checked statement",
         &payloads,
         StatementPayloadFamily::INVENTORY,
+    );
+}
+
+#[test]
+fn checked_match_flow_control_bundle_retains_exact_payloads_and_meaning() {
+    struct Row {
+        name: &'static str,
+        source: String,
+        expected: BTreeSet<(StatementShapeFamily, StatementPayloadFamily)>,
+    }
+
+    let rows = [
+        Row {
+            name: "Goto target",
+            source: flow_match_goto_source("done"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Goto,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "alternate Goto target",
+            source: flow_match_goto_source("alternate"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Goto,
+                StatementPayloadFamily::Structural,
+            )]),
+        },
+        Row {
+            name: "Yield flag operand",
+            source: flow_match_statement_source("yield flag"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Yield,
+                StatementPayloadFamily::Yield,
+            )]),
+        },
+        Row {
+            name: "Yield other operand",
+            source: flow_match_statement_source("yield other"),
+            expected: BTreeSet::from([(
+                StatementShapeFamily::Yield,
+                StatementPayloadFamily::Yield,
+            )]),
+        },
+        Row {
+            name: "Break loop target",
+            source: flow_match_statement_source("loop { break }"),
+            expected: BTreeSet::from([
+                (
+                    StatementShapeFamily::Break,
+                    StatementPayloadFamily::ControlTransfer,
+                ),
+                (
+                    StatementShapeFamily::Expression,
+                    StatementPayloadFamily::Structural,
+                ),
+            ]),
+        },
+        Row {
+            name: "Continue loop target",
+            source: flow_match_statement_source("loop { continue }"),
+            expected: BTreeSet::from([
+                (
+                    StatementShapeFamily::Continue,
+                    StatementPayloadFamily::ControlTransfer,
+                ),
+                (
+                    StatementShapeFamily::Expression,
+                    StatementPayloadFamily::Structural,
+                ),
+            ]),
+        },
+    ];
+    let observations = rows
+        .iter()
+        .map(|row| {
+            let observation = accepted_match_statement_corpus_observation(&row.source);
+            assert_eq!(
+                observation.statement_families, row.expected,
+                "{} retains its exact HIR shape and checked payload",
+                row.name,
+            );
+            observation
+        })
+        .collect::<Vec<_>>();
+
+    let goto = &observations[0];
+    let alternate_goto = &observations[1];
+    assert_ne!(
+        goto.semantic_digest, alternate_goto.semantic_digest,
+        "the resolved Flow target contributes to the Match digest",
+    );
+
+    let yield_flag = &observations[2];
+    let yield_other = &observations[3];
+    assert_ne!(
+        yield_flag.semantic_digest, yield_other.semantic_digest,
+        "the checked Yield operand contributes through its expression child edge",
+    );
+
+    let break_transfer = &observations[4];
+    let continue_transfer = &observations[5];
+    let [break_fact] = break_transfer.loop_transfers.as_slice() else {
+        panic!("the Match descendant retains one checked Break target")
+    };
+    let [continue_fact] = continue_transfer.loop_transfers.as_slice() else {
+        panic!("the Match descendant retains one checked Continue target")
+    };
+    assert_eq!(
+        break_fact.kind,
+        arcweft_lang_hir::project::HirControlTransferKind::Break
+    );
+    assert_eq!(
+        continue_fact.kind,
+        arcweft_lang_hir::project::HirControlTransferKind::Continue
+    );
+    assert_eq!(
+        break_fact.family,
+        arcweft_lang_hir::project::HirLoopTargetFamily::LoopExpression
+    );
+    assert_eq!(break_fact.family, continue_fact.family);
+    assert_eq!(break_fact.body, continue_fact.body);
+    assert_ne!(
+        break_transfer.semantic_digest, continue_transfer.semantic_digest,
+        "the transfer operation contributes to the Match digest",
     );
 }
 
