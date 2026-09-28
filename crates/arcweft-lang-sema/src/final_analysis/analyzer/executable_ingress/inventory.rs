@@ -3,8 +3,10 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
+    expr::{HirChoicePlanItem, HirExprKind},
     identity::{ExprId, HirModuleId, ItemId, StmtId},
     project::HirSemanticPathStep,
+    stmt::HirTrigger,
     symbol::CallableDeclarationKey,
 };
 
@@ -31,6 +33,10 @@ impl PreparedExecutableDeclaration {
         &self.statements
     }
 
+    pub(in crate::final_analysis::analyzer) const fn expressions(&self) -> &[ExprId] {
+        &self.expressions
+    }
+
     pub(in crate::final_analysis::analyzer) fn contains_event_scrutinee(
         &self,
         modules: &BTreeMap<HirModuleId, &HirModule>,
@@ -39,12 +45,27 @@ impl PreparedExecutableDeclaration {
             .get(&self.module)
             .copied()
             .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-        self.statements.iter().try_fold(false, |found, owner| {
+        let statement_event = self.statements.iter().try_fold(false, |found, owner| {
             let statement = module
                 .resolve_stmt(*owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            Ok(found || super::super::statement_scrutinee::has_event_scrutinee(statement.kind()))
-        })
+            Ok::<bool, FinalSemanticAnalysisError>(
+                found || super::super::statement_scrutinee::has_event_scrutinee(statement.kind()),
+            )
+        })?;
+        self.expressions
+            .iter()
+            .try_fold(statement_event, |found, owner| {
+                let expression = module
+                    .resolve_expr(*owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let choice_event = matches!(expression.kind(), HirExprKind::Choice(choice)
+                if choice.plan().is_some_and(|plan| plan.items().iter().any(|item|
+                    matches!(item, HirChoicePlanItem::Cancel {
+                        trigger: HirTrigger::Event(_), ..
+                    }))));
+                Ok(found || choice_event)
+            })
     }
 }
 

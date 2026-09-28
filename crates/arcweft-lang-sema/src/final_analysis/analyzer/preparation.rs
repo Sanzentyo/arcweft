@@ -2,10 +2,11 @@
 
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
-    expr::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
+    expr::{HirChoicePlanItem, HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
     identity::{LocalId, SyntheticOwner},
     item::{HirCapabilityFunction, HirCapabilityMember},
     project::HirSemanticPathOwnerId,
+    stmt::HirTrigger,
 };
 
 use crate::{
@@ -540,6 +541,45 @@ impl Analyzer<'_, '_, '_> {
                         &mut patterns,
                     )?;
                     Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
+                }
+                if let HirExprKind::Choice(choice) = expression.kind()
+                    && let Some(plan) = choice.plan()
+                {
+                    let ingress = self.catalogs.world.environment().statement_ingress();
+                    for item in plan.items() {
+                        let HirChoicePlanItem::Cancel { trigger, .. } = item else {
+                            continue;
+                        };
+                        let (pattern, expected) = match trigger {
+                            HirTrigger::Input(pattern) => (*pattern, ingress.input().clone()),
+                            HirTrigger::Select(pattern) => {
+                                (*pattern, TypeKind::entity_ref(EntityKind::ChoiceOption))
+                            }
+                            HirTrigger::Task(pattern) => (*pattern, ingress.task().clone()),
+                            HirTrigger::Scope(pattern) => (*pattern, ingress.scope().clone()),
+                            HirTrigger::Event(_)
+                            | HirTrigger::Signal { .. }
+                            | HirTrigger::Timeout(_)
+                            | HirTrigger::Mark(_)
+                            | HirTrigger::Expression(_)
+                            | HirTrigger::Recovered(_) => continue,
+                        };
+                        let mut locals = BTreeMap::new();
+                        let mut patterns = BTreeMap::new();
+                        seed_pattern_locals(
+                            PatternSeedContext {
+                                module,
+                                types: &self.types,
+                                symbols: self.symbols,
+                                environment: self.catalogs.world.environment().typecheck_env(),
+                            },
+                            pattern,
+                            &expected,
+                            &mut locals,
+                            &mut patterns,
+                        )?;
+                        Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
+                    }
                 }
             }
         }

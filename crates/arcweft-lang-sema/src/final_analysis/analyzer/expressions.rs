@@ -10,17 +10,18 @@ use std::{rc::Rc, sync::Arc};
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
     CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
-    CheckedChoiceGoto, CheckedClosure, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger, CheckedExpression, CheckedExpressionResolution,
-    CheckedProjectItem, CheckedStageLook, CheckedTryBoundaryOwner, CheckedTryCarrier,
-    CheckedTryFunctionSite, CheckedTypeSelection, CheckedValueResolution, CheckedViewCall,
-    EffectId, EffectSet, EntityKind, ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId,
-    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
-    HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef,
-    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
-    HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirScopeKind,
-    HirScopeOwner, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
-    HirStmtKind, HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
+    CheckedChoiceGoto, CheckedChoicePlan, CheckedChoicePlanItem, CheckedChoicePlanKey,
+    CheckedClosure, CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
+    CheckedExpression, CheckedExpressionResolution, CheckedProjectItem, CheckedStageLook,
+    CheckedTrigger, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryFunctionSite,
+    CheckedTypeSelection, CheckedValueResolution, CheckedViewCall, EffectId, EffectSet, EntityKind,
+    ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
+    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
+    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
+    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
+    HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirScopeKind, HirScopeOwner,
+    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
+    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
     PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
     PreparedExpressionFact, PreparedExpressionShell, PreparedImplicitCallableBody,
     PreparedOwnerBoundExpression, PreparedOwnerBoundResolution, PreparedTryBoundary,
@@ -48,6 +49,7 @@ use arcweft_lang_hir::expr::{
     HirSelectExpr,
 };
 use arcweft_lang_hir::leaf::{HirPath, HirPathValue, HirStringLiteral};
+use arcweft_lang_hir::stmt::HirTrigger;
 
 use super::expression_error::{
     AnalyzerExpressionContext, AnalyzerExpressionError, AnalyzerExpressionFactAuthority,
@@ -3001,6 +3003,60 @@ impl Analyzer<'_, '_, '_> {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
         self.validate_choice_owned_plan_patterns(expression, choice)?;
+        let plan = choice
+            .plan()
+            .map(|plan| {
+                plan.items()
+                    .iter()
+                    .map(|item| {
+                        let checked = match item {
+                            HirChoicePlanItem::Assignment { key, value } => {
+                                let key =
+                                    CheckedChoicePlanKey::from_hir_name(key).ok_or_else(|| {
+                                        AnalyzerExpressionError::fatal(
+                                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                                        )
+                                    })?;
+                                let checked = self.evaluate_expression(context, *value, None)?;
+                                if checked.value_type().is_none() {
+                                    return Err(AnalyzerExpressionError::rejected(*value));
+                                }
+                                effects.union_with(checked.effects());
+                                CheckedChoicePlanItem::Assignment(key)
+                            }
+                            HirChoicePlanItem::Timeout { duration, .. } => {
+                                let checked = self.evaluate_expression(
+                                    context,
+                                    *duration,
+                                    Some(&TypeKind::Duration),
+                                )?;
+                                if checked.value_type() != Some(&TypeKind::Duration) {
+                                    return Err(AnalyzerExpressionError::rejected(*duration));
+                                }
+                                effects.union_with(checked.effects());
+                                CheckedChoicePlanItem::Timeout
+                            }
+                            HirChoicePlanItem::Cancel { trigger, .. } => {
+                                CheckedChoicePlanItem::Cancel(self.check_choice_cancel_trigger(
+                                    context,
+                                    module,
+                                    trigger,
+                                    &mut effects,
+                                )?)
+                            }
+                            HirChoicePlanItem::OnSelect { .. } => CheckedChoicePlanItem::OnSelect,
+                            HirChoicePlanItem::Error(_) => {
+                                return Err(AnalyzerExpressionError::fatal(
+                                    FinalSemanticAnalysisError::RecoveredOwner,
+                                ));
+                            }
+                        };
+                        Ok(checked)
+                    })
+                    .collect::<Result<Vec<_>, AnalyzerExpressionError>>()
+                    .map(CheckedChoicePlan::new)
+            })
+            .transpose()?;
         Ok(CheckedExpression::value(
             ty,
             if expectation.is_contextual() {
@@ -3009,8 +3065,143 @@ impl Analyzer<'_, '_, '_> {
                 CheckedTypeSelection::Inferred
             },
             effects,
-            CheckedExpressionResolution::Choice(CheckedChoice::new(public_id, option_ids, gotos)),
+            CheckedExpressionResolution::Choice(CheckedChoice::new(
+                public_id, option_ids, gotos, plan,
+            )),
         ))
+    }
+
+    fn check_choice_cancel_trigger(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        module: &HirModule,
+        trigger: &HirTrigger,
+        effects: &mut EffectSet,
+    ) -> Result<CheckedTrigger, AnalyzerExpressionError> {
+        let ingress = self.catalogs.world.environment().statement_ingress();
+        let checked = match trigger {
+            HirTrigger::Input(pattern) => {
+                self.require_choice_trigger_pattern(*pattern, ingress.input())?;
+                CheckedTrigger::input()
+            }
+            HirTrigger::Event(pattern) => {
+                if self.facts.patterns().get(pattern).is_none() {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::PatternTypeUnavailable { owner: *pattern },
+                    ));
+                }
+                CheckedTrigger::event()
+            }
+            HirTrigger::Signal { target, value } => {
+                let checked = self.evaluate_expression(context, *target, None)?;
+                effects.union_with(checked.effects());
+                let TypeKind::Ref(signal) = checked.value_type().ok_or_else(|| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                    )
+                })?
+                else {
+                    return Err(AnalyzerExpressionError::rejected(*target));
+                };
+                if signal.kind() != &EntityKind::Signal {
+                    return Err(AnalyzerExpressionError::rejected(*target));
+                }
+                let payload = signal
+                    .value()
+                    .ok_or_else(|| AnalyzerExpressionError::rejected(*target))?;
+                if let Some(pattern) = value {
+                    self.seed_choice_trigger_pattern(module, *pattern, payload)?;
+                }
+                CheckedTrigger::signal()
+            }
+            HirTrigger::Timeout(duration) => {
+                let checked =
+                    self.evaluate_expression(context, *duration, Some(&TypeKind::Duration))?;
+                if checked.value_type() != Some(&TypeKind::Duration) {
+                    return Err(AnalyzerExpressionError::rejected(*duration));
+                }
+                effects.union_with(checked.effects());
+                CheckedTrigger::timeout()
+            }
+            HirTrigger::Mark(_) | HirTrigger::Recovered(_) => {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::RecoveredOwner,
+                ));
+            }
+            HirTrigger::Select(pattern) => {
+                self.require_choice_trigger_pattern(
+                    *pattern,
+                    &TypeKind::entity_ref(EntityKind::ChoiceOption),
+                )?;
+                CheckedTrigger::select()
+            }
+            HirTrigger::Task(pattern) => {
+                self.require_choice_trigger_pattern(*pattern, ingress.task())?;
+                CheckedTrigger::task()
+            }
+            HirTrigger::Scope(pattern) => {
+                self.require_choice_trigger_pattern(*pattern, ingress.scope())?;
+                CheckedTrigger::scope()
+            }
+            HirTrigger::Expression(expression) => {
+                let checked =
+                    self.evaluate_expression(context, *expression, Some(&TypeKind::Bool))?;
+                if checked.value_type() != Some(&TypeKind::Bool) {
+                    return Err(AnalyzerExpressionError::rejected(*expression));
+                }
+                effects.union_with(checked.effects());
+                CheckedTrigger::expression()
+            }
+        };
+        Ok(checked)
+    }
+
+    fn require_choice_trigger_pattern(
+        &self,
+        pattern: arcweft_lang_hir::identity::PatternId,
+        expected: &TypeKind,
+    ) -> Result<(), AnalyzerExpressionError> {
+        (self.facts.patterns().get(&pattern) == Some(expected))
+            .then_some(())
+            .ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::PatternTypeUnavailable {
+                    owner: pattern,
+                })
+            })
+    }
+
+    fn seed_choice_trigger_pattern(
+        &mut self,
+        module: &HirModule,
+        pattern: arcweft_lang_hir::identity::PatternId,
+        expected: &TypeKind,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let mut locals = std::collections::BTreeMap::new();
+        let mut patterns = std::collections::BTreeMap::new();
+        super::patterns::seed_pattern_locals(
+            super::patterns::PatternSeedContext {
+                module,
+                types: &self.types,
+                symbols: self.symbols,
+                environment: self.catalogs.world.environment().typecheck_env(),
+            },
+            pattern,
+            expected,
+            &mut locals,
+            &mut patterns,
+        )
+        .map_err(AnalyzerExpressionError::fatal)?;
+        for (owner, ty) in locals {
+            self.facts
+                .set_local_type(owner, ty)
+                .map_err(|error| AnalyzerExpressionError::fatal(error.into()))?;
+        }
+        for (owner, ty) in patterns {
+            self.facts
+                .set_pattern_type(owner, ty)
+                .map_err(|error| AnalyzerExpressionError::fatal(error.into()))?;
+        }
+        Ok(())
     }
 
     fn validate_choice_owned_plan_patterns(

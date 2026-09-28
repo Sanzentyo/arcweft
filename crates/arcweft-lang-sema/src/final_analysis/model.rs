@@ -1085,28 +1085,95 @@ impl CheckedChoiceGoto {
     }
 }
 
-/// Checked semantic additions to one final-HIR Choice expression.
+/// Closed assignment key of an accepted compact Choice lifecycle plan.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedChoicePlanKey {
+    Window,
+    Layout,
+    DefaultFocus,
+}
+
+impl CheckedChoicePlanKey {
+    pub(crate) fn from_hir_name(name: &arcweft_lang_hir::leaf::HirName) -> Option<Self> {
+        match name.as_str() {
+            "window" => Some(Self::Window),
+            "layout" => Some(Self::Layout),
+            "default_focus" => Some(Self::DefaultFocus),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Window => 0,
+            Self::Layout => 1,
+            Self::DefaultFocus => 2,
+        }
+    }
+}
+
+/// One source-ordered non-child row in a checked compact Choice plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedChoicePlanItem {
+    Assignment(CheckedChoicePlanKey),
+    Timeout,
+    Cancel(CheckedTrigger),
+    OnSelect,
+}
+
+impl CheckedChoicePlanItem {
+    pub(crate) const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Assignment(_) => 0,
+            Self::Timeout => 1,
+            Self::Cancel(_) => 2,
+            Self::OnSelect => 3,
+        }
+    }
+}
+
+/// Presence and order of the checked compact Choice lifecycle plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedChoicePlan {
+    items: Box<[CheckedChoicePlanItem]>,
+}
+
+impl CheckedChoicePlan {
+    pub(crate) fn new(items: impl Into<Box<[CheckedChoicePlanItem]>>) -> Self {
+        Self {
+            items: items.into(),
+        }
+    }
+
+    pub fn items(&self) -> &[CheckedChoicePlanItem] {
+        &self.items
+    }
+}
+
+/// Checked semantic additions to one final-HIR compact Choice expression.
 ///
-/// Candidate structure, labels, conditions, and output expressions remain
-/// owned by final HIR. Only non-expression `goto` targets need an additional
-/// semantic selection fact.
+/// Candidate expressions and plan children remain owned by final HIR. The
+/// selected `goto` targets and closed plan rows live in this checked fact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedChoice {
     public_id: Option<PublicId>,
     option_ids: Box<[PublicId]>,
     gotos: Box<[CheckedChoiceGoto]>,
+    plan: Option<CheckedChoicePlan>,
 }
 
 impl CheckedChoice {
-    pub fn new(
+    pub(crate) fn new(
         public_id: Option<PublicId>,
         option_ids: impl Into<Box<[PublicId]>>,
         gotos: impl Into<Box<[CheckedChoiceGoto]>>,
+        plan: Option<CheckedChoicePlan>,
     ) -> Self {
         Self {
             public_id,
             option_ids: option_ids.into(),
             gotos: gotos.into(),
+            plan,
         }
     }
 
@@ -1120,6 +1187,10 @@ impl CheckedChoice {
 
     pub fn gotos(&self) -> &[CheckedChoiceGoto] {
         &self.gotos
+    }
+
+    pub const fn plan(&self) -> Option<&CheckedChoicePlan> {
+        self.plan.as_ref()
     }
 }
 

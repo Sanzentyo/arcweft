@@ -34,7 +34,7 @@ use crate::semantic_coordinate::{
 use crate::types::{ArrayLength, SemanticTypeDigest, TypeKind};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
-    expr::{HirExprKind, HirMatchExpr},
+    expr::{HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirMatchExpr},
     identity::{ExprId, PatternId},
     leaf::{HirLiteral, HirNumericSequenceRecovery},
     module::HirModule,
@@ -3473,7 +3473,6 @@ fn write_expression_shape_atoms(
         | HirExprKind::Index(_)
         | HirExprKind::Pipe(_)
         | HirExprKind::Try(_)
-        | HirExprKind::Choice(_)
         | HirExprKind::Record(_)
         | HirExprKind::RecordLiteral(_)
         | HirExprKind::Dereference(_)
@@ -3518,6 +3517,25 @@ fn write_expression_shape_atoms(
                     &mut |bytes| hasher.update(bytes),
                 )
                 .map_err(map_canonical_literal_error)?;
+            }
+        }
+        HirExprKind::Choice(choice) => {
+            write_len(hasher, choice.body().items().len())?;
+            for item in choice.body().items() {
+                let HirChoiceItem::CompactArm(arm) = item else {
+                    return Err(SemanticTranscriptError::RecoveredOwner);
+                };
+                transcript_update!(hasher, &[0]);
+                transcript_update!(
+                    hasher,
+                    &[match arm.action() {
+                        HirChoiceCompactAction::Goto(_) => 0,
+                        HirChoiceCompactAction::Out(_) => 1,
+                        HirChoiceCompactAction::Missing => {
+                            return Err(SemanticTranscriptError::RecoveredOwner);
+                        }
+                    }],
+                );
             }
         }
         HirExprKind::Call(call) => {
@@ -3822,6 +3840,33 @@ fn write_resolution_payload(
                 transcript_update!(hasher, &goto.arm().to_le_bytes());
                 transcript_update!(hasher, goto.target().semantic_id().as_bytes());
                 transcript_update!(hasher, goto.target().value_type().as_bytes());
+            }
+            match choice.plan() {
+                Some(plan) => {
+                    transcript_update!(hasher, &[1]);
+                    write_len(hasher, plan.items().len())?;
+                    for item in plan.items() {
+                        transcript_update!(hasher, &[item.semantic_tag()]);
+                        match item {
+                            super::CheckedChoicePlanItem::Assignment(key) => {
+                                transcript_update!(hasher, &[key.semantic_tag()]);
+                            }
+                            super::CheckedChoicePlanItem::Cancel(trigger) => {
+                                if matches!(
+                                    trigger.view(),
+                                    super::CheckedTriggerView::InputAction(_)
+                                        | super::CheckedTriggerView::Mark(_)
+                                ) {
+                                    return Err(SemanticTranscriptError::MissingIdentity);
+                                }
+                                transcript_update!(hasher, &[trigger.semantic_tag()]);
+                            }
+                            super::CheckedChoicePlanItem::Timeout
+                            | super::CheckedChoicePlanItem::OnSelect => {}
+                        }
+                    }
+                }
+                None => transcript_update!(hasher, &[0]),
             }
         }
         CheckedExpressionResolution::Try(checked_try) => {

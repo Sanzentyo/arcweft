@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_interaction_model::input::InputActionId;
 use arcweft_lang_hir::{
+    expr::{HirChoicePlanItem, HirExprKind},
     identity::{ExprId, HirModuleId, PatternId, StmtId, TypeId},
     module::HirModule,
     project::{HirAnalysisProjectView, HirProjectEvaluationTopology},
@@ -329,6 +330,114 @@ pub(super) fn seed_declaration_scrutinees(
         true,
         facts,
     )
+}
+
+/// Seeds Choice-owned Event cancel patterns from the same Entry-rooted event
+/// scrutinee authority used by statement triggers.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the borrowed selector keeps registered, HIR, type, and Entry-rooted authorities explicit"
+)]
+pub(super) fn seed_choice_event_scrutinees(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    types: &BTreeMap<TypeId, TypeKind>,
+    symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+    environment: &TypeCheckEnv,
+    standard: &RegisteredStatementIngressTypes,
+    project: HirAnalysisProjectView<'_>,
+    topology: &HirProjectEvaluationTopology,
+    ingress: &PreparedExecutableIngressFacts,
+    declaration: &CallableDeclarationKey,
+    expressions: &[ExprId],
+    facts: &mut SemanticFactState,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let authority =
+        StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress);
+    for owner in expressions {
+        let module = modules
+            .get(&owner.module())
+            .copied()
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let expression = module
+            .resolve_expr(*owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::Choice(choice) = expression.kind() else {
+            continue;
+        };
+        let Some(plan) = choice.plan() else {
+            continue;
+        };
+        for item in plan.items() {
+            let HirChoicePlanItem::Cancel {
+                trigger: HirTrigger::Event(pattern),
+                ..
+            } = item
+            else {
+                continue;
+            };
+            seed_registered(
+                module,
+                types,
+                symbols,
+                environment,
+                facts,
+                *pattern,
+                authority.event(StatementScrutineeRole::TriggerEvent, declaration)?,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Rechecks Choice Event patterns after their expressions have completed,
+/// against the same Entry-rooted event type and digest used at seed time.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the borrowed selector compares completed facts with the exact Entry-rooted authority"
+)]
+pub(super) fn validate_choice_event_scrutinees(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    types: &BTreeMap<TypeId, TypeKind>,
+    standard: &RegisteredStatementIngressTypes,
+    project: HirAnalysisProjectView<'_>,
+    topology: &HirProjectEvaluationTopology,
+    ingress: &PreparedExecutableIngressFacts,
+    declaration: &CallableDeclarationKey,
+    expressions: &[ExprId],
+    facts: &SemanticFactState,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let authority =
+        StatementScrutineeTypeAuthority::new(standard, project, topology, types, ingress);
+    for owner in expressions {
+        let module = modules
+            .get(&owner.module())
+            .copied()
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let expression = module
+            .resolve_expr(*owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::Choice(choice) = expression.kind() else {
+            continue;
+        };
+        let Some(plan) = choice.plan() else {
+            continue;
+        };
+        for item in plan.items() {
+            let HirChoicePlanItem::Cancel {
+                trigger: HirTrigger::Event(pattern),
+                ..
+            } = item
+            else {
+                continue;
+            };
+            require_pattern(
+                facts,
+                *pattern,
+                authority.event(StatementScrutineeRole::TriggerEvent, declaration)?,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[expect(

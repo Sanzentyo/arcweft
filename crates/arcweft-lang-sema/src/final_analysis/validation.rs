@@ -8,13 +8,16 @@ use std::{
 use arcweft_lang_hir::scope::LocalLookup;
 use arcweft_lang_hir::symbol::{ProjectTypeLookupError, ProjectTypeTarget};
 use arcweft_lang_hir::{
-    expr::{HirCallCallee, HirPlaceholderKind, HirSelectExpr, HirSelectedMember},
+    expr::{
+        HirCallCallee, HirChoicePlanItem, HirPlaceholderKind, HirSelectExpr, HirSelectedMember,
+    },
     leaf::{HirPathRoot, HirPathSegment, HirPathValue},
     project::HirProjectEvaluationTopology,
     source_index::{
         HirExprSourceRole, HirLocalSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
         HirTypeSourceRole,
     },
+    stmt::HirTrigger,
 };
 
 use crate::{
@@ -33,19 +36,19 @@ use super::{
     CallableDiagnosticSubject, CaptureId, CheckedBinding, CheckedBindingRole,
     CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallResult,
     CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice,
-    CheckedEntryReference, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedImplicitCallable, CheckedImplicitCallableBody, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPipe, CheckedPipeLeft, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementPayload, CheckedTraitConformance, CheckedTry,
-    CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryFunctionSite, CheckedValueResolution,
-    CheckedVariantOwnerKind, CheckedVariantResolution, DeclarationIdentityFamily, ExprId,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisWork, HirExprKind, HirIdRef, HirItemKind,
-    HirModule, HirModuleId, HirPatternKind, ItemId, LocalId, PatternId,
-    PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectNominalBody,
-    ProjectSymbolTable, ResolvedCallable, ResolvedCallableOrigin, SemanticFactFamily, StmtId,
-    TypeId, TypeKind, TypeResolutionReport,
+    CheckedChoicePlanItem, CheckedChoicePlanKey, CheckedEntryReference, CheckedExpression,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable,
+    CheckedImplicitCallableBody, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedPipeLeft,
+    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
+    CheckedSelectResolution, CheckedStatement, CheckedStatementPayload, CheckedTraitConformance,
+    CheckedTriggerView, CheckedTry, CheckedTryBoundaryOwner, CheckedTryCarrier,
+    CheckedTryFunctionSite, CheckedValueResolution, CheckedVariantOwnerKind,
+    CheckedVariantResolution, DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisWork, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
+    HirPatternKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
+    PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
+    ResolvedCallableOrigin, SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
 };
 
 use super::match_edges::CheckedStructuralEdgeDraft;
@@ -1669,6 +1672,40 @@ fn validate_choice(
         }
         validate_project_item(symbols, modules, goto.target())?;
         previous = Some(goto.arm());
+    }
+    match (choice.plan(), authored.plan()) {
+        (None, None) => {}
+        (Some(checked), Some(authored)) if checked.items().len() == authored.items().len() => {
+            for (checked, authored) in checked.items().iter().zip(authored.items()) {
+                let valid = match (checked, authored) {
+                    (
+                        CheckedChoicePlanItem::Assignment(checked),
+                        HirChoicePlanItem::Assignment { key, .. },
+                    ) => CheckedChoicePlanKey::from_hir_name(key) == Some(*checked),
+                    (CheckedChoicePlanItem::Timeout, HirChoicePlanItem::Timeout { .. })
+                    | (CheckedChoicePlanItem::OnSelect, HirChoicePlanItem::OnSelect { .. }) => true,
+                    (
+                        CheckedChoicePlanItem::Cancel(checked),
+                        HirChoicePlanItem::Cancel { trigger, .. },
+                    ) => matches!(
+                        (checked.view(), trigger),
+                        (CheckedTriggerView::Input, HirTrigger::Input(_))
+                            | (CheckedTriggerView::Event, HirTrigger::Event(_))
+                            | (CheckedTriggerView::Signal, HirTrigger::Signal { .. })
+                            | (CheckedTriggerView::Timeout, HirTrigger::Timeout(_))
+                            | (CheckedTriggerView::Select, HirTrigger::Select(_))
+                            | (CheckedTriggerView::Task, HirTrigger::Task(_))
+                            | (CheckedTriggerView::Scope, HirTrigger::Scope(_))
+                            | (CheckedTriggerView::Expression, HirTrigger::Expression(_))
+                    ),
+                    _ => false,
+                };
+                if !valid {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
+        }
+        _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
     }
     Ok(())
 }

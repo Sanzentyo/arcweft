@@ -244,9 +244,33 @@ impl Analyzer<'_, '_, '_> {
             &declaration.statements,
             &mut self.facts,
         )?;
+        super::statement_scrutinee::seed_choice_event_scrutinees(
+            &self.modules,
+            &self.types,
+            self.symbols,
+            self.catalogs.world.environment().typecheck_env(),
+            self.catalogs.world.environment().statement_ingress(),
+            self.executable,
+            self.topology.as_ref(),
+            ingress,
+            declaration.declaration(),
+            declaration.expressions(),
+            &mut self.facts,
+        )?;
         self.complete_declaration_statements(declaration)?;
         self.validate_declaration_body_result(&declaration.declaration)?;
         self.complete_declaration_expression_roots(declaration)?;
+        super::statement_scrutinee::validate_choice_event_scrutinees(
+            &self.modules,
+            &self.types,
+            self.catalogs.world.environment().statement_ingress(),
+            self.executable,
+            self.topology.as_ref(),
+            ingress,
+            declaration.declaration(),
+            declaration.expressions(),
+            &self.facts,
+        )?;
         super::statement_scrutinee::validate_declaration_scrutinees(
             &self.modules,
             &self.types,

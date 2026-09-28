@@ -319,6 +319,83 @@ fn checked_match_transcript_uses_structural_method_identity() {
     assert_ne!(first.match_digest, second.match_digest);
 }
 
+#[test]
+fn checked_match_transcript_commits_compact_choice_plan_rows() {
+    let source = |prefix: &str, plan: &str| {
+        format!(
+            "{prefix}flow done() -> String {{ return \"done\" }}\nflow main() {{\n    let selected = match true {{\n        true => choice @choice.main {{ @.go \"Go\" -> @flow.done }} {plan}\n        false => ()\n    }}\n}}\n"
+        )
+    };
+    let digest = |plan: &str| source_match_digest(&source("", plan));
+    let absent = digest("");
+    let empty = digest("with {}");
+    let window = digest("with { window = true }");
+    let layout = digest("with { layout = true }");
+    let input = digest("with { cancel on input(_) {} }");
+    let task = digest("with { cancel on task(_) {} }");
+    let expression = digest("with { cancel on true {} }");
+    let timeout = digest("with { cancel on timeout(1s) {} }");
+    let signal = source_match_digest(&source(
+        "signal ready: bool\n",
+        "with { cancel on signal(@signal.ready, value) { let observed = value } }",
+    ));
+    let formatted = source_match_digest(&source(
+        "fn unrelated() -> i64 { 99i64 }\n",
+        "with {  window = true  }",
+    ));
+
+    assert_ne!(absent, empty, "absent versus present-empty plan");
+    assert_ne!(window, layout, "closed assignment key");
+    assert_ne!(input, task, "closed cancel trigger family");
+    assert_ne!(expression, timeout, "checked trigger expression kind");
+    assert_ne!(input, signal, "checked Signal target and payload pattern");
+    assert_eq!(window, formatted, "plan formatting and source revision");
+
+    let invalid = super::fixture(&source("", "with { unknown = true }"), None);
+    assert!(
+        super::analyze(&invalid).is_err(),
+        "unknown plan key rejects"
+    );
+    for (label, plan) in [
+        ("timeout duration", "with { timeout true {} }"),
+        ("cancel Boolean", "with { cancel on 1i64 {} }"),
+        ("Signal target", "with { cancel on signal(true) {} }"),
+    ] {
+        let invalid = super::fixture(&source("", plan), None);
+        assert!(super::analyze(&invalid).is_err(), "{label} rejects");
+    }
+    let invalid = super::fixture(
+        &source(
+            "signal ready: bool\n",
+            "with { cancel on signal(@signal.ready, \"wrong\") {} }",
+        ),
+        None,
+    );
+    assert!(
+        super::analyze(&invalid).is_err(),
+        "Signal payload pattern must match the checked Signal type",
+    );
+
+    let effectful = super::fixture(&source("", "with { window = thread {} }"), None);
+    let report = super::analyze(&effectful).expect("effectful plan value checks");
+    let choice = report
+        .expressions()
+        .find_map(|(_, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::Choice(_)
+            )
+            .then_some(expression)
+        })
+        .expect("checked Choice expression");
+    assert!(
+        choice
+            .effects()
+            .contains(&crate::effects::EffectId::parse("control.spawn").expect("effect ID")),
+        "plan value effect reaches its checked Choice owner",
+    );
+}
+
 fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
     let world = super::fixture(source, None);
     let report = super::analyze(&world).expect("pattern transcript fixture should check");

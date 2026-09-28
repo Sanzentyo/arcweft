@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use arcweft_lang_hir::{
+    expr::{HirChoicePlanItem, HirExprKind},
     stmt::{HirStmtKind, HirTrigger},
     symbol::{CallableDeclarationKey, ProjectSymbolRevision, ProjectSymbolWorldId},
 };
@@ -9,9 +10,9 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use crate::{
     callable::{CheckedCallableContext, CheckedCallableId},
     final_analysis::{
-        CheckedStatementPayload, CheckedTriggerView, FinalSemanticAnalysis,
-        FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticCatalogs,
-        FinalSemanticProjectError,
+        CheckedChoicePlanItem, CheckedExpressionResolution, CheckedStatementPayload,
+        CheckedTriggerView, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+        FinalSemanticAnalysisError, FinalSemanticCatalogs, FinalSemanticProjectError,
     },
     types::SemanticTypeDigest,
 };
@@ -246,6 +247,59 @@ fn p21_two_equal_entry_roots_converge_at_one_event_statement_in_either_source_or
         };
         assert!(matches!(trigger.view(), CheckedTriggerView::Event));
     }
+}
+
+#[test]
+fn choice_cancel_event_uses_the_entry_scrutinee_authority() {
+    let fixture = one_entry_fixture(
+        "    choice @choice.shared { @.go \"Go\" -> @flow.done } with { cancel on event(event) {} }",
+        "flow done() -> String { return \"done\" }",
+    );
+    let report = analyze(&fixture).expect("Choice Event cancel uses the reached Entry event type");
+    let choice = report
+        .expressions()
+        .find_map(|(_, checked)| match checked.resolution() {
+            CheckedExpressionResolution::Choice(choice) => Some(choice),
+            _ => None,
+        })
+        .expect("checked compact Choice");
+    assert!(matches!(
+        choice.plan().and_then(|plan| plan.items().first()),
+        Some(CheckedChoicePlanItem::Cancel(trigger))
+            if matches!(trigger.view(), CheckedTriggerView::Event)
+    ));
+    let project = fixture.project.analysis_view().expect("executable HIR");
+    let pattern = project
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .find_map(|(_, expression)| match expression.kind() {
+            HirExprKind::Choice(choice) => choice.plan().and_then(|plan| {
+                plan.items().iter().find_map(|item| match item {
+                    HirChoicePlanItem::Cancel {
+                        trigger: HirTrigger::Event(pattern),
+                        ..
+                    } => Some(*pattern),
+                    _ => None,
+                })
+            }),
+            _ => None,
+        })
+        .expect("Choice Event pattern");
+    let checked = report
+        .pattern(pattern)
+        .expect("Entry-typed Choice Event pattern");
+    let event = report
+        .checked_entries()
+        .entries()
+        .find_map(crate::entry::CheckedEntryBinding::stateful)
+        .expect("stateful Entry event");
+    assert_eq!(
+        checked
+            .ty()
+            .semantic_identity_digest()
+            .expect("closed event type"),
+        event.event().semantic_type(),
+    );
 }
 
 #[test]
