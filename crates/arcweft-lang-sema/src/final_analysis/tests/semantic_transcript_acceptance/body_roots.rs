@@ -91,32 +91,8 @@ fn root(outer: bool, inner: bool) -> i64 {
 
 #[test]
 fn checked_match_transcript_commits_arm_block_body_meaning() {
-    let original = match_observations(
-        r"
-fn root(flag: bool) -> i64 {
-    match flag {
-        true => {
-            let value = 1i64
-            value
-        }
-        false => 0i64
-    }
-}
-",
-    );
-    let changed = match_observations(
-        r"
-fn root(flag: bool) -> i64 {
-    match flag {
-        true => {
-            let value = 2i64
-            value
-        }
-        false => 0i64
-    }
-}
-",
-    );
+    let original = match_observations(&match_arm_let_source("1i64"));
+    let changed = match_observations(&match_arm_let_source("2i64"));
 
     assert_eq!(original.len(), 1);
     assert_eq!(changed.len(), 1);
@@ -125,12 +101,7 @@ fn root(flag: bool) -> i64 {
 
 #[test]
 fn checked_match_transcript_commits_nested_statement_body_meaning() {
-    let source = |body: &str| {
-        format!(
-            "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            if true {{\n{body}\n            }}\n            0i64\n        }}\n        false => 0i64\n    }}\n}}\n"
-        )
-    };
-    let digest = |body| outermost(&match_observations(&source(body))).digest;
+    let digest = |body| outermost(&match_observations(&nested_if_statement_source(body))).digest;
 
     let first = digest("                let first = 1i64");
     let changed_value = digest("                let first = 2i64");

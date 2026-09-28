@@ -8,6 +8,8 @@ mod expression_corpus;
 mod expression_shapes;
 #[path = "semantic_transcript_acceptance/patterns.rs"]
 mod patterns;
+#[path = "semantic_transcript_acceptance/statements.rs"]
+mod statements;
 
 #[derive(Clone, Copy)]
 struct MatchObservation {
@@ -70,6 +72,28 @@ fn outermost(observations: &[MatchObservation]) -> MatchObservation {
 
 fn source_match_digest(source: &str) -> [u8; 32] {
     outermost(&match_observations(source)).digest
+}
+
+fn match_arm_let_source(value: &str) -> String {
+    format!(
+        r"
+fn root(flag: bool) -> i64 {{
+    match flag {{
+        true => {{
+            let value = {value}
+            value
+        }}
+        false => 0i64
+    }}
+}}
+"
+    )
+}
+
+fn nested_if_statement_source(body: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            if true {{\n{body}\n            }}\n            0i64\n        }}\n        false => 0i64\n    }}\n}}\n"
+    )
 }
 
 fn bool_match_i64_source(expression: &str) -> String {
