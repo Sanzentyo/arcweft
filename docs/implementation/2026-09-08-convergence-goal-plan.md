@@ -2716,3 +2716,19 @@ focused 4/4、Sema lib 1046/1046、`cargo test -p arcweft-lang-sema`、changed-c
 Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
 workspace と構造 gate は再実行していない。T01 の残る live expression/value/select/
 pattern/statement family、T06 の残 root、View 以降と goal 全体は未完として継続する。
+
+## Match T01 Pipe/Try expression の受理差分 — 2026-09-28
+
+確認した code commit は `7545ae34fd13a9126f0fdafdae7200de6d4ca815`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み Match arm 直下の Pipe と prefix Try について、HIR family と checked
+resolution を同一 owner で確認した。Pipe は placeholder 2箇所を持つ checked binding
+を保持し、同型の別 callable source へ替えると Match digest が変わる。Try は Result
+carrier と CarrierBlock boundary を保持し、同型の別 local operand へ替えると digest
+が変わる。source 名だけで解決を推測せず checked fact を検査している。
+
+focused 2/2、Sema lib 1048/1048、`cargo test -p arcweft-lang-sema`、changed-crate
+Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
+workspace と構造 gate は再実行していない。T01 の残る live family、T06 の残 root、
+View 以降と goal 全体は未完として継続する。
