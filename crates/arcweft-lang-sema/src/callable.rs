@@ -159,7 +159,6 @@ pub use identity::{
     StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
     VectorDimensions,
 };
-pub(crate) use join::validate_selected_application;
 pub use join::{
     CallableInstantiationDigest, CallableReceiverMode, CheckedCallableArgument,
     CheckedCallableArgumentSlot, CheckedCallableJoin, CheckedCallableJoinDigest,
@@ -175,6 +174,7 @@ pub use join::{
     IntrinsicCallableCandidateTag, select_project_function_root_runtime,
     select_project_function_runtime, select_project_function_value_runtime,
 };
+pub(crate) use join::{CheckedCallableJoinTranscriptDigest, validate_selected_application};
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,
     PRODUCTION_SIGNATURE_LIMITS, SignatureAccountingError, SignatureQueryLimits,

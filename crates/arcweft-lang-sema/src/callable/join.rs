@@ -17,9 +17,7 @@ use thiserror::Error;
 use crate::{
     effect_row::{EffectRow, EffectRowError, EffectSubstitution},
     final_analysis::{CheckedFunctionExecution, CheckedProjectNominal},
-    semantic_coordinate::{
-        AcceptedDeclarationSemanticId, SemanticCoordinateIndex, SemanticCoordinateIndexError,
-    },
+    semantic_coordinate::{SemanticCoordinateIndex, SemanticCoordinateIndexError},
     types::{ArrayLength, TypeKind, constraints::ClosedTypeInstantiation},
 };
 
@@ -29,9 +27,9 @@ use super::{
     CallableParameterPresence, CallableResultSchema, CallableSignatureSchemaDigest,
     CheckedCallApplication, CheckedCallContinuationDigest, CheckedCallExecutionArgument,
     CheckedCallOperandDestination, CheckedCallResult, CheckedCallableCatalog,
-    CheckedCallableDeclaration, CheckedCallableDigest, CheckedCallableExecution,
-    CheckedCallableFacts, CheckedCallableId, CheckedCallableLookupError, CheckedMethodLookup,
-    ContentCallableIdentity, FrozenCallTypeSolution, ResolvedCallable,
+    CheckedCallableContext, CheckedCallableDeclaration, CheckedCallableDigest,
+    CheckedCallableExecution, CheckedCallableFacts, CheckedCallableId, CheckedCallableLookupError,
+    CheckedMethodLookup, ContentCallableIdentity, FrozenCallTypeSolution, ResolvedCallable,
     ResolvedCallableBaseInstantiation, ResolvedCallableOrigin, ResolvedCallableState,
 };
 
@@ -112,6 +110,8 @@ pub enum CheckedCallableJoinError {
     IntrinsicEffectSchemaMismatch,
     #[error("selected callable instantiation transcript cannot be canonically encoded")]
     InstantiationTranscript,
+    #[error("selected callable has no accepted-rooted Match transcript identity")]
+    StableTranscriptIdentity,
 }
 
 /// Exact runtime input lineage of one selected project-function application.
@@ -1011,7 +1011,8 @@ impl CheckedCallableJoinError {
             | Self::MissingIntrinsicAuthority
             | Self::IntrinsicFamilyMismatch
             | Self::IntrinsicEffectSchemaMismatch
-            | Self::InstantiationTranscript => Ok(()),
+            | Self::InstantiationTranscript
+            | Self::StableTranscriptIdentity => Ok(()),
         }
     }
 }
@@ -1363,7 +1364,7 @@ impl CheckedCallableJoin {
     pub fn semantic_digest(
         &self,
     ) -> Result<CheckedCallableJoinDigest, crate::types::GenericScopeError> {
-        self.digest_with_project_identity(
+        self.digest_with_catalog_identity(
             b"arcweft.lang.checked-callable-authority-join.v1\0",
             None,
         )
@@ -1371,42 +1372,61 @@ impl CheckedCallableJoin {
     }
 
     /// Stable Match transcript projection of this already selected join.
-    /// Project callable identity is issued by the accepted-root catalog, while
-    /// the generation-bound checked ID remains the runtime identity.
+    /// Project callable identity is issued by the accepted-root catalog;
+    /// environment and standard rows use their structural declaration IDs.
+    /// The generation-bound checked ID remains the runtime identity.
     pub(crate) fn stable_transcript_digest(
         &self,
         coordinates: &SemanticCoordinateIndex<'_, '_>,
     ) -> Result<CheckedCallableJoinTranscriptDigest, CheckedCallableJoinTranscriptError> {
-        let project_identity = match self {
+        let catalog_identity = match self {
             Self::Catalog { id, digest, .. } => {
                 if id.semantic_digest() != *digest {
                     return Err(CheckedCallableJoinTranscriptError::StaleCallable);
                 }
-                match id.declaration() {
-                    CheckedCallableDeclaration::Project(declaration) => {
-                        Some(coordinates.accepted_declaration(declaration)?)
+                match (id.context(), id.declaration()) {
+                    (
+                        CheckedCallableContext::Project { .. },
+                        CheckedCallableDeclaration::Project(declaration),
+                    ) => Some(*coordinates.accepted_declaration(declaration)?.as_bytes()),
+                    (
+                        CheckedCallableContext::Environment { .. },
+                        CheckedCallableDeclaration::Environment(declaration),
+                    ) => Some(*declaration.semantic_digest().as_bytes()),
+                    (
+                        CheckedCallableContext::Standard { version },
+                        CheckedCallableDeclaration::Standard(declaration),
+                    ) => {
+                        let mut hasher = blake3::Hasher::new();
+                        hasher.update(b"arcweft.lang.standard-callable-semantic.v1\0");
+                        hasher.update(&version.as_u32().to_le_bytes());
+                        hasher.update(&[declaration.owner().digest_tag()]);
+                        hasher.update(&declaration.catalog_ordinal().to_le_bytes());
+                        Some(*hasher.finalize().as_bytes())
                     }
-                    CheckedCallableDeclaration::Detached(_) => {
+                    (
+                        CheckedCallableContext::Detached { .. },
+                        CheckedCallableDeclaration::Detached(_),
+                    ) => {
                         return Err(CheckedCallableJoinTranscriptError::DetachedCallable);
                     }
-                    CheckedCallableDeclaration::Environment(_)
-                    | CheckedCallableDeclaration::Standard(_) => None,
+                    _ => return Err(CheckedCallableJoinTranscriptError::StaleCallable),
                 }
             }
             Self::Intrinsic { .. } => None,
         };
-        self.digest_with_project_identity(
+        self.digest_with_catalog_identity(
             b"arcweft.lang.checked-callable-authority-join-transcript.v1\0",
-            project_identity,
+            catalog_identity,
         )
         .map(CheckedCallableJoinTranscriptDigest)
         .map_err(Into::into)
     }
 
-    fn digest_with_project_identity(
+    fn digest_with_catalog_identity(
         &self,
         domain: &[u8],
-        project_identity: Option<AcceptedDeclarationSemanticId>,
+        catalog_identity: Option<[u8; 32]>,
     ) -> Result<[u8; 32], crate::types::GenericScopeError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(domain);
@@ -1425,8 +1445,8 @@ impl CheckedCallableJoin {
                 instantiation,
             } => {
                 hasher.update(&[0]);
-                if let Some(identity) = project_identity {
-                    hasher.update(identity.as_bytes());
+                if let Some(identity) = catalog_identity {
+                    hasher.update(&identity);
                 } else {
                     hasher.update(id.semantic_digest().as_bytes());
                     hasher.update(digest.as_bytes());

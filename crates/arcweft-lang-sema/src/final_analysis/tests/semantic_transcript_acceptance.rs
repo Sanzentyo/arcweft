@@ -248,6 +248,77 @@ fn checked_match_transcript_commits_selected_call_argument_passing() {
     assert_eq!(named, radix, "integer radix does not alter checked values");
 }
 
+#[test]
+fn checked_match_transcript_uses_accepted_project_callable_value_identity() {
+    let original = source_match_digest(
+        "fn identity(value: i64) -> i64 { value }\nfn root(flag: bool) -> i64 {\n    match flag {\n        true => { let saved = identity; 1i64 }\n        false => 0i64\n    }\n}\n",
+    );
+    let reformatted = source_match_digest(
+        "fn unrelated() -> i64 { 99i64 }\nfn identity ( value : i64 ) -> i64 { value }\nfn root(flag: bool) -> i64 {\n    match flag {\n        true => { let saved = identity; 1i64 }\n        false => 0i64\n    }\n}\n",
+    );
+    assert_eq!(original, reformatted);
+}
+
+#[test]
+fn checked_match_transcript_uses_structural_method_identity() {
+    struct MethodObservation {
+        match_digest: [u8; 32],
+        runtime_callable: [u8; 32],
+        transcript_callable: [u8; 32],
+    }
+    let source = |prefix: &str, call: &str| {
+        format!(
+            "{prefix}view Main(dialogue: DialogueView, speed: f32) {{\n    match true {{\n        true => {call}\n        false => Button()\n    }}\n}}\n"
+        )
+    };
+    let observe = |prefix: &str, call: &str| {
+        let world = super::fixture(&source(prefix, call), None);
+        let report = super::analyze(&world).expect("checked method selection");
+        let project = world.project.analysis_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let method = module
+            .expressions()
+            .find_map(|(owner, _)| match report.expression(owner)?.resolution() {
+                CheckedExpressionResolution::Select(CheckedSelectResolution::Method(method)) => {
+                    Some(method)
+                }
+                _ => None,
+            })
+            .expect("Match arm has a checked method selection");
+        let match_owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .expect("Match expression");
+        let product =
+            super::checked_match_product(&report, project, module, &world.symbols, match_owner);
+        MethodObservation {
+            match_digest: *product.semantic_digest().as_bytes(),
+            runtime_callable: *method.callable().as_bytes(),
+            transcript_callable: *method.transcript_callable().as_bytes(),
+        }
+    };
+    let first = observe("", "Button().on_click { dialogue.primary_action }");
+    let whitespace = observe("", "Button().on_click {  dialogue.primary_action  }");
+    let unrelated = observe(
+        "fn unrelated() -> i64 { 99i64 }\n",
+        "Button().on_click { dialogue.primary_action }",
+    );
+    let second = observe("", "Button().fx(wave(speed = speed))");
+
+    assert_ne!(first.runtime_callable, whitespace.runtime_callable);
+    assert_ne!(first.runtime_callable, unrelated.runtime_callable);
+    assert_eq!(first.transcript_callable, whitespace.transcript_callable);
+    assert_eq!(first.transcript_callable, unrelated.transcript_callable);
+    assert_eq!(first.match_digest, whitespace.match_digest);
+    assert_eq!(first.match_digest, unrelated.match_digest);
+    assert_ne!(first.transcript_callable, second.transcript_callable);
+    assert_ne!(first.match_digest, second.match_digest);
+}
+
 fn first_arm_pattern_digest(source: &str) -> [u8; 32] {
     let world = super::fixture(source, None);
     let report = super::analyze(&world).expect("pattern transcript fixture should check");

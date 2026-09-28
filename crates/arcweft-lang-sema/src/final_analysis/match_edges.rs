@@ -973,6 +973,7 @@ pub(super) fn prepare_checked_method_selections(
     structural_edges: &CheckedStructuralEdgeDraft,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     joins: &PreparedCallableJoins,
+    coordinates: &crate::semantic_coordinate::SemanticCoordinateIndex<'_, '_>,
 ) -> Result<BTreeMap<ExprId, CheckedMethodSelection>, FinalSemanticAnalysisError> {
     let mut methods = BTreeMap::new();
     for (call_owner, joined) in joins {
@@ -994,8 +995,7 @@ pub(super) fn prepare_checked_method_selections(
             }
             Err(error) => return Err(error.clone().into()),
         };
-        let selection = CheckedMethodSelection::try_from_join(join)
-            .ok_or(CheckedCallableJoinError::ReceiverModeMismatch)?;
+        let selection = CheckedMethodSelection::try_from_join(join, coordinates)?;
         if methods.insert(value, selection).is_some() {
             return Err(CheckedCallableJoinError::MethodLookupAmbiguous.into());
         }

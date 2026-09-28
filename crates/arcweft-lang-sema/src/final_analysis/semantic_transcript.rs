@@ -3638,7 +3638,7 @@ fn write_resolution_payload(
             }
             CheckedValueResolution::LineContext => {}
             CheckedValueResolution::ProjectCallable(callable) => {
-                write_project_callable(hasher, analysis, callable)?;
+                write_project_callable(hasher, analysis, coordinates, callable)?;
             }
             CheckedValueResolution::Registered(value) => {
                 transcript_update!(hasher, value.as_bytes());
@@ -3698,7 +3698,7 @@ fn write_resolution_payload(
                 );
             }
             CheckedSelectResolution::Method(method) => {
-                transcript_update!(hasher, method.callable().as_bytes());
+                transcript_update!(hasher, method.transcript_callable().as_bytes());
                 transcript_update!(hasher, method.receiver_type().as_bytes());
                 match method.receiver_mode() {
                     crate::callable::CallableReceiverMode::None => {
@@ -4085,7 +4085,7 @@ fn write_value_resolution(
         }
         CheckedValueResolution::ProjectCallable(callable) => {
             transcript_update!(hasher, &[3]);
-            write_project_callable(hasher, analysis, callable)?;
+            write_project_callable(hasher, analysis, coordinates, callable)?;
         }
         CheckedValueResolution::ProjectItem(item) => {
             if !item.has_valid_semantic_identity() {
@@ -4566,13 +4566,19 @@ fn write_nominal(
 fn write_project_callable(
     hasher: &mut MatchTranscriptHasher<'_>,
     analysis: &FinalSemanticAnalysis,
+    coordinates: &SemanticCoordinateIndex<'_, '_>,
     callable: &super::CheckedProjectCallable,
 ) -> Result<(), SemanticTranscriptError> {
     let facts = analysis
         .checked_callables()
         .project_callable(callable.declaration())
         .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-    transcript_update!(hasher, facts.id().semantic_digest().as_bytes());
+    transcript_update!(
+        hasher,
+        coordinates
+            .accepted_declaration(callable.declaration())?
+            .as_bytes(),
+    );
     if let Some(interface) = facts.sealed_interface_digest() {
         transcript_update!(hasher, interface.as_bytes());
         return Ok(());

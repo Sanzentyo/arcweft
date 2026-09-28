@@ -805,6 +805,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &structural_edges,
             self.facts.expressions(),
             &callable_joins,
+            &semantic_coordinates,
         )?;
         for (owner, selection) in method_selections {
             let previous = self

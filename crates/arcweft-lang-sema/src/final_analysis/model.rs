@@ -16,8 +16,8 @@ use super::{
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
-    CheckedCallApplicationDigest, CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId,
-    OpenArgumentId,
+    CheckedCallApplicationDigest, CheckedCallableJoin, CheckedCallableJoinDigest,
+    CheckedCallableJoinError, CheckedCallableJoinTranscriptDigest, DropCallableId, OpenArgumentId,
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::checked_compile_time::CheckedCompileTimeScalar;
@@ -25,7 +25,7 @@ use crate::checked_rich_text::CheckedContentApplicationId;
 use crate::checked_rich_text::Milli;
 use crate::semantic_coordinate::{
     AcceptedDeclarationSemanticId, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
-    StableCheckedValueCoordinate,
+    SemanticCoordinateIndex, StableCheckedValueCoordinate,
 };
 use crate::types::{CharacterField, EntityKind};
 use arcweft_core::value::RuntimeAgentField;
@@ -554,28 +554,41 @@ impl CheckedValueResolution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedMethodSelection {
     callable: CheckedCallableJoinDigest,
+    transcript_callable: CheckedCallableJoinTranscriptDigest,
     receiver_type: SemanticTypeDigest,
     receiver_mode: CallableReceiverMode,
 }
 
 impl CheckedMethodSelection {
-    pub(crate) fn try_from_join(join: &CheckedCallableJoin) -> Option<Self> {
+    pub(crate) fn try_from_join(
+        join: &CheckedCallableJoin,
+        coordinates: &SemanticCoordinateIndex<'_, '_>,
+    ) -> Result<Self, CheckedCallableJoinError> {
         let receiver_mode = join.receiver().clone();
         let receiver = match &receiver_mode {
-            CallableReceiverMode::None => return None,
+            CallableReceiverMode::None => {
+                return Err(CheckedCallableJoinError::ReceiverModeMismatch);
+            }
             CallableReceiverMode::Value { receiver }
             | CallableReceiverMode::Type { receiver }
             | CallableReceiverMode::Extension { receiver, .. } => receiver,
         };
-        Some(Self {
-            callable: join.semantic_digest().ok()?,
-            receiver_type: receiver.semantic_identity_digest().ok()?,
+        Ok(Self {
+            callable: join.semantic_digest()?,
+            transcript_callable: join
+                .stable_transcript_digest(coordinates)
+                .map_err(|_| CheckedCallableJoinError::StableTranscriptIdentity)?,
+            receiver_type: receiver.semantic_identity_digest()?,
             receiver_mode,
         })
     }
 
     pub const fn callable(&self) -> CheckedCallableJoinDigest {
         self.callable
+    }
+
+    pub(crate) const fn transcript_callable(&self) -> CheckedCallableJoinTranscriptDigest {
+        self.transcript_callable
     }
 
     pub const fn receiver_type(&self) -> SemanticTypeDigest {
