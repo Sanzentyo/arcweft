@@ -2,7 +2,7 @@ use super::*;
 
 use arcweft_lang_syntax::attachment::TypedItemNode;
 
-use crate::expr::{HirExprKind, HirPoisonState};
+use crate::expr::{HirExprKind, HirPoisonState, HirThreadFlowItem};
 use crate::item::{
     HirContractScopes, HirFunctionBody, HirFunctionItem, HirFunctionParameterGroup,
     HirFunctionSignature, HirParameter, HirParameterKind,
@@ -10,6 +10,98 @@ use crate::item::{
 use crate::module::HirModuleStatus;
 use crate::stmt::{HirContextualStmtBody, HirStmtKind};
 use crate::type_ref::{HirType, HirTypeKind};
+
+#[test]
+fn await_pending_body_retains_expression_match_source_owners() {
+    let parsed = parse(
+        "arcweft-test://proof/await-pending-expression-match",
+        r#"
+fn observe(need: Need<i64>) -> i64 {
+    await need with {
+        pending progress => {
+            let selected = match true {
+                true => 1i64
+                false => 2i64
+            }
+        }
+    }
+}
+"#,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower_with_proof_return_classes(&mut database, &parsed, &key, []);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let (_, _, function) = function(&module, 0);
+    let HirFunctionBody::Block {
+        statements,
+        tail: await_owner,
+        ..
+    } = function.body()
+    else {
+        panic!("Await fixture requires a function body");
+    };
+    assert!(statements.is_empty(), "Await is the function value tail");
+    let HirExprKind::Await(await_expression) = module
+        .arenas()
+        .expressions()
+        .resolve(module.slots(), *await_owner)
+        .expect("Await expression")
+        .kind()
+    else {
+        panic!("function value tail retains Await");
+    };
+    let [pending] = await_expression.branches() else {
+        panic!("Await retains one Pending branch");
+    };
+    assert!(pending.pattern().is_some());
+    let HirContextualStmtBody::Thread(body) = pending.body() else {
+        panic!("Pending owns a Thread/Flow body");
+    };
+    let [HirThreadFlowItem::Statement(let_owner)] = body.items() else {
+        panic!("Pending body retains one Let statement");
+    };
+    let HirStmtKind::Let { initializer, .. } = module
+        .resolve_stmt(*let_owner)
+        .expect("Pending body Let")
+        .kind()
+    else {
+        panic!("Pending body statement is Let");
+    };
+    let match_owner = *initializer;
+    let matched = module
+        .arenas()
+        .expressions()
+        .resolve(module.slots(), match_owner)
+        .expect("Match initializer");
+    let HirExprKind::Match(matched) = matched.kind() else {
+        panic!("Let initializer is an expression Match");
+    };
+    assert_eq!(matched.arms().len(), 2);
+    let source = module
+        .source_site(
+            parsed.document().identity(),
+            crate::source_index::HirSourceQuery::Expr {
+                owner: match_owner,
+                role: crate::source_index::HirExprSourceRole::Whole,
+            },
+        )
+        .expect("Match source coordinate");
+    let crate::source_index::HirSourcePresence::Present(HirSourceSite::Span(span)) =
+        source.presence()
+    else {
+        panic!("Match initializer retains a source span");
+    };
+    assert!(
+        parsed.document().text()[span.range().start()..span.range().end()]
+            .starts_with("match true")
+    );
+}
 
 #[test]
 fn function_body_retains_prefix_try_associated_call_and_following_select() {

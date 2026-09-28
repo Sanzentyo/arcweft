@@ -318,6 +318,43 @@ flow row(flag: bool) {
 }
 
 #[test]
+fn checked_match_transcript_commits_await_pending_body_and_ignores_source_revision() {
+    let original = r#"
+fn observe(need: Need<i64>) -> i64 {
+    await need with {
+        pending progress => {
+            let selected = match true {
+                true => 1i64
+                false => 2i64
+            }
+        }
+    }
+}
+"#;
+    let changed = original.replace("true => 1i64", "true => 3i64");
+    let revised = r#"
+fn unrelated() -> i64 { 99i64 }
+fn observe ( need : Need<i64> ) -> i64 {
+    await need with {
+        pending progress => {
+            let selected = match true {
+                true => 0x1_i64
+                false => 2i64
+            }
+        }
+    }
+}
+"#;
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "Await Pending body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
 fn checked_match_transcript_commits_dialogue_on_body_and_ignores_source_revision() {
     let original = r#"
 pub character alice { display = "Alice" }
