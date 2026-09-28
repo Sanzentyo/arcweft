@@ -2833,3 +2833,19 @@ Match digest も異なるが型も異なるため、この比較だけを field 
 Sema lib 1057/1057、focused acceptance、changed-crate Clippy、fmt、cached diff
 check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
 再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
+
+## Match T01 ProgressField atom の writer 証拠 — 2026-09-28
+
+確認した code commit は `122e26ff811544570cae84f8bb11c8f3bac60861`。
+main へ fast-forward push 後、working tree は clean。
+
+ProgressField の transcript payload は重複した Ratio/Label byte mapping をやめ、
+owner の `ProgressField::semantic_tag()` を使う。受理済み Pending/Match fixture から
+実際の checked Ratio/Label selection を取得し、同じ analysis、owner coordinate、
+hasher prefix、型入力なしで writer に転記すると、同じ byte 長で異なる payload
+digest になる。直前 cut の Match-root 到達証拠と合わせて field atom を検証した。
+
+focused semantic transcript 42/42、Sema lib 1058/1058、changed-crate Clippy、
+fmt、cached diff check は成功。既存警告あり。owner tag に同じ値を移す内部 writer
+整理で公開形や依存関係を変えていないため、workspace と構造 gate はこの cut で
+再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
