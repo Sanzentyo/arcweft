@@ -204,6 +204,54 @@ fn source_match_digest(source: &str) -> [u8; 32] {
     outermost(&match_observations(source)).digest
 }
 
+fn bool_match_i64_source(expression: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {expression}\n        false => 0i64\n    }}\n}}\n"
+    )
+}
+
+fn numeric_sequence_match_source(expression: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> Vec<i64> {{\n    match flag {{\n        true => {expression}\n        false => [0i64]\n    }}\n}}\n"
+    )
+}
+
+fn callable_value_match_source(copy: &str) -> String {
+    format!(
+        "fn identity(value: i64) -> i64 {{ value }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{ let saved = identity; let copy = {copy}; 1i64 }}\n        false => 0i64\n    }}\n}}\n"
+    )
+}
+
+fn field_match_source(member: &str) -> String {
+    format!(
+        "struct Pair {{ left: i64, right: i64 }}\nfn root(pair: Pair, flag: bool) -> i64 {{\n    match flag {{\n        true => pair.{member}\n        false => 0i64\n    }}\n}}\n"
+    )
+}
+
+fn method_match_source(prefix: &str, call: &str) -> String {
+    format!(
+        "{prefix}view Main(dialogue: DialogueView, speed: f32) {{\n    match true {{\n        true => {call}\n        false => Button()\n    }}\n}}\n"
+    )
+}
+
+fn try_match_source(first: &str) -> String {
+    format!(
+        "fn root(first: Result<i64, String>, second: Result<i64, String>, flag: bool) -> Result<i64, String> {{\n    result {{\n        match flag {{\n            true => try {first}\n            false => try second\n        }}\n    }}\n}}\n"
+    )
+}
+
+fn pipe_match_source(left: &str) -> String {
+    format!(
+        "fn identity(value: i32) -> i32 {{ value }}\nfn shifted(value: i32) -> i32 {{ value + 1i32 }}\nfn apply(callback: i32 -> i32, value: i32) -> i32 {{ callback(value) }}\nfn root(flag: bool) -> (i32, i32) {{\n    match flag {{\n        true => {left} |> (apply(^, 1i32), apply(^, 2i32))\n        false => (0i32, 0i32)\n    }}\n}}\n"
+    )
+}
+
+fn choice_match_source(prefix: &str, plan: &str) -> String {
+    format!(
+        "{prefix}flow done() -> String {{ return \"done\" }}\nflow main() {{\n    let selected = match true {{\n        true => choice @choice.main {{ @.go \"Go\" -> @flow.done }} {plan}\n        false => ()\n    }}\n}}\n"
+    )
+}
+
 struct MatchArmExpressionObservation {
     semantic_digest: [u8; 32],
     hir_kind: HirExprKind,
@@ -553,13 +601,8 @@ impl Number {
 
 #[test]
 fn checked_match_transcript_commits_pipe_owner_and_checked_binding() {
-    let source = |left: &str| {
-        format!(
-            "fn identity(value: i32) -> i32 {{ value }}\nfn shifted(value: i32) -> i32 {{ value + 1i32 }}\nfn apply(callback: i32 -> i32, value: i32) -> i32 {{ callback(value) }}\nfn root(flag: bool) -> (i32, i32) {{\n    match flag {{\n        true => {left} |> (apply(^, 1i32), apply(^, 2i32))\n        false => (0i32, 0i32)\n    }}\n}}\n"
-        )
-    };
-    let identity = checked_match_arm_expression_observation(&source("identity"), 0);
-    let shifted = checked_match_arm_expression_observation(&source("shifted"), 0);
+    let identity = checked_match_arm_expression_observation(&pipe_match_source("identity"), 0);
+    let shifted = checked_match_arm_expression_observation(&pipe_match_source("shifted"), 0);
 
     assert_ne!(
         identity.semantic_digest, shifted.semantic_digest,
@@ -578,13 +621,8 @@ fn checked_match_transcript_commits_pipe_owner_and_checked_binding() {
 
 #[test]
 fn checked_match_transcript_commits_try_carrier_and_operand() {
-    let source = |first: &str| {
-        format!(
-            "fn root(first: Result<i64, String>, second: Result<i64, String>, flag: bool) -> Result<i64, String> {{\n    result {{\n        match flag {{\n            true => try {first}\n            false => try second\n        }}\n    }}\n}}\n"
-        )
-    };
-    let first = checked_match_arm_expression_observation(&source("first"), 0);
-    let changed = checked_match_arm_expression_observation(&source("second"), 0);
+    let first = checked_match_arm_expression_observation(&try_match_source("first"), 0);
+    let changed = checked_match_arm_expression_observation(&try_match_source("second"), 0);
 
     assert_ne!(
         first.semantic_digest, changed.semantic_digest,
@@ -731,13 +769,8 @@ fn checked_match_transcript_uses_accepted_project_callable_value_identity() {
 
 #[test]
 fn checked_match_transcript_uses_closed_value_and_select_families() {
-    let value_source = |copy: &str| {
-        format!(
-            "fn identity(value: i64) -> i64 {{ value }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{ let saved = identity; let copy = {copy}; 1i64 }}\n        false => 0i64\n    }}\n}}\n"
-        )
-    };
-    let project = value_source("identity");
-    let local = value_source("saved");
+    let project = callable_value_match_source("identity");
+    let local = callable_value_match_source("saved");
     let world = super::fixture(&local, None);
     let report = super::analyze(&world).expect("checked local and project callable values");
     let value_tags = report.expressions().filter_map(|(_, expression)| {
@@ -755,12 +788,7 @@ fn checked_match_transcript_uses_closed_value_and_select_families() {
         "a direct callable and an accepted local binding are different Value meanings",
     );
 
-    let field_source = |member: &str| {
-        format!(
-            "struct Pair {{ left: i64, right: i64 }}\nfn root(pair: Pair, flag: bool) -> i64 {{\n    match flag {{\n        true => pair.{member}\n        false => 0i64\n    }}\n}}\n"
-        )
-    };
-    let left = field_source("left");
+    let left = field_match_source("left");
     let world = super::fixture(&left, None);
     let report = super::analyze(&world).expect("checked field selection");
     assert!(report.expressions().any(|(_, expression)| matches!(
@@ -770,7 +798,7 @@ fn checked_match_transcript_uses_closed_value_and_select_families() {
     )));
     assert_ne!(
         source_match_digest(&left),
-        source_match_digest(&field_source("right")),
+        source_match_digest(&field_match_source("right")),
         "different accepted fields reach the Match digest",
     );
 }
@@ -782,13 +810,8 @@ fn checked_match_transcript_uses_structural_method_identity() {
         runtime_callable: [u8; 32],
         transcript_callable: [u8; 32],
     }
-    let source = |prefix: &str, call: &str| {
-        format!(
-            "{prefix}view Main(dialogue: DialogueView, speed: f32) {{\n    match true {{\n        true => {call}\n        false => Button()\n    }}\n}}\n"
-        )
-    };
     let observe = |prefix: &str, call: &str| {
-        let world = super::fixture(&source(prefix, call), None);
+        let world = super::fixture(&method_match_source(prefix, call), None);
         let report = super::analyze(&world).expect("checked method selection");
         let project = world.project.analysis_view().expect("executable HIR");
         let module = project
@@ -840,12 +863,7 @@ fn checked_match_transcript_uses_structural_method_identity() {
 
 #[test]
 fn checked_match_transcript_commits_compact_choice_plan_rows() {
-    let source = |prefix: &str, plan: &str| {
-        format!(
-            "{prefix}flow done() -> String {{ return \"done\" }}\nflow main() {{\n    let selected = match true {{\n        true => choice @choice.main {{ @.go \"Go\" -> @flow.done }} {plan}\n        false => ()\n    }}\n}}\n"
-        )
-    };
-    let digest = |plan: &str| source_match_digest(&source("", plan));
+    let digest = |plan: &str| source_match_digest(&choice_match_source("", plan));
     let absent = digest("");
     let empty = digest("with {}");
     let window = digest("with { window = true }");
@@ -854,11 +872,11 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
     let task = digest("with { cancel on task(_) {} }");
     let expression = digest("with { cancel on true {} }");
     let timeout = digest("with { cancel on timeout(1s) {} }");
-    let signal = source_match_digest(&source(
+    let signal = source_match_digest(&choice_match_source(
         "signal ready: bool\n",
         "with { cancel on signal(@signal.ready, value) { let observed = value } }",
     ));
-    let formatted = source_match_digest(&source(
+    let formatted = source_match_digest(&choice_match_source(
         "fn unrelated() -> i64 { 99i64 }\n",
         "with {  window = true  }",
     ));
@@ -870,7 +888,7 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
     assert_ne!(input, signal, "checked Signal target and payload pattern");
     assert_eq!(window, formatted, "plan formatting and source revision");
 
-    let invalid = super::fixture(&source("", "with { unknown = true }"), None);
+    let invalid = super::fixture(&choice_match_source("", "with { unknown = true }"), None);
     assert!(
         super::analyze(&invalid).is_err(),
         "unknown plan key rejects"
@@ -880,11 +898,11 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
         ("cancel Boolean", "with { cancel on 1i64 {} }"),
         ("Signal target", "with { cancel on signal(true) {} }"),
     ] {
-        let invalid = super::fixture(&source("", plan), None);
+        let invalid = super::fixture(&choice_match_source("", plan), None);
         assert!(super::analyze(&invalid).is_err(), "{label} rejects");
     }
     let invalid = super::fixture(
-        &source(
+        &choice_match_source(
             "signal ready: bool\n",
             "with { cancel on signal(@signal.ready, \"wrong\") {} }",
         ),
@@ -895,7 +913,10 @@ fn checked_match_transcript_commits_compact_choice_plan_rows() {
         "Signal payload pattern must match the checked Signal type",
     );
 
-    let effectful = super::fixture(&source("", "with { window = thread {} }"), None);
+    let effectful = super::fixture(
+        &choice_match_source("", "with { window = thread {} }"),
+        None,
+    );
     let report = super::analyze(&effectful).expect("effectful plan value checks");
     let choice = report
         .expressions()
@@ -1397,11 +1418,7 @@ fn checked_match_pattern_transcript_commits_mutable_entity_and_whole_binding_own
 
 #[test]
 fn checked_match_transcript_commits_binary_operator_and_range_inclusivity() {
-    let result = |expression: &str| {
-        source_match_digest(&format!(
-            "fn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {expression}\n        false => 0i64\n    }}\n}}\n"
-        ))
-    };
+    let result = |expression: &str| source_match_digest(&bool_match_i64_source(expression));
     assert_ne!(result("1i64 + 2i64"), result("1i64 - 2i64"));
 
     let range = |expression: &str| {
@@ -1414,11 +1431,7 @@ fn checked_match_transcript_commits_binary_operator_and_range_inclusivity() {
 
 #[test]
 fn checked_match_transcript_commits_compact_numeric_values_but_not_radix() {
-    let result = |expression: &str| {
-        source_match_digest(&format!(
-            "fn root(flag: bool) -> Vec<i64> {{\n    match flag {{\n        true => {expression}\n        false => [0i64]\n    }}\n}}\n"
-        ))
-    };
+    let result = |expression: &str| source_match_digest(&numeric_sequence_match_source(expression));
     assert_ne!(result("[1i64, 2i64]"), result("[1i64, 3i64]"));
     assert_eq!(result("[1i64, 2i64]"), result("[0x1_i64, 0b10_i64]"));
 }
@@ -1587,4 +1600,442 @@ fn checked_match_pattern_transcript_carries_project_record_variant_owner() {
     };
     assert!(carries_payload_type(&record_variant, &TypeKind::I64));
     assert!(carries_payload_type(&changed, &TypeKind::I32));
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExpressionCorpusDisposition {
+    Accepted,
+    Pending,
+    RejectOnly,
+    #[allow(
+        dead_code,
+        reason = "no live expression family has been proven unreachable"
+    )]
+    ProvenUnreachable,
+}
+
+// Each list generates both the corpus disposition and an exhaustive classifier
+// against its live HIR or checked owner enum.
+macro_rules! expression_family_inventory {
+    ($family:ident for $owner:ty, { $($pattern:pat => $variant:ident => $disposition:ident),+ $(,)? }) => {
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+        enum $family {
+            $($variant),+
+        }
+
+        impl $family {
+            const INVENTORY: &'static [(Self, ExpressionCorpusDisposition)] = &[
+                $((Self::$variant, ExpressionCorpusDisposition::$disposition)),+
+            ];
+
+            fn of(owner: &$owner) -> Self {
+                match owner {
+                    $($pattern => Self::$variant),+
+                }
+            }
+        }
+    };
+}
+
+expression_family_inventory!(ExprShapeFamily for HirExprKind, {
+    HirExprKind::Unit => Unit => Accepted,
+    HirExprKind::Literal(_) => Literal => Accepted,
+    HirExprKind::EntityReference(_) => EntityReference => Pending,
+    HirExprKind::LifetimePath(_) => LifetimePath => Pending,
+    HirExprKind::Path(_) => Path => Accepted,
+    HirExprKind::ShortVariant(_) => ShortVariant => Pending,
+    HirExprKind::Placeholder(_) => Placeholder => Accepted,
+    HirExprKind::Tuple(_) => Tuple => Accepted,
+    HirExprKind::BracketSequence(_) => BracketSequence => Pending,
+    HirExprKind::NumericBracketSequence(_) => NumericBracketSequence => Accepted,
+    HirExprKind::ArrayRepeat(_) => ArrayRepeat => Pending,
+    HirExprKind::Call(_) => Call => Accepted,
+    HirExprKind::Select(_) => Select => Accepted,
+    HirExprKind::Index(_) => Index => Pending,
+    HirExprKind::Pipe(_) => Pipe => Accepted,
+    HirExprKind::Try(_) => Try => Accepted,
+    HirExprKind::Await(_) => Await => Pending,
+    HirExprKind::Thread(_) => Thread => Accepted,
+    HirExprKind::Choice(_) => Choice => Accepted,
+    HirExprKind::Range(_) => Range => Pending,
+    HirExprKind::Record(_) => Record => Pending,
+    HirExprKind::RecordLiteral(_) => RecordLiteral => Pending,
+    HirExprKind::Binary(_) => Binary => Accepted,
+    HirExprKind::Borrow(_) => Borrow => Pending,
+    HirExprKind::Dereference(_) => Dereference => Pending,
+    HirExprKind::Closure(_) => Closure => Accepted,
+    HirExprKind::Unary(_) => Unary => Pending,
+    HirExprKind::Block(_) => Block => Accepted,
+    HirExprKind::ComputationBlock(_) => ComputationBlock => Pending,
+    HirExprKind::NamedBlock(_) => NamedBlock => Pending,
+    HirExprKind::Loop(_) => Loop => Pending,
+    HirExprKind::If(_) => If => Pending,
+    HirExprKind::IfLet(_) => IfLet => Pending,
+    HirExprKind::Match(_) => Match => Accepted,
+    HirExprKind::AttachedContentApplication(_) => AttachedContentApplication => Pending,
+    HirExprKind::PostfixBracket(_) => PostfixBracket => Pending,
+    HirExprKind::Error(_) => Error => RejectOnly,
+    HirExprKind::ForSynthetic(_) => ForSynthetic => Pending,
+});
+
+expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionResolution, {
+    CheckedExpressionResolution::Structural => Structural => Accepted,
+    CheckedExpressionResolution::Scope(_) => Scope => Pending,
+    CheckedExpressionResolution::Literal(_) => Literal => Accepted,
+    CheckedExpressionResolution::Value(_) => Value => Accepted,
+    CheckedExpressionResolution::Select(_) => Select => Accepted,
+    CheckedExpressionResolution::Nominal(_) => Nominal => Pending,
+    CheckedExpressionResolution::Variant(_) => Variant => Pending,
+    CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Pending,
+    CheckedExpressionResolution::StageLook(_) => StageLook => Pending,
+    CheckedExpressionResolution::Effect(_) => Effect => Pending,
+    CheckedExpressionResolution::Call => Call => Accepted,
+    CheckedExpressionResolution::Await(_) => Await => Pending,
+    CheckedExpressionResolution::Choice(_) => Choice => Accepted,
+    CheckedExpressionResolution::Try(_) => Try => Accepted,
+    CheckedExpressionResolution::ImplicitCallable(_) => ImplicitCallable => Pending,
+    CheckedExpressionResolution::Closure(_) => Closure => Accepted,
+    CheckedExpressionResolution::ImplicitParameter(_) => ImplicitParameter => Pending,
+    CheckedExpressionResolution::Pipe(_) => Pipe => Accepted,
+    CheckedExpressionResolution::PipeLeft(_) => PipeLeft => Accepted,
+    CheckedExpressionResolution::ViewCall(_) => ViewCall => Accepted,
+    CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Pending,
+    CheckedExpressionResolution::StyleValue(_) => StyleValue => Pending,
+    CheckedExpressionResolution::CompileTimeCallee(_) => CompileTimeCallee => Accepted,
+    CheckedExpressionResolution::TypeValue(_) => TypeValue => Pending,
+    CheckedExpressionResolution::CompileTimeScalar(_) => CompileTimeScalar => Pending,
+    CheckedExpressionResolution::DialogueLineReference(_) => DialogueLineReference => Pending,
+    CheckedExpressionResolution::DialogueLineCoordinate(_) => DialogueLineCoordinate => Pending,
+    CheckedExpressionResolution::DialogueTextKeyCoordinate(_) => DialogueTextKeyCoordinate => Pending,
+    CheckedExpressionResolution::CharacterDialogueFactory(_) => CharacterDialogueFactory => Pending,
+    CheckedExpressionResolution::CharacterDialogueReconfigure(_) => CharacterDialogueReconfigure => Pending,
+    CheckedExpressionResolution::DialogueApplication { .. } => DialogueApplication => Pending,
+    CheckedExpressionResolution::ContentApplication(_) => ContentApplication => Pending,
+    CheckedExpressionResolution::PostfixBracket(_) => PostfixBracket => Pending,
+});
+
+expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
+    CheckedValueResolution::Local(_) => Local => Accepted,
+    CheckedValueResolution::LineContext => LineContext => Pending,
+    CheckedValueResolution::CharacterField { .. } => CharacterField => Pending,
+    CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
+    CheckedValueResolution::ProjectItem(_) => ProjectItem => Pending,
+    CheckedValueResolution::Entry(_) => Entry => Pending,
+    CheckedValueResolution::Registered(_) => Registered => Pending,
+    CheckedValueResolution::Constant(_) => Constant => Pending,
+});
+
+expression_family_inventory!(SelectResolutionFamily for CheckedSelectResolution, {
+    CheckedSelectResolution::Method(_) => Method => Accepted,
+    CheckedSelectResolution::DialogueView { .. } => DialogueView => Accepted,
+    CheckedSelectResolution::AgentField { .. } => AgentField => Pending,
+    CheckedSelectResolution::ProgressField { .. } => ProgressField => Pending,
+    CheckedSelectResolution::Field(_) => Field => Accepted,
+});
+
+struct MatchExpressionCorpusObservation {
+    shapes: BTreeSet<ExprShapeFamily>,
+    resolutions: BTreeSet<ExpressionResolutionFamily>,
+    values: BTreeSet<ValueResolutionFamily>,
+    selects: BTreeSet<SelectResolutionFamily>,
+}
+
+impl MatchExpressionCorpusObservation {
+    fn record_value(&mut self, value: &CheckedValueResolution) {
+        self.values.insert(ValueResolutionFamily::of(value));
+        if let CheckedValueResolution::CharacterField { receiver, .. } = value {
+            self.record_value(receiver);
+        }
+    }
+
+    fn record_resolution(&mut self, resolution: &CheckedExpressionResolution) {
+        self.resolutions
+            .insert(ExpressionResolutionFamily::of(resolution));
+        if let CheckedExpressionResolution::Value(value) = resolution {
+            self.record_value(value);
+        }
+        if let CheckedExpressionResolution::Select(select) = resolution {
+            self.selects.insert(SelectResolutionFamily::of(select));
+        }
+        if let CheckedExpressionResolution::CompileTimeScalar(scalar) = resolution {
+            self.record_resolution(scalar.original());
+        }
+        if let CheckedExpressionResolution::ImplicitCallable(callable) = resolution
+            && let CheckedImplicitCallableBody::Plain(inner) = callable.body()
+        {
+            self.record_resolution(inner);
+        }
+    }
+}
+
+/// Traverse only expressions whose accepted path descends from one Match root.
+/// Checked wrappers may retain a nested Value/Select resolution at that owner.
+fn accepted_match_expression_corpus_observation(source: &str) -> MatchExpressionCorpusObservation {
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).expect("expression corpus source should check");
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let match_owners = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    let [match_owner] = match_owners.as_slice() else {
+        panic!("each expression corpus row has exactly one Match expression");
+    };
+    let product =
+        super::checked_match_product(&report, project, module, &world.symbols, *match_owner);
+    assert!(
+        !product.arms().is_empty(),
+        "accepted Match has checked arms"
+    );
+
+    let coordinates = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let root_path = coordinates
+        .expression(*match_owner)
+        .expect("accepted Match root path");
+    let mut observation = MatchExpressionCorpusObservation {
+        shapes: BTreeSet::new(),
+        resolutions: BTreeSet::new(),
+        values: BTreeSet::new(),
+        selects: BTreeSet::new(),
+    };
+    for (owner, hir) in module.expressions() {
+        let Some(checked) = report.expression(owner) else {
+            continue;
+        };
+        let path = coordinates
+            .expression(owner)
+            .expect("checked expression owner path");
+        if path.root() != root_path.root() || !path.steps().starts_with(root_path.steps()) {
+            continue;
+        }
+        observation.shapes.insert(ExprShapeFamily::of(hir.kind()));
+        observation.record_resolution(checked.resolution());
+    }
+    assert!(observation.shapes.contains(&ExprShapeFamily::Match));
+    observation
+}
+
+fn assert_expression_corpus_inventory<T: Copy + Ord + std::fmt::Debug>(
+    axis: &str,
+    observed: &BTreeSet<T>,
+    inventory: &[(T, ExpressionCorpusDisposition)],
+) {
+    for (family, disposition) in inventory {
+        assert_eq!(
+            observed.contains(family),
+            *disposition == ExpressionCorpusDisposition::Accepted,
+            "{axis} {family:?} corpus disposition {disposition:?}",
+        );
+    }
+}
+
+struct ExpressionCorpusRow {
+    name: &'static str,
+    source: String,
+    shapes: &'static [ExprShapeFamily],
+    resolutions: &'static [ExpressionResolutionFamily],
+    values: &'static [ValueResolutionFamily],
+    selects: &'static [SelectResolutionFamily],
+}
+
+fn view_method_corpus_row() -> ExpressionCorpusRow {
+    ExpressionCorpusRow {
+        name: "selected view method",
+        source: method_match_source("", "Button().on_click { dialogue.primary_action }"),
+        shapes: &[
+            ExprShapeFamily::Call,
+            ExprShapeFamily::Select,
+            ExprShapeFamily::Closure,
+        ],
+        resolutions: &[
+            ExpressionResolutionFamily::Select,
+            ExpressionResolutionFamily::Call,
+            ExpressionResolutionFamily::Closure,
+            ExpressionResolutionFamily::ViewCall,
+            ExpressionResolutionFamily::CompileTimeCallee,
+        ],
+        values: &[],
+        selects: &[
+            SelectResolutionFamily::Method,
+            SelectResolutionFamily::DialogueView,
+        ],
+    }
+}
+
+fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
+    vec![
+        ExpressionCorpusRow {
+            name: "binary scalar",
+            source: bool_match_i64_source("1i64 + 2i64"),
+            shapes: &[
+                ExprShapeFamily::Match,
+                ExprShapeFamily::Binary,
+                ExprShapeFamily::Literal,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+            ],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "compact numeric sequence",
+            source: numeric_sequence_match_source("[1i64, 2i64]"),
+            shapes: &[ExprShapeFamily::NumericBracketSequence],
+            resolutions: &[ExpressionResolutionFamily::Structural],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "local and project callable values",
+            source: callable_value_match_source("saved"),
+            shapes: &[ExprShapeFamily::Block, ExprShapeFamily::Path],
+            resolutions: &[ExpressionResolutionFamily::Value],
+            values: &[
+                ValueResolutionFamily::Local,
+                ValueResolutionFamily::ProjectCallable,
+            ],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "record field",
+            source: field_match_source("left"),
+            shapes: &[ExprShapeFamily::Select],
+            resolutions: &[ExpressionResolutionFamily::Select],
+            values: &[],
+            selects: &[SelectResolutionFamily::Field],
+        },
+        view_method_corpus_row(),
+        ExpressionCorpusRow {
+            name: "checked Try carrier",
+            source: try_match_source("first"),
+            shapes: &[ExprShapeFamily::Try],
+            resolutions: &[ExpressionResolutionFamily::Try],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "pipeline placeholders",
+            source: pipe_match_source("identity"),
+            shapes: &[
+                ExprShapeFamily::Pipe,
+                ExprShapeFamily::Placeholder,
+                ExprShapeFamily::Tuple,
+                ExprShapeFamily::Call,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Pipe,
+                ExpressionResolutionFamily::PipeLeft,
+                ExpressionResolutionFamily::Call,
+            ],
+            values: &[ValueResolutionFamily::ProjectCallable],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "Choice plan with thread value",
+            source: choice_match_source("", "with { window = thread {} }"),
+            shapes: &[
+                ExprShapeFamily::Choice,
+                ExprShapeFamily::Thread,
+                ExprShapeFamily::Unit,
+            ],
+            resolutions: &[ExpressionResolutionFamily::Choice],
+            values: &[],
+            selects: &[],
+        },
+    ]
+}
+
+#[test]
+fn checked_match_expression_corpus_tracks_accepted_root_families() {
+    let mut observed = MatchExpressionCorpusObservation {
+        shapes: BTreeSet::new(),
+        resolutions: BTreeSet::new(),
+        values: BTreeSet::new(),
+        selects: BTreeSet::new(),
+    };
+    for row in expression_corpus_rows() {
+        let found = accepted_match_expression_corpus_observation(&row.source);
+        for required in row.shapes {
+            assert!(
+                found.shapes.contains(required),
+                "{} needs {required:?}",
+                row.name
+            );
+        }
+        for required in row.resolutions {
+            assert!(
+                found.resolutions.contains(required),
+                "{} needs {required:?}",
+                row.name
+            );
+        }
+        for required in row.values {
+            assert!(
+                found.values.contains(required),
+                "{} needs {required:?}",
+                row.name
+            );
+        }
+        for required in row.selects {
+            assert!(
+                found.selects.contains(required),
+                "{} needs {required:?}",
+                row.name
+            );
+        }
+        observed.shapes.extend(found.shapes);
+        observed.resolutions.extend(found.resolutions);
+        observed.values.extend(found.values);
+        observed.selects.extend(found.selects);
+    }
+    assert_expression_corpus_inventory(
+        "HIR expression",
+        &observed.shapes,
+        ExprShapeFamily::INVENTORY,
+    );
+    assert_expression_corpus_inventory(
+        "checked expression",
+        &observed.resolutions,
+        ExpressionResolutionFamily::INVENTORY,
+    );
+    assert_expression_corpus_inventory(
+        "checked Value",
+        &observed.values,
+        ValueResolutionFamily::INVENTORY,
+    );
+    assert_expression_corpus_inventory(
+        "checked Select",
+        &observed.selects,
+        SelectResolutionFamily::INVENTORY,
+    );
+}
+
+#[test]
+fn checked_match_expression_corpus_excludes_unrelated_declaration_expressions() {
+    let source = format!(
+        "fn unrelated() -> i64 {{ let outside = 0i64..1i64; 0i64 }}\n{}",
+        bool_match_i64_source("1i64 + 2i64"),
+    );
+    let world = super::fixture(&source, None);
+    let report = super::analyze(&world).expect("unrelated range should check");
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    assert!(module.expressions().any(|(owner, expression)| {
+        matches!(expression.kind(), HirExprKind::Range(_)) && report.expression(owner).is_some()
+    }));
+    let observation = accepted_match_expression_corpus_observation(&source);
+    assert!(observation.shapes.contains(&ExprShapeFamily::Binary));
+    assert!(
+        !observation.shapes.contains(&ExprShapeFamily::Range),
+        "an unrelated checked Range must not enter the Match corpus",
+    );
 }
