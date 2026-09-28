@@ -3152,3 +3152,20 @@ Sema が拒否する非compact Choice 全体の native/AWBC 実行移行を、�
 正例は受理済み compact Choice の Timeout/Cancel/OnSelect body・pattern root と
 source order を差分検証する。これらの正例は未検証であり、T06 は未完のまま。
 View parameter default も現行の別 producer/consumer gap として保持する。
+
+## Match T06 compact Choice plan body roots — 2026-09-29
+
+確認した code commit は `2b61eee27a429531e96915df44c717e2b9023c8c`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み compact Choice を Match arm に置き、`with` plan の Timeout body、Cancel
+trigger pattern/body、OnSelect pattern/body が source-order ordinal を保つ typed role と
+Match 子孫の accepted coordinate に到達することを確認した。各 body の値だけを変更すると
+checked Choice の public/option ID、Goto target、plan rows は同じまま Match digest が
+変わる。plan 行順の変更でも digest が変わり、整形・無関係な先行宣言による raw ID/span
+変更では digest が保たれる。Cancel/OnSelect pattern の checked 型も検証した。
+
+focused test と Sema lib 1087/1087、changed-crate Clippy、fmt、cached diff check は
+成功。既存警告あり。テストのみの cut なので workspace と構造 gate は再実行していない。
+T06 には View parameter/default/body/value の明示matrix、とりわけ現行非受理の
+View default が残る。T01、View 以降と goal 全体も未完として継続する。
