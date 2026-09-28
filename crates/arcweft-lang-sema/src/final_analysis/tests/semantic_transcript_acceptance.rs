@@ -204,6 +204,57 @@ fn source_match_digest(source: &str) -> [u8; 32] {
     outermost(&match_observations(source)).digest
 }
 
+struct MatchArmExpressionObservation {
+    semantic_digest: [u8; 32],
+    hir_kind: HirExprKind,
+    checked_resolution: CheckedExpressionResolution,
+    value_type: TypeKind,
+}
+
+fn checked_match_arm_expression_observation(
+    source: &str,
+    arm_ordinal: usize,
+) -> MatchArmExpressionObservation {
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world)
+        .unwrap_or_else(|error| panic!("Match expression fixture should check: {error:?}"));
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("Match expression");
+    let HirExprKind::Match(authored) = module.resolve_expr(owner).expect("Match owner").kind()
+    else {
+        panic!("selected expression is a Match");
+    };
+    let arm = authored
+        .arms()
+        .get(arm_ordinal)
+        .expect("selected Match arm");
+    let arm_expression = module
+        .resolve_expr(arm.value())
+        .expect("Match arm expression");
+    let checked = report
+        .expression(arm.value())
+        .expect("checked Match arm expression");
+    let product = super::checked_match_product(&report, project, module, &world.symbols, owner);
+
+    MatchArmExpressionObservation {
+        semantic_digest: *product.semantic_digest().as_bytes(),
+        hir_kind: arm_expression.kind().clone(),
+        checked_resolution: checked.resolution().clone(),
+        value_type: checked
+            .value_type()
+            .expect("checked Match arm value type")
+            .clone(),
+    }
+}
+
 fn assert_match_sensitivity_and_source_revision_invariance(
     root: &str,
     original: &str,
@@ -498,6 +549,57 @@ impl Number {
         &changed,
         revised,
     );
+}
+
+#[test]
+fn checked_match_transcript_commits_pipe_owner_and_checked_binding() {
+    let source = |left: &str| {
+        format!(
+            "fn identity(value: i32) -> i32 {{ value }}\nfn shifted(value: i32) -> i32 {{ value + 1i32 }}\nfn apply(callback: i32 -> i32, value: i32) -> i32 {{ callback(value) }}\nfn root(flag: bool) -> (i32, i32) {{\n    match flag {{\n        true => {left} |> (apply(^, 1i32), apply(^, 2i32))\n        false => (0i32, 0i32)\n    }}\n}}\n"
+        )
+    };
+    let identity = checked_match_arm_expression_observation(&source("identity"), 0);
+    let shifted = checked_match_arm_expression_observation(&source("shifted"), 0);
+
+    assert_ne!(
+        identity.semantic_digest, shifted.semantic_digest,
+        "changing the checked Pipe source changes the Match digest",
+    );
+    assert!(matches!(identity.hir_kind, HirExprKind::Pipe(_)));
+    assert_eq!(
+        identity.value_type,
+        TypeKind::Tuple(vec![TypeKind::I32, TypeKind::I32])
+    );
+    let CheckedExpressionResolution::Pipe(pipe) = &identity.checked_resolution else {
+        panic!("Match arm Pipe has a checked Pipe binding");
+    };
+    assert_eq!(pipe.occurrences().len(), 2);
+}
+
+#[test]
+fn checked_match_transcript_commits_try_carrier_and_operand() {
+    let source = |first: &str| {
+        format!(
+            "fn root(first: Result<i64, String>, second: Result<i64, String>, flag: bool) -> Result<i64, String> {{\n    result {{\n        match flag {{\n            true => try {first}\n            false => try second\n        }}\n    }}\n}}\n"
+        )
+    };
+    let first = checked_match_arm_expression_observation(&source("first"), 0);
+    let changed = checked_match_arm_expression_observation(&source("second"), 0);
+
+    assert_ne!(
+        first.semantic_digest, changed.semantic_digest,
+        "changing the checked Try operand changes the Match digest",
+    );
+    assert!(matches!(first.hir_kind, HirExprKind::Try(_)));
+    assert_eq!(first.value_type, TypeKind::I64);
+    let CheckedExpressionResolution::Try(tried) = &first.checked_resolution else {
+        panic!("Match arm Try has a checked residual carrier");
+    };
+    assert_eq!(tried.carrier().success(), &TypeKind::I64);
+    assert!(matches!(
+        tried.boundary().owner(),
+        CheckedTryBoundaryOwner::CarrierBlock(_)
+    ));
 }
 
 #[test]
