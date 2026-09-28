@@ -2786,3 +2786,19 @@ diff check は成功。既存警告あり。テストのみの cut なので wor
 再実行していない。Registered/Entry/ProjectItem Value 等の既存受理 source は次の
 行の候補で、まだこの pilot の証拠には数えない。T01/T06 の残り、View 以降と goal
 全体は未完として継続する。
+
+## Match T01 Entry/ProjectItem Value の受理差分 — 2026-09-28
+
+確認した code commit は `2eb2bc2ebc086753fd2cfd5000b2a73d864eae21`。
+main へ fast-forward push 後、working tree は clean。
+
+既存 corpus helper を fixture 入力へ対応させ、Flow 内の2つの Entry と external/
+retained Character の2つの ProjectItem を、受理済み Match path 配下の checked
+Value として確認した。各 arm の値は同じ `Ref<Entry>` / `Ref<Character>` 型を保つが、
+Entry binding digest または ProjectItem semantic ID が異なる。片方の arm の owner
+を替えると Match digest が変わる。HIR EntityReference shape も受理済み行へ移した。
+
+acceptance module 34/34、Sema lib 1055/1055、changed-crate Clippy、fmt、cached
+diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。Registered Value は custom environment が必要なためこの cut に
+含めず、残る T01/T06、View 以降と goal 全体は未完として継続する。
