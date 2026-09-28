@@ -2868,3 +2868,24 @@ StageApi と Match result の exact Character 型も変わるため field atom �
 focused 2/2 と corpus matrix 1/1、Sema lib 1060/1060、changed-crate Clippy、fmt、
 cached diff check は成功。既存警告あり。テストのみの cut なので workspace と構造
 gate は再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
+
+## Match transcript 受理テストの owner 分割 — 2026-09-28
+
+確認した code commit は `b83ed9f671cd3a59410a387ec0e163f2fe550d55`。
+main へ fast-forward push 後、working tree は clean。
+
+`semantic_transcript_acceptance.rs` が 98,536 bytes / 2,642 physical LOC に達し、
+expression corpus pilot の一 cut だけで 451 LOC 増えたため、構造 policy の owner
+review を行った。単一ファイルには body-root、expression behavior、pattern、
+expression/Value/Select corpus の独立に変化する受理テスト責務が同居していた。
+共通 Match 観測 helper を親121 LOC / 4,760 bytes に残し、body_roots 440 LOC /
+11,276 bytes、expression_shapes 409 LOC / 16,574 bytes、patterns 649 LOC /
+24,399 bytes、expression_corpus 1,036 LOC / 41,900 bytes の test-only 子 module
+へ分けた。後者は accepted-path collector、網羅表、Value/Select owner fact を一つの
+受理境界として保つ。新たな本番 owner、状態、I/O、Cargo edge、公開 API はない。
+statement corpus は別子 module に置ける構造になった。
+
+移動前後の acceptance 38/38、Sema lib 1060/1060、fmt、changed-crate Clippy、
+`just structure-audit-gate`、cached diff check は成功。構造 gate は review trigger
+のみ、blocking 0。既存警告あり。T01/T06 の残り、View 以降と goal 全体は未完として
+継続する。
