@@ -2325,3 +2325,33 @@ compiler の native/decoded AWBC 共通 host テスト 1/1、fmt と cached diff
 構造 gate はこの cut では再実行していない。`CoreIndex` の値取得には別途
 affine item を clone しうる経路が見つかったため、次の所有権判断として残す。
 053 fixture 全体と後続工程の受入条件は未完了。
+
+## CoreIndex の Copy 契約 — 2026-09-28
+
+確認した code commit は `9f04fea14c2586e57fc974dabca152d090ec158f`。
+main へ fast-forward push 後、working tree は clean。
+
+`target[index]` は保持された collection から独立した値を返すため、選択 item
+に Copy を要求する。Sema の generation-bound local-use seal は選択済み式辺を
+辿り、閉じた generic instance でも Copy 証拠がない item を拒否する。
+`CoreIndex` の直接呼び出しは affine sequence 全体を `value_at` より前に拒否し、
+AWBC verifier は exact な sequence/array または String、整数 index、
+matching Copy result と pure effect を要求する。実行側のない Map/Range の
+index 型受理も削除した。affine collection から選択した要素だけを取り出して
+残りを暗黙に捨てる経路は作っていない。
+
+Core lib 778/778、Sema lib 1016/1016、compiler の native/decoded AWBC 実行
+1/1、変更 crate の all-target/all-feature Clippy、fmt、cached diff check は
+終了コード 0。Sema 全体の初回は選択済み postfix 子を二重に辿る回帰 7 件と、
+旧 fixture の affine `Stream` index 1 件で失敗した。前者は選択済み式辺の走査へ
+訂正し、後者は Copy 拒否を明示するテストへ移して再実行で全通過した。
+`just structure-audit-gate` は 2656 files / 97 packages / 348 review triggers /
+blocking 0。既存の大きな local-use owner は 2688 physical LOC / 104734 bytes、
+AWBC verifier owner は 5754 physical LOC / 224154 bytes。今回の追加はそれぞれ
+既存の所有権 seal と命令署名検証の責務内で、別 state、重複 authority、依存逆転を
+増やしていないため、前 checkpoint の cohesion 判断を維持する。
+
+053 check fixture 群は直前の clean SHA
+`645e217d4cf22a0fb66ad8b0d3b81572a2404203` で focused CLI test 1/1 が通過。
+この証拠は check 受理であり、053 の native/decoded AWBC 実行を示さない。
+後続の View、task-plan、scheduler/restore と goal 全体の受入は未完了。
