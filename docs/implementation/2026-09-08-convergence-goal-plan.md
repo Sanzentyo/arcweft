@@ -2958,3 +2958,21 @@ IfLet は受理された。LetElse/While/WhileLet は修正後未検証なので
 focused Match 64件、Sema lib 1068/1068、changed-crate Clippy、fmt、cached diff
 check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
 再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
+
+## Match T01 LetElse statement の受理差分 — 2026-09-28
+
+確認した code commit は `20cd53099da71309e0a886fee86fb5f74e4d7674`。
+main へ fast-forward push 後、working tree は clean。
+
+正しい raw multiline source の expression Match arm block に LetElse を置き、
+checked Structural payload と else body 内 Return/Structural を accepted path 配下で
+確認した。Bool initializer を変えると Match digest が変わる。focused 65件、
+Sema lib 1069/1069、changed-crate Clippy、fmt、cached diff check は成功。
+既存警告あり。テストのみの cut なので workspace と構造 gate は再実行していない。
+
+同じ Ordinary arm block に直接置いた While/WhileLet は HIR `thread_control.rs` の
+`require_thread_statement_context` で `InvalidArenaCommit` となり、前段の不正な
+字下げだけが原因ではなかった。T01 ではまず既存 Thread body を Match の下に置く
+受理証拠を試す。普通の block に While を受理させる変更は body owner と利用側の移行
+が必要で、この cut に混ぜない。While/WhileLet と T01/T06 の残り、View 以降と goal
+全体は未完として継続する。
