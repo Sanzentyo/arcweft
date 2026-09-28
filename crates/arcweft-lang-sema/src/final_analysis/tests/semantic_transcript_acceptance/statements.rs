@@ -39,7 +39,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Assertion { .. } => Assertion => Accepted,
     HirStmtKind::Let { .. } => Let => Accepted,
     HirStmtKind::Assign { .. } => Assign => Accepted,
-    HirStmtKind::LetElse { .. } => LetElse => Pending,
+    HirStmtKind::LetElse { .. } => LetElse => Accepted,
     HirStmtKind::Return { .. } => Return => Accepted,
     HirStmtKind::Out { .. } => Out => Pending,
     HirStmtKind::Goto { .. } => Goto => Pending,
@@ -363,6 +363,12 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             payloads: &[StatementPayloadFamily::Structural],
         },
         Row {
+            name: "LetElse and failure Return in arm block",
+            source: function_match_statement_source("let value = true else { return 3i64 }"),
+            shapes: &[StatementShapeFamily::LetElse, StatementShapeFamily::Return],
+            payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
             name: "Defer in Flow arm block",
             source: flow_match_defer_source("flag"),
             shapes: &[StatementShapeFamily::Defer, StatementShapeFamily::Let],
@@ -552,6 +558,33 @@ fn checked_match_if_let_retains_exact_shape_and_input_meaning() {
     assert_eq!(other.statement_families, expected);
     assert_eq!(flag.statement_families, expected);
     assert_ne!(other.semantic_digest, flag.semantic_digest);
+}
+
+#[test]
+fn checked_match_let_else_retains_exact_shapes_and_initializer_meaning() {
+    let true_initializer = accepted_match_statement_corpus_observation(
+        &function_match_statement_source("let value = true else { return 3i64 }"),
+    );
+    let false_initializer = accepted_match_statement_corpus_observation(
+        &function_match_statement_source("let value = false else { return 3i64 }"),
+    );
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::LetElse,
+            StatementPayloadFamily::Structural,
+        ),
+        (
+            StatementShapeFamily::Return,
+            StatementPayloadFamily::Structural,
+        ),
+    ]);
+
+    assert_eq!(true_initializer.statement_families, expected);
+    assert_eq!(false_initializer.statement_families, expected);
+    assert_ne!(
+        true_initializer.semantic_digest,
+        false_initializer.semantic_digest
+    );
 }
 
 #[test]
