@@ -3010,3 +3010,20 @@ ordinary arm block にしてしまった fixture 配置が原因だった。
 check、changed-crate Clippy も成功。既存警告あり。テストのみの cut なので workspace
 と構造 gate は再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として
 継続する。
+
+## Match T01 dialogue CancelRule の受理証拠 — 2026-09-28
+
+確認した code commit は `08875ff79263a6c9012f1a8dcfb9081aca707aab`。
+main へ fast-forward push 後、working tree は clean。
+
+外側 Match arm の Dialogue application line-plan に `cancel on input(...)` を置き、
+HIR CancelRule と checked Trigger が accepted path 配下にあることを確認した。
+キャンセル規則なしとの差、同じ String result と Trigger family のまま `.SkipLine` と
+`.BackToTitle` の InputAction ID を替えた差で Match digest が変わる。compact Choice
+plan の cancel は expression-owned `HirChoicePlanItem::Cancel` であり、statement
+CancelRule の受理証拠には数えない。
+
+statement corpus 13/13、Sema lib 1073/1073 と crate integration/doc suites、
+changed-crate Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの
+cut なので workspace と構造 gate は再実行していない。T01/T06 の残り、View 以降と
+goal 全体は未完として継続する。
