@@ -136,31 +136,31 @@ fn evaluated_effect_match_source(suffix: &str, message: &str) -> String {
     )
 }
 
-fn dialogue_call_match_source(suffix: &str, callable: &str) -> String {
+pub(super) fn dialogue_call_match_source(suffix: &str, callable: &str) -> String {
     format!(
         "pub character alice {{}}\nfn project_action() {{}}\nfn alternate_action() {{}}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            alice[before [call {callable}()] [at 120ms call={callable}()]];\n            1i64\n        }}\n        false => 0i64\n    }}\n}}\n{suffix}"
     )
 }
 
-fn content_call_match_source(suffix: &str, modifier: &str) -> String {
+pub(super) fn content_call_match_source(suffix: &str, modifier: &str) -> String {
     format!(
         "pub character alice {{}}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            alice[before #{modifier}()[text]];\n            1i64\n        }}\n        false => 0i64\n    }}\n}}\n{suffix}"
     )
 }
 
-fn project_content_call_match_source(suffix: &str, callable: &str) -> String {
+pub(super) fn project_content_call_match_source(suffix: &str, callable: &str) -> String {
     format!(
         "pub character alice {{}}\nfn passthrough()[body: DialogueContent] -> DialogueContent {{ body }}\nfn alternate()[body: DialogueContent] -> DialogueContent {{ body }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            alice[before #{callable}()[nested]];\n            1i64\n        }}\n        false => 0i64\n    }}\n}}\n{suffix}"
     )
 }
 
-fn project_fx_match_source(suffix: &str, accent: &str) -> String {
+pub(super) fn project_fx_match_source(suffix: &str, accent: &str) -> String {
     format!(
         "pub character alice {{}}\n#[fx]\nfn emphasis(accent: Color = rgb(\"#ffd060\")) -> Fx {{\n    Fx.text(color = accent)\n}}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {{\n            alice[#fx(emphasis(accent=rgb(\"{accent}\")))[text]];\n            1i64\n        }}\n        false => 0i64\n    }}\n}}\n{suffix}"
     )
 }
 
-fn view_fx_match_source(suffix: &str, producer: &str) -> String {
+pub(super) fn view_fx_match_source(suffix: &str, producer: &str) -> String {
     format!(
         "view Main(speed: f32) {{\n    match true {{\n        true => Button().fx({producer})\n        false => Button()\n    }}\n}}\n{suffix}"
     )

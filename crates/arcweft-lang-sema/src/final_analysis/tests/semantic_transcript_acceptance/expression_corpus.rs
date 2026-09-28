@@ -137,8 +137,8 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::If(_) => If => Pending,
     HirExprKind::IfLet(_) => IfLet => Pending,
     HirExprKind::Match(_) => Match => Accepted,
-    HirExprKind::AttachedContentApplication(_) => AttachedContentApplication => Pending,
-    HirExprKind::PostfixBracket(_) => PostfixBracket => Pending,
+    HirExprKind::AttachedContentApplication(_) => AttachedContentApplication => Accepted,
+    HirExprKind::PostfixBracket(_) => PostfixBracket => Accepted,
     HirExprKind::Error(_) => Error => RejectOnly,
     HirExprKind::ForSynthetic(_) => ForSynthetic => Pending,
 });
@@ -164,19 +164,19 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::Pipe(_) => Pipe => Accepted,
     CheckedExpressionResolution::PipeLeft(_) => PipeLeft => Accepted,
     CheckedExpressionResolution::ViewCall(_) => ViewCall => Accepted,
-    CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Pending,
+    CheckedExpressionResolution::ViewFxApplication(_) => ViewFxApplication => Accepted,
     CheckedExpressionResolution::StyleValue(_) => StyleValue => Pending,
     CheckedExpressionResolution::CompileTimeCallee(_) => CompileTimeCallee => Accepted,
     CheckedExpressionResolution::TypeValue(_) => TypeValue => Pending,
-    CheckedExpressionResolution::CompileTimeScalar(_) => CompileTimeScalar => Pending,
+    CheckedExpressionResolution::CompileTimeScalar(_) => CompileTimeScalar => Accepted,
     CheckedExpressionResolution::DialogueLineReference(_) => DialogueLineReference => Pending,
     CheckedExpressionResolution::DialogueLineCoordinate(_) => DialogueLineCoordinate => Pending,
     CheckedExpressionResolution::DialogueTextKeyCoordinate(_) => DialogueTextKeyCoordinate => Pending,
     CheckedExpressionResolution::CharacterDialogueFactory(_) => CharacterDialogueFactory => Pending,
     CheckedExpressionResolution::CharacterDialogueReconfigure(_) => CharacterDialogueReconfigure => Pending,
-    CheckedExpressionResolution::DialogueApplication { .. } => DialogueApplication => Pending,
-    CheckedExpressionResolution::ContentApplication(_) => ContentApplication => Pending,
-    CheckedExpressionResolution::PostfixBracket(_) => PostfixBracket => Pending,
+    CheckedExpressionResolution::DialogueApplication { .. } => DialogueApplication => Accepted,
+    CheckedExpressionResolution::ContentApplication(_) => ContentApplication => Accepted,
+    CheckedExpressionResolution::PostfixBracket(_) => PostfixBracket => Accepted,
 });
 
 expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
@@ -346,6 +346,7 @@ fn assert_expression_corpus_inventory<T: Copy + Ord + std::fmt::Debug>(
 
 struct ExpressionCorpusRow {
     name: &'static str,
+    exact_path_families: bool,
     source: String,
     fixture: ExpressionCorpusFixture,
     shapes: &'static [ExprShapeFamily],
@@ -382,6 +383,7 @@ impl ExpressionCorpusFixture {
 fn view_method_corpus_row() -> ExpressionCorpusRow {
     ExpressionCorpusRow {
         name: "selected view method",
+        exact_path_families: false,
         source: method_match_source("", "Button().on_click { dialogue.primary_action }"),
         fixture: ExpressionCorpusFixture::Standard,
         shapes: &[
@@ -408,6 +410,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     let mut rows = vec![
         ExpressionCorpusRow {
             name: "binary scalar",
+            exact_path_families: false,
             source: bool_match_i64_source("1i64 + 2i64"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
@@ -424,6 +427,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "compact numeric sequence",
+            exact_path_families: false,
             source: numeric_sequence_match_source("[1i64, 2i64]"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::NumericBracketSequence],
@@ -433,6 +437,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "named scope expression",
+            exact_path_families: false,
             source: bool_match_i64_source("scope local { 1i64 }"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::NamedBlock],
@@ -442,6 +447,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "local and project callable values",
+            exact_path_families: false,
             source: callable_value_match_source("saved"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Block, ExprShapeFamily::Path],
@@ -454,6 +460,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "record field",
+            exact_path_families: false,
             source: field_match_source("left"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Select],
@@ -464,6 +471,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         view_method_corpus_row(),
         ExpressionCorpusRow {
             name: "checked Try carrier",
+            exact_path_families: false,
             source: try_match_source("first"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Try],
@@ -473,6 +481,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "pipeline placeholders",
+            exact_path_families: false,
             source: pipe_match_source("identity"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
@@ -491,6 +500,7 @@ fn expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "Choice plan with thread value",
+            exact_path_families: false,
             source: choice_match_source("", "with { window = thread {} }"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[
@@ -511,6 +521,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
     vec![
         ExpressionCorpusRow {
             name: "checked Entry references",
+            exact_path_families: false,
             source: entry_reference_match_source("@entry.cli.primary", "@entry.cli.alternate"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
@@ -520,6 +531,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "checked external and project Character items",
+            exact_path_families: false,
             source: project_item_match_source("@character.akane", "@character.alternate"),
             fixture: ExpressionCorpusFixture::ExternalCharacter,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::EntityReference],
@@ -529,6 +541,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "registered environment value",
+            exact_path_families: false,
             source: registered_value_match_source("registered_left"),
             fixture: ExpressionCorpusFixture::RegisteredI32Pair,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Path],
@@ -541,6 +554,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "Await Pending Progress field",
+            exact_path_families: false,
             source: progress_field_match_source("ratio"),
             fixture: ExpressionCorpusFixture::Standard,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Select],
@@ -553,6 +567,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "Dialogue line context value",
+            exact_path_families: false,
             source: dialogue_line_context_match_source(),
             fixture: ExpressionCorpusFixture::CharacterNominal,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Call],
@@ -566,6 +581,7 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
         },
         ExpressionCorpusRow {
             name: "Dialogue Character Stage field value",
+            exact_path_families: false,
             source: dialogue_character_field_match_source("akane"),
             fixture: ExpressionCorpusFixture::CharacterNominal,
             shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Call],
@@ -581,6 +597,128 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             ],
             selects: &[],
         },
+        ExpressionCorpusRow {
+            name: "generation Match-root dialogue calls",
+            exact_path_families: true,
+            source: super::generation_invariance::dialogue_call_match_source("", "project_action"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Call,
+                ExprShapeFamily::Block,
+                ExprShapeFamily::Match,
+                ExprShapeFamily::AttachedContentApplication,
+                ExprShapeFamily::PostfixBracket,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Call,
+                ExpressionResolutionFamily::DialogueApplication,
+                ExpressionResolutionFamily::PostfixBracket,
+            ],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "generation Match-root attached content modifier",
+            exact_path_families: true,
+            source: super::generation_invariance::content_call_match_source("", "strong"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Block,
+                ExprShapeFamily::Match,
+                ExprShapeFamily::AttachedContentApplication,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::DialogueApplication,
+                ExpressionResolutionFamily::ContentApplication,
+            ],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "generation Match-root project content call",
+            exact_path_families: true,
+            source: super::generation_invariance::project_content_call_match_source(
+                "",
+                "passthrough",
+            ),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Block,
+                ExprShapeFamily::Match,
+                ExprShapeFamily::AttachedContentApplication,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::DialogueApplication,
+                ExpressionResolutionFamily::ContentApplication,
+            ],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "generation Match-root project Fx content call",
+            exact_path_families: true,
+            source: super::generation_invariance::project_fx_match_source("", "#ff6b8a"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Call,
+                ExprShapeFamily::Block,
+                ExprShapeFamily::Match,
+                ExprShapeFamily::AttachedContentApplication,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Call,
+                ExpressionResolutionFamily::CompileTimeScalar,
+                ExpressionResolutionFamily::DialogueApplication,
+                ExpressionResolutionFamily::ContentApplication,
+            ],
+            values: &[],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "generation Match-root View Fx application",
+            exact_path_families: true,
+            source: super::generation_invariance::view_fx_match_source("", "wave(speed = speed)"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Call,
+                ExprShapeFamily::Select,
+                ExprShapeFamily::Match,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Select,
+                ExpressionResolutionFamily::Call,
+                ExpressionResolutionFamily::ViewCall,
+                ExpressionResolutionFamily::ViewFxApplication,
+                ExpressionResolutionFamily::CompileTimeCallee,
+            ],
+            values: &[],
+            selects: &[],
+        },
     ]
 }
 
@@ -590,6 +728,20 @@ fn checked_match_expression_corpus_tracks_accepted_root_families() {
     for row in expression_corpus_rows() {
         let world = row.fixture.build(&row.source);
         let found = accepted_match_expression_corpus_observation_for_fixture(&world);
+        if row.exact_path_families {
+            assert_eq!(
+                found.shapes,
+                row.shapes.iter().copied().collect(),
+                "{} has the observed complete accepted-path HIR shape set",
+                row.name,
+            );
+            assert_eq!(
+                found.resolutions,
+                row.resolutions.iter().copied().collect(),
+                "{} has the observed complete accepted-path resolution set",
+                row.name,
+            );
+        }
         for required in row.shapes {
             assert!(
                 found.shapes.contains(required),
