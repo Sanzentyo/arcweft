@@ -949,6 +949,24 @@ fn record_variant_pattern_source(field_type: &str) -> String {
     )
 }
 
+fn mutable_binding_pattern_source(pattern: &str) -> String {
+    format!(
+        "fn root(value: bool) -> i64 {{\n    match value {{\n        {pattern} => 1i64\n    }}\n}}\n"
+    )
+}
+
+fn entity_reference_pattern_source(pattern: &str) -> String {
+    format!(
+        "flow @flow.primary primary {{}}\nflow @flow.alternate alternate {{}}\nfn root(value: Ref<Flow>) -> i64 {{\n    match value {{\n        {pattern} => 1i64\n        _ => 0i64\n    }}\n}}\n"
+    )
+}
+
+fn whole_binding_pattern_source(pattern: &str) -> String {
+    format!(
+        "enum Event {{\n    Start,\n    Empty {{}},\n    ChoiceSelected {{ id: i64 }},\n}}\nfn root(event: Event) -> i64 {{\n    match event {{\n        {pattern} => 2i64\n        .Start => 0i64\n        .Empty {{}} => 1i64\n    }}\n}}\n"
+    )
+}
+
 struct CheckedMatchPatternFact {
     hir_kind: HirPatternKind,
     checked: CheckedPattern,
@@ -1030,7 +1048,6 @@ fn checked_match_pattern_observation(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PatternCorpusDisposition {
     Accepted,
-    Pending,
     RejectOnly,
     #[allow(
         dead_code,
@@ -1058,15 +1075,15 @@ macro_rules! pattern_family_inventory {
 
 pattern_family_inventory!(PatternShapeFamily {
     Binding => Accepted,
-    MutableBinding => Pending,
+    MutableBinding => Accepted,
     Literal => Accepted,
-    EntityReference => Pending,
+    EntityReference => Accepted,
     Variant => Accepted,
     Discard => Accepted,
     Tuple => Accepted,
     Record => Accepted,
     BracketSequence => Accepted,
-    WholeBinding => Pending,
+    WholeBinding => Accepted,
     Or => Accepted,
     TypedBinding => Accepted,
     Error => RejectOnly,
@@ -1095,7 +1112,7 @@ impl PatternShapeFamily {
 pattern_family_inventory!(PatternResolutionFamily {
     Structural => Accepted,
     Literal => Accepted,
-    Entity => Pending,
+    Entity => Accepted,
     Record => Accepted,
     Variant => Accepted,
     TypedBinding => Accepted,
@@ -1224,6 +1241,38 @@ fn checked_match_pattern_corpus_tracks_accepted_root_families() {
                 PatternResolutionFamily::Variant,
             ],
         },
+        Row {
+            name: "mutable binding",
+            source: mutable_binding_pattern_source("mut selected"),
+            shapes: &[PatternShapeFamily::MutableBinding],
+            resolutions: &[PatternResolutionFamily::Structural],
+        },
+        Row {
+            name: "checked entity reference",
+            source: entity_reference_pattern_source("@flow.primary"),
+            shapes: &[
+                PatternShapeFamily::EntityReference,
+                PatternShapeFamily::Discard,
+            ],
+            resolutions: &[
+                PatternResolutionFamily::Entity,
+                PatternResolutionFamily::Structural,
+            ],
+        },
+        Row {
+            name: "whole binding",
+            source: whole_binding_pattern_source("whole .ChoiceSelected { id }"),
+            shapes: &[
+                PatternShapeFamily::WholeBinding,
+                PatternShapeFamily::Variant,
+                PatternShapeFamily::Record,
+            ],
+            resolutions: &[
+                PatternResolutionFamily::Structural,
+                PatternResolutionFamily::Variant,
+                PatternResolutionFamily::Record,
+            ],
+        },
     ];
     let mut observed_shapes = BTreeSet::new();
     let mut observed_resolutions = BTreeSet::new();
@@ -1283,6 +1332,67 @@ fn checked_match_pattern_corpus_excludes_unrelated_declaration_patterns() {
         !observation.shapes.contains(&PatternShapeFamily::Binding),
         "a checked binding outside the Match root must not enter its corpus",
     );
+}
+
+#[test]
+fn checked_match_pattern_transcript_commits_mutable_entity_and_whole_binding_owners() {
+    let mutable =
+        checked_match_pattern_observation(&mutable_binding_pattern_source("mut selected"), 0);
+    let immutable =
+        checked_match_pattern_observation(&mutable_binding_pattern_source("selected"), 0);
+    assert_ne!(
+        mutable.semantic_digest, immutable.semantic_digest,
+        "mutable binding mode reaches the Match transcript",
+    );
+    assert!(mutable.facts.iter().any(|fact| matches!(
+        (&fact.hir_kind, fact.checked.resolution()),
+        (
+            HirPatternKind::MutableBinding(_),
+            CheckedPatternResolution::Structural
+        )
+    )));
+
+    let primary =
+        checked_match_pattern_observation(&entity_reference_pattern_source("@flow.primary"), 0);
+    let alternate =
+        checked_match_pattern_observation(&entity_reference_pattern_source("@flow.alternate"), 0);
+    let checked_entity = |observation: &CheckedMatchPatternObservation| {
+        observation
+            .facts
+            .iter()
+            .find_map(|fact| match (&fact.hir_kind, fact.checked.resolution()) {
+                (HirPatternKind::EntityReference(_), CheckedPatternResolution::Entity(item)) => {
+                    Some(item.semantic_id())
+                }
+                _ => None,
+            })
+            .expect("entity pattern resolves to an accepted project item")
+    };
+    assert_ne!(checked_entity(&primary), checked_entity(&alternate));
+    assert_ne!(
+        primary.semantic_digest, alternate.semantic_digest,
+        "checked entity target meaning reaches the Match transcript",
+    );
+
+    let whole = checked_match_pattern_observation(
+        &whole_binding_pattern_source("whole .ChoiceSelected { id }"),
+        0,
+    );
+    let variant = checked_match_pattern_observation(
+        &whole_binding_pattern_source(".ChoiceSelected { id }"),
+        0,
+    );
+    assert_ne!(
+        whole.semantic_digest, variant.semantic_digest,
+        "whole-pattern binding reaches the Match transcript",
+    );
+    assert!(whole.facts.iter().any(|fact| matches!(
+        (&fact.hir_kind, fact.checked.resolution()),
+        (
+            HirPatternKind::WholeBinding { .. },
+            CheckedPatternResolution::Structural
+        )
+    )));
 }
 
 #[test]
