@@ -3027,3 +3027,20 @@ statement corpus 13/13、Sema lib 1073/1073 と crate integration/doc suites、
 changed-crate Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの
 cut なので workspace と構造 gate は再実行していない。T01/T06 の残り、View 以降と
 goal 全体は未完として継続する。
+
+## Match T01 SourceLocale/Include statement の受理証拠 — 2026-09-28
+
+確認した code commit は `57270ad5e57b22af824ad537f07c6436e9883753`。
+main へ fast-forward push 後、working tree は clean。
+
+外側 Match arm の nested Thread に SourceLocale と Include を置き、受理済み
+HIR statement と exact checked payload を Match path 配下で確認した。
+`en-US`/`ja-JP` の locale 差と `shared`/`alternate` の Flow target 差は
+checked fact と Match digest の双方で観測された。Scope は named identity の
+transcript writer が名前を落とす欠落を発見したため Pending のままとし、別の
+本番修正で閉じる。
+
+`cargo test -p arcweft-lang-sema` は lib 1075件と integration/doc suites を含め
+全件成功。changed-crate Clippy、fmt、cached diff check も成功し、既存警告あり。
+テストのみの cut なので workspace と構造 gate は再実行していない。T01/T06、
+View 以降と goal 全体は未完として継続する。
