@@ -43,7 +43,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Return { .. } => Return => Pending,
     HirStmtKind::Out { .. } => Out => Pending,
     HirStmtKind::Goto { .. } => Goto => Pending,
-    HirStmtKind::Defer { .. } => Defer => Pending,
+    HirStmtKind::Defer { .. } => Defer => Accepted,
     HirStmtKind::Yield { .. } => Yield => Pending,
     HirStmtKind::Signal { .. } => Signal => Pending,
     HirStmtKind::LifetimeSet { .. } => LifetimeSet => Pending,
@@ -57,7 +57,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Match(_) => Match => Pending,
     HirStmtKind::While(_) => While => Pending,
     HirStmtKind::WhileLet(_) => WhileLet => Pending,
-    HirStmtKind::For(_) => For => Pending,
+    HirStmtKind::For(_) => For => Accepted,
     HirStmtKind::Close { .. } => Close => Pending,
     HirStmtKind::Select(_) => Select => Pending,
     HirStmtKind::SourceLocale(_) => SourceLocale => Pending,
@@ -74,9 +74,9 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Structural => Structural => Accepted,
     CheckedStatementPayload::Assignment(_) => Assignment => Accepted,
     CheckedStatementPayload::Assertion(_) => Assertion => Accepted,
-    CheckedStatementPayload::Defer(_) => Defer => Pending,
+    CheckedStatementPayload::Defer(_) => Defer => Accepted,
     CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Pending,
-    CheckedStatementPayload::Iteration(_) => Iteration => Pending,
+    CheckedStatementPayload::Iteration(_) => Iteration => Accepted,
     CheckedStatementPayload::ControlTransfer(_) => ControlTransfer => Pending,
     CheckedStatementPayload::Trigger(_) => Trigger => Pending,
     CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Pending,
@@ -93,6 +93,8 @@ struct MatchStatementCorpusObservation {
     payloads: BTreeSet<StatementPayloadFamily>,
     assignments: Vec<CheckedAssignmentCorpusFact>,
     assertion_dispositions: Vec<CheckedAssertionDisposition>,
+    defers: Vec<CheckedDeferCorpusFact>,
+    iterations: Vec<CheckedIteration>,
     semantic_digest: [u8; 32],
 }
 
@@ -102,6 +104,12 @@ struct CheckedAssignmentCorpusFact {
     field_ordinal: u32,
     field_type: crate::types::TypeKind,
     value_type: crate::types::TypeKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedDeferCorpusFact {
+    outcome: arcweft_lang_syntax::ast::line_plan::DeferOutcome,
+    captures: Vec<(Vec<u8>, crate::types::TypeKind)>,
 }
 
 /// Count only checked statements owned below this accepted Match expression.
@@ -136,6 +144,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut payloads = BTreeSet::new();
     let mut assignments = Vec::new();
     let mut assertion_dispositions = Vec::new();
+    let mut defers = Vec::new();
+    let mut iterations = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -164,11 +174,38 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Assertion { .. }, CheckedStatementPayload::Assertion(disposition)) => {
                 assertion_dispositions.push(*disposition)
             }
+            (HirStmtKind::Defer { .. }, CheckedStatementPayload::Defer(defer)) => {
+                defers.push(CheckedDeferCorpusFact {
+                    outcome: defer.outcome(),
+                    captures: defer
+                        .captures()
+                        .iter()
+                        .map(|capture| {
+                            (
+                                capture
+                                    .origin()
+                                    .canonical_bytes()
+                                    .expect("defer capture has a stable checked origin"),
+                                capture.ty().clone(),
+                            )
+                        })
+                        .collect(),
+                });
+            }
+            (HirStmtKind::For(_), CheckedStatementPayload::Iteration(iteration)) => {
+                iterations.push(iteration.as_ref().clone())
+            }
             (HirStmtKind::Assign { .. }, _) => {
                 panic!("accepted Assign has its exact checked Assignment payload")
             }
             (HirStmtKind::Assertion { .. }, _) => {
                 panic!("accepted Assertion has its exact checked Assertion payload")
+            }
+            (HirStmtKind::Defer { .. }, _) => {
+                panic!("accepted Defer has its exact checked Defer payload")
+            }
+            (HirStmtKind::For(_), _) => {
+                panic!("accepted For has its exact checked Iteration payload")
             }
             _ => {}
         }
@@ -182,6 +219,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         payloads,
         assignments,
         assertion_dispositions,
+        defers,
+        iterations,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
 }
@@ -213,6 +252,29 @@ fn match_arm_assertion_source(operand: &str) -> String {
              }}\n\
          }}\n"
     )
+}
+
+fn flow_match_statement_source(statement: &str) -> String {
+    let statement = statement
+        .lines()
+        .map(|line| format!("                     {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "flow root(flag: bool, other: bool) {{\n\
+             let selected = match flag {{\n\
+                 true => {{\n\
+{statement}\n\
+                     1i64\n\
+                 }}\n\
+                 false => 0i64\n\
+             }}\n\
+         }}\n"
+    )
+}
+
+fn flow_match_defer_source(capture: &str) -> String {
+    flow_match_statement_source(&format!("defer {{\n    let captured = {capture};\n}}"))
 }
 
 fn assert_statement_inventory<T: Copy + Ord + std::fmt::Debug>(
@@ -261,6 +323,21 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
             source: match_arm_assertion_source("flag"),
             shapes: &[StatementShapeFamily::Assertion],
             payloads: &[StatementPayloadFamily::Assertion],
+        },
+        Row {
+            name: "Defer in Flow arm block",
+            source: flow_match_defer_source("flag"),
+            shapes: &[StatementShapeFamily::Defer, StatementShapeFamily::Let],
+            payloads: &[
+                StatementPayloadFamily::Defer,
+                StatementPayloadFamily::Structural,
+            ],
+        },
+        Row {
+            name: "For in Flow arm block",
+            source: flow_match_statement_source("for value in [true, false] {}"),
+            shapes: &[StatementShapeFamily::For],
+            payloads: &[StatementPayloadFamily::Iteration],
         },
     ];
     let mut shapes = BTreeSet::new();
@@ -341,6 +418,66 @@ fn checked_match_assertions_retain_disposition_and_condition_meaning() {
     assert_eq!(flag.assertion_dispositions, [expected]);
     assert_eq!(other.assertion_dispositions, [expected]);
     assert_ne!(flag.semantic_digest, other.semantic_digest);
+}
+
+#[test]
+fn checked_match_defer_retains_capture_meaning() {
+    let flag = accepted_match_statement_corpus_observation(&flow_match_defer_source("flag"));
+    let other = accepted_match_statement_corpus_observation(&flow_match_defer_source("other"));
+
+    assert_eq!(
+        flag.shapes,
+        BTreeSet::from([StatementShapeFamily::Defer, StatementShapeFamily::Let])
+    );
+    assert_eq!(
+        flag.payloads,
+        BTreeSet::from([
+            StatementPayloadFamily::Defer,
+            StatementPayloadFamily::Structural,
+        ])
+    );
+    assert_eq!(flag.defers.len(), 1);
+    assert_eq!(other.defers.len(), 1);
+    assert_eq!(
+        flag.defers[0].outcome,
+        arcweft_lang_syntax::ast::line_plan::DeferOutcome::Always
+    );
+    assert_eq!(flag.defers[0].captures.len(), 1);
+    assert_eq!(other.defers[0].captures.len(), 1);
+    assert_eq!(flag.defers[0].captures[0].1, crate::types::TypeKind::Bool);
+    assert_eq!(other.defers[0].captures[0].1, crate::types::TypeKind::Bool);
+    assert_ne!(flag.defers[0].captures[0].0, other.defers[0].captures[0].0);
+    assert_ne!(flag.semantic_digest, other.semantic_digest);
+}
+
+#[test]
+fn checked_match_for_retains_builtin_iteration_and_iterable_meaning() {
+    let ordered = accepted_match_statement_corpus_observation(&flow_match_statement_source(
+        "for value in [true, false] {}",
+    ));
+    let repeated = accepted_match_statement_corpus_observation(&flow_match_statement_source(
+        "for value in [true, true] {}",
+    ));
+
+    assert_eq!(ordered.shapes, BTreeSet::from([StatementShapeFamily::For]));
+    assert_eq!(
+        ordered.payloads,
+        BTreeSet::from([StatementPayloadFamily::Iteration])
+    );
+    for observation in [&ordered, &repeated] {
+        assert!(
+            matches!(
+                observation.iterations.as_slice(),
+                [CheckedIteration::Builtin {
+                    family: CheckedIteratorFamily::Vec,
+                    item,
+                }] if item == &crate::types::TypeKind::Bool
+            ),
+            "observed checked iteration: {:?}",
+            observation.iterations
+        );
+    }
+    assert_ne!(ordered.semantic_digest, repeated.semantic_digest);
 }
 
 #[test]
