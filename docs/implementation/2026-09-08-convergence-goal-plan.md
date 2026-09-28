@@ -2644,3 +2644,22 @@ project-loader の `release_remote_publish_file_mirror_archive_verifies_after_pu
 構造 gate は再実行していない。
 
 T01 の全 live family、T06 の残 root、View 以降と goal 全体の受入は未完として継続する。
+
+## Match T06 dialogue/attached default の受理証拠 — 2026-09-28
+
+確認した code commit は `420e1f8e57484f029e410cadab1fc3bd25f3770f`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み dialogue On handler と attached-content default block に expression Match を
+置き、型を保つ arm の意味変更で digest が変わり、先行宣言による raw ExprId/span 変更
+では digest が維持されることを確認した。focused 13/13、Sema lib 1039/1039、fmt、
+changed-crate Clippy と cached diff check は成功。テストのみの cut なので workspace
+と構造 gate は再実行していない。
+
+Await Pending は受理済み基底に expression Match を挿入すると HIR publication が
+`HirInvariantFailure::InvalidSourceIndex` で失敗し、今回の受理証拠には含めない。
+statement Match 形式は expression Match owner を生成しない。原因の owner/source-index
+調査と修正を継続する。通常 function parameter default は現行文法が禁止する一方、
+View parameter default は retained View 契約が要求するが現在の builder/compiler が
+拒否しており、View 工程で型・効果・実行側を一体で移行する必要がある。
+T01/T06 全 matrix と goal 全体は未完として継続する。
