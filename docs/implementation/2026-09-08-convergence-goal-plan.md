@@ -2621,3 +2621,26 @@ impl/inherent、dialogue、Await、attached default の候補はこの cut で�
 できず、テストには含めていない。通常/View project parameter default は現行 builder
 が拒否する。T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として
 継続する。
+
+## Match T01 nested Value/Select tag の閉鎖 — 2026-09-28
+
+確認した code commit は `789802c63d84066b4e81f9e7cadc46d71f16586b`。
+main へ fast-forward push 後、working tree は clean。
+
+live `CheckedValueResolution` の8 variant と `CheckedSelectResolution` の5 variant は
+各 owner が閉じた u16 tag を定義し、Match transcript がその tag を payload より前に
+転記する。top-level Value は再帰 Value writer に統合したため、Value node ごとに
+tag を一度だけ書く。Select の DialogueView/AgentField にあった局所的な byte tag は
+重複 authority として削除した。既存受理 source で Local/ProjectCallable と同型の
+別 record field の意味差、Method/Field の live tag を検証した。
+
+focused semantic transcript 21/21、Sema lib 1037/1037、workspace all-target/all-feature
+check と Clippy、fmt、cached diff check は成功。`just test-workspace` の初回は
+project-loader の `release_remote_publish_file_mirror_archive_verifies_after_publication`
+1件が staging path 不在で失敗した。同テストの単独再実行は成功し、workspace 全体の
+再実行も 308 件の test result 群で失敗 0、終了コード 0。原因の確定や再現性の解消は
+この cut では行っていない。既存警告はあるが上記の最終 gate は成功した。
+既存 owner 内の tag/writer 修正で新たな依存方向や owner を増やしていないため、
+構造 gate は再実行していない。
+
+T01 の全 live family、T06 の残 root、View 以降と goal 全体の受入は未完として継続する。
