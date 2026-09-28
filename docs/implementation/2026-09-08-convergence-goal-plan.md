@@ -2818,3 +2818,18 @@ synthetic `from_bytes` ID や型差ではなく実解析の checked fact を検�
 acceptance module 35/35、Sema lib 1056/1056、changed-crate Clippy、fmt、cached
 diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
 再実行していない。残る T01/T06、View 以降と goal 全体は未完として継続する。
+
+## Match T01 ProgressField の受理到達 — 2026-09-28
+
+確認した code commit は `cc815851a5cd243ac8cccabd4bbb1d78e4bdb87a`。
+main へ fast-forward push 後、working tree は clean。
+
+受理済み Await Pending body の Match arm 内で `progress.ratio` と
+`progress.label` がそれぞれ checked `Select::ProgressField` として到達する。
+前者は F32、後者は Option<String> で、両方とも2 armに exact field fact がある。
+Match digest も異なるが型も異なるため、この比較だけを field atom 単独の転記証拠
+とは扱わない。同条件の writer 検証を次の cut で行う。
+
+Sema lib 1057/1057、focused acceptance、changed-crate Clippy、fmt、cached diff
+check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
