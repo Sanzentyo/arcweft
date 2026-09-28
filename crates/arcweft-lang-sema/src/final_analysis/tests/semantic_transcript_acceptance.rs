@@ -270,6 +270,12 @@ fn registered_value_match_source(binding: &str) -> String {
     )
 }
 
+fn progress_field_match_source(field: &str) -> String {
+    format!(
+        "fn observe(need: Need<i64>) -> i64 {{\n    await need with {{\n        pending progress => {{\n            let selected = match true {{\n                true => progress.{field}\n                false => progress.{field}\n            }}\n        }}\n    }}\n}}\n"
+    )
+}
+
 struct MatchArmExpressionObservation {
     semantic_digest: [u8; 32],
     hir_kind: HirExprKind,
@@ -1747,7 +1753,7 @@ expression_family_inventory!(SelectResolutionFamily for CheckedSelectResolution,
     CheckedSelectResolution::Method(_) => Method => Accepted,
     CheckedSelectResolution::DialogueView { .. } => DialogueView => Accepted,
     CheckedSelectResolution::AgentField { .. } => AgentField => Pending,
-    CheckedSelectResolution::ProgressField { .. } => ProgressField => Pending,
+    CheckedSelectResolution::ProgressField { .. } => ProgressField => Accepted,
     CheckedSelectResolution::Field(_) => Field => Accepted,
 });
 
@@ -1758,6 +1764,7 @@ struct MatchExpressionCorpusObservation {
     values: BTreeSet<ValueResolutionFamily>,
     selects: BTreeSet<SelectResolutionFamily>,
     value_facts: Vec<(CheckedValueResolution, TypeKind)>,
+    select_facts: Vec<(CheckedSelectResolution, TypeKind)>,
     semantic_digest: Option<[u8; 32]>,
 }
 
@@ -1830,6 +1837,7 @@ fn accepted_match_expression_corpus_observation_for_fixture(
         values: BTreeSet::new(),
         selects: BTreeSet::new(),
         value_facts: Vec::new(),
+        select_facts: Vec::new(),
         semantic_digest: Some(*product.semantic_digest().as_bytes()),
     };
     for (owner, hir) in module.expressions() {
@@ -1850,6 +1858,15 @@ fn accepted_match_expression_corpus_observation_for_fixture(
                 checked
                     .value_type()
                     .expect("checked Value expression has a type")
+                    .clone(),
+            ));
+        }
+        if let CheckedExpressionResolution::Select(select) = checked.resolution() {
+            observation.select_facts.push((
+                select.clone(),
+                checked
+                    .value_type()
+                    .expect("checked Select expression has a type")
                     .clone(),
             ));
         }
@@ -2055,6 +2072,18 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             ],
             values: &[ValueResolutionFamily::Registered],
             selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "Await Pending Progress field",
+            source: progress_field_match_source("ratio"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Select],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Select,
+            ],
+            values: &[],
+            selects: &[SelectResolutionFamily::ProgressField],
         },
     ]
 }
@@ -2286,6 +2315,50 @@ fn checked_match_transcript_commits_registered_environment_binding_identity() {
     assert_eq!(revised_type, left_type);
     assert_eq!(revised_id.as_bytes(), left_id.as_bytes());
     assert_eq!(revised.semantic_digest, left.semantic_digest);
+}
+
+fn progress_field_facts(
+    observation: &MatchExpressionCorpusObservation,
+) -> Vec<(&crate::types::ProgressField, &TypeKind)> {
+    observation
+        .select_facts
+        .iter()
+        .filter_map(|(selection, ty)| match selection {
+            CheckedSelectResolution::ProgressField { field } => Some((field, ty)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn checked_match_transcript_reaches_pending_progress_field_facts() {
+    let ratio_world = super::fixture(&progress_field_match_source("ratio"), None);
+    let ratio = accepted_match_expression_corpus_observation_for_fixture(&ratio_world);
+    let ratio_facts = progress_field_facts(&ratio);
+    assert_eq!(
+        ratio_facts.len(),
+        2,
+        "both Match arms select Progress::ratio"
+    );
+    for (field, ty) in ratio_facts {
+        assert_eq!(field, &crate::types::ProgressField::Ratio);
+        assert_eq!(ty, &TypeKind::F32);
+    }
+
+    let label_world = super::fixture(&progress_field_match_source("label"), None);
+    let label = accepted_match_expression_corpus_observation_for_fixture(&label_world);
+    let label_facts = progress_field_facts(&label);
+    assert_eq!(
+        label_facts.len(),
+        2,
+        "both Match arms select Progress::label"
+    );
+    for (field, ty) in label_facts {
+        assert_eq!(field, &crate::types::ProgressField::Label);
+        assert_eq!(ty, &TypeKind::Option(Box::new(TypeKind::String)));
+    }
+    assert_ne!(TypeKind::F32, TypeKind::Option(Box::new(TypeKind::String)));
+    assert_ne!(ratio.semantic_digest, label.semantic_digest);
 }
 
 #[test]
