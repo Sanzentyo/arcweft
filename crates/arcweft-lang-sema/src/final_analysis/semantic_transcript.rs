@@ -3705,13 +3705,7 @@ fn write_resolution_payload(
                     transcript_update!(hasher, selection.field_type().as_bytes());
                 }
                 CheckedSelectResolution::ProgressField { field } => {
-                    transcript_update!(
-                        hasher,
-                        &[match field {
-                            crate::types::ProgressField::Ratio => 0,
-                            crate::types::ProgressField::Label => 1,
-                        }]
-                    );
+                    transcript_update!(hasher, &[field.semantic_tag()]);
                 }
                 CheckedSelectResolution::Method(method) => {
                     transcript_update!(hasher, method.transcript_callable().as_bytes());
@@ -4779,6 +4773,120 @@ mod tests {
             )
             .expect("accepted Match transcript");
         *product.semantic_digest().as_bytes()
+    }
+
+    #[test]
+    fn checked_progress_field_payload_discriminates_selected_field_without_type_input() {
+        let fixture = crate::final_analysis::tests::fixture(
+            r"
+fn observe(need: Need<i64>) -> i64 {
+    await need with {
+        pending progress => {
+            let selected = match true {
+                true => {
+                    let ratio = progress.ratio
+                    let label = progress.label
+                    1i64
+                }
+                false => 0i64
+            }
+        }
+    }
+}
+",
+            None,
+        );
+        let analysis = crate::final_analysis::tests::analyze(&fixture)
+            .expect("Pending Match with both checked Progress fields");
+        let project = fixture.project.analysis_view().expect("executable HIR");
+        let module = project
+            .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let match_owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .expect("Pending body Match expression");
+        analysis
+            .checked_match(
+                project,
+                &fixture.symbols,
+                match_owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .expect("accepted Pending Match transcript");
+
+        let coordinates = SemanticCoordinateIndex::new(analysis.accepted_root_catalog(), &analysis);
+        let match_path = coordinates
+            .expression(match_owner)
+            .expect("accepted Match root path");
+        let selections = analysis
+            .expressions()
+            .filter_map(|(owner, expression)| {
+                let CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField {
+                    field,
+                }) = expression.resolution()
+                else {
+                    return None;
+                };
+                let path = coordinates
+                    .expression(owner)
+                    .expect("checked Progress field path");
+                (path.root() == match_path.root() && path.steps().starts_with(match_path.steps()))
+                    .then_some((owner, *field, expression))
+            })
+            .collect::<Vec<_>>();
+        let [ratio, label] = selections.as_slice() else {
+            panic!("the Match body has exactly Ratio and Label selections");
+        };
+        assert_eq!(ratio.1, crate::types::ProgressField::Ratio);
+        assert_eq!(ratio.2.value_type(), Some(&TypeKind::F32));
+        assert_eq!(label.1, crate::types::ProgressField::Label);
+        assert_eq!(
+            label.2.value_type(),
+            Some(&TypeKind::Option(Box::new(TypeKind::String))),
+        );
+        assert_eq!(ratio.1.semantic_tag(), 0);
+        assert_eq!(label.1.semantic_tag(), 1);
+
+        let owner = ratio.0;
+        let owner_coordinate = coordinates
+            .expression(owner)
+            .expect("accepted Progress selection path")
+            .canonical_bytes()
+            .expect("canonical Progress selection path");
+        let expression_digests = BTreeMap::new();
+        let pattern_digests = BTreeMap::new();
+        let match_products = BTreeMap::new();
+        let payload_digest = |resolution: &CheckedExpressionResolution| {
+            let mut budget = CheckedMatchBudget::new(CheckedMatchLimits::PRODUCTION);
+            let mut hasher = TranscriptHasher::new(&mut budget);
+            hasher
+                .update(b"progress-field-payload-test\0")
+                .expect("prefix fits");
+            write_resolution_payload(
+                &mut hasher,
+                owner,
+                &owner_coordinate,
+                resolution,
+                None,
+                &coordinates,
+                &analysis,
+                &expression_digests,
+                &pattern_digests,
+                &match_products,
+                None,
+                None,
+            )
+            .expect("checked Progress selection payload");
+            let byte_len = hasher.byte_len();
+            (hasher.finalize(), byte_len)
+        };
+        let ratio_payload = payload_digest(ratio.2.resolution());
+        let label_payload = payload_digest(label.2.resolution());
+        assert_eq!(ratio_payload.1, label_payload.1);
+        assert_ne!(ratio_payload.0, label_payload.0);
     }
 
     #[test]
