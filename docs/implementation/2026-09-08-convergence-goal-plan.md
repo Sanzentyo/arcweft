@@ -2768,3 +2768,21 @@ focused pattern 8/8、`cargo test -p arcweft-lang-sema`（lib 1051/1051、trybui
 テストのみの cut なので workspace と構造 gate は再実行していない。T01 の残る
 expression/value/select/statement と T06 の残 root、View 以降、goal 全体は未完として
 継続する。
+
+## Match T01 expression/value/select corpus pilot — 2026-09-28
+
+確認した code commit は `9e781d468e011903bccaac99b146dbbe56818b56`。
+main へ fast-forward push 後、working tree は clean。
+
+test-only の accepted Match path-prefix collector と、live HIR expression shape、
+checked expression resolution、Value、Select の exhaustive classifier を追加した。
+既存の意味差分テストと共有する8件の受理済み source row からのみ集計し、別宣言の
+checked expression を誤算入しないことも検証した。現時点の直接証拠は HIR shape
+16/38、checked expression 12/33、Value 2/8、Select 3/5。残りは Pending、
+HIR Error は RejectOnly、到達不能と断定した family はない。
+
+acceptance module 32/32、Sema lib 1053/1053、changed-crate Clippy、fmt、cached
+diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。Registered/Entry/ProjectItem Value 等の既存受理 source は次の
+行の候補で、まだこの pilot の証拠には数えない。T01/T06 の残り、View 以降と goal
+全体は未完として継続する。
