@@ -2976,3 +2976,20 @@ Sema lib 1069/1069、changed-crate Clippy、fmt、cached diff check は成功。
 受理証拠を試す。普通の block に While を受理させる変更は body owner と利用側の移行
 が必要で、この cut に混ぜない。While/WhileLet と T01/T06 の残り、View 以降と goal
 全体は未完として継続する。
+
+## Match T01 Thread 内 While/WhileLet の受理証拠 — 2026-09-28
+
+確認した code commit は `a3e4aab38cdd14c8f955e94e11a4b33e08620624`。
+main へ fast-forward push 後、working tree は clean。
+
+expression Match arm の値 block に `thread { while ... {} }` と
+`thread { while let ... {} }` を置き、Thread body 下の HIR While/WhileLet と外側
+Expression statement がいずれも checked Structural payload として Match path 配下
+に到達することを確認した。同型 Bool 入力の変更がそれぞれ Match digest に届く。
+普通の arm block 直下は HIR Thread 文脈ゲートで拒否されるままであり、この受理証拠は
+その契約を変更しない。
+
+focused Match 67件、Sema lib 1071/1071、changed-crate Clippy、fmt、cached diff
+check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
+再実行していない。Wait/Suspension 等の残る T01/T06、View 以降と goal 全体は
+未完として継続する。
