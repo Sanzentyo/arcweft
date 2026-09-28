@@ -2573,3 +2573,31 @@ production owner `final_analysis/analyzer/expressions.rs` は 4750 → 4941 phys
 full Option の label/text_key は現行 checker が受理していないため、この compact
 Choice cut の完了証拠には含めない。C3 の明示 Call 型引数と T01/T06 の全 live
 family/root matrix、View 以降、goal 全体は未完として継続する。
+
+## Match C3 明示 Call 型引数の転記 — 2026-09-28
+
+Supersedes: 直前 checkpoint の明示 Call 型引数未転記という記述。確認した code commit は
+`6dd8ed3e66d3263ffdab4f3d96ad73d6f5a5cf42`。main へ fast-forward push 後、
+working tree は clean。
+
+Call の HIR invocation は explicit type application の不在/存在、source 順の個数と
+各 TypeId を保持する。Match writer は TypeId を lookup のみに使い、final analysis の
+checked `TypeKind::semantic_identity_digest()` を転記する。通常 Call と attached-content
+ContentCall は同じ helper を通り、raw ID と DirectAngle/Turbofish の綴りは書かない。
+欠落・不正な引数、未閉鎖の application、checked type 欠落は成功 transcript を作らず
+拒否する。join/application の選択 authority は変更しない。
+
+同じ selected generic join を持つ推論 `identity(1i64)` と明示
+`identity::<i64>(1i64)` の Match digest が異なり、明示 call の空白変更では等しい。
+DirectAngle の generic method は受理されることを確認したが、現行 Sema で同一 callee
+に両表記を受理する fixture は見つからず、DirectAngle/Turbofish 相互の等価性は
+未検証。malformed application と checked 型不一致の拒否を確認した。
+
+focused transcript 12/12、Sema lib 1033/1033、
+`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+既存警告はあるが失敗はない。2 file の同一 writer/受理テスト変更で新たな owner や
+依存方向を増やしていないため、構造 gate はこの cut では再実行していない。
+
+T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として継続する。
