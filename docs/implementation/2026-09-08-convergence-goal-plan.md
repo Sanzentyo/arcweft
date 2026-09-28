@@ -2749,3 +2749,22 @@ focused pattern 6/6、corpus 2/2、Sema lib 1050/1050、changed-crate Clippy、f
 cached diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate
 は再実行していない。Pending pattern と残る T01/T06、View 以降と goal 全体は未完として
 継続する。
+
+## Match T01 accepted pattern corpus の閉鎖 — 2026-09-28
+
+Supersedes: 直前 pilot の MutableBinding、EntityReference、WholeBinding、checked Entity
+を Pending とした分類。確認した code commit は
+`8d9737e418fbdfad44485b3af14bf07517cb691e`。main へ fast-forward push 後、
+working tree は clean。
+
+3つの HIR pattern shape は全て受理済み Match root 配下に到達し、MutableBinding と
+WholeBinding は checked Structural、EntityReference は checked Entity として閉じた。
+`mut selected` と通常 binding、別の accepted Flow entity ID、whole binding の有無
+それぞれで Match digest が変わる。pattern corpus の positive は live HIR 12/13、
+checked resolution 6/6。残る HIR Error は RejectOnly で、受理 family と数えない。
+
+focused pattern 8/8、`cargo test -p arcweft-lang-sema`（lib 1051/1051、trybuild
+14 と integration）、changed-crate Clippy、fmt、cached diff check は成功。既存警告あり。
+テストのみの cut なので workspace と構造 gate は再実行していない。T01 の残る
+expression/value/select/statement と T06 の残 root、View 以降、goal 全体は未完として
+継続する。
