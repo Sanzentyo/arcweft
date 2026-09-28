@@ -41,14 +41,14 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::Assign { .. } => Assign => Accepted,
     HirStmtKind::LetElse { .. } => LetElse => Accepted,
     HirStmtKind::Return { .. } => Return => Accepted,
-    HirStmtKind::Out { .. } => Out => Pending,
+    HirStmtKind::Out { .. } => Out => Accepted,
     HirStmtKind::Goto { .. } => Goto => Pending,
     HirStmtKind::Defer { .. } => Defer => Accepted,
     HirStmtKind::Yield { .. } => Yield => Pending,
     HirStmtKind::Signal { .. } => Signal => Pending,
     HirStmtKind::LifetimeSet { .. } => LifetimeSet => Pending,
-    HirStmtKind::Wait { .. } => Wait => Pending,
-    HirStmtKind::On { .. } => On => Pending,
+    HirStmtKind::Wait { .. } => Wait => Accepted,
+    HirStmtKind::On { .. } => On => Accepted,
     HirStmtKind::CancelRule { .. } => CancelRule => Pending,
     HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Pending,
     HirStmtKind::Choice { .. } => Choice => Pending,
@@ -77,14 +77,14 @@ statement_family_inventory!(StatementPayloadFamily for CheckedStatementPayload, 
     CheckedStatementPayload::Defer(_) => Defer => Accepted,
     CheckedStatementPayload::EvaluatedEffect(_) => EvaluatedEffect => Pending,
     CheckedStatementPayload::Iteration(_) => Iteration => Accepted,
-    CheckedStatementPayload::ControlTransfer(_) => ControlTransfer => Pending,
-    CheckedStatementPayload::Trigger(_) => Trigger => Pending,
+    CheckedStatementPayload::ControlTransfer(_) => ControlTransfer => Accepted,
+    CheckedStatementPayload::Trigger(_) => Trigger => Accepted,
     CheckedStatementPayload::UnsafeAudit(_) => UnsafeAudit => Pending,
     CheckedStatementPayload::Select(_) => Select => Pending,
     CheckedStatementPayload::SourceLocale(_) => SourceLocale => Pending,
     CheckedStatementPayload::Scope(_) => Scope => Pending,
     CheckedStatementPayload::Include(_) => Include => Pending,
-    CheckedStatementPayload::Suspension(_) => Suspension => Pending,
+    CheckedStatementPayload::Suspension(_) => Suspension => Accepted,
     CheckedStatementPayload::Yield => Yield => Pending,
 });
 
@@ -96,6 +96,8 @@ struct MatchStatementCorpusObservation {
     assertion_dispositions: Vec<CheckedAssertionDisposition>,
     defers: Vec<CheckedDeferCorpusFact>,
     iterations: Vec<CheckedIteration>,
+    suspensions: Vec<CheckedSuspensionStatement>,
+    match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
 
@@ -136,6 +138,10 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         !product.arms().is_empty(),
         "accepted Match has checked arms"
     );
+    let match_value_type = report
+        .expression(*match_owner)
+        .and_then(|expression| expression.value_type())
+        .cloned();
 
     let coordinates = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
     let match_path = coordinates
@@ -148,6 +154,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut assertion_dispositions = Vec::new();
     let mut defers = Vec::new();
     let mut iterations = Vec::new();
+    let mut suspensions = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -200,6 +207,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::For(_), CheckedStatementPayload::Iteration(iteration)) => {
                 iterations.push(iteration.as_ref().clone())
             }
+            (HirStmtKind::Wait { .. }, CheckedStatementPayload::Suspension(suspension)) => {
+                suspensions.push(suspension.as_ref().clone())
+            }
             (HirStmtKind::Assign { .. }, _) => {
                 panic!("accepted Assign has its exact checked Assignment payload")
             }
@@ -211,6 +221,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             }
             (HirStmtKind::For(_), _) => {
                 panic!("accepted For has its exact checked Iteration payload")
+            }
+            (HirStmtKind::Wait { .. }, _) => {
+                panic!("accepted Wait has its exact checked Suspension payload")
             }
             _ => {}
         }
@@ -227,6 +240,8 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         assertion_dispositions,
         defers,
         iterations,
+        suspensions,
+        match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
 }
@@ -305,6 +320,26 @@ fn flow_match_defer_source(capture: &str) -> String {
 
 fn flow_match_thread_source(statement: &str) -> String {
     flow_match_statement_source(&format!("thread {{ {statement} }}"))
+}
+
+fn dialogue_match_wait_source(wait: &str) -> String {
+    format!(
+        r#"pub character alice {{ display = "Alice" }}
+flow row() -> Unit {{
+    let selected = match true {{
+        true => {{
+            alice[before [mark @.release] after[p]] with {{
+                {wait}
+                on mark(@.release) {{ out "Released" }}
+            }}
+            "Released"
+        }}
+        false => "Moved"
+    }}
+    return ()
+}}
+"#
+    )
 }
 
 fn assert_statement_inventory<T: Copy + Ord + std::fmt::Debug>(
@@ -404,6 +439,22 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
                 StatementShapeFamily::WhileLet,
             ],
             payloads: &[StatementPayloadFamily::Structural],
+        },
+        Row {
+            name: "Wait in dialogue line-plan Match arm block",
+            source: dialogue_match_wait_source("wait(1s)"),
+            shapes: &[
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::On,
+                StatementShapeFamily::Out,
+                StatementShapeFamily::Wait,
+            ],
+            payloads: &[
+                StatementPayloadFamily::ControlTransfer,
+                StatementPayloadFamily::Structural,
+                StatementPayloadFamily::Suspension,
+                StatementPayloadFamily::Trigger,
+            ],
         },
     ];
     let mut shapes = BTreeSet::new();
@@ -653,6 +704,43 @@ fn checked_match_thread_while_let_candidate_reaches_checked_statement_path() {
     assert_eq!(other.statement_families, expected);
     assert_eq!(flag.statement_families, expected);
     assert_ne!(other.semantic_digest, flag.semantic_digest);
+}
+
+#[test]
+fn checked_match_dialogue_wait_reaches_checked_statement_path_and_changes_digest() {
+    let one_second =
+        accepted_match_statement_corpus_observation(&dialogue_match_wait_source("wait(1s)"));
+    let two_seconds =
+        accepted_match_statement_corpus_observation(&dialogue_match_wait_source("wait(2s)"));
+    let expected = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (StatementShapeFamily::On, StatementPayloadFamily::Trigger),
+        (
+            StatementShapeFamily::Out,
+            StatementPayloadFamily::ControlTransfer,
+        ),
+        (
+            StatementShapeFamily::Wait,
+            StatementPayloadFamily::Suspension,
+        ),
+    ]);
+
+    assert_eq!(one_second.statement_families, expected);
+    assert_eq!(two_seconds.statement_families, expected);
+    assert_eq!(
+        one_second.match_value_type,
+        Some(crate::types::TypeKind::String)
+    );
+    assert_eq!(
+        two_seconds.match_value_type,
+        Some(crate::types::TypeKind::String)
+    );
+    assert_eq!(one_second.suspensions, [CheckedSuspensionStatement::Wait]);
+    assert_eq!(two_seconds.suspensions, [CheckedSuspensionStatement::Wait]);
+    assert_ne!(one_second.semantic_digest, two_seconds.semantic_digest);
 }
 
 #[test]
