@@ -2993,3 +2993,20 @@ focused Match 67件、Sema lib 1071/1071、changed-crate Clippy、fmt、cached d
 check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate は
 再実行していない。Wait/Suspension 等の残る T01/T06、View 以降と goal 全体は
 未完として継続する。
+
+## Match T01 dialogue Wait/Trigger/ControlTransfer の受理証拠 — 2026-09-28
+
+確認した code commit は `2ef350f4d7ce7da82a70b0ca26cfbb6fc6aa8329`。
+main へ fast-forward push 後、working tree は clean。
+
+外側の expression Match arm に Dialogue application 全体を置き、その line-plan の
+`wait(1s)` を FlowItem/Thread statement として受理した。accepted Match path 配下に
+Wait/Suspension、On/Trigger、Out/ControlTransfer、Expression/Structural の正確な
+HIR/checked 組があり、Match result は String。`wait(1s)` と `wait(2s)` で digest が
+変わる。以前の `InvalidEvidence` は Match を on-mark body の内側へ置き、wait を
+ordinary arm block にしてしまった fixture 配置が原因だった。
+
+`cargo test -p arcweft-lang-sema` は全件成功（lib 1072件を含む）。fmt、cached diff
+check、changed-crate Clippy も成功。既存警告あり。テストのみの cut なので workspace
+と構造 gate は再実行していない。T01/T06 の残り、View 以降と goal 全体は未完として
+継続する。
