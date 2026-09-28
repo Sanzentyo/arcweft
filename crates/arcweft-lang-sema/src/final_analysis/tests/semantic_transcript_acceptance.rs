@@ -12,7 +12,11 @@ struct MatchObservation {
 
 fn match_observations(source: &str) -> Vec<MatchObservation> {
     let world = super::fixture(source, None);
-    let report = super::analyze(&world)
+    match_observations_for_fixture(&world)
+}
+
+fn match_observations_for_fixture(world: &super::Fixture) -> Vec<MatchObservation> {
+    let report = super::analyze(world)
         .unwrap_or_else(|error| panic!("semantic transcript fixture should check: {error:?}"));
     let project = world.project.analysis_view().expect("executable HIR");
     let module = project
@@ -273,6 +277,49 @@ fn registered_value_match_source(binding: &str) -> String {
 fn progress_field_match_source(field: &str) -> String {
     format!(
         "fn observe(need: Need<i64>) -> i64 {{\n    await need with {{\n        pending progress => {{\n            let selected = match true {{\n                true => progress.{field}\n                false => progress.{field}\n            }}\n        }}\n    }}\n}}\n"
+    )
+}
+
+fn dialogue_line_context_match_source() -> String {
+    concat!(
+        "pub character akane {}\n",
+        "flow line_context_match() -> String {\n",
+        "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let actor = akane.stage.acquire(scope=line)\n",
+        "        at(0.20s):\n",
+        "            actor.look(.normal)\n",
+        "        let later_actor = akane.stage.acquire(scope=line)\n",
+        "        let cue = at(0.42s):\n",
+        "            later_actor.look(.normal, crossfade=120ms)\n",
+        "        let voice = match true {\n",
+        "            true => line.voice_handle()\n",
+        "            false => line.voice_handle()\n",
+        "        }\n",
+        "        out (voice, cue)\n",
+        "    return \"done\"\n",
+        "}\n",
+    )
+    .to_owned()
+}
+
+fn dialogue_character_field_match_source(character: &str) -> String {
+    format!(
+        concat!(
+            "pub character akane {{}}\n",
+            "pub character alternate {{}}\n",
+            "flow character_field_match() -> String {{\n",
+            "    let (retained, _) = akane(voice=auto)[聞いて。[p]]\n",
+            "    with:\n",
+            "        let actor = match true {{\n",
+            "            true => {character}.stage.acquire(scope=line)\n",
+            "            false => {character}.stage.acquire(scope=line)\n",
+            "        }}\n",
+            "        out (actor, ())\n",
+            "    return \"done\"\n",
+            "}}\n",
+        ),
+        character = character,
     )
 }
 
@@ -1709,7 +1756,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::Value(_) => Value => Accepted,
     CheckedExpressionResolution::Select(_) => Select => Accepted,
     CheckedExpressionResolution::Nominal(_) => Nominal => Pending,
-    CheckedExpressionResolution::Variant(_) => Variant => Pending,
+    CheckedExpressionResolution::Variant(_) => Variant => Accepted,
     CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Pending,
     CheckedExpressionResolution::StageLook(_) => StageLook => Pending,
     CheckedExpressionResolution::Effect(_) => Effect => Pending,
@@ -1740,8 +1787,8 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
 
 expression_family_inventory!(ValueResolutionFamily for CheckedValueResolution, {
     CheckedValueResolution::Local(_) => Local => Accepted,
-    CheckedValueResolution::LineContext => LineContext => Pending,
-    CheckedValueResolution::CharacterField { .. } => CharacterField => Pending,
+    CheckedValueResolution::LineContext => LineContext => Accepted,
+    CheckedValueResolution::CharacterField { .. } => CharacterField => Accepted,
     CheckedValueResolution::ProjectCallable(_) => ProjectCallable => Accepted,
     CheckedValueResolution::ProjectItem(_) => ProjectItem => Accepted,
     CheckedValueResolution::Entry(_) => Entry => Accepted,
@@ -1765,6 +1812,8 @@ struct MatchExpressionCorpusObservation {
     selects: BTreeSet<SelectResolutionFamily>,
     value_facts: Vec<(CheckedValueResolution, TypeKind)>,
     select_facts: Vec<(CheckedSelectResolution, TypeKind)>,
+    variant_facts: Vec<crate::final_analysis::CheckedVariantResolution>,
+    match_type: Option<TypeKind>,
     semantic_digest: Option<[u8; 32]>,
 }
 
@@ -1784,6 +1833,9 @@ impl MatchExpressionCorpusObservation {
         }
         if let CheckedExpressionResolution::Select(select) = resolution {
             self.selects.insert(SelectResolutionFamily::of(select));
+        }
+        if let CheckedExpressionResolution::Variant(variant) = resolution {
+            self.variant_facts.push(variant.clone());
         }
         if let CheckedExpressionResolution::CompileTimeScalar(scalar) = resolution {
             self.record_resolution(scalar.original());
@@ -1838,6 +1890,10 @@ fn accepted_match_expression_corpus_observation_for_fixture(
         selects: BTreeSet::new(),
         value_facts: Vec::new(),
         select_facts: Vec::new(),
+        variant_facts: Vec::new(),
+        match_type: report
+            .expression(*match_owner)
+            .and_then(|checked| checked.value_type().cloned()),
         semantic_digest: Some(*product.semantic_digest().as_bytes()),
     };
     for (owner, hir) in module.expressions() {
@@ -1903,6 +1959,7 @@ struct ExpressionCorpusRow {
 enum ExpressionCorpusFixture {
     Standard,
     ExternalCharacter,
+    CharacterNominal,
     RegisteredI32Pair,
 }
 
@@ -1911,6 +1968,7 @@ impl ExpressionCorpusFixture {
         match self {
             Self::Standard => super::fixture(source, None),
             Self::ExternalCharacter => super::external_character_fixture(source),
+            Self::CharacterNominal => super::character_nominal_fixture(source),
             Self::RegisteredI32Pair => super::fixture_with_base_environment(
                 source,
                 None,
@@ -2084,6 +2142,36 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             ],
             values: &[],
             selects: &[SelectResolutionFamily::ProgressField],
+        },
+        ExpressionCorpusRow {
+            name: "Dialogue line context value",
+            source: dialogue_line_context_match_source(),
+            fixture: ExpressionCorpusFixture::CharacterNominal,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Call],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Call,
+                ExpressionResolutionFamily::Value,
+            ],
+            values: &[ValueResolutionFamily::LineContext],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "Dialogue Character Stage field value",
+            source: dialogue_character_field_match_source("akane"),
+            fixture: ExpressionCorpusFixture::CharacterNominal,
+            shapes: &[ExprShapeFamily::Match, ExprShapeFamily::Call],
+            resolutions: &[
+                ExpressionResolutionFamily::Structural,
+                ExpressionResolutionFamily::Call,
+                ExpressionResolutionFamily::Variant,
+                ExpressionResolutionFamily::Value,
+            ],
+            values: &[
+                ValueResolutionFamily::CharacterField,
+                ValueResolutionFamily::ProjectItem,
+            ],
+            selects: &[],
         },
     ]
 }
@@ -2273,6 +2361,175 @@ fn registered_value_fact(
             _ => None,
         })
         .expect("Match descendant has a checked Registered value")
+}
+
+fn line_context_facts(observation: &MatchExpressionCorpusObservation) -> Vec<&TypeKind> {
+    observation
+        .value_facts
+        .iter()
+        .filter_map(|(value, ty)| {
+            matches!(value, CheckedValueResolution::LineContext).then_some(ty)
+        })
+        .collect()
+}
+
+fn character_field_facts(
+    observation: &MatchExpressionCorpusObservation,
+) -> Vec<(
+    &CharacterId,
+    &crate::types::CharacterField,
+    &CheckedValueResolution,
+    &TypeKind,
+)> {
+    observation
+        .value_facts
+        .iter()
+        .filter_map(|(value, ty)| match value {
+            CheckedValueResolution::CharacterField {
+                receiver,
+                character,
+                field,
+            } => Some((character, field, receiver.as_ref(), ty)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn variant_facts(
+    observation: &MatchExpressionCorpusObservation,
+) -> &[crate::final_analysis::CheckedVariantResolution] {
+    &observation.variant_facts
+}
+
+fn assert_dialogue_match_source_revision_invariant(
+    source: &str,
+    fixture: ExpressionCorpusFixture,
+    original_digest: [u8; 32],
+) {
+    let revised_source = format!("fn unrelated() -> i64 {{ 99i64 }}\n{source}");
+    let revised_world = fixture.build(&revised_source);
+    let revised = accepted_match_expression_corpus_observation_for_fixture(&revised_world);
+    let original_world = fixture.build(source);
+    let original = outermost(&match_observations_for_fixture(&original_world));
+    let revised_match = outermost(&match_observations_for_fixture(&revised_world));
+    assert_eq!(original_digest, original.digest);
+    assert_ne!(original.owner, revised_match.owner);
+    assert_ne!(original.source_start, revised_match.source_start);
+    assert_ne!(original.source_end, revised_match.source_end);
+    assert_eq!(
+        original.digest,
+        revised.semantic_digest.expect("checked Match digest")
+    );
+}
+
+#[test]
+fn checked_match_transcript_reaches_dialogue_line_context_values() {
+    let source = dialogue_line_context_match_source();
+    let world = ExpressionCorpusFixture::CharacterNominal.build(&source);
+    let observation = accepted_match_expression_corpus_observation_for_fixture(&world);
+    let facts = line_context_facts(&observation);
+    assert_eq!(facts.len(), 2, "each Match arm has a checked line receiver");
+    assert!(facts.iter().all(|ty| **ty == TypeKind::LineContext));
+    assert_eq!(observation.match_type, Some(TypeKind::VoiceHandle));
+
+    assert_dialogue_match_source_revision_invariant(
+        &source,
+        ExpressionCorpusFixture::CharacterNominal,
+        observation.semantic_digest.expect("checked Match digest"),
+    );
+}
+
+#[test]
+fn checked_match_transcript_reaches_dialogue_character_field_values() {
+    let akane_source = dialogue_character_field_match_source("akane");
+    let akane_world = ExpressionCorpusFixture::CharacterNominal.build(&akane_source);
+    let akane = accepted_match_expression_corpus_observation_for_fixture(&akane_world);
+    let akane_id = CharacterId::try_new("character.akane").expect("Akane Character ID");
+    let akane_facts = character_field_facts(&akane);
+    assert_eq!(
+        akane_facts.len(),
+        2,
+        "each Match arm has a checked Stage field"
+    );
+    for (character, field, receiver, ty) in &akane_facts {
+        assert_eq!(*character, &akane_id);
+        assert_eq!(*field, &crate::types::CharacterField::Stage);
+        assert_eq!(
+            *ty,
+            &TypeKind::StageApi(akane_id.clone()),
+            "the exact Character owner is part of the StageApi type",
+        );
+        let CheckedValueResolution::ProjectItem(item) = receiver else {
+            panic!("Character Stage receiver retains a checked project Character item");
+        };
+        assert_eq!(item.character(), Some(akane_id.clone()));
+        assert!(item.retained_owner().is_some());
+    }
+    assert_eq!(
+        akane.match_type,
+        Some(TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            akane_id.clone()
+        )))
+    );
+    assert_scope_line_variant_facts(&akane);
+
+    let alternate_source = dialogue_character_field_match_source("alternate");
+    let alternate_world = ExpressionCorpusFixture::CharacterNominal.build(&alternate_source);
+    let alternate = accepted_match_expression_corpus_observation_for_fixture(&alternate_world);
+    let alternate_id = CharacterId::try_new("character.alternate").expect("Alternate Character ID");
+    let alternate_facts = character_field_facts(&alternate);
+    assert_eq!(
+        alternate_facts.len(),
+        2,
+        "each alternate-owner Match arm has a checked Stage field",
+    );
+    for (character, field, receiver, ty) in &alternate_facts {
+        assert_eq!(*character, &alternate_id);
+        assert_eq!(*field, &crate::types::CharacterField::Stage);
+        assert_eq!(*ty, &TypeKind::StageApi(alternate_id.clone()));
+        let CheckedValueResolution::ProjectItem(item) = receiver else {
+            panic!("alternate Character Stage receiver remains checked");
+        };
+        assert_eq!(item.character(), Some(alternate_id.clone()));
+        assert!(item.retained_owner().is_some());
+    }
+    assert_eq!(
+        alternate.match_type,
+        Some(TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            alternate_id
+        )))
+    );
+    assert_scope_line_variant_facts(&alternate);
+    // Exact Character identity is carried by StageApi and StageActorHandle,
+    // so this owner comparison also changes the checked Match result type.
+    assert_ne!(akane.match_type, alternate.match_type);
+    assert_ne!(akane.semantic_digest, alternate.semantic_digest);
+
+    assert_dialogue_match_source_revision_invariant(
+        &akane_source,
+        ExpressionCorpusFixture::CharacterNominal,
+        akane.semantic_digest.expect("checked Match digest"),
+    );
+}
+
+fn assert_scope_line_variant_facts(observation: &MatchExpressionCorpusObservation) {
+    let facts = variant_facts(observation);
+    assert_eq!(facts.len(), 2, "each Match arm checks its scope variant");
+    for variant in facts {
+        let CheckedVariantOwnerKind::BuiltinClosed { nominal, ty } = variant.owner().kind() else {
+            panic!("scope=line retains its closed PresentationLifetime owner");
+        };
+        assert_eq!(nominal.as_str(), "PresentationLifetime");
+        let lifetime_type = TypeKind::Named("PresentationLifetime".to_owned());
+        assert_eq!(ty, &lifetime_type);
+        assert_eq!(variant.owner().ty(), lifetime_type);
+        assert_eq!(variant.ordinal(), 3);
+        assert_eq!(variant.selected().diagnostic_name(), Some("line"));
+    }
+    assert_eq!(
+        facts[0], facts[1],
+        "both arms select the same owner and case"
+    );
 }
 
 #[test]
