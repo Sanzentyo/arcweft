@@ -390,6 +390,78 @@ fn fallback(first: DialogueContent, second: DialogueContent)[body: DialogueConte
 }
 
 #[test]
+fn checked_match_transcript_commits_trait_impl_method_body_and_ignores_source_revision() {
+    let original = r#"
+struct RouteInfo { label: String }
+impl DisplayText for RouteInfo {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        match true {
+            true => Ok(fmt(self.label))
+            false => Ok(fmt("alternate"))
+        }
+    }
+}
+fn render(value: RouteInfo) -> Content { fmt(value) }
+"#;
+    let changed = original.replace("fmt(\"alternate\")", "fmt(\"fallback\")");
+    let revised = r#"
+fn unrelated() -> i64 { 99i64 }
+struct RouteInfo { label: String }
+impl DisplayText for RouteInfo {
+    fn display_text(self, ctx: DisplayContext) -> Result<Content, DisplayError> {
+        match true {
+            true => Ok(fmt(self.label))
+            false => Ok(fmt("alternate"))
+        }
+    }
+}
+fn render(value: RouteInfo) -> Content { fmt(value) }
+"#;
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "trait implementation method body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
+fn checked_match_transcript_commits_inherent_method_body_and_ignores_source_revision() {
+    let original = r#"
+struct Number { value: i64 }
+impl Number {
+    fn get(self, flag: bool) -> i64 {
+        match flag {
+            true => self.value
+            false => 0i64
+        }
+    }
+}
+"#;
+    let changed = original.replace("true => self.value", "true => 1i64");
+    let revised = r#"
+fn unrelated() -> i64 { 99i64 }
+struct Number { value: i64 }
+impl Number {
+    fn get(self, flag: bool) -> i64 {
+        match flag {
+            true => self.value
+            false => 0i64
+        }
+    }
+}
+"#;
+
+    assert_match_sensitivity_and_source_revision_invariance(
+        "inherent implementation method body",
+        original,
+        &changed,
+        revised,
+    );
+}
+
+#[test]
 fn checked_match_transcript_commits_selected_call_argument_passing() {
     let source = |call: &str| {
         format!(
