@@ -3044,3 +3044,22 @@ transcript writer が名前を落とす欠落を発見したため Pending の�
 全件成功。changed-crate Clippy、fmt、cached diff check も成功し、既存警告あり。
 テストのみの cut なので workspace と構造 gate は再実行していない。T01/T06、
 View 以降と goal 全体は未完として継続する。
+
+## Match T01 named scope identity の transcript 修正 — 2026-09-29
+
+確認した code commit は `bb937ea678170b79bdc7abd8f64b3cfbf3727750`。
+main へ fast-forward push 後、working tree は clean。
+
+`CheckedScopeIdentity::Named` に残る検証済み DeclarationName を共通
+`write_scope_identity` が省いていたため、`scope local` と `scope scene` の
+Match digest が衝突していた。DeclarationName の owner API で canonical bytes を
+発行し、statement Scope と NamedBlock expression の双方へ length-framed で記録した。
+両方を T01 corpus Accepted へ移し、name の意味差、anonymous 差、整形不変性を
+実際の checked owner と Match digest で確認した。旧「scope label 無視」テストは
+契約と矛盾するため新しい意味差分期待へ更新した。
+
+focused 3件、acceptance module 55/55、workspace all-target/all-feature check と
+Clippy、`just test-workspace`、`just structure-audit-gate`（blocking 0）、fmt、
+cached diff check は成功。workspace test 初回は旧期待テスト1件で失敗し、修正後の
+full rerun が成功した。既存 Clippy 警告と構造 review triggers 348件あり。
+T01/T06、View 以降と goal 全体は未完として継続する。
