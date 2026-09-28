@@ -34,7 +34,10 @@ use crate::semantic_coordinate::{
 use crate::types::{ArrayLength, SemanticTypeDigest, TypeKind};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
-    expr::{HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirMatchExpr},
+    expr::{
+        HirCallInvocation, HirCallTypeApplication, HirCallTypeApplicationTerminator,
+        HirCallTypeArgument, HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirMatchExpr,
+    },
     identity::{ExprId, PatternId},
     leaf::{HirLiteral, HirNumericSequenceRecovery},
     module::HirModule,
@@ -1513,7 +1516,7 @@ fn expression_digest_at_with_state(
             })?,
         )?;
     }
-    write_expression_shape_atoms(&mut hasher, owner, hir.kind(), checked)?;
+    write_expression_shape_atoms(&mut hasher, owner, hir.kind(), checked, analysis)?;
     write_resolution_payload(
         &mut hasher,
         owner,
@@ -3460,6 +3463,7 @@ fn write_expression_shape_atoms(
     owner: ExprId,
     kind: &HirExprKind,
     checked: &super::CheckedExpression,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<(), SemanticTranscriptError> {
     match kind {
         HirExprKind::Unit
@@ -3483,7 +3487,6 @@ fn write_expression_shape_atoms(
         | HirExprKind::If(_)
         | HirExprKind::IfLet(_)
         | HirExprKind::Match(_)
-        | HirExprKind::AttachedContentApplication(_)
         | HirExprKind::PostfixBracket(_) => {}
         HirExprKind::Placeholder(placeholder) => {
             transcript_update!(hasher, &[placeholder.semantic_transcript_tag()]);
@@ -3540,6 +3543,12 @@ fn write_expression_shape_atoms(
         }
         HirExprKind::Call(call) => {
             transcript_update!(hasher, &[call.form().semantic_transcript_tag()]);
+            write_call_type_application(hasher, call, analysis)?;
+        }
+        HirExprKind::AttachedContentApplication(application) => {
+            if let Some(call) = application.family().invocation() {
+                write_call_type_application(hasher, call, analysis)?;
+            }
         }
         HirExprKind::Await(awaited) => {
             write_len(hasher, awaited.branches().len())?;
@@ -3582,6 +3591,40 @@ fn write_expression_shape_atoms(
             transcript_update!(hasher, &[synthetic.semantic_transcript_tag()]);
         }
         HirExprKind::Error(_) => return Err(SemanticTranscriptError::RecoveredOwner),
+    }
+    Ok(())
+}
+
+/// The invocation owns whether type arguments were written and their order;
+/// final checked types own their meaning. Source syntax and raw `TypeId` values do not
+/// enter the transcript.
+fn write_call_type_application(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    call: &HirCallInvocation,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<(), SemanticTranscriptError> {
+    match call.explicit_type_application() {
+        HirCallTypeApplication::Absent => transcript_update!(hasher, &[0]),
+        HirCallTypeApplication::Present {
+            arguments,
+            terminator: HirCallTypeApplicationTerminator::Closed,
+            ..
+        } => {
+            transcript_update!(hasher, &[1]);
+            write_len(hasher, arguments.len())?;
+            for argument in arguments {
+                let HirCallTypeArgument::Resolved { ty } = argument else {
+                    return Err(SemanticTranscriptError::RecoveredOwner);
+                };
+                let checked = analysis
+                    .ty(*ty)
+                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
+                transcript_update!(hasher, checked.semantic_identity_digest()?.as_bytes());
+            }
+        }
+        HirCallTypeApplication::Present { .. } => {
+            return Err(SemanticTranscriptError::RecoveredOwner);
+        }
     }
     Ok(())
 }

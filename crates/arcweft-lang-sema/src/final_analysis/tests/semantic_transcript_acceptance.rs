@@ -249,6 +249,76 @@ fn checked_match_transcript_commits_selected_call_argument_passing() {
 }
 
 #[test]
+fn checked_match_transcript_commits_explicit_call_type_application() {
+    let source = |call: &str| {
+        format!(
+            "fn identity<T>(value: T) -> T {{ value }}\nfn root(flag: bool) -> i64 {{\n    match flag {{\n        true => {call}\n        false => 0i64\n    }}\n}}\n"
+        )
+    };
+    let digest = |call: &str| source_match_digest(&source(call));
+    let selected_join = |call: &str| {
+        let world = super::fixture(&source(call), None);
+        let report = super::analyze(&world).expect("checked generic call");
+        let (owner, _) = report.calls().next().expect("one call");
+        let join = report
+            .edge_facts
+            .get(&owner)
+            .expect("call edges")
+            .as_ref()
+            .expect("checked call edges")
+            .callable()
+            .expect("selected callable join");
+        let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+            report.accepted_root_catalog(),
+            &report,
+        );
+        *join
+            .stable_transcript_digest(&coordinates)
+            .expect("selected generic instantiation")
+            .as_bytes()
+    };
+
+    let inferred = "identity(1i64)";
+    let explicit = "identity::<i64>(1i64)";
+    let formatted = "identity::<i64>( 1i64 )";
+    assert_eq!(
+        selected_join(inferred),
+        selected_join(explicit),
+        "explicit arguments retain the selected target and instantiation",
+    );
+    assert_ne!(
+        digest(inferred),
+        digest(explicit),
+        "explicitness is an atom"
+    );
+    assert_eq!(digest(explicit), digest(formatted), "layout is omitted");
+
+    let method_source = |call: &str| {
+        format!(
+            "fn root(items: Seq<i64>, flag: bool) -> Vec<i64> {{\n    match flag {{\n        true => {call}\n        false => [0i64]\n    }}\n}}\n"
+        )
+    };
+    let _direct_method = source_match_digest(&method_source("items.collect<Vec<i64>>()"));
+
+    for (label, call) in [
+        ("missing type argument", "identity::<>()"),
+        ("invalid type argument", "identity::<9bad>(1i64)"),
+        ("missing type close", "identity::<i64(1i64)"),
+    ] {
+        let invalid = super::fixture(&source(call), None);
+        assert!(
+            invalid.project.analysis_view().is_err(),
+            "{label} rejects before final semantic analysis",
+        );
+    }
+    let mismatched = super::fixture(&source("identity::<bool>(1i64)"), None);
+    assert!(
+        super::analyze(&mismatched).is_err(),
+        "mismatched checked type rejects",
+    );
+}
+
+#[test]
 fn checked_match_transcript_uses_accepted_project_callable_value_identity() {
     let original = source_match_digest(
         "fn identity(value: i64) -> i64 { value }\nfn root(flag: bool) -> i64 {\n    match flag {\n        true => { let saved = identity; 1i64 }\n        false => 0i64\n    }\n}\n",
