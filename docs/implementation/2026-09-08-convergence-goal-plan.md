@@ -2732,3 +2732,20 @@ focused 2/2、Sema lib 1048/1048、`cargo test -p arcweft-lang-sema`、changed-c
 Clippy、fmt、cached diff check は成功。既存警告あり。テストのみの cut なので
 workspace と構造 gate は再実行していない。T01 の残る live family、T06 の残 root、
 View 以降と goal 全体は未完として継続する。
+
+## Match T01 pattern corpus pilot — 2026-09-28
+
+確認した code commit は `83a1150f0e20c4a80edbd82e6b7b282bac0fb814`。
+main へ fast-forward push 後、working tree は clean。
+
+test-only の accepted Match path-prefix collector を追加し、別宣言の checked pattern を
+対象 Match の証拠に数えないことを検証した。既存5件の受理済み source を表に再利用し、
+live HIR pattern shape と checked pattern resolution を wildcard のない exhaustive
+classifier で分類する。現時点の受理証拠は HIR shape 9/13、checked resolution 5/6。
+MutableBinding、EntityReference、WholeBinding と checked Entity は Pending、Error は
+RejectOnly。到達不能と断定した family はない。既存の意味差分テストは維持した。
+
+focused pattern 6/6、corpus 2/2、Sema lib 1050/1050、changed-crate Clippy、fmt、
+cached diff check は成功。既存警告あり。テストのみの cut なので workspace と構造 gate
+は再実行していない。Pending pattern と残る T01/T06、View 以降と goal 全体は未完として
+継続する。
