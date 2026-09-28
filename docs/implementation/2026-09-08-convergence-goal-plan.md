@@ -2889,3 +2889,19 @@ statement corpus は別子 module に置ける構造になった。
 `just structure-audit-gate`、cached diff check は成功。構造 gate は review trigger
 のみ、blocking 0。既存警告あり。T01/T06 の残り、View 以降と goal 全体は未完として
 継続する。
+
+## Match T01 statement corpus pilot — 2026-09-28
+
+確認した code commit は `639613a2292f61c7c84a4cd7a2c0904913fb0dd3`。
+main へ fast-forward push 後、working tree は clean。
+
+test-only `statements.rs` で live HIR statement 32形状と checked payload 15 family を
+wildcardなしで分類した。accepted Match root の semantic coordinate 以下にある
+checked statement だけを集計し、既存 arm block の Let と nested If+Let は
+Structural payload として受理した。別宣言の checked Return は集計から除外する。
+既存 body-root source builder を親 module へ共有し、重複 fixture を作らなかった。
+
+focused corpus 2/2、acceptance 40/40、Sema lib 1062/1062、changed-crate Clippy、
+fmt、cached diff check は成功。既存警告あり。テスト専用の新子 module は直前の
+構造レビューに沿い、本番 API や依存は変えない。Assign、Assertion、Wait 等は
+Pending のまま。T01/T06 の残り、View 以降と goal 全体は未完として継続する。
