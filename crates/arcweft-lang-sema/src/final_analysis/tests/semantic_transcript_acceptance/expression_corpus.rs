@@ -18,6 +18,31 @@ fn registered_value_match_source(binding: &str) -> String {
     )
 }
 
+fn range_match_source(inclusive: bool) -> String {
+    let right = if inclusive { "..=" } else { ".." };
+    format!(
+        "fn root(flag: bool) -> i64 {{\n    let selected = match flag {{\n        true => 0i64{right}1i64\n        false => 0i64..2i64\n    }}\n    0i64\n}}\n"
+    )
+}
+
+fn bracket_sequence_match_source(left: &str, right: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> Array<bool, 2> {{\n    match flag {{\n        true => [{left}]\n        false => [{right}]\n    }}\n}}\n"
+    )
+}
+
+fn array_repeat_match_source(value: &str) -> String {
+    format!(
+        "fn root(flag: bool) -> Array<i32, 2> {{\n    match flag {{\n        true => [{value}i32; 2i64]\n        false => [9i32; 2i64]\n    }}\n}}\n"
+    )
+}
+
+fn index_match_source(index: usize) -> String {
+    format!(
+        "fn root(items: Vec<i64>, flag: bool) -> i64 {{\n    match flag {{\n        true => items[{index}]\n        false => 0i64\n    }}\n}}\n"
+    )
+}
+
 fn progress_field_match_source(field: &str) -> String {
     format!(
         "fn observe(need: Need<i64>) -> i64 {{\n    await need with {{\n        pending progress => {{\n            let selected = match true {{\n                true => progress.{field}\n                false => progress.{field}\n            }}\n        }}\n    }}\n}}\n"
@@ -72,10 +97,6 @@ enum ExpressionCorpusDisposition {
     Accepted,
     Pending,
     RejectOnly,
-    #[allow(
-        dead_code,
-        reason = "no live expression family has been proven unreachable"
-    )]
     ProvenUnreachable,
 }
 
@@ -111,18 +132,18 @@ expression_family_inventory!(ExprShapeFamily for HirExprKind, {
     HirExprKind::ShortVariant(_) => ShortVariant => Pending,
     HirExprKind::Placeholder(_) => Placeholder => Accepted,
     HirExprKind::Tuple(_) => Tuple => Accepted,
-    HirExprKind::BracketSequence(_) => BracketSequence => Pending,
+    HirExprKind::BracketSequence(_) => BracketSequence => Accepted,
     HirExprKind::NumericBracketSequence(_) => NumericBracketSequence => Accepted,
-    HirExprKind::ArrayRepeat(_) => ArrayRepeat => Pending,
+    HirExprKind::ArrayRepeat(_) => ArrayRepeat => Accepted,
     HirExprKind::Call(_) => Call => Accepted,
     HirExprKind::Select(_) => Select => Accepted,
-    HirExprKind::Index(_) => Index => Pending,
+    HirExprKind::Index(_) => Index => Accepted,
     HirExprKind::Pipe(_) => Pipe => Accepted,
     HirExprKind::Try(_) => Try => Accepted,
     HirExprKind::Await(_) => Await => Pending,
     HirExprKind::Thread(_) => Thread => Accepted,
     HirExprKind::Choice(_) => Choice => Accepted,
-    HirExprKind::Range(_) => Range => Pending,
+    HirExprKind::Range(_) => Range => Accepted,
     HirExprKind::Record(_) => Record => Pending,
     HirExprKind::RecordLiteral(_) => RecordLiteral => Pending,
     HirExprKind::Binary(_) => Binary => Accepted,
@@ -153,7 +174,7 @@ expression_family_inventory!(ExpressionResolutionFamily for CheckedExpressionRes
     CheckedExpressionResolution::Variant(_) => Variant => Accepted,
     CheckedExpressionResolution::CompileTimeEnum(_) => CompileTimeEnum => Pending,
     CheckedExpressionResolution::StageLook(_) => StageLook => Pending,
-    CheckedExpressionResolution::Effect(_) => Effect => Pending,
+    CheckedExpressionResolution::Effect(_) => Effect => ProvenUnreachable,
     CheckedExpressionResolution::Call => Call => Accepted,
     CheckedExpressionResolution::Await(_) => Await => Pending,
     CheckedExpressionResolution::Choice(_) => Choice => Accepted,
@@ -719,6 +740,82 @@ fn checked_owner_expression_corpus_rows() -> Vec<ExpressionCorpusRow> {
             values: &[],
             selects: &[],
         },
+        ExpressionCorpusRow {
+            name: "ordinary Match-root range value",
+            exact_path_families: true,
+            source: range_match_source(false),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Range,
+                ExprShapeFamily::Match,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Structural,
+            ],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "ordinary Match-root bracket sequence",
+            exact_path_families: true,
+            source: bracket_sequence_match_source("true, false", "false, true"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::BracketSequence,
+                ExprShapeFamily::Match,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Structural,
+            ],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "ordinary Match-root array repeat",
+            exact_path_families: true,
+            source: array_repeat_match_source("0"),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::ArrayRepeat,
+                ExprShapeFamily::Match,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Structural,
+            ],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
+        ExpressionCorpusRow {
+            name: "ordinary Match-root Vec index",
+            exact_path_families: true,
+            source: index_match_source(0),
+            fixture: ExpressionCorpusFixture::Standard,
+            shapes: &[
+                ExprShapeFamily::Path,
+                ExprShapeFamily::Literal,
+                ExprShapeFamily::Index,
+                ExprShapeFamily::Match,
+            ],
+            resolutions: &[
+                ExpressionResolutionFamily::Value,
+                ExpressionResolutionFamily::Literal,
+                ExpressionResolutionFamily::Structural,
+            ],
+            values: &[ValueResolutionFamily::Local],
+            selects: &[],
+        },
     ]
 }
 
@@ -1210,6 +1307,88 @@ fn checked_match_named_block_commits_checked_namespace_identity() {
     assert_eq!(local.scope_facts, formatted.scope_facts);
     assert_ne!(local.semantic_digest, scene.semantic_digest);
     assert_eq!(local.semantic_digest, formatted.semantic_digest);
+}
+
+#[test]
+fn checked_match_transcript_commits_same_typed_sequence_repeat_and_index_values() {
+    let sequence =
+        |left: &str| source_match_digest(&bracket_sequence_match_source(left, "false, true"));
+    assert_ne!(sequence("true, false"), sequence("false, false"));
+
+    let repeat = |value: &str| source_match_digest(&array_repeat_match_source(value));
+    assert_ne!(repeat("0"), repeat("1"));
+
+    let index = |selected| source_match_digest(&index_match_source(selected));
+    assert_ne!(index(0), index(1));
+}
+
+#[test]
+fn effect_expression_fact_is_outside_its_function_body_match_path() {
+    let source = r"
+fn root(flag: bool) -> i64 effects { fs.read } {
+    match flag {
+        true => 1i64
+        false => 0i64
+    }
+}
+";
+    let world = super::fixture(source, None);
+    let report = super::analyze(&world).expect("effect clause and Match body are accepted");
+    let project = world.project.analysis_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let matches = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    let [match_owner] = matches.as_slice() else {
+        panic!("effect witness owns one Match expression");
+    };
+    let coordinates = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let match_path = coordinates
+        .expression(*match_owner)
+        .expect("accepted body Match path");
+    let effect_paths = report
+        .expressions()
+        .filter_map(|(owner, checked)| {
+            let CheckedExpressionResolution::Effect(effect) = checked.resolution() else {
+                return None;
+            };
+            assert_eq!(effect.as_str(), "fs.read");
+            Some(
+                coordinates
+                    .expression(owner)
+                    .expect("declaration-contract Effect path"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !effect_paths.is_empty(),
+        "the effect clause publishes checked facts"
+    );
+    assert!(
+        effect_paths
+            .iter()
+            .all(|path| !path.is_at_or_below(&match_path))
+    );
+    assert!(effect_paths.iter().all(|path| matches!(
+        path.steps().first(),
+        Some(crate::semantic_coordinate::CheckedSemanticPathStep::DeclarationContract(_))
+    )));
+    assert!(matches!(
+        match_path.steps().first(),
+        Some(crate::semantic_coordinate::CheckedSemanticPathStep::DeclarationBody(_))
+    ));
+
+    let match_observation = accepted_match_expression_corpus_observation_for_fixture(&world);
+    assert!(
+        !match_observation
+            .resolutions
+            .contains(&ExpressionResolutionFamily::Effect)
+    );
 }
 
 #[test]
