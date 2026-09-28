@@ -2478,3 +2478,29 @@ checked call passing と Choice の plan key/cancel trigger は未転記。full 
 `label(text_key=...)` は現行 checker 自体が拒否しており、受理前の checked owner
 拡張が必要。T01/T06 の全 live family/root matrix、View 以降の工程、goal 全体の
 受入は未完として継続する。
+
+## Match C3 selected call passing と安定 join — 2026-09-28
+
+確認した code commit は `e91240c92767da6b5bb556eea779c027098a301d`。
+main へ fast-forward push 後、working tree は clean。
+
+Match の call writer は exact site と accepted-rooted expression 座標を照合した
+selected application の source-ordered `CheckedCallArgumentPassing` を転記する。
+positional/named/spread の閉じた tag は既存 application encoder と共有する。
+選択済み callable join の runtime digest は解析世代と catalog revision を含むため、
+その bytes は変えずに、同じ join から accepted declaration ID を使う transcript 専用
+投影を発行する。非選択 candidate 一覧を含む application 全体の digest や raw 引数名は
+Match に入れない。
+
+同じ selected callable/slot の positional と named call は Match digest が異なり、
+named call の空白・整数 radix 変更では等しい。後者は修正前、既存 join digest の
+generation-bound ID により失敗したため、安定投影の必要性を実証した。Sema lib
+1028/1028、focused transcript 8/8、`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+既存警告はあるが失敗はない。新しい crate/依存方向、公開 runtime contract、
+大幅な owner growth はなく、構造 gate は本 cut では再実行していない。
+
+C3 には project callable value writer の generation-bound ID と method selection
+の generation-bound join、Choice の checked plan key/cancel trigger が残る。
+T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として継続する。
