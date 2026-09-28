@@ -2504,3 +2504,31 @@ generation-bound ID により失敗したため、安定投影の必要性を実
 C3 には project callable value writer の generation-bound ID と method selection
 の generation-bound join、Choice の checked plan key/cancel trigger が残る。
 T01/T06 の全 live family/root matrix、View 以降、goal 全体は未完として継続する。
+
+## Match C3 callable value / method の安定 identity — 2026-09-28
+
+Supersedes: 直前 checkpoint の project callable value と method selection に残る
+generation-bound digest の記述。確認した code commit は
+`e017c1a84e5394e0726c99ea7161691107d8835c`。main へ fast-forward push 後、
+working tree は clean。
+
+project callable value writer は実行用 `CheckedCallableId` の解析世代 digest の代わりに
+accepted declaration ID を記録する。`CheckedMethodSelection` は既存の runtime 用
+join digest を保持しつつ、同じ selected join から seal 時に transcript 用 digest も
+発行する。Project は accepted declaration、Environment は durable な構造的
+`EnvironmentCallableId`、Standard は catalog version と構造的 ordinal を用い、
+Detached は project Match transcript への混入を拒否する。transcript 時の再解決や
+並行する callable catalog は作らない。
+
+project callable value の空白・無関係な前置宣言不変テストと、`Select(Method)` を実際に
+通る View modifier のテストが通過した。後者は runtime digest が source revision で
+変わる一方、stored stable method digest と Match digest は等しく、別 modifier では
+双方が異なることを検証する。Sema lib 1030/1030、focused transcript 10/10、
+`cargo check --workspace --all-targets --all-features`、
+`cargo clippy --workspace --all-targets --all-features`、`just test-workspace`
+（308 件の test result 群、失敗 0）、fmt、cached diff check は終了コード 0。
+既存警告はあるが失敗はない。新 crate/依存方向や大幅な owner growth はなく、
+構造 gate は本 cut では再実行していない。
+
+C3 の compact Choice plan key/cancel trigger と T01/T06 全 live family/root matrix は
+まだ未完。View 以降の工程と goal 全体も継続する。
