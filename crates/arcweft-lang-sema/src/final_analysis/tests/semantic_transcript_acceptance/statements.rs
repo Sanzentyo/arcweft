@@ -49,7 +49,7 @@ statement_family_inventory!(StatementShapeFamily for HirStmtKind, {
     HirStmtKind::LifetimeSet { .. } => LifetimeSet => Pending,
     HirStmtKind::Wait { .. } => Wait => Accepted,
     HirStmtKind::On { .. } => On => Accepted,
-    HirStmtKind::CancelRule { .. } => CancelRule => Pending,
+    HirStmtKind::CancelRule { .. } => CancelRule => Accepted,
     HirStmtKind::UnsafeLifetime { .. } => UnsafeLifetime => Pending,
     HirStmtKind::Choice { .. } => Choice => Pending,
     HirStmtKind::If(_) => If => Accepted,
@@ -97,6 +97,7 @@ struct MatchStatementCorpusObservation {
     defers: Vec<CheckedDeferCorpusFact>,
     iterations: Vec<CheckedIteration>,
     suspensions: Vec<CheckedSuspensionStatement>,
+    triggers: Vec<super::super::super::CheckedTrigger>,
     match_value_type: Option<crate::types::TypeKind>,
     semantic_digest: [u8; 32],
 }
@@ -155,6 +156,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
     let mut defers = Vec::new();
     let mut iterations = Vec::new();
     let mut suspensions = Vec::new();
+    let mut triggers = Vec::new();
     for (owner, hir) in module.statements() {
         let Some(checked) = report.statement(owner) else {
             continue;
@@ -210,6 +212,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             (HirStmtKind::Wait { .. }, CheckedStatementPayload::Suspension(suspension)) => {
                 suspensions.push(suspension.as_ref().clone())
             }
+            (HirStmtKind::CancelRule { .. }, CheckedStatementPayload::Trigger(trigger)) => {
+                triggers.push(trigger.clone());
+            }
             (HirStmtKind::Assign { .. }, _) => {
                 panic!("accepted Assign has its exact checked Assignment payload")
             }
@@ -224,6 +229,9 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
             }
             (HirStmtKind::Wait { .. }, _) => {
                 panic!("accepted Wait has its exact checked Suspension payload")
+            }
+            (HirStmtKind::CancelRule { .. }, _) => {
+                panic!("accepted CancelRule has its exact checked Trigger payload")
             }
             _ => {}
         }
@@ -241,6 +249,7 @@ fn accepted_match_statement_corpus_observation(source: &str) -> MatchStatementCo
         defers,
         iterations,
         suspensions,
+        triggers,
         match_value_type,
         semantic_digest: *product.semantic_digest().as_bytes(),
     }
@@ -330,6 +339,26 @@ flow row() -> Unit {{
         true => {{
             alice[before [mark @.release] after[p]] with {{
                 {wait}
+                on mark(@.release) {{ out "Released" }}
+            }}
+            "Released"
+        }}
+        false => "Moved"
+    }}
+    return ()
+}}
+"#
+    )
+}
+
+fn dialogue_match_cancel_source(cancel: &str) -> String {
+    format!(
+        r#"pub character alice {{ display = "Alice" }}
+flow row() -> Unit {{
+    let selected = match true {{
+        true => {{
+            alice[before [mark @.release] after[p]] with {{
+                {cancel}
                 on mark(@.release) {{ out "Released" }}
             }}
             "Released"
@@ -453,6 +482,21 @@ fn checked_match_statement_corpus_tracks_accepted_root_families() {
                 StatementPayloadFamily::ControlTransfer,
                 StatementPayloadFamily::Structural,
                 StatementPayloadFamily::Suspension,
+                StatementPayloadFamily::Trigger,
+            ],
+        },
+        Row {
+            name: "CancelRule in dialogue line-plan Match arm block",
+            source: dialogue_match_cancel_source("cancel on input(.SkipLine) { out \"Skipped\" }"),
+            shapes: &[
+                StatementShapeFamily::CancelRule,
+                StatementShapeFamily::Expression,
+                StatementShapeFamily::On,
+                StatementShapeFamily::Out,
+            ],
+            payloads: &[
+                StatementPayloadFamily::ControlTransfer,
+                StatementPayloadFamily::Structural,
                 StatementPayloadFamily::Trigger,
             ],
         },
@@ -741,6 +785,74 @@ fn checked_match_dialogue_wait_reaches_checked_statement_path_and_changes_digest
     assert_eq!(one_second.suspensions, [CheckedSuspensionStatement::Wait]);
     assert_eq!(two_seconds.suspensions, [CheckedSuspensionStatement::Wait]);
     assert_ne!(one_second.semantic_digest, two_seconds.semantic_digest);
+}
+
+#[test]
+fn checked_match_dialogue_cancel_rule_reaches_exact_trigger_payload() {
+    let absent = accepted_match_statement_corpus_observation(&dialogue_match_cancel_source(""));
+    let skip = accepted_match_statement_corpus_observation(&dialogue_match_cancel_source(
+        "cancel on input(.SkipLine) { out \"Skipped\" }",
+    ));
+    let back = accepted_match_statement_corpus_observation(&dialogue_match_cancel_source(
+        "cancel on input(.BackToTitle) { out \"Skipped\" }",
+    ));
+    let absent_families = BTreeSet::from([
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (StatementShapeFamily::On, StatementPayloadFamily::Trigger),
+        (
+            StatementShapeFamily::Out,
+            StatementPayloadFamily::ControlTransfer,
+        ),
+    ]);
+    let cancel_families = BTreeSet::from([
+        (
+            StatementShapeFamily::CancelRule,
+            StatementPayloadFamily::Trigger,
+        ),
+        (
+            StatementShapeFamily::Expression,
+            StatementPayloadFamily::Structural,
+        ),
+        (StatementShapeFamily::On, StatementPayloadFamily::Trigger),
+        (
+            StatementShapeFamily::Out,
+            StatementPayloadFamily::ControlTransfer,
+        ),
+    ]);
+
+    assert_eq!(absent.statement_families, absent_families);
+    assert_eq!(skip.statement_families, cancel_families);
+    assert_eq!(back.statement_families, cancel_families);
+    assert!(absent.triggers.is_empty());
+    assert!(matches!(
+        skip.triggers.as_slice(),
+        [trigger]
+            if matches!(
+                trigger.view(),
+                super::super::super::CheckedTriggerView::InputAction(action)
+                    if action.as_str() == "SkipLine"
+            )
+    ));
+    assert!(matches!(
+        back.triggers.as_slice(),
+        [trigger]
+            if matches!(
+                trigger.view(),
+                super::super::super::CheckedTriggerView::InputAction(action)
+                    if action.as_str() == "BackToTitle"
+            )
+    ));
+    assert_eq!(
+        absent.match_value_type,
+        Some(crate::types::TypeKind::String)
+    );
+    assert_eq!(skip.match_value_type, Some(crate::types::TypeKind::String));
+    assert_eq!(back.match_value_type, Some(crate::types::TypeKind::String));
+    assert_ne!(absent.semantic_digest, skip.semantic_digest);
+    assert_ne!(skip.semantic_digest, back.semantic_digest);
 }
 
 #[test]
